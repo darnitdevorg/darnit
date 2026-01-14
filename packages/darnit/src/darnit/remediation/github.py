@@ -101,6 +101,7 @@ def enable_branch_protection(
     branch: str = "main",
     required_approvals: int = 1,
     enforce_admins: bool = True,
+    require_pull_request: bool = True,
     require_status_checks: bool = False,
     status_checks: Optional[List[str]] = None,
     local_path: str = ".",
@@ -115,6 +116,10 @@ def enable_branch_protection(
         branch: Branch to protect (default: main)
         required_approvals: Number of required PR approvals (default: 1)
         enforce_admins: Apply rules to admins too (default: True)
+        require_pull_request: Require pull requests for changes (default: True).
+            Setting to False allows direct pushes while still protecting against
+            force-push and deletion. NOTE: Disabling this means OSPS-QA-07.01
+            (peer review requirement) will NOT be satisfied.
         require_status_checks: Require status checks to pass (default: False)
         status_checks: List of required status check contexts (e.g., ["ci/test"])
         local_path: Local path to repo for auto-detection (default: ".")
@@ -176,18 +181,23 @@ To modify rulesets, go to: Settings → Rules → Rulesets
     endpoint = f"/repos/{owner}/{repo}/branches/{branch}/protection"
 
     # Build protection config as a proper dict (NOT string)
-    protection_config = {
-        "required_pull_request_reviews": {
-            "required_approving_review_count": required_approvals,
-            "dismiss_stale_reviews": True,
-            "require_code_owner_reviews": False
-        },
+    protection_config: Dict[str, Any] = {
         "enforce_admins": enforce_admins,
         "restrictions": None,
         "required_linear_history": False,
         "allow_force_pushes": False,
         "allow_deletions": False
     }
+
+    # Only require PRs if explicitly enabled
+    if require_pull_request:
+        protection_config["required_pull_request_reviews"] = {
+            "required_approving_review_count": required_approvals,
+            "dismiss_stale_reviews": True,
+            "require_code_owner_reviews": False
+        }
+    else:
+        protection_config["required_pull_request_reviews"] = None
 
     if require_status_checks and status_checks:
         protection_config["required_status_checks"] = {
@@ -199,16 +209,40 @@ To modify rulesets, go to: Settings → Rules → Rulesets
 
     config_json = json.dumps(protection_config)
 
+    # Build compliance warning if PR reviews are disabled or no approvals required
+    compliance_warning = ""
+    if not require_pull_request:
+        compliance_warning = """
+⚠️ **COMPLIANCE WARNING**: Pull request reviews are DISABLED.
+- OSPS-QA-07.01 (peer review requirement) will NOT be satisfied
+- This configuration is suitable for solo maintainers but does not meet
+  full OpenSSF Baseline Level 1 compliance
+- Consider enabling PR reviews when you have additional contributors
+
+"""
+    elif required_approvals == 0:
+        compliance_warning = """
+⚠️ **COMPLIANCE NOTE**: Pull requests required but NO approvals needed.
+- OSPS-QA-07.01 (peer review requirement) will NOT be satisfied
+- PRs provide traceability but not actual peer review
+- This configuration is suitable for solo maintainers
+- Consider requiring approvals when you have additional contributors
+
+"""
+
     # Dry run - show what would be configured
     if dry_run:
-        return f"""🔍 **DRY RUN** - Branch protection preview for {owner}/{repo}:{branch}
-{ruleset_warning}
-**Would configure:**
+        pr_config_display = f"""- Require pull requests: {require_pull_request}
 - Required approvals: {required_approvals}
+- Dismiss stale reviews: Yes""" if require_pull_request else "- Require pull requests: No (direct pushes allowed)"
+
+        return f"""🔍 **DRY RUN** - Branch protection preview for {owner}/{repo}:{branch}
+{ruleset_warning}{compliance_warning}
+**Would configure:**
+{pr_config_display}
 - Enforce for admins: {enforce_admins}
-- Dismiss stale reviews: Yes
+- Prevent force push: Yes
 - Prevent deletion: Yes
-- Allow force push: No
 - Require status checks: {require_status_checks}
 {f"- Status checks: {', '.join(status_checks)}" if status_checks else ""}
 
@@ -220,9 +254,9 @@ To modify rulesets, go to: Settings → Rules → Rulesets
 ```
 
 **OSPS Controls that would be addressed:**
-- OSPS-AC-03.01: Direct commits prevented
+- OSPS-AC-03.01: {"Direct commits prevented" if require_pull_request else "⚠️ NOT SATISFIED (direct pushes allowed)"}
 - OSPS-AC-03.02: Branch deletion prevented
-- OSPS-QA-07.01: Peer review required
+- OSPS-QA-07.01: {"Peer review required" if require_pull_request and required_approvals >= 1 else "⚠️ NOT SATISFIED (no peer review requirement)"}
 
 **To apply:** Run again with `dry_run=False`
 """
@@ -258,19 +292,23 @@ To modify rulesets, go to: Settings → Rules → Rulesets
             return f"❌ Failed: {error_msg}"
 
         logger.info(f"Enabled branch protection for {owner}/{repo}:{branch}")
-        return f"""✅ Branch protection enabled for {owner}/{repo}:{branch}
-{ruleset_warning}
-**Configuration:**
+
+        pr_config_display = f"""- Require pull requests: Yes
 - Required approvals: {required_approvals}
+- Dismiss stale reviews: Yes""" if require_pull_request else "- Require pull requests: No (direct pushes allowed)"
+
+        return f"""✅ Branch protection enabled for {owner}/{repo}:{branch}
+{ruleset_warning}{compliance_warning}
+**Configuration:**
+{pr_config_display}
 - Enforce for admins: {enforce_admins}
-- Dismiss stale reviews: Yes
+- Prevent force push: Yes
 - Prevent deletion: Yes
-- Allow force push: No
 
 **OSPS Controls Addressed:**
-- OSPS-AC-03.01: Direct commits prevented
+- OSPS-AC-03.01: {"Direct commits prevented" if require_pull_request else "⚠️ NOT SATISFIED (direct pushes allowed)"}
 - OSPS-AC-03.02: Branch deletion prevented
-- OSPS-QA-07.01: Peer review required"""
+- OSPS-QA-07.01: {"Peer review required" if require_pull_request and required_approvals >= 1 else "⚠️ NOT SATISFIED (no peer review requirement)"}"""
 
     except FileNotFoundError:
         logger.error("gh CLI not found")

@@ -801,6 +801,7 @@ def enable_branch_protection(
     branch: str = "main",
     required_approvals: int = 1,
     enforce_admins: bool = True,
+    require_pull_request: bool = True,
     require_status_checks: bool = False,
     status_checks: Optional[List[str]] = None,
     local_path: str = ".",
@@ -815,6 +816,11 @@ def enable_branch_protection(
         branch: Branch to protect (default: main)
         required_approvals: Number of required PR approvals (default: 1)
         enforce_admins: Apply rules to admins too (default: True)
+        require_pull_request: Require pull requests for changes (default: True).
+            Set to False to allow direct pushes while still protecting against
+            force-push and deletion. **NOTE**: Disabling this means OSPS-QA-07.01
+            (peer review) will NOT be satisfied - suitable for solo maintainers
+            but not fully OpenSSF Baseline compliant.
         require_status_checks: Require status checks to pass (default: False)
         status_checks: List of required status check contexts (e.g., ["ci/test"])
         local_path: Local path to repo for auto-detection (default: ".")
@@ -829,6 +835,7 @@ def enable_branch_protection(
         branch=branch,
         required_approvals=required_approvals,
         enforce_admins=enforce_admins,
+        require_pull_request=require_pull_request,
         require_status_checks=require_status_checks,
         status_checks=status_checks,
         local_path=local_path,

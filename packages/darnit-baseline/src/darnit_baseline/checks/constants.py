@@ -37,8 +37,9 @@ DEPENDENCY_FILES = [
 # Lockfile patterns for dependency pinning verification
 LOCKFILE_PATTERNS = [
     "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
-    "Pipfile.lock", "poetry.lock",
-    "Gemfile.lock", "Cargo.lock", "go.sum", "composer.lock"
+    "Pipfile.lock", "poetry.lock", "pdm.lock", "uv.lock",
+    "Gemfile.lock", "Cargo.lock", "go.sum",
+    "composer.lock", "mix.lock", "pubspec.lock",
 ]
 
 # Common secret file patterns that should be gitignored

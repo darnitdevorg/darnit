@@ -1,0 +1,21 @@
+# CODEOWNERS - Define code ownership for pull request reviews
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owners for everything in the repo
+* @mlieberman85
+
+# Core framework
+/packages/darnit/ @mlieberman85
+
+# OpenSSF Baseline implementation
+/packages/darnit-baseline/ @mlieberman85
+
+# MCP server entry point
+/main.py @mlieberman85
+
+# CI/CD and security-sensitive files
+/.github/ @mlieberman85
+/SECURITY.md @mlieberman85
+
+# Documentation
+/docs/ @mlieberman85

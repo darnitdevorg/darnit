@@ -269,7 +269,7 @@ def _create_changelog_check() -> Callable[[CheckContext], PassResult]:
 
 LOCKFILE_PATTERNS = [
     "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
-    "Pipfile.lock", "poetry.lock", "pdm.lock",
+    "Pipfile.lock", "poetry.lock", "pdm.lock", "uv.lock",
     "Gemfile.lock", "go.sum", "Cargo.lock",
     "composer.lock", "mix.lock", "pubspec.lock",
 ]

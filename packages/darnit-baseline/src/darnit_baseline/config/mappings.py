@@ -178,8 +178,9 @@ DEFAULT_FILE_LOCATIONS: Dict[str, List[str]] = {
     # Dependency management (extension fields)
     "dependencies.lockfile": [
         "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
-        "Cargo.lock", "go.sum", "Gemfile.lock", "poetry.lock",
-        "uv.lock", "Pipfile.lock", "composer.lock"
+        "Pipfile.lock", "poetry.lock", "pdm.lock", "uv.lock",
+        "Gemfile.lock", "Cargo.lock", "go.sum",
+        "composer.lock", "mix.lock", "pubspec.lock",
     ],
     "dependencies.manifest": [
         "package.json", "Cargo.toml", "go.mod", "Gemfile",
