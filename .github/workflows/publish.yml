@@ -9,10 +9,9 @@ on:
   # release:
   #   types: [published]
 
-# Restrict permissions to minimum required
+# Restrict permissions to minimum required at workflow level
 permissions:
   contents: read
-  id-token: write  # Required for OIDC trusted publishing
 
 env:
   PYTHON_VERSION: "3.12"
@@ -26,6 +25,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -53,6 +54,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     environment: pypi
+    permissions:
+      id-token: write  # OIDC for trusted publishing (scoped to this job only)
+      contents: read
 
     steps:
       - name: Download build artifacts
@@ -72,6 +76,9 @@ jobs:
     needs: publish-darnit
     runs-on: ubuntu-latest
     environment: pypi
+    permissions:
+      id-token: write  # OIDC for trusted publishing (scoped to this job only)
+      contents: read
 
     steps:
       - name: Download build artifacts
