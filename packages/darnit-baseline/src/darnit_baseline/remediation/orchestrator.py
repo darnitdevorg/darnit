@@ -25,7 +25,7 @@ from darnit.tools import (
 )
 
 from .registry import REMEDIATION_REGISTRY, get_control_to_category_map
-from .actions import create_security_policy
+from .actions import create_security_policy, create_contributing_guide
 from darnit.remediation.github import enable_branch_protection
 
 logger = get_logger("remediation.orchestrator")
@@ -129,6 +129,7 @@ def _apply_remediation(
     func_map = {
         "enable_branch_protection": enable_branch_protection,
         "create_security_policy": create_security_policy,
+        "create_contributing_guide": create_contributing_guide,
         # Add other remediation functions here as they're implemented
     }
 
