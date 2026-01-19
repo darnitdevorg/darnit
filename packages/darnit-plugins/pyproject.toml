@@ -1,0 +1,86 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "darnit-plugins"
+version = "0.1.0"
+description = "Plugin adapters for darnit compliance frameworks"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+authors = [
+    { name = "Kusari", email = "info@kusari.dev" },
+]
+keywords = [
+    "compliance",
+    "security",
+    "darnit",
+    "plugins",
+    "adapters",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = [
+    "darnit>=0.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/kusaridev/baseline-mcp"
+Repository = "https://github.com/kusaridev/baseline-mcp"
+
+# =============================================================================
+# Entry Points for Plugin Discovery
+# =============================================================================
+# These entry points allow darnit to discover adapters from this package.
+# Any framework can reference these adapters by name in their TOML config:
+#
+#   [controls."CTRL-001"]
+#   check = { adapter = "kusari" }
+#
+# =============================================================================
+
+[project.entry-points."darnit.check_adapters"]
+# CLI tool wrappers
+kusari = "darnit_plugins.adapters.kusari:KusariCheckAdapter"
+echo = "darnit_plugins.adapters.echo:EchoCheckAdapter"
+
+[project.entry-points."darnit.remediation_adapters"]
+# Remediation adapters (none yet, but structure is ready)
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/darnit_plugins"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/",
+    "README.md",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]

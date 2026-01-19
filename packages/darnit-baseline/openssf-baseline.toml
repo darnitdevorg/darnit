@@ -1,0 +1,724 @@
+# OpenSSF Baseline Framework Definition
+# Declarative configuration for OSPS v2025.10.10 compliance controls
+#
+# This file defines all 62 controls across 3 maturity levels.
+# Users can override settings via .baseline.toml in their repository.
+
+[metadata]
+name = "openssf-baseline"
+display_name = "OpenSSF Baseline"
+version = "0.1.0"
+spec_version = "OSPS v2025.10.10"
+description = "OpenSSF Baseline security controls for open source projects"
+url = "https://baseline.openssf.org/"
+
+[defaults]
+check_adapter = "builtin"
+remediation_adapter = "builtin"
+
+# =============================================================================
+# Adapter Definitions
+# =============================================================================
+
+[adapters.builtin]
+type = "python"
+module = "darnit_baseline.adapters.builtin"
+class = "BuiltinCheckAdapter"
+
+# =============================================================================
+# Level 1 Controls - Access Control (AC)
+# =============================================================================
+
+[controls."OSPS-AC-01.01"]
+name = "RequireMFA"
+level = 1
+domain = "AC"
+description = "Require multi-factor authentication for organization members"
+tags = ["access-control", "authentication"]
+security_severity = 8.0
+docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-AC-01.01"
+
+[controls."OSPS-AC-01.01".passes]
+deterministic = { api_check = "check_org_mfa_requirement" }
+manual = { steps = [
+    "Navigate to Organization Settings → Security",
+    "Verify 'Require two-factor authentication' is enabled",
+]}
+
+[controls."OSPS-AC-02.01"]
+name = "AllowForking"
+level = 1
+domain = "AC"
+description = "Allow repository forking for public collaboration"
+tags = ["access-control", "collaboration"]
+
+[controls."OSPS-AC-02.01".passes]
+deterministic = { api_check = "check_allow_forking" }
+
+[controls."OSPS-AC-03.01"]
+name = "PreventDirectCommits"
+level = 1
+domain = "AC"
+description = "Prevent direct commits to primary branch"
+tags = ["access-control", "branch-protection"]
+security_severity = 7.5
+docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-AC-03.01"
+
+[controls."OSPS-AC-03.01".passes]
+deterministic = { api_check = "check_branch_protection_enabled" }
+manual = { steps = [
+    "Navigate to Repository Settings → Branches",
+    "Verify branch protection rule exists for main/master",
+    "Check 'Require a pull request before merging' is enabled",
+]}
+
+[controls."OSPS-AC-03.01".remediation]
+handler = "enable_branch_protection"
+safe = true
+requires_api = true
+
+[controls."OSPS-AC-03.02"]
+name = "PreventBranchDeletion"
+level = 1
+domain = "AC"
+description = "Prevent deletion of primary branch"
+tags = ["access-control", "branch-protection"]
+
+[controls."OSPS-AC-03.02".passes]
+deterministic = { api_check = "check_branch_deletion_prevented" }
+
+# =============================================================================
+# Level 1 Controls - Build & Release (BR)
+# =============================================================================
+
+[controls."OSPS-BR-01.01"]
+name = "SecureWorkflowInputs"
+level = 1
+domain = "BR"
+description = "Workflows handle untrusted inputs safely"
+tags = ["build", "security", "ci-cd"]
+security_severity = 8.5
+
+[controls."OSPS-BR-01.01".passes.pattern]
+files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+pass_if_any = false
+
+[controls."OSPS-BR-01.01".passes.pattern.patterns]
+injection_risk = "\\$\\{\\{\\s*github\\.(event\\.issue|event\\.pull_request|head_ref)"
+
+[controls."OSPS-BR-01.02"]
+name = "SecureBranchNames"
+level = 1
+domain = "BR"
+description = "Branch names are handled safely in workflows"
+tags = ["build", "security"]
+
+[controls."OSPS-BR-03.01"]
+name = "SecureRepositoryURL"
+level = 1
+domain = "BR"
+description = "Repository URL uses HTTPS"
+tags = ["build", "security"]
+
+[controls."OSPS-BR-03.01".passes]
+deterministic = { api_check = "check_https_url" }
+
+[controls."OSPS-BR-07.01"]
+name = "GitignoreSecrets"
+level = 1
+domain = "BR"
+description = "Secret files are properly gitignored"
+tags = ["build", "secrets"]
+
+[controls."OSPS-BR-07.01".passes]
+deterministic = { file_must_exist = [".gitignore"] }
+
+[controls."OSPS-BR-07.01".passes.pattern]
+files = [".gitignore"]
+
+[controls."OSPS-BR-07.01".passes.pattern.patterns]
+env_files = "\\.env"
+key_files = "\\*\\.key|\\*\\.pem"
+
+# =============================================================================
+# Level 1 Controls - Documentation (DO)
+# =============================================================================
+
+[controls."OSPS-DO-01.01"]
+name = "HasReadme"
+level = 1
+domain = "DO"
+description = "Repository has a README file"
+tags = ["documentation"]
+
+[controls."OSPS-DO-01.01".passes]
+deterministic = { file_must_exist = [
+    "README.md",
+    "README.rst",
+    "README.txt",
+    "README",
+    "readme.md",
+]}
+
+[controls."OSPS-DO-02.01"]
+name = "BugReportingProcess"
+level = 1
+domain = "DO"
+description = "Document bug reporting process"
+tags = ["documentation", "issues"]
+
+[controls."OSPS-DO-02.01".passes.deterministic]
+file_must_exist = [".github/ISSUE_TEMPLATE/bug_report.md", ".github/ISSUE_TEMPLATE/bug_report.yml", ".github/ISSUE_TEMPLATE.md"]
+
+[controls."OSPS-DO-02.01".passes.pattern]
+files = ["README.md", "CONTRIBUTING.md"]
+
+[controls."OSPS-DO-02.01".passes.pattern.patterns]
+bug_reporting = "(report|submit).*(bug|issue)"
+
+[controls."OSPS-DO-02.01".remediation]
+handler = "create_bug_report_template"
+safe = true
+
+# =============================================================================
+# Level 1 Controls - Governance (GV)
+# =============================================================================
+
+[controls."OSPS-GV-02.01"]
+name = "PublicDiscussion"
+level = 1
+domain = "GV"
+description = "Enable public discussion mechanisms"
+tags = ["governance", "community"]
+
+[controls."OSPS-GV-02.01".passes]
+deterministic = { api_check = "check_discussions_or_issues_enabled" }
+
+[controls."OSPS-GV-03.01"]
+name = "HasContributing"
+level = 1
+domain = "GV"
+description = "Repository has contributing guidelines"
+tags = ["governance", "documentation"]
+
+[controls."OSPS-GV-03.01".passes]
+deterministic = { file_must_exist = [
+    "CONTRIBUTING.md",
+    ".github/CONTRIBUTING.md",
+    "docs/CONTRIBUTING.md",
+]}
+
+[controls."OSPS-GV-03.01".remediation]
+handler = "create_contributing"
+safe = true
+
+# =============================================================================
+# Level 1 Controls - Legal (LE)
+# =============================================================================
+
+[controls."OSPS-LE-01.01"]
+name = "HasLicense"
+level = 1
+domain = "LE"
+description = "Repository has a license file"
+tags = ["legal", "license"]
+
+[controls."OSPS-LE-01.01".passes]
+deterministic = { file_must_exist = [
+    "LICENSE",
+    "LICENSE.md",
+    "LICENSE.txt",
+    "COPYING",
+]}
+
+[controls."OSPS-LE-02.01"]
+name = "OSIApprovedLicense"
+level = 1
+domain = "LE"
+description = "License is OSI-approved"
+tags = ["legal", "license"]
+
+[controls."OSPS-LE-02.01".passes]
+deterministic = { api_check = "check_osi_approved_license" }
+
+[controls."OSPS-LE-02.02"]
+name = "ReleaseLicense"
+level = 1
+domain = "LE"
+description = "Releases include license information"
+tags = ["legal", "license"]
+
+[controls."OSPS-LE-03.01"]
+name = "LicenseInRepo"
+level = 1
+domain = "LE"
+description = "License file present in repository root"
+tags = ["legal", "license"]
+
+[controls."OSPS-LE-03.01".passes]
+deterministic = { file_must_exist = ["LICENSE", "LICENSE.md", "COPYING"] }
+
+[controls."OSPS-LE-03.02"]
+name = "LicenseInReleases"
+level = 1
+domain = "LE"
+description = "License file included in releases"
+tags = ["legal", "license"]
+
+# =============================================================================
+# Level 1 Controls - Quality Assurance (QA)
+# =============================================================================
+
+[controls."OSPS-QA-01.01"]
+name = "PublicRepository"
+level = 1
+domain = "QA"
+description = "Repository is publicly accessible"
+tags = ["quality", "transparency"]
+
+[controls."OSPS-QA-01.01".passes]
+deterministic = { api_check = "check_repo_public" }
+
+[controls."OSPS-QA-01.02"]
+name = "PublicCommitHistory"
+level = 1
+domain = "QA"
+description = "Commit history is publicly visible"
+tags = ["quality", "transparency"]
+
+[controls."OSPS-QA-02.01"]
+name = "DependencyManifest"
+level = 1
+domain = "QA"
+description = "Project has dependency manifest files"
+tags = ["quality", "dependencies"]
+
+[controls."OSPS-QA-02.01".passes]
+deterministic = { file_must_exist = [
+    "package.json",
+    "requirements.txt",
+    "pyproject.toml",
+    "Cargo.toml",
+    "go.mod",
+    "pom.xml",
+    "build.gradle",
+    "Gemfile",
+]}
+
+[controls."OSPS-QA-04.01"]
+name = "DocumentSubprojects"
+level = 1
+domain = "QA"
+description = "Subprojects are documented"
+tags = ["quality", "documentation"]
+
+[controls."OSPS-QA-05.01"]
+name = "NoGeneratedExecutables"
+level = 1
+domain = "QA"
+description = "No generated executables in repository"
+tags = ["quality", "security"]
+
+[controls."OSPS-QA-05.02"]
+name = "NoUnreviewableBinaries"
+level = 1
+domain = "QA"
+description = "No unreviewable binary artifacts"
+tags = ["quality", "security"]
+
+# =============================================================================
+# Level 1 Controls - Vulnerability Management (VM)
+# =============================================================================
+
+[controls."OSPS-VM-02.01"]
+name = "HasSecurityPolicy"
+level = 1
+domain = "VM"
+description = "Repository has a security policy"
+tags = ["security", "vulnerability-management"]
+security_severity = 7.0
+
+[controls."OSPS-VM-02.01".passes]
+deterministic = { file_must_exist = [
+    "SECURITY.md",
+    ".github/SECURITY.md",
+    "docs/SECURITY.md",
+]}
+
+[controls."OSPS-VM-02.01".remediation]
+handler = "create_security_policy"
+template = "standard"
+safe = true
+
+# =============================================================================
+# Level 2 Controls - Access Control (AC)
+# =============================================================================
+
+[controls."OSPS-AC-04.01"]
+name = "ExplicitWorkflowPermissions"
+level = 2
+domain = "AC"
+description = "Workflows define explicit permissions"
+tags = ["access-control", "ci-cd"]
+security_severity = 6.5
+
+[controls."OSPS-AC-04.01".passes.pattern]
+files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+
+[controls."OSPS-AC-04.01".passes.pattern.patterns]
+permissions = "^permissions:"
+
+# =============================================================================
+# Level 2 Controls - Governance (GV)
+# =============================================================================
+
+[controls."OSPS-GV-01.01"]
+name = "HasGovernance"
+level = 2
+domain = "GV"
+description = "Project has governance documentation"
+tags = ["governance"]
+
+[controls."OSPS-GV-01.01".passes]
+deterministic = { file_must_exist = [
+    "GOVERNANCE.md",
+    "MAINTAINERS.md",
+    "CODEOWNERS",
+    ".github/CODEOWNERS",
+]}
+
+[controls."OSPS-GV-01.01".remediation]
+handler = "create_governance_doc"
+safe = true
+
+[controls."OSPS-GV-01.02"]
+name = "DocumentedRoles"
+level = 2
+domain = "GV"
+description = "Roles and responsibilities are documented"
+tags = ["governance"]
+
+[controls."OSPS-GV-01.02".passes.pattern]
+files = ["GOVERNANCE.md", "MAINTAINERS.md", "CONTRIBUTING.md"]
+
+[controls."OSPS-GV-01.02".passes.pattern.patterns]
+roles = "(maintainer|contributor|reviewer|owner)"
+responsibilities = "(responsibil|duties|role)"
+
+[controls."OSPS-GV-03.02"]
+name = "ContributionRequirements"
+level = 2
+domain = "GV"
+description = "Contribution requirements are documented"
+tags = ["governance", "contributing"]
+
+[controls."OSPS-GV-03.02".passes.pattern]
+files = ["CONTRIBUTING.md"]
+
+[controls."OSPS-GV-03.02".passes.pattern.patterns]
+requirements = "(requirement|must|should|need to)"
+process = "(pull request|PR|submit|review)"
+
+# =============================================================================
+# Level 2 Controls - Quality Assurance (QA)
+# =============================================================================
+
+[controls."OSPS-QA-03.01"]
+name = "RequiredStatusChecks"
+level = 2
+domain = "QA"
+description = "Branch protection requires status checks"
+tags = ["quality", "ci-cd"]
+
+[controls."OSPS-QA-03.01".passes]
+deterministic = { api_check = "check_required_status_checks" }
+
+[controls."OSPS-QA-06.01"]
+name = "AutomatedTests"
+level = 2
+domain = "QA"
+description = "CI workflows include automated tests"
+tags = ["quality", "testing"]
+
+[controls."OSPS-QA-06.01".passes.pattern]
+files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+
+[controls."OSPS-QA-06.01".passes.pattern.patterns]
+test_command = "(npm test|pytest|go test|cargo test|mvn test|gradle test)"
+test_step = "(run.*test|Test|testing)"
+
+# =============================================================================
+# Level 2 Controls - Vulnerability Management (VM)
+# =============================================================================
+
+[controls."OSPS-VM-01.01"]
+name = "DisclosurePolicy"
+level = 2
+domain = "VM"
+description = "Security policy includes disclosure process"
+tags = ["security", "vulnerability-management"]
+
+[controls."OSPS-VM-01.01".passes.pattern]
+files = ["SECURITY.md"]
+
+[controls."OSPS-VM-01.01".passes.pattern.patterns]
+disclosure = "(disclos|report|contact)"
+process = "(process|procedure|timeline)"
+
+[controls."OSPS-VM-03.01"]
+name = "PrivateReporting"
+level = 2
+domain = "VM"
+description = "Private vulnerability reporting is enabled"
+tags = ["security", "vulnerability-management"]
+
+[controls."OSPS-VM-03.01".passes]
+deterministic = { api_check = "check_private_vulnerability_reporting" }
+
+[controls."OSPS-VM-03.01".passes.pattern]
+files = ["SECURITY.md"]
+
+[controls."OSPS-VM-03.01".passes.pattern.patterns]
+private = "(private|confidential|security advisory)"
+
+[controls."OSPS-VM-04.01"]
+name = "SecurityAdvisories"
+level = 2
+domain = "VM"
+description = "Repository supports security advisories"
+tags = ["security", "vulnerability-management"]
+
+[controls."OSPS-VM-04.01".passes]
+deterministic = { api_check = "check_security_advisories_enabled" }
+
+# =============================================================================
+# Level 3 Controls - Access Control (AC)
+# =============================================================================
+
+[controls."OSPS-AC-04.02"]
+name = "ScopedPermissions"
+level = 3
+domain = "AC"
+description = "Workflow permissions are appropriately scoped"
+tags = ["access-control", "ci-cd", "least-privilege"]
+security_severity = 7.0
+
+[controls."OSPS-AC-04.02".passes.pattern]
+files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+
+[controls."OSPS-AC-04.02".passes.pattern.patterns]
+scoped = "(contents:|issues:|pull-requests:|packages:)"
+read_only = "read(-only)?"
+
+# =============================================================================
+# Level 3 Controls - Quality Assurance (QA)
+# =============================================================================
+
+[controls."OSPS-QA-07.01"]
+name = "RequiredApprovals"
+level = 3
+domain = "QA"
+description = "Pull requests require approval before merge"
+tags = ["quality", "code-review"]
+
+[controls."OSPS-QA-07.01".passes]
+deterministic = { api_check = "check_required_approvals" }
+
+[controls."OSPS-QA-07.01".remediation]
+handler = "enable_branch_protection"
+config = { required_approvals = 1 }
+requires_api = true
+
+[controls."OSPS-QA-06.02"]
+name = "DocumentedTesting"
+level = 3
+domain = "QA"
+description = "Testing instructions are documented"
+tags = ["quality", "testing", "documentation"]
+
+[controls."OSPS-QA-06.02".passes.pattern]
+files = ["README.md", "CONTRIBUTING.md", "docs/testing.md"]
+
+[controls."OSPS-QA-06.02".passes.pattern.patterns]
+test_docs = "(run.*test|test.*instruction|how to test)"
+
+[controls."OSPS-QA-06.03"]
+name = "TestRequirements"
+level = 3
+domain = "QA"
+description = "Test requirements for contributions are documented"
+tags = ["quality", "testing", "contributing"]
+
+[controls."OSPS-QA-06.03".passes.pattern]
+files = ["CONTRIBUTING.md"]
+
+[controls."OSPS-QA-06.03".passes.pattern.patterns]
+test_req = "(test.*required|must.*test|include.*test)"
+
+# =============================================================================
+# Level 3 Controls - Vulnerability Management (VM)
+# =============================================================================
+
+[controls."OSPS-VM-05.01"]
+name = "SCARemediationPolicy"
+level = 3
+domain = "VM"
+description = "SCA remediation policy documented"
+tags = ["security", "dependencies"]
+
+[controls."OSPS-VM-05.01".passes.pattern]
+files = ["SECURITY.md", "docs/security.md"]
+
+[controls."OSPS-VM-05.01".passes.pattern.patterns]
+sca_policy = "(dependency|SCA|software composition|remediat)"
+
+[controls."OSPS-VM-05.02"]
+name = "PreReleaseSCA"
+level = 3
+domain = "VM"
+description = "Pre-release SCA workflow configured"
+tags = ["security", "ci-cd", "dependencies"]
+
+[controls."OSPS-VM-05.02".passes.pattern]
+files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+
+[controls."OSPS-VM-05.02".passes.pattern.patterns]
+sca_tool = "(dependency-review-action|kusari|trivy|snyk|dependabot)"
+
+[controls."OSPS-VM-05.03"]
+name = "AutomatedDependencyScanning"
+level = 3
+domain = "VM"
+description = "Automated dependency scanning configured"
+tags = ["security", "dependencies"]
+
+[controls."OSPS-VM-05.03".passes]
+deterministic = { file_must_exist = [
+    ".github/dependabot.yml",
+    ".github/dependabot.yaml",
+    "renovate.json",
+    ".renovaterc",
+]}
+
+[controls."OSPS-VM-05.03".remediation]
+handler = "create_dependabot_config"
+safe = true
+
+[controls."OSPS-VM-06.01"]
+name = "SASTRemediationPolicy"
+level = 3
+domain = "VM"
+description = "SAST remediation policy documented"
+tags = ["security", "code-analysis"]
+
+[controls."OSPS-VM-06.01".passes.pattern]
+files = ["SECURITY.md"]
+
+[controls."OSPS-VM-06.01".passes.pattern.patterns]
+sast_policy = "(SAST|static analysis|code scan|remediat)"
+
+[controls."OSPS-VM-06.02"]
+name = "AutomatedSAST"
+level = 3
+domain = "VM"
+description = "Automated SAST in CI pipeline"
+tags = ["security", "ci-cd", "code-analysis"]
+
+[controls."OSPS-VM-06.02".passes.pattern]
+files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+
+[controls."OSPS-VM-06.02".passes.pattern.patterns]
+sast_tool = "(codeql|semgrep|sonar|bandit|gosec|brakeman)"
+
+# =============================================================================
+# Level 3 Controls - Documentation (DO)
+# =============================================================================
+
+[controls."OSPS-DO-03.01"]
+name = "SupportDocumentation"
+level = 3
+domain = "DO"
+description = "Support documentation available"
+tags = ["documentation", "support"]
+
+[controls."OSPS-DO-03.01".passes]
+deterministic = { file_must_exist = [
+    "SUPPORT.md",
+    ".github/SUPPORT.md",
+]}
+
+[controls."OSPS-DO-03.01".remediation]
+handler = "create_support_doc"
+safe = true
+
+[controls."OSPS-DO-05.01"]
+name = "EndOfSupportPolicy"
+level = 3
+domain = "DO"
+description = "End-of-support policy documented"
+tags = ["documentation", "support"]
+
+[controls."OSPS-DO-05.01".passes.pattern]
+files = ["SUPPORT.md", "SECURITY.md", "README.md"]
+
+[controls."OSPS-DO-05.01".passes.pattern.patterns]
+eol_policy = "(end.of.(life|support)|EOL|deprecat|sunset)"
+
+# =============================================================================
+# Level 3 Controls - Governance (GV)
+# =============================================================================
+
+[controls."OSPS-GV-04.01"]
+name = "CollaboratorReviewPolicy"
+level = 3
+domain = "GV"
+description = "Collaborator review policy documented"
+tags = ["governance", "code-review"]
+
+[controls."OSPS-GV-04.01".passes.pattern]
+files = ["GOVERNANCE.md", "CONTRIBUTING.md"]
+
+[controls."OSPS-GV-04.01".passes.pattern.patterns]
+review_policy = "(review|collaborator|maintainer).*(policy|process|requirement)"
+
+# =============================================================================
+# Level 3 Controls - Security Assessment (SA)
+# =============================================================================
+
+[controls."OSPS-SA-02.01"]
+name = "APIDocumentation"
+level = 2
+domain = "SA"
+description = "API/interface documentation available"
+tags = ["documentation", "api"]
+
+[controls."OSPS-SA-02.01".passes]
+deterministic = { file_must_exist = [
+    "API.md",
+    "docs/api.md",
+    "docs/api/",
+    "openapi.yaml",
+    "openapi.json",
+    "swagger.yaml",
+    "swagger.json",
+]}
+
+[controls."OSPS-SA-03.02"]
+name = "ThreatModel"
+level = 3
+domain = "SA"
+description = "Threat model documentation available"
+tags = ["security", "threat-modeling"]
+
+[controls."OSPS-SA-03.02".passes]
+deterministic = { file_must_exist = [
+    "THREAT_MODEL.md",
+    "docs/threat-model.md",
+    "docs/security/threat-model.md",
+]}
+
+[controls."OSPS-SA-03.02".passes.pattern]
+files = ["SECURITY.md", "docs/security.md"]
+
+[controls."OSPS-SA-03.02".passes.pattern.patterns]
+threat_model = "(threat model|STRIDE|attack surface|security assessment)"

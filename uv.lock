@@ -7,6 +7,8 @@ members = [
     "darnit",
     "darnit-baseline",
     "darnit-mcp",
+    "darnit-plugins",
+    "darnit-testchecks",
 ]
 
 [[package]]
@@ -434,6 +436,50 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0.0" },
 ]
 provides-extras = ["attestation", "dev"]
+
+[[package]]
+name = "darnit-plugins"
+version = "0.1.0"
+source = { editable = "packages/darnit-plugins" }
+dependencies = [
+    { name = "darnit" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "darnit", editable = "packages/darnit" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0.0" },
+]
+provides-extras = ["dev"]
+
+[[package]]
+name = "darnit-testchecks"
+version = "0.1.0"
+source = { editable = "packages/darnit-testchecks" }
+dependencies = [
+    { name = "darnit" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "darnit", editable = "packages/darnit" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0.0" },
+]
+provides-extras = ["dev"]
 
 [[package]]
 name = "dnspython"

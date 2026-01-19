@@ -78,6 +78,47 @@ from .discovery import (
     sync_discovered_to_config,
 )
 
+# Framework and user configuration schemas
+from .framework_schema import (
+    FrameworkConfig,
+    FrameworkMetadata,
+    FrameworkDefaults,
+    ControlConfig,
+    CheckConfig,
+    RemediationConfig,
+    PassesConfig,
+    DeterministicPassConfig,
+    PatternPassConfig,
+    LLMPassConfig,
+    ManualPassConfig,
+    AdapterType,
+    PassPhase,
+)
+
+from .user_schema import (
+    UserConfig,
+    UserSettings,
+    ControlOverride as UserControlOverride,
+    ControlGroup,
+    CustomControl,
+    ControlStatus as UserControlStatus,
+    create_user_config,
+    create_user_config_with_kusari,
+)
+
+from .merger import (
+    EffectiveConfig,
+    EffectiveControl,
+    merge_configs,
+    merge_control,
+    deep_merge,
+    load_framework_config,
+    load_user_config,
+    load_effective_config,
+    validate_framework_config,
+    validate_user_config,
+)
+
 # Legacy exports (deprecated)
 from .models import (
     ReferenceStatus,
@@ -156,4 +197,38 @@ __all__ = [
     "ReferenceStatus",
     "ResourceReference",
     "ControlStatus",
+    # Framework configuration schema
+    "FrameworkConfig",
+    "FrameworkMetadata",
+    "FrameworkDefaults",
+    "ControlConfig",
+    "CheckConfig",
+    "RemediationConfig",
+    "PassesConfig",
+    "DeterministicPassConfig",
+    "PatternPassConfig",
+    "LLMPassConfig",
+    "ManualPassConfig",
+    "AdapterType",
+    "PassPhase",
+    # User configuration schema
+    "UserConfig",
+    "UserSettings",
+    "UserControlOverride",
+    "ControlGroup",
+    "CustomControl",
+    "UserControlStatus",
+    "create_user_config",
+    "create_user_config_with_kusari",
+    # Configuration merger
+    "EffectiveConfig",
+    "EffectiveControl",
+    "merge_configs",
+    "merge_control",
+    "deep_merge",
+    "load_framework_config",
+    "load_user_config",
+    "load_effective_config",
+    "validate_framework_config",
+    "validate_user_config",
 ]

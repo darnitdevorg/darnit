@@ -232,6 +232,159 @@ See `packages/darnit-baseline` for a complete example.
 | OSPS-SA | Security Architecture | Threat modeling, secure design principles |
 | OSPS-VM | Vulnerability Management | Dependency scanning, CVE handling, security advisories |
 
+## Using with Claude Code
+
+Darnit provides an MCP (Model Context Protocol) server that integrates with AI assistants like Claude Code. This allows Claude to run compliance audits, generate attestations, and apply remediations directly.
+
+### Quick Setup
+
+Add the darnit MCP server to your Claude Code settings:
+
+**Option 1: Global settings** (`~/.claude/settings.json`):
+
+```json
+{
+  "mcpServers": {
+    "darnit": {
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/baseline-mcp", "python", "main.py"]
+    }
+  }
+}
+```
+
+**Option 2: Project settings** (`.claude/settings.json` in your repo):
+
+```json
+{
+  "mcpServers": {
+    "darnit": {
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/baseline-mcp", "python", "main.py"]
+    }
+  }
+}
+```
+
+**Option 3: Using uvx** (if published to PyPI):
+
+```json
+{
+  "mcpServers": {
+    "darnit": {
+      "command": "uvx",
+      "args": ["darnit-mcp"]
+    }
+  }
+}
+```
+
+### Verifying the Connection
+
+After adding the configuration, restart Claude Code. You should see darnit tools available:
+
+```
+/mcp
+```
+
+This will show available MCP servers including `darnit` with tools like:
+- `audit_openssf_baseline`
+- `remediate_audit_findings`
+- `generate_attestation`
+- etc.
+
+### Example Usage in Claude Code
+
+Once configured, you can ask Claude to:
+
+```
+Audit this repository for OpenSSF Baseline compliance
+```
+
+```
+Fix the failing security controls
+```
+
+```
+Generate a signed attestation for this project
+```
+
+### Creating Custom MCP Servers with Darnit Plugins
+
+You can create your own compliance MCP server by:
+
+1. **Create a custom framework package** (see [Creating a Custom Framework](#creating-a-plugin))
+
+2. **Create an MCP server entry point**:
+
+```python
+# my_compliance_server/main.py
+from mcp.server.fastmcp import FastMCP
+from darnit.config.merger import load_effective_config_by_name
+from darnit.core import get_plugin_registry
+
+mcp = FastMCP("My Compliance Server")
+
+@mcp.tool()
+def audit_my_standard(local_path: str = ".") -> str:
+    """Run compliance audit against my-standard."""
+    registry = get_plugin_registry()
+    registry.discover_all()
+
+    # Load your framework
+    config = load_effective_config_by_name("my-standard", local_path)
+
+    # Run checks using your adapters
+    # ...
+
+    return "Audit results..."
+
+if __name__ == "__main__":
+    mcp.run()
+```
+
+3. **Configure Claude Code to use your server**:
+
+```json
+{
+  "mcpServers": {
+    "my-compliance": {
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/my-server", "python", "main.py"]
+    }
+  }
+}
+```
+
+### Environment Variables
+
+The MCP server respects these environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `GITHUB_TOKEN` | GitHub API token for repo checks | From `gh auth` |
+| `DARNIT_LOG_LEVEL` | Logging level (DEBUG, INFO, WARN) | INFO |
+| `DARNIT_CACHE_TTL` | Cache time-to-live in seconds | 300 |
+
+## Security
+
+Darnit is designed with security in mind. Key security features include:
+
+- **Module Whitelist**: Dynamic adapter loading is restricted to trusted module prefixes (`darnit.*`, `darnit_baseline.*`, `darnit_plugins.*`, `darnit_testchecks.*`)
+- **Dry-Run Mode**: All remediation actions support dry-run to preview changes before applying
+- **Sigstore Attestations**: Cryptographically signed compliance attestations with transparency logging
+
+### Quick Security Checklist
+
+- [ ] Use fine-grained GitHub tokens with minimal permissions
+- [ ] Always use `dry_run=True` first when remediating
+- [ ] Review `.baseline.toml` changes in pull requests
+- [ ] Name custom adapter packages with `darnit_` prefix
+
+For comprehensive security guidance, see [docs/SECURITY_GUIDE.md](docs/SECURITY_GUIDE.md).
+
+To report security vulnerabilities, see [SECURITY.md](SECURITY.md).
+
 ## Development
 
 ### Running Tests

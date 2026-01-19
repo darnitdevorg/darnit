@@ -1,10 +1,37 @@
 """Core utilities for the darnit framework.
 
 This module provides fundamental utilities used across the framework:
-- Logging configuration
-- Data models
-- Common utilities
-- Adapter interfaces
+
+- **Logging**: Structured logging configuration
+- **Models**: Data models for audit results, check results
+- **Utilities**: Git detection, path validation
+- **Adapters**: Check and remediation adapter interfaces
+- **Plugin Registry**: Unified discovery for frameworks and adapters
+
+Plugin System:
+    The plugin registry discovers plugins via Python entry points:
+
+    - ``darnit.frameworks`` - Framework TOML path providers
+    - ``darnit.check_adapters`` - Check adapter classes
+    - ``darnit.remediation_adapters`` - Remediation adapter classes
+
+    Example::
+
+        from darnit.core import get_plugin_registry
+
+        registry = get_plugin_registry()
+        registry.discover_all()
+
+        # List available plugins
+        print(registry.list_frameworks())
+        print(registry.list_check_adapters())
+
+        # Get an adapter by name
+        adapter = registry.get_check_adapter("kusari")
+
+See Also:
+    - :mod:`darnit.core.registry` for the plugin registry
+    - :mod:`darnit.core.adapters` for adapter base classes
 """
 
 from .logging import get_logger
@@ -29,6 +56,16 @@ from .discovery import (
     get_implementation,
     get_default_implementation,
 )
+from .registry import (
+    PluginRegistry,
+    get_plugin_registry,
+    reset_plugin_registry,
+    FrameworkInfo,
+    AdapterInfo,
+    ENTRY_POINT_FRAMEWORKS,
+    ENTRY_POINT_CHECK_ADAPTERS,
+    ENTRY_POINT_REMEDIATION_ADAPTERS,
+)
 
 __all__ = [
     # Logging
@@ -45,10 +82,19 @@ __all__ = [
     # Adapters
     "CheckAdapter",
     "RemediationAdapter",
-    # Plugin system
+    # Legacy plugin system
     "ControlSpec",
     "ComplianceImplementation",
     "discover_implementations",
     "get_implementation",
     "get_default_implementation",
+    # Plugin registry (new)
+    "PluginRegistry",
+    "get_plugin_registry",
+    "reset_plugin_registry",
+    "FrameworkInfo",
+    "AdapterInfo",
+    "ENTRY_POINT_FRAMEWORKS",
+    "ENTRY_POINT_CHECK_ADAPTERS",
+    "ENTRY_POINT_REMEDIATION_ADAPTERS",
 ]

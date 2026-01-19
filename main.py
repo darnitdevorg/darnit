@@ -262,7 +262,7 @@ def _run_baseline_checks(
         return None, error
 
     # Run checks
-    all_results = run_checks(owner, repo, resolved_path, default_branch, level, use_sieve=use_sieve)
+    all_results, skipped = run_checks(owner, repo, resolved_path, default_branch, level, use_sieve=use_sieve)
 
     # Calculate summary
     summary = summarize_results(all_results)
@@ -347,7 +347,7 @@ def _run_baseline_checks(
         config_was_created=config_was_created,
         config_was_updated=False,
         config_changes=[],
-        skipped_controls={},
+        skipped_controls=skipped,
         commit=commit,
         ref=ref,
     )

@@ -57,6 +57,57 @@ class AdapterCapability:
     control_ids: Set[str]  # Specific control IDs, or {"*"} for all
     supports_batch: bool = False  # Can handle multiple controls in one call
     batch_command: Optional[str] = None  # Command for batch mode
+    # TODO: Add cache_key for shared execution context
+    # cache_key: Optional[str] = None  # Key for caching tool output (e.g., "scorecard")
+
+
+# TODO: Shared Execution Context (Future Enhancement)
+# Add ExecutionContext class for sharing tool outputs across controls.
+# This enables tools like OpenSSF Scorecard to run once and provide
+# results for multiple controls.
+#
+# @dataclass
+# class ExecutionContext:
+#     """Shared context for an audit run, enabling result caching across controls.
+#
+#     Example usage:
+#         context = ExecutionContext(owner="org", repo="repo", local_path="/path")
+#
+#         # Adapter caches its output
+#         scorecard_data = context.get_or_run_tool(
+#             "scorecard",
+#             lambda: run_scorecard(context.local_path)
+#         )
+#
+#         # Extract specific control result
+#         return extract_branch_protection_result(scorecard_data)
+#     """
+#     owner: str
+#     repo: str
+#     local_path: str
+#
+#     # Cached tool outputs (scorecard JSON, trivy results, etc.)
+#     tool_outputs: Dict[str, Any] = field(default_factory=dict)
+#
+#     # Cached GitHub API responses
+#     api_responses: Dict[str, Any] = field(default_factory=dict)
+#
+#     # Already-computed check results
+#     cached_results: Dict[str, CheckResult] = field(default_factory=dict)
+#
+#     def get_or_run_tool(self, tool_key: str, run_func: Callable) -> Any:
+#         """Get cached tool output or run the tool and cache result."""
+#         if tool_key not in self.tool_outputs:
+#             self.tool_outputs[tool_key] = run_func()
+#         return self.tool_outputs[tool_key]
+#
+#     def get_cached_result(self, control_id: str) -> Optional[CheckResult]:
+#         """Get a previously cached check result."""
+#         return self.cached_results.get(control_id)
+#
+#     def cache_result(self, result: CheckResult) -> None:
+#         """Cache a check result for later retrieval."""
+#         self.cached_results[result.control_id] = result
 
 
 @dataclass

@@ -1,0 +1,80 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "darnit-testchecks"
+version = "0.1.0"
+description = "Test Checks Framework for darnit - trivial checks for testing"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+authors = [
+    { name = "Kusari", email = "info@kusari.dev" },
+]
+keywords = [
+    "compliance",
+    "testing",
+    "darnit",
+    "framework",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Testing",
+]
+dependencies = [
+    "darnit>=0.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/kusaridev/baseline-mcp"
+Repository = "https://github.com/kusaridev/baseline-mcp"
+
+# Entry points for darnit plugin discovery
+[project.entry-points."darnit.frameworks"]
+testchecks = "darnit_testchecks:get_framework_path"
+
+[project.entry-points."darnit.check_adapters"]
+testchecks = "darnit_testchecks.adapters.builtin:TrivialCheckAdapter"
+
+[project.entry-points."darnit.remediation_adapters"]
+testchecks = "darnit_testchecks.adapters.builtin:TrivialRemediationAdapter"
+
+# Legacy entry point (deprecated, kept for backwards compatibility)
+[project.entry-points."darnit.adapters"]
+testchecks = "darnit_testchecks.adapters.builtin:get_test_check_adapter"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/darnit_testchecks"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/",
+    "testchecks.toml",
+    "README.md",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]

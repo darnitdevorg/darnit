@@ -8,7 +8,8 @@ as the main MCP entry point. This module provides supporting functions
 and can be used for programmatic access.
 """
 
-from typing import Dict, List, Any, Optional, Tuple
+from pathlib import Path
+from typing import Dict, List, Any, Optional, Tuple, Set
 from dataclasses import dataclass
 
 from darnit.core.logging import get_logger
@@ -69,6 +70,140 @@ def _get_sieve_components():
             logger.warning("Sieve components not available")
             _sieve_components = {}
     return _sieve_components
+
+
+# =============================================================================
+# User Configuration Loading
+# =============================================================================
+
+_effective_config_cache: Dict[str, Any] = {}
+
+
+def _get_framework_config_path() -> Optional[Path]:
+    """Get path to the framework TOML file from the installed package.
+
+    Returns:
+        Path to openssf-baseline.toml or None if not found
+    """
+    try:
+        import darnit_baseline
+        # darnit_baseline.__file__ is like:
+        # .../packages/darnit-baseline/src/darnit_baseline/__init__.py
+        # We need: .../packages/darnit-baseline/openssf-baseline.toml
+        init_path = Path(darnit_baseline.__file__)
+        # Go up: __init__.py -> darnit_baseline -> src -> darnit-baseline
+        package_root = init_path.parent.parent.parent
+
+        # Try standard locations
+        candidates = [
+            package_root / "openssf-baseline.toml",
+            init_path.parent / "openssf-baseline.toml",  # Inside package
+            package_root / "src" / "openssf-baseline.toml",
+        ]
+
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+
+    except ImportError:
+        logger.debug("darnit_baseline not installed")
+    except Exception as e:
+        logger.debug(f"Error locating framework config: {e}")
+
+    return None
+
+
+def load_effective_audit_config(local_path: str) -> Optional[Any]:
+    """Load the effective configuration for auditing.
+
+    This loads the framework config (openssf-baseline.toml) and merges it
+    with any user config (.baseline.toml) found in the repository.
+
+    Args:
+        local_path: Path to the repository
+
+    Returns:
+        EffectiveConfig if successful, None otherwise
+    """
+    # Check cache first
+    abs_path = str(Path(local_path).resolve())
+    if abs_path in _effective_config_cache:
+        return _effective_config_cache[abs_path]
+
+    try:
+        from darnit.config import (
+            load_framework_config,
+            load_user_config,
+            merge_configs,
+            EffectiveConfig,
+        )
+
+        # Load framework config
+        framework_path = _get_framework_config_path()
+        if not framework_path:
+            logger.debug("Framework config not found, using legacy checks only")
+            return None
+
+        framework = load_framework_config(framework_path)
+
+        # Load user config if exists
+        user = load_user_config(Path(local_path))
+
+        # Merge configs
+        effective = merge_configs(framework, user)
+
+        # Cache the result
+        _effective_config_cache[abs_path] = effective
+
+        if user:
+            logger.info(f"Loaded user config from {local_path}/.baseline.toml")
+            excluded = effective.get_excluded_controls()
+            if excluded:
+                logger.info(f"User config excludes {len(excluded)} controls")
+
+        return effective
+
+    except Exception as e:
+        logger.warning(f"Error loading effective config: {e}")
+        return None
+
+
+def clear_effective_config_cache():
+    """Clear the effective config cache."""
+    _effective_config_cache.clear()
+
+
+def get_excluded_control_ids(local_path: str) -> Dict[str, str]:
+    """Get control IDs that are excluded via user config.
+
+    Args:
+        local_path: Path to the repository
+
+    Returns:
+        Dict mapping control_id to exclusion reason
+    """
+    effective = load_effective_audit_config(local_path)
+    if effective:
+        return effective.get_excluded_controls()
+    return {}
+
+
+def get_adapter_for_control(control_id: str, local_path: str) -> Optional[str]:
+    """Get the adapter name configured for a specific control.
+
+    Args:
+        control_id: Control identifier
+        local_path: Path to the repository
+
+    Returns:
+        Adapter name if configured, None for builtin
+    """
+    effective = load_effective_audit_config(local_path)
+    if effective:
+        ctrl = effective.controls.get(control_id)
+        if ctrl and ctrl.check_adapter != "builtin":
+            return ctrl.check_adapter
+    return None
 
 
 @dataclass
@@ -135,7 +270,8 @@ def run_checks(
     level: int = 3,
     use_sieve: bool = False,
     stop_on_llm: bool = True,
-) -> List[Dict[str, Any]]:
+    apply_user_config: bool = True,
+) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
     """Run OSPS baseline checks at the specified level.
 
     Args:
@@ -146,32 +282,94 @@ def run_checks(
         level: Maximum level to check (1, 2, or 3)
         use_sieve: Enable progressive verification pipeline
         stop_on_llm: Return PENDING_LLM for LLM consultation (when use_sieve=True)
+        apply_user_config: Apply .baseline.toml user config overrides
+
+    Returns:
+        Tuple of (check_results, skipped_controls)
+        where skipped_controls maps control_id to reason
+    """
+    # Load user config exclusions if enabled
+    skipped_controls: Dict[str, str] = {}
+    excluded_ids: Set[str] = set()
+
+    if apply_user_config:
+        skipped_controls = get_excluded_control_ids(local_path)
+        excluded_ids = set(skipped_controls.keys())
+        if excluded_ids:
+            logger.info(f"Skipping {len(excluded_ids)} controls per user config")
+
+    if use_sieve:
+        results = _run_sieve_checks(
+            owner, repo, local_path, default_branch, level, stop_on_llm
+        )
+    else:
+        # Legacy check execution
+        results = []
+        check_funcs = _get_check_functions()
+
+        # Run Level 1 checks (always)
+        if level >= 1:
+            results.extend(check_funcs["level1"](owner, repo, local_path, default_branch))
+
+        # Run Level 2 checks
+        if level >= 2:
+            results.extend(check_funcs["level2"](owner, repo, local_path, default_branch))
+
+        # Run Level 3 checks
+        if level >= 3:
+            results.extend(check_funcs["level3"](owner, repo, local_path, default_branch))
+
+    # Filter out excluded controls and mark them as N/A
+    if excluded_ids:
+        filtered_results = []
+        for r in results:
+            control_id = r.get("id", "")
+            if control_id in excluded_ids:
+                # Replace result with N/A status
+                filtered_results.append({
+                    "id": control_id,
+                    "status": "N/A",
+                    "details": f"Excluded via .baseline.toml: {skipped_controls.get(control_id, 'User override')}",
+                    "level": r.get("level", 1),
+                })
+            else:
+                filtered_results.append(r)
+        results = filtered_results
+
+    return results, skipped_controls
+
+
+def run_checks_legacy(
+    owner: str,
+    repo: str,
+    local_path: str,
+    default_branch: str,
+    level: int = 3,
+    use_sieve: bool = False,
+    stop_on_llm: bool = True,
+) -> List[Dict[str, Any]]:
+    """Run OSPS baseline checks (legacy API without user config).
+
+    This is a backwards-compatible wrapper that ignores user config.
+
+    Args:
+        owner: GitHub org/user
+        repo: Repository name
+        local_path: Path to repository
+        default_branch: Default branch name
+        level: Maximum level to check (1, 2, or 3)
+        use_sieve: Enable progressive verification pipeline
+        stop_on_llm: Return PENDING_LLM for LLM consultation
 
     Returns:
         List of check results
     """
-    if use_sieve:
-        return _run_sieve_checks(
-            owner, repo, local_path, default_branch, level, stop_on_llm
-        )
-
-    # Legacy check execution
-    all_results = []
-    check_funcs = _get_check_functions()
-
-    # Run Level 1 checks (always)
-    if level >= 1:
-        all_results.extend(check_funcs["level1"](owner, repo, local_path, default_branch))
-
-    # Run Level 2 checks
-    if level >= 2:
-        all_results.extend(check_funcs["level2"](owner, repo, local_path, default_branch))
-
-    # Run Level 3 checks
-    if level >= 3:
-        all_results.extend(check_funcs["level3"](owner, repo, local_path, default_branch))
-
-    return all_results
+    results, _ = run_checks(
+        owner, repo, local_path, default_branch,
+        level, use_sieve, stop_on_llm,
+        apply_user_config=False
+    )
+    return results
 
 
 def _run_sieve_checks(
@@ -204,7 +402,16 @@ def _run_sieve_checks(
     sieve = _get_sieve_components()
     if not sieve:
         logger.warning("Sieve components not available, falling back to legacy checks")
-        return run_checks(owner, repo, local_path, default_branch, level, use_sieve=False)
+        # Use legacy execution directly (don't go through run_checks to avoid recursion)
+        results = []
+        check_funcs = _get_check_functions()
+        if level >= 1:
+            results.extend(check_funcs["level1"](owner, repo, local_path, default_branch))
+        if level >= 2:
+            results.extend(check_funcs["level2"](owner, repo, local_path, default_branch))
+        if level >= 3:
+            results.extend(check_funcs["level3"](owner, repo, local_path, default_branch))
+        return results
 
     get_control_registry = sieve["get_control_registry"]
     SieveOrchestrator = sieve["SieveOrchestrator"]
@@ -547,8 +754,14 @@ __all__ = [
     "AuditOptions",
     "prepare_audit",
     "run_checks",
+    "run_checks_legacy",
     "calculate_compliance",
     "summarize_results",
     "format_results_markdown",
     "list_available_checks",
+    # User config integration
+    "load_effective_audit_config",
+    "get_excluded_control_ids",
+    "get_adapter_for_control",
+    "clear_effective_config_cache",
 ]
