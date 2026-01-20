@@ -1,16 +1,19 @@
-# Example OpenSSF Baseline Configuration
+# Example OpenSSF Baseline User Configuration
 # Copy this file to .baseline.toml in your repository root
+#
+# This file allows you to:
+# - Override control settings (mark as N/A, use different adapter)
+# - Define custom adapters (Kusari, custom scripts)
+# - Configure control groups for batch settings
+# - Add custom controls specific to your organization
 
 version = "1.0"
 
+# Framework to extend (this is typically "openssf-baseline")
+extends = "openssf-baseline"
+
 # Global settings
 [settings]
-# Default adapter for checks (builtin uses the standard OSPS checks)
-default_check_adapter = "builtin"
-
-# Default adapter for remediations
-default_remediation_adapter = "builtin"
-
 # Cache check results for faster re-runs
 cache_results = true
 cache_ttl = 300  # 5 minutes
@@ -18,25 +21,43 @@ cache_ttl = 300  # 5 minutes
 # Timeout for adapter operations (seconds)
 timeout = 300
 
-# Define custom adapters
-# Example: Kusari for SCA and dependency scanning
-[adapters.kusari]
-type = "kusari"
-command = "kusari"
-controls = ["OSPS-VM-05.02", "OSPS-VM-05.03"]
+# Fail the audit if any check produces an error
+fail_on_error = false
 
-# Example: Custom script for security checks
+# Run independent checks in parallel
+parallel_checks = true
+max_parallel = 5
+
+# =============================================================================
+# Custom Adapters
+# =============================================================================
+
+# Example: Kusari adapter for SCA and dependency scanning
+[adapters.kusari]
+type = "command"
+command = "kusari"
+output_format = "json"
+timeout = 300
+
+# Example: Custom script adapter for internal security checks
 # [adapters.security-scanner]
 # type = "script"
 # command = "./scripts/security-check.sh"
 # output_format = "json"
-# controls = ["OSPS-SA-02"]
-# supports_batch = false
+# timeout = 120
 
-# Per-control configuration
+# Example: Python module adapter for custom checks
+# [adapters.my-checker]
+# type = "python"
+# module = "my_company.security.checker"
+# class = "SecurityChecker"
+
+# =============================================================================
+# Control Overrides
+# =============================================================================
+
 # Use Kusari for pre-release SCA checks
 [controls."OSPS-VM-05.02"]
-# Check uses Kusari adapter
 check = { adapter = "kusari" }
 # Remediation still uses builtin (provides guidance)
 remediation = { adapter = "builtin" }
@@ -45,14 +66,42 @@ remediation = { adapter = "builtin" }
 [controls."OSPS-VM-05.03"]
 check = { adapter = "kusari" }
 
-# Control groups for shared configuration
-# Useful when multiple controls should use the same adapter
+# Mark a control as Not Applicable with reason
+# Example: Pre-1.0 project without releases
+[controls."OSPS-BR-02.01"]
+status = "n/a"
+reason = "Pre-1.0 project, no releases yet"
 
-# Example: Group all vulnerability management controls
+# Example: Disable a control temporarily
+# [controls."OSPS-QA-04.01"]
+# status = "disabled"
+# reason = "Temporarily disabled while migrating to monorepo"
+
+# =============================================================================
+# Control Groups
+# =============================================================================
+# Apply shared configuration to multiple controls at once
+
+# Group all vulnerability management controls to use Kusari
 [control_groups.vulnerability-management]
 controls = ["OSPS-VM-05.02", "OSPS-VM-05.03"]
 check = { adapter = "kusari" }
 
-# Example: Group documentation controls (uses default builtin adapter)
-# [control_groups.documentation]
-# controls = ["OSPS-DO-01.01", "OSPS-DO-01.02", "OSPS-DO-02.01"]
+# Example: Mark multiple controls as N/A
+# [control_groups.pre-release]
+# controls = ["OSPS-BR-02.01", "OSPS-BR-02.02"]
+# status = "n/a"
+# reason = "No releases for this internal tool"
+
+# =============================================================================
+# Custom Controls
+# =============================================================================
+# Add organization-specific controls beyond the framework
+
+# Example: Custom internal security review requirement
+# [controls."CUSTOM-SEC-01"]
+# name = "InternalSecurityReview"
+# level = 1
+# domain = "SA"
+# description = "Require internal security review sign-off for releases"
+# check = { adapter = "security-scanner" }

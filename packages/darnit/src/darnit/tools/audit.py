@@ -49,6 +49,7 @@ def _get_check_functions():
 
 # Sieve system imports - also lazy loaded
 _sieve_components = None
+_toml_controls_registered = False
 
 
 def _get_sieve_components():
@@ -70,6 +71,57 @@ def _get_sieve_components():
             logger.warning("Sieve components not available")
             _sieve_components = {}
     return _sieve_components
+
+
+def _register_toml_controls() -> int:
+    """Load and register controls from the framework TOML file.
+
+    This enables declarative control definitions from openssf-baseline.toml
+    to be used alongside (or instead of) Python-defined controls.
+
+    Returns:
+        Number of controls registered from TOML
+    """
+    global _toml_controls_registered
+    if _toml_controls_registered:
+        return 0
+
+    framework_path = _get_framework_config_path()
+    if not framework_path:
+        logger.debug("No framework TOML found, skipping TOML control registration")
+        return 0
+
+    try:
+        from darnit.config import (
+            load_framework_config,
+            load_controls_from_framework,
+        )
+        from darnit.sieve.registry import register_control
+
+        framework = load_framework_config(framework_path)
+        controls = load_controls_from_framework(framework)
+
+        registered = 0
+        for control in controls:
+            try:
+                register_control(control)
+                registered += 1
+                logger.debug(f"Registered TOML control: {control.control_id}")
+            except ValueError:
+                # Control already registered (likely from Python)
+                logger.debug(f"Skipping {control.control_id}: already registered")
+
+        _toml_controls_registered = True
+        if registered > 0:
+            logger.info(f"Registered {registered} controls from {framework_path.name}")
+        return registered
+
+    except ImportError as e:
+        logger.debug(f"Config loader not available: {e}")
+        return 0
+    except Exception as e:
+        logger.warning(f"Error loading TOML controls: {e}")
+        return 0
 
 
 # =============================================================================
@@ -383,10 +435,13 @@ def _run_sieve_checks(
     """Run checks using the progressive sieve verification pipeline.
 
     This implements the 4-phase verification model:
-    1. DETERMINISTIC - File existence, API checks, config lookups
+    1. DETERMINISTIC - File existence, API checks, config lookups, external commands
     2. PATTERN - Regex matching, content analysis
     3. LLM - LLM-assisted analysis (returns PENDING_LLM for consultation)
     4. MANUAL - Always returns WARN with verification steps
+
+    Controls can be defined either in Python (via level1.py, level2.py, level3.py)
+    or declaratively in TOML (via openssf-baseline.toml).
 
     Args:
         owner: GitHub org/user
@@ -416,6 +471,10 @@ def _run_sieve_checks(
     get_control_registry = sieve["get_control_registry"]
     SieveOrchestrator = sieve["SieveOrchestrator"]
     CheckContext = sieve["CheckContext"]
+
+    # Register controls from TOML framework definition
+    # This enables declarative control definitions alongside Python-defined controls
+    _register_toml_controls()
 
     registry = get_control_registry()
     orchestrator = SieveOrchestrator(stop_on_llm=stop_on_llm)
@@ -764,4 +823,6 @@ __all__ = [
     "get_excluded_control_ids",
     "get_adapter_for_control",
     "clear_effective_config_cache",
+    # TOML framework support
+    "_register_toml_controls",  # Internal but useful for testing
 ]

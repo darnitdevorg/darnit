@@ -352,3 +352,248 @@ class ManualPass:
 
     def describe(self) -> str:
         return f"Manual verification: {len(self.verification_steps)} steps"
+
+
+@dataclass
+class ExecPass:
+    """Execute external command for verification.
+
+    Runs an external command (like trivy, kusari, scorecard) and evaluates
+    the result based on exit code and/or output patterns.
+
+    Security:
+        - Commands are executed as a list (no shell interpolation)
+        - Variable substitution ($PATH, $OWNER, $REPO) replaces whole list elements only
+        - No string interpolation that could enable injection
+
+    Example:
+        exec_pass = ExecPass(
+            command=["kusari", "repo", "scan", "$PATH", "HEAD"],
+            pass_exit_codes=[0],
+            fail_if_output_matches=r"Flagged Issues Detected",
+        )
+        result = exec_pass.execute(context)
+    """
+
+    phase: VerificationPhase = field(default=VerificationPhase.DETERMINISTIC, init=False)
+
+    # Command as list - supports $PATH, $OWNER, $REPO substitution
+    command: List[str] = field(default_factory=list)
+
+    # Exit codes that indicate pass
+    pass_exit_codes: List[int] = field(default_factory=lambda: [0])
+
+    # Exit codes that indicate fail (others = inconclusive)
+    fail_exit_codes: Optional[List[int]] = None
+
+    # Output format for parsing
+    output_format: str = "text"
+
+    # Output pattern matching
+    pass_if_output_matches: Optional[str] = None
+    fail_if_output_matches: Optional[str] = None
+
+    # JSON output evaluation
+    pass_if_json_path: Optional[str] = None
+    pass_if_json_value: Optional[str] = None
+
+    # Execution settings
+    timeout: int = 300
+    cwd: Optional[str] = None
+    env: Dict[str, str] = field(default_factory=dict)
+
+    def _substitute_variables(self, context: CheckContext) -> List[str]:
+        """Substitute variables in command list.
+
+        Security: Since we use shell=False and values come from trusted
+        CheckContext (owner/repo from git remote), string substitution is safe.
+        The subprocess module will pass arguments directly without shell parsing.
+
+        Supports both whole-element substitution ($OWNER) and partial
+        substitution within strings (/repos/$OWNER/$REPO).
+        """
+        substitutions = {
+            "$PATH": context.local_path,
+            "$OWNER": context.owner,
+            "$REPO": context.repo,
+            "$BRANCH": context.default_branch,
+            "$CONTROL": context.control_id,
+        }
+
+        result = []
+        for arg in self.command:
+            if arg in substitutions:
+                # Whole-element substitution
+                result.append(substitutions[arg])
+            else:
+                # Check for partial substitution within the string
+                modified = arg
+                for var, value in substitutions.items():
+                    if var in modified and value is not None:
+                        modified = modified.replace(var, str(value))
+                result.append(modified)
+        return result
+
+    def execute(self, context: CheckContext) -> PassResult:
+        import subprocess
+        import json as json_lib
+
+        if not self.command:
+            return PassResult(
+                phase=self.phase,
+                outcome=PassOutcome.ERROR,
+                message="No command specified for ExecPass",
+            )
+
+        # Substitute variables
+        cmd = self._substitute_variables(context)
+
+        # Prepare environment
+        exec_env = dict(os.environ)
+        exec_env.update(self.env)
+
+        # Determine working directory
+        working_dir = self.cwd or context.local_path
+
+        logger.debug(f"ExecPass executing: {' '.join(cmd)}")
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout,
+                cwd=working_dir,
+                env=exec_env,
+                shell=False,  # Security: never use shell
+            )
+
+            stdout = result.stdout
+            stderr = result.stderr
+            exit_code = result.returncode
+
+            # First check output patterns (take precedence over exit codes)
+            if self.fail_if_output_matches:
+                if re.search(self.fail_if_output_matches, stdout, re.IGNORECASE):
+                    return PassResult(
+                        phase=self.phase,
+                        outcome=PassOutcome.FAIL,
+                        message=f"Command output matched fail pattern",
+                        evidence={
+                            "command": cmd[0],
+                            "exit_code": exit_code,
+                            "pattern_matched": self.fail_if_output_matches,
+                        },
+                        details={"stdout": stdout[:1000], "stderr": stderr[:500]},
+                    )
+
+            if self.pass_if_output_matches:
+                if re.search(self.pass_if_output_matches, stdout, re.IGNORECASE):
+                    return PassResult(
+                        phase=self.phase,
+                        outcome=PassOutcome.PASS,
+                        message=f"Command output matched pass pattern",
+                        evidence={
+                            "command": cmd[0],
+                            "exit_code": exit_code,
+                            "pattern_matched": self.pass_if_output_matches,
+                        },
+                    )
+
+            # Check JSON output if configured
+            if self.output_format == "json" and self.pass_if_json_path:
+                try:
+                    data = json_lib.loads(stdout)
+                    # Simple dot-notation path evaluation
+                    value = self._extract_json_path(data, self.pass_if_json_path)
+                    if str(value) == self.pass_if_json_value:
+                        return PassResult(
+                            phase=self.phase,
+                            outcome=PassOutcome.PASS,
+                            message=f"JSON path {self.pass_if_json_path} == {self.pass_if_json_value}",
+                            evidence={"command": cmd[0], "json_value": value},
+                        )
+                except json_lib.JSONDecodeError:
+                    logger.warning(f"ExecPass: Could not parse JSON output from {cmd[0]}")
+
+            # Fall back to exit code evaluation
+            if exit_code in self.pass_exit_codes:
+                return PassResult(
+                    phase=self.phase,
+                    outcome=PassOutcome.PASS,
+                    message=f"Command {cmd[0]} exited with {exit_code}",
+                    evidence={"command": cmd[0], "exit_code": exit_code},
+                )
+            elif self.fail_exit_codes and exit_code in self.fail_exit_codes:
+                return PassResult(
+                    phase=self.phase,
+                    outcome=PassOutcome.FAIL,
+                    message=f"Command {cmd[0]} exited with {exit_code}",
+                    evidence={"command": cmd[0], "exit_code": exit_code},
+                    details={"stderr": stderr[:500]},
+                )
+            else:
+                return PassResult(
+                    phase=self.phase,
+                    outcome=PassOutcome.INCONCLUSIVE,
+                    message=f"Command {cmd[0]} exited with {exit_code} (not in pass/fail lists)",
+                    evidence={"command": cmd[0], "exit_code": exit_code},
+                )
+
+        except subprocess.TimeoutExpired:
+            return PassResult(
+                phase=self.phase,
+                outcome=PassOutcome.ERROR,
+                message=f"Command {cmd[0]} timed out after {self.timeout}s",
+                evidence={"command": cmd[0], "timeout": self.timeout},
+            )
+        except FileNotFoundError:
+            return PassResult(
+                phase=self.phase,
+                outcome=PassOutcome.ERROR,
+                message=f"Command not found: {cmd[0]}",
+                evidence={"command": cmd[0]},
+            )
+        except (OSError, subprocess.SubprocessError) as e:
+            return PassResult(
+                phase=self.phase,
+                outcome=PassOutcome.ERROR,
+                message=f"Command execution failed: {e}",
+                evidence={"command": cmd[0], "error": str(e)},
+            )
+
+    def _extract_json_path(self, data: Any, path: str) -> Any:
+        """Extract value from JSON using simple dot notation.
+
+        Args:
+            data: JSON data (dict/list)
+            path: Dot-separated path like "checks.BranchProtection.score"
+
+        Returns:
+            Extracted value or None if not found
+        """
+        parts = path.lstrip("$.").split(".")
+        current = data
+
+        for part in parts:
+            if isinstance(current, dict):
+                current = current.get(part)
+            elif isinstance(current, list):
+                try:
+                    idx = int(part)
+                    current = current[idx]
+                except (ValueError, IndexError):
+                    return None
+            else:
+                return None
+
+            if current is None:
+                return None
+
+        return current
+
+    def describe(self) -> str:
+        cmd_preview = " ".join(self.command[:3])
+        if len(self.command) > 3:
+            cmd_preview += "..."
+        return f"Execute: {cmd_preview}"

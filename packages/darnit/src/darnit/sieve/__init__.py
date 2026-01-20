@@ -27,6 +27,7 @@ from .models import (
 )
 from .passes import (
     DeterministicPass,
+    ExecPass,
     PatternPass,
     LLMPass,
     ManualPass,
@@ -44,6 +45,7 @@ __all__ = [
     "SieveResult",
     # Passes
     "DeterministicPass",
+    "ExecPass",
     "PatternPass",
     "LLMPass",
     "ManualPass",

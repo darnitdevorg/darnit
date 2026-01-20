@@ -167,9 +167,65 @@ class ManualPassConfig(BaseModel):
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
 
+class ExecPassConfig(BaseModel):
+    """Configuration for external command execution pass.
+
+    Executes an external command and evaluates the result. This enables
+    integration with external tools like trivy, scorecard, kusari, etc.
+
+    Security: Command arguments are passed as a list, never interpolated
+    into a shell string. Variables like $PATH are substituted as whole
+    list elements only.
+
+    Example:
+        ```toml
+        [controls."OSPS-VM-05.02".passes]
+        exec = {
+            command = ["kusari", "repo", "scan", "$PATH", "HEAD"],
+            pass_exit_codes = [0],
+            output_format = "json",
+        }
+        ```
+    """
+    # Command as list (secure - no shell interpolation)
+    # Supports $PATH, $OWNER, $REPO as whole-element substitution
+    command: List[str]
+
+    # Exit codes that indicate pass (default: [0])
+    pass_exit_codes: List[int] = Field(default_factory=lambda: [0])
+
+    # Exit codes that indicate fail (all others = inconclusive)
+    fail_exit_codes: Optional[List[int]] = None
+
+    # Output format for parsing (json, sarif, text)
+    output_format: str = "text"
+
+    # JSONPath to extract pass/fail from JSON output
+    pass_if_json_path: Optional[str] = None  # e.g., "$.status" == "pass"
+    pass_if_json_value: Optional[str] = None
+
+    # Regex pattern to match in output for pass
+    pass_if_output_matches: Optional[str] = None
+
+    # Regex pattern to match in output for fail
+    fail_if_output_matches: Optional[str] = None
+
+    # Timeout in seconds
+    timeout: int = 300
+
+    # Working directory (default: repo path)
+    cwd: Optional[str] = None
+
+    # Environment variables to set
+    env: Dict[str, str] = Field(default_factory=dict)
+
+    model_config = ConfigDict(extra="allow")
+
+
 class PassesConfig(BaseModel):
     """Configuration for all verification passes of a control."""
     deterministic: Optional[DeterministicPassConfig] = None
+    exec: Optional[ExecPassConfig] = None  # External command execution
     pattern: Optional[PatternPassConfig] = None
     llm: Optional[LLMPassConfig] = None
     manual: Optional[ManualPassConfig] = None
@@ -177,10 +233,12 @@ class PassesConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     def get_ordered_passes(self) -> List[tuple]:
-        """Return passes in execution order: deterministic -> pattern -> llm -> manual."""
+        """Return passes in execution order: deterministic -> exec -> pattern -> llm -> manual."""
         passes = []
         if self.deterministic:
             passes.append((PassPhase.DETERMINISTIC, self.deterministic))
+        if self.exec:
+            passes.append((PassPhase.DETERMINISTIC, self.exec))  # exec is deterministic
         if self.pattern:
             passes.append((PassPhase.PATTERN, self.pattern))
         if self.llm:

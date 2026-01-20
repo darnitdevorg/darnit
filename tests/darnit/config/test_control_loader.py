@@ -1,0 +1,440 @@
+"""Tests for config-to-ControlSpec loading.
+
+This module tests the TOML-based declarative control definition system.
+"""
+
+import pytest
+from pathlib import Path
+import tempfile
+import os
+
+# Test imports
+from darnit.config.framework_schema import (
+    FrameworkConfig,
+    FrameworkMetadata,
+    FrameworkDefaults,
+    ControlConfig,
+    PassesConfig,
+    DeterministicPassConfig,
+    ExecPassConfig,
+    PatternPassConfig,
+    LLMPassConfig,
+    ManualPassConfig,
+)
+
+from darnit.config.control_loader import (
+    control_from_framework,
+    load_controls_from_framework,
+    _convert_deterministic_pass,
+    _convert_exec_pass,
+    _convert_pattern_pass,
+    _convert_manual_pass,
+)
+
+from darnit.sieve.models import ControlSpec, VerificationPhase
+from darnit.sieve.passes import (
+    DeterministicPass,
+    ExecPass,
+    PatternPass,
+    ManualPass,
+)
+
+
+class TestDeterministicPassConversion:
+    """Test conversion of DeterministicPassConfig to DeterministicPass."""
+
+    def test_file_must_exist(self):
+        """Test file_must_exist conversion."""
+        config = DeterministicPassConfig(
+            file_must_exist=["README.md", "LICENSE"],
+        )
+        result = _convert_deterministic_pass(config)
+
+        assert isinstance(result, DeterministicPass)
+        assert result.file_must_exist == ["README.md", "LICENSE"]
+
+    def test_file_must_not_exist(self):
+        """Test file_must_not_exist conversion."""
+        config = DeterministicPassConfig(
+            file_must_not_exist=[".env", "secrets.json"],
+        )
+        result = _convert_deterministic_pass(config)
+
+        assert isinstance(result, DeterministicPass)
+        assert result.file_must_not_exist == [".env", "secrets.json"]
+
+    def test_both_file_conditions(self):
+        """Test both file conditions together."""
+        config = DeterministicPassConfig(
+            file_must_exist=["README.md"],
+            file_must_not_exist=[".env"],
+        )
+        result = _convert_deterministic_pass(config)
+
+        assert result.file_must_exist == ["README.md"]
+        assert result.file_must_not_exist == [".env"]
+
+
+class TestExecPassConversion:
+    """Test conversion of ExecPassConfig to ExecPass."""
+
+    def test_basic_command(self):
+        """Test basic command conversion."""
+        config = ExecPassConfig(
+            command=["gh", "api", "/repos/owner/repo"],
+            pass_exit_codes=[0],
+            output_format="json",
+            timeout=30,
+        )
+        result = _convert_exec_pass(config)
+
+        assert isinstance(result, ExecPass)
+        assert result.command == ["gh", "api", "/repos/owner/repo"]
+        assert result.pass_exit_codes == [0]
+        assert result.output_format == "json"
+        assert result.timeout == 30
+
+    def test_json_path_matching(self):
+        """Test JSON path matching configuration."""
+        config = ExecPassConfig(
+            command=["gh", "api", "/orgs/testorg"],
+            pass_exit_codes=[0],
+            output_format="json",
+            pass_if_json_path="two_factor_requirement_enabled",
+            pass_if_json_value="true",
+        )
+        result = _convert_exec_pass(config)
+
+        assert result.pass_if_json_path == "two_factor_requirement_enabled"
+        assert result.pass_if_json_value == "true"
+
+    def test_output_matching(self):
+        """Test output pattern matching configuration."""
+        config = ExecPassConfig(
+            command=["cat", "README.md"],
+            pass_exit_codes=[0],
+            output_format="text",
+            pass_if_output_matches=r"MIT License",
+        )
+        result = _convert_exec_pass(config)
+
+        assert result.pass_if_output_matches == r"MIT License"
+
+    def test_fail_exit_codes(self):
+        """Test fail_exit_codes configuration."""
+        config = ExecPassConfig(
+            command=["gh", "api", "/some/endpoint"],
+            pass_exit_codes=[0],
+            fail_exit_codes=[1, 2],
+        )
+        result = _convert_exec_pass(config)
+
+        assert result.fail_exit_codes == [1, 2]
+
+    def test_environment_variables(self):
+        """Test environment variable configuration."""
+        config = ExecPassConfig(
+            command=["custom-checker"],
+            pass_exit_codes=[0],
+            env={"CUSTOM_VAR": "value", "ANOTHER_VAR": "another"},
+        )
+        result = _convert_exec_pass(config)
+
+        assert result.env == {"CUSTOM_VAR": "value", "ANOTHER_VAR": "another"}
+
+
+class TestPatternPassConversion:
+    """Test conversion of PatternPassConfig to PatternPass."""
+
+    def test_file_patterns(self):
+        """Test file pattern configuration."""
+        config = PatternPassConfig(
+            files=[".github/workflows/*.yml"],
+        )
+        result = _convert_pattern_pass(config)
+
+        assert isinstance(result, PatternPass)
+        assert result.file_patterns == [".github/workflows/*.yml"]
+
+    def test_content_patterns(self):
+        """Test content pattern matching."""
+        config = PatternPassConfig(
+            files=["SECURITY.md"],
+            patterns={
+                "email": r"[\w.-]+@[\w.-]+\.\w+",
+                "reporting": r"report.*vulnerabilit",
+            },
+            pass_if_any_match=True,
+        )
+        result = _convert_pattern_pass(config)
+
+        assert result.content_patterns == {
+            "email": r"[\w.-]+@[\w.-]+\.\w+",
+            "reporting": r"report.*vulnerabilit",
+        }
+        assert result.pass_if_any_match is True
+
+    def test_fail_if_no_match(self):
+        """Test fail_if_no_match configuration."""
+        config = PatternPassConfig(
+            files=["README.md"],
+            fail_if_no_match=True,
+        )
+        result = _convert_pattern_pass(config)
+
+        assert result.fail_if_no_match is True
+
+
+class TestManualPassConversion:
+    """Test conversion of ManualPassConfig to ManualPass."""
+
+    def test_verification_steps(self):
+        """Test verification steps conversion."""
+        config = ManualPassConfig(
+            steps=[
+                "Check repository settings",
+                "Verify branch protection is enabled",
+            ],
+        )
+        result = _convert_manual_pass(config)
+
+        assert isinstance(result, ManualPass)
+        assert result.verification_steps == [
+            "Check repository settings",
+            "Verify branch protection is enabled",
+        ]
+
+    def test_docs_url(self):
+        """Test docs_url configuration."""
+        config = ManualPassConfig(
+            steps=["Check settings"],
+            docs_url="https://docs.example.com/verify",
+        )
+        result = _convert_manual_pass(config)
+
+        assert result.verification_docs_url == "https://docs.example.com/verify"
+
+
+class TestControlFromFramework:
+    """Test control_from_framework conversion."""
+
+    def test_basic_control(self):
+        """Test basic control conversion."""
+        control_config = ControlConfig(
+            name="TestControl",
+            level=1,
+            domain="AC",
+            description="A test control",
+            tags=["test", "access-control"],
+            security_severity=8.0,  # Must be float
+            docs_url="https://example.com/docs",
+        )
+
+        result = control_from_framework("TEST-01.01", control_config)
+
+        assert isinstance(result, ControlSpec)
+        assert result.control_id == "TEST-01.01"
+        assert result.name == "TestControl"
+        assert result.level == 1
+        assert result.domain == "AC"
+        assert result.description == "A test control"
+
+    def test_control_with_passes(self):
+        """Test control with passes configuration."""
+        control_config = ControlConfig(
+            name="FileCheck",
+            level=1,
+            domain="DO",
+            description="Check files exist",
+            passes=PassesConfig(
+                deterministic=DeterministicPassConfig(
+                    file_must_exist=["README.md"],
+                ),
+                manual=ManualPassConfig(
+                    steps=["Verify README exists"],
+                ),
+            ),
+        )
+
+        result = control_from_framework("TEST-02.01", control_config)
+
+        assert len(result.passes) == 2
+        assert isinstance(result.passes[0], DeterministicPass)
+        assert isinstance(result.passes[1], ManualPass)
+
+
+class TestLoadControlsFromFramework:
+    """Test loading controls from a complete FrameworkConfig."""
+
+    def test_load_multiple_controls(self):
+        """Test loading multiple controls from framework."""
+        framework = FrameworkConfig(
+            metadata=FrameworkMetadata(
+                name="test-framework",
+                display_name="Test Framework",
+                version="1.0.0",
+            ),
+            controls={
+                "TEST-01.01": ControlConfig(
+                    name="Control1",
+                    level=1,
+                    domain="AC",
+                    description="First control",
+                ),
+                "TEST-02.01": ControlConfig(
+                    name="Control2",
+                    level=2,
+                    domain="BR",
+                    description="Second control",
+                ),
+            },
+        )
+
+        controls = load_controls_from_framework(framework)
+
+        assert len(controls) == 2
+        control_ids = {c.control_id for c in controls}
+        assert control_ids == {"TEST-01.01", "TEST-02.01"}
+
+    def test_preserves_levels(self):
+        """Test that control levels are preserved."""
+        framework = FrameworkConfig(
+            metadata=FrameworkMetadata(
+                name="test-framework",
+                display_name="Test Framework",
+                version="1.0.0",
+            ),
+            controls={
+                "TEST-L1": ControlConfig(name="L1", level=1, domain="AC", description="Level 1"),
+                "TEST-L2": ControlConfig(name="L2", level=2, domain="AC", description="Level 2"),
+                "TEST-L3": ControlConfig(name="L3", level=3, domain="AC", description="Level 3"),
+            },
+        )
+
+        controls = load_controls_from_framework(framework)
+        levels = {c.control_id: c.level for c in controls}
+
+        assert levels["TEST-L1"] == 1
+        assert levels["TEST-L2"] == 2
+        assert levels["TEST-L3"] == 3
+
+
+class TestExecPassVariableSubstitution:
+    """Test variable substitution in ExecPass."""
+
+    def test_whole_element_substitution(self):
+        """Test that ExecPass substitutes whole-element variables correctly."""
+        from darnit.sieve.models import CheckContext
+
+        # Whole-element variables (should be substituted)
+        exec_pass = ExecPass(
+            command=["gh", "api", "$OWNER", "$REPO"],
+            pass_exit_codes=[0],
+        )
+
+        context = CheckContext(
+            owner="test-org",
+            repo="test-repo",
+            local_path="/tmp/test",
+            default_branch="main",
+            control_id="TEST-01",
+        )
+
+        # Access the internal method for testing
+        substituted = exec_pass._substitute_variables(context)
+
+        assert substituted == ["gh", "api", "test-org", "test-repo"]
+
+    def test_partial_substitution_allowed(self):
+        """Test that partial matches ARE substituted (needed for API paths)."""
+        from darnit.sieve.models import CheckContext
+
+        exec_pass = ExecPass(
+            command=["gh", "api", "/repos/$OWNER/$REPO"],  # Partial match in path
+            pass_exit_codes=[0],
+        )
+
+        context = CheckContext(
+            owner="test-org",
+            repo="test-repo",
+            local_path="/tmp/test",
+            default_branch="main",
+            control_id="TEST-01",
+        )
+
+        substituted = exec_pass._substitute_variables(context)
+
+        # Should substitute partial matches (needed for gh api paths)
+        assert substituted == ["gh", "api", "/repos/test-org/test-repo"]
+
+    def test_path_substitution(self):
+        """Test $PATH variable substitution."""
+        from darnit.sieve.models import CheckContext
+
+        exec_pass = ExecPass(
+            command=["ls", "$PATH"],
+            pass_exit_codes=[0],
+        )
+
+        context = CheckContext(
+            owner="test-org",
+            repo="test-repo",
+            local_path="/tmp/test-repo",
+            default_branch="main",
+            control_id="TEST-01",
+        )
+
+        substituted = exec_pass._substitute_variables(context)
+
+        assert substituted == ["ls", "/tmp/test-repo"]
+
+
+class TestFrameworkSchemaValidation:
+    """Test framework schema validation."""
+
+    def test_valid_framework(self):
+        """Test that valid framework configs pass validation."""
+        framework = FrameworkConfig(
+            metadata=FrameworkMetadata(
+                name="valid-framework",
+                display_name="Valid Framework",
+                version="1.0.0",
+            ),
+            controls={
+                "VALID-01": ControlConfig(
+                    name="ValidControl",
+                    level=1,
+                    domain="AC",
+                    description="A valid control",
+                ),
+            },
+        )
+
+        # Should not raise
+        assert framework.metadata.name == "valid-framework"
+
+    def test_valid_levels(self):
+        """Test that levels 1, 2, 3 are all valid."""
+        for level in [1, 2, 3]:
+            control = ControlConfig(
+                name=f"Level{level}",
+                level=level,
+                domain="AC",
+                description=f"Level {level} control",
+            )
+            assert control.level == level
+
+    def test_security_severity_float(self):
+        """Test that security_severity must be a float."""
+        control = ControlConfig(
+            name="Test",
+            level=1,
+            domain="AC",
+            description="Test",
+            security_severity=7.5,
+        )
+        assert control.security_severity == 7.5
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

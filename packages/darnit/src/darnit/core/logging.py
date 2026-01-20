@@ -38,4 +38,28 @@ def get_logger(name: str = "") -> logging.Logger:
     return _logger
 
 
-__all__ = ["get_logger"]
+def configure_logging(level: str = "INFO") -> None:
+    """Configure logging for the darnit CLI.
+
+    Args:
+        level: Log level (DEBUG, INFO, WARNING, ERROR)
+    """
+    logger = get_logger()
+
+    # Remove NullHandler and add StreamHandler
+    for handler in logger.handlers[:]:
+        if isinstance(handler, logging.NullHandler):
+            logger.removeHandler(handler)
+
+    # Only add handler if not already configured
+    if not any(isinstance(h, logging.StreamHandler) for h in logger.handlers):
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter(
+            "%(levelname)s: %(message)s"
+        ))
+        logger.addHandler(handler)
+
+    logger.setLevel(getattr(logging, level.upper(), logging.INFO))
+
+
+__all__ = ["get_logger", "configure_logging"]

@@ -9,7 +9,16 @@ dependencies = [
     "pydantic>=2.0.0",
     "pyyaml>=6.0.0",
     "pydantic[email]>=2.0.0",
+    "tomli>=2.0.0;python_version<'3.11'",
+    "tomllib-stubs>=0.1.0;python_version<'3.11'",
 ]
+
+[project.scripts]
+darnit = "darnit.cli:main"
+
+[project.entry-points."darnit.frameworks"]
+# Framework plugins register here
+# Example: openssf-baseline = "darnit_baseline:get_framework_path"
 
 [project.optional-dependencies]
 attestation = [

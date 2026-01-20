@@ -88,6 +88,7 @@ from .framework_schema import (
     RemediationConfig,
     PassesConfig,
     DeterministicPassConfig,
+    ExecPassConfig,
     PatternPassConfig,
     LLMPassConfig,
     ManualPassConfig,
@@ -115,8 +116,23 @@ from .merger import (
     load_framework_config,
     load_user_config,
     load_effective_config,
+    load_effective_config_by_name,
+    load_effective_config_auto,
+    load_framework_by_name,
+    resolve_framework_path,
+    list_available_frameworks,
     validate_framework_config,
     validate_user_config,
+)
+
+from .control_loader import (
+    load_controls_from_effective,
+    load_controls_from_framework,
+    load_controls_from_toml,
+    load_controls_by_name,
+    register_controls_from_config,
+    control_from_effective,
+    control_from_framework,
 )
 
 # Legacy exports (deprecated)
@@ -206,6 +222,7 @@ __all__ = [
     "RemediationConfig",
     "PassesConfig",
     "DeterministicPassConfig",
+    "ExecPassConfig",
     "PatternPassConfig",
     "LLMPassConfig",
     "ManualPassConfig",
@@ -229,6 +246,19 @@ __all__ = [
     "load_framework_config",
     "load_user_config",
     "load_effective_config",
+    "load_effective_config_by_name",
+    "load_effective_config_auto",
+    "load_framework_by_name",
+    "resolve_framework_path",
+    "list_available_frameworks",
     "validate_framework_config",
     "validate_user_config",
+    # Control loader
+    "load_controls_from_effective",
+    "load_controls_from_framework",
+    "load_controls_from_toml",
+    "load_controls_by_name",
+    "register_controls_from_config",
+    "control_from_effective",
+    "control_from_framework",
 ]

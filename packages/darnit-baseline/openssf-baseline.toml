@@ -38,12 +38,21 @@ tags = ["access-control", "authentication"]
 security_severity = 8.0
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-AC-01.01"
 
-[controls."OSPS-AC-01.01".passes]
-deterministic = { api_check = "check_org_mfa_requirement" }
-manual = { steps = [
+# ExecPass: Use gh CLI to check MFA requirement
+[controls."OSPS-AC-01.01".passes.exec]
+command = ["gh", "api", "/orgs/$OWNER"]
+pass_exit_codes = [0]
+fail_exit_codes = [1]
+output_format = "json"
+pass_if_json_path = "two_factor_requirement_enabled"
+pass_if_json_value = "true"
+timeout = 30
+
+[controls."OSPS-AC-01.01".passes.manual]
+steps = [
     "Navigate to Organization Settings → Security",
     "Verify 'Require two-factor authentication' is enabled",
-]}
+]
 
 [controls."OSPS-AC-02.01"]
 name = "AllowForking"
@@ -52,8 +61,21 @@ domain = "AC"
 description = "Allow repository forking for public collaboration"
 tags = ["access-control", "collaboration"]
 
-[controls."OSPS-AC-02.01".passes]
-deterministic = { api_check = "check_allow_forking" }
+# ExecPass: Check if forking is allowed via GitHub API
+[controls."OSPS-AC-02.01".passes.exec]
+command = ["gh", "api", "/repos/$OWNER/$REPO"]
+pass_exit_codes = [0]
+fail_exit_codes = [1]
+output_format = "json"
+pass_if_json_path = "allow_forking"
+pass_if_json_value = "true"
+timeout = 30
+
+[controls."OSPS-AC-02.01".passes.manual]
+steps = [
+    "Navigate to Repository Settings → General",
+    "Under 'Features', verify 'Allow forking' is enabled",
+]
 
 [controls."OSPS-AC-03.01"]
 name = "PreventDirectCommits"
@@ -64,13 +86,21 @@ tags = ["access-control", "branch-protection"]
 security_severity = 7.5
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-AC-03.01"
 
-[controls."OSPS-AC-03.01".passes]
-deterministic = { api_check = "check_branch_protection_enabled" }
-manual = { steps = [
+# ExecPass: Use gh CLI to check branch protection
+[controls."OSPS-AC-03.01".passes.exec]
+command = ["gh", "api", "/repos/$OWNER/$REPO/branches/$BRANCH/protection"]
+pass_exit_codes = [0]
+fail_exit_codes = [1]
+output_format = "json"
+pass_if_json_path = "required_pull_request_reviews"
+timeout = 30
+
+[controls."OSPS-AC-03.01".passes.manual]
+steps = [
     "Navigate to Repository Settings → Branches",
     "Verify branch protection rule exists for main/master",
     "Check 'Require a pull request before merging' is enabled",
-]}
+]
 
 [controls."OSPS-AC-03.01".remediation]
 handler = "enable_branch_protection"
@@ -84,8 +114,22 @@ domain = "AC"
 description = "Prevent deletion of primary branch"
 tags = ["access-control", "branch-protection"]
 
-[controls."OSPS-AC-03.02".passes]
-deterministic = { api_check = "check_branch_deletion_prevented" }
+# ExecPass: Check if branch deletion is prevented via branch protection
+[controls."OSPS-AC-03.02".passes.exec]
+command = ["gh", "api", "/repos/$OWNER/$REPO/branches/$BRANCH/protection"]
+pass_exit_codes = [0]
+fail_exit_codes = [1]
+output_format = "json"
+pass_if_json_path = "allow_deletions.enabled"
+pass_if_json_value = "false"
+timeout = 30
+
+[controls."OSPS-AC-03.02".passes.manual]
+steps = [
+    "Navigate to Repository Settings → Branches",
+    "Check branch protection rule for main/master",
+    "Verify 'Allow deletions' is NOT checked",
+]
 
 # =============================================================================
 # Level 1 Controls - Build & Release (BR)
@@ -120,8 +164,20 @@ domain = "BR"
 description = "Repository URL uses HTTPS"
 tags = ["build", "security"]
 
-[controls."OSPS-BR-03.01".passes]
-deterministic = { api_check = "check_https_url" }
+# ExecPass: Verify repository URL uses HTTPS
+[controls."OSPS-BR-03.01".passes.exec]
+command = ["gh", "api", "/repos/$OWNER/$REPO", "--jq", ".html_url"]
+pass_exit_codes = [0]
+fail_exit_codes = [1]
+output_format = "text"
+pass_if_output_matches = "^https://"
+timeout = 30
+
+[controls."OSPS-BR-03.01".passes.manual]
+steps = [
+    "Verify the repository URL in your browser address bar starts with https://",
+    "Confirm all git clone URLs use https:// or git@ (SSH)",
+]
 
 [controls."OSPS-BR-07.01"]
 name = "GitignoreSecrets"
@@ -191,8 +247,20 @@ domain = "GV"
 description = "Enable public discussion mechanisms"
 tags = ["governance", "community"]
 
-[controls."OSPS-GV-02.01".passes]
-deterministic = { api_check = "check_discussions_or_issues_enabled" }
+# ExecPass: Check if Issues or Discussions are enabled
+[controls."OSPS-GV-02.01".passes.exec]
+command = ["gh", "api", "/repos/$OWNER/$REPO", "--jq", ".has_issues or .has_discussions"]
+pass_exit_codes = [0]
+fail_exit_codes = [1]
+output_format = "text"
+pass_if_output_matches = "^true"
+timeout = 30
+
+[controls."OSPS-GV-02.01".passes.manual]
+steps = [
+    "Navigate to Repository Settings → General → Features",
+    "Verify 'Issues' or 'Discussions' is enabled",
+]
 
 [controls."OSPS-GV-03.01"]
 name = "HasContributing"
@@ -238,8 +306,22 @@ domain = "LE"
 description = "License is OSI-approved"
 tags = ["legal", "license"]
 
-[controls."OSPS-LE-02.01".passes]
-deterministic = { api_check = "check_osi_approved_license" }
+# ExecPass: Check if license is OSI-approved via GitHub's license detection
+[controls."OSPS-LE-02.01".passes.exec]
+command = ["gh", "api", "/repos/$OWNER/$REPO", "--jq", ".license.spdx_id // \"none\""]
+pass_exit_codes = [0]
+fail_exit_codes = [1]
+output_format = "text"
+# Match common OSI-approved licenses (case-insensitive handled by spdx_id)
+pass_if_output_matches = "^(MIT|Apache-2\\.0|GPL-[23]\\.0|LGPL-[23]\\.[01]|BSD-[23]-Clause|MPL-2\\.0|ISC|Unlicense|0BSD|AGPL-3\\.0|EPL-[12]\\.0|CC0-1\\.0)$"
+timeout = 30
+
+[controls."OSPS-LE-02.01".passes.manual]
+steps = [
+    "Navigate to repository main page",
+    "Check license badge in repository sidebar",
+    "Verify license is OSI-approved at https://opensource.org/licenses",
+]
 
 [controls."OSPS-LE-02.02"]
 name = "ReleaseLicense"
@@ -276,8 +358,15 @@ domain = "QA"
 description = "Repository is publicly accessible"
 tags = ["quality", "transparency"]
 
-[controls."OSPS-QA-01.01".passes]
-deterministic = { api_check = "check_repo_public" }
+# ExecPass: Use gh CLI to check repository visibility
+[controls."OSPS-QA-01.01".passes.exec]
+command = ["gh", "api", "/repos/$OWNER/$REPO"]
+pass_exit_codes = [0]
+fail_exit_codes = [1]
+output_format = "json"
+pass_if_json_path = "private"
+pass_if_json_value = "false"
+timeout = 30
 
 [controls."OSPS-QA-01.02"]
 name = "PublicCommitHistory"
@@ -430,8 +519,21 @@ domain = "QA"
 description = "Branch protection requires status checks"
 tags = ["quality", "ci-cd"]
 
-[controls."OSPS-QA-03.01".passes]
-deterministic = { api_check = "check_required_status_checks" }
+# ExecPass: Use gh CLI to check required status checks
+[controls."OSPS-QA-03.01".passes.exec]
+command = ["gh", "api", "/repos/$OWNER/$REPO/branches/$BRANCH/protection"]
+pass_exit_codes = [0]
+fail_exit_codes = [1]
+output_format = "json"
+pass_if_json_path = "required_status_checks"
+timeout = 30
+
+[controls."OSPS-QA-03.01".passes.manual]
+steps = [
+    "Navigate to Repository Settings → Branches",
+    "Check branch protection rules",
+    "Verify 'Require status checks to pass before merging' is enabled",
+]
 
 [controls."OSPS-QA-06.01"]
 name = "AutomatedTests"
@@ -472,14 +574,19 @@ domain = "VM"
 description = "Private vulnerability reporting is enabled"
 tags = ["security", "vulnerability-management"]
 
-[controls."OSPS-VM-03.01".passes]
-deterministic = { api_check = "check_private_vulnerability_reporting" }
-
+# PatternPass: Check for private contact methods in SECURITY.md
 [controls."OSPS-VM-03.01".passes.pattern]
-files = ["SECURITY.md"]
+files = ["SECURITY.md", ".github/SECURITY.md"]
 
 [controls."OSPS-VM-03.01".passes.pattern.patterns]
-private = "(private|confidential|security advisory)"
+private_contact = "(private|confidential|security advisory|PGP|GPG|security@|email)"
+
+[controls."OSPS-VM-03.01".passes.manual]
+steps = [
+    "Verify SECURITY.md contains a private reporting mechanism",
+    "Check for security email address or PGP key",
+    "Confirm GitHub Security Advisories is enabled in Settings → Security",
+]
 
 [controls."OSPS-VM-04.01"]
 name = "SecurityAdvisories"
@@ -488,8 +595,21 @@ domain = "VM"
 description = "Repository supports security advisories"
 tags = ["security", "vulnerability-management"]
 
-[controls."OSPS-VM-04.01".passes]
-deterministic = { api_check = "check_security_advisories_enabled" }
+# ExecPass: Check if security advisories are supported (requires Issues enabled)
+[controls."OSPS-VM-04.01".passes.exec]
+command = ["gh", "api", "/repos/$OWNER/$REPO", "--jq", ".has_issues"]
+pass_exit_codes = [0]
+fail_exit_codes = [1]
+output_format = "text"
+pass_if_output_matches = "^true"
+timeout = 30
+
+[controls."OSPS-VM-04.01".passes.manual]
+steps = [
+    "Navigate to Repository Settings → General → Features",
+    "Verify 'Issues' is enabled (required for Security Advisories)",
+    "Check Security tab for advisory capability",
+]
 
 # =============================================================================
 # Level 3 Controls - Access Control (AC)
@@ -521,8 +641,21 @@ domain = "QA"
 description = "Pull requests require approval before merge"
 tags = ["quality", "code-review"]
 
-[controls."OSPS-QA-07.01".passes]
-deterministic = { api_check = "check_required_approvals" }
+# ExecPass: Check if branch protection requires approvals
+[controls."OSPS-QA-07.01".passes.exec]
+command = ["gh", "api", "/repos/$OWNER/$REPO/branches/$BRANCH/protection", "--jq", ".required_pull_request_reviews.required_approving_review_count >= 1"]
+pass_exit_codes = [0]
+fail_exit_codes = [1]
+output_format = "text"
+pass_if_output_matches = "^true"
+timeout = 30
+
+[controls."OSPS-QA-07.01".passes.manual]
+steps = [
+    "Navigate to Repository Settings → Branches",
+    "Check branch protection rule for main/master",
+    "Verify 'Require approvals' is enabled with at least 1 required",
+]
 
 [controls."OSPS-QA-07.01".remediation]
 handler = "enable_branch_protection"
