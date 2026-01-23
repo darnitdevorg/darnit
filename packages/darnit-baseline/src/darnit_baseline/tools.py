@@ -161,7 +161,7 @@ def list_available_checks() -> str:
             checks[level_key].append({
                 "id": rule_id,
                 "name": rule.get("name", rule_id),
-                "description": rule.get("shortDescription", {}).get("text", ""),
+                "description": rule.get("short", ""),
             })
 
     return json.dumps(checks, indent=2)
@@ -234,7 +234,7 @@ def create_security_policy(
 
     try:
         result = _create(
-            repo_path=repo_path,
+            local_path=str(repo_path),
             owner=owner,
             repo=repo,
             template=template,
@@ -401,7 +401,16 @@ def generate_threat_model(
     Returns:
         Threat model report with identified threats and recommendations
     """
-    from darnit.threat_model import generate_threat_model as _generate
+    from darnit.threat_model import (
+        detect_frameworks,
+        discover_all_assets,
+        discover_injection_sinks,
+        analyze_stride_threats,
+        identify_control_gaps,
+        generate_markdown_threat_model,
+        generate_sarif_threat_model,
+        generate_json_summary,
+    )
 
     repo_path = Path(local_path).resolve()
     if not repo_path.exists():
@@ -412,13 +421,28 @@ def generate_threat_model(
     repo = repo or detected_repo
 
     try:
-        result = _generate(
-            owner=owner,
-            repo=repo,
-            local_path=str(repo_path),
-            output_format=output_format,
-        )
-        return result
+        # Detect frameworks
+        frameworks = detect_frameworks(str(repo_path))
+
+        # Discover assets
+        assets = discover_all_assets(str(repo_path), frameworks)
+
+        # Discover injection sinks
+        injection_sinks = discover_injection_sinks(str(repo_path))
+
+        # Analyze threats
+        threats = analyze_stride_threats(assets, injection_sinks)
+
+        # Identify control gaps
+        control_gaps = identify_control_gaps(assets, threats)
+
+        # Generate output
+        if output_format == "sarif":
+            return json.dumps(generate_sarif_threat_model(str(repo_path), threats), indent=2)
+        elif output_format == "json":
+            return json.dumps(generate_json_summary(str(repo_path), frameworks, assets, threats, control_gaps), indent=2)
+        else:
+            return generate_markdown_threat_model(str(repo_path), assets, threats, control_gaps, frameworks)
     except Exception as e:
         return f"❌ Error generating threat model: {e}"
 
@@ -528,7 +552,7 @@ def remediate_audit_findings(
 
     try:
         result = apply_remediations(
-            repo_path=repo_path,
+            local_path=str(repo_path),
             owner=owner,
             repo=repo,
             categories=categories or ["all"],

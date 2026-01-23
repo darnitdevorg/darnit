@@ -103,12 +103,11 @@ def _register_toml_controls() -> int:
 
         registered = 0
         for control in controls:
-            try:
-                register_control(control)
+            # register_control returns False if already registered
+            if register_control(control):
                 registered += 1
                 logger.debug(f"Registered TOML control: {control.control_id}")
-            except ValueError:
-                # Control already registered (likely from Python)
+            else:
                 logger.debug(f"Skipping {control.control_id}: already registered")
 
         _toml_controls_registered = True
@@ -472,8 +471,19 @@ def _run_sieve_checks(
     SieveOrchestrator = sieve["SieveOrchestrator"]
     CheckContext = sieve["CheckContext"]
 
+    # Register Python-defined controls first
+    # These take priority over TOML definitions for the same control_id
+    try:
+        import darnit_baseline.controls.level1  # noqa: F401
+        import darnit_baseline.controls.level2  # noqa: F401
+        import darnit_baseline.controls.level3  # noqa: F401
+        logger.debug("Registered Python control definitions")
+    except ImportError as e:
+        logger.debug(f"Python control modules not available: {e}")
+
     # Register controls from TOML framework definition
     # This enables declarative control definitions alongside Python-defined controls
+    # Note: Controls already registered from Python will be skipped
     _register_toml_controls()
 
     registry = get_control_registry()

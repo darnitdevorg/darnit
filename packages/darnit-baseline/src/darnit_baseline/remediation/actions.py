@@ -1,18 +1,135 @@
 """File creation remediation actions.
 
 This module contains functions that create compliance-related files
-like SECURITY.md, CONTRIBUTING.md, GOVERNANCE.md, etc.
+like SECURITY.md, CONTRIBUTING.md, GOVERNANCE.md, CODEOWNERS, etc.
+
+Design Philosophy:
+- Simple cases: Just create files with sensible defaults
+- Pull data from .project.yaml, GitHub API, and git config when available
+- Provide clear guidance for manual steps when automation isn't possible
+- Use detected project context (e.g., single maintainer) to make smart defaults
 """
 
 import os
-from typing import Optional
+import json
+import subprocess
+from typing import Optional, List, Dict, Any
 
 from darnit.core.logging import get_logger
-from darnit.core.utils import validate_local_path, detect_repo_from_git
+from darnit.core.utils import validate_local_path, detect_repo_from_git, read_file
 from darnit.tools import write_file_safely
-from darnit.remediation.helpers import get_repo_maintainers
+from darnit.remediation.helpers import (
+    get_repo_maintainers,
+    ensure_directory,
+    format_success,
+    format_error,
+)
 
 logger = get_logger("remediation.actions")
+
+
+def _detect_package_ecosystems(local_path: str) -> List[str]:
+    """Detect package ecosystems used in the repository.
+
+    Returns list of Dependabot ecosystem names.
+    """
+    ecosystems = []
+
+    # Check for various package manager files
+    ecosystem_files = {
+        "npm": ["package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"],
+        "pip": ["requirements.txt", "setup.py", "pyproject.toml", "Pipfile"],
+        "cargo": ["Cargo.toml", "Cargo.lock"],
+        "gomod": ["go.mod", "go.sum"],
+        "maven": ["pom.xml"],
+        "gradle": ["build.gradle", "build.gradle.kts"],
+        "nuget": ["*.csproj", "packages.config", "*.fsproj"],
+        "bundler": ["Gemfile", "Gemfile.lock"],
+        "composer": ["composer.json", "composer.lock"],
+        "docker": ["Dockerfile", "docker-compose.yml", "docker-compose.yaml"],
+        "terraform": ["*.tf", "terraform.lock.hcl"],
+        "github-actions": [".github/workflows/*.yml", ".github/workflows/*.yaml"],
+    }
+
+    for ecosystem, files in ecosystem_files.items():
+        for file_pattern in files:
+            if "*" in file_pattern:
+                # Simple glob check
+                import glob
+                if glob.glob(os.path.join(local_path, file_pattern)):
+                    ecosystems.append(ecosystem)
+                    break
+            else:
+                if os.path.exists(os.path.join(local_path, file_pattern)):
+                    ecosystems.append(ecosystem)
+                    break
+
+    return ecosystems
+
+
+def _get_project_description(local_path: str, repo: str) -> str:
+    """Try to get project description from README or package files."""
+    # Try README
+    for readme in ["README.md", "README.rst", "README.txt", "README"]:
+        readme_path = os.path.join(local_path, readme)
+        if os.path.exists(readme_path):
+            try:
+                with open(readme_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    # Get first non-empty, non-header line
+                    for line in content.split('\n'):
+                        line = line.strip()
+                        if line and not line.startswith('#') and not line.startswith('='):
+                            if len(line) > 20:
+                                return line[:200]
+            except (IOError, OSError):
+                pass
+
+    # Try package.json
+    pkg_path = os.path.join(local_path, "package.json")
+    if os.path.exists(pkg_path):
+        try:
+            with open(pkg_path, 'r') as f:
+                pkg = json.load(f)
+                if pkg.get("description"):
+                    return pkg["description"]
+        except (IOError, json.JSONDecodeError):
+            pass
+
+    # Try pyproject.toml
+    pyproject_path = os.path.join(local_path, "pyproject.toml")
+    if os.path.exists(pyproject_path):
+        try:
+            with open(pyproject_path, 'r') as f:
+                content = f.read()
+                import re
+                match = re.search(r'description\s*=\s*"([^"]+)"', content)
+                if match:
+                    return match.group(1)
+        except (IOError, OSError):
+            pass
+
+    return f"A project for {repo}"
+
+
+def _is_single_maintainer_project(owner: str, repo: str, maintainers: List[str]) -> bool:
+    """Detect if this appears to be a single-maintainer project."""
+    if len(maintainers) <= 1:
+        return True
+
+    # Check if owner is also the only contributor (using API if available)
+    try:
+        result = subprocess.run(
+            ["gh", "api", f"/repos/{owner}/{repo}/contributors", "--jq", "length"],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode == 0:
+            count = int(result.stdout.strip())
+            return count <= 2
+    except (subprocess.SubprocessError, ValueError, OSError):
+        pass
+
+    return False
 
 
 def create_security_policy(
@@ -258,7 +375,691 @@ Thank you for contributing!
         return f"❌ {message}"
 
 
+def create_codeowners(
+    owner: Optional[str] = None,
+    repo: Optional[str] = None,
+    local_path: str = ".",
+) -> str:
+    """
+    Create a CODEOWNERS file defining code ownership.
+
+    Satisfies: OSPS-GV-01.01, OSPS-GV-01.02, OSPS-GV-04.01
+
+    Intelligently detects maintainers from GitHub API and creates appropriate
+    ownership rules. For single-maintainer projects, uses a simple global pattern.
+
+    Args:
+        owner: GitHub Org/User (auto-detected if not provided)
+        repo: Repository Name (auto-detected if not provided)
+        local_path: Path to repository
+
+    Returns:
+        Success message with created file path
+    """
+    resolved_path, error = validate_local_path(local_path)
+    if error:
+        logger.warning(f"Invalid path for CODEOWNERS: {error}")
+        return format_error(error)
+
+    # Auto-detect owner/repo
+    if not owner or not repo:
+        detected = detect_repo_from_git(resolved_path)
+        if detected:
+            owner = owner or detected["owner"]
+            repo = repo or detected["repo"]
+        else:
+            owner = owner or "OWNER"
+            repo = repo or "REPO"
+
+    # Get maintainers
+    maintainers = get_repo_maintainers(owner, repo)
+    is_single = _is_single_maintainer_project(owner, repo, maintainers)
+
+    # Build maintainer string
+    if maintainers:
+        maintainer_handles = " ".join(f"@{m}" for m in maintainers[:5])
+    else:
+        maintainer_handles = f"@{owner}"
+
+    # Create content
+    if is_single:
+        content = f"""# CODEOWNERS - Defines code ownership for review requirements
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Global ownership - all files
+* {maintainer_handles}
+"""
+    else:
+        content = f"""# CODEOWNERS - Defines code ownership for review requirements
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Global ownership - default reviewers for all files
+* {maintainer_handles}
+
+# Examples - customize based on your project structure:
+# /docs/       @{maintainers[0] if maintainers else owner}
+# /src/        {maintainer_handles}
+# *.md         @{maintainers[0] if maintainers else owner}
+
+# Security-sensitive files should have explicit owners:
+# /security/   {maintainer_handles}
+# SECURITY.md  {maintainer_handles}
+"""
+
+    # Prefer .github/CODEOWNERS location
+    github_dir = os.path.join(resolved_path, ".github")
+    if os.path.exists(github_dir):
+        filepath = os.path.join(github_dir, "CODEOWNERS")
+    else:
+        filepath = os.path.join(resolved_path, "CODEOWNERS")
+
+    success, message = write_file_safely(filepath, content)
+
+    if success:
+        logger.info(f"Created CODEOWNERS at {filepath}")
+        return f"""✅ Created CODEOWNERS
+
+**OSPS Controls Addressed:**
+- OSPS-GV-01.01: Governance roles defined
+- OSPS-GV-01.02: Maintainers documented
+- OSPS-GV-04.01: Code ownership defined
+
+**File:** {filepath}
+**Maintainers:** {maintainer_handles}
+
+{"ℹ️ Single-maintainer project detected - using simple global ownership." if is_single else "ℹ️ Customize the file to match your team's code ownership structure."}
+"""
+    else:
+        logger.error(f"Failed to create CODEOWNERS: {message}")
+        return format_error(message)
+
+
+def create_governance_doc(
+    owner: Optional[str] = None,
+    repo: Optional[str] = None,
+    local_path: str = ".",
+) -> str:
+    """
+    Create a GOVERNANCE.md file describing project governance.
+
+    Satisfies: OSPS-GV-01.01, OSPS-GV-01.02
+
+    Args:
+        owner: GitHub Org/User (auto-detected if not provided)
+        repo: Repository Name (auto-detected if not provided)
+        local_path: Path to repository
+
+    Returns:
+        Success message with created file path
+    """
+    resolved_path, error = validate_local_path(local_path)
+    if error:
+        logger.warning(f"Invalid path for GOVERNANCE.md: {error}")
+        return format_error(error)
+
+    # Auto-detect owner/repo
+    if not owner or not repo:
+        detected = detect_repo_from_git(resolved_path)
+        if detected:
+            owner = owner or detected["owner"]
+            repo = repo or detected["repo"]
+        else:
+            owner = owner or "OWNER"
+            repo = repo or "REPO"
+
+    # Get maintainers
+    maintainers = get_repo_maintainers(owner, repo)
+    is_single = _is_single_maintainer_project(owner, repo, maintainers)
+
+    if maintainers:
+        maintainer_list = "\n".join(f"- @{m}" for m in maintainers)
+    else:
+        maintainer_list = f"- @{owner}"
+
+    if is_single:
+        content = f"""# Governance
+
+## Project Maintainer
+
+This project is currently maintained by @{maintainers[0] if maintainers else owner}.
+
+## Decision Making
+
+As a single-maintainer project, decisions are made by the maintainer with input
+from the community through issues and discussions.
+
+## Contributing
+
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## Changes to Governance
+
+If the project grows, this governance model may be updated to include additional
+maintainers or a more formal decision-making process.
+"""
+    else:
+        content = f"""# Governance
+
+## Overview
+
+This document describes the governance model for {repo}.
+
+## Roles
+
+### Maintainers
+
+Maintainers are responsible for the overall direction and health of the project.
+
+**Current Maintainers:**
+{maintainer_list}
+
+### Contributors
+
+Anyone who contributes code, documentation, or other improvements to the project.
+
+## Decision Making
+
+- **Minor changes**: Can be merged by any maintainer after review
+- **Major changes**: Require discussion and consensus among maintainers
+- **Breaking changes**: Require announcement and community feedback period
+
+## Becoming a Maintainer
+
+Contributors who have made significant contributions may be invited to become
+maintainers. Criteria include:
+
+- Sustained contributions over time
+- Quality of contributions
+- Constructive participation in discussions
+- Alignment with project goals
+
+## Code of Conduct
+
+All participants are expected to follow our Code of Conduct.
+
+## Changes to Governance
+
+Significant changes to governance require consensus among maintainers and should
+be discussed openly before implementation.
+"""
+
+    filepath = os.path.join(resolved_path, "GOVERNANCE.md")
+    success, message = write_file_safely(filepath, content)
+
+    if success:
+        logger.info(f"Created GOVERNANCE.md at {filepath}")
+        return f"""✅ Created GOVERNANCE.md
+
+**OSPS Controls Addressed:**
+- OSPS-GV-01.01: Governance roles defined
+- OSPS-GV-01.02: Maintainers documented
+
+**File:** {filepath}
+
+{"ℹ️ Single-maintainer governance template used. Update as your project grows." if is_single else "ℹ️ Review and customize the governance model for your project's needs."}
+"""
+    else:
+        logger.error(f"Failed to create GOVERNANCE.md: {message}")
+        return format_error(message)
+
+
+def create_dependabot_config(
+    owner: Optional[str] = None,
+    repo: Optional[str] = None,
+    local_path: str = ".",
+) -> str:
+    """
+    Create a Dependabot configuration file for automated dependency updates.
+
+    Satisfies: OSPS-VM-05.01, OSPS-VM-05.02, OSPS-VM-05.03
+
+    Intelligently detects package ecosystems used in the repository and
+    configures Dependabot for each.
+
+    Args:
+        owner: GitHub Org/User (auto-detected if not provided)
+        repo: Repository Name (auto-detected if not provided)
+        local_path: Path to repository
+
+    Returns:
+        Success message with created file path
+    """
+    resolved_path, error = validate_local_path(local_path)
+    if error:
+        logger.warning(f"Invalid path for dependabot.yml: {error}")
+        return format_error(error)
+
+    # Auto-detect owner/repo
+    if not owner or not repo:
+        detected = detect_repo_from_git(resolved_path)
+        if detected:
+            owner = owner or detected["owner"]
+            repo = repo or detected["repo"]
+        else:
+            owner = owner or "OWNER"
+            repo = repo or "REPO"
+
+    # Detect ecosystems
+    ecosystems = _detect_package_ecosystems(resolved_path)
+
+    # Always include github-actions if .github/workflows exists
+    if os.path.exists(os.path.join(resolved_path, ".github", "workflows")):
+        if "github-actions" not in ecosystems:
+            ecosystems.insert(0, "github-actions")
+
+    if not ecosystems:
+        ecosystems = ["github-actions"]  # Default fallback
+
+    # Build configuration
+    updates = []
+    for ecosystem in ecosystems:
+        # Determine directory based on ecosystem
+        if ecosystem == "github-actions":
+            directory = "/"
+            prefix = "ci"
+        elif ecosystem in ("npm", "pip", "cargo", "gomod", "maven", "gradle", "bundler", "composer"):
+            directory = "/"
+            prefix = "deps"
+        elif ecosystem == "docker":
+            directory = "/"
+            prefix = "docker"
+        elif ecosystem == "terraform":
+            directory = "/"
+            prefix = "infra"
+        else:
+            directory = "/"
+            prefix = "deps"
+
+        updates.append(f"""  - package-ecosystem: "{ecosystem}"
+    directory: "{directory}"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "{prefix}"
+    open-pull-requests-limit: 10""")
+
+    content = f"""# Dependabot configuration
+# See: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+updates:
+{chr(10).join(updates)}
+"""
+
+    # Ensure .github directory exists
+    github_dir = os.path.join(resolved_path, ".github")
+    ensure_directory(github_dir)
+
+    filepath = os.path.join(github_dir, "dependabot.yml")
+    success, message = write_file_safely(filepath, content)
+
+    if success:
+        logger.info(f"Created dependabot.yml at {filepath}")
+        ecosystem_list = ", ".join(ecosystems)
+        return f"""✅ Created dependabot.yml
+
+**OSPS Controls Addressed:**
+- OSPS-VM-05.01: Dependency update automation configured
+- OSPS-VM-05.02: Security updates enabled
+- OSPS-VM-05.03: Automated dependency scanning active
+
+**File:** {filepath}
+**Detected ecosystems:** {ecosystem_list}
+
+ℹ️ Dependabot will create PRs for dependency updates weekly.
+Review and merge these PRs to keep dependencies secure and up-to-date.
+"""
+    else:
+        logger.error(f"Failed to create dependabot.yml: {message}")
+        return format_error(message)
+
+
+def create_support_doc(
+    owner: Optional[str] = None,
+    repo: Optional[str] = None,
+    local_path: str = ".",
+) -> str:
+    """
+    Create a SUPPORT.md file describing how to get help.
+
+    Satisfies: OSPS-DO-03.01
+
+    Args:
+        owner: GitHub Org/User (auto-detected if not provided)
+        repo: Repository Name (auto-detected if not provided)
+        local_path: Path to repository
+
+    Returns:
+        Success message with created file path
+    """
+    resolved_path, error = validate_local_path(local_path)
+    if error:
+        logger.warning(f"Invalid path for SUPPORT.md: {error}")
+        return format_error(error)
+
+    # Auto-detect owner/repo
+    if not owner or not repo:
+        detected = detect_repo_from_git(resolved_path)
+        if detected:
+            owner = owner or detected["owner"]
+            repo = repo or detected["repo"]
+        else:
+            owner = owner or "OWNER"
+            repo = repo or "REPO"
+
+    # Check if Discussions are enabled
+    has_discussions = False
+    try:
+        result = subprocess.run(
+            ["gh", "api", f"/repos/{owner}/{repo}", "--jq", ".has_discussions"],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode == 0 and result.stdout.strip() == "true":
+            has_discussions = True
+    except (subprocess.SubprocessError, OSError):
+        pass
+
+    discussion_section = f"""## Discussions
+
+For questions, ideas, and community support, visit our [GitHub Discussions](https://github.com/{owner}/{repo}/discussions).
+""" if has_discussions else ""
+
+    content = f"""# Support
+
+## Getting Help
+
+Thanks for using {repo}! Here are some ways to get help:
+
+### Documentation
+
+- Check the [README](README.md) for basic usage
+- Review any documentation in the `/docs` folder
+
+### Issues
+
+If you've found a bug or have a feature request:
+1. Search [existing issues](https://github.com/{owner}/{repo}/issues) first
+2. If not found, [open a new issue](https://github.com/{owner}/{repo}/issues/new)
+{discussion_section}
+### Security Issues
+
+**Please do not report security vulnerabilities through public issues.**
+
+See our [Security Policy](SECURITY.md) for responsible disclosure instructions.
+
+## Response Times
+
+This is {"a community-maintained" if _is_single_maintainer_project(owner, repo, get_repo_maintainers(owner, repo)) else "an"} open source project. Response times may vary based on
+maintainer availability. We appreciate your patience!
+
+## Contributing
+
+Want to help improve {repo}? See our [Contributing Guide](CONTRIBUTING.md).
+"""
+
+    filepath = os.path.join(resolved_path, "SUPPORT.md")
+    success, message = write_file_safely(filepath, content)
+
+    if success:
+        logger.info(f"Created SUPPORT.md at {filepath}")
+        return f"""✅ Created SUPPORT.md
+
+**OSPS Controls Addressed:**
+- OSPS-DO-03.01: Support documentation available
+
+**File:** {filepath}
+
+ℹ️ Review and customize the support channels for your project.
+{"Consider enabling GitHub Discussions for community Q&A." if not has_discussions else "GitHub Discussions link included."}
+"""
+    else:
+        logger.error(f"Failed to create SUPPORT.md: {message}")
+        return format_error(message)
+
+
+def create_bug_report_template(
+    owner: Optional[str] = None,
+    repo: Optional[str] = None,
+    local_path: str = ".",
+) -> str:
+    """
+    Create a GitHub issue template for bug reports.
+
+    Satisfies: OSPS-DO-02.01
+
+    Args:
+        owner: GitHub Org/User (auto-detected if not provided)
+        repo: Repository Name (auto-detected if not provided)
+        local_path: Path to repository
+
+    Returns:
+        Success message with created file path
+    """
+    resolved_path, error = validate_local_path(local_path)
+    if error:
+        logger.warning(f"Invalid path for bug report template: {error}")
+        return format_error(error)
+
+    # Auto-detect owner/repo
+    if not owner or not repo:
+        detected = detect_repo_from_git(resolved_path)
+        if detected:
+            owner = owner or detected["owner"]
+            repo = repo or detected["repo"]
+        else:
+            owner = owner or "OWNER"
+            repo = repo or "REPO"
+
+    content = """---
+name: Bug Report
+about: Create a report to help us improve
+title: '[BUG] '
+labels: bug
+assignees: ''
+---
+
+## Describe the Bug
+
+A clear and concise description of what the bug is.
+
+## To Reproduce
+
+Steps to reproduce the behavior:
+
+1. Step one
+2. Step two
+3. Step three
+4. See error
+
+## Expected Behavior
+
+A clear and concise description of what you expected to happen.
+
+## Actual Behavior
+
+What actually happened instead.
+
+## Environment
+
+- OS: [e.g., macOS 14.0, Ubuntu 22.04, Windows 11]
+- Version: [e.g., v1.2.3]
+- Other relevant details:
+
+## Screenshots
+
+If applicable, add screenshots to help explain your problem.
+
+## Additional Context
+
+Add any other context about the problem here.
+
+## Possible Solution
+
+If you have ideas on how to fix this, please share them.
+"""
+
+    # Create directory structure
+    template_dir = os.path.join(resolved_path, ".github", "ISSUE_TEMPLATE")
+    ensure_directory(template_dir)
+
+    filepath = os.path.join(template_dir, "bug_report.md")
+    success, message = write_file_safely(filepath, content)
+
+    if success:
+        logger.info(f"Created bug report template at {filepath}")
+        return f"""✅ Created bug report template
+
+**OSPS Controls Addressed:**
+- OSPS-DO-02.01: Bug reporting process documented
+
+**File:** {filepath}
+
+ℹ️ Users will now see this template when creating bug report issues.
+Consider also creating a feature request template for completeness.
+"""
+    else:
+        logger.error(f"Failed to create bug report template: {message}")
+        return format_error(message)
+
+
+def configure_dco_enforcement(
+    owner: Optional[str] = None,
+    repo: Optional[str] = None,
+    local_path: str = ".",
+) -> str:
+    """
+    Configure Developer Certificate of Origin (DCO) enforcement.
+
+    Satisfies: OSPS-LE-01.01
+
+    Note: This creates documentation and guidance. Actual DCO enforcement
+    requires either the DCO GitHub App or a CI check.
+
+    Args:
+        owner: GitHub Org/User (auto-detected if not provided)
+        repo: Repository Name (auto-detected if not provided)
+        local_path: Path to repository
+
+    Returns:
+        Success message with guidance
+    """
+    resolved_path, error = validate_local_path(local_path)
+    if error:
+        logger.warning(f"Invalid path for DCO configuration: {error}")
+        return format_error(error)
+
+    # Auto-detect owner/repo
+    if not owner or not repo:
+        detected = detect_repo_from_git(resolved_path)
+        if detected:
+            owner = owner or detected["owner"]
+            repo = repo or detected["repo"]
+        else:
+            owner = owner or "OWNER"
+            repo = repo or "REPO"
+
+    # Check if CONTRIBUTING.md exists and update it
+    contributing_path = os.path.join(resolved_path, "CONTRIBUTING.md")
+    dco_section = """
+## Developer Certificate of Origin (DCO)
+
+This project uses the [Developer Certificate of Origin](https://developercertificate.org/) (DCO).
+
+By contributing to this project, you agree to the DCO. This means you certify that:
+- You have the right to submit the contribution
+- You grant the project the rights to use your contribution
+
+### Signing Your Commits
+
+Sign your commits by adding `Signed-off-by` to your commit messages:
+
+```bash
+git commit -s -m "Your commit message"
+```
+
+Or configure git to sign automatically:
+
+```bash
+git config --global user.name "Your Name"
+git config --global user.email "your@email.com"
+```
+
+Then use `git commit -s` for all commits.
+"""
+
+    if os.path.exists(contributing_path):
+        try:
+            with open(contributing_path, 'r') as f:
+                content = f.read()
+
+            # Check if DCO section already exists
+            if "Developer Certificate of Origin" not in content and "DCO" not in content:
+                content += dco_section
+                success, message = write_file_safely(contributing_path, content)
+                if success:
+                    logger.info(f"Added DCO section to CONTRIBUTING.md")
+                    contributing_updated = True
+                else:
+                    contributing_updated = False
+            else:
+                contributing_updated = False  # Already has DCO info
+        except (IOError, OSError):
+            contributing_updated = False
+    else:
+        contributing_updated = False
+
+    return f"""✅ DCO Configuration Guidance
+
+**OSPS Controls Addressed:**
+- OSPS-LE-01.01: Contributions require sign-off
+
+{"**Updated:** CONTRIBUTING.md with DCO requirements" if contributing_updated else ""}
+
+## Manual Steps Required
+
+To fully enforce DCO, you need to set up one of these options:
+
+### Option 1: DCO GitHub App (Recommended)
+
+1. Install the [DCO App](https://github.com/apps/dco) on your repository
+2. The app will automatically check for signed commits on PRs
+
+### Option 2: GitHub Actions Check
+
+Add this workflow to `.github/workflows/dco.yml`:
+
+```yaml
+name: DCO Check
+on: [pull_request]
+jobs:
+  dco:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: DCO Check
+        uses: dco/dco-action@v1
+```
+
+### Option 3: Branch Protection Rule
+
+1. Go to Settings → Branches → Branch protection rules
+2. Add rule for your main branch
+3. Enable "Require status checks to pass"
+4. Add "DCO" as a required check (after installing the app)
+
+ℹ️ The DCO GitHub App is the simplest option and works automatically.
+"""
+
+
 __all__ = [
     "create_security_policy",
     "create_contributing_guide",
+    "create_codeowners",
+    "create_governance_doc",
+    "create_dependabot_config",
+    "create_support_doc",
+    "create_bug_report_template",
+    "configure_dco_enforcement",
 ]

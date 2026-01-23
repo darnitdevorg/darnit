@@ -1072,15 +1072,14 @@ check_files = ["README.md"]
 look_for_urls = true
 
 [controls."OSPS-SA-02.01".passes]
-deterministic = { file_must_exist = [
-    "API.md",
-    "docs/api.md",
-    "docs/api/",
-    "openapi.yaml",
-    "openapi.json",
-    "swagger.yaml",
-    "swagger.json",
-]}
+# Check for API documentation in dedicated files OR README sections
+# The pattern pass looks for API/interface documentation headings
+[controls."OSPS-SA-02.01".passes.pattern]
+files = ["API.md", "docs/api.md", "README.md", "docs/README.md", "USAGE.md", "docs/getting-started.md", "openapi.yaml", "openapi.json", "swagger.yaml", "swagger.json"]
+pass_if_any = true
+
+[controls."OSPS-SA-02.01".passes.pattern.patterns]
+api_section = "(?mi)^#.*\\b(api|interface|usage|methods|functions|endpoints|cli|commands?)\\b"
 
 [controls."OSPS-SA-03.02"]
 name = "ThreatModel"

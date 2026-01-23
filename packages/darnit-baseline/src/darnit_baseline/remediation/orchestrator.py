@@ -33,7 +33,16 @@ from darnit.config.resolver import update_config_after_file_create
 
 from .registry import REMEDIATION_REGISTRY, get_control_to_category_map
 from ..config.mappings import CONTROL_REFERENCE_MAPPING
-from .actions import create_security_policy, create_contributing_guide
+from .actions import (
+    create_security_policy,
+    create_contributing_guide,
+    create_codeowners,
+    create_governance_doc,
+    create_dependabot_config,
+    create_support_doc,
+    create_bug_report_template,
+    configure_dco_enforcement,
+)
 from darnit.remediation.github import enable_branch_protection
 
 logger = get_logger("remediation.orchestrator")
@@ -397,6 +406,14 @@ CATEGORY_FILE_MAPPING: Dict[str, Dict[str, str]] = {
         "file": ".github/ISSUE_TEMPLATE/bug_report.md",
         "control_id": "OSPS-DO-02.01",  # Maps to security.policy (issue template)
     },
+    "dependabot": {
+        "file": ".github/dependabot.yml",
+        "control_id": "OSPS-VM-05.01",  # Maps to security.dependency_scanning
+    },
+    "dco_enforcement": {
+        "file": "CONTRIBUTING.md",  # DCO info added to CONTRIBUTING.md
+        "control_id": "OSPS-LE-01.01",  # Maps to legal.dco
+    },
 }
 
 
@@ -428,7 +445,12 @@ def _apply_legacy_remediation(
         "enable_branch_protection": enable_branch_protection,
         "create_security_policy": create_security_policy,
         "create_contributing_guide": create_contributing_guide,
-        # Add other remediation functions here as they're implemented
+        "create_codeowners": create_codeowners,
+        "create_governance_doc": create_governance_doc,
+        "create_dependabot_config": create_dependabot_config,
+        "create_support_doc": create_support_doc,
+        "create_bug_report_template": create_bug_report_template,
+        "configure_dco_enforcement": configure_dco_enforcement,
     }
 
     func = func_map.get(func_name)

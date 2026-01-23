@@ -107,6 +107,15 @@ jobs:
           uv run mypy packages/darnit/src/darnit/core/plugin.py --ignore-missing-imports || true
         continue-on-error: true  # Don't fail CI on type errors yet
 
+      # Critical: Check for parameter name mismatches in tool wrappers
+      # This catches bugs like passing 'repo_path' when function expects 'local_path'
+      - name: Check tools.py for call-arg errors
+        run: |
+          uv run mypy packages/darnit-baseline/src/darnit_baseline/tools.py \
+            --ignore-missing-imports \
+            --no-error-summary \
+            --show-error-codes 2>&1 | grep -E "call-arg|arg-type" && exit 1 || exit 0
+
   coverage:
     name: Coverage
     runs-on: ubuntu-latest

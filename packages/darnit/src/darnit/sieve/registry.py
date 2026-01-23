@@ -24,9 +24,22 @@ class ControlRegistry:
         self._specs: Dict[str, ControlSpec] = {}
         self._legacy_checks: Dict[str, Callable] = {}
 
-    def register(self, spec: ControlSpec) -> None:
-        """Register a control specification."""
+    def register(self, spec: ControlSpec, overwrite: bool = False) -> bool:
+        """Register a control specification.
+
+        Args:
+            spec: The control specification to register
+            overwrite: If False (default), skip if control already registered
+                      If True, overwrite existing registration
+
+        Returns:
+            True if registered, False if skipped (already exists)
+        """
+        if not overwrite and spec.control_id in self._specs:
+            logger.debug(f"Control {spec.control_id} already registered, skipping")
+            return False
         self._specs[spec.control_id] = spec
+        return True
 
     def register_legacy(self, control_id: str, check_fn: Callable) -> None:
         """Register a legacy check function for gradual migration."""
@@ -78,9 +91,13 @@ def get_control_registry() -> ControlRegistry:
     return _registry
 
 
-def register_control(spec: ControlSpec) -> None:
-    """Register a control specification in the global registry."""
-    _registry.register(spec)
+def register_control(spec: ControlSpec) -> bool:
+    """Register a control specification in the global registry.
+
+    Returns:
+        True if registered, False if skipped (already exists)
+    """
+    return _registry.register(spec)
 
 
 # ============================================================================

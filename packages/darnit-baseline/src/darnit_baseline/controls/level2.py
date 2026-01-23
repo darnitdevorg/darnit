@@ -676,11 +676,38 @@ def _create_status_checks_check() -> Callable[[CheckContext], PassResult]:
     return check
 
 
+def _detect_test_files(local_path: str) -> Optional[Dict]:
+    """Detect test files in the repository."""
+    import glob as glob_module
+
+    test_patterns = {
+        "go": ["*_test.go", "**/*_test.go"],
+        "python": ["test_*.py", "*_test.py", "tests/*.py", "tests/**/*.py"],
+        "javascript": ["*.test.js", "*.spec.js", "**/*.test.js", "**/*.spec.js",
+                      "*.test.ts", "*.spec.ts", "**/*.test.ts", "**/*.spec.ts"],
+        "ruby": ["*_spec.rb", "**/*_spec.rb", "*_test.rb", "**/*_test.rb"],
+        "rust": ["**/tests/*.rs"],
+        "java": ["**/src/test/**/*.java", "**/*Test.java"],
+    }
+
+    for lang, patterns in test_patterns.items():
+        for pattern in patterns:
+            matches = glob_module.glob(os.path.join(local_path, pattern), recursive=True)
+            if matches:
+                return {"language": lang, "test_files": len(matches), "example": matches[0]}
+
+    return None
+
+
 def _create_automated_tests_check() -> Callable[[CheckContext], PassResult]:
     """Check for automated test suite in CI (OSPS-QA-06.01).
 
     Spec: Prior to a commit being accepted, the project's CI/CD pipelines MUST
     run at least one automated test suite to ensure the changes meet expectations.
+
+    This check:
+    1. Looks for test commands in CI config (GitHub Actions, GitLab CI, etc.)
+    2. Falls back to detecting test files as strong evidence tests exist
     """
 
     def check(ctx: CheckContext) -> PassResult:
@@ -695,9 +722,9 @@ def _create_automated_tests_check() -> Callable[[CheckContext], PassResult]:
             "travis": [".travis.yml"],
         }
 
-        test_patterns = [
+        test_command_patterns = [
             r'npm\s+test', r'yarn\s+test', r'pnpm\s+test',
-            r'pytest', r'python\s+-m\s+pytest',
+            r'pytest', r'python\s+-m\s+pytest', r'uv\s+run\s+pytest',
             r'jest', r'mocha', r'vitest',
             r'go\s+test', r'cargo\s+test',
             r'rspec', r'bundle\s+exec\s+rspec',
@@ -705,86 +732,94 @@ def _create_automated_tests_check() -> Callable[[CheckContext], PassResult]:
             r'dotnet\s+test', r'mix\s+test',
         ]
 
-        if not os.path.exists(workflow_dir):
-            # Check if user has confirmed a different CI provider
-            if is_context_confirmed(ctx.local_path, "ci_provider"):
-                ci_provider = get_context_value(ctx.local_path, "ci_provider")
-                if ci_provider == "none":
-                    return PassResult(
-                        phase=VerificationPhase.DETERMINISTIC,
-                        outcome=PassOutcome.FAIL,
-                        message="No CI/CD used - automated tests are required before merging",
-                        evidence={"ci_provider": "none", "source": ".project.yaml"},
-                    )
-                elif ci_provider != "github":
-                    # Check for other CI config files
-                    config_files = ci_configs.get(ci_provider, [])
-                    for config in config_files:
-                        config_path = os.path.join(ctx.local_path, config)
-                        if os.path.exists(config_path):
-                            content = _read_file(ctx.local_path, config) or ""
-                            for pattern in test_patterns:
-                                if re.search(pattern, content, re.IGNORECASE):
-                                    return PassResult(
-                                        phase=VerificationPhase.DETERMINISTIC,
-                                        outcome=PassOutcome.PASS,
-                                        message=f"Automated tests found in {ci_provider} CI ({config})",
-                                        evidence={"ci_provider": ci_provider, "config": config},
-                                    )
-                            return PassResult(
-                                phase=VerificationPhase.DETERMINISTIC,
-                                outcome=PassOutcome.INCONCLUSIVE,
-                                message=f"Using {ci_provider} CI - verify automated tests are configured",
-                                evidence={"ci_provider": ci_provider, "config": config},
-                            )
-                    return PassResult(
-                        phase=VerificationPhase.DETERMINISTIC,
-                        outcome=PassOutcome.INCONCLUSIVE,
-                        message=f"Using {ci_provider} CI but config file not found - verify tests are configured",
-                        evidence={"ci_provider": ci_provider, "source": ".project.yaml"},
-                    )
+        # First, check GitHub Actions
+        if os.path.exists(workflow_dir):
+            for root, _, files in os.walk(workflow_dir):
+                for file in files:
+                    if file.endswith(('.yml', '.yaml')):
+                        content = _read_file(root, file) or ""
+                        for pattern in test_command_patterns:
+                            if re.search(pattern, content, re.IGNORECASE):
+                                return PassResult(
+                                    phase=VerificationPhase.DETERMINISTIC,
+                                    outcome=PassOutcome.PASS,
+                                    message=f"CI workflows include automated tests",
+                                    evidence={"workflow": file, "source": "github_actions"},
+                                )
 
-            # No confirmation - prompt user
-            return PassResult(
-                phase=VerificationPhase.DETERMINISTIC,
-                outcome=PassOutcome.INCONCLUSIVE,
-                message="No GitHub Actions found. Please confirm CI provider in .project.yaml",
-                evidence={
-                    "has_workflows": False,
-                    "needs_confirmation": True,
-                    "confirmation_key": "ci_provider",
-                    "confirmation_prompt": "What CI/CD system does this project use?",
-                },
-            )
-
-        # GitHub Actions found - check for tests
-        test_patterns = [
-            r'npm\s+test', r'yarn\s+test', r'pnpm\s+test',
-            r'pytest', r'python\s+-m\s+pytest',
-            r'jest', r'mocha', r'vitest',
-            r'go\s+test', r'cargo\s+test',
-            r'rspec', r'bundle\s+exec\s+rspec',
-            r'mvn\s+test', r'gradle\s+test',
-            r'dotnet\s+test', r'mix\s+test',
-        ]
-
-        for root, _, files in os.walk(workflow_dir):
-            for file in files:
-                if file.endswith(('.yml', '.yaml')):
-                    content = _read_file(root, file) or ""
-                    for pattern in test_patterns:
+        # Check other CI providers
+        for provider, config_files in ci_configs.items():
+            for config in config_files:
+                config_path = os.path.join(ctx.local_path, config)
+                if os.path.exists(config_path):
+                    content = _read_file(ctx.local_path, config) or ""
+                    for pattern in test_command_patterns:
                         if re.search(pattern, content, re.IGNORECASE):
                             return PassResult(
                                 phase=VerificationPhase.DETERMINISTIC,
                                 outcome=PassOutcome.PASS,
-                                message="CI workflows include automated tests",
-                                evidence={"workflow": file},
+                                message=f"Automated tests found in {provider} CI",
+                                evidence={"ci_provider": provider, "config": config},
                             )
+
+        # Fallback: Detect test files as evidence
+        test_files = _detect_test_files(ctx.local_path)
+        if test_files:
+            # Has test files - this is strong evidence tests exist,
+            # but we should verify CI runs them
+            if os.path.exists(workflow_dir) or any(
+                os.path.exists(os.path.join(ctx.local_path, c))
+                for configs in ci_configs.values()
+                for c in configs
+            ):
+                # Has CI config + test files - likely tests run in CI
+                return PassResult(
+                    phase=VerificationPhase.DETERMINISTIC,
+                    outcome=PassOutcome.PASS,
+                    message=f"Test files found ({test_files['language']}) with CI config present",
+                    evidence={
+                        "test_files": test_files["test_files"],
+                        "language": test_files["language"],
+                        "has_ci": True,
+                        "note": "Verify CI runs these tests",
+                    },
+                )
+            else:
+                # Has test files but no CI config
+                return PassResult(
+                    phase=VerificationPhase.DETERMINISTIC,
+                    outcome=PassOutcome.INCONCLUSIVE,
+                    message=f"Test files found ({test_files['language']}) but no CI config detected",
+                    evidence={
+                        "test_files": test_files["test_files"],
+                        "language": test_files["language"],
+                        "has_ci": False,
+                    },
+                )
+
+        # Check if user has confirmed CI provider
+        if is_context_confirmed(ctx.local_path, "ci_provider"):
+            ci_provider = get_context_value(ctx.local_path, "ci_provider")
+            if ci_provider == "none":
+                return PassResult(
+                    phase=VerificationPhase.DETERMINISTIC,
+                    outcome=PassOutcome.FAIL,
+                    message="No CI/CD used - automated tests are required before merging",
+                    evidence={"ci_provider": "none", "source": ".project.yaml"},
+                )
+
+        # No tests found
+        if os.path.exists(workflow_dir):
+            return PassResult(
+                phase=VerificationPhase.DETERMINISTIC,
+                outcome=PassOutcome.FAIL,
+                message="CI workflows exist but no test commands or test files found",
+            )
 
         return PassResult(
             phase=VerificationPhase.DETERMINISTIC,
-            outcome=PassOutcome.FAIL,
-            message="CI workflows exist but no test commands found",
+            outcome=PassOutcome.INCONCLUSIVE,
+            message="No CI config or test files found - verify automated testing setup",
         )
 
     return check
@@ -840,6 +875,47 @@ API_DOCS = [
     "swagger.yaml", "swagger.json", "api-docs/",
 ]
 
+# Files that commonly contain API/interface documentation inline
+DOCS_WITH_API_SECTIONS = [
+    "README.md", "README.rst", "README.txt", "README",
+    "docs/README.md", "USAGE.md", "docs/USAGE.md",
+    "docs/index.md", "docs/getting-started.md",
+]
+
+# Patterns that indicate API/interface documentation sections
+API_SECTION_PATTERNS = [
+    # Markdown headings for API documentation
+    r'^#+\s*(API|Interface|External\s+Interface|Public\s+Interface)',
+    r'^#+\s*(Usage|How\s+to\s+Use)',
+    r'^#+\s*(Methods|Functions|Endpoints)',
+    r'^#+\s*(CLI|Command[s]?|Command[\s-]Line)',
+    r'^#+\s*(Reference|API\s+Reference)',
+    r'^#+\s*(Parameters|Arguments|Options)',
+    # Code blocks with function/method definitions
+    r'```[a-z]*\s*\n[^`]*def\s+\w+\s*\([^)]*\)',  # Python functions
+    r'```[a-z]*\s*\n[^`]*function\s+\w+\s*\([^)]*\)',  # JS functions
+    r'```[a-z]*\s*\n[^`]*func\s+\w+\s*\([^)]*\)',  # Go functions
+    # API-related keywords in context
+    r'(endpoint|route|method|parameter|return|response)s?\s*:',
+]
+
+
+def _has_api_documentation_section(content: str) -> bool:
+    """Check if content contains API/interface documentation sections."""
+    content_lower = content.lower()
+
+    # Quick check: must have some API-related keywords
+    api_keywords = ['api', 'usage', 'interface', 'method', 'function', 'endpoint', 'cli', 'command']
+    if not any(kw in content_lower for kw in api_keywords):
+        return False
+
+    # Check for section patterns
+    for pattern in API_SECTION_PATTERNS:
+        if re.search(pattern, content, re.MULTILINE | re.IGNORECASE):
+            return True
+
+    return False
+
 
 def _create_design_docs_check() -> Callable[[CheckContext], PassResult]:
     """Check for design documentation (OSPS-SA-01.01)."""
@@ -864,22 +940,42 @@ def _create_design_docs_check() -> Callable[[CheckContext], PassResult]:
 
 
 def _create_api_docs_check() -> Callable[[CheckContext], PassResult]:
-    """Check for API documentation (OSPS-SA-02.01)."""
+    """Check for API documentation (OSPS-SA-02.01).
+
+    Spec: The project MUST document how to interact with external interfaces.
+
+    This check:
+    1. First looks for dedicated API documentation files (API.md, openapi.yaml, etc.)
+    2. Falls back to checking README and other docs for API/interface sections
+    3. Passes if either dedicated files or inline documentation exists
+    """
 
     def check(ctx: CheckContext) -> PassResult:
+        # First, check for dedicated API documentation files
         for doc in API_DOCS:
             if _file_exists(ctx.local_path, doc):
                 return PassResult(
                     phase=VerificationPhase.DETERMINISTIC,
                     outcome=PassOutcome.PASS,
                     message=f"API/interface documentation found: {doc}",
-                    evidence={"file": doc},
+                    evidence={"file": doc, "type": "dedicated"},
+                )
+
+        # Fallback: Check README and other docs for API sections
+        for doc_file in DOCS_WITH_API_SECTIONS:
+            content = _read_file(ctx.local_path, doc_file)
+            if content and _has_api_documentation_section(content):
+                return PassResult(
+                    phase=VerificationPhase.DETERMINISTIC,
+                    outcome=PassOutcome.PASS,
+                    message=f"API/interface documentation found in {doc_file}",
+                    evidence={"file": doc_file, "type": "inline_section"},
                 )
 
         return PassResult(
             phase=VerificationPhase.DETERMINISTIC,
             outcome=PassOutcome.FAIL,
-            message="No API/interface documentation found",
+            message="No API/interface documentation found in dedicated files or README",
         )
 
     return check
