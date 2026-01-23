@@ -218,16 +218,33 @@ def control_from_effective(
         except (TypeError, ValueError) as e:
             logger.warning(f"Could not convert passes for {control_id}: {e}")
 
+    # Build the tags dict - effective.tags already includes level/domain from merger
+    tags = dict(effective.tags) if effective.tags else {}
+
+    # Extract level/domain/security_severity from tags if not present as top-level
+    # This supports the new flexible schema where everything can be in tags
+    level = effective.level
+    if level is None and "level" in tags:
+        level = tags["level"]
+
+    domain = effective.domain
+    if domain is None and "domain" in tags:
+        domain = tags["domain"]
+
+    security_severity = effective.security_severity
+    if security_severity is None and "security_severity" in tags:
+        security_severity = tags["security_severity"]
+
     return ControlSpec(
         control_id=control_id,
-        level=effective.level,
-        domain=effective.domain,
+        level=level,
+        domain=domain,
         name=effective.name,
         description=effective.description,
         passes=passes,
+        tags=tags,  # Pass tags directly, ControlSpec.__post_init__ will add level/domain
         metadata={
-            "tags": effective.tags,
-            "security_severity": effective.security_severity,
+            "security_severity": security_severity,
             "docs_url": effective.docs_url,
             "check_adapter": effective.check_adapter,
             "remediation_adapter": effective.remediation_adapter,
@@ -250,16 +267,33 @@ def control_from_framework(
     """
     passes = _convert_passes_config(control_config.passes) if control_config.passes else []
 
+    # Build tags dict from config - tags is now Dict[str, Any]
+    tags = dict(control_config.tags) if control_config.tags else {}
+
+    # Extract level/domain/security_severity from tags if not present as top-level
+    # This supports the new flexible schema where everything can be in tags
+    level = control_config.level
+    if level is None and "level" in tags:
+        level = tags["level"]
+
+    domain = control_config.domain
+    if domain is None and "domain" in tags:
+        domain = tags["domain"]
+
+    security_severity = control_config.security_severity
+    if security_severity is None and "security_severity" in tags:
+        security_severity = tags["security_severity"]
+
     return ControlSpec(
         control_id=control_id,
-        level=control_config.level,
-        domain=control_config.domain,
+        level=level,
+        domain=domain,
         name=control_config.name,
         description=control_config.description,
         passes=passes,
+        tags=tags,  # Pass tags directly, ControlSpec.__post_init__ will add level/domain
         metadata={
-            "tags": list(control_config.tags) if control_config.tags else [],
-            "security_severity": control_config.security_severity,
+            "security_severity": security_severity,
             "docs_url": control_config.docs_url,
         },
     )

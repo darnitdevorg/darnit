@@ -1,0 +1,329 @@
+# =============================================================================
+# Example Framework - Pure TOML Implementation
+# =============================================================================
+#
+# This example shows how to create a compliance framework using ONLY TOML.
+# No Python code is required for simple checks and remediations.
+#
+# Features demonstrated:
+# - Deterministic file existence checks
+# - Pattern matching in files
+# - External command execution (ExecPass)
+# - File creation remediation from templates
+# - API call remediation
+# - Variable substitution ($OWNER, $REPO, $BRANCH, etc.)
+
+[metadata]
+name = "example-framework"
+display_name = "Example Compliance Framework"
+version = "1.0.0"
+schema_version = "0.1.0-alpha"  # TOML config format version - expect breaking changes
+spec_version = "Example v1.0"
+description = "A minimal example showing declarative framework definition"
+url = "https://example.com/compliance"
+
+[defaults]
+check_adapter = "builtin"
+remediation_adapter = "builtin"
+
+# =============================================================================
+# Templates - Reusable content for remediation
+# =============================================================================
+
+[templates.readme_standard]
+description = "Standard README template"
+content = """# $REPO
+
+A project by $OWNER.
+
+## Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/$OWNER/$REPO.git
+cd $REPO
+
+# Install dependencies
+npm install  # or pip install -r requirements.txt
+```
+
+## Usage
+
+See the [documentation](docs/) for detailed usage instructions.
+
+## Contributing
+
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct
+and the process for submitting pull requests.
+
+## License
+
+This project is licensed under the terms specified in [LICENSE](LICENSE).
+"""
+
+[templates.changelog_standard]
+description = "Standard CHANGELOG template"
+content = """# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+- Initial project setup
+
+### Changed
+- Nothing yet
+
+### Fixed
+- Nothing yet
+
+## [0.1.0] - $DATE
+
+### Added
+- Initial release
+"""
+
+[templates.codeowners_standard]
+description = "Standard CODEOWNERS template"
+content = """# Code Owners
+# These owners will be requested for review when someone opens a pull request.
+
+# Default owners for everything in the repo
+*       @$OWNER
+
+# Documentation
+/docs/  @$OWNER
+*.md    @$OWNER
+"""
+
+# =============================================================================
+# Controls - Compliance requirements with checks and remediations
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Control: README exists
+# -----------------------------------------------------------------------------
+[controls."EXAMPLE-DO-01"]
+name = "ReadmeExists"
+description = "Project must have a README file"
+tags = { level = 1, domain = "DO", documentation = true, onboarding = true }
+docs_url = "https://example.com/docs/readme"
+
+# Check: File must exist (deterministic)
+[controls."EXAMPLE-DO-01".passes]
+deterministic = { file_must_exist = ["README.md", "README", "README.rst", "README.txt"] }
+
+# Remediation: Create README.md from template
+[controls."EXAMPLE-DO-01".remediation]
+safe = true
+dry_run_supported = true
+
+[controls."EXAMPLE-DO-01".remediation.file_create]
+path = "README.md"
+template = "readme_standard"
+overwrite = false
+
+# -----------------------------------------------------------------------------
+# Control: CHANGELOG exists
+# -----------------------------------------------------------------------------
+[controls."EXAMPLE-DO-02"]
+name = "ChangelogExists"
+description = "Project must have a CHANGELOG file"
+tags = { level = 1, domain = "DO", documentation = true, versioning = true }
+
+[controls."EXAMPLE-DO-02".passes]
+deterministic = { file_must_exist = ["CHANGELOG.md", "CHANGELOG", "HISTORY.md", "NEWS.md"] }
+
+[controls."EXAMPLE-DO-02".remediation]
+safe = true
+dry_run_supported = true
+
+[controls."EXAMPLE-DO-02".remediation.file_create]
+path = "CHANGELOG.md"
+template = "changelog_standard"
+overwrite = false
+
+# -----------------------------------------------------------------------------
+# Control: LICENSE exists
+# -----------------------------------------------------------------------------
+[controls."EXAMPLE-LE-01"]
+name = "LicenseExists"
+description = "Project must have a LICENSE file"
+tags = { level = 1, domain = "LE", security_severity = 3.0, legal = true, compliance = true }
+
+[controls."EXAMPLE-LE-01".passes]
+deterministic = { file_must_exist = ["LICENSE", "LICENSE.md", "LICENSE.txt", "COPYING"] }
+
+# Note: No remediation - license choice requires human decision
+
+# -----------------------------------------------------------------------------
+# Control: No secrets in repository
+# -----------------------------------------------------------------------------
+[controls."EXAMPLE-SE-01"]
+name = "NoHardcodedSecrets"
+description = "Repository must not contain hardcoded secrets"
+tags = { level = 1, domain = "SE", security_severity = 9.0, security = true, secrets = true }
+
+# Check: These files should NOT exist
+[controls."EXAMPLE-SE-01".passes]
+deterministic = { file_must_not_exist = [
+    ".env",
+    ".env.local",
+    "secrets.json",
+    "credentials.json",
+    "*.pem",
+    "*.key",
+]}
+
+# Pattern check: Look for common secret patterns (these should NOT match)
+[controls."EXAMPLE-SE-01".passes.pattern]
+files = ["**/*.py", "**/*.js", "**/*.ts", "**/*.go", "**/*.java"]
+fail_if_no_match = false  # We WANT no matches
+
+[controls."EXAMPLE-SE-01".passes.pattern.patterns]
+aws_key = "AKIA[0-9A-Z]{16}"
+private_key = "-----BEGIN (RSA |EC |DSA )?PRIVATE KEY-----"
+api_token = "(api[_-]?key|api[_-]?token|access[_-]?token)\\s*[=:]\\s*['\"][a-zA-Z0-9]{20,}"
+
+# -----------------------------------------------------------------------------
+# Control: CI/CD configured
+# -----------------------------------------------------------------------------
+[controls."EXAMPLE-QA-01"]
+name = "CICDConfigured"
+description = "Project must have CI/CD configuration"
+tags = { level = 2, domain = "QA", ci-cd = true, automation = true, quality = true }
+
+[controls."EXAMPLE-QA-01".passes]
+deterministic = { file_must_exist = [
+    ".github/workflows/*.yml",
+    ".github/workflows/*.yaml",
+    ".gitlab-ci.yml",
+    "Jenkinsfile",
+    ".circleci/config.yml",
+    ".travis.yml",
+    "azure-pipelines.yml",
+]}
+
+# -----------------------------------------------------------------------------
+# Control: Tests exist
+# -----------------------------------------------------------------------------
+[controls."EXAMPLE-QA-02"]
+name = "TestsExist"
+description = "Project must have test files"
+tags = { level = 2, domain = "QA", testing = true, quality = true }
+
+[controls."EXAMPLE-QA-02".passes]
+deterministic = { file_must_exist = [
+    "tests/**/*.py",
+    "test/**/*.py",
+    "**/*_test.py",
+    "**/*_test.go",
+    "**/*.test.js",
+    "**/*.test.ts",
+    "**/*.spec.js",
+    "**/*.spec.ts",
+]}
+
+# -----------------------------------------------------------------------------
+# Control: Code owners defined
+# -----------------------------------------------------------------------------
+[controls."EXAMPLE-GV-01"]
+name = "CodeOwnersExists"
+description = "Project must define code owners"
+tags = { level = 2, domain = "GV", governance = true, ownership = true }
+
+[controls."EXAMPLE-GV-01".passes]
+deterministic = { file_must_exist = ["CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS"] }
+
+[controls."EXAMPLE-GV-01".remediation]
+safe = true
+dry_run_supported = true
+
+[controls."EXAMPLE-GV-01".remediation.file_create]
+path = "CODEOWNERS"
+template = "codeowners_standard"
+overwrite = false
+
+# -----------------------------------------------------------------------------
+# Control: Branch protection enabled (uses GitHub API)
+# -----------------------------------------------------------------------------
+[controls."EXAMPLE-AC-01"]
+name = "BranchProtectionEnabled"
+description = "Primary branch must have protection rules"
+tags = { level = 2, domain = "AC", security_severity = 7.5, access-control = true, branch-protection = true }
+
+# Check: Use gh CLI to verify branch protection
+[controls."EXAMPLE-AC-01".passes.exec]
+command = ["gh", "api", "/repos/$OWNER/$REPO/branches/$BRANCH/protection"]
+pass_exit_codes = [0]
+fail_exit_codes = [1]
+output_format = "json"
+timeout = 30
+
+[controls."EXAMPLE-AC-01".passes.manual]
+steps = [
+    "Navigate to Repository Settings → Branches",
+    "Verify branch protection rule exists for the default branch",
+]
+
+# Remediation: Enable branch protection via API
+[controls."EXAMPLE-AC-01".remediation]
+safe = true
+requires_api = true
+dry_run_supported = true
+
+[controls."EXAMPLE-AC-01".remediation.api_call]
+method = "PUT"
+endpoint = "/repos/$OWNER/$REPO/branches/$BRANCH/protection"
+payload = {
+    enforce_admins = true,
+    required_pull_request_reviews = { required_approving_review_count = 1 },
+    required_status_checks = null,
+    restrictions = null,
+    allow_force_pushes = false,
+    allow_deletions = false
+}
+
+# -----------------------------------------------------------------------------
+# Control: Dependency scanning configured
+# -----------------------------------------------------------------------------
+[controls."EXAMPLE-VM-01"]
+name = "DependencyScanningEnabled"
+description = "Automated dependency scanning must be configured"
+tags = { level = 3, domain = "VM", security_severity = 6.0, security = true, dependencies = true, scanning = true }
+
+[controls."EXAMPLE-VM-01".passes]
+deterministic = { file_must_exist = [
+    ".github/dependabot.yml",
+    ".github/dependabot.yaml",
+    "renovate.json",
+    ".renovaterc",
+    ".renovaterc.json",
+]}
+
+# -----------------------------------------------------------------------------
+# Control: External tool check (using kusari as example)
+# -----------------------------------------------------------------------------
+[controls."EXAMPLE-VM-02"]
+name = "SBOMCompliance"
+description = "Project passes SBOM compliance checks"
+tags = { level = 3, domain = "VM", sbom = true, supply-chain = true, compliance = true }
+
+# Check: Run external tool (kusari) for SBOM validation
+[controls."EXAMPLE-VM-02".passes.exec]
+command = ["kusari", "repo", "scan", "$PATH", "HEAD"]
+pass_exit_codes = [0]
+fail_exit_codes = [1, 2]
+output_format = "json"
+timeout = 120
+
+[controls."EXAMPLE-VM-02".passes.manual]
+steps = [
+    "Run: kusari repo scan . HEAD",
+    "Verify all checks pass",
+    "Review any warnings or recommendations",
+]

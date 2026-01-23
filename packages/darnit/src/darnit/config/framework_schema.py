@@ -26,12 +26,109 @@ Example:
     [controls."OSPS-AC-03.01".passes]
     deterministic = { api_check = "check_branch_protection" }
     ```
+
+# =============================================================================
+# TODO: Future Schema Enhancements (Roadmap)
+# =============================================================================
+#
+# This schema is versioned at 0.1.0-alpha. The following enhancements are
+# planned for future versions. See docs/declarative-configuration.md for details.
+#
+# -----------------------------------------------------------------------------
+# HIGH PRIORITY
+# -----------------------------------------------------------------------------
+#
+# 1. Policy Language Support for Check Output Evaluation
+#    - Add `policy` field to ExecPassConfig for CEL/Rego expressions
+#    - Support complex boolean conditions: `score >= 7.0 && checks.*.pass`
+#    - Candidates: CEL (Google), Rego (OPA), CUE, JSONPath extensions
+#    - See: passes.py _extract_json_path() for implementation location
+#
+# 2. External Template Files
+#    - Primary: Resolve file paths relative to framework TOML location
+#      Example: `file = "templates/security.md"` (relative to TOML)
+#    - Template inheritance/composition: `extends = "base_template"`
+#    - Future: Remote sources (https://, git://) with integrity checks
+#    - See: remediation/executor.py _get_template_content() for implementation
+#
+# 3. Schema Migration Tooling
+#    - CLI command: `darnit migrate-config old.toml`
+#    - Automatic schema version detection and upgrade
+#    - Validation warnings for deprecated fields
+#    - Generate migration diff before applying
+#
+# -----------------------------------------------------------------------------
+# MEDIUM PRIORITY
+# -----------------------------------------------------------------------------
+#
+# 4. Control Dependencies
+#    - Run control B only if control A passes
+#    - Example: `depends_on = ["OSPS-AC-01.01"]`
+#    - Skip dependent controls if prerequisite fails
+#    - Useful for: "has CI" before "CI runs tests"
+#
+# 5. Conditional Controls
+#    - Enable/disable controls based on project context
+#    - Example: `when = { has_releases = true }` or `when = { language = "python" }`
+#    - Auto-detect project type and apply relevant controls
+#
+# 6. Async/Parallel Check Execution
+#    - Run independent checks in parallel
+#    - Configurable concurrency limits
+#    - Progress reporting during long audits
+#    - Example in defaults: `parallel_checks = true, max_concurrency = 5`
+#
+# 7. Shared Execution Context (Batch Tool Runs)
+#    - Single tool run (e.g., Scorecard) serves multiple controls
+#    - Cache results with `cache_key` in adapter config
+#    - Extract per-control results with JSONPath
+#    - Already has TODOs in CheckConfig and CommandAdapterConfig
+#
+# -----------------------------------------------------------------------------
+# LOWER PRIORITY
+# -----------------------------------------------------------------------------
+#
+# 8. Rich Output Formats
+#    - HTML report generation with charts
+#    - PDF export for compliance documentation
+#    - GitHub Actions annotations format
+#    - GitLab CI report format
+#    - OSCAL (Open Security Controls Assessment Language) export
+#
+# 9. Control Versioning
+#    - Track control changes over time
+#    - Deprecation notices with migration guidance
+#    - Example: `deprecated = true, deprecated_by = "OSPS-AC-03.02"`
+#    - Sunset dates for removed controls
+#
+# 10. Custom Validation Functions
+#     - Register Python validators for complex checks
+#     - Example: `validator = "my_module:validate_sbom_completeness"`
+#     - Safer than full adapter, scoped to single control
+#
+# 11. Inheritance Between Frameworks
+#     - Extend base frameworks with custom controls
+#     - Example: `extends = "openssf-baseline"` at framework level
+#     - Override specific controls while inheriting others
+#
+# 12. Localization/i18n
+#     - Translatable control descriptions and messages
+#     - Example: `description.en = "...", description.es = "..."`
+#     - Or external translation files
+#
+# 13. Severity/Priority Scoring Improvements
+#     - Custom scoring algorithms
+#     - Risk-based prioritization
+#     - Business impact weighting
+#     - Example: `risk_score = { base = 7.0, exploitability = 0.8 }`
+#
+# =============================================================================
 """
 
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 # =============================================================================
@@ -249,12 +346,146 @@ class PassesConfig(BaseModel):
 
 
 # =============================================================================
+# Locator Configuration (Evidence Location)
+# =============================================================================
+
+
+class LocatorLLMHints(BaseModel):
+    """LLM hints for investigation fallback when file not found by discovery.
+
+    When deterministic discovery fails, these hints guide LLM investigation
+    to find the evidence in non-standard locations or formats.
+
+    Example:
+        ```toml
+        [controls."OSPS-VM-01.01".locator.llm_hints]
+        search_for = "security policy, vulnerability reporting, security contact"
+        check_files = ["README.md", "docs/index.md"]
+        look_for_urls = true
+        ```
+    """
+    # Keywords to search for in the codebase
+    search_for: Optional[str] = None
+
+    # Files to search within for references
+    check_files: List[str] = Field(default_factory=list)
+
+    # Whether to look for external URLs (e.g., docs.example.com/security)
+    look_for_urls: bool = False
+
+    model_config = ConfigDict(extra="allow")
+
+
+class LocatorConfig(BaseModel):
+    """Configuration for locating evidence for a control.
+
+    The locator defines how to find the artifact that satisfies a control:
+    1. First check .project/ reference (project_path)
+    2. Fall back to pattern discovery (discover)
+    3. If still not found, use LLM hints for investigation
+
+    Example:
+        ```toml
+        [controls."OSPS-VM-01.01".locator]
+        project_path = "security.policy"
+        discover = ["SECURITY.md", ".github/SECURITY.md", "docs/SECURITY.md"]
+        kind = "file"
+
+        [controls."OSPS-VM-01.01".locator.llm_hints]
+        search_for = "security policy, vulnerability reporting"
+        check_files = ["README.md"]
+        look_for_urls = true
+        ```
+    """
+    # .project/ field reference (e.g., "security.policy", "governance.contributing")
+    # Uses dot notation: section.field
+    project_path: Optional[str] = None
+
+    # Discovery patterns (fallback if not in .project/)
+    # Order matters: first match wins
+    discover: List[str] = Field(default_factory=list)
+
+    # Kind of evidence being located
+    # - file: Local file in repository
+    # - url: External URL (e.g., external docs site)
+    # - api: API endpoint or runtime configuration (e.g., branch protection)
+    # - config: Configuration in a config file
+    kind: str = "file"  # file | url | api | config
+
+    # LLM hints for investigation fallback
+    llm_hints: Optional[LocatorLLMHints] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class OutputMapping(BaseModel):
+    """Map external tool output to standardized CheckOutput contract.
+
+    When using external tools that produce their own output format,
+    this mapping extracts the relevant fields using JSONPath expressions.
+
+    Example:
+        ```toml
+        [controls."OSPS-AC-03.01".check.output_mapping]
+        status_path = "$.checks.BranchProtection.pass"
+        score_path = "$.checks.BranchProtection.score"
+        pass_threshold = 8
+        message_path = "$.checks.BranchProtection.reason"
+        found_path = "$.checks.BranchProtection.details.url"
+        ```
+    """
+    # JSONPath to extract pass/fail status (bool or "pass"/"fail" string)
+    status_path: Optional[str] = None
+
+    # JSONPath to extract numeric score (0-10 scale)
+    score_path: Optional[str] = None
+
+    # Score threshold for pass (when using score_path)
+    # If score >= pass_threshold, status = "pass"
+    pass_threshold: Optional[float] = None
+
+    # JSONPath to extract message/reason
+    message_path: Optional[str] = None
+
+    # JSONPath to extract found evidence location (file path or URL)
+    found_path: Optional[str] = None
+
+    # JSONPath to extract evidence kind (file, url, api, config)
+    found_kind_path: Optional[str] = None
+
+    # Default kind if not extractable
+    found_kind_default: str = "file"
+
+    model_config = ConfigDict(extra="allow")
+
+
+# =============================================================================
 # Check and Remediation Routing
 # =============================================================================
 
 
 class CheckConfig(BaseModel):
     """Configuration for how a control is checked.
+
+    Supports both builtin adapters and external tools with output mapping.
+
+    Example with builtin:
+        ```toml
+        [controls."OSPS-VM-01.01".check]
+        adapter = "builtin"
+        handler = "check_security_policy"
+        ```
+
+    Example with external tool and output mapping:
+        ```toml
+        [controls."OSPS-AC-03.01".check]
+        adapter = "scorecard"
+
+        [controls."OSPS-AC-03.01".check.output_mapping]
+        status_path = "$.checks.BranchProtection.pass"
+        score_path = "$.checks.BranchProtection.score"
+        pass_threshold = 8
+        ```
 
     # TODO: Add 'extract' field for shared tool result extraction
     # This would allow multiple controls to share a single tool run (e.g., Scorecard):
@@ -278,19 +509,179 @@ class CheckConfig(BaseModel):
     adapter: str = "builtin"  # Adapter name
     handler: Optional[str] = None  # Specific handler function
     config: Dict[str, Any] = Field(default_factory=dict)  # Adapter-specific config
+
+    # Output mapping for external tools
+    # Maps tool output to standardized CheckOutput contract
+    output_mapping: Optional[OutputMapping] = None
+
     # TODO: extract: Optional[str] = None  # JSONPath to extract from cached tool output
 
     model_config = ConfigDict(extra="allow")
 
 
 class RemediationConfig(BaseModel):
-    """Configuration for how a control is remediated."""
+    """Configuration for how a control is remediated.
+
+    Supports multiple remediation strategies that can be mixed:
+    - handler: Python function reference (legacy)
+    - file_create: Create a file from template
+    - exec: Execute external command
+    - api_call: Make GitHub API call
+    """
+    # Legacy Python handler reference
     adapter: str = "builtin"
     handler: Optional[str] = None  # e.g., "create_security_policy"
-    template: Optional[str] = None  # e.g., "standard", "minimal"
+
+    # Declarative remediation types
+    file_create: Optional["FileCreateRemediationConfig"] = None
+    exec: Optional["ExecRemediationConfig"] = None
+    api_call: Optional["ApiCallRemediationConfig"] = None
+
+    # Common settings
+    template: Optional[str] = None  # Template name reference
     safe: bool = True  # Safe to auto-apply without confirmation
     requires_api: bool = False  # Requires API access (GitHub, etc.)
+    requires_confirmation: bool = False  # Require user confirmation
+    dry_run_supported: bool = True  # Supports dry-run mode
     config: Dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(extra="allow")
+
+
+class FileCreateRemediationConfig(BaseModel):
+    """Configuration for file creation remediation.
+
+    Creates a file from a template with variable substitution.
+
+    Example:
+        ```toml
+        [controls."OSPS-VM-01.01".remediation.file_create]
+        path = "SECURITY.md"
+        template = "security_policy_standard"
+        overwrite = false
+        ```
+    """
+    # Target file path (relative to repo root)
+    path: str
+
+    # Template to use (references templates section)
+    template: Optional[str] = None
+
+    # Inline content (alternative to template)
+    content: Optional[str] = None
+
+    # Whether to overwrite existing files
+    overwrite: bool = False
+
+    # Create parent directories if needed
+    create_dirs: bool = True
+
+    model_config = ConfigDict(extra="allow")
+
+
+class ExecRemediationConfig(BaseModel):
+    """Configuration for command execution remediation.
+
+    Executes an external command for remediation. Supports variable
+    substitution ($OWNER, $REPO, $BRANCH, $PATH).
+
+    Example:
+        ```toml
+        [controls."OSPS-AC-03.01".remediation.exec]
+        command = ["gh", "api", "-X", "PUT", "/repos/$OWNER/$REPO/branches/$BRANCH/protection"]
+        stdin_template = "branch_protection_payload"
+        success_exit_codes = [0]
+        ```
+    """
+    # Command as list (secure - no shell interpolation)
+    command: List[str]
+
+    # Template for stdin input (for API payloads)
+    stdin_template: Optional[str] = None
+
+    # Inline stdin content
+    stdin: Optional[str] = None
+
+    # Exit codes that indicate success
+    success_exit_codes: List[int] = Field(default_factory=lambda: [0])
+
+    # Timeout in seconds
+    timeout: int = 300
+
+    # Environment variables
+    env: Dict[str, str] = Field(default_factory=dict)
+
+    model_config = ConfigDict(extra="allow")
+
+
+class ApiCallRemediationConfig(BaseModel):
+    """Configuration for GitHub API call remediation.
+
+    Makes a GitHub API call using gh cli. This is a convenience wrapper
+    around ExecRemediationConfig specifically for GitHub API operations.
+
+    Example:
+        ```toml
+        [controls."OSPS-AC-03.01".remediation.api_call]
+        method = "PUT"
+        endpoint = "/repos/$OWNER/$REPO/branches/$BRANCH/protection"
+        payload_template = "branch_protection"
+        ```
+    """
+    # HTTP method
+    method: str = "PUT"
+
+    # API endpoint (supports variable substitution)
+    endpoint: str
+
+    # JSON payload template name
+    payload_template: Optional[str] = None
+
+    # Inline JSON payload
+    payload: Optional[Dict[str, Any]] = None
+
+    # JQ filter for response
+    jq_filter: Optional[str] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+# =============================================================================
+# Template Configuration
+# =============================================================================
+
+
+class TemplateConfig(BaseModel):
+    """Configuration for a reusable template.
+
+    Templates support variable substitution:
+    - $OWNER - Repository owner
+    - $REPO - Repository name
+    - $BRANCH - Default branch
+    - $YEAR - Current year
+    - $DATE - Current date (ISO format)
+    - $MAINTAINERS - List of maintainers (if detectable)
+
+    Example:
+        ```toml
+        [templates.security_policy_standard]
+        content = '''
+        # Security Policy
+
+        ## Reporting a Vulnerability
+
+        Please report security vulnerabilities to security@$OWNER.github.io
+        '''
+        ```
+    """
+    # Template content (inline)
+    content: Optional[str] = None
+
+    # Path to template file (alternative to inline)
+    file: Optional[str] = None
+
+    # Description of this template
+    description: Optional[str] = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -303,13 +694,20 @@ class RemediationConfig(BaseModel):
 class ControlConfig(BaseModel):
     """Configuration for a single compliance control.
 
+    Level, domain, and security_severity are optional to support frameworks
+    that don't use maturity levels or severity scoring. Use the tags dict
+    for flexible key-value metadata that can be filtered uniformly.
+
     Example:
         ```toml
         [controls."OSPS-AC-03.01"]
         name = "PreventDirectCommits"
-        level = 1
-        domain = "AC"
         description = "Prevent direct commits to primary branch"
+        tags = { level = 1, domain = "AC", severity = 8.0 }
+
+        [controls."OSPS-AC-03.01".locator]
+        project_path = "ci.branch_protection"
+        kind = "api"
 
         [controls."OSPS-AC-03.01".passes]
         deterministic = { api_check = "check_branch_protection" }
@@ -322,9 +720,17 @@ class ControlConfig(BaseModel):
     """
     # Required fields
     name: str
-    level: int  # 1, 2, or 3
-    domain: str  # AC, BR, DO, GV, LE, QA, SA, VM
     description: str
+
+    # Optional framework-specific fields (for backward compatibility)
+    # These are also copied into tags dict for uniform filtering
+    level: Optional[int] = None  # Maturity level (1, 2, 3) - None if framework doesn't use levels
+    domain: Optional[str] = None  # Domain code (e.g., "AC", "VM") - None if not applicable
+    security_severity: Optional[float] = None  # 0.0-10.0 CVSS-like - None if not applicable
+
+    # Evidence location configuration
+    # Defines where to find the artifact that satisfies this control
+    locator: Optional[LocatorConfig] = None
 
     # Verification passes
     passes: Optional[PassesConfig] = None
@@ -335,14 +741,30 @@ class ControlConfig(BaseModel):
     # Remediation routing
     remediation: Optional[RemediationConfig] = None
 
-    # Metadata
-    tags: List[str] = Field(default_factory=list)
-    security_severity: Optional[float] = None  # 0.0-10.0 CVSS-like
+    # Flexible key-value tags for filtering and metadata
+    # Can include any attributes: level, domain, severity, category, priority, etc.
+    # For backward compatibility, also accepts List[str] which converts to Dict[str, bool]
+    tags: Dict[str, Any] = Field(default_factory=dict)
     help_md: Optional[str] = None  # Inline markdown help
     help_file: Optional[str] = None  # Path to help markdown file
     docs_url: Optional[str] = None  # Link to external docs
 
     model_config = ConfigDict(extra="allow")
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def convert_tags_list_to_dict(cls, v: Any) -> Dict[str, Any]:
+        """Convert List[str] tags to Dict[str, bool] for backward compatibility.
+
+        Allows both formats:
+            tags = ["access-control", "auth"]  # Old format -> {"access-control": True, "auth": True}
+            tags = { level = 1, category = "auth" }  # New format (preferred)
+        """
+        if isinstance(v, list):
+            return {tag: True for tag in v}
+        if v is None:
+            return {}
+        return v
 
 
 # =============================================================================
@@ -364,10 +786,22 @@ class FrameworkDefaults(BaseModel):
 
 
 class FrameworkMetadata(BaseModel):
-    """Metadata for the compliance framework."""
+    """Metadata for the compliance framework.
+
+    The schema_version field indicates the TOML configuration format version,
+    separate from the framework's own version. This allows the darnit system
+    to handle schema migrations and provide appropriate warnings when the
+    configuration format is evolving.
+
+    Current schema version: 0.1.0-alpha
+    - This indicates the TOML schema is in early development
+    - Breaking changes may occur between minor versions
+    - Framework authors should expect to update their TOML files
+    """
     name: str  # e.g., "openssf-baseline"
     display_name: str  # e.g., "OpenSSF Baseline"
     version: str  # e.g., "0.1.0"
+    schema_version: str = "0.1.0-alpha"  # TOML config format version
     spec_version: Optional[str] = None  # e.g., "OSPS v2025.10.10"
     description: Optional[str] = None
     url: Optional[str] = None  # Link to spec
@@ -400,6 +834,12 @@ class FrameworkConfig(BaseModel):
         type = "python"
         module = "darnit_baseline.adapters.builtin"
 
+        [templates.security_policy]
+        content = '''
+        # Security Policy
+        ...
+        '''
+
         [controls."OSPS-AC-03.01"]
         name = "PreventDirectCommits"
         level = 1
@@ -416,6 +856,9 @@ class FrameworkConfig(BaseModel):
     # Adapter definitions
     adapters: Dict[str, AdapterConfig] = Field(default_factory=dict)
 
+    # Template definitions for remediation
+    templates: Dict[str, TemplateConfig] = Field(default_factory=dict)
+
     # Control definitions
     controls: Dict[str, ControlConfig] = Field(default_factory=dict)
 
@@ -429,7 +872,10 @@ class FrameworkConfig(BaseModel):
     # =========================================================================
 
     def get_controls_by_level(self, level: int) -> Dict[str, ControlConfig]:
-        """Get all controls at a specific maturity level."""
+        """Get all controls at a specific maturity level.
+
+        Note: Controls without a level (level=None) are not included.
+        """
         return {
             control_id: control
             for control_id, control in self.controls.items()
@@ -437,7 +883,10 @@ class FrameworkConfig(BaseModel):
         }
 
     def get_controls_by_domain(self, domain: str) -> Dict[str, ControlConfig]:
-        """Get all controls in a specific domain."""
+        """Get all controls in a specific domain.
+
+        Note: Controls without a domain (domain=None) are not included.
+        """
         return {
             control_id: control
             for control_id, control in self.controls.items()

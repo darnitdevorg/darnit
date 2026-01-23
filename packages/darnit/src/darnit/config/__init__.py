@@ -78,6 +78,12 @@ from .discovery import (
     sync_discovered_to_config,
 )
 
+from .resolver import (
+    resolve_file_for_control,
+    update_config_after_file_create,
+    sync_discovered_file_to_config,
+)
+
 # Framework and user configuration schemas
 from .framework_schema import (
     FrameworkConfig,
@@ -94,6 +100,10 @@ from .framework_schema import (
     ManualPassConfig,
     AdapterType,
     PassPhase,
+    # Locator configuration (evidence location)
+    LocatorConfig,
+    LocatorLLMHints,
+    OutputMapping,
 )
 
 from .user_schema import (
@@ -209,6 +219,10 @@ __all__ = [
     "discover_ci_config",
     "discover_project_name",
     "sync_discovered_to_config",
+    # Config-aware resolver
+    "resolve_file_for_control",
+    "update_config_after_file_create",
+    "sync_discovered_file_to_config",
     # Legacy (deprecated)
     "ReferenceStatus",
     "ResourceReference",
@@ -228,6 +242,10 @@ __all__ = [
     "ManualPassConfig",
     "AdapterType",
     "PassPhase",
+    # Locator configuration (evidence location)
+    "LocatorConfig",
+    "LocatorLLMHints",
+    "OutputMapping",
     # User configuration schema
     "UserConfig",
     "UserSettings",

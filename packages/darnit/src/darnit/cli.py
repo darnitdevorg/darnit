@@ -2,35 +2,26 @@
 
 A Terraform-like CLI for running compliance audits against repositories.
 
+IMPORTANT: This CLI is primarily intended for debugging and development.
+For production use, run darnit as an MCP server which enables full LLM
+consultation capabilities for intelligent check analysis.
+
 Usage:
-    darnit audit [OPTIONS] [REPO_PATH]
-    darnit plan [OPTIONS] [REPO_PATH]
-    darnit validate [OPTIONS] FRAMEWORK_PATH
-    darnit init [OPTIONS] [REPO_PATH]
-    darnit list [OPTIONS]
-    darnit serve [OPTIONS]
+    darnit serve [OPTIONS]              # Start MCP server (RECOMMENDED)
+    darnit audit [OPTIONS] [REPO_PATH]  # Debug: Run audit without LLM
+    darnit plan [OPTIONS] [REPO_PATH]   # Debug: Show execution plan
+    darnit validate [OPTIONS] PATH      # Validate framework config
+    darnit init [OPTIONS] [REPO_PATH]   # Initialize .baseline.toml
+    darnit list [OPTIONS]               # List available frameworks
 
 Examples:
-    # Audit a repository against OpenSSF Baseline
-    darnit audit /path/to/repo
-
-    # Audit with a custom framework
-    darnit audit --framework ./my-framework.toml /path/to/repo
-
-    # Show what would be checked (dry-run)
-    darnit plan /path/to/repo
-
-    # Validate a framework definition
-    darnit validate ./my-framework.toml
-
-    # Initialize a .baseline.toml file
-    darnit init /path/to/repo
-
-    # List available frameworks
-    darnit list
-
-    # Start the MCP server
+    # Start the MCP server (recommended for production)
     darnit serve
+    darnit serve --framework openssf-baseline
+
+    # Debug/development commands (no LLM consultation)
+    darnit audit /path/to/repo
+    darnit plan --tags level=1 /path/to/repo
 """
 
 import argparse
@@ -132,7 +123,12 @@ def format_results_json(results: List[dict], framework_name: str) -> str:
 
 
 def cmd_audit(args: argparse.Namespace) -> int:
-    """Run compliance audit against a repository."""
+    """Run compliance audit against a repository.
+
+    NOTE: This command runs without LLM consultation. Checks requiring
+    LLM analysis will return WARN/inconclusive. For full capabilities,
+    use 'darnit serve' and connect via MCP.
+    """
     from darnit.config import (
         load_effective_config,
         load_effective_config_by_name,
@@ -140,6 +136,13 @@ def cmd_audit(args: argparse.Namespace) -> int:
         load_controls_from_effective,
     )
     from darnit.sieve import SieveOrchestrator, CheckContext
+    from darnit.filtering import parse_tags_arg, filter_controls
+
+    # Warn about limited functionality in terminal mode
+    logger.warning(
+        "Running in terminal mode (no LLM consultation). "
+        "For full capabilities, use 'darnit serve' with an MCP client."
+    )
 
     repo_path = Path(args.repo_path).resolve()
     if not repo_path.exists():
@@ -170,9 +173,15 @@ def cmd_audit(args: argparse.Namespace) -> int:
         logger.warning("No controls loaded from configuration")
         return 0
 
-    # Filter by level if specified
-    if args.level:
-        controls = [c for c in controls if c.level <= args.level]
+    # Build filters from --tags
+    filters = parse_tags_arg(args.tags) if args.tags else []
+
+    # Parse include/exclude lists
+    include_ids = set(args.include.split(",")) if args.include else None
+    exclude_ids = set(args.exclude.split(",")) if args.exclude else set()
+
+    # Apply filters
+    controls = filter_controls(controls, filters, include_ids, exclude_ids)
 
     logger.info(f"Auditing {repo_path} with {len(controls)} controls")
 
@@ -212,12 +221,17 @@ def cmd_audit(args: argparse.Namespace) -> int:
 
 
 def cmd_plan(args: argparse.Namespace) -> int:
-    """Show what would be checked (dry-run)."""
+    """Show what would be checked (dry-run).
+
+    NOTE: This is a debug/development command. For production use,
+    run 'darnit serve' and connect via MCP.
+    """
     from darnit.config import (
         load_effective_config_auto,
         load_effective_config,
         load_effective_config_by_name,
     )
+    from darnit.filtering import parse_tags_arg, matches_filters
 
     repo_path = Path(args.repo_path).resolve()
 
@@ -235,11 +249,24 @@ def cmd_plan(args: argparse.Namespace) -> int:
         logger.error(f"Failed to load framework: {e}")
         return 1
 
+    # Build filters from --tags
+    filters = parse_tags_arg(args.tags) if args.tags else []
+
+    # Parse include/exclude lists
+    include_ids = set(args.include.split(",")) if args.include else None
+    exclude_ids = set(args.exclude.split(",")) if args.exclude else set()
+
     print(f"\n=== Execution Plan: {config.framework_name} ===\n")
     print(f"Framework: {config.framework_name} v{config.framework_version}")
     if config.spec_version:
         print(f"Spec: {config.spec_version}")
     print(f"Repository: {repo_path}")
+    if filters:
+        print(f"Filters: {', '.join(f'{f.field}{f.operator}{f.value}' for f in filters)}")
+    if include_ids:
+        print(f"Include: {', '.join(sorted(include_ids))}")
+    if exclude_ids:
+        print(f"Exclude: {', '.join(sorted(exclude_ids))}")
     print()
 
     # Group controls by level
@@ -248,19 +275,42 @@ def cmd_plan(args: argparse.Namespace) -> int:
         level = ctrl.level
         by_level.setdefault(level, []).append((cid, ctrl))
 
+    total_shown = 0
+    total_filtered = 0
+
     for level in sorted(by_level.keys()):
-        if args.level and level > args.level:
+        controls = by_level[level]
+        shown_controls = []
+
+        for cid, ctrl in sorted(controls, key=lambda x: x[0]):
+            # Apply include/exclude lists
+            if include_ids and cid not in include_ids:
+                total_filtered += 1
+                continue
+            if cid in exclude_ids:
+                total_filtered += 1
+                continue
+            # Apply filters
+            if not matches_filters(ctrl, filters):
+                total_filtered += 1
+                continue
+            shown_controls.append((cid, ctrl))
+
+        if not shown_controls:
             continue
 
-        controls = by_level[level]
-        print(f"Level {level} ({len(controls)} controls):")
-        for cid, ctrl in sorted(controls, key=lambda x: x[0]):
+        print(f"Level {level} ({len(shown_controls)} controls):")
+        for cid, ctrl in shown_controls:
             if ctrl.is_applicable():
                 adapter = ctrl.check_adapter
                 print(f"  • {cid}: {ctrl.name} [adapter: {adapter}]")
             else:
                 print(f"  - {cid}: {ctrl.name} [skipped: {ctrl.status_reason}]")
         print()
+        total_shown += len(shown_controls)
+
+    if total_filtered > 0:
+        print(f"({total_filtered} controls filtered out)")
 
     # Show excluded controls
     excluded = config.get_excluded_controls()
@@ -379,16 +429,66 @@ def cmd_list(args: argparse.Namespace) -> int:
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
-    """Start the MCP server."""
-    # Import and run the MCP server
+    """Start the MCP server.
+
+    Supports two modes:
+    1. With config file: `darnit serve config.toml` - Uses TOML-defined tools
+    2. Without config: `darnit serve` - Auto-detects framework (legacy mode)
+    """
+    import os
+
     try:
         from darnit.server import create_server
-        server = create_server()
-        server.run()
-        return 0
     except ImportError:
         logger.error("MCP server dependencies not installed. Run: pip install mcp")
         return 1
+
+    config_path = getattr(args, "config", None)
+
+    if config_path:
+        # New mode: Use TOML config file
+        if not os.path.exists(config_path):
+            logger.error(f"Config file not found: {config_path}")
+            return 1
+
+        try:
+            server = create_server(config_path)
+            logger.info(f"Starting MCP server from {config_path}")
+            server.run()
+            return 0
+        except Exception as e:
+            logger.error(f"Failed to create server: {e}")
+            return 1
+    else:
+        # Legacy mode: Auto-detect framework
+        # For now, try to find a framework config
+        from darnit.config import list_available_frameworks, resolve_framework_path
+
+        framework_name = getattr(args, "framework", None)
+        if not framework_name:
+            frameworks = list_available_frameworks()
+            if frameworks:
+                framework_name = frameworks[0]  # Default to first available
+            else:
+                logger.error(
+                    "No framework specified and none found. "
+                    "Use 'darnit serve config.toml' or install a framework package."
+                )
+                return 1
+
+        # Get framework path and use it as config
+        try:
+            framework_path = resolve_framework_path(framework_name)
+            if not framework_path:
+                logger.error(f"Framework not found: {framework_name}")
+                return 1
+            server = create_server(str(framework_path))
+            logger.info(f"Starting MCP server with framework: {framework_name}")
+            server.run()
+            return 0
+        except Exception as e:
+            logger.error(f"Failed to start server with framework '{framework_name}': {e}")
+            return 1
 
 
 # =============================================================================
@@ -471,8 +571,37 @@ def create_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command", help="Commands")
 
-    # audit command
-    audit_parser = subparsers.add_parser("audit", help="Run compliance audit")
+    # serve command (primary - listed first)
+    serve_parser = subparsers.add_parser(
+        "serve",
+        help="Start MCP server (recommended)",
+        description="Start darnit as an MCP server. This is the recommended way to use darnit "
+                    "as it enables full LLM consultation capabilities for intelligent analysis.\n\n"
+                    "Usage:\n"
+                    "  darnit serve config.toml      # Use TOML config file\n"
+                    "  darnit serve --framework NAME # Use named framework\n"
+                    "  darnit serve                  # Auto-detect framework",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    serve_parser.add_argument(
+        "config",
+        nargs="?",
+        help="Path to TOML config file (e.g., openssf-baseline.toml)",
+    )
+    serve_parser.add_argument(
+        "-f", "--framework",
+        help="Framework to use (default: auto-detect). Ignored if config file is provided.",
+    )
+    serve_parser.set_defaults(func=cmd_serve)
+
+    # audit command (debug)
+    audit_parser = subparsers.add_parser(
+        "audit",
+        help="[Debug] Run audit without LLM",
+        description="Run compliance audit in terminal mode. NOTE: This runs without LLM "
+                    "consultation - checks requiring analysis will return WARN/inconclusive. "
+                    "For full capabilities, use 'darnit serve' with an MCP client.",
+    )
     audit_parser.add_argument(
         "repo_path",
         nargs="?",
@@ -484,10 +613,19 @@ def create_parser() -> argparse.ArgumentParser:
         help="Framework to use (name or path to .toml file)",
     )
     audit_parser.add_argument(
-        "-l", "--level",
-        type=int,
-        choices=[1, 2, 3],
-        help="Maximum level to check (default: all)",
+        "-t", "--tags",
+        action="append",
+        default=[],
+        help="Filter controls by attributes (e.g., level=1, domain=VM, security). "
+             "Multiple filters use AND logic. Bare values match tags list.",
+    )
+    audit_parser.add_argument(
+        "--include",
+        help="Include only these control IDs (comma-separated)",
+    )
+    audit_parser.add_argument(
+        "--exclude",
+        help="Exclude these control IDs (comma-separated)",
     )
     audit_parser.add_argument(
         "-o", "--output",
@@ -502,8 +640,12 @@ def create_parser() -> argparse.ArgumentParser:
     )
     audit_parser.set_defaults(func=cmd_audit)
 
-    # plan command
-    plan_parser = subparsers.add_parser("plan", help="Show execution plan")
+    # plan command (debug)
+    plan_parser = subparsers.add_parser(
+        "plan",
+        help="[Debug] Show execution plan",
+        description="Show what controls would be checked. This is a debug/development command.",
+    )
     plan_parser.add_argument(
         "repo_path",
         nargs="?",
@@ -515,10 +657,19 @@ def create_parser() -> argparse.ArgumentParser:
         help="Framework to use",
     )
     plan_parser.add_argument(
-        "-l", "--level",
-        type=int,
-        choices=[1, 2, 3],
-        help="Maximum level to show",
+        "-t", "--tags",
+        action="append",
+        default=[],
+        help="Filter controls by attributes (e.g., level=1, domain=VM, security). "
+             "Multiple filters use AND logic. Bare values match tags list.",
+    )
+    plan_parser.add_argument(
+        "--include",
+        help="Include only these control IDs (comma-separated)",
+    )
+    plan_parser.add_argument(
+        "--exclude",
+        help="Exclude these control IDs (comma-separated)",
     )
     plan_parser.set_defaults(func=cmd_plan)
 
@@ -552,10 +703,6 @@ def create_parser() -> argparse.ArgumentParser:
     # list command
     list_parser = subparsers.add_parser("list", help="List available frameworks")
     list_parser.set_defaults(func=cmd_list)
-
-    # serve command
-    serve_parser = subparsers.add_parser("serve", help="Start MCP server")
-    serve_parser.set_defaults(func=cmd_serve)
 
     return parser
 

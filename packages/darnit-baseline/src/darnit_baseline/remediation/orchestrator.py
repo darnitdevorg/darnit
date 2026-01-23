@@ -1,11 +1,13 @@
 """Remediation orchestrator for OpenSSF Baseline compliance.
 
 This module coordinates the application of multiple remediations
-based on audit findings.
+based on audit findings. It supports both declarative TOML-based
+remediations and legacy Python function remediations.
 """
 
 import inspect
 from datetime import datetime
+from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 
 from darnit.core.logging import get_logger
@@ -17,6 +19,8 @@ from darnit.core.utils import (
     get_git_ref,
 )
 from darnit.config.loader import load_project_config
+from darnit.config.framework_schema import FrameworkConfig, TemplateConfig
+from darnit.remediation.executor import RemediationExecutor, RemediationResult
 from darnit.tools import (
     prepare_audit,
     run_checks,
@@ -24,11 +28,89 @@ from darnit.tools import (
     calculate_compliance,
 )
 
+from darnit.sieve.project_context import is_control_applicable
+from darnit.config.resolver import update_config_after_file_create
+
 from .registry import REMEDIATION_REGISTRY, get_control_to_category_map
+from ..config.mappings import CONTROL_REFERENCE_MAPPING
 from .actions import create_security_policy, create_contributing_guide
 from darnit.remediation.github import enable_branch_protection
 
 logger = get_logger("remediation.orchestrator")
+
+
+# =============================================================================
+# Framework Loading
+# =============================================================================
+
+_cached_framework: Optional[FrameworkConfig] = None
+
+
+def _get_framework_config() -> Optional[FrameworkConfig]:
+    """Load the OpenSSF Baseline framework config from TOML.
+
+    Returns:
+        FrameworkConfig if loaded successfully, None otherwise
+    """
+    global _cached_framework
+    if _cached_framework is not None:
+        return _cached_framework
+
+    try:
+        import sys
+        if sys.version_info >= (3, 11):
+            import tomllib
+        else:
+            import tomli as tomllib
+
+        # Use the package's get_framework_path() function
+        from darnit_baseline import get_framework_path
+        toml_path = get_framework_path()
+
+        if not toml_path.exists():
+            logger.debug(f"Framework TOML not found at {toml_path}")
+            return None
+
+        with open(toml_path, "rb") as f:
+            data = tomllib.load(f)
+
+        _cached_framework = FrameworkConfig(**data)
+        logger.debug(f"Loaded framework config from {toml_path}")
+        return _cached_framework
+
+    except (OSError, IOError) as e:
+        logger.debug(f"Failed to load framework TOML: {e}")
+        return None
+    except (ValueError, TypeError, KeyError) as e:
+        logger.debug(f"Failed to parse framework TOML: {e}")
+        return None
+
+
+def _get_declarative_remediation(
+    control_id: str,
+) -> Tuple[Optional[Any], Optional[Dict[str, TemplateConfig]]]:
+    """Get declarative remediation config for a control.
+
+    Args:
+        control_id: The control ID (e.g., "OSPS-VM-02.01")
+
+    Returns:
+        Tuple of (RemediationConfig, templates_dict) or (None, None)
+    """
+    framework = _get_framework_config()
+    if not framework:
+        return None, None
+
+    control = framework.controls.get(control_id)
+    if not control or not control.remediation:
+        return None, None
+
+    # Check if this has a declarative remediation type
+    remediation = control.remediation
+    if remediation.file_create or remediation.exec or remediation.api_call:
+        return remediation, framework.templates
+
+    return None, None
 
 
 def _run_baseline_checks(
@@ -105,6 +187,10 @@ def _apply_remediation(
 ) -> Dict[str, Any]:
     """Apply a single remediation category.
 
+    This function first checks if controls are applicable (via .project.yaml),
+    then attempts to use declarative remediation from TOML,
+    and finally falls back to legacy Python functions.
+
     Args:
         category: Remediation category name
         local_path: Path to repository
@@ -123,6 +209,218 @@ def _apply_remediation(
         }
 
     info = REMEDIATION_REGISTRY[category]
+    controls = info["controls"]
+
+    # Check if any of the controls are applicable (respects .project.yaml overrides)
+    skipped_controls = []
+    applicable_controls = []
+    for control_id in controls:
+        applicable, reason = is_control_applicable(local_path, control_id)
+        if applicable:
+            applicable_controls.append(control_id)
+        else:
+            skipped_controls.append({"id": control_id, "reason": reason})
+            logger.debug(f"Control {control_id} skipped: {reason}")
+
+    # If all controls are skipped, return early
+    if not applicable_controls and skipped_controls:
+        return {
+            "category": category,
+            "status": "skipped",
+            "description": info["description"],
+            "controls": controls,
+            "skipped_controls": skipped_controls,
+            "message": f"All controls marked as N/A in .project.yaml",
+        }
+
+    # Try declarative remediation first (only for applicable controls)
+    for control_id in applicable_controls:
+        remediation_config, templates = _get_declarative_remediation(control_id)
+        if remediation_config:
+            result = _apply_declarative_remediation(
+                category=category,
+                control_id=control_id,
+                remediation_config=remediation_config,
+                templates=templates,
+                local_path=local_path,
+                owner=owner,
+                repo=repo,
+                dry_run=dry_run,
+                info=info,
+            )
+            # Add skipped controls info if any
+            if skipped_controls:
+                result["skipped_controls"] = skipped_controls
+            return result
+
+    # Fall back to legacy Python functions
+    result = _apply_legacy_remediation(
+        category=category,
+        local_path=local_path,
+        owner=owner,
+        repo=repo,
+        dry_run=dry_run,
+        info=info,
+    )
+    # Add skipped controls info if any
+    if skipped_controls:
+        result["skipped_controls"] = skipped_controls
+    return result
+
+
+def _apply_declarative_remediation(
+    category: str,
+    control_id: str,
+    remediation_config: Any,
+    templates: Optional[Dict[str, TemplateConfig]],
+    local_path: str,
+    owner: Optional[str],
+    repo: Optional[str],
+    dry_run: bool,
+    info: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Apply a declarative remediation from TOML config.
+
+    Args:
+        category: Remediation category name
+        control_id: The control ID being remediated
+        remediation_config: RemediationConfig from TOML
+        templates: Template definitions from framework
+        local_path: Path to repository
+        owner: GitHub owner/organization
+        repo: Repository name
+        dry_run: If True, only show what would be done
+        info: Category info from registry
+
+    Returns:
+        Dict with category, status, and result details
+    """
+    try:
+        # Create executor with templates
+        executor = RemediationExecutor(
+            local_path=local_path,
+            owner=owner,
+            repo=repo,
+            templates=templates or {},
+        )
+
+        # Execute the remediation
+        result = executor.execute(
+            control_id=control_id,
+            config=remediation_config,
+            dry_run=dry_run,
+        )
+
+        if dry_run:
+            return {
+                "category": category,
+                "status": "would_apply",
+                "description": info["description"],
+                "controls": info["controls"],
+                "remediation_type": result.remediation_type,
+                "details": result.details,
+                "requires_api": info.get("requires_api", False),
+                "declarative": True,
+            }
+
+        if result.success:
+            logger.info(f"Applied declarative remediation: {category} ({result.remediation_type})")
+
+            # Update .project/ config with reference to created file
+            config_updated = False
+            if result.remediation_type == "file_create":
+                created_path = result.details.get("path")
+                if created_path:
+                    config_updated = update_config_after_file_create(
+                        local_path=local_path,
+                        control_id=control_id,
+                        created_file_path=created_path,
+                        control_reference_mapping=CONTROL_REFERENCE_MAPPING,
+                    )
+                    if config_updated:
+                        logger.info(f"Updated .project/ with reference: {created_path}")
+
+            return {
+                "category": category,
+                "status": "applied",
+                "description": info["description"],
+                "controls": info["controls"],
+                "remediation_type": result.remediation_type,
+                "result": result.message,
+                "declarative": True,
+                "config_updated": config_updated,
+            }
+        else:
+            logger.error(f"Declarative remediation failed: {result.message}")
+            return {
+                "category": category,
+                "status": "error",
+                "description": info["description"],
+                "message": result.message,
+                "declarative": True,
+            }
+
+    except (RuntimeError, ValueError, TypeError, KeyError) as e:
+        logger.error(f"Declarative remediation {category} failed: {e}")
+        return {
+            "category": category,
+            "status": "error",
+            "description": info["description"],
+            "message": f"Declarative remediation error: {str(e)}",
+            "declarative": True,
+        }
+
+
+# Mapping from category to file path and primary control ID for config updates
+CATEGORY_FILE_MAPPING: Dict[str, Dict[str, str]] = {
+    "security_policy": {
+        "file": "SECURITY.md",
+        "control_id": "OSPS-VM-01.01",  # Primary control for security.policy
+    },
+    "contributing": {
+        "file": "CONTRIBUTING.md",
+        "control_id": "OSPS-GV-03.01",  # Maps to governance.contributing
+    },
+    "codeowners": {
+        "file": "CODEOWNERS",
+        "control_id": "OSPS-GV-04.01",  # Maps to governance.codeowners
+    },
+    "governance": {
+        "file": "GOVERNANCE.md",
+        "control_id": "OSPS-GV-01.01",  # Maps to governance.maintainers
+    },
+    "support_doc": {
+        "file": "SUPPORT.md",
+        "control_id": "OSPS-DO-03.01",  # Maps to documentation.support
+    },
+    "bug_report_template": {
+        "file": ".github/ISSUE_TEMPLATE/bug_report.md",
+        "control_id": "OSPS-DO-02.01",  # Maps to security.policy (issue template)
+    },
+}
+
+
+def _apply_legacy_remediation(
+    category: str,
+    local_path: str,
+    owner: Optional[str],
+    repo: Optional[str],
+    dry_run: bool,
+    info: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Apply a legacy Python function remediation.
+
+    Args:
+        category: Remediation category name
+        local_path: Path to repository
+        owner: GitHub owner/organization
+        repo: Repository name
+        dry_run: If True, only show what would be done
+        info: Category info from registry
+
+    Returns:
+        Dict with category, status, and result details
+    """
     func_name = info["function"]
 
     # Map function names to actual functions
@@ -148,7 +446,8 @@ def _apply_remediation(
             "description": info["description"],
             "controls": info["controls"],
             "function": func_name,
-            "requires_api": info["requires_api"]
+            "requires_api": info["requires_api"],
+            "declarative": False,
         }
 
     try:
@@ -165,13 +464,31 @@ def _apply_remediation(
 
         result = func(**kwargs)
 
-        logger.info(f"Applied remediation: {category}")
+        logger.info(f"Applied legacy remediation: {category}")
+
+        # Update .project/ config with reference to created file (for file-creating categories)
+        config_updated = False
+        file_mapping = CATEGORY_FILE_MAPPING.get(category)
+        if file_mapping:
+            created_path = file_mapping["file"]
+            control_id = file_mapping["control_id"]
+            config_updated = update_config_after_file_create(
+                local_path=local_path,
+                control_id=control_id,
+                created_file_path=created_path,
+                control_reference_mapping=CONTROL_REFERENCE_MAPPING,
+            )
+            if config_updated:
+                logger.info(f"Updated .project/ with reference: {created_path}")
+
         return {
             "category": category,
             "status": "applied",
             "description": info["description"],
             "controls": info["controls"],
-            "result": result[:500] if len(result) > 500 else result
+            "result": result[:500] if len(result) > 500 else result,
+            "declarative": False,
+            "config_updated": config_updated,
         }
     except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, IOError, OSError) as e:
         logger.error(f"Remediation {category} failed: {e}")
@@ -179,7 +496,8 @@ def _apply_remediation(
             "category": category,
             "status": "error",
             "description": info["description"],
-            "message": str(e)
+            "message": str(e),
+            "declarative": False,
         }
 
 
@@ -289,6 +607,7 @@ def remediate_audit_findings(
 
     applied = [r for r in results if r.get("status") == "applied"]
     would_apply = [r for r in results if r.get("status") == "would_apply"]
+    skipped = [r for r in results if r.get("status") == "skipped"]
     errors = [r for r in results if r.get("status") == "error"]
 
     if dry_run:
@@ -297,10 +616,20 @@ def remediate_audit_findings(
         for r in would_apply:
             controls_str = ", ".join(r.get("controls", []))
             api_note = " *(requires GitHub API)*" if r.get("requires_api") else ""
-            md.append(f"### {r['category']}{api_note}")
+            declarative_note = " *(declarative)*" if r.get("declarative") else ""
+            md.append(f"### {r['category']}{api_note}{declarative_note}")
             md.append(f"- **Description:** {r.get('description', 'N/A')}")
             md.append(f"- **Controls:** {controls_str}")
-            md.append(f"- **Function:** `{r.get('function', 'N/A')}()`")
+            if r.get("remediation_type"):
+                md.append(f"- **Type:** {r.get('remediation_type')}")
+            elif r.get("function"):
+                md.append(f"- **Function:** `{r.get('function', 'N/A')}()`")
+            # Show skipped controls if any
+            if r.get("skipped_controls"):
+                skipped_info = ", ".join(
+                    f"{s['id']} ({s['reason']})" for s in r["skipped_controls"]
+                )
+                md.append(f"- **Skipped (N/A):** {skipped_info}")
             md.append("")
 
         md.append("---")
@@ -320,10 +649,34 @@ def remediate_audit_findings(
             md.append("")
             for r in applied:
                 controls_str = ", ".join(r.get("controls", []))
-                md.append(f"### {r['category']}")
+                declarative_note = " *(declarative)*" if r.get("declarative") else ""
+                md.append(f"### {r['category']}{declarative_note}")
                 md.append(f"- **Description:** {r.get('description', 'N/A')}")
                 md.append(f"- **Controls fixed:** {controls_str}")
+                # Show skipped controls if any
+                if r.get("skipped_controls"):
+                    skipped_info = ", ".join(
+                        f"{s['id']} ({s['reason']})" for s in r["skipped_controls"]
+                    )
+                    md.append(f"- **Skipped (N/A):** {skipped_info}")
                 md.append("")
+
+    # Show categories skipped due to .project.yaml overrides
+    if skipped:
+        md.append(f"## ⏭️ Skipped ({len(skipped)} categories)")
+        md.append("")
+        md.append("The following categories were skipped because all their controls")
+        md.append("are marked as N/A in `.project.yaml`:")
+        md.append("")
+        for r in skipped:
+            controls_str = ", ".join(r.get("controls", []))
+            md.append(f"### {r['category']}")
+            md.append(f"- **Description:** {r.get('description', 'N/A')}")
+            md.append(f"- **Controls:** {controls_str}")
+            if r.get("skipped_controls"):
+                for s in r["skipped_controls"]:
+                    md.append(f"  - `{s['id']}`: {s['reason']}")
+            md.append("")
 
     if errors:
         md.append(f"## ❌ Errors ({len(errors)})")

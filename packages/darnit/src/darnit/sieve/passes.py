@@ -78,12 +78,77 @@ class DeterministicPass:
     api_check: Optional[Callable[[str, str], PassResult]] = None
     config_check: Optional[Callable[[CheckContext], PassResult]] = None
 
+    def _locate_file_with_locator(self, context: CheckContext) -> tuple[Optional[str], str, bool]:
+        """Try to locate file using UnifiedLocator if available.
+
+        Returns:
+            Tuple of (found_path, source, should_sync)
+            - found_path: Path to file if found, None otherwise
+            - source: "config", "discovered", "fallback", or "none"
+            - should_sync: Whether to sync the discovery to .project/
+        """
+        # If locator is available and configured, use it
+        if context.locator and context.locator_config:
+            result = context.locator.locate(context.control_id, context.locator_config)
+
+            if result.success and result.found and result.found.path:
+                # Store locate result in gathered_evidence for later passes
+                context.gathered_evidence["locate_result"] = {
+                    "path": result.found.path,
+                    "source": result.source,
+                    "searched": result.searched_locations,
+                }
+
+                # Auto-sync if recommended
+                if result.needs_sync:
+                    try:
+                        context.locator.sync_to_project(
+                            context.control_id,
+                            result.found,
+                            context.locator_config,
+                        )
+                        logger.debug(f"Auto-synced {result.found.path} to .project/")
+                    except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, IOError, OSError) as e:
+                        logger.warning(f"Failed to sync to .project/: {e}")
+
+                return os.path.join(context.local_path, result.found.path), result.source, result.needs_sync
+
+            # Locator didn't find it, store that info
+            context.gathered_evidence["locate_result"] = {
+                "path": None,
+                "source": "none",
+                "searched": result.searched_locations,
+            }
+
+            return None, "none", False
+
+        # No locator, return indicator to use fallback
+        return None, "fallback", False
+
     def execute(self, context: CheckContext) -> PassResult:
         checks_performed = []
 
         # File existence checks
         if self.file_must_exist:
             checks_performed.append(f"file_exists({self.file_must_exist})")
+
+            # Try locator first
+            located_path, source, _ = self._locate_file_with_locator(context)
+
+            if source not in ("fallback", "none") and located_path:
+                # Found via locator
+                return PassResult(
+                    phase=self.phase,
+                    outcome=PassOutcome.PASS,
+                    message=f"Required file found via {source}: {os.path.basename(located_path)}",
+                    evidence={
+                        "file_found": located_path,
+                        "locate_source": source,
+                        "files_checked": self.file_must_exist,
+                    },
+                )
+
+            # Fall back to direct pattern search
             found = _file_exists(context.local_path, *self.file_must_exist)
             if found:
                 return PassResult(
@@ -571,6 +636,42 @@ class ExecPass:
 
         Returns:
             Extracted value or None if not found
+
+        # TODO: Policy Language Support (Future Enhancement)
+        # =================================================
+        # The current JSON evaluation is intentionally simple. Future versions
+        # should support more expressive policy languages for complex conditions.
+        #
+        # Candidates to evaluate:
+        #
+        # 1. CEL (Common Expression Language) - Google's expression language
+        #    - Used by Kubernetes, Firebase, GCP IAM
+        #    - Good for boolean expressions with type safety
+        #    - Example: `data.score >= 7.0 && data.checks.BranchProtection.pass`
+        #    - Python: cel-python or py-cel
+        #
+        # 2. CUE - Configuration language with validation
+        #    - Strong typing and constraints
+        #    - Example: `score: >=7.0, checks: BranchProtection: pass: true`
+        #    - Python: cuelang bindings (limited)
+        #
+        # 3. Rego (OPA) - Open Policy Agent's policy language
+        #    - Widely used for policy-as-code
+        #    - Example: `allow { input.score >= 7; input.checks.BranchProtection.pass }`
+        #    - Python: opa-python or subprocess to opa
+        #
+        # 4. JSONPath with extensions
+        #    - Familiar syntax, widely supported
+        #    - Example: `$.checks[?(@.score >= 7)]`
+        #    - Python: jsonpath-ng
+        #
+        # Recommended approach:
+        # - Add `policy` field to ExecPassConfig for CEL/Rego expressions
+        # - Keep simple pass_if_json_path/pass_if_json_value for basic cases
+        # - Evaluate CEL first (most portable, good tooling)
+        # - Consider OPA/Rego for complex policy scenarios
+        #
+        # See: docs/declarative-configuration.md "Future Enhancements" section
         """
         parts = path.lstrip("$.").split(".")
         current = data

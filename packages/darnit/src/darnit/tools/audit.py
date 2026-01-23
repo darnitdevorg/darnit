@@ -480,6 +480,18 @@ def _run_sieve_checks(
     orchestrator = SieveOrchestrator(stop_on_llm=stop_on_llm)
     all_results = []
 
+    # Create UnifiedLocator for .project/-aware file resolution (Phase 6)
+    # This enables checks to use .project/ references and auto-sync discovered files
+    locator = None
+    try:
+        from darnit.locate import UnifiedLocator
+        locator = UnifiedLocator(local_path)
+        logger.debug("UnifiedLocator created for .project/ integration")
+    except ImportError:
+        logger.debug("UnifiedLocator not available, using direct file resolution")
+    except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, IOError, OSError) as e:
+        logger.warning(f"Failed to create UnifiedLocator: {e}")
+
     # Get all control specs for requested levels
     sieve_control_ids = set()
     for lvl in range(1, level + 1):
@@ -509,7 +521,7 @@ def _run_sieve_checks(
             # Use sieve for this control
             spec = registry.get(control_id)
             if spec:
-                # Create check context
+                # Create check context with locator integration
                 context = CheckContext(
                     owner=owner,
                     repo=repo,
@@ -521,6 +533,9 @@ def _run_sieve_checks(
                         "description": spec.description,
                         "full": spec.metadata.get("full", ""),
                     },
+                    # Phase 6: Pass locator and locator_config for .project/ integration
+                    locator=locator,
+                    locator_config=spec.locator_config,
                 )
 
                 # Run sieve verification

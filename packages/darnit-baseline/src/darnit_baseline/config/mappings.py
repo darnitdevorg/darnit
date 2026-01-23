@@ -60,14 +60,18 @@ PROJECT_TYPE_EXCLUSIONS: Dict[str, Set[str]] = {
 # Format: "section.field" - resolver will check both standard and extension sections
 CONTROL_REFERENCE_MAPPING: Dict[str, str] = {
     # Security (standard .project fields)
-    "OSPS-DO-02.01": "security.policy",           # SECURITY.md
+    # SECURITY.md addresses multiple controls (VM and DO domains)
+    "OSPS-VM-01.01": "security.policy",           # SECURITY.md - vulnerability reporting contact
+    "OSPS-VM-02.01": "security.policy",           # SECURITY.md - vulnerability reporting process
+    "OSPS-VM-03.01": "security.policy",           # SECURITY.md - response timeline
+    "OSPS-DO-02.01": "security.policy",           # SECURITY.md (documentation domain)
     "OSPS-SA-03.02": "security.threat_model",     # Threat model
 
-    # Security (extension fields)
-    "OSPS-VM-02.01": "security.advisories",       # Security advisories (extension)
-
     # Governance (standard .project fields)
-    "OSPS-DO-01.02": "governance.contributing",   # CONTRIBUTING.md
+    # CONTRIBUTING.md addresses multiple controls
+    "OSPS-GV-03.01": "governance.contributing",   # CONTRIBUTING.md - contribution guide exists
+    "OSPS-GV-03.02": "governance.contributing",   # CONTRIBUTING.md - development process documented
+    "OSPS-DO-01.02": "governance.contributing",   # CONTRIBUTING.md (documentation domain)
     "OSPS-GV-04.01": "governance.codeowners",     # CODEOWNERS
 
     # Governance (extension fields - to be upstreamed)

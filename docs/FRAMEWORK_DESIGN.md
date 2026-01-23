@@ -136,20 +136,32 @@ class ControlDefinition:
     """Definition of a single control/requirement within a standard."""
     id: str                              # e.g., "OSPS-AC-01.01", "SLSA-SOURCE-L2"
     standard: str                        # e.g., "osps", "slsa"
-    level: int                           # Maturity level (1-4)
-    domain: str                          # Category/domain within standard
     title: str                           # Short title
     description: str                     # Full description
     rationale: Optional[str] = None      # Why this matters
     verification: Optional[str] = None   # How to verify
     remediation_hint: Optional[str] = None
 
+    # Flexible tags dict - can include level, domain, security_severity, and custom tags
+    # Example: {"level": 1, "domain": "AC", "security_severity": 8.0, "access-control": True}
+    tags: Dict[str, Any] = field(default_factory=dict)
+
     # Metadata for cross-standard mapping
     related_controls: List[str] = field(default_factory=list)  # Cross-references
-    tags: List[str] = field(default_factory=list)
 
-    # SARIF integration
-    security_severity: float = 5.0       # 0.1-10.0 scale
+    # Convenience properties to extract common tags
+    @property
+    def level(self) -> int:
+        return self.tags.get("level", 1)
+
+    @property
+    def domain(self) -> str:
+        return self.tags.get("domain", "")
+
+    @property
+    def security_severity(self) -> float:
+        return self.tags.get("security_severity", 5.0)
+
     default_sarif_level: str = "warning" # error, warning, note, none
 
 
@@ -1086,56 +1098,46 @@ SLSA_CONTROLS = {
     "SLSA-BUILD-L1": ControlDefinition(
         id="SLSA-BUILD-L1",
         standard="slsa",
-        level=1,
-        domain="BUILD",
         title="Build - Level 1",
         description="Build process exists and produces provenance",
         verification="Check for build automation and basic provenance",
-        security_severity=7.0,
+        tags={"level": 1, "domain": "BUILD", "security_severity": 7.0, "build": True},
     ),
 
     # Level 2
     "SLSA-BUILD-L2": ControlDefinition(
         id="SLSA-BUILD-L2",
         standard="slsa",
-        level=2,
-        domain="BUILD",
         title="Build - Level 2",
         description="Build service generates authenticated provenance",
         verification="Verify provenance is signed by build service",
-        security_severity=8.0,
+        tags={"level": 2, "domain": "BUILD", "security_severity": 8.0, "build": True, "provenance": True},
     ),
     "SLSA-SOURCE-L2": ControlDefinition(
         id="SLSA-SOURCE-L2",
         standard="slsa",
-        level=2,
-        domain="SOURCE",
         title="Source - Level 2",
         description="Version controlled with verified history",
         verification="Check for version control and history retention",
-        security_severity=7.5,
+        tags={"level": 2, "domain": "SOURCE", "security_severity": 7.5, "source": True, "version-control": True},
     ),
 
     # Level 3
     "SLSA-BUILD-L3": ControlDefinition(
         id="SLSA-BUILD-L3",
         standard="slsa",
-        level=3,
-        domain="BUILD",
         title="Build - Level 3",
         description="Build on hardened, isolated build service",
         verification="Verify build service meets isolation requirements",
-        security_severity=9.0,
+        tags={"level": 3, "domain": "BUILD", "security_severity": 9.0, "build": True, "hardened": True},
     ),
     "SLSA-SOURCE-L3": ControlDefinition(
         id="SLSA-SOURCE-L3",
         standard="slsa",
-        level=3,
-        domain="SOURCE",
         title="Source - Level 3",
         description="Two-person review required for all changes",
         verification="Check for mandatory code review",
-        security_severity=8.5,
+        tags={"level": 3, "domain": "SOURCE", "security_severity": 8.5, "source": True, "code-review": True},
     ),
 
     # Level 4 (future)

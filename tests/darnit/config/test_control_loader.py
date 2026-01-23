@@ -225,7 +225,7 @@ class TestControlFromFramework:
             level=1,
             domain="AC",
             description="A test control",
-            tags=["test", "access-control"],
+            tags={"category": "test", "type": "access-control"},
             security_severity=8.0,  # Must be float
             docs_url="https://example.com/docs",
         )

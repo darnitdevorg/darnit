@@ -44,7 +44,7 @@ class TestMergeControl:
             level=1,
             domain="AC",
             description="Test description",
-            tags=["test"],
+            tags={"category": "test"},
         )
         defaults = FrameworkDefaults()
 

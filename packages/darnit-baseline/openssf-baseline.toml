@@ -8,6 +8,7 @@
 name = "openssf-baseline"
 display_name = "OpenSSF Baseline"
 version = "0.1.0"
+schema_version = "0.1.0-alpha"  # TOML config format version - expect breaking changes
 spec_version = "OSPS v2025.10.10"
 description = "OpenSSF Baseline security controls for open source projects"
 url = "https://baseline.openssf.org/"
@@ -17,13 +18,205 @@ check_adapter = "builtin"
 remediation_adapter = "builtin"
 
 # =============================================================================
-# Adapter Definitions
+# Templates for Remediation
 # =============================================================================
 
-[adapters.builtin]
-type = "python"
-module = "darnit_baseline.adapters.builtin"
-class = "BuiltinCheckAdapter"
+[templates.security_policy_standard]
+description = "Standard SECURITY.md template for vulnerability reporting"
+content = """# Security Policy
+
+## Supported Versions
+
+| Version | Supported          |
+| ------- | ------------------ |
+| latest  | :white_check_mark: |
+
+## Reporting a Vulnerability
+
+We take security vulnerabilities seriously. If you discover a security issue,
+please report it responsibly.
+
+### How to Report
+
+**Please do NOT report security vulnerabilities through public GitHub issues.**
+
+Instead, please report security vulnerabilities by:
+
+1. **GitHub Security Advisories**: Use the "Report a vulnerability" button in
+   the Security tab of this repository (preferred)
+2. **Email**: Send details to security@$OWNER.github.io
+
+### What to Include
+
+Please include as much of the following information as possible:
+
+- Type of issue (e.g., buffer overflow, SQL injection, cross-site scripting)
+- Full paths of source file(s) related to the issue
+- Location of the affected source code (tag/branch/commit or direct URL)
+- Step-by-step instructions to reproduce the issue
+- Proof-of-concept or exploit code (if possible)
+- Impact of the issue
+
+### Response Timeline
+
+- **Initial Response**: Within 48 hours
+- **Status Update**: Within 7 days
+- **Resolution Target**: Within 90 days (depending on severity)
+
+### Disclosure Policy
+
+- We will acknowledge receipt of your report
+- We will work with you to understand and resolve the issue
+- We will keep you informed of our progress
+- We will credit you in the security advisory (unless you prefer otherwise)
+
+## Security Updates
+
+Security updates will be released as patch versions and announced via:
+- GitHub Security Advisories
+- Release notes
+"""
+
+[templates.security_policy_minimal]
+description = "Minimal SECURITY.md template"
+content = """# Security Policy
+
+## Reporting a Vulnerability
+
+Please report security vulnerabilities by:
+- Using GitHub's "Report a vulnerability" feature in the Security tab
+- Or emailing security@$OWNER.github.io
+
+We will respond within 48 hours and work with you to resolve the issue.
+"""
+
+[templates.contributing_standard]
+description = "Standard CONTRIBUTING.md template"
+content = """# Contributing to $REPO
+
+Thank you for your interest in contributing! This document provides guidelines
+for contributing to this project.
+
+## Code of Conduct
+
+Please read and follow our Code of Conduct to keep our community approachable
+and respectable.
+
+## Getting Started
+
+1. Fork the repository
+2. Clone your fork: `git clone https://github.com/YOUR-USERNAME/$REPO.git`
+3. Create a branch: `git checkout -b feature/your-feature-name`
+4. Make your changes
+5. Run tests: `make test` (or equivalent)
+6. Commit your changes with a clear message
+7. Push to your fork: `git push origin feature/your-feature-name`
+8. Open a Pull Request
+
+## Pull Request Guidelines
+
+- Ensure your code follows the existing style
+- Include tests for new functionality
+- Update documentation as needed
+- Keep PRs focused on a single change
+- Write clear commit messages
+
+## Reporting Issues
+
+- Search existing issues before creating a new one
+- Use the issue templates when available
+- Provide as much context as possible
+
+## Development Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/$OWNER/$REPO.git
+cd $REPO
+
+# Install dependencies
+# (Add project-specific setup instructions here)
+```
+
+## Questions?
+
+Feel free to open an issue for any questions about contributing.
+"""
+
+[templates.bug_report_template]
+description = "GitHub issue template for bug reports"
+content = """---
+name: Bug Report
+about: Create a report to help us improve
+title: '[BUG] '
+labels: bug
+assignees: ''
+---
+
+## Describe the Bug
+A clear and concise description of what the bug is.
+
+## To Reproduce
+Steps to reproduce the behavior:
+1. Go to '...'
+2. Click on '...'
+3. See error
+
+## Expected Behavior
+A clear and concise description of what you expected to happen.
+
+## Actual Behavior
+What actually happened.
+
+## Screenshots
+If applicable, add screenshots to help explain your problem.
+
+## Environment
+- OS: [e.g., Ubuntu 22.04, macOS 14, Windows 11]
+- Version: [e.g., v1.2.3]
+- Other relevant info:
+
+## Additional Context
+Add any other context about the problem here.
+"""
+
+[templates.branch_protection_payload]
+description = "JSON payload for GitHub branch protection API"
+content = """
+{
+  "enforce_admins": true,
+  "required_pull_request_reviews": {
+    "required_approving_review_count": 1,
+    "dismiss_stale_reviews": true,
+    "require_code_owner_reviews": false
+  },
+  "required_status_checks": null,
+  "restrictions": null,
+  "required_linear_history": false,
+  "allow_force_pushes": false,
+  "allow_deletions": false
+}
+"""
+
+[templates.dependabot_config]
+description = "Dependabot configuration file"
+content = """version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+
+  # Add additional ecosystems as needed:
+  # - package-ecosystem: "npm"
+  #   directory: "/"
+  #   schedule:
+  #     interval: "weekly"
+  #   commit-message:
+  #     prefix: "deps"
+"""
 
 # =============================================================================
 # Level 1 Controls - Access Control (AC)
@@ -31,11 +224,8 @@ class = "BuiltinCheckAdapter"
 
 [controls."OSPS-AC-01.01"]
 name = "RequireMFA"
-level = 1
-domain = "AC"
 description = "Require multi-factor authentication for organization members"
-tags = ["access-control", "authentication"]
-security_severity = 8.0
+tags = { level = 1, domain = "AC", security_severity = 8.0, access-control = true, authentication = true }
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-AC-01.01"
 
 # ExecPass: Use gh CLI to check MFA requirement
@@ -56,10 +246,8 @@ steps = [
 
 [controls."OSPS-AC-02.01"]
 name = "AllowForking"
-level = 1
-domain = "AC"
 description = "Allow repository forking for public collaboration"
-tags = ["access-control", "collaboration"]
+tags = { level = 1, domain = "AC", access-control = true, collaboration = true }
 
 # ExecPass: Check if forking is allowed via GitHub API
 [controls."OSPS-AC-02.01".passes.exec]
@@ -79,11 +267,8 @@ steps = [
 
 [controls."OSPS-AC-03.01"]
 name = "PreventDirectCommits"
-level = 1
-domain = "AC"
 description = "Prevent direct commits to primary branch"
-tags = ["access-control", "branch-protection"]
-security_severity = 7.5
+tags = { level = 1, domain = "AC", security_severity = 7.5, access-control = true, branch-protection = true }
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-AC-03.01"
 
 # ExecPass: Use gh CLI to check branch protection
@@ -103,16 +288,21 @@ steps = [
 ]
 
 [controls."OSPS-AC-03.01".remediation]
-handler = "enable_branch_protection"
+handler = "enable_branch_protection"  # Legacy handler for fallback
 safe = true
 requires_api = true
+dry_run_supported = true
+
+# Declarative API call remediation
+[controls."OSPS-AC-03.01".remediation.api_call]
+method = "PUT"
+endpoint = "/repos/$OWNER/$REPO/branches/$BRANCH/protection"
+payload_template = "branch_protection_payload"
 
 [controls."OSPS-AC-03.02"]
 name = "PreventBranchDeletion"
-level = 1
-domain = "AC"
 description = "Prevent deletion of primary branch"
-tags = ["access-control", "branch-protection"]
+tags = { level = 1, domain = "AC", access-control = true, branch-protection = true }
 
 # ExecPass: Check if branch deletion is prevented via branch protection
 [controls."OSPS-AC-03.02".passes.exec]
@@ -137,11 +327,8 @@ steps = [
 
 [controls."OSPS-BR-01.01"]
 name = "SecureWorkflowInputs"
-level = 1
-domain = "BR"
 description = "Workflows handle untrusted inputs safely"
-tags = ["build", "security", "ci-cd"]
-security_severity = 8.5
+tags = { level = 1, domain = "BR", security_severity = 8.5, build = true, security = true, ci-cd = true }
 
 [controls."OSPS-BR-01.01".passes.pattern]
 files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
@@ -152,17 +339,13 @@ injection_risk = "\\$\\{\\{\\s*github\\.(event\\.issue|event\\.pull_request|head
 
 [controls."OSPS-BR-01.02"]
 name = "SecureBranchNames"
-level = 1
-domain = "BR"
 description = "Branch names are handled safely in workflows"
-tags = ["build", "security"]
+tags = { level = 1, domain = "BR", build = true, security = true }
 
 [controls."OSPS-BR-03.01"]
 name = "SecureRepositoryURL"
-level = 1
-domain = "BR"
 description = "Repository URL uses HTTPS"
-tags = ["build", "security"]
+tags = { level = 1, domain = "BR", build = true, security = true }
 
 # ExecPass: Verify repository URL uses HTTPS
 [controls."OSPS-BR-03.01".passes.exec]
@@ -181,10 +364,13 @@ steps = [
 
 [controls."OSPS-BR-07.01"]
 name = "GitignoreSecrets"
-level = 1
-domain = "BR"
 description = "Secret files are properly gitignored"
-tags = ["build", "secrets"]
+tags = { level = 1, domain = "BR", build = true, secrets = true }
+
+[controls."OSPS-BR-07.01".locator]
+project_path = "ci.gitignore"
+discover = [".gitignore"]
+kind = "file"
 
 [controls."OSPS-BR-07.01".passes]
 deterministic = { file_must_exist = [".gitignore"] }
@@ -202,10 +388,13 @@ key_files = "\\*\\.key|\\*\\.pem"
 
 [controls."OSPS-DO-01.01"]
 name = "HasReadme"
-level = 1
-domain = "DO"
 description = "Repository has a README file"
-tags = ["documentation"]
+tags = { level = 1, domain = "DO", documentation = true }
+
+[controls."OSPS-DO-01.01".locator]
+project_path = "documentation.readme"
+discover = ["README.md", "README.rst", "README.txt", "README", "readme.md"]
+kind = "file"
 
 [controls."OSPS-DO-01.01".passes]
 deterministic = { file_must_exist = [
@@ -218,10 +407,18 @@ deterministic = { file_must_exist = [
 
 [controls."OSPS-DO-02.01"]
 name = "BugReportingProcess"
-level = 1
-domain = "DO"
 description = "Document bug reporting process"
-tags = ["documentation", "issues"]
+tags = { level = 1, domain = "DO", documentation = true, issues = true }
+
+[controls."OSPS-DO-02.01".locator]
+project_path = "security.policy"
+discover = [".github/ISSUE_TEMPLATE/bug_report.md", ".github/ISSUE_TEMPLATE/bug_report.yml", ".github/ISSUE_TEMPLATE.md"]
+kind = "file"
+
+[controls."OSPS-DO-02.01".locator.llm_hints]
+search_for = "bug report, issue template, report bugs"
+check_files = ["README.md", "CONTRIBUTING.md"]
+look_for_urls = false
 
 [controls."OSPS-DO-02.01".passes.deterministic]
 file_must_exist = [".github/ISSUE_TEMPLATE/bug_report.md", ".github/ISSUE_TEMPLATE/bug_report.yml", ".github/ISSUE_TEMPLATE.md"]
@@ -233,8 +430,16 @@ files = ["README.md", "CONTRIBUTING.md"]
 bug_reporting = "(report|submit).*(bug|issue)"
 
 [controls."OSPS-DO-02.01".remediation]
-handler = "create_bug_report_template"
+handler = "create_bug_report_template"  # Legacy handler for fallback
 safe = true
+dry_run_supported = true
+
+# Declarative file creation remediation
+[controls."OSPS-DO-02.01".remediation.file_create]
+path = ".github/ISSUE_TEMPLATE/bug_report.md"
+template = "bug_report_template"
+overwrite = false
+create_dirs = true
 
 # =============================================================================
 # Level 1 Controls - Governance (GV)
@@ -242,10 +447,8 @@ safe = true
 
 [controls."OSPS-GV-02.01"]
 name = "PublicDiscussion"
-level = 1
-domain = "GV"
 description = "Enable public discussion mechanisms"
-tags = ["governance", "community"]
+tags = { level = 1, domain = "GV", governance = true, community = true }
 
 # ExecPass: Check if Issues or Discussions are enabled
 [controls."OSPS-GV-02.01".passes.exec]
@@ -264,10 +467,18 @@ steps = [
 
 [controls."OSPS-GV-03.01"]
 name = "HasContributing"
-level = 1
-domain = "GV"
 description = "Repository has contributing guidelines"
-tags = ["governance", "documentation"]
+tags = { level = 1, domain = "GV", governance = true, documentation = true }
+
+[controls."OSPS-GV-03.01".locator]
+project_path = "governance.contributing"
+discover = ["CONTRIBUTING.md", ".github/CONTRIBUTING.md", "docs/CONTRIBUTING.md"]
+kind = "file"
+
+[controls."OSPS-GV-03.01".locator.llm_hints]
+search_for = "contributing guidelines, contribution guide, how to contribute"
+check_files = ["README.md"]
+look_for_urls = false
 
 [controls."OSPS-GV-03.01".passes]
 deterministic = { file_must_exist = [
@@ -277,8 +488,16 @@ deterministic = { file_must_exist = [
 ]}
 
 [controls."OSPS-GV-03.01".remediation]
-handler = "create_contributing"
+handler = "create_contributing"  # Legacy handler for fallback
 safe = true
+dry_run_supported = true
+
+# Declarative file creation remediation
+[controls."OSPS-GV-03.01".remediation.file_create]
+path = "CONTRIBUTING.md"
+template = "contributing_standard"
+overwrite = false
+create_dirs = false
 
 # =============================================================================
 # Level 1 Controls - Legal (LE)
@@ -286,10 +505,13 @@ safe = true
 
 [controls."OSPS-LE-01.01"]
 name = "HasLicense"
-level = 1
-domain = "LE"
 description = "Repository has a license file"
-tags = ["legal", "license"]
+tags = { level = 1, domain = "LE", legal = true, license = true }
+
+[controls."OSPS-LE-01.01".locator]
+project_path = "legal.license"
+discover = ["LICENSE", "LICENSE.md", "LICENSE.txt", "COPYING"]
+kind = "file"
 
 [controls."OSPS-LE-01.01".passes]
 deterministic = { file_must_exist = [
@@ -301,10 +523,8 @@ deterministic = { file_must_exist = [
 
 [controls."OSPS-LE-02.01"]
 name = "OSIApprovedLicense"
-level = 1
-domain = "LE"
 description = "License is OSI-approved"
-tags = ["legal", "license"]
+tags = { level = 1, domain = "LE", legal = true, license = true }
 
 # ExecPass: Check if license is OSI-approved via GitHub's license detection
 [controls."OSPS-LE-02.01".passes.exec]
@@ -325,27 +545,26 @@ steps = [
 
 [controls."OSPS-LE-02.02"]
 name = "ReleaseLicense"
-level = 1
-domain = "LE"
 description = "Releases include license information"
-tags = ["legal", "license"]
+tags = { level = 1, domain = "LE", legal = true, license = true }
 
 [controls."OSPS-LE-03.01"]
 name = "LicenseInRepo"
-level = 1
-domain = "LE"
 description = "License file present in repository root"
-tags = ["legal", "license"]
+tags = { level = 1, domain = "LE", legal = true, license = true }
+
+[controls."OSPS-LE-03.01".locator]
+project_path = "legal.license"
+discover = ["LICENSE", "LICENSE.md", "COPYING"]
+kind = "file"
 
 [controls."OSPS-LE-03.01".passes]
 deterministic = { file_must_exist = ["LICENSE", "LICENSE.md", "COPYING"] }
 
 [controls."OSPS-LE-03.02"]
 name = "LicenseInReleases"
-level = 1
-domain = "LE"
 description = "License file included in releases"
-tags = ["legal", "license"]
+tags = { level = 1, domain = "LE", legal = true, license = true }
 
 # =============================================================================
 # Level 1 Controls - Quality Assurance (QA)
@@ -353,10 +572,8 @@ tags = ["legal", "license"]
 
 [controls."OSPS-QA-01.01"]
 name = "PublicRepository"
-level = 1
-domain = "QA"
 description = "Repository is publicly accessible"
-tags = ["quality", "transparency"]
+tags = { level = 1, domain = "QA", quality = true, transparency = true }
 
 # ExecPass: Use gh CLI to check repository visibility
 [controls."OSPS-QA-01.01".passes.exec]
@@ -370,17 +587,21 @@ timeout = 30
 
 [controls."OSPS-QA-01.02"]
 name = "PublicCommitHistory"
-level = 1
-domain = "QA"
 description = "Commit history is publicly visible"
-tags = ["quality", "transparency"]
+tags = { level = 1, domain = "QA", quality = true, transparency = true }
 
 [controls."OSPS-QA-02.01"]
 name = "DependencyManifest"
-level = 1
-domain = "QA"
 description = "Project has dependency manifest files"
-tags = ["quality", "dependencies"]
+tags = { level = 1, domain = "QA", quality = true, dependencies = true }
+
+[controls."OSPS-QA-02.01".locator]
+project_path = "dependencies.manifest"
+discover = [
+    "package.json", "requirements.txt", "pyproject.toml",
+    "Cargo.toml", "go.mod", "pom.xml", "build.gradle", "Gemfile",
+]
+kind = "file"
 
 [controls."OSPS-QA-02.01".passes]
 deterministic = { file_must_exist = [
@@ -396,24 +617,18 @@ deterministic = { file_must_exist = [
 
 [controls."OSPS-QA-04.01"]
 name = "DocumentSubprojects"
-level = 1
-domain = "QA"
 description = "Subprojects are documented"
-tags = ["quality", "documentation"]
+tags = { level = 1, domain = "QA", quality = true, documentation = true }
 
 [controls."OSPS-QA-05.01"]
 name = "NoGeneratedExecutables"
-level = 1
-domain = "QA"
 description = "No generated executables in repository"
-tags = ["quality", "security"]
+tags = { level = 1, domain = "QA", quality = true, security = true }
 
 [controls."OSPS-QA-05.02"]
 name = "NoUnreviewableBinaries"
-level = 1
-domain = "QA"
 description = "No unreviewable binary artifacts"
-tags = ["quality", "security"]
+tags = { level = 1, domain = "QA", quality = true, security = true }
 
 # =============================================================================
 # Level 1 Controls - Vulnerability Management (VM)
@@ -421,11 +636,18 @@ tags = ["quality", "security"]
 
 [controls."OSPS-VM-02.01"]
 name = "HasSecurityPolicy"
-level = 1
-domain = "VM"
 description = "Repository has a security policy"
-tags = ["security", "vulnerability-management"]
-security_severity = 7.0
+tags = { level = 1, domain = "VM", security_severity = 7.0, security = true, vulnerability-management = true }
+
+[controls."OSPS-VM-02.01".locator]
+project_path = "security.policy"
+discover = ["SECURITY.md", ".github/SECURITY.md", "docs/SECURITY.md"]
+kind = "file"
+
+[controls."OSPS-VM-02.01".locator.llm_hints]
+search_for = "security policy, vulnerability reporting, security contact"
+check_files = ["README.md"]
+look_for_urls = true
 
 [controls."OSPS-VM-02.01".passes]
 deterministic = { file_must_exist = [
@@ -435,9 +657,16 @@ deterministic = { file_must_exist = [
 ]}
 
 [controls."OSPS-VM-02.01".remediation]
-handler = "create_security_policy"
-template = "standard"
+handler = "create_security_policy"  # Legacy handler for fallback
 safe = true
+dry_run_supported = true
+
+# Declarative file creation remediation
+[controls."OSPS-VM-02.01".remediation.file_create]
+path = "SECURITY.md"
+template = "security_policy_standard"
+overwrite = false
+create_dirs = false
 
 # =============================================================================
 # Level 2 Controls - Access Control (AC)
@@ -445,11 +674,8 @@ safe = true
 
 [controls."OSPS-AC-04.01"]
 name = "ExplicitWorkflowPermissions"
-level = 2
-domain = "AC"
 description = "Workflows define explicit permissions"
-tags = ["access-control", "ci-cd"]
-security_severity = 6.5
+tags = { level = 2, domain = "AC", security_severity = 6.5, access-control = true, ci-cd = true }
 
 [controls."OSPS-AC-04.01".passes.pattern]
 files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
@@ -463,10 +689,18 @@ permissions = "^permissions:"
 
 [controls."OSPS-GV-01.01"]
 name = "HasGovernance"
-level = 2
-domain = "GV"
 description = "Project has governance documentation"
-tags = ["governance"]
+tags = { level = 2, domain = "GV", governance = true }
+
+[controls."OSPS-GV-01.01".locator]
+project_path = "governance.governance_doc"
+discover = ["GOVERNANCE.md", "MAINTAINERS.md", "CODEOWNERS", ".github/CODEOWNERS"]
+kind = "file"
+
+[controls."OSPS-GV-01.01".locator.llm_hints]
+search_for = "governance, maintainers, project leadership, decision making"
+check_files = ["README.md", "CONTRIBUTING.md"]
+look_for_urls = false
 
 [controls."OSPS-GV-01.01".passes]
 deterministic = { file_must_exist = [
@@ -482,10 +716,8 @@ safe = true
 
 [controls."OSPS-GV-01.02"]
 name = "DocumentedRoles"
-level = 2
-domain = "GV"
 description = "Roles and responsibilities are documented"
-tags = ["governance"]
+tags = { level = 2, domain = "GV", governance = true }
 
 [controls."OSPS-GV-01.02".passes.pattern]
 files = ["GOVERNANCE.md", "MAINTAINERS.md", "CONTRIBUTING.md"]
@@ -496,10 +728,8 @@ responsibilities = "(responsibil|duties|role)"
 
 [controls."OSPS-GV-03.02"]
 name = "ContributionRequirements"
-level = 2
-domain = "GV"
 description = "Contribution requirements are documented"
-tags = ["governance", "contributing"]
+tags = { level = 2, domain = "GV", governance = true, contributing = true }
 
 [controls."OSPS-GV-03.02".passes.pattern]
 files = ["CONTRIBUTING.md"]
@@ -514,10 +744,8 @@ process = "(pull request|PR|submit|review)"
 
 [controls."OSPS-QA-03.01"]
 name = "RequiredStatusChecks"
-level = 2
-domain = "QA"
 description = "Branch protection requires status checks"
-tags = ["quality", "ci-cd"]
+tags = { level = 2, domain = "QA", quality = true, ci-cd = true }
 
 # ExecPass: Use gh CLI to check required status checks
 [controls."OSPS-QA-03.01".passes.exec]
@@ -537,10 +765,8 @@ steps = [
 
 [controls."OSPS-QA-06.01"]
 name = "AutomatedTests"
-level = 2
-domain = "QA"
 description = "CI workflows include automated tests"
-tags = ["quality", "testing"]
+tags = { level = 2, domain = "QA", quality = true, testing = true }
 
 [controls."OSPS-QA-06.01".passes.pattern]
 files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
@@ -555,10 +781,18 @@ test_step = "(run.*test|Test|testing)"
 
 [controls."OSPS-VM-01.01"]
 name = "DisclosurePolicy"
-level = 2
-domain = "VM"
 description = "Security policy includes disclosure process"
-tags = ["security", "vulnerability-management"]
+tags = { level = 2, domain = "VM", security = true, vulnerability-management = true }
+
+[controls."OSPS-VM-01.01".locator]
+project_path = "security.policy"
+discover = ["SECURITY.md", ".github/SECURITY.md", "docs/SECURITY.md"]
+kind = "file"
+
+[controls."OSPS-VM-01.01".locator.llm_hints]
+search_for = "disclosure policy, vulnerability disclosure, responsible disclosure"
+check_files = ["README.md"]
+look_for_urls = true
 
 [controls."OSPS-VM-01.01".passes.pattern]
 files = ["SECURITY.md"]
@@ -569,10 +803,18 @@ process = "(process|procedure|timeline)"
 
 [controls."OSPS-VM-03.01"]
 name = "PrivateReporting"
-level = 2
-domain = "VM"
 description = "Private vulnerability reporting is enabled"
-tags = ["security", "vulnerability-management"]
+tags = { level = 2, domain = "VM", security = true, vulnerability-management = true }
+
+[controls."OSPS-VM-03.01".locator]
+project_path = "security.policy"
+discover = ["SECURITY.md", ".github/SECURITY.md"]
+kind = "file"
+
+[controls."OSPS-VM-03.01".locator.llm_hints]
+search_for = "private reporting, security email, PGP key, confidential"
+check_files = ["README.md"]
+look_for_urls = false
 
 # PatternPass: Check for private contact methods in SECURITY.md
 [controls."OSPS-VM-03.01".passes.pattern]
@@ -590,10 +832,8 @@ steps = [
 
 [controls."OSPS-VM-04.01"]
 name = "SecurityAdvisories"
-level = 2
-domain = "VM"
 description = "Repository supports security advisories"
-tags = ["security", "vulnerability-management"]
+tags = { level = 2, domain = "VM", security = true, vulnerability-management = true }
 
 # ExecPass: Check if security advisories are supported (requires Issues enabled)
 [controls."OSPS-VM-04.01".passes.exec]
@@ -617,11 +857,8 @@ steps = [
 
 [controls."OSPS-AC-04.02"]
 name = "ScopedPermissions"
-level = 3
-domain = "AC"
 description = "Workflow permissions are appropriately scoped"
-tags = ["access-control", "ci-cd", "least-privilege"]
-security_severity = 7.0
+tags = { level = 3, domain = "AC", security_severity = 7.0, access-control = true, ci-cd = true, least-privilege = true }
 
 [controls."OSPS-AC-04.02".passes.pattern]
 files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
@@ -636,10 +873,8 @@ read_only = "read(-only)?"
 
 [controls."OSPS-QA-07.01"]
 name = "RequiredApprovals"
-level = 3
-domain = "QA"
 description = "Pull requests require approval before merge"
-tags = ["quality", "code-review"]
+tags = { level = 3, domain = "QA", quality = true, code-review = true }
 
 # ExecPass: Check if branch protection requires approvals
 [controls."OSPS-QA-07.01".passes.exec]
@@ -664,10 +899,8 @@ requires_api = true
 
 [controls."OSPS-QA-06.02"]
 name = "DocumentedTesting"
-level = 3
-domain = "QA"
 description = "Testing instructions are documented"
-tags = ["quality", "testing", "documentation"]
+tags = { level = 3, domain = "QA", quality = true, testing = true, documentation = true }
 
 [controls."OSPS-QA-06.02".passes.pattern]
 files = ["README.md", "CONTRIBUTING.md", "docs/testing.md"]
@@ -677,10 +910,8 @@ test_docs = "(run.*test|test.*instruction|how to test)"
 
 [controls."OSPS-QA-06.03"]
 name = "TestRequirements"
-level = 3
-domain = "QA"
 description = "Test requirements for contributions are documented"
-tags = ["quality", "testing", "contributing"]
+tags = { level = 3, domain = "QA", quality = true, testing = true, contributing = true }
 
 [controls."OSPS-QA-06.03".passes.pattern]
 files = ["CONTRIBUTING.md"]
@@ -694,10 +925,8 @@ test_req = "(test.*required|must.*test|include.*test)"
 
 [controls."OSPS-VM-05.01"]
 name = "SCARemediationPolicy"
-level = 3
-domain = "VM"
 description = "SCA remediation policy documented"
-tags = ["security", "dependencies"]
+tags = { level = 3, domain = "VM", security = true, dependencies = true }
 
 [controls."OSPS-VM-05.01".passes.pattern]
 files = ["SECURITY.md", "docs/security.md"]
@@ -707,10 +936,8 @@ sca_policy = "(dependency|SCA|software composition|remediat)"
 
 [controls."OSPS-VM-05.02"]
 name = "PreReleaseSCA"
-level = 3
-domain = "VM"
 description = "Pre-release SCA workflow configured"
-tags = ["security", "ci-cd", "dependencies"]
+tags = { level = 3, domain = "VM", security = true, ci-cd = true, dependencies = true }
 
 [controls."OSPS-VM-05.02".passes.pattern]
 files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
@@ -720,10 +947,13 @@ sca_tool = "(dependency-review-action|kusari|trivy|snyk|dependabot)"
 
 [controls."OSPS-VM-05.03"]
 name = "AutomatedDependencyScanning"
-level = 3
-domain = "VM"
 description = "Automated dependency scanning configured"
-tags = ["security", "dependencies"]
+tags = { level = 3, domain = "VM", security = true, dependencies = true }
+
+[controls."OSPS-VM-05.03".locator]
+project_path = "ci.github.dependabot"
+discover = [".github/dependabot.yml", ".github/dependabot.yaml", "renovate.json", ".renovaterc"]
+kind = "file"
 
 [controls."OSPS-VM-05.03".passes]
 deterministic = { file_must_exist = [
@@ -734,15 +964,21 @@ deterministic = { file_must_exist = [
 ]}
 
 [controls."OSPS-VM-05.03".remediation]
-handler = "create_dependabot_config"
+handler = "create_dependabot_config"  # Legacy handler for fallback
 safe = true
+dry_run_supported = true
+
+# Declarative file creation remediation
+[controls."OSPS-VM-05.03".remediation.file_create]
+path = ".github/dependabot.yml"
+template = "dependabot_config"
+overwrite = false
+create_dirs = true
 
 [controls."OSPS-VM-06.01"]
 name = "SASTRemediationPolicy"
-level = 3
-domain = "VM"
 description = "SAST remediation policy documented"
-tags = ["security", "code-analysis"]
+tags = { level = 3, domain = "VM", security = true, code-analysis = true }
 
 [controls."OSPS-VM-06.01".passes.pattern]
 files = ["SECURITY.md"]
@@ -752,10 +988,8 @@ sast_policy = "(SAST|static analysis|code scan|remediat)"
 
 [controls."OSPS-VM-06.02"]
 name = "AutomatedSAST"
-level = 3
-domain = "VM"
 description = "Automated SAST in CI pipeline"
-tags = ["security", "ci-cd", "code-analysis"]
+tags = { level = 3, domain = "VM", security = true, ci-cd = true, code-analysis = true }
 
 [controls."OSPS-VM-06.02".passes.pattern]
 files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
@@ -769,10 +1003,18 @@ sast_tool = "(codeql|semgrep|sonar|bandit|gosec|brakeman)"
 
 [controls."OSPS-DO-03.01"]
 name = "SupportDocumentation"
-level = 3
-domain = "DO"
 description = "Support documentation available"
-tags = ["documentation", "support"]
+tags = { level = 3, domain = "DO", documentation = true, support = true }
+
+[controls."OSPS-DO-03.01".locator]
+project_path = "documentation.support"
+discover = ["SUPPORT.md", ".github/SUPPORT.md"]
+kind = "file"
+
+[controls."OSPS-DO-03.01".locator.llm_hints]
+search_for = "support, help, getting help, community support"
+check_files = ["README.md"]
+look_for_urls = true
 
 [controls."OSPS-DO-03.01".passes]
 deterministic = { file_must_exist = [
@@ -786,10 +1028,8 @@ safe = true
 
 [controls."OSPS-DO-05.01"]
 name = "EndOfSupportPolicy"
-level = 3
-domain = "DO"
 description = "End-of-support policy documented"
-tags = ["documentation", "support"]
+tags = { level = 3, domain = "DO", documentation = true, support = true }
 
 [controls."OSPS-DO-05.01".passes.pattern]
 files = ["SUPPORT.md", "SECURITY.md", "README.md"]
@@ -803,10 +1043,8 @@ eol_policy = "(end.of.(life|support)|EOL|deprecat|sunset)"
 
 [controls."OSPS-GV-04.01"]
 name = "CollaboratorReviewPolicy"
-level = 3
-domain = "GV"
 description = "Collaborator review policy documented"
-tags = ["governance", "code-review"]
+tags = { level = 3, domain = "GV", governance = true, code-review = true }
 
 [controls."OSPS-GV-04.01".passes.pattern]
 files = ["GOVERNANCE.md", "CONTRIBUTING.md"]
@@ -820,10 +1058,18 @@ review_policy = "(review|collaborator|maintainer).*(policy|process|requirement)"
 
 [controls."OSPS-SA-02.01"]
 name = "APIDocumentation"
-level = 2
-domain = "SA"
 description = "API/interface documentation available"
-tags = ["documentation", "api"]
+tags = { level = 2, domain = "SA", documentation = true, api = true }
+
+[controls."OSPS-SA-02.01".locator]
+project_path = "documentation.api"
+discover = ["API.md", "docs/api.md", "docs/api/", "openapi.yaml", "openapi.json", "swagger.yaml", "swagger.json"]
+kind = "file"
+
+[controls."OSPS-SA-02.01".locator.llm_hints]
+search_for = "API documentation, API reference, endpoints"
+check_files = ["README.md"]
+look_for_urls = true
 
 [controls."OSPS-SA-02.01".passes]
 deterministic = { file_must_exist = [
@@ -838,10 +1084,18 @@ deterministic = { file_must_exist = [
 
 [controls."OSPS-SA-03.02"]
 name = "ThreatModel"
-level = 3
-domain = "SA"
 description = "Threat model documentation available"
-tags = ["security", "threat-modeling"]
+tags = { level = 3, domain = "SA", security = true, threat-modeling = true }
+
+[controls."OSPS-SA-03.02".locator]
+project_path = "security.threat_model"
+discover = ["THREAT_MODEL.md", "docs/threat-model.md", "docs/security/threat-model.md"]
+kind = "file"
+
+[controls."OSPS-SA-03.02".locator.llm_hints]
+search_for = "threat model, security assessment, attack surface, STRIDE"
+check_files = ["SECURITY.md", "README.md"]
+look_for_urls = true
 
 [controls."OSPS-SA-03.02".passes]
 deterministic = { file_must_exist = [
@@ -855,3 +1109,83 @@ files = ["SECURITY.md", "docs/security.md"]
 
 [controls."OSPS-SA-03.02".passes.pattern.patterns]
 threat_model = "(threat model|STRIDE|attack surface|security assessment)"
+
+# =============================================================================
+# MCP Server Configuration
+# =============================================================================
+# This section defines the MCP tools that are exposed when running:
+#   darnit serve openssf-baseline.toml
+
+[mcp]
+name = "openssf-baseline"
+description = "OpenSSF Baseline security compliance tools for MCP clients"
+
+[mcp.tools.audit_openssf_baseline]
+handler = "darnit_baseline.tools:audit_openssf_baseline"
+description = """Run OpenSSF Baseline audit on a repository.
+
+Supports filtering by:
+- level: Maximum maturity level (1, 2, or 3). Default: 3
+- tags: Filter by domain, tags, or custom attributes (e.g., "domain=AC", "security", "severity>=7.0")
+
+Examples:
+- Level 1 only: level=1
+- AC domain controls: tags="domain=AC"
+- Security-tagged level 2: level=2, tags="security"
+"""
+
+[mcp.tools.list_available_checks]
+handler = "darnit_baseline.tools:list_available_checks"
+description = "List all available OpenSSF Baseline checks organized by level"
+
+[mcp.tools.get_project_config]
+handler = "darnit_baseline.tools:get_project_config"
+description = "Get the current project configuration for OpenSSF Baseline"
+
+[mcp.tools.create_security_policy]
+handler = "darnit_baseline.tools:create_security_policy"
+description = "Create SECURITY.md file for vulnerability reporting"
+
+[mcp.tools.enable_branch_protection]
+handler = "darnit_baseline.tools:enable_branch_protection"
+description = "Enable branch protection rules on GitHub repository"
+
+[mcp.tools.init_project_config]
+handler = "darnit_baseline.tools:init_project_config"
+description = "Initialize a new .project.yaml configuration file"
+
+[mcp.tools.confirm_project_context]
+handler = "darnit_baseline.tools:confirm_project_context"
+description = "Record user-confirmed project context in .project.yaml"
+
+[mcp.tools.generate_threat_model]
+handler = "darnit_baseline.tools:generate_threat_model"
+description = "Generate a STRIDE-based threat model for a repository"
+
+[mcp.tools.generate_attestation]
+handler = "darnit_baseline.tools:generate_attestation"
+description = "Generate an in-toto attestation for OpenSSF Baseline compliance"
+
+[mcp.tools.remediate_audit_findings]
+handler = "darnit_baseline.tools:remediate_audit_findings"
+description = "Apply automated remediations for failed audit controls"
+
+[mcp.tools.create_remediation_branch]
+handler = "darnit_baseline.tools:create_remediation_branch"
+description = "Create a new branch for remediation work"
+
+[mcp.tools.commit_remediation_changes]
+handler = "darnit_baseline.tools:commit_remediation_changes"
+description = "Commit remediation changes with a descriptive message"
+
+[mcp.tools.create_remediation_pr]
+handler = "darnit_baseline.tools:create_remediation_pr"
+description = "Create a pull request for remediation changes"
+
+[mcp.tools.get_remediation_status]
+handler = "darnit_baseline.tools:get_remediation_status"
+description = "Get the current git status for remediation work"
+
+[mcp.tools.create_test_repository]
+handler = "darnit_baseline.tools:create_test_repository"
+description = "Create a minimal test repository that fails all OpenSSF Baseline controls"

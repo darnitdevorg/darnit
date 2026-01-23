@@ -2,7 +2,11 @@
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    from darnit.locate import UnifiedLocator
+    from darnit.config.framework_schema import LocatorConfig
 
 
 class VerificationPhase(Enum):
@@ -35,6 +39,12 @@ class CheckContext:
     control_metadata: Dict[str, Any] = field(default_factory=dict)
     # Accumulated data from previous passes
     gathered_evidence: Dict[str, Any] = field(default_factory=dict)
+
+    # Locator integration (Phase 6)
+    # UnifiedLocator instance for .project/-aware file resolution
+    locator: Optional["UnifiedLocator"] = None
+    # LocatorConfig for this specific control (from TOML)
+    locator_config: Optional["LocatorConfig"] = None
 
 
 @dataclass
@@ -134,18 +144,36 @@ class VerificationPassProtocol(Protocol):
 
 @dataclass
 class ControlSpec:
-    """Complete specification for a control with sieve verification."""
+    """Complete specification for a control with sieve verification.
+
+    Level and domain are regular fields for backward compatibility, but are
+    also copied into the tags dict for uniform filtering. This allows frameworks
+    to filter on any tag key (including level and domain) uniformly.
+
+    The tags dict can hold additional key-value pairs beyond level/domain,
+    enabling flexible filtering like --tags severity>=7.0 or --tags category=auth.
+    """
 
     control_id: str
-    level: int
-    domain: str
+    level: Optional[int]  # Maturity level (1, 2, 3) - None if framework doesn't use levels
+    domain: Optional[str]  # Domain code (e.g., "AC", "VM") - None if not applicable
     name: str
     description: str
     passes: List[Any]  # List of pass implementations (VerificationPassProtocol)
+    tags: Dict[str, Any] = field(default_factory=dict)  # Additional tags for filtering
     metadata: Dict[str, Any] = field(default_factory=dict)
+    # Locator configuration for this control (from TOML)
+    locator_config: Optional["LocatorConfig"] = None
 
     def __post_init__(self):
-        """Validate that passes are ordered correctly."""
+        """Copy level/domain to tags and validate passes order."""
+        # Copy level and domain to tags for uniform filtering
+        if self.level is not None:
+            self.tags["level"] = self.level
+        if self.domain is not None:
+            self.tags["domain"] = self.domain
+
+        # Validate that passes are ordered correctly
         if not self.passes:
             return
 

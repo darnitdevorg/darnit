@@ -6,8 +6,8 @@ to be discovered and used by the darnit framework.
 Implementations register via Python entry points under 'darnit.implementations'.
 """
 
-from typing import Protocol, List, Dict, Any, Optional, runtime_checkable
-from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -15,13 +15,28 @@ class ControlSpec:
     """Specification for a compliance control.
 
     This is a framework-level definition that implementations provide.
+
+    Level and domain are regular fields for backward compatibility, but are
+    also copied into the tags dict for uniform filtering. This allows frameworks
+    to filter on any tag key (including level and domain) uniformly.
+
+    The tags dict can hold additional key-value pairs beyond level/domain,
+    enabling flexible filtering like --tags severity>=7.0 or --tags category=auth.
     """
     control_id: str
     name: str
     description: str
-    level: int
-    domain: str
+    level: Optional[int]  # Maturity level (1, 2, 3) - None if framework doesn't use levels
+    domain: Optional[str]  # Domain code (e.g., "AC", "VM") - None if not applicable
     metadata: Dict[str, Any]
+    tags: Dict[str, Any] = field(default_factory=dict)  # Additional tags for filtering
+
+    def __post_init__(self):
+        """Copy level/domain to tags for uniform filtering."""
+        if self.level is not None:
+            self.tags["level"] = self.level
+        if self.domain is not None:
+            self.tags["domain"] = self.domain
 
 
 @runtime_checkable

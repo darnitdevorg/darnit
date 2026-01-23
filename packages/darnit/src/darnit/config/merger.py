@@ -92,12 +92,19 @@ from .user_schema import (
 
 @dataclass
 class EffectiveControl:
-    """Merged control configuration with framework + user overrides."""
+    """Merged control configuration with framework + user overrides.
+
+    Level and domain are optional to support frameworks that don't use
+    maturity levels or domain categorization. Use the tags dict for
+    flexible key-value metadata that can be filtered uniformly.
+    """
     control_id: str
     name: str
-    level: int
-    domain: str
     description: str
+
+    # Optional framework-specific fields
+    level: Optional[int] = None  # Maturity level - None if framework doesn't use levels
+    domain: Optional[str] = None  # Domain code - None if not applicable
 
     # Source tracking
     from_framework: bool = True
@@ -120,8 +127,8 @@ class EffectiveControl:
     # Framework pass configuration (for sieve)
     passes_config: Optional[Dict[str, Any]] = None
 
-    # Metadata
-    tags: List[str] = field(default_factory=list)
+    # Flexible key-value tags for filtering and metadata
+    tags: Dict[str, Any] = field(default_factory=dict)
     security_severity: Optional[float] = None
     docs_url: Optional[str] = None
 
@@ -159,14 +166,20 @@ class EffectiveConfig:
     _user_config: Optional[UserConfig] = None
 
     def get_controls_by_level(self, level: int) -> Dict[str, EffectiveControl]:
-        """Get all applicable controls at a specific level."""
+        """Get all applicable controls at a specific level.
+
+        Note: Controls without a level (level=None) are not included.
+        """
         return {
             cid: ctrl for cid, ctrl in self.controls.items()
             if ctrl.level == level and ctrl.is_applicable()
         }
 
     def get_controls_by_domain(self, domain: str) -> Dict[str, EffectiveControl]:
-        """Get all applicable controls in a specific domain."""
+        """Get all applicable controls in a specific domain.
+
+        Note: Controls without a domain (domain=None) are not included.
+        """
         return {
             cid: ctrl for cid, ctrl in self.controls.items()
             if ctrl.domain == domain and ctrl.is_applicable()
@@ -237,6 +250,15 @@ def merge_control(
     """
     # Start with framework config or create minimal for custom control
     if framework_control:
+        # Build tags dict - start with explicit tags, then add level/domain if present
+        tags = dict(framework_control.tags) if framework_control.tags else {}
+        if framework_control.level is not None:
+            tags["level"] = framework_control.level
+        if framework_control.domain is not None:
+            tags["domain"] = framework_control.domain
+        if framework_control.security_severity is not None:
+            tags["security_severity"] = framework_control.security_severity
+
         effective = EffectiveControl(
             control_id=control_id,
             name=framework_control.name,
@@ -246,7 +268,7 @@ def merge_control(
             from_framework=True,
             check_adapter=defaults.check_adapter,
             remediation_adapter=defaults.remediation_adapter,
-            tags=list(framework_control.tags),
+            tags=tags,
             security_severity=framework_control.security_severity,
             docs_url=framework_control.docs_url,
         )
@@ -268,12 +290,10 @@ def merge_control(
             effective.passes_config = framework_control.passes.model_dump()
 
     else:
-        # Custom control from user - need at minimum name, level, domain
+        # Custom control from user - name and description required, level/domain optional
         effective = EffectiveControl(
             control_id=control_id,
             name=control_id,
-            level=1,
-            domain="CUSTOM",
             description="User-defined control",
             from_framework=False,
             from_user=True,
@@ -678,10 +698,9 @@ def validate_framework_config(config: FrameworkConfig) -> List[str]:
     for control_id, control in config.controls.items():
         if not control.name:
             errors.append(f"Control {control_id} missing name")
-        if control.level not in (1, 2, 3):
+        # Level and domain are optional - only validate if present
+        if control.level is not None and control.level not in (1, 2, 3):
             errors.append(f"Control {control_id} has invalid level: {control.level}")
-        if not control.domain:
-            errors.append(f"Control {control_id} missing domain")
 
         # Check adapter references exist
         if control.check and control.check.adapter != "builtin":
