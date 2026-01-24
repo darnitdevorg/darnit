@@ -13,12 +13,9 @@ from typing import Dict, List, Any, Optional, Tuple, Set
 from dataclasses import dataclass
 
 from darnit.core.logging import get_logger
-from darnit.core.models import AuditResult, CheckStatus
 from darnit.core.utils import (
     validate_local_path,
     detect_repo_from_git,
-    get_git_commit,
-    get_git_ref,
 )
 
 logger = get_logger("tools.audit")
@@ -186,7 +183,6 @@ def load_effective_audit_config(local_path: str) -> Optional[Any]:
             load_framework_config,
             load_user_config,
             merge_configs,
-            EffectiveConfig,
         )
 
         # Load framework config

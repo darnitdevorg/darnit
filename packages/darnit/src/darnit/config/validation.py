@@ -64,7 +64,6 @@ def validate_repo_reference(ref: ResourceReference) -> Tuple[ReferenceStatus, st
 
     # If path specified, check if it exists
     if ref.repo_path:
-        ref_name = ref.repo_ref or repo_data.get("default_branch", "main")
         try:
             result = subprocess.run(
                 ["gh", "api", f"repos/{ref.repo}/contents/{ref.repo_path}",

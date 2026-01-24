@@ -40,9 +40,6 @@ from darnit.core.logging import get_logger
 from darnit.remediation.helpers import (
     detect_repo_from_git,
     ensure_directory,
-    format_error,
-    format_success,
-    format_warning,
     write_file_safe,
 )
 

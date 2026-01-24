@@ -13,7 +13,7 @@ Each rule includes:
 - Location hints for code linking
 """
 
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 
 
 # Domain descriptions for tags

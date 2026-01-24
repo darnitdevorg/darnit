@@ -14,7 +14,7 @@ modifying the core loading/saving logic.
 """
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional, Dict, Any, List
 
 import yaml
@@ -23,7 +23,6 @@ from pydantic import ValidationError
 from darnit.core.logging import get_logger
 from darnit.config.schema import (
     ProjectConfig,
-    BaselineExtension,
     create_minimal_config,
 )
 

@@ -301,11 +301,6 @@ def check_level2_vulnerability(owner: str, repo: str, local_path: str) -> List[D
     try:
         repo_data = gh_api(f"/repos/{owner}/{repo}")
 
-        # Check if GitHub's private vulnerability reporting is enabled
-        private_vuln_reporting = repo_data.get("security_and_analysis", {}).get(
-            "secret_scanning_push_protection", {}
-        ).get("status")
-
         # Check SECURITY.md for private reporting mechanism
         has_private_contact = re.search(
             r'(private|confidential|email|pgp|gpg|security@|privately)',

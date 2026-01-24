@@ -8,7 +8,7 @@ location for controls, including:
 """
 
 import os
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 from darnit.core.logging import get_logger
 from darnit.config.loader import load_project_config, save_project_config

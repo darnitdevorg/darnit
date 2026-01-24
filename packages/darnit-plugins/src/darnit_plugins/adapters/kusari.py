@@ -63,7 +63,7 @@ See Also:
 import json
 import logging
 import subprocess
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from darnit.core.adapters import CheckAdapter
 from darnit.core.models import AdapterCapability, CheckResult, CheckStatus

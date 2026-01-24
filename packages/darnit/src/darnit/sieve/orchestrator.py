@@ -1,7 +1,7 @@
 """Sieve orchestrator - runs verification passes in order."""
 
 import time
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, List
 
 from darnit.core.logging import get_logger
 

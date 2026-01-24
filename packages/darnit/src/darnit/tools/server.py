@@ -4,7 +4,7 @@ This module provides the MCP server instance and registration functions
 for organizing tool implementations across multiple modules.
 """
 
-from typing import Callable, List, Dict, Any, Optional
+from typing import Callable, List, Optional
 from mcp.server.fastmcp import FastMCP
 
 

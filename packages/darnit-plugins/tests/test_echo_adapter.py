@@ -1,6 +1,5 @@
 """Tests for the EchoCheckAdapter."""
 
-import pytest
 from pathlib import Path
 
 from darnit.core.models import CheckStatus

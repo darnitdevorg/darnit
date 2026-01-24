@@ -13,8 +13,7 @@ import json
 import logging
 import subprocess
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Type, Union
+from typing import Any, Dict, List, Optional, Type, Union
 
 from darnit.core.models import (
     CheckResult,
@@ -207,7 +206,6 @@ class CommandCheckAdapter(CheckAdapter):
         config: Dict[str, Any],
     ) -> CheckResult:
         """Run command and parse output."""
-        import os as _os
 
         try:
             # Build command with arguments

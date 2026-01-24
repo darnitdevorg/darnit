@@ -7,7 +7,6 @@ import json
 from darnit.core.logging import get_logger
 from .models import (
     ControlSpec,
-    CheckContext,
     VerificationPhase,
     PassResult,
     PassOutcome,

@@ -9,7 +9,7 @@ This module contains pattern definitions for detecting:
 - Data stores
 """
 
-from typing import Dict, List, Any, Tuple, Optional
+from typing import Dict, Any
 
 
 # Framework detection patterns

@@ -19,14 +19,11 @@ Example:
 """
 
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, List, Optional
 
 from darnit.core.logging import get_logger
 from darnit.sieve.models import (
-    CheckContext,
     ControlSpec,
-    PassResult,
-    VerificationPhase,
 )
 from darnit.sieve.passes import (
     DeterministicPass,

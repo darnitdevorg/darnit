@@ -7,7 +7,6 @@ The normalizer uses JSONPath expressions from OutputMapping to extract
 relevant fields from tool outputs.
 """
 
-import re
 from typing import Any, Dict, Optional, Union
 
 from darnit.core.logging import get_logger
@@ -287,16 +286,10 @@ def normalize_scorecard_output(
     Returns:
         Normalized CheckOutput
     """
-    # Scorecard output mapping
-    mapping = OutputMapping(
-        status_path=f"$.checks[?(@.name=='{check_name}')].score",
-        score_path=f"$.checks[?(@.name=='{check_name}')].score",
-        pass_threshold=8.0,  # Scorecard uses 0-10 scale
-        message_path=f"$.checks[?(@.name=='{check_name}')].reason",
-    )
+    # Scorecard uses 0-10 scale, 8.0+ is considered passing
+    pass_threshold = 8.0
 
-    # Since we don't support JSONPath filter expressions,
-    # we need to manually find the check
+    # Find the check manually (JSONPath filter expressions not supported)
     checks = raw_output.get("checks", [])
     target_check = None
     for check in checks:
@@ -326,7 +319,7 @@ def normalize_scorecard_output(
         )
 
     # Apply threshold
-    status = "pass" if score >= 8 else "fail"
+    status = "pass" if score >= pass_threshold else "fail"
 
     return CheckOutput(
         status=status,

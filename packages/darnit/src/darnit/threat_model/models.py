@@ -6,7 +6,7 @@ STRIDE threat analysis engine.
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 
 
 class StrideCategory(Enum):

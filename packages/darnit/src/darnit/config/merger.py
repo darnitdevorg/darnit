@@ -61,7 +61,7 @@ See Also:
 import copy
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 try:
     import tomllib
@@ -73,14 +73,10 @@ from .framework_schema import (
     ControlConfig,
     FrameworkConfig,
     FrameworkDefaults,
-    FrameworkMetadata,
-    CheckConfig,
-    RemediationConfig,
 )
 from .user_schema import (
     ControlOverride,
     ControlStatus,
-    CustomControl,
     UserConfig,
 )
 

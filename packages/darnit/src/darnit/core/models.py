@@ -5,7 +5,7 @@ from enum import Enum
 from typing import Dict, List, Any, Optional, Set, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from darnit.config.models import ProjectConfig
+    pass
 
 
 class CheckStatus(Enum):

@@ -135,7 +135,6 @@ def detect_workflow_checks(local_path: str) -> List[Dict[str, Any]]:
         if not filename.endswith(('.yml', '.yaml')):
             continue
 
-        filepath = os.path.join(workflow_dir, filename)
         try:
             content = read_file(workflow_dir, filename) or ""
 

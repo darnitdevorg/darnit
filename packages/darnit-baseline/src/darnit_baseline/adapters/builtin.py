@@ -29,8 +29,7 @@ Example usage:
 """
 
 import logging
-from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 from darnit.core.adapters import CheckAdapter, RemediationAdapter
 from darnit.core.models import (

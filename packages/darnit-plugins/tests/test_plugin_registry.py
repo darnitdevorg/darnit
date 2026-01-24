@@ -1,6 +1,5 @@
 """Tests for the PluginRegistry."""
 
-import pytest
 from pathlib import Path
 
 from darnit.core.registry import (

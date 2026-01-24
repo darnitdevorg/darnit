@@ -3,7 +3,6 @@
 import sys
 from pathlib import Path
 
-import pytest
 
 # Add package paths for testing without installation
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "darnit" / "src"))

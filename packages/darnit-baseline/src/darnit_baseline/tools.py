@@ -333,7 +333,7 @@ def init_project_config(
         return "⚠️ .project.yaml already exists. Use get_project_config() to view it."
 
     try:
-        config = _init(repo_path, project_name=project_name)
+        _init(repo_path, project_name=project_name)
         return f"✅ Created .project.yaml at {repo_path}"
     except Exception as e:
         return f"❌ Error creating config: {e}"

@@ -5,12 +5,10 @@ It demonstrates how to create custom check implementations for a
 darnit framework.
 """
 
-import glob
 import logging
 import re
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional
 
 from darnit.core.adapters import CheckAdapter, RemediationAdapter
 from darnit.core.models import (

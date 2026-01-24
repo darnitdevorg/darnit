@@ -12,7 +12,7 @@ import re
 import glob as glob_module
 import subprocess
 import json
-from typing import Dict, List, Optional, Any, Callable
+from typing import Dict, Optional, Callable
 
 from darnit.core.logging import get_logger
 
@@ -25,7 +25,7 @@ from darnit.sieve.models import (
     PassResult,
     PassOutcome,
 )
-from darnit.sieve.passes import DeterministicPass, PatternPass, LLMPass, ManualPass
+from darnit.sieve.passes import DeterministicPass, PatternPass, ManualPass
 from darnit.sieve.registry import register_control
 from darnit.sieve.project_context import is_context_confirmed, get_context_value
 

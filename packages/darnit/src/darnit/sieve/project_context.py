@@ -13,7 +13,6 @@ from darnit.core.logging import get_logger
 from darnit.config import (
     load_project_config,
     ProjectConfig,
-    ControlOverride,
     ControlStatusValue,
 )
 

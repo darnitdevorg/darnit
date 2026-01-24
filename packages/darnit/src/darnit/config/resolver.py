@@ -14,7 +14,7 @@ from typing import Dict, List, Optional, Tuple
 
 from darnit.core.logging import get_logger
 from darnit.config.loader import load_project_config, save_project_config
-from darnit.config.schema import create_minimal_config, ProjectConfig
+from darnit.config.schema import create_minimal_config
 from darnit.config.discovery import discover_files, _set_config_path
 
 logger = get_logger("config.resolver")

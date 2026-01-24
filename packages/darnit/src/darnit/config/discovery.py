@@ -4,7 +4,7 @@ import glob as glob_module
 import json
 import os
 import re
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from darnit.core.logging import get_logger
 from darnit.config.schema import (
@@ -14,10 +14,8 @@ from darnit.config.schema import (
     GovernanceConfig,
     LegalConfig,
     DocumentationConfig,
-    BaselineExtension,
     ExtendedGovernance,
     ExtendedQuality,
-    ExtendedSecurity,
     DependenciesConfig,
     CIConfig,
 )

@@ -7,7 +7,6 @@ remediations and legacy Python function remediations.
 
 import inspect
 from datetime import datetime
-from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 
 from darnit.core.logging import get_logger
@@ -20,7 +19,7 @@ from darnit.core.utils import (
 )
 from darnit.config.loader import load_project_config
 from darnit.config.framework_schema import FrameworkConfig, TemplateConfig
-from darnit.remediation.executor import RemediationExecutor, RemediationResult
+from darnit.remediation.executor import RemediationExecutor
 from darnit.tools import (
     prepare_audit,
     run_checks,
