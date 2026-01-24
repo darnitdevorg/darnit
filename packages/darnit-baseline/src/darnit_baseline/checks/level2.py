@@ -301,6 +301,12 @@ def check_level2_vulnerability(owner: str, repo: str, local_path: str) -> List[D
     try:
         repo_data = gh_api(f"/repos/{owner}/{repo}")
 
+        # Check if GitHub's private vulnerability reporting is enabled
+        # This is available via the security_and_analysis API field
+        security_analysis = repo_data.get("security_and_analysis", {}) or {}
+        pvr_settings = security_analysis.get("private_vulnerability_reporting", {}) or {}
+        github_pvr_enabled = pvr_settings.get("status") == "enabled"
+
         # Check SECURITY.md for private reporting mechanism
         has_private_contact = re.search(
             r'(private|confidential|email|pgp|gpg|security@|privately)',
@@ -308,14 +314,18 @@ def check_level2_vulnerability(owner: str, repo: str, local_path: str) -> List[D
             re.IGNORECASE
         )
 
-        if has_private_contact:
-            results.append(result("OSPS-VM-03.01", "PASS", "Private vulnerability reporting mechanism documented.", level=2))
+        if github_pvr_enabled:
+            results.append(result("OSPS-VM-03.01", "PASS",
+                "GitHub private vulnerability reporting is enabled.", level=2))
+        elif has_private_contact:
+            results.append(result("OSPS-VM-03.01", "PASS",
+                "Private vulnerability reporting mechanism documented in SECURITY.md.", level=2))
         elif security_content:
             results.append(result("OSPS-VM-03.01", "FAIL",
-                "SECURITY.md exists but lacks private reporting method. Add email or PGP key.", level=2))
+                "SECURITY.md exists but lacks private reporting method. Enable GitHub private vulnerability reporting or add email/PGP key.", level=2))
         else:
             results.append(result("OSPS-VM-03.01", "FAIL",
-                "No private vulnerability reporting mechanism. Create SECURITY.md with security contact.", level=2))
+                "No private vulnerability reporting mechanism. Enable GitHub private vulnerability reporting or create SECURITY.md with security contact.", level=2))
     except (RuntimeError, KeyError, TypeError, AttributeError) as e:
         # API error - this is a true WARN case
         logger.debug(f"Could not verify private reporting: {type(e).__name__}: {e}")
