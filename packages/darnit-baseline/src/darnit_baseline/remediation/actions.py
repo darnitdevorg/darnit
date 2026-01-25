@@ -13,15 +13,14 @@ Design Philosophy:
 import os
 import json
 import subprocess
-from typing import Optional, List, Dict, Any
+from typing import Optional, List
 
 from darnit.core.logging import get_logger
-from darnit.core.utils import validate_local_path, detect_repo_from_git, read_file
+from darnit.core.utils import validate_local_path, detect_repo_from_git
 from darnit.tools import write_file_safely
 from darnit.remediation.helpers import (
     get_repo_maintainers,
     ensure_directory,
-    format_success,
     format_error,
 )
 
