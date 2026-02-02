@@ -102,6 +102,7 @@ def check_context_requirements(
                     definition=_get_context_definition(req.key, framework),
                     requirement=req,
                     current_value=None,
+                    local_path=local_path,
                 )
                 result.prompts.append(prompt)
                 continue
@@ -116,6 +117,7 @@ def check_context_requirements(
                 definition=_get_context_definition(req.key, framework),
                 requirement=req,
                 current_value=context_value,
+                local_path=local_path,
             )
             result.prompts.append(prompt)
             continue
@@ -131,6 +133,7 @@ def check_context_requirements(
                 definition=_get_context_definition(req.key, framework),
                 requirement=req,
                 current_value=context_value,
+                local_path=local_path,
             )
             result.prompts.append(prompt)
             continue
@@ -145,6 +148,7 @@ def format_context_prompt(
     definition: ContextDefinitionConfig | None,
     requirement: ContextRequirement,
     current_value: Any | None,
+    local_path: str | None = None,
 ) -> str:
     """Generate a user-friendly prompt from TOML definition + requirement settings.
 
@@ -153,14 +157,21 @@ def format_context_prompt(
         definition: The ContextDefinitionConfig from TOML (if available)
         requirement: The ContextRequirement with threshold and warning
         current_value: Current value (if auto-detected)
+        local_path: Path to repository (used to check for existing files)
 
     Returns:
         Formatted prompt string for the user
     """
+    from pathlib import Path
+
     lines = []
 
     # Header
     lines.append(f"⚠️ **Context confirmation required: `{context_key}`**")
+    lines.append("")
+    lines.append("🚨 **DO NOT** directly edit `.project/` files! Use `confirm_project_context()` instead.")
+    lines.append("")
+    lines.append("🛑 **AI Agents:** You MUST ask the user for this value. Do NOT guess or infer from repository owner, git history, or other sources.")
     lines.append("")
 
     # Warning from requirement
@@ -168,18 +179,70 @@ def format_context_prompt(
         lines.append(f"⚠️ {requirement.warning}")
         lines.append("")
 
-    # Show current value if auto-detected
-    if current_value is not None:
-        if isinstance(current_value, ContextValue):
-            lines.append(f"🔍 **Auto-detected value** (confidence: {current_value.confidence:.0%}):")
-            if isinstance(current_value.value, list):
-                for item in current_value.value[:10]:  # Limit to 10 items
-                    lines.append(f"   - {item}")
-                if len(current_value.value) > 10:
-                    lines.append(f"   - ... and {len(current_value.value) - 10} more")
-            else:
-                lines.append(f"   {current_value.value}")
+    # For maintainers, check for existing governance files that can be referenced
+    existing_maintainer_files: list[str] = []
+    if context_key == "maintainers" and local_path:
+        repo_path = Path(local_path)
+        for candidate in ["CODEOWNERS", ".github/CODEOWNERS", "MAINTAINERS.md", "MAINTAINERS"]:
+            if (repo_path / candidate).exists():
+                existing_maintainer_files.append(candidate)
+
+    # For maintainers: only show authoritative file references OR ask user
+    # Never show auto-detected values - they are too easy for AI to guess
+    if context_key == "maintainers":
+        if existing_maintainer_files:
+            lines.append("📁 **Found authoritative source(s):**")
+            for f in existing_maintainer_files:
+                lines.append(f"   - `{f}`")
             lines.append("")
+            lines.append("**Use this command to reference the file:**")
+            lines.append("```")
+            lines.append(f'confirm_project_context(maintainers="{existing_maintainer_files[0]}")')
+            lines.append("```")
+            lines.append("")
+        else:
+            lines.append("📭 **No maintainer file found** (CODEOWNERS, MAINTAINERS.md, etc.)")
+            lines.append("")
+            lines.append("**Ask the user:** Who are the maintainers of this project?")
+            lines.append("")
+            lines.append("**After the user provides names, use:**")
+            lines.append("```")
+            lines.append('confirm_project_context(maintainers=["@user1", "@user2"])')
+            lines.append("```")
+            lines.append("")
+        # Skip showing auto-detected values for maintainers - return early
+    else:
+        # Show existing files that can be referenced (PREFERRED option)
+        if existing_maintainer_files:
+            lines.append("📁 **Existing maintainer files found:**")
+            for f in existing_maintainer_files:
+                lines.append(f"   - `{f}`")
+            lines.append("")
+            lines.append("💡 **Recommended:** Reference an existing file instead of duplicating data:")
+            lines.append("```")
+            lines.append(f'confirm_project_context(maintainers="{existing_maintainer_files[0]}")')
+            lines.append("```")
+            lines.append("")
+            lines.append("This ensures maintainer data stays in sync with the authoritative source.")
+            lines.append("")
+
+        # Show current value if auto-detected (as ALTERNATIVE, not primary)
+        if current_value is not None:
+            if isinstance(current_value, ContextValue):
+                if existing_maintainer_files:
+                    lines.append("---")
+                    lines.append("")
+                    lines.append("**Alternative:** Specify maintainers explicitly (not recommended if files exist):")
+                    lines.append("")
+                lines.append(f"🔍 **Auto-detected value** (confidence: {current_value.confidence:.0%}):")
+                if isinstance(current_value.value, list):
+                    for item in current_value.value[:10]:  # Limit to 10 items
+                        lines.append(f"   - {item}")
+                    if len(current_value.value) > 10:
+                        lines.append(f"   - ... and {len(current_value.value) - 10} more")
+                else:
+                    lines.append(f"   {current_value.value}")
+                lines.append("")
 
     # Prompt and hint from definition
     if definition:
@@ -190,16 +253,15 @@ def format_context_prompt(
             lines.append(f"📝 Examples: {', '.join(definition.examples[:3])}")
         lines.append("")
 
-    # Instructions
-    lines.append("**To proceed, confirm the context using:**")
-    lines.append("```")
-    if context_key == "maintainers":
-        lines.append('confirm_project_context(maintainers=["@user1", "@user2"])')
-    elif context_key == "security_contact":
-        lines.append('confirm_project_context(security_contact="security@example.com")')
-    else:
-        lines.append(f'confirm_project_context({context_key}=<value>)')
-    lines.append("```")
+    # Instructions (skip for maintainers - already handled above)
+    if context_key != "maintainers" and not existing_maintainer_files:
+        lines.append("**To proceed, confirm the context using:**")
+        lines.append("```")
+        if context_key == "security_contact":
+            lines.append('confirm_project_context(security_contact="security@example.com")')
+        else:
+            lines.append(f'confirm_project_context({context_key}=<value>)')
+        lines.append("```")
 
     return "\n".join(lines)
 
@@ -275,6 +337,10 @@ def _try_sieve_detection(
     2. Heuristic (git history, package.json authors)
     3. API (GitHub collaborators)
 
+    NOTE: Some context keys are intentionally NOT auto-detected to prevent
+    AI agents from guessing values. For example, "maintainers" must come
+    from authoritative sources (CODEOWNERS, MAINTAINERS.md) or user input.
+
     Args:
         key: Context key to detect (e.g., "maintainers")
         local_path: Path to the repository
@@ -284,6 +350,15 @@ def _try_sieve_detection(
     Returns:
         ContextValue with auto-detected value if found, None otherwise
     """
+    # Never auto-detect maintainers - too easy for AI to guess wrong.
+    # AI agents will see repo owner and assume they're the maintainer.
+    # Instead, require either an authoritative file or explicit user input.
+    if key == "maintainers":
+        logger.debug(
+            f"Skipping auto-detection for '{key}' - requires authoritative source or user input"
+        )
+        return None
+
     try:
         from darnit.context import get_context_sieve
 

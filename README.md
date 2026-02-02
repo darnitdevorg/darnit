@@ -39,7 +39,10 @@ The Baseline isn't just about security—it covers testing requirements, build p
 uv sync
 
 # Run the MCP server
-uv run python main.py
+uv run darnit serve --framework openssf-baseline
+
+# Or use the CLI for terminal-based audits
+uv run darnit audit /path/to/repo
 ```
 
 ## Quick Start
@@ -245,9 +248,9 @@ Add the darnit MCP server to your Claude Code settings:
 ```json
 {
   "mcpServers": {
-    "darnit": {
+    "openssf-baseline": {
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/baseline-mcp", "python", "main.py"]
+      "args": ["run", "--directory", "/path/to/baseline-mcp", "darnit", "serve", "--framework", "openssf-baseline"]
     }
   }
 }
@@ -258,9 +261,9 @@ Add the darnit MCP server to your Claude Code settings:
 ```json
 {
   "mcpServers": {
-    "darnit": {
+    "openssf-baseline": {
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/baseline-mcp", "python", "main.py"]
+      "args": ["run", "--directory", "/path/to/baseline-mcp", "darnit", "serve", "--framework", "openssf-baseline"]
     }
   }
 }
@@ -271,9 +274,9 @@ Add the darnit MCP server to your Claude Code settings:
 ```json
 {
   "mcpServers": {
-    "darnit": {
+    "openssf-baseline": {
       "command": "uvx",
-      "args": ["darnit-mcp"]
+      "args": ["darnit", "serve", "--framework", "openssf-baseline"]
     }
   }
 }
@@ -309,48 +312,41 @@ Fix the failing security controls
 Generate a signed attestation for this project
 ```
 
-### Creating Custom MCP Servers with Darnit Plugins
+### Creating Custom Frameworks
 
-You can create your own compliance MCP server by:
+You can create your own compliance framework by:
 
-1. **Create a custom framework package** (see [Creating a Custom Framework](#creating-a-plugin))
+1. **Create a framework package** with entry points (see [Creating a Plugin](#creating-a-plugin))
 
-2. **Create an MCP server entry point**:
+2. **Define your framework in TOML** (`my-framework.toml`):
 
-```python
-# my_compliance_server/main.py
-from mcp.server.fastmcp import FastMCP
-from darnit.config.merger import load_effective_config_by_name
-from darnit.core import get_plugin_registry
+```toml
+[framework]
+name = "my-framework"
+version = "1.0.0"
 
-mcp = FastMCP("My Compliance Server")
+[mcp]
+name = "my-framework"
+description = "My compliance framework"
 
-@mcp.tool()
-def audit_my_standard(local_path: str = ".") -> str:
-    """Run compliance audit against my-standard."""
-    registry = get_plugin_registry()
-    registry.discover_all()
+[mcp.tools.audit_my_framework]
+handler = "my_package.tools:audit"
+description = "Run compliance audit"
 
-    # Load your framework
-    config = load_effective_config_by_name("my-standard", local_path)
-
-    # Run checks using your adapters
-    # ...
-
-    return "Audit results..."
-
-if __name__ == "__main__":
-    mcp.run()
+[controls."MY-01.01"]
+name = "MyFirstControl"
+description = "Description of the control"
+level = 1
 ```
 
-3. **Configure Claude Code to use your server**:
+3. **Configure Claude Code to use your framework**:
 
 ```json
 {
   "mcpServers": {
-    "my-compliance": {
+    "my-framework": {
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/my-server", "python", "main.py"]
+      "args": ["run", "--directory", "/path/to/my-framework", "darnit", "serve", "/path/to/my-framework.toml"]
     }
   }
 }

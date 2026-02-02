@@ -1,65 +1,79 @@
-"""Tests for main.py MCP server entry point."""
+"""Tests for darnit MCP server creation and CLI."""
 
 import os
 
 import pytest
 
 
-class TestMainImports:
-    """Test that main.py can be imported without errors."""
+class TestServerFactory:
+    """Test that MCP server can be created from framework TOML."""
 
-    def test_main_imports(self):
-        """Test that main.py imports successfully."""
-        import main
-        assert main is not None
+    def test_server_creates_from_framework(self):
+        """Test that server can be created from openssf-baseline framework."""
+        import tomllib
 
-    def test_mcp_server_created(self):
-        """Test that MCP server instance exists."""
-        import main
-        assert hasattr(main, 'mcp')
-        assert main.mcp is not None
+        from darnit.server.factory import create_server_from_dict
+        from darnit_baseline import get_framework_path
 
-    def test_mcp_server_has_name(self):
-        """Test MCP server has expected name."""
-        import main
-        # FastMCP stores name in the instance
-        assert "Darnit" in main.mcp.name
+        path = get_framework_path()
+        with open(path, "rb") as f:
+            config = tomllib.load(f)
+
+        server = create_server_from_dict(config)
+        assert server is not None
+        assert "openssf-baseline" in server.name.lower() or "darnit" in server.name.lower()
+
+    def test_framework_path_exists(self):
+        """Test that framework TOML path is valid."""
+        from darnit_baseline import get_framework_path
+
+        path = get_framework_path()
+        assert path.exists()
+        assert path.suffix == ".toml"
+
+    def test_framework_has_mcp_config(self):
+        """Test that framework TOML has MCP configuration."""
+        import tomllib
+
+        from darnit_baseline import get_framework_path
+
+        path = get_framework_path()
+        with open(path, "rb") as f:
+            config = tomllib.load(f)
+
+        assert "mcp" in config
+        assert "name" in config["mcp"]
+        assert "tools" in config["mcp"]
 
 
 class TestToolFunctions:
-    """Test MCP tool function existence and basic structure."""
+    """Test MCP tool functions from darnit_baseline package."""
 
     def test_audit_tool_exists(self):
-        """Test audit_openssf_baseline tool is registered."""
-        import main
-        # Check the function exists
-        assert hasattr(main, 'audit_openssf_baseline')
-        assert callable(main.audit_openssf_baseline)
+        """Test audit_openssf_baseline tool is available."""
+        from darnit_baseline.tools import audit_openssf_baseline
+        assert callable(audit_openssf_baseline)
 
     def test_remediate_tool_exists(self):
         """Test remediate_audit_findings tool exists."""
-        import main
-        assert hasattr(main, 'remediate_audit_findings')
-        assert callable(main.remediate_audit_findings)
+        from darnit_baseline.tools import remediate_audit_findings
+        assert callable(remediate_audit_findings)
 
     def test_attestation_tool_exists(self):
         """Test generate_attestation tool exists."""
-        import main
-        assert hasattr(main, 'generate_attestation')
-        assert callable(main.generate_attestation)
+        from darnit_baseline.tools import generate_attestation
+        assert callable(generate_attestation)
 
     def test_threat_model_tool_exists(self):
         """Test generate_threat_model tool exists."""
-        import main
-        assert hasattr(main, 'generate_threat_model')
-        assert callable(main.generate_threat_model)
+        from darnit_baseline.tools import generate_threat_model
+        assert callable(generate_threat_model)
 
     def test_project_config_tools_exist(self):
         """Test project config tools exist."""
-        import main
-        assert hasattr(main, 'get_project_config')
-        # Note: sync_project_config may be named differently
-        assert hasattr(main, 'save_project_config') or hasattr(main, 'init_project_config')
+        from darnit_baseline.tools import get_project_config, init_project_config
+        assert callable(get_project_config)
+        assert callable(init_project_config)
 
 
 class TestHelperFunctions:
@@ -115,9 +129,9 @@ class TestAuditWorkflow:
 
     def test_audit_returns_string(self, test_repo):
         """Test that audit returns a string result."""
-        import main
+        from darnit_baseline.tools import audit_openssf_baseline
 
-        result = main.audit_openssf_baseline(
+        result = audit_openssf_baseline(
             owner=None,
             repo=None,
             local_path=str(test_repo),
@@ -130,10 +144,10 @@ class TestAuditWorkflow:
 
     def test_audit_includes_controls(self, test_repo):
         """Test that audit output includes control IDs."""
-        import main
+        from darnit_baseline.tools import audit_openssf_baseline
 
         # Provide dummy owner/repo since auto-detect may not work in test env
-        result = main.audit_openssf_baseline(
+        result = audit_openssf_baseline(
             owner="test",
             repo="test-repo",
             local_path=str(test_repo),
@@ -156,17 +170,52 @@ class TestProjectConfig:
 
     def test_get_project_config_no_config(self, config_repo):
         """Test getting config when none exists."""
-        import main
+        from darnit_baseline.tools import get_project_config
 
-        result = main.get_project_config(str(config_repo))
+        result = get_project_config(str(config_repo))
         # Should indicate no config exists or return empty/default
         assert isinstance(result, str)
 
     def test_init_project_config(self, config_repo):
         """Test initializing project config."""
-        import main
+        from darnit_baseline.tools import init_project_config
 
-        # Use init_project_config if available, otherwise skip
-        if hasattr(main, 'init_project_config'):
-            result = main.init_project_config(str(config_repo))
-            assert isinstance(result, str)
+        result = init_project_config(str(config_repo))
+        assert isinstance(result, str)
+
+
+class TestCLI:
+    """Test darnit CLI commands."""
+
+    def test_cli_help(self):
+        """Test that CLI --help works."""
+        import subprocess
+        result = subprocess.run(
+            ["uv", "run", "darnit", "--help"],
+            capture_output=True,
+            text=True
+        )
+        assert result.returncode == 0
+        assert "darnit" in result.stdout.lower()
+
+    def test_cli_serve_help(self):
+        """Test that serve subcommand help works."""
+        import subprocess
+        result = subprocess.run(
+            ["uv", "run", "darnit", "serve", "--help"],
+            capture_output=True,
+            text=True
+        )
+        assert result.returncode == 0
+        assert "framework" in result.stdout.lower()
+
+    def test_cli_list_frameworks(self):
+        """Test that list command shows available frameworks."""
+        import subprocess
+        result = subprocess.run(
+            ["uv", "run", "darnit", "list"],
+            capture_output=True,
+            text=True
+        )
+        assert result.returncode == 0
+        assert "openssf-baseline" in result.stdout.lower()

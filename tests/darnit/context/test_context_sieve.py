@@ -348,7 +348,13 @@ class TestIntegrationWithValidator:
 
     @pytest.mark.unit
     def test_validator_uses_sieve_for_detection(self, temp_repo):
-        """Validator should use sieve when context is missing."""
+        """Validator should NOT auto-detect maintainers (security measure).
+
+        Maintainers are intentionally excluded from sieve auto-detection to
+        prevent AI agents from guessing values based on git history or repo
+        owner. Instead, the validator should prompt for user confirmation
+        and suggest referencing the authoritative file.
+        """
         # Create a MAINTAINERS.md so sieve can detect
         (Path(temp_repo) / "MAINTAINERS.md").write_text("""
 # Maintainers
@@ -375,9 +381,14 @@ class TestIntegrationWithValidator:
             repo="test-repo",
         )
 
-        # Should have auto-detected maintainers
-        assert "maintainers" in result.auto_detected
-        assert len(result.auto_detected["maintainers"]) >= 2
+        # Maintainers should NOT be auto-detected (intentionally disabled)
+        assert "maintainers" not in result.auto_detected
+        # But should still be in missing_context (needs confirmation)
+        assert "maintainers" in result.missing_context
+        # Prompt should reference the authoritative file
+        assert len(result.prompts) >= 1
+        assert "MAINTAINERS.md" in result.prompts[0]
+        assert "authoritative" in result.prompts[0].lower()
 
     @pytest.mark.unit
     def test_validator_prompts_for_low_confidence(self, temp_repo):

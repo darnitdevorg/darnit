@@ -443,10 +443,32 @@ pass_if_any = false
 [controls."OSPS-BR-01.01".passes.pattern.patterns]
 injection_risk = "\\$\\{\\{\\s*github\\.(event\\.issue|event\\.pull_request|head_ref)"
 
+[controls."OSPS-BR-01.01".passes.manual]
+steps = [
+    "Review GitHub workflow files in .github/workflows/",
+    "Check that untrusted inputs are not used in run: blocks directly",
+    "Verify ${{ github.event.* }} expressions are properly sanitized",
+]
+
 [controls."OSPS-BR-01.02"]
 name = "SecureBranchNames"
 description = "Branch names are handled safely in workflows"
 tags = { level = 1, domain = "BR", build = true, security = true }
+
+# Pattern: Check workflows don't use raw branch names unsafely
+[controls."OSPS-BR-01.02".passes.pattern]
+files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+
+[controls."OSPS-BR-01.02".passes.pattern.patterns]
+# Look for safe patterns - quoting or using github.ref_name
+safe_ref_usage = "(\\$\\{\\{ github\\.ref_name \\}\\}|\\$\\{\\{ github\\.head_ref \\}\\})"
+
+[controls."OSPS-BR-01.02".passes.manual]
+steps = [
+    "Review CI/CD workflows for branch name handling",
+    "Verify branch names are not used in shell commands without sanitization",
+    "Check for proper quoting and escaping of branch name variables",
+]
 
 [controls."OSPS-BR-03.01"]
 name = "SecureRepositoryURL"
@@ -472,6 +494,13 @@ steps = [
 name = "EncryptedDistribution"
 description = "Official distribution channels use encrypted connections (HTTPS)"
 tags = { level = 1, domain = "BR", build = true, security = true }
+
+# Pattern: Check that README download links use HTTPS
+[controls."OSPS-BR-03.02".passes.pattern]
+files = ["README.md", "INSTALL.md", "docs/installation.md"]
+
+[controls."OSPS-BR-03.02".passes.pattern.patterns]
+https_links = "https://"
 
 [controls."OSPS-BR-03.02".passes.manual]
 steps = [
@@ -508,6 +537,13 @@ key_files = "\\*\\.key|\\*\\.pem"
 name = "UniqueVersionIdentifiers"
 description = "Assign unique version identifiers to each official release"
 tags = { level = 2, domain = "BR", build = true, releases = true }
+
+# ExecPass: Check GitHub releases have unique version tags
+[controls."OSPS-BR-02.01".passes.exec]
+command = ["gh", "release", "list", "--json", "tagName", "--limit", "10"]
+pass_exit_codes = [0]
+output_format = "json"
+timeout = 30
 
 [controls."OSPS-BR-02.01".passes.manual]
 steps = [
@@ -546,6 +582,21 @@ name = "StandardizedDependencyTools"
 description = "Use standardized tooling for dependency ingestion"
 tags = { level = 2, domain = "BR", build = true, dependencies = true }
 
+# Deterministic: Check for standard dependency manifest files
+[controls."OSPS-BR-05.01".passes]
+deterministic = { file_must_exist = [
+    "package.json",
+    "package-lock.json",
+    "requirements.txt",
+    "pyproject.toml",
+    "Cargo.toml",
+    "go.mod",
+    "go.sum",
+    "pom.xml",
+    "build.gradle",
+    "Gemfile.lock",
+]}
+
 [controls."OSPS-BR-05.01".passes.manual]
 steps = [
     "Verify the project uses standard package managers (npm, pip, cargo, go mod, etc.)",
@@ -557,6 +608,13 @@ steps = [
 name = "SignReleases"
 description = "Sign releases or provide signed manifest containing hashes"
 tags = { level = 2, domain = "BR", build = true, releases = true, security = true }
+
+# Pattern: Check workflows or docs for signing mentions
+[controls."OSPS-BR-06.01".passes.pattern]
+files = [".github/workflows/*.yml", ".github/workflows/*.yaml", "SECURITY.md", "README.md"]
+
+[controls."OSPS-BR-06.01".passes.pattern.patterns]
+signing = "(GPG|Sigstore|sign|cosign|checksums?|SHA256|signature)"
 
 [controls."OSPS-BR-06.01".passes.manual]
 steps = [
@@ -587,6 +645,13 @@ deterministic = { file_must_exist = [
     "README",
     "readme.md",
 ]}
+
+[controls."OSPS-DO-01.01".passes.manual]
+steps = [
+    "Navigate to repository root directory",
+    "Verify a README file exists (README.md, README.rst, or similar)",
+    "Check that README contains project description and basic usage",
+]
 
 [controls."OSPS-DO-02.01"]
 name = "BugReportingProcess"
@@ -702,6 +767,13 @@ deterministic = { file_must_exist = [
     "docs/CONTRIBUTING.md",
 ]}
 
+[controls."OSPS-GV-03.01".passes.manual]
+steps = [
+    "Look for CONTRIBUTING.md in repository root or .github/ directory",
+    "Verify it contains contribution guidelines and process",
+    "Check it includes code of conduct or links to one",
+]
+
 [controls."OSPS-GV-03.01".remediation]
 handler = "create_contributing"  # Legacy handler for fallback
 safe = true
@@ -736,6 +808,13 @@ deterministic = { file_must_exist = [
     "COPYING",
 ]}
 
+[controls."OSPS-LE-01.01".passes.manual]
+steps = [
+    "Check repository root for LICENSE, LICENSE.md, or COPYING file",
+    "Verify the license file contains valid license text",
+    "Confirm license type is clearly identified",
+]
+
 [controls."OSPS-LE-02.01"]
 name = "OSIApprovedLicense"
 description = "License is OSI-approved"
@@ -763,6 +842,20 @@ name = "ReleaseLicense"
 description = "Releases include license information"
 tags = { level = 1, domain = "LE", legal = true, license = true }
 
+# Check that releases have license info (via release notes or included files)
+[controls."OSPS-LE-02.02".passes.exec]
+command = ["gh", "release", "view", "--json", "body,assets"]
+pass_exit_codes = [0]
+output_format = "json"
+timeout = 30
+
+[controls."OSPS-LE-02.02".passes.manual]
+steps = [
+    "Go to repository Releases page",
+    "Check that latest release mentions license or includes LICENSE file",
+    "Verify release artifacts include license information",
+]
+
 [controls."OSPS-LE-03.01"]
 name = "LicenseInRepo"
 description = "License file present in repository root"
@@ -776,10 +869,37 @@ kind = "file"
 [controls."OSPS-LE-03.01".passes]
 deterministic = { file_must_exist = ["LICENSE", "LICENSE.md", "COPYING"] }
 
+[controls."OSPS-LE-03.01".passes.manual]
+steps = [
+    "Navigate to repository root directory",
+    "Verify a LICENSE or COPYING file exists",
+    "Confirm the file contains complete license text",
+]
+
 [controls."OSPS-LE-03.02"]
 name = "LicenseInReleases"
 description = "License file included in releases"
 tags = { level = 1, domain = "LE", legal = true, license = true }
+
+# TODO: Improve this check to recognize that if OSPS-LE-03.01 passes (LICENSE exists
+# in repo), this control is effectively satisfied because GitHub's auto-generated
+# source archives always include repo files. Could add a deterministic pass that
+# checks for LICENSE file existence as a fallback before manual verification.
+
+# Check that release assets include license file
+[controls."OSPS-LE-03.02".passes.exec]
+command = ["gh", "release", "view", "--json", "assets"]
+pass_exit_codes = [0]
+output_format = "json"
+pass_if_json_contains = "LICENSE"
+timeout = 30
+
+[controls."OSPS-LE-03.02".passes.manual]
+steps = [
+    "Go to repository Releases page",
+    "Download or inspect release archive (zip/tar)",
+    "Verify LICENSE file is included in the release archive",
+]
 
 # =============================================================================
 # Level 1 Controls - Quality Assurance (QA)
@@ -800,10 +920,30 @@ pass_if_json_path = "private"
 pass_if_json_value = "false"
 timeout = 30
 
+[controls."OSPS-QA-01.01".passes.manual]
+steps = [
+    "Navigate to the repository URL",
+    "Verify the repository is accessible without authentication",
+    "Check repository settings to confirm visibility is 'Public'",
+]
+
 [controls."OSPS-QA-01.02"]
 name = "PublicCommitHistory"
 description = "Commit history is publicly visible"
 tags = { level = 1, domain = "QA", quality = true, transparency = true }
+
+# ExecPass: Check that commit history is accessible
+[controls."OSPS-QA-01.02".passes.exec]
+command = ["gh", "api", "/repos/$OWNER/$REPO/commits", "--jq", "length"]
+pass_exit_codes = [0]
+timeout = 30
+
+[controls."OSPS-QA-01.02".passes.manual]
+steps = [
+    "Navigate to repository main page",
+    "Click on commit history (X commits link)",
+    "Verify commit history is accessible and not hidden",
+]
 
 [controls."OSPS-QA-02.01"]
 name = "DependencyManifest"
@@ -830,20 +970,70 @@ deterministic = { file_must_exist = [
     "Gemfile",
 ]}
 
+[controls."OSPS-QA-02.01".passes.manual]
+steps = [
+    "Check for dependency manifest file (package.json, requirements.txt, etc.)",
+    "Verify dependencies are declared with version constraints",
+    "Confirm manifest is appropriate for the project's primary language",
+]
+
 [controls."OSPS-QA-04.01"]
 name = "DocumentSubprojects"
 description = "Subprojects are documented"
 tags = { level = 1, domain = "QA", quality = true, documentation = true }
+
+# Context-dependent: Only applies to projects with subprojects
+[controls."OSPS-QA-04.01".context]
+requires = "has_subprojects"
+not_applicable_if_false = true
+
+# Pattern: Look for subproject/module documentation
+[controls."OSPS-QA-04.01".passes.pattern]
+files = ["README.md", "docs/**/*.md"]
+
+[controls."OSPS-QA-04.01".passes.pattern.patterns]
+subprojects = "(subproject|module|package|workspace|monorepo)"
+
+[controls."OSPS-QA-04.01".passes.manual]
+steps = [
+    "Check if project has subprojects or is a monorepo",
+    "If yes, verify each subproject is documented",
+    "If no subprojects, mark as N/A",
+]
 
 [controls."OSPS-QA-05.01"]
 name = "NoGeneratedExecutables"
 description = "No generated executables in repository"
 tags = { level = 1, domain = "QA", quality = true, security = true }
 
+# Pattern: Check for absence of executable extensions in tracked files
+[controls."OSPS-QA-05.01".passes.pattern]
+exclude_files = ["**/*.exe", "**/*.dll", "**/*.so", "**/*.dylib", "**/*.bin"]
+mode = "exclude_must_not_exist"
+
+[controls."OSPS-QA-05.01".passes.manual]
+steps = [
+    "Search repository for executable files (.exe, .dll, .so, .dylib)",
+    "Verify no generated executables are committed",
+    "Check .gitignore excludes build output directories",
+]
+
 [controls."OSPS-QA-05.02"]
 name = "NoUnreviewableBinaries"
 description = "No unreviewable binary artifacts"
 tags = { level = 1, domain = "QA", quality = true, security = true }
+
+# Pattern: Check for absence of large binary files
+[controls."OSPS-QA-05.02".passes.pattern]
+exclude_files = ["**/*.jar", "**/*.war", "**/*.pyc", "**/*.class", "**/*.o"]
+mode = "exclude_must_not_exist"
+
+[controls."OSPS-QA-05.02".passes.manual]
+steps = [
+    "Search repository for binary artifacts (.jar, .war, .pyc, .class)",
+    "Verify no unreviewable binaries are committed",
+    "Check that build artifacts are in .gitignore",
+]
 
 # =============================================================================
 # Level 1 Controls - Vulnerability Management (VM)
@@ -870,6 +1060,13 @@ deterministic = { file_must_exist = [
     ".github/SECURITY.md",
     "docs/SECURITY.md",
 ]}
+
+[controls."OSPS-VM-02.01".passes.manual]
+steps = [
+    "Look for SECURITY.md in repository root or .github/ directory",
+    "Verify it contains vulnerability reporting instructions",
+    "Check for security contact or email address",
+]
 
 [controls."OSPS-VM-02.01".remediation]
 handler = "create_security_policy"  # Legacy handler for fallback
@@ -898,6 +1095,13 @@ files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
 [controls."OSPS-AC-04.01".passes.pattern.patterns]
 permissions = "^permissions:"
 
+[controls."OSPS-AC-04.01".passes.manual]
+steps = [
+    "Open each workflow file in .github/workflows/",
+    "Verify 'permissions:' block is defined at workflow or job level",
+    "Check permissions follow least-privilege principle",
+]
+
 # =============================================================================
 # Level 2 Controls - Governance (GV)
 # =============================================================================
@@ -925,6 +1129,13 @@ deterministic = { file_must_exist = [
     ".github/CODEOWNERS",
 ]}
 
+[controls."OSPS-GV-01.01".passes.manual]
+steps = [
+    "Check for GOVERNANCE.md, MAINTAINERS.md, or CODEOWNERS file",
+    "Verify governance document describes project leadership",
+    "Confirm decision-making processes are documented",
+]
+
 [controls."OSPS-GV-01.01".remediation]
 handler = "create_governance_doc"
 safe = true
@@ -949,6 +1160,13 @@ files = ["GOVERNANCE.md", "MAINTAINERS.md", "CONTRIBUTING.md"]
 roles = "(maintainer|contributor|reviewer|owner)"
 responsibilities = "(responsibil|duties|role)"
 
+[controls."OSPS-GV-01.02".passes.manual]
+steps = [
+    "Check GOVERNANCE.md, MAINTAINERS.md, or CONTRIBUTING.md",
+    "Verify roles (maintainer, contributor, reviewer) are defined",
+    "Confirm responsibilities for each role are documented",
+]
+
 [controls."OSPS-GV-03.02"]
 name = "ContributionRequirements"
 description = "Contribution requirements are documented"
@@ -960,6 +1178,13 @@ files = ["CONTRIBUTING.md"]
 [controls."OSPS-GV-03.02".passes.pattern.patterns]
 requirements = "(requirement|must|should|need to)"
 process = "(pull request|PR|submit|review)"
+
+[controls."OSPS-GV-03.02".passes.manual]
+steps = [
+    "Review CONTRIBUTING.md for contribution requirements",
+    "Verify pull request process is documented",
+    "Confirm code review and testing requirements are specified",
+]
 
 # =============================================================================
 # Level 2 Controls - Quality Assurance (QA)
@@ -998,6 +1223,13 @@ files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
 test_command = "(npm test|pytest|go test|cargo test|mvn test|gradle test)"
 test_step = "(run.*test|Test|testing)"
 
+[controls."OSPS-QA-06.01".passes.manual]
+steps = [
+    "Review CI workflow files in .github/workflows/",
+    "Verify test commands are present (npm test, pytest, etc.)",
+    "Confirm tests run on pull requests and pushes",
+]
+
 # =============================================================================
 # Level 2 Controls - Vulnerability Management (VM)
 # =============================================================================
@@ -1023,6 +1255,13 @@ files = ["SECURITY.md"]
 [controls."OSPS-VM-01.01".passes.pattern.patterns]
 disclosure = "(disclos|report|contact)"
 process = "(process|procedure|timeline)"
+
+[controls."OSPS-VM-01.01".passes.manual]
+steps = [
+    "Check SECURITY.md for disclosure policy section",
+    "Verify process for reporting vulnerabilities is documented",
+    "Confirm expected timeline for acknowledgment/response is provided",
+]
 
 [controls."OSPS-VM-03.01"]
 name = "PrivateReporting"
@@ -1090,6 +1329,13 @@ files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
 scoped = "(contents:|issues:|pull-requests:|packages:)"
 read_only = "read(-only)?"
 
+[controls."OSPS-AC-04.02".passes.manual]
+steps = [
+    "Review workflow permissions in .github/workflows/",
+    "Verify permissions are scoped to specific resources (contents, issues, etc.)",
+    "Confirm read-only access is used where write access isn't needed",
+]
+
 # =============================================================================
 # Level 3 Controls - Build & Release (BR)
 # =============================================================================
@@ -1098,6 +1344,13 @@ read_only = "read(-only)?"
 name = "ClearAssetAssociation"
 description = "Clearly associate all release assets with release identifiers"
 tags = { level = 3, domain = "BR", build = true, releases = true }
+
+# ExecPass: Check that releases have assets associated with tags
+[controls."OSPS-BR-02.02".passes.exec]
+command = ["gh", "release", "list", "--json", "tagName,assets", "--limit", "5"]
+pass_exit_codes = [0]
+output_format = "json"
+timeout = 30
 
 [controls."OSPS-BR-02.02".passes.manual]
 steps = [
@@ -1151,6 +1404,19 @@ name = "SubprojectSecurity"
 description = "Subprojects enforce security as strict as primary codebase"
 tags = { level = 3, domain = "QA", quality = true, security = true }
 
+# Context-dependent: Only applies to projects with subprojects
+[controls."OSPS-QA-04.02".context]
+requires = "has_subprojects"
+not_applicable_if_false = true
+
+# Pattern: Check for consistent security configuration across subprojects
+[controls."OSPS-QA-04.02".passes.pattern]
+files = ["**/SECURITY.md", "**/CODEOWNERS", "**/.github/workflows/*.yml"]
+pass_if_any = true
+
+[controls."OSPS-QA-04.02".passes.pattern.patterns]
+security_config = "(security|codeowners|workflow)"
+
 [controls."OSPS-QA-04.02".passes.manual]
 steps = [
     "Verify subprojects follow the same security standards as the main project",
@@ -1195,6 +1461,13 @@ files = ["README.md", "CONTRIBUTING.md", "docs/testing.md"]
 [controls."OSPS-QA-06.02".passes.pattern.patterns]
 test_docs = "(run.*test|test.*instruction|how to test)"
 
+[controls."OSPS-QA-06.02".passes.manual]
+steps = [
+    "Check README.md or CONTRIBUTING.md for test instructions",
+    "Verify instructions explain how to run the test suite",
+    "Confirm any required setup or dependencies for testing are documented",
+]
+
 [controls."OSPS-QA-06.03"]
 name = "TestRequirements"
 description = "Test requirements for contributions are documented"
@@ -1205,6 +1478,13 @@ files = ["CONTRIBUTING.md"]
 
 [controls."OSPS-QA-06.03".passes.pattern.patterns]
 test_req = "(test.*required|must.*test|include.*test)"
+
+[controls."OSPS-QA-06.03".passes.manual]
+steps = [
+    "Review CONTRIBUTING.md for test requirements",
+    "Verify contributors are informed that tests are required",
+    "Confirm testing expectations are clearly stated",
+]
 
 # =============================================================================
 # Level 3 Controls - Vulnerability Management (VM)
@@ -1251,6 +1531,13 @@ files = ["SECURITY.md", "docs/security.md"]
 [controls."OSPS-VM-05.01".passes.pattern.patterns]
 sca_policy = "(dependency|SCA|software composition|remediat)"
 
+[controls."OSPS-VM-05.01".passes.manual]
+steps = [
+    "Check SECURITY.md for SCA remediation policy",
+    "Verify policy describes how dependency vulnerabilities are addressed",
+    "Confirm timelines for remediation are specified",
+]
+
 [controls."OSPS-VM-05.02"]
 name = "PreReleaseSCA"
 description = "Pre-release SCA workflow configured"
@@ -1261,6 +1548,13 @@ files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
 
 [controls."OSPS-VM-05.02".passes.pattern.patterns]
 sca_tool = "(dependency-review-action|kusari|trivy|snyk|dependabot)"
+
+[controls."OSPS-VM-05.02".passes.manual]
+steps = [
+    "Check CI workflows for pre-release SCA scanning",
+    "Verify dependency scanning runs before releases",
+    "Confirm SCA tool (dependency-review-action, trivy, snyk) is configured",
+]
 
 [controls."OSPS-VM-05.03"]
 name = "AutomatedDependencyScanning"
@@ -1279,6 +1573,13 @@ deterministic = { file_must_exist = [
     "renovate.json",
     ".renovaterc",
 ]}
+
+[controls."OSPS-VM-05.03".passes.manual]
+steps = [
+    "Check for Dependabot or Renovate configuration file",
+    "Verify dependency scanning is configured for project's ecosystems",
+    "Confirm automated updates are enabled",
+]
 
 [controls."OSPS-VM-05.03".remediation]
 handler = "create_dependabot_config"  # Legacy handler for fallback
@@ -1303,6 +1604,13 @@ files = ["SECURITY.md"]
 [controls."OSPS-VM-06.01".passes.pattern.patterns]
 sast_policy = "(SAST|static analysis|code scan|remediat)"
 
+[controls."OSPS-VM-06.01".passes.manual]
+steps = [
+    "Check SECURITY.md for SAST remediation policy",
+    "Verify policy describes how static analysis findings are addressed",
+    "Confirm timelines for fixing code issues are specified",
+]
+
 [controls."OSPS-VM-06.02"]
 name = "AutomatedSAST"
 description = "Automated SAST in CI pipeline"
@@ -1313,6 +1621,13 @@ files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
 
 [controls."OSPS-VM-06.02".passes.pattern.patterns]
 sast_tool = "(codeql|semgrep|sonar|bandit|gosec|brakeman)"
+
+[controls."OSPS-VM-06.02".passes.manual]
+steps = [
+    "Check CI workflows for automated SAST scanning",
+    "Verify SAST tool (CodeQL, Semgrep, Bandit, etc.) is configured",
+    "Confirm SAST runs on pull requests and/or main branch",
+]
 
 # =============================================================================
 # Level 3 Controls - Documentation (DO)
@@ -1338,6 +1653,13 @@ deterministic = { file_must_exist = [
     "SUPPORT.md",
     ".github/SUPPORT.md",
 ]}
+
+[controls."OSPS-DO-03.01".passes.manual]
+steps = [
+    "Check for SUPPORT.md in repository root or .github/ directory",
+    "Verify support documentation explains how to get help",
+    "Confirm support channels (issues, discussions, chat) are documented",
+]
 
 [controls."OSPS-DO-03.01".remediation]
 handler = "create_support_doc"
@@ -1390,6 +1712,13 @@ files = ["SUPPORT.md", "SECURITY.md", "README.md"]
 [controls."OSPS-DO-05.01".passes.pattern.patterns]
 eol_policy = "(end.of.(life|support)|EOL|deprecat|sunset)"
 
+[controls."OSPS-DO-05.01".passes.manual]
+steps = [
+    "Check SUPPORT.md, SECURITY.md, or README.md for EOL policy",
+    "Verify documentation describes end-of-support timeline",
+    "Confirm deprecation and sunset procedures are documented",
+]
+
 # =============================================================================
 # Level 3 Controls - Governance (GV)
 # =============================================================================
@@ -1404,6 +1733,13 @@ files = ["GOVERNANCE.md", "CONTRIBUTING.md"]
 
 [controls."OSPS-GV-04.01".passes.pattern.patterns]
 review_policy = "(review|collaborator|maintainer).*(policy|process|requirement)"
+
+[controls."OSPS-GV-04.01".passes.manual]
+steps = [
+    "Check GOVERNANCE.md or CONTRIBUTING.md for review policy",
+    "Verify code review requirements are documented",
+    "Confirm collaborator onboarding/offboarding processes exist",
+]
 
 [controls."OSPS-GV-04.01".remediation]
 handler = "create_codeowners"
@@ -1474,6 +1810,13 @@ pass_if_any = true
 
 [controls."OSPS-SA-02.01".passes.pattern.patterns]
 api_section = "(?mi)^#.*\\b(api|interface|usage|methods|functions|endpoints|cli|commands?)\\b"
+
+[controls."OSPS-SA-02.01".passes.manual]
+steps = [
+    "Check for API documentation (API.md, docs/api.md, README.md)",
+    "Verify interface documentation describes available methods/endpoints",
+    "Confirm usage instructions explain how to interact with the project",
+]
 
 [controls."OSPS-SA-03.01"]
 name = "SecurityAssessment"
@@ -1571,7 +1914,38 @@ description = "Initialize a new .project.yaml configuration file"
 
 [mcp.tools.confirm_project_context]
 handler = "darnit_baseline.tools:confirm_project_context"
-description = "Record user-confirmed project context in .project.yaml"
+description = """Record user-confirmed project context in .project.yaml.
+
+**IMPORTANT**: This is the ONLY way to set project context. DO NOT directly edit
+.project/ files - always use this tool instead.
+
+**Parameters:**
+- `local_path`: Path to repository (default: ".")
+- `maintainers`: Project maintainers - list ["@user1", "@user2"] OR file reference "CODEOWNERS"
+- `security_contact`: Security contact email or file reference
+- `governance_model`: One of: bdfl, meritocracy, democracy, corporate, foundation, committee, other
+- `ci_provider`: One of: github, gitlab, jenkins, circleci, azure, travis, none, other
+- `has_subprojects`: Boolean - does project have subprojects?
+- `has_releases`: Boolean - does project make official releases?
+- `is_library`: Boolean - is this a library consumed by other projects?
+- `has_compiled_assets`: Boolean - does project release compiled binaries?
+
+**Examples:**
+```
+# Reference existing CODEOWNERS file (RECOMMENDED)
+confirm_project_context(maintainers="CODEOWNERS")
+
+# Explicit maintainer list
+confirm_project_context(maintainers=["@alice", "@bob"])
+
+# Multiple context values
+confirm_project_context(
+    maintainers="CODEOWNERS",
+    security_contact="security@example.com",
+    ci_provider="github"
+)
+```
+"""
 
 [mcp.tools.generate_threat_model]
 handler = "darnit_baseline.tools:generate_threat_model"

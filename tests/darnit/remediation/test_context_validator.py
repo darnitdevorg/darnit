@@ -222,8 +222,12 @@ class TestFormatContextPrompt:
         assert "GitHub collaborators are not project maintainers" in prompt
         assert "confirm_project_context" in prompt
 
-    def test_includes_auto_detected_value(self):
-        """Prompt should show auto-detected value."""
+    def test_maintainers_does_not_show_auto_detected_value(self):
+        """Maintainers prompt should NOT show auto-detected values (security measure).
+
+        Auto-detected values for maintainers are intentionally hidden to prevent
+        AI agents from guessing. The prompt should ask the user instead.
+        """
         requirement = ContextRequirement(key="maintainers")
         current_value = ContextValue(
             value=["@alice", "@bob"],
@@ -238,9 +242,13 @@ class TestFormatContextPrompt:
             current_value=current_value,
         )
 
-        assert "@alice" in prompt
-        assert "@bob" in prompt
-        assert "Auto-detected" in prompt
+        # Should NOT show auto-detected values for maintainers
+        assert "@alice" not in prompt
+        assert "@bob" not in prompt
+        assert "Auto-detected" not in prompt
+        # Should instead ask user to provide the information
+        assert "Ask the user" in prompt
+        assert "MUST ask" in prompt  # AI instruction
 
     def test_includes_definition_hints(self):
         """Prompt should include hints from definition."""

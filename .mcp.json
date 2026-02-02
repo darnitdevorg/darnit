@@ -1,8 +1,8 @@
 {
   "mcpServers": {
-    "darnit": {
+    "openssf-baseline": {
       "command": "uv",
-      "args": ["run", "python", "main.py"]
+      "args": ["run", "darnit", "serve", "--framework", "openssf-baseline"]
     }
   }
 }

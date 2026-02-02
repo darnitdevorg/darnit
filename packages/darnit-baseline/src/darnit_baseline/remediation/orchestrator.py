@@ -603,6 +603,137 @@ def _determine_remediations_for_failures(failures: list[dict[str, Any]]) -> list
     return sorted(categories)
 
 
+def _preflight_context_check(
+    categories: list[str],
+    local_path: str,
+    owner: str | None,
+    repo: str | None,
+) -> tuple[bool, dict[str, Any]]:
+    """Pre-flight check for all context requirements across categories.
+
+    Aggregates all missing context requirements before starting any remediation.
+    This allows us to prompt the user once for all needed context, rather than
+    discovering missing context one category at a time.
+
+    Args:
+        categories: List of remediation categories to check
+        local_path: Path to repository
+        owner: GitHub owner/organization
+        repo: Repository name
+
+    Returns:
+        Tuple of (ready, context_info) where:
+        - ready: True if all context is available, False if prompts needed
+        - context_info: Dict with missing_context, auto_detected, and prompts
+    """
+    framework = _get_framework_config()
+
+    # Aggregate context requirements across all categories (deduplicate by key)
+    all_requirements: dict[str, tuple[str, Any]] = {}  # key -> (category, requirement)
+
+    for category in categories:
+        if category not in REMEDIATION_REGISTRY:
+            continue
+
+        info = REMEDIATION_REGISTRY[category]
+        controls = info["controls"]
+
+        # Get context requirements for this category
+        context_requirements = get_context_requirements_for_category(
+            category=category,
+            control_id=controls[0] if controls else None,
+            framework=framework,
+            registry=REMEDIATION_REGISTRY,
+        )
+
+        for req in context_requirements:
+            if req.key not in all_requirements:
+                all_requirements[req.key] = (category, req)
+
+    if not all_requirements:
+        return True, {"missing_context": [], "auto_detected": {}, "prompts": []}
+
+    # Check all requirements at once
+    from darnit.remediation.context_validator import check_context_requirements
+
+    requirements_list = [req for _, req in all_requirements.values()]
+    check_result = check_context_requirements(
+        requirements=requirements_list,
+        local_path=local_path,
+        framework=framework,
+        owner=owner,
+        repo=repo,
+    )
+
+    # Build category mapping for context keys
+    key_to_categories: dict[str, list[str]] = {}
+    for key, (category, _) in all_requirements.items():
+        if key not in key_to_categories:
+            key_to_categories[key] = []
+        key_to_categories[key].append(category)
+
+    return check_result.ready, {
+        "missing_context": check_result.missing_context,
+        "auto_detected": check_result.auto_detected,
+        "prompts": check_result.prompts,
+        "key_to_categories": key_to_categories,
+    }
+
+
+def _format_preflight_prompt(
+    context_info: dict[str, Any],
+    local_path: str,
+) -> str:
+    """Format the pre-flight context check results as a user-friendly prompt.
+
+    Args:
+        context_info: Dict with missing_context, auto_detected, prompts, key_to_categories
+        local_path: Path to repository
+
+    Returns:
+        Markdown-formatted prompt for user
+    """
+    md = []
+    md.append("# ⚠️ Context Confirmation Required")
+    md.append("")
+    md.append("Before proceeding with remediation, please confirm the following:")
+    md.append("")
+    md.append("---")
+    md.append("")
+    md.append("## 🚨 IMPORTANT: DO NOT directly edit `.project/` files!")
+    md.append("")
+    md.append("You **MUST** use the `confirm_project_context()` tool to set context values.")
+    md.append("Direct file edits will be rejected and may cause inconsistent state.")
+    md.append("")
+    md.append("---")
+    md.append("")
+
+    # Show each prompt
+    for prompt in context_info.get("prompts", []):
+        md.append(prompt)
+        md.append("")
+
+    # Show which categories are affected
+    key_to_cats = context_info.get("key_to_categories", {})
+    if key_to_cats:
+        md.append("---")
+        md.append("")
+        md.append("**Affected remediation categories:**")
+        for key, cats in key_to_cats.items():
+            if key in context_info.get("missing_context", []):
+                md.append(f"- `{key}`: {', '.join(cats)}")
+        md.append("")
+
+    md.append("---")
+    md.append("")
+    md.append("**After confirming context, re-run remediation:**")
+    md.append("```python")
+    md.append(f'remediate_audit_findings(local_path="{local_path}", dry_run=True)')
+    md.append("```")
+
+    return "\n".join(md)
+
+
 def remediate_audit_findings(
     local_path: str = ".",
     owner: str | None = None,
@@ -668,7 +799,20 @@ def remediate_audit_findings(
     elif categories == ["all"]:
         categories = list(REMEDIATION_REGISTRY.keys())
 
-    # Apply remediations
+    # Pre-flight check: Verify all context requirements BEFORE starting remediation
+    # This ensures we prompt for all missing context upfront, not one-by-one
+    context_ready, context_info = _preflight_context_check(
+        categories=categories,
+        local_path=local_path,
+        owner=owner,
+        repo=repo,
+    )
+
+    if not context_ready:
+        # Return consolidated prompt for all missing context
+        return _format_preflight_prompt(context_info, local_path)
+
+    # All context is ready - apply remediations
     results = []
     for category in categories:
         result = _apply_remediation(

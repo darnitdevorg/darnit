@@ -42,8 +42,9 @@ class TestRemediationE2EFlow:
             dry_run=False,
         )
 
-        # Should show "Needs Confirmation" section with prompt
-        assert "Needs Confirmation" in result1
+        # Pre-flight check now returns early with "Context Confirmation Required"
+        # (instead of running remediations and returning "Needs Confirmation")
+        assert "Context Confirmation Required" in result1 or "Needs Confirmation" in result1
         assert "confirm_project_context" in result1
         assert not (Path(temp_git_repo) / "MAINTAINERS.md").exists()
 
