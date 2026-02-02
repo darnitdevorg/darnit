@@ -209,7 +209,7 @@ def format_context_prompt(
         lines.append("")
     elif allow_sieve_hints and current_value is not None and isinstance(current_value, ContextValue):
         # Case 2: No authoritative file, but sieve found hints - show for confirmation
-        lines.append(f"🔍 **Detected potential values (please confirm):**")
+        lines.append("🔍 **Detected potential values (please confirm):**")
         # Note: source is already a string due to use_enum_values=True in ContextValue
         lines.append(f"   Source: {current_value.source}, Confidence: {current_value.confidence:.0%}")
         if isinstance(current_value.value, list):
