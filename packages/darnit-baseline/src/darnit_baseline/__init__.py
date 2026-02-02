@@ -23,16 +23,17 @@ __version__ = "0.1.0"
 from pathlib import Path
 
 
-def get_framework_path() -> Path:
+def get_framework_path() -> Path | None:
     """Get the path to the OpenSSF Baseline framework TOML file.
 
-    This function is called by darnit's plugin registry via entry points
-    to locate the framework definition file.
+    This delegates to the implementation's get_framework_config_path() method
+    to avoid duplicate path logic.
 
     Returns:
-        Path: Absolute path to openssf-baseline.toml.
+        Path: Absolute path to openssf-baseline.toml, or None if not found.
     """
-    return Path(__file__).parent.parent.parent / "openssf-baseline.toml"
+    from .implementation import OSPSBaselineImplementation
+    return OSPSBaselineImplementation().get_framework_config_path()
 
 
 def register():

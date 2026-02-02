@@ -128,33 +128,28 @@ _effective_config_cache: dict[str, Any] = {}
 
 
 def _get_framework_config_path() -> Path | None:
-    """Get path to the framework TOML file from the installed package.
+    """Get path to the framework TOML file via plugin discovery.
+
+    This uses the ComplianceImplementation protocol to get the framework
+    config path, avoiding direct imports of implementation packages.
 
     Returns:
-        Path to openssf-baseline.toml or None if not found
+        Path to framework TOML file or None if not found
     """
     try:
-        import darnit_baseline
-        # darnit_baseline.__file__ is like:
-        # .../packages/darnit-baseline/src/darnit_baseline/__init__.py
-        # We need: .../packages/darnit-baseline/openssf-baseline.toml
-        init_path = Path(darnit_baseline.__file__)
-        # Go up: __init__.py -> darnit_baseline -> src -> darnit-baseline
-        package_root = init_path.parent.parent.parent
+        from darnit.core.discovery import get_default_implementation
 
-        # Try standard locations
-        candidates = [
-            package_root / "openssf-baseline.toml",
-            init_path.parent / "openssf-baseline.toml",  # Inside package
-            package_root / "src" / "openssf-baseline.toml",
-        ]
+        impl = get_default_implementation()
+        if impl and hasattr(impl, "get_framework_config_path"):
+            path = impl.get_framework_config_path()
+            if path and path.exists():
+                return path
+            logger.debug(f"Framework config path from {impl.name} does not exist: {path}")
+        elif impl:
+            logger.debug(f"Implementation {impl.name} does not provide get_framework_config_path()")
+        else:
+            logger.debug("No compliance implementation found")
 
-        for candidate in candidates:
-            if candidate.exists():
-                return candidate
-
-    except ImportError:
-        logger.debug("darnit_baseline not installed")
     except Exception as e:
         logger.debug(f"Error locating framework config: {e}")
 
@@ -467,14 +462,20 @@ def _run_sieve_checks(
     SieveOrchestrator = sieve["SieveOrchestrator"]
     CheckContext = sieve["CheckContext"]
 
-    # Register Python-defined controls first
+    # Register Python-defined controls first via plugin system
     # These take priority over TOML definitions for the same control_id
     try:
-        import darnit_baseline.controls.level1  # noqa: F401
-        import darnit_baseline.controls.level2  # noqa: F401
-        import darnit_baseline.controls.level3  # noqa: F401
-        logger.debug("Registered Python control definitions")
-    except ImportError as e:
+        from darnit.core.discovery import get_default_implementation
+
+        impl = get_default_implementation()
+        if impl and hasattr(impl, "register_controls"):
+            impl.register_controls()
+            logger.debug(f"Registered Python control definitions from {impl.name}")
+        elif impl:
+            logger.debug(f"Implementation {impl.name} does not provide register_controls()")
+        else:
+            logger.debug("No compliance implementation found for control registration")
+    except Exception as e:
         logger.debug(f"Python control modules not available: {e}")
 
     # Register controls from TOML framework definition

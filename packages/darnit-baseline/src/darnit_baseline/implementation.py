@@ -4,6 +4,7 @@ This module provides the OSPSBaselineImplementation class that implements
 the darnit ComplianceImplementation protocol for OpenSSF Baseline (OSPS v2025.10.10).
 """
 
+from pathlib import Path
 from typing import Any
 
 from darnit.core.plugin import ControlSpec
@@ -83,6 +84,23 @@ class OSPSBaselineImplementation:
         """Get the remediation registry for auto-fixes."""
         from .remediation.registry import REMEDIATION_REGISTRY
         return REMEDIATION_REGISTRY
+
+    def get_framework_config_path(self) -> Path | None:
+        """Get path to the OpenSSF Baseline framework TOML file.
+
+        Returns:
+            Path to openssf-baseline.toml in the package root.
+        """
+        # Navigate from implementation.py to package root:
+        # implementation.py -> darnit_baseline -> src -> darnit-baseline -> openssf-baseline.toml
+        return Path(__file__).parent.parent.parent / "openssf-baseline.toml"
+
+    def register_controls(self) -> None:
+        """Register Python-defined controls with the sieve registry.
+
+        This imports the control modules which register controls via decorators.
+        """
+        from .controls import level1, level2, level3  # noqa: F401
 
 
 __all__ = ["OSPSBaselineImplementation"]

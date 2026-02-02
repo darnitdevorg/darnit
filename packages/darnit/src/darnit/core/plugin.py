@@ -7,6 +7,7 @@ Implementations register via Python entry points under 'darnit.implementations'.
 """
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 
@@ -99,6 +100,38 @@ class ComplianceImplementation(Protocol):
 
     def get_remediation_registry(self) -> dict[str, Any]:
         """Get the remediation registry for auto-fixes."""
+        ...
+
+    def get_framework_config_path(self) -> Path | None:
+        """Get path to the framework configuration file (e.g., TOML).
+
+        This method enables the framework to locate implementation-specific
+        configuration files without hardcoding paths or importing implementation
+        packages directly.
+
+        Returns:
+            Path to the framework config file, or None if not applicable.
+
+        Example:
+            # In openssf-baseline implementation:
+            def get_framework_config_path(self) -> Path | None:
+                return Path(__file__).parent.parent.parent / "openssf-baseline.toml"
+        """
+        ...
+
+    def register_controls(self) -> None:
+        """Register this implementation's Python-defined controls.
+
+        Implementations should import their control modules here to trigger
+        registration via decorators (e.g., @register_control). This allows
+        the framework to load controls without knowing implementation-specific
+        module paths.
+
+        Example:
+            # In openssf-baseline implementation:
+            def register_controls(self) -> None:
+                from .controls import level1, level2, level3  # noqa: F401
+        """
         ...
 
 

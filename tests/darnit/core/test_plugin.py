@@ -1,5 +1,6 @@
 """Tests for darnit.core.plugin module."""
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -97,6 +98,12 @@ class MockImplementation:
 
     def get_remediation_registry(self) -> dict[str, Any]:
         return {}
+
+    def get_framework_config_path(self) -> Path | None:
+        return None
+
+    def register_controls(self) -> None:
+        pass
 
 
 class TestComplianceImplementation:
