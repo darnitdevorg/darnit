@@ -179,70 +179,64 @@ def format_context_prompt(
         lines.append(f"⚠️ {requirement.warning}")
         lines.append("")
 
-    # For maintainers, check for existing governance files that can be referenced
-    existing_maintainer_files: list[str] = []
-    if context_key == "maintainers" and local_path:
+    # Get hint_sources from definition (TOML-driven, no hardcoding)
+    hint_sources = definition.hint_sources if definition else []
+    allow_sieve_hints = definition.allow_sieve_hints if definition else False
+
+    # Check for authoritative files from hint_sources
+    existing_hint_files: list[str] = []
+    if local_path and hint_sources:
         repo_path = Path(local_path)
-        for candidate in ["CODEOWNERS", ".github/CODEOWNERS", "MAINTAINERS.md", "MAINTAINERS"]:
+        for candidate in hint_sources:
             if (repo_path / candidate).exists():
-                existing_maintainer_files.append(candidate)
+                existing_hint_files.append(candidate)
 
-    # For maintainers: only show authoritative file references OR ask user
-    # Never show auto-detected values - they are too easy for AI to guess
-    if context_key == "maintainers":
-        if existing_maintainer_files:
-            lines.append("📁 **Found authoritative source(s):**")
-            for f in existing_maintainer_files:
-                lines.append(f"   - `{f}`")
-            lines.append("")
-            lines.append("**Use this command to reference the file:**")
-            lines.append("```")
-            lines.append(f'confirm_project_context(maintainers="{existing_maintainer_files[0]}")')
-            lines.append("```")
-            lines.append("")
+    # Cascading prompt logic:
+    # 1. If authoritative file exists → suggest referencing file (short-circuit)
+    # 2. If no file but sieve hints allowed → show detected values for confirmation
+    # 3. If no hints at all → ask user directly
+
+    if existing_hint_files:
+        # Case 1: Authoritative file exists - suggest referencing it
+        lines.append("📁 **Found authoritative source(s):**")
+        for f in existing_hint_files:
+            lines.append(f"   - `{f}`")
+        lines.append("")
+        lines.append("**Use this command to reference the file:**")
+        lines.append("```")
+        lines.append(f'confirm_project_context({context_key}="{existing_hint_files[0]}")')
+        lines.append("```")
+        lines.append("")
+    elif allow_sieve_hints and current_value is not None and isinstance(current_value, ContextValue):
+        # Case 2: No authoritative file, but sieve found hints - show for confirmation
+        lines.append(f"🔍 **Detected potential values (please confirm):**")
+        # Note: source is already a string due to use_enum_values=True in ContextValue
+        lines.append(f"   Source: {current_value.source}, Confidence: {current_value.confidence:.0%}")
+        if isinstance(current_value.value, list):
+            for item in current_value.value[:10]:
+                lines.append(f"   - {item}")
+            if len(current_value.value) > 10:
+                lines.append(f"   - ... and {len(current_value.value) - 10} more")
         else:
-            lines.append("📭 **No maintainer file found** (CODEOWNERS, MAINTAINERS.md, etc.)")
-            lines.append("")
-            lines.append("**Ask the user:** Who are the maintainers of this project?")
-            lines.append("")
-            lines.append("**After the user provides names, use:**")
-            lines.append("```")
-            lines.append('confirm_project_context(maintainers=["@user1", "@user2"])')
-            lines.append("```")
-            lines.append("")
-        # Skip showing auto-detected values for maintainers - return early
+            lines.append(f"   {current_value.value}")
+        lines.append("")
+        lines.append("**Confirm or correct:**")
+        lines.append("```")
+        if isinstance(current_value.value, list):
+            lines.append(f'confirm_project_context({context_key}={current_value.value})')
+        else:
+            lines.append(f'confirm_project_context({context_key}="{current_value.value}")')
+        lines.append("```")
+        lines.append("")
     else:
-        # Show existing files that can be referenced (PREFERRED option)
-        if existing_maintainer_files:
-            lines.append("📁 **Existing maintainer files found:**")
-            for f in existing_maintainer_files:
-                lines.append(f"   - `{f}`")
-            lines.append("")
-            lines.append("💡 **Recommended:** Reference an existing file instead of duplicating data:")
-            lines.append("```")
-            lines.append(f'confirm_project_context(maintainers="{existing_maintainer_files[0]}")')
-            lines.append("```")
-            lines.append("")
-            lines.append("This ensures maintainer data stays in sync with the authoritative source.")
-            lines.append("")
-
-        # Show current value if auto-detected (as ALTERNATIVE, not primary)
-        if current_value is not None:
-            if isinstance(current_value, ContextValue):
-                if existing_maintainer_files:
-                    lines.append("---")
-                    lines.append("")
-                    lines.append("**Alternative:** Specify maintainers explicitly (not recommended if files exist):")
-                    lines.append("")
-                lines.append(f"🔍 **Auto-detected value** (confidence: {current_value.confidence:.0%}):")
-                if isinstance(current_value.value, list):
-                    for item in current_value.value[:10]:  # Limit to 10 items
-                        lines.append(f"   - {item}")
-                    if len(current_value.value) > 10:
-                        lines.append(f"   - ... and {len(current_value.value) - 10} more")
-                else:
-                    lines.append(f"   {current_value.value}")
-                lines.append("")
+        # Case 3: No hints at all - ask user directly
+        if hint_sources:
+            lines.append(f"📭 **No authoritative file found** ({', '.join(hint_sources[:3])})")
+        else:
+            lines.append(f"📭 **No hints available for `{context_key}`**")
+        lines.append("")
+        lines.append(f"**Ask the user:** What is the value for `{context_key}`?")
+        lines.append("")
 
     # Prompt and hint from definition
     if definition:
@@ -253,12 +247,15 @@ def format_context_prompt(
             lines.append(f"📝 Examples: {', '.join(definition.examples[:3])}")
         lines.append("")
 
-    # Instructions (skip for maintainers - already handled above)
-    if context_key != "maintainers" and not existing_maintainer_files:
-        lines.append("**To proceed, confirm the context using:**")
+    # Generic instructions (only if we haven't already shown a specific command)
+    # This handles the "ask user directly" case (Case 3)
+    if not existing_hint_files and not (allow_sieve_hints and current_value is not None):
+        lines.append("**After the user provides the value, use:**")
         lines.append("```")
-        if context_key == "security_contact":
-            lines.append('confirm_project_context(security_contact="security@example.com")')
+        # Show example based on context type
+        if definition and definition.examples:
+            example = definition.examples[0]
+            lines.append(f'confirm_project_context({context_key}={example})')
         else:
             lines.append(f'confirm_project_context({context_key}=<value>)')
         lines.append("```")
@@ -337,9 +334,9 @@ def _try_sieve_detection(
     2. Heuristic (git history, package.json authors)
     3. API (GitHub collaborators)
 
-    NOTE: Some context keys are intentionally NOT auto-detected to prevent
-    AI agents from guessing values. For example, "maintainers" must come
-    from authoritative sources (CODEOWNERS, MAINTAINERS.md) or user input.
+    NOTE: The sieve results are used as HINTS for user confirmation, not
+    auto-applied values. The display of sieve hints is controlled by
+    `allow_sieve_hints` in the ContextDefinitionConfig TOML.
 
     Args:
         key: Context key to detect (e.g., "maintainers")
@@ -350,15 +347,6 @@ def _try_sieve_detection(
     Returns:
         ContextValue with auto-detected value if found, None otherwise
     """
-    # Never auto-detect maintainers - too easy for AI to guess wrong.
-    # AI agents will see repo owner and assume they're the maintainer.
-    # Instead, require either an authoritative file or explicit user input.
-    if key == "maintainers":
-        logger.debug(
-            f"Skipping auto-detection for '{key}' - requires authoritative source or user input"
-        )
-        return None
-
     try:
         from darnit.context import get_context_sieve
 

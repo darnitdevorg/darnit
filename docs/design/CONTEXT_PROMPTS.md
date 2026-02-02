@@ -119,6 +119,14 @@ examples = ["@user1, @user2", "MAINTAINERS.md", "See CODEOWNERS"]
 affects = ["OSPS-GV-01.01", "OSPS-GV-01.02", "OSPS-GV-04.01"]
 store_as = "governance.maintainers"  # Where to store in .project/
 
+# Hint sources: files to check for authoritative values
+# If any exist, prompt suggests referencing the file instead of providing values
+hint_sources = ["CODEOWNERS", ".github/CODEOWNERS", "MAINTAINERS.md", "MAINTAINERS"]
+
+# Allow sieve hints: whether to show auto-detected values for confirmation
+# When true and no authoritative file exists, shows sieve-detected values as suggestions
+allow_sieve_hints = true
+
 [context.security_contact]
 type = "string"
 prompt = "What is the security contact for vulnerability reports?"
@@ -177,7 +185,48 @@ fields = ["maintainers", "governance_model"]
 | `email` | Email address | RFC 5322 | String |
 | `url` | URL | Valid URL | String |
 
-### 4. .project/ Directory Structure (CNCF Compliant)
+### 4. Context Definition Fields
+
+Each `[context.key]` section supports these fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | string | Value type (see Context Types above) |
+| `prompt` | string | Question to ask the user |
+| `hint` | string | Help text explaining what's needed |
+| `examples` | list | Example values to guide the user |
+| `values` | list | Valid values for `enum` type |
+| `affects` | list | Control IDs that depend on this context |
+| `store_as` | string | Path in .project/ where value is stored (e.g., `governance.maintainers`) |
+| `auto_detect` | bool | Whether value can be auto-detected (default: false) |
+| `auto_detect_method` | string | Method name for auto-detection (e.g., `github_collaborators`) |
+| `required` | bool | Whether this context is required (default: false) |
+| `hint_sources` | list | **Files to check for authoritative values** (e.g., `["CODEOWNERS", "MAINTAINERS.md"]`) |
+| `allow_sieve_hints` | bool | **Whether to show sieve-detected values as suggestions** (default: false) |
+
+#### Hint Sources and Sieve Hints
+
+The `hint_sources` and `allow_sieve_hints` fields control how the system helps users provide context values:
+
+1. **If an authoritative file exists** (from `hint_sources`):
+   - Prompt suggests referencing the file: `confirm_project_context(maintainers="CODEOWNERS")`
+   - No guessing or auto-detection shown
+
+2. **If NO authoritative file** AND `allow_sieve_hints = true`:
+   - Sieve runs detection (git history, package.json, GitHub API)
+   - Shows detected values for user confirmation
+   - User can confirm or correct the suggestions
+
+3. **If NO hints available**:
+   - Asks user directly without suggestions
+   - No guessing from repository owner or other sources
+
+This cascading approach ensures:
+- Authoritative files are preferred over guessed values
+- Auto-detected hints are shown for confirmation, never auto-applied
+- AI agents cannot bypass confirmation by inferring values
+
+### 5. .project/ Directory Structure (CNCF Compliant)
 
 Move from monolithic `.project.yaml` to modular `.project/` following CNCF conventions:
 
@@ -224,7 +273,7 @@ extensions:
           reason: "No releases yet"
 ```
 
-### 5. Context Storage Schema (CNCF Extension Format)
+### 6. Context Storage Schema (CNCF Extension Format)
 
 **Option A: Inline in `.project/project.yaml`** (recommended for most projects):
 ```yaml
@@ -322,7 +371,7 @@ private_vuln_reporting:
 | `file_reference` | Points to a file containing the information | 0.9 |
 | `default` | Default value when no other source available | 0.5 |
 
-### 6. Pydantic Models (CNCF Extension Compatible)
+### 7. Pydantic Models (CNCF Extension Compatible)
 
 ```python
 # packages/darnit/src/darnit/config/context_schema.py
@@ -430,7 +479,7 @@ class CNCFProjectConfig(BaseModel):
     extensions: Optional[ProjectExtensions] = None
 ```
 
-### 7. Framework Schema Extensions
+### 8. Framework Schema Extensions
 
 ```python
 # packages/darnit/src/darnit/config/framework_schema.py
@@ -483,7 +532,7 @@ def load_project_config(local_path: str) -> Optional[CNCFProjectConfig]:
     return None
 ```
 
-### 8. MCP Tool: confirm_project_context (Enhanced)
+### 9. MCP Tool: confirm_project_context (Enhanced)
 
 ```python
 def confirm_project_context(
@@ -518,7 +567,7 @@ def confirm_project_context(
     """
 ```
 
-### 9. MCP Tool: get_pending_context
+### 10. MCP Tool: get_pending_context
 
 ```python
 def get_pending_context(
@@ -550,7 +599,7 @@ def get_pending_context(
     """
 ```
 
-### 10. Audit Output Integration
+### 11. Audit Output Integration
 
 When audit runs, include context prompts in output:
 

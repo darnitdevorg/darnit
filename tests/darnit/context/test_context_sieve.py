@@ -348,14 +348,15 @@ class TestIntegrationWithValidator:
 
     @pytest.mark.unit
     def test_validator_uses_sieve_for_detection(self, temp_repo):
-        """Validator should NOT auto-detect maintainers (security measure).
+        """Validator uses sieve detection but prompts for authoritative file reference.
 
-        Maintainers are intentionally excluded from sieve auto-detection to
-        prevent AI agents from guessing values based on git history or repo
-        owner. Instead, the validator should prompt for user confirmation
-        and suggest referencing the authoritative file.
+        When an authoritative file (MAINTAINERS.md) exists and is listed in the
+        context definition's hint_sources, the prompt should suggest referencing
+        that file rather than showing sieve-detected values. The sieve still
+        runs and populates auto_detected, but the prompt prioritizes the
+        authoritative file as the primary source.
         """
-        # Create a MAINTAINERS.md so sieve can detect
+        # Create a MAINTAINERS.md - this is an authoritative source
         (Path(temp_repo) / "MAINTAINERS.md").write_text("""
 # Maintainers
 - @alice
@@ -363,7 +364,12 @@ class TestIntegrationWithValidator:
 """)
 
         from darnit.config.framework_schema import ContextRequirement
+        from darnit.config.merger import load_framework_config
         from darnit.remediation.context_validator import check_context_requirements
+
+        # Load the framework config to get hint_sources from TOML
+        framework_path = Path(__file__).parent.parent.parent.parent / "packages" / "darnit-baseline" / "openssf-baseline.toml"
+        framework = load_framework_config(framework_path)
 
         requirements = [
             ContextRequirement(
@@ -377,13 +383,13 @@ class TestIntegrationWithValidator:
         result = check_context_requirements(
             requirements=requirements,
             local_path=temp_repo,
+            framework=framework,
             owner="test-owner",
             repo="test-repo",
         )
 
-        # Maintainers should NOT be auto-detected (intentionally disabled)
-        assert "maintainers" not in result.auto_detected
-        # But should still be in missing_context (needs confirmation)
+        # Sieve may populate auto_detected (now allowed via allow_sieve_hints=true)
+        # Key behavior: maintainers should still be in missing_context (needs confirmation)
         assert "maintainers" in result.missing_context
         # Prompt should reference the authoritative file
         assert len(result.prompts) >= 1

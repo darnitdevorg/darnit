@@ -248,9 +248,13 @@ hint = "Provide GitHub usernames (e.g., @user1, @user2) or path to MAINTAINERS.m
 examples = ["@user1, @user2", "MAINTAINERS.md"]
 affects = ["OSPS-GV-01.01", "OSPS-GV-01.02", "OSPS-GV-04.01"]
 store_as = "governance.maintainers"
-auto_detect = true
-auto_detect_method = "github_collaborators"  # Uses get_repo_maintainers() from GitHub API
+auto_detect = false  # Never auto-use values without confirmation
+auto_detect_method = "github_collaborators"  # Used for sieve hints when allow_sieve_hints=true
 required = false
+# Authoritative files to check - if found, suggest referencing the file instead of values
+hint_sources = ["CODEOWNERS", ".github/CODEOWNERS", "MAINTAINERS.md", "MAINTAINERS"]
+# Show sieve results (git history, manifests, API) as hints when no authoritative file exists
+allow_sieve_hints = true
 
 [context.security_contact]
 type = "string"

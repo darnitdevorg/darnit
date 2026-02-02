@@ -810,6 +810,8 @@ class ContextDefinitionConfig(BaseModel):
         store_as = "governance.maintainers"
         auto_detect = false
         required = false
+        hint_sources = ["CODEOWNERS", ".github/CODEOWNERS", "MAINTAINERS.md"]
+        allow_sieve_hints = true
         ```
     """
     # Type of the context value (for validation)
@@ -841,6 +843,15 @@ class ContextDefinitionConfig(BaseModel):
 
     # Whether this context is required for accurate audit
     required: bool = False
+
+    # Files to check for authoritative values (e.g., CODEOWNERS, MAINTAINERS.md)
+    # If any of these files exist, they can be referenced instead of providing values directly
+    hint_sources: list[str] = Field(default_factory=list)
+
+    # Whether to show sieve-detected values as hints when no authoritative file exists
+    # If True, sieve results (git history, manifests, API) are shown for user confirmation
+    # If False, only ask user directly without showing guesses
+    allow_sieve_hints: bool = False
 
     model_config = ConfigDict(extra="allow")
 
