@@ -7,42 +7,47 @@ remediations and legacy Python function remediations.
 
 import inspect
 from datetime import datetime
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Any
 
+from darnit.config.framework_schema import FrameworkConfig, TemplateConfig
+from darnit.config.loader import load_project_config
+from darnit.config.resolver import update_config_after_file_create
 from darnit.core.logging import get_logger
 from darnit.core.models import AuditResult
 from darnit.core.utils import (
-    validate_local_path,
     detect_repo_from_git,
     get_git_commit,
     get_git_ref,
+    validate_local_path,
 )
-from darnit.config.loader import load_project_config
-from darnit.config.framework_schema import FrameworkConfig, TemplateConfig
+from darnit.remediation.context_validator import (
+    check_context_requirements,
+    get_context_requirements_for_category,
+)
 from darnit.remediation.executor import RemediationExecutor
+from darnit.remediation.github import enable_branch_protection
+from darnit.sieve.project_context import is_control_applicable
 from darnit.tools import (
+    calculate_compliance,
     prepare_audit,
     run_checks,
     summarize_results,
-    calculate_compliance,
 )
 
-from darnit.sieve.project_context import is_control_applicable
-from darnit.config.resolver import update_config_after_file_create
-
-from .registry import REMEDIATION_REGISTRY, get_control_to_category_map
 from ..config.mappings import CONTROL_REFERENCE_MAPPING
 from .actions import (
-    create_security_policy,
-    create_contributing_guide,
-    create_codeowners,
-    create_governance_doc,
-    create_dependabot_config,
-    create_support_doc,
-    create_bug_report_template,
     configure_dco_enforcement,
+    create_bug_report_template,
+    create_codeowners,
+    create_contributing_guide,
+    create_dependabot_config,
+    create_governance_doc,
+    create_maintainers_doc,
+    create_security_policy,
+    create_support_doc,
+    ensure_vex_policy,
 )
-from darnit.remediation.github import enable_branch_protection
+from .registry import REMEDIATION_REGISTRY, get_control_to_category_map
 
 logger = get_logger("remediation.orchestrator")
 
@@ -51,10 +56,10 @@ logger = get_logger("remediation.orchestrator")
 # Framework Loading
 # =============================================================================
 
-_cached_framework: Optional[FrameworkConfig] = None
+_cached_framework: FrameworkConfig | None = None
 
 
-def _get_framework_config() -> Optional[FrameworkConfig]:
+def _get_framework_config() -> FrameworkConfig | None:
     """Load the OpenSSF Baseline framework config from TOML.
 
     Returns:
@@ -65,11 +70,7 @@ def _get_framework_config() -> Optional[FrameworkConfig]:
         return _cached_framework
 
     try:
-        import sys
-        if sys.version_info >= (3, 11):
-            import tomllib
-        else:
-            import tomli as tomllib
+        import tomllib
 
         # Use the package's get_framework_path() function
         from darnit_baseline import get_framework_path
@@ -86,7 +87,7 @@ def _get_framework_config() -> Optional[FrameworkConfig]:
         logger.debug(f"Loaded framework config from {toml_path}")
         return _cached_framework
 
-    except (OSError, IOError) as e:
+    except OSError as e:
         logger.debug(f"Failed to load framework TOML: {e}")
         return None
     except (ValueError, TypeError, KeyError) as e:
@@ -96,7 +97,7 @@ def _get_framework_config() -> Optional[FrameworkConfig]:
 
 def _get_declarative_remediation(
     control_id: str,
-) -> Tuple[Optional[Any], Optional[Dict[str, TemplateConfig]]]:
+) -> tuple[Any | None, dict[str, TemplateConfig] | None]:
     """Get declarative remediation config for a control.
 
     Args:
@@ -122,12 +123,12 @@ def _get_declarative_remediation(
 
 
 def _run_baseline_checks(
-    owner: Optional[str],
-    repo: Optional[str],
+    owner: str | None,
+    repo: str | None,
     local_path: str,
     level: int = 3,
     use_sieve: bool = True,
-) -> Tuple[Optional[AuditResult], Optional[str]]:
+) -> tuple[AuditResult | None, str | None]:
     """Run baseline checks and return audit result or error.
 
     Args:
@@ -145,8 +146,8 @@ def _run_baseline_checks(
     if error:
         return None, error
 
-    # Run checks
-    all_results = run_checks(owner, repo, resolved_path, default_branch, level, use_sieve=use_sieve)
+    # Run checks - returns (results_list, skipped_controls_dict)
+    all_results, skipped_controls = run_checks(owner, repo, resolved_path, default_branch, level, use_sieve=use_sieve)
 
     # Calculate summary
     summary = summarize_results(all_results)
@@ -160,7 +161,7 @@ def _run_baseline_checks(
     project_config = None
     try:
         project_config = load_project_config(resolved_path)
-    except (IOError, OSError):
+    except OSError:
         pass
 
     # Create audit result
@@ -178,7 +179,7 @@ def _run_baseline_checks(
         config_was_created=False,
         config_was_updated=False,
         config_changes=[],
-        skipped_controls={},
+        skipped_controls=skipped_controls,
         commit=commit,
         ref=ref,
     )
@@ -189,10 +190,10 @@ def _run_baseline_checks(
 def _apply_remediation(
     category: str,
     local_path: str,
-    owner: Optional[str] = None,
-    repo: Optional[str] = None,
+    owner: str | None = None,
+    repo: str | None = None,
     dry_run: bool = True
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Apply a single remediation category.
 
     This function first checks if controls are applicable (via .project.yaml),
@@ -219,6 +220,48 @@ def _apply_remediation(
     info = REMEDIATION_REGISTRY[category]
     controls = info["controls"]
 
+    # Get framework config for TOML-based requirements
+    framework = _get_framework_config()
+
+    # Pre-check: Validate context requirements before running remediation
+    # Priority: TOML (via framework) > Python registry
+    context_requirements = get_context_requirements_for_category(
+        category=category,
+        control_id=controls[0] if controls else None,  # Use first control for TOML lookup
+        framework=framework,
+        registry=REMEDIATION_REGISTRY,
+    )
+
+    # Context validation must happen regardless of dry_run mode
+    # Users need to see the prompt even in preview mode, otherwise they get
+    # misleading output showing files would be created with guessed maintainers
+    if context_requirements:
+        check_result = check_context_requirements(
+            requirements=context_requirements,
+            local_path=local_path,
+            framework=framework,
+            owner=owner,  # Pass for sieve auto-detection
+            repo=repo,    # Pass for sieve auto-detection
+        )
+
+        if not check_result.ready:
+            # Context needs confirmation - return prompts
+            logger.info(f"Remediation {category} needs context confirmation: {check_result.missing_context}")
+
+            # Build the prompt output
+            prompt_output = "\n\n".join(check_result.prompts)
+
+            return {
+                "category": category,
+                "status": "needs_confirmation",
+                "description": info["description"],
+                "controls": controls,
+                "missing_context": check_result.missing_context,
+                "auto_detected": check_result.auto_detected,
+                "result": prompt_output,
+                "declarative": False,
+            }
+
     # Check if any of the controls are applicable (respects .project.yaml overrides)
     skipped_controls = []
     applicable_controls = []
@@ -238,7 +281,7 @@ def _apply_remediation(
             "description": info["description"],
             "controls": controls,
             "skipped_controls": skipped_controls,
-            "message": f"All controls marked as N/A in .project.yaml",
+            "message": "All controls marked as N/A in .project.yaml",
         }
 
     # Try declarative remediation first (only for applicable controls)
@@ -280,13 +323,13 @@ def _apply_declarative_remediation(
     category: str,
     control_id: str,
     remediation_config: Any,
-    templates: Optional[Dict[str, TemplateConfig]],
+    templates: dict[str, TemplateConfig] | None,
     local_path: str,
-    owner: Optional[str],
-    repo: Optional[str],
+    owner: str | None,
+    repo: str | None,
     dry_run: bool,
-    info: Dict[str, Any],
-) -> Dict[str, Any]:
+    info: dict[str, Any],
+) -> dict[str, Any]:
     """Apply a declarative remediation from TOML config.
 
     Args:
@@ -380,7 +423,7 @@ def _apply_declarative_remediation(
 
 
 # Mapping from category to file path and primary control ID for config updates
-CATEGORY_FILE_MAPPING: Dict[str, Dict[str, str]] = {
+CATEGORY_FILE_MAPPING: dict[str, dict[str, str]] = {
     "security_policy": {
         "file": "SECURITY.md",
         "control_id": "OSPS-VM-01.01",  # Primary control for security.policy
@@ -419,11 +462,11 @@ CATEGORY_FILE_MAPPING: Dict[str, Dict[str, str]] = {
 def _apply_legacy_remediation(
     category: str,
     local_path: str,
-    owner: Optional[str],
-    repo: Optional[str],
+    owner: str | None,
+    repo: str | None,
     dry_run: bool,
-    info: Dict[str, Any],
-) -> Dict[str, Any]:
+    info: dict[str, Any],
+) -> dict[str, Any]:
     """Apply a legacy Python function remediation.
 
     Args:
@@ -443,8 +486,10 @@ def _apply_legacy_remediation(
     func_map = {
         "enable_branch_protection": enable_branch_protection,
         "create_security_policy": create_security_policy,
+        "ensure_vex_policy": ensure_vex_policy,
         "create_contributing_guide": create_contributing_guide,
         "create_codeowners": create_codeowners,
+        "create_maintainers_doc": create_maintainers_doc,
         "create_governance_doc": create_governance_doc,
         "create_dependabot_config": create_dependabot_config,
         "create_support_doc": create_support_doc,
@@ -460,17 +505,6 @@ def _apply_legacy_remediation(
             "message": f"Remediation function '{func_name}' not yet implemented"
         }
 
-    if dry_run:
-        return {
-            "category": category,
-            "status": "would_apply",
-            "description": info["description"],
-            "controls": info["controls"],
-            "function": func_name,
-            "requires_api": info["requires_api"],
-            "declarative": False,
-        }
-
     try:
         # Call the remediation function with appropriate parameters
         kwargs = {"local_path": local_path}
@@ -481,9 +515,36 @@ def _apply_legacy_remediation(
         if "repo" in sig.parameters:
             kwargs["repo"] = repo
         if "dry_run" in sig.parameters:
-            kwargs["dry_run"] = False
+            kwargs["dry_run"] = dry_run
 
         result = func(**kwargs)
+
+        # Check if the function is asking for user confirmation
+        # Functions that need confirmation return prompts containing "confirm_project_context"
+        needs_confirmation = "confirm_project_context" in result
+
+        if needs_confirmation:
+            logger.info(f"Remediation {category} needs user confirmation")
+            return {
+                "category": category,
+                "status": "needs_confirmation",
+                "description": info["description"],
+                "controls": info["controls"],
+                "result": result,
+                "declarative": False,
+            }
+
+        if dry_run:
+            return {
+                "category": category,
+                "status": "would_apply",
+                "description": info["description"],
+                "controls": info["controls"],
+                "function": func_name,
+                "requires_api": info["requires_api"],
+                "result": result[:500] if len(result) > 500 else result,
+                "declarative": False,
+            }
 
         logger.info(f"Applied legacy remediation: {category}")
 
@@ -511,7 +572,7 @@ def _apply_legacy_remediation(
             "declarative": False,
             "config_updated": config_updated,
         }
-    except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, IOError, OSError) as e:
+    except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as e:
         logger.error(f"Remediation {category} failed: {e}")
         return {
             "category": category,
@@ -522,7 +583,7 @@ def _apply_legacy_remediation(
         }
 
 
-def _determine_remediations_for_failures(failures: List[Dict[str, Any]]) -> List[str]:
+def _determine_remediations_for_failures(failures: list[dict[str, Any]]) -> list[str]:
     """Determine which remediation categories apply to the given failures.
 
     Args:
@@ -544,9 +605,9 @@ def _determine_remediations_for_failures(failures: List[Dict[str, Any]]) -> List
 
 def remediate_audit_findings(
     local_path: str = ".",
-    owner: Optional[str] = None,
-    repo: Optional[str] = None,
-    categories: Optional[List[str]] = None,
+    owner: str | None = None,
+    repo: str | None = None,
+    categories: list[str] | None = None,
     dry_run: bool = True
 ) -> str:
     """
@@ -628,6 +689,7 @@ def remediate_audit_findings(
 
     applied = [r for r in results if r.get("status") == "applied"]
     would_apply = [r for r in results if r.get("status") == "would_apply"]
+    needs_confirmation = [r for r in results if r.get("status") == "needs_confirmation"]
     skipped = [r for r in results if r.get("status") == "skipped"]
     errors = [r for r in results if r.get("status") == "error"]
 
@@ -681,6 +743,25 @@ def remediate_audit_findings(
                     )
                     md.append(f"- **Skipped (N/A):** {skipped_info}")
                 md.append("")
+
+    # Show categories that need user confirmation before proceeding
+    if needs_confirmation:
+        md.append(f"## ⚠️ Needs Confirmation ({len(needs_confirmation)} remediations)")
+        md.append("")
+        md.append("The following remediations need your confirmation before they can be applied:")
+        md.append("")
+        for r in needs_confirmation:
+            controls_str = ", ".join(r.get("controls", []))
+            md.append(f"### {r['category']}")
+            md.append(f"- **Description:** {r.get('description', 'N/A')}")
+            md.append(f"- **Controls:** {controls_str}")
+            md.append("")
+            # Show the full confirmation prompt
+            if r.get("result"):
+                md.append(r["result"])
+            md.append("")
+        md.append("---")
+        md.append("")
 
     # Show categories skipped due to .project.yaml overrides
     if skipped:

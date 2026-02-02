@@ -9,22 +9,28 @@ Implementation-specific remediations (like OSPS orchestrator and actions)
 should be in the respective implementation packages.
 """
 
-from .helpers import (
-    ensure_directory,
-    write_file_safe,
-    check_file_exists,
-    get_repo_maintainers,
-    detect_workflow_checks,
-    format_success,
-    format_error,
-    format_warning,
-)
-from .github import (
-    enable_branch_protection,
+from .context_validator import (
+    ContextCheckResult,
+    check_context_requirements,
+    format_context_prompt,
+    get_context_requirements_for_category,
 )
 from .executor import (
     RemediationExecutor,
     RemediationResult,
+)
+from .github import (
+    enable_branch_protection,
+)
+from .helpers import (
+    check_file_exists,
+    detect_workflow_checks,
+    ensure_directory,
+    format_error,
+    format_success,
+    format_warning,
+    get_repo_maintainers,
+    write_file_safe,
 )
 
 __all__ = [
@@ -42,4 +48,9 @@ __all__ = [
     # Executor
     "RemediationExecutor",
     "RemediationResult",
+    # Context Validator
+    "ContextCheckResult",
+    "check_context_requirements",
+    "format_context_prompt",
+    "get_context_requirements_for_category",
 ]

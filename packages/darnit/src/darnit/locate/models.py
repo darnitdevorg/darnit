@@ -10,8 +10,7 @@ These models form the tool output contract that all check adapters
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Literal, Optional
-
+from typing import Any, Literal
 
 # =============================================================================
 # Found Evidence Models
@@ -33,9 +32,9 @@ class FoundEvidence:
         api_endpoint: API endpoint that was checked (e.g., GitHub API)
         kind: Type of evidence (file, url, api, config)
     """
-    path: Optional[str] = None
-    url: Optional[str] = None
-    api_endpoint: Optional[str] = None
+    path: str | None = None
+    url: str | None = None
+    api_endpoint: str | None = None
     kind: Literal["file", "url", "api", "config"] = "file"
 
     def __post_init__(self):
@@ -45,7 +44,7 @@ class FoundEvidence:
             pass
 
     @property
-    def location(self) -> Optional[str]:
+    def location(self) -> str | None:
         """Return the primary location identifier."""
         if self.path:
             return self.path
@@ -69,9 +68,9 @@ class LocateResult:
         searched_locations: List of locations that were checked
         sync_recommended: Whether the found evidence should be synced to .project/
     """
-    found: Optional[FoundEvidence] = None
+    found: FoundEvidence | None = None
     source: Literal["config", "discovered", "llm", "none"] = "none"
-    searched_locations: List[str] = field(default_factory=list)
+    searched_locations: list[str] = field(default_factory=list)
     sync_recommended: bool = False
 
     @property
@@ -120,14 +119,14 @@ class CheckOutput:
     confidence: float = 1.0
 
     # What was found (for .project/ sync)
-    found: Optional[FoundEvidence] = None
+    found: FoundEvidence | None = None
 
     # Validation details (adapter-specific)
-    evidence: Dict[str, Any] = field(default_factory=dict)
+    evidence: dict[str, Any] = field(default_factory=dict)
 
     # For remediation context
-    issues: List[str] = field(default_factory=list)
-    suggestions: List[str] = field(default_factory=list)
+    issues: list[str] = field(default_factory=list)
+    suggestions: list[str] = field(default_factory=list)
 
     def __post_init__(self):
         """Validate confidence is in valid range."""
@@ -157,7 +156,7 @@ class CheckOutput:
 
 def create_pass_output(
     message: str,
-    found: Optional[FoundEvidence] = None,
+    found: FoundEvidence | None = None,
     confidence: float = 1.0,
     **evidence: Any,
 ) -> CheckOutput:
@@ -183,8 +182,8 @@ def create_pass_output(
 
 def create_fail_output(
     message: str,
-    issues: Optional[List[str]] = None,
-    suggestions: Optional[List[str]] = None,
+    issues: list[str] | None = None,
+    suggestions: list[str] | None = None,
     confidence: float = 1.0,
     **evidence: Any,
 ) -> CheckOutput:
@@ -212,7 +211,7 @@ def create_fail_output(
 
 def create_error_output(
     message: str,
-    exception: Optional[Exception] = None,
+    exception: Exception | None = None,
 ) -> CheckOutput:
     """Create an error check output.
 
@@ -239,7 +238,7 @@ def create_error_output(
 def create_inconclusive_output(
     message: str,
     confidence: float = 0.5,
-    suggestions: Optional[List[str]] = None,
+    suggestions: list[str] | None = None,
     **evidence: Any,
 ) -> CheckOutput:
     """Create an inconclusive check output.

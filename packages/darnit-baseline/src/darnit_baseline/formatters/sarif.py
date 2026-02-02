@@ -8,12 +8,12 @@ Specification: https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html
 
 import hashlib
 import os
-from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from darnit.core.logging import get_logger
 from darnit.core.models import AuditResult
-from darnit_baseline.rules.catalog import OSPS_RULES, DOMAIN_INFO, get_rule
+from darnit_baseline.rules.catalog import DOMAIN_INFO, OSPS_RULES, get_rule
 
 logger = get_logger("formatters.sarif")
 
@@ -48,7 +48,7 @@ def generate_sarif_audit(
     audit_result: AuditResult,
     include_passing: bool = False,
     include_na: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Generate SARIF 2.1.0 output for baseline audit.
 
     Args:
@@ -104,7 +104,7 @@ def generate_sarif_audit(
             "results": sarif_results,
             "invocations": [{
                 "executionSuccessful": True,
-                "endTimeUtc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                "endTimeUtc": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
             }],
             "properties": {
                 "owner": audit_result.owner,
@@ -125,8 +125,8 @@ def generate_sarif_audit(
 
 
 def build_sarif_rules(
-    control_ids: Optional[List[str]] = None
-) -> List[Dict[str, Any]]:
+    control_ids: list[str] | None = None
+) -> list[dict[str, Any]]:
     """Build SARIF rules array for OSPS controls.
 
     Args:
@@ -202,11 +202,11 @@ def build_sarif_rules(
 
 
 def result_to_sarif_result(
-    result: Dict[str, Any],
+    result: dict[str, Any],
     rule_index: int,
     local_path: str,
     repo: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Convert a check result to SARIF result format.
 
     Args:
@@ -255,7 +255,7 @@ def result_to_sarif_result(
 def get_location_for_control(
     control_id: str,
     local_path: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Determine file location for a control result.
 
     Maps controls to their most relevant file locations for

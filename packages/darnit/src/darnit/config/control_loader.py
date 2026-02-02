@@ -18,8 +18,9 @@ Example:
         register_control(control)
 """
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, List, Optional
+from typing import Any
 
 from darnit.core.logging import get_logger
 from darnit.sieve.models import (
@@ -129,7 +130,7 @@ def _convert_llm_pass(config: LLMPassConfig) -> LLMPass:
             prompt_path = Path(config.prompt_file)
             if prompt_path.exists():
                 prompt = prompt_path.read_text()
-        except (IOError, OSError) as e:
+        except OSError as e:
             logger.warning(f"Could not load prompt file {config.prompt_file}: {e}")
 
     return LLMPass(
@@ -160,7 +161,7 @@ def _convert_manual_pass(config: ManualPassConfig) -> ManualPass:
 # =============================================================================
 
 
-def _convert_passes_config(passes_config: Optional[PassesConfig]) -> List[Any]:
+def _convert_passes_config(passes_config: PassesConfig | None) -> list[Any]:
     """Convert PassesConfig to list of executable pass objects.
 
     Args:
@@ -301,7 +302,7 @@ def control_from_framework(
 # =============================================================================
 
 
-def load_controls_from_effective(config: EffectiveConfig) -> List[ControlSpec]:
+def load_controls_from_effective(config: EffectiveConfig) -> list[ControlSpec]:
     """Load ControlSpec objects from effective configuration.
 
     This is the main entry point for loading controls from merged
@@ -330,7 +331,7 @@ def load_controls_from_effective(config: EffectiveConfig) -> List[ControlSpec]:
     return controls
 
 
-def load_controls_from_framework(config: FrameworkConfig) -> List[ControlSpec]:
+def load_controls_from_framework(config: FrameworkConfig) -> list[ControlSpec]:
     """Load ControlSpec objects directly from framework configuration.
 
     Use this when you want framework controls without user customization.
@@ -355,8 +356,8 @@ def load_controls_from_framework(config: FrameworkConfig) -> List[ControlSpec]:
 
 def load_controls_from_toml(
     framework_path: Path,
-    repo_path: Optional[Path] = None,
-) -> List[ControlSpec]:
+    repo_path: Path | None = None,
+) -> list[ControlSpec]:
     """Load controls from TOML files.
 
     Convenience function that loads framework TOML, optionally merges
@@ -377,8 +378,8 @@ def load_controls_from_toml(
 
 def load_controls_by_name(
     framework_name: str,
-    repo_path: Optional[Path] = None,
-) -> List[ControlSpec]:
+    repo_path: Path | None = None,
+) -> list[ControlSpec]:
     """Load controls by framework name.
 
     Resolves framework via entry points, merges with user config,
@@ -407,7 +408,7 @@ def load_controls_by_name(
 
 def register_controls_from_config(
     config: EffectiveConfig,
-    registry_func: Optional[Callable[[ControlSpec], None]] = None,
+    registry_func: Callable[[ControlSpec], None] | None = None,
 ) -> int:
     """Load controls from config and register them.
 

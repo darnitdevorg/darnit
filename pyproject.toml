@@ -34,6 +34,8 @@ attestation = [
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=4.0.0",
+    "ruff>=0.8.0",
+    "pre-commit>=4.0.0",
 ]
 
 [tool.uv.workspace]
@@ -96,3 +98,50 @@ packages = [
 [[tool.mypy.overrides]]
 module = "tests.*"
 disallow_untyped_defs = false
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    ".eggs",
+]
+
+[tool.ruff.lint]
+select = [
+    "F",      # Pyflakes (includes F401 unused imports, F841 unused variables)
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "I",      # isort (import sorting)
+    "UP",     # pyupgrade (Python version upgrades)
+    "B",      # flake8-bugbear (common bugs)
+    "C4",     # flake8-comprehensions
+    "SIM",    # flake8-simplify
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "E731",   # lambda assignment (sometimes useful)
+    "B008",   # function call in default argument (needed for FastAPI/MCP)
+    "SIM102", # nested if (sometimes more readable than combined)
+    "SIM105", # contextlib.suppress (explicit try-except often clearer)
+    "SIM108", # ternary operator (readability preference)
+    "SIM110", # any() suggestion (explicit loop often clearer)
+    "SIM116", # dict comprehension (sometimes explicit is clearer)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"main.py" = ["E402"]  # Entry point has early logger setup
+"tests/*" = ["B", "SIM", "E402"]  # Less strict for tests, allow late imports
+"scripts/*" = ["E402"]  # Allow late imports in scripts
+"docs/examples/*" = ["B", "SIM", "E402"]  # Less strict for examples
+
+[tool.ruff.lint.isort]
+known-first-party = ["darnit", "darnit_baseline"]
+
+[tool.bandit]
+exclude_dirs = ["tests", "docs/examples"]
+skips = ["B101"]  # Allow assert statements

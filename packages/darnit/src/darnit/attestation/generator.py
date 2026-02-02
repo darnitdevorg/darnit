@@ -4,19 +4,19 @@ This module provides the main entry point for generating
 in-toto attestations from OpenSSF Baseline audit results.
 """
 
-import os
 import json
-from typing import Dict, Any, Optional, TYPE_CHECKING
+import os
+from typing import TYPE_CHECKING, Any
 
 from darnit.core.logging import get_logger
 
-logger = get_logger("attestation.generator")
-
 from .predicate import build_assessment_predicate
-from .signing import sign_attestation, ATTESTATION_AVAILABLE
+from .signing import ATTESTATION_AVAILABLE, sign_attestation
 
 if TYPE_CHECKING:
     from darnit.core.models import AuditResult
+
+logger = get_logger("attestation.generator")
 
 
 # Predicate type for OpenSSF Baseline assessments
@@ -27,8 +27,8 @@ def build_unsigned_statement(
     subject_name: str,
     commit: str,
     predicate_type: str,
-    predicate: Dict[str, Any]
-) -> Dict[str, Any]:
+    predicate: dict[str, Any]
+) -> dict[str, Any]:
     """Build an unsigned in-toto statement.
 
     Args:
@@ -52,8 +52,8 @@ def generate_attestation_from_results(
     audit_result: "AuditResult",
     sign: bool = True,
     staging: bool = False,
-    output_path: Optional[str] = None,
-    output_dir: Optional[str] = None
+    output_path: str | None = None,
+    output_dir: str | None = None
 ) -> str:
     """Generate attestation from audit results.
 
@@ -106,7 +106,7 @@ def generate_attestation_from_results(
                 use_staging=staging
             )
             output = json.dumps(bundle, indent=2)
-        except (RuntimeError, ValueError, TypeError, IOError, OSError) as e:
+        except (RuntimeError, ValueError, TypeError, OSError) as e:
             unsigned = build_unsigned_statement(
                 subject_name, audit_result.commit, predicate_type, predicate
             )
@@ -134,7 +134,7 @@ def generate_attestation_from_results(
         with open(output_path, 'w') as f:
             f.write(output)
         return f"✅ Attestation saved to: {output_path}\n\n{output}"
-    except (IOError, OSError) as e:
+    except OSError as e:
         return json.dumps({
             "error": f"Failed to write to {output_path}: {e}",
             "attestation": json.loads(output)

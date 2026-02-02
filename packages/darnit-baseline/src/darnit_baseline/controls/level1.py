@@ -7,35 +7,32 @@ This module defines all Level 1 controls using the 4-phase sieve architecture:
 4. MANUAL: Always returns WARN with verification steps
 """
 
+import glob as glob_module
+import json
 import os
 import re
-import glob as glob_module
 import subprocess
-import json
-from typing import Dict, Optional, Callable
+from collections.abc import Callable
 
 from darnit.core.logging import get_logger
+from darnit.sieve.models import (
+    CheckContext,
+    ControlSpec,
+    PassOutcome,
+    PassResult,
+    VerificationPhase,
+)
+from darnit.sieve.passes import DeterministicPass, ManualPass, PatternPass
+from darnit.sieve.project_context import get_context_value, is_context_confirmed
+from darnit.sieve.registry import register_control
 
 logger = get_logger("sieve.level1")
-
-from darnit.sieve.models import (
-    ControlSpec,
-    CheckContext,
-    VerificationPhase,
-    PassResult,
-    PassOutcome,
-)
-from darnit.sieve.passes import DeterministicPass, PatternPass, ManualPass
-from darnit.sieve.registry import register_control
-from darnit.sieve.project_context import is_context_confirmed, get_context_value
-
-
 # =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
 
 
-def _gh_api(endpoint: str) -> Optional[Dict]:
+def _gh_api(endpoint: str) -> dict | None:
     """Call GitHub API via gh CLI. Returns None on error."""
     try:
         result = subprocess.run(
@@ -74,14 +71,14 @@ def _file_exists(local_path: str, *patterns: str) -> bool:
     return False
 
 
-def _read_file(local_path: str, filename: str) -> Optional[str]:
+def _read_file(local_path: str, filename: str) -> str | None:
     """Read file content, return None if doesn't exist."""
     filepath = os.path.join(local_path, filename)
     if os.path.exists(filepath):
         try:
-            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+            with open(filepath, encoding='utf-8', errors='ignore') as f:
                 return f.read()
-        except (IOError, OSError) as e:
+        except OSError as e:
             logger.debug(f"Could not read {filepath}: {type(e).__name__}")
             return None
     return None
@@ -448,7 +445,7 @@ def _create_workflow_injection_check() -> Callable[[CheckContext], PassResult]:
                 if file.endswith(('.yml', '.yaml')):
                     filepath = os.path.join(root, file)
                     try:
-                        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                        with open(filepath, encoding='utf-8', errors='ignore') as f:
                             content = f.read()
                             lines = content.splitlines()
 
@@ -466,7 +463,7 @@ def _create_workflow_injection_check() -> Callable[[CheckContext], PassResult]:
                             if is_shell_context and "${{" in line:
                                 if any(ctx_name in line for ctx_name in DANGEROUS_CONTEXTS):
                                     injection_risks.append(f"{file}:{i+1}")
-                    except (IOError, OSError) as e:
+                    except OSError as e:
                         logger.debug(f"Could not read workflow {filepath}: {type(e).__name__}")
                         continue
 
@@ -536,7 +533,7 @@ def _create_branch_name_injection_check() -> Callable[[CheckContext], PassResult
                 if file.endswith(('.yml', '.yaml')):
                     filepath = os.path.join(root, file)
                     try:
-                        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                        with open(filepath, encoding='utf-8', errors='ignore') as f:
                             content = f.read()
                             lines = content.splitlines()
 
@@ -552,7 +549,7 @@ def _create_branch_name_injection_check() -> Callable[[CheckContext], PassResult
                             if in_run_block and "${{" in line:
                                 if "github.head_ref" in line or "github.ref_name" in line:
                                     branch_name_risks.append(f"{file}:{i+1}")
-                    except (IOError, OSError) as e:
+                    except OSError as e:
                         logger.debug(f"Could not read workflow {filepath}: {type(e).__name__}")
                         continue
 
@@ -941,7 +938,7 @@ OSI_LICENSES = {
 }
 
 
-def _detect_license_from_file(local_path: str) -> Optional[str]:
+def _detect_license_from_file(local_path: str) -> str | None:
     """Detect OSI license from local LICENSE file content."""
     for license_file in ["LICENSE", "LICENSE.md", "LICENSE.txt", "COPYING", "license"]:
         content = _read_file(local_path, license_file)
@@ -1447,46 +1444,35 @@ register_control(ControlSpec(
 # VULNERABILITY MANAGEMENT (VM) - 1 control
 # =============================================================================
 
-# OSPS-VM-02.01 is already registered in registry.py
-# We'll update it here with a more complete implementation
-
-
-def _create_security_file_check() -> Callable[[CheckContext], PassResult]:
-    """Check for SECURITY.md with contact info (OSPS-VM-02.01)."""
-
-    def check(ctx: CheckContext) -> PassResult:
-        security_files = [
-            "SECURITY.md", "SECURITY", "SECURITY.rst",
-            ".github/SECURITY.md", "docs/SECURITY.md"
-        ]
-
-        for sf in security_files:
-            content = _read_file(ctx.local_path, sf)
-            if content:
-                # Check for contact/reporting info
-                if re.search(r'(report|contact|email|security@|vulnerability|disclose)', content, re.IGNORECASE):
-                    return PassResult(
-                        phase=VerificationPhase.DETERMINISTIC,
-                        outcome=PassOutcome.PASS,
-                        message="SECURITY.md with reporting instructions found",
-                        evidence={"file": sf},
-                    )
-                else:
-                    return PassResult(
-                        phase=VerificationPhase.DETERMINISTIC,
-                        outcome=PassOutcome.INCONCLUSIVE,
-                        message="SECURITY.md exists but may lack reporting instructions",
-                        evidence={"file": sf},
-                    )
-
-        return PassResult(
-            phase=VerificationPhase.DETERMINISTIC,
-            outcome=PassOutcome.FAIL,
-            message="No SECURITY.md found",
-        )
-
-    return check
-
-
-# Note: OSPS-VM-02.01 is already registered in registry.py with a similar definition
-# This module extends the registry with all Level 1 controls
+register_control(ControlSpec(
+    control_id="OSPS-VM-02.01",
+    level=1,
+    domain="VM",
+    name="SecurityContacts",
+    description="Project documentation includes security contacts for vulnerability reporting",
+    passes=[
+        DeterministicPass(
+            file_must_exist=[
+                "SECURITY.md",
+                ".github/SECURITY.md",
+                "docs/SECURITY.md",
+                "SECURITY.rst",
+                "SECURITY",
+            ]
+        ),
+        PatternPass(
+            file_patterns=["SECURITY.md", ".github/SECURITY.md", "README.md"],
+            content_patterns={
+                "security_contact": r"(report|contact|email|security@|vulnerability|disclose)",
+            },
+            pass_if_any_match=True,
+        ),
+        ManualPass(
+            verification_steps=[
+                "Verify SECURITY.md or equivalent exists",
+                "Check that security contact information is documented",
+                "Confirm vulnerability reporting process is described",
+            ],
+        ),
+    ],
+))

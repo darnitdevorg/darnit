@@ -12,10 +12,9 @@ Example:
 """
 
 import logging
-from typing import Optional
 
 # Package-level logger - silent by default (NullHandler)
-_logger: Optional[logging.Logger] = None
+_logger: logging.Logger | None = None
 
 
 def get_logger(name: str = "") -> logging.Logger:

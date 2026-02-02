@@ -1,11 +1,10 @@
 """Pytest configuration and shared fixtures."""
 
-import os
-import tempfile
 import shutil
 import subprocess
+import tempfile
+from collections.abc import Generator
 from pathlib import Path
-from typing import Generator
 
 import pytest
 

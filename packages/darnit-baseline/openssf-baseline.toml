@@ -75,6 +75,20 @@ Please include as much of the following information as possible:
 Security updates will be released as patch versions and announced via:
 - GitHub Security Advisories
 - Release notes
+
+## Vulnerability Exploitability (VEX)
+
+When vulnerabilities are reported in our dependencies that do not affect this project,
+we will provide VEX (Vulnerability Exploitability eXchange) statements explaining why
+the vulnerability is not exploitable in our context.
+
+VEX statements will be published as:
+- GitHub Security Advisories with "not affected" status
+- VEX documents in this repository (when applicable)
+
+For more information about VEX, see:
+- [OpenVEX Specification](https://openvex.dev/)
+- [CISA VEX Guide](https://www.cisa.gov/resources-tools/resources/vulnerability-exploitability-exchange-vex-overview)
 """
 
 [templates.security_policy_minimal]
@@ -217,6 +231,98 @@ updates:
   #   commit-message:
   #     prefix: "deps"
 """
+
+# =============================================================================
+# Context Definitions (Interactive Context Collection)
+# =============================================================================
+# These define context keys that can be collected from users to improve audit
+# accuracy. Each key specifies its type, prompt, and which controls it affects.
+#
+# Note: The CNCF .project/ specification is still under development (PR #131).
+# Context storage format may change as the upstream spec evolves.
+
+[context.maintainers]
+type = "list_or_path"
+prompt = "Who are the project maintainers?"
+hint = "Provide GitHub usernames (e.g., @user1, @user2) or path to MAINTAINERS.md"
+examples = ["@user1, @user2", "MAINTAINERS.md"]
+affects = ["OSPS-GV-01.01", "OSPS-GV-01.02", "OSPS-GV-04.01"]
+store_as = "governance.maintainers"
+auto_detect = true
+auto_detect_method = "github_collaborators"  # Uses get_repo_maintainers() from GitHub API
+required = false
+
+[context.security_contact]
+type = "string"
+prompt = "What is the security contact for vulnerability reports?"
+hint = "Email address, URL, or reference to SECURITY.md section"
+examples = ["security@example.com", "https://example.com/security", "See SECURITY.md"]
+affects = ["OSPS-VM-01.01", "OSPS-VM-02.01", "OSPS-VM-03.01"]
+store_as = "security.contact"
+auto_detect = false
+required = false
+
+[context.governance_model]
+type = "enum"
+prompt = "What governance model does this project use?"
+hint = "Select the model that best describes how decisions are made"
+values = ["bdfl", "meritocracy", "democracy", "corporate", "foundation", "committee", "other"]
+examples = ["bdfl", "foundation"]
+affects = ["OSPS-GV-01.01", "OSPS-GV-01.02"]
+store_as = "governance.model"
+auto_detect = false
+required = false
+
+[context.has_subprojects]
+type = "boolean"
+prompt = "Does this project have subprojects or related repositories?"
+hint = "Set to false if this is a standalone project"
+examples = ["true", "false"]
+affects = ["OSPS-GV-01.02"]
+store_as = "project.has_subprojects"
+auto_detect = false
+required = false
+
+[context.has_releases]
+type = "boolean"
+prompt = "Does this project make official releases?"
+hint = "Set to true if you publish versioned releases"
+examples = ["true", "false"]
+affects = ["OSPS-BR-02.01", "OSPS-BR-03.01", "OSPS-BR-04.01"]
+store_as = "build.has_releases"
+auto_detect = true
+required = false
+
+[context.is_library]
+type = "boolean"
+prompt = "Is this a library or framework consumed by other projects?"
+hint = "Set to true if other projects depend on this as a dependency"
+examples = ["true", "false"]
+affects = ["OSPS-DO-04.01", "OSPS-BR-01.01"]
+store_as = "project.is_library"
+auto_detect = false
+required = false
+
+[context.has_compiled_assets]
+type = "boolean"
+prompt = "Does this project release compiled binaries or build artifacts?"
+hint = "Set to true if you release binaries, containers, or other compiled assets"
+examples = ["true", "false"]
+affects = ["OSPS-BR-03.01", "OSPS-BR-04.01"]
+store_as = "build.has_compiled_assets"
+auto_detect = false
+required = false
+
+[context.ci_provider]
+type = "enum"
+prompt = "What CI/CD system does this project use?"
+hint = "Select your primary CI/CD provider"
+values = ["github", "gitlab", "jenkins", "circleci", "azure", "travis", "none", "other"]
+examples = ["github", "gitlab"]
+affects = ["OSPS-QA-03.01", "OSPS-QA-04.01"]
+store_as = "ci.provider"
+auto_detect = true
+required = false
 
 # =============================================================================
 # Level 1 Controls - Access Control (AC)
@@ -362,6 +468,18 @@ steps = [
     "Confirm all git clone URLs use https:// or git@ (SSH)",
 ]
 
+[controls."OSPS-BR-03.02"]
+name = "EncryptedDistribution"
+description = "Official distribution channels use encrypted connections (HTTPS)"
+tags = { level = 1, domain = "BR", build = true, security = true }
+
+[controls."OSPS-BR-03.02".passes.manual]
+steps = [
+    "Verify all official download links use https://",
+    "Confirm package registry URLs (npm, PyPI, etc.) use HTTPS",
+    "Check that release asset download URLs use encrypted connections",
+]
+
 [controls."OSPS-BR-07.01"]
 name = "GitignoreSecrets"
 description = "Secret files are properly gitignored"
@@ -381,6 +499,71 @@ files = [".gitignore"]
 [controls."OSPS-BR-07.01".passes.pattern.patterns]
 env_files = "\\.env"
 key_files = "\\*\\.key|\\*\\.pem"
+
+# =============================================================================
+# Level 2 Controls - Build & Release (BR)
+# =============================================================================
+
+[controls."OSPS-BR-02.01"]
+name = "UniqueVersionIdentifiers"
+description = "Assign unique version identifiers to each official release"
+tags = { level = 2, domain = "BR", build = true, releases = true }
+
+[controls."OSPS-BR-02.01".passes.manual]
+steps = [
+    "Verify each release has a unique version identifier (e.g., semver)",
+    "Check that version identifiers are not reused across releases",
+    "Confirm releases are tagged with their version identifiers in the VCS",
+]
+
+[controls."OSPS-BR-04.01"]
+name = "ReleaseChangelog"
+description = "Releases include log of functional and security modifications"
+tags = { level = 2, domain = "BR", build = true, releases = true, documentation = true }
+
+[controls."OSPS-BR-04.01".locator]
+project_path = "documentation.changelog"
+discover = ["CHANGELOG.md", "CHANGES.md", "HISTORY.md", "NEWS.md"]
+kind = "file"
+
+[controls."OSPS-BR-04.01".passes]
+deterministic = { file_must_exist = [
+    "CHANGELOG.md",
+    "CHANGES.md",
+    "HISTORY.md",
+    "NEWS.md",
+]}
+
+[controls."OSPS-BR-04.01".passes.manual]
+steps = [
+    "Verify CHANGELOG.md or equivalent exists",
+    "Check that each release documents functional changes",
+    "Confirm security-relevant changes are clearly marked",
+]
+
+[controls."OSPS-BR-05.01"]
+name = "StandardizedDependencyTools"
+description = "Use standardized tooling for dependency ingestion"
+tags = { level = 2, domain = "BR", build = true, dependencies = true }
+
+[controls."OSPS-BR-05.01".passes.manual]
+steps = [
+    "Verify the project uses standard package managers (npm, pip, cargo, go mod, etc.)",
+    "Check that dependencies are declared in standard manifest files",
+    "Confirm dependency resolution uses reproducible tooling",
+]
+
+[controls."OSPS-BR-06.01"]
+name = "SignReleases"
+description = "Sign releases or provide signed manifest containing hashes"
+tags = { level = 2, domain = "BR", build = true, releases = true, security = true }
+
+[controls."OSPS-BR-06.01".passes.manual]
+steps = [
+    "Verify releases are cryptographically signed (GPG, Sigstore, etc.)",
+    "Or verify a signed manifest with hashes is provided for release assets",
+    "Check that public keys or verification instructions are documented",
+]
 
 # =============================================================================
 # Level 1 Controls - Documentation (DO)
@@ -440,6 +623,38 @@ path = ".github/ISSUE_TEMPLATE/bug_report.md"
 template = "bug_report_template"
 overwrite = false
 create_dirs = true
+
+# =============================================================================
+# Level 2 Controls - Documentation (DO)
+# =============================================================================
+
+[controls."OSPS-DO-06.01"]
+name = "DependencyDocumentation"
+description = "Document how project selects, obtains, and tracks dependencies"
+tags = { level = 2, domain = "DO", documentation = true, dependencies = true }
+
+[controls."OSPS-DO-06.01".locator]
+project_path = "documentation.dependencies"
+discover = ["docs/dependencies.md", "DEPENDENCIES.md", "docs/dependency-policy.md"]
+kind = "file"
+
+[controls."OSPS-DO-06.01".locator.llm_hints]
+search_for = "dependency management, dependency policy, how we manage dependencies"
+check_files = ["README.md", "CONTRIBUTING.md", "SECURITY.md"]
+look_for_urls = false
+
+[controls."OSPS-DO-06.01".passes.pattern]
+files = ["README.md", "CONTRIBUTING.md", "docs/dependencies.md", "DEPENDENCIES.md"]
+
+[controls."OSPS-DO-06.01".passes.pattern.patterns]
+dependency_docs = "(dependenc|package|library).*(select|obtain|track|manage|update|policy)"
+
+[controls."OSPS-DO-06.01".passes.manual]
+steps = [
+    "Verify documentation explains how dependencies are selected",
+    "Check that dependency sources are documented",
+    "Confirm dependency tracking/update process is described",
+]
 
 # =============================================================================
 # Level 1 Controls - Governance (GV)
@@ -714,6 +929,14 @@ deterministic = { file_must_exist = [
 handler = "create_governance_doc"
 safe = true
 
+# Context requirements - orchestrator checks these before running remediation
+[[controls."OSPS-GV-01.01".remediation.requires_context]]
+key = "maintainers"
+required = true
+confidence_threshold = 0.9
+prompt_if_auto_detected = true
+warning = "GitHub collaborators are not necessarily project maintainers. Please confirm the actual project maintainers."
+
 [controls."OSPS-GV-01.02"]
 name = "DocumentedRoles"
 description = "Roles and responsibilities are documented"
@@ -868,8 +1091,72 @@ scoped = "(contents:|issues:|pull-requests:|packages:)"
 read_only = "read(-only)?"
 
 # =============================================================================
+# Level 3 Controls - Build & Release (BR)
+# =============================================================================
+
+[controls."OSPS-BR-02.02"]
+name = "ClearAssetAssociation"
+description = "Clearly associate all release assets with release identifiers"
+tags = { level = 3, domain = "BR", build = true, releases = true }
+
+[controls."OSPS-BR-02.02".passes.manual]
+steps = [
+    "Verify release assets are clearly associated with specific release versions",
+    "Check that asset filenames or metadata include version identifiers",
+    "Confirm release notes link assets to the correct release",
+]
+
+[controls."OSPS-BR-07.02"]
+name = "SecretsManagementPolicy"
+description = "Define policy for managing secrets and credentials"
+tags = { level = 3, domain = "BR", build = true, secrets = true, security = true }
+
+[controls."OSPS-BR-07.02".passes.pattern]
+files = ["SECURITY.md", "docs/security.md", "CONTRIBUTING.md"]
+
+[controls."OSPS-BR-07.02".passes.pattern.patterns]
+secrets_policy = "(secret|credential|token|key).*(management|policy|handling|rotation)"
+
+[controls."OSPS-BR-07.02".passes.manual]
+steps = [
+    "Verify documentation describes secrets management policy",
+    "Check that credential rotation practices are defined",
+    "Confirm guidance for handling sensitive values is documented",
+]
+
+# =============================================================================
 # Level 3 Controls - Quality Assurance (QA)
 # =============================================================================
+
+[controls."OSPS-QA-02.02"]
+name = "SoftwareBillOfMaterials"
+description = "Deliver compiled assets with Software Bill of Materials (SBOM)"
+tags = { level = 3, domain = "QA", quality = true, releases = true, supply-chain = true }
+
+[controls."OSPS-QA-02.02".passes.pattern]
+files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+
+[controls."OSPS-QA-02.02".passes.pattern.patterns]
+sbom_generation = "(sbom|syft|cyclonedx|spdx|anchore)"
+
+[controls."OSPS-QA-02.02".passes.manual]
+steps = [
+    "Verify SBOM is generated for compiled/released assets",
+    "Check for SBOM generation tools in CI/CD (Syft, CycloneDX, etc.)",
+    "Confirm SBOM is published alongside release artifacts",
+]
+
+[controls."OSPS-QA-04.02"]
+name = "SubprojectSecurity"
+description = "Subprojects enforce security as strict as primary codebase"
+tags = { level = 3, domain = "QA", quality = true, security = true }
+
+[controls."OSPS-QA-04.02".passes.manual]
+steps = [
+    "Verify subprojects follow the same security standards as the main project",
+    "Check that security policies apply uniformly across all subprojects",
+    "Confirm subprojects have equivalent branch protection and review requirements",
+]
 
 [controls."OSPS-QA-07.01"]
 name = "RequiredApprovals"
@@ -922,6 +1209,36 @@ test_req = "(test.*required|must.*test|include.*test)"
 # =============================================================================
 # Level 3 Controls - Vulnerability Management (VM)
 # =============================================================================
+
+[controls."OSPS-VM-04.02"]
+name = "VEXPolicy"
+description = "VEX policy documented in SECURITY.md"
+tags = { level = 3, domain = "VM", security = true, vulnerability-management = true, policy = true }
+
+# PatternPass: Check for VEX policy section in SECURITY.md (preferred method)
+[controls."OSPS-VM-04.02".passes.pattern]
+files = ["SECURITY.md", ".github/SECURITY.md"]
+
+[controls."OSPS-VM-04.02".passes.pattern.patterns]
+vex_policy = "(vex|vulnerability.exploitability|exploitability.exchange)"
+
+[controls."OSPS-VM-04.02".passes.manual]
+steps = [
+    "Verify SECURITY.md has a VEX policy section",
+    "Policy should explain how VEX statements will be handled for non-applicable vulnerabilities",
+    "NOTE: This control requires a POLICY, not actual vex.json files",
+]
+
+# Remediation: Add VEX policy section to SECURITY.md
+[controls."OSPS-VM-04.02".remediation]
+handler = "ensure_vex_policy"
+requires_api = false
+help = """
+This control requires documenting your POLICY for handling VEX (Vulnerability
+Exploitability eXchange) statements - it does NOT require creating vex.json files.
+
+Run: ensure_vex_policy() to add a VEX policy section to your SECURITY.md
+"""
 
 [controls."OSPS-VM-05.01"]
 name = "SCARemediationPolicy"
@@ -1026,6 +1343,42 @@ deterministic = { file_must_exist = [
 handler = "create_support_doc"
 safe = true
 
+[controls."OSPS-DO-03.02"]
+name = "VerifyReleaseAuthor"
+description = "Provide instructions to verify release author identity"
+tags = { level = 3, domain = "DO", documentation = true, releases = true, security = true }
+
+[controls."OSPS-DO-03.02".passes.pattern]
+files = ["SECURITY.md", "README.md", "docs/releases.md", "CONTRIBUTING.md"]
+
+[controls."OSPS-DO-03.02".passes.pattern.patterns]
+verify_author = "(verify|verif|signature|sign|GPG|Sigstore).*(author|release|identity)"
+
+[controls."OSPS-DO-03.02".passes.manual]
+steps = [
+    "Verify documentation explains how to verify release author identity",
+    "Check for GPG/Sigstore signature verification instructions",
+    "Confirm public keys or keyserver references are provided",
+]
+
+[controls."OSPS-DO-04.01"]
+name = "SupportScopeStatement"
+description = "Document scope and duration of support"
+tags = { level = 3, domain = "DO", documentation = true, support = true }
+
+[controls."OSPS-DO-04.01".passes.pattern]
+files = ["SUPPORT.md", "SECURITY.md", "README.md"]
+
+[controls."OSPS-DO-04.01".passes.pattern.patterns]
+support_scope = "(support.*(scope|duration|period|timeline)|version.*(support|maintenance))"
+
+[controls."OSPS-DO-04.01".passes.manual]
+steps = [
+    "Verify documentation describes which versions are supported",
+    "Check that support duration or maintenance windows are documented",
+    "Confirm scope of support (security fixes, bug fixes, features) is defined",
+]
+
 [controls."OSPS-DO-05.01"]
 name = "EndOfSupportPolicy"
 description = "End-of-support policy documented"
@@ -1052,9 +1405,50 @@ files = ["GOVERNANCE.md", "CONTRIBUTING.md"]
 [controls."OSPS-GV-04.01".passes.pattern.patterns]
 review_policy = "(review|collaborator|maintainer).*(policy|process|requirement)"
 
+[controls."OSPS-GV-04.01".remediation]
+handler = "create_codeowners"
+safe = true
+
+# Context requirements - orchestrator checks these before running remediation
+[[controls."OSPS-GV-04.01".remediation.requires_context]]
+key = "maintainers"
+required = true
+confidence_threshold = 0.9
+prompt_if_auto_detected = true
+warning = "GitHub collaborators are not necessarily project maintainers. Please confirm who should be code owners."
+
 # =============================================================================
-# Level 3 Controls - Security Assessment (SA)
+# Level 2 Controls - Security Assessment (SA)
 # =============================================================================
+
+[controls."OSPS-SA-01.01"]
+name = "DesignDocumentation"
+description = "Provide design documentation showing actions and actors"
+tags = { level = 2, domain = "SA", documentation = true, architecture = true }
+
+[controls."OSPS-SA-01.01".locator]
+project_path = "documentation.design"
+discover = ["ARCHITECTURE.md", "docs/architecture.md", "docs/design.md", "DESIGN.md"]
+kind = "file"
+
+[controls."OSPS-SA-01.01".locator.llm_hints]
+search_for = "architecture, design documentation, system design, actors, components"
+check_files = ["README.md", "docs/README.md"]
+look_for_urls = true
+
+[controls."OSPS-SA-01.01".passes.pattern]
+files = ["ARCHITECTURE.md", "docs/architecture.md", "docs/design.md", "DESIGN.md", "README.md"]
+pass_if_any = true
+
+[controls."OSPS-SA-01.01".passes.pattern.patterns]
+design_docs = "(?mi)(architecture|design|component|actor|system.*diagram)"
+
+[controls."OSPS-SA-01.01".passes.manual]
+steps = [
+    "Verify design documentation exists describing system architecture",
+    "Check that documentation shows actions and actors in the system",
+    "Confirm documentation helps users understand how the system works",
+]
 
 [controls."OSPS-SA-02.01"]
 name = "APIDocumentation"
@@ -1080,6 +1474,28 @@ pass_if_any = true
 
 [controls."OSPS-SA-02.01".passes.pattern.patterns]
 api_section = "(?mi)^#.*\\b(api|interface|usage|methods|functions|endpoints|cli|commands?)\\b"
+
+[controls."OSPS-SA-03.01"]
+name = "SecurityAssessment"
+description = "Perform security assessment before major releases"
+tags = { level = 2, domain = "SA", security = true, releases = true }
+
+[controls."OSPS-SA-03.01".passes.manual]
+steps = [
+    "Verify that security assessments are performed before major releases",
+    "Check for evidence of security review process (checklists, sign-offs, etc.)",
+    "Confirm that security findings are addressed before release",
+]
+
+[controls."OSPS-SA-03.01".passes.pattern]
+files = ["SECURITY.md", "docs/security.md", "CONTRIBUTING.md"]
+
+[controls."OSPS-SA-03.01".passes.pattern.patterns]
+security_assessment = "(security.*(assessment|review|audit)|pre-release.*security)"
+
+# =============================================================================
+# Level 3 Controls - Security Assessment (SA)
+# =============================================================================
 
 [controls."OSPS-SA-03.02"]
 name = "ThreatModel"

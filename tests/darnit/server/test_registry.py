@@ -1,7 +1,8 @@
 """Tests for darnit.server.registry module."""
 
 import pytest
-from darnit.server.registry import ToolSpec, ToolRegistry
+
+from darnit.server.registry import ToolRegistry, ToolSpec
 
 
 class TestToolSpec:

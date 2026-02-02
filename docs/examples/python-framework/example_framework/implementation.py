@@ -9,12 +9,12 @@ Note how much more code is required for the same functionality:
 - Python version: ~500+ lines (imperative, with logic)
 """
 
+import glob
 import os
 import re
-import glob
 import subprocess
-from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
+from typing import Any
 
 # These would normally be imported from darnit
 # from darnit.core.models import CheckResult, CheckStatus
@@ -34,9 +34,9 @@ class CheckResult:
     message: str
     level: int
     domain: str
-    details: Dict[str, Any] = None
+    details: dict[str, Any] = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "name": self.name,
@@ -172,7 +172,7 @@ def check_no_secrets(local_path: str) -> CheckResult:
     for ext in code_extensions:
         for filepath in glob.glob(os.path.join(local_path, "**", ext), recursive=True):
             try:
-                with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                with open(filepath, encoding="utf-8", errors="ignore") as f:
                     content = f.read()
                 for pattern_name, pattern in secret_patterns.items():
                     if re.search(pattern, content):
@@ -180,7 +180,7 @@ def check_no_secrets(local_path: str) -> CheckResult:
                             "file": filepath,
                             "pattern": pattern_name,
                         })
-            except (IOError, OSError):
+            except OSError:
                 continue
 
     if secrets_found:
@@ -223,7 +223,7 @@ def check_cicd_configured(local_path: str) -> CheckResult:
                 id="EXAMPLE-QA-01",
                 name="CICDConfigured",
                 status="PASS",
-                message=f"CI/CD configuration found",
+                message="CI/CD configuration found",
                 level=2,
                 domain="QA",
                 details={"files_found": matches},
@@ -653,7 +653,7 @@ class ExampleFrameworkImplementation:
         local_path: str,
         default_branch: str,
         level: int = 3,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Run all checks up to the specified level.
 
         Args:
@@ -686,7 +686,7 @@ class ExampleFrameworkImplementation:
 
         return results
 
-    def get_controls(self) -> Dict[str, Dict]:
+    def get_controls(self) -> dict[str, dict]:
         """Get all control definitions."""
         return self.CONTROLS
 

@@ -44,18 +44,11 @@ from __future__ import annotations
 
 import importlib
 import logging
-import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import (
     Any,
-    Callable,
-    Dict,
-    List,
-    Optional,
-    Set,
-    Type,
-    Union,
 )
 
 from .adapters import CheckAdapter, RemediationAdapter
@@ -106,7 +99,7 @@ class FrameworkInfo:
     package: str
     entry_point_name: str
     path_func: Callable[[], Path]
-    _path: Optional[Path] = field(default=None, repr=False)
+    _path: Path | None = field(default=None, repr=False)
 
     @property
     def path(self) -> Path:
@@ -136,10 +129,10 @@ class AdapterInfo:
     name: str
     package: str
     entry_point_name: str
-    adapter_class: Type
+    adapter_class: type
     adapter_type: str  # "check" or "remediation"
-    _instance: Optional[Any] = field(default=None, repr=False)
-    _capabilities: Optional[AdapterCapability] = field(default=None, repr=False)
+    _instance: Any | None = field(default=None, repr=False)
+    _capabilities: AdapterCapability | None = field(default=None, repr=False)
 
     def get_instance(self) -> Any:
         """Get the adapter instance (lazily instantiated)."""
@@ -148,7 +141,7 @@ class AdapterInfo:
         return self._instance
 
     @property
-    def capabilities(self) -> Optional[AdapterCapability]:
+    def capabilities(self) -> AdapterCapability | None:
         """Get adapter capabilities (requires instantiation)."""
         if self._capabilities is None:
             instance = self.get_instance()
@@ -215,16 +208,16 @@ class PluginRegistry:
     """
 
     # Discovered plugins
-    _frameworks: Dict[str, FrameworkInfo] = field(default_factory=dict)
-    _check_adapters: Dict[str, AdapterInfo] = field(default_factory=dict)
-    _remediation_adapters: Dict[str, AdapterInfo] = field(default_factory=dict)
+    _frameworks: dict[str, FrameworkInfo] = field(default_factory=dict)
+    _check_adapters: dict[str, AdapterInfo] = field(default_factory=dict)
+    _remediation_adapters: dict[str, AdapterInfo] = field(default_factory=dict)
 
     # Cached instances (separate from info to allow re-instantiation)
-    _check_instances: Dict[str, CheckAdapter] = field(default_factory=dict)
-    _remediation_instances: Dict[str, RemediationAdapter] = field(default_factory=dict)
+    _check_instances: dict[str, CheckAdapter] = field(default_factory=dict)
+    _remediation_instances: dict[str, RemediationAdapter] = field(default_factory=dict)
 
     # Discovery state
-    _discovered: Set[str] = field(default_factory=set)
+    _discovered: set[str] = field(default_factory=set)
 
     # Allowed module prefixes for dynamic imports (security whitelist)
     ALLOWED_MODULE_PREFIXES: tuple = (
@@ -253,7 +246,7 @@ class PluginRegistry:
         self.discover_check_adapters()
         self.discover_remediation_adapters()
 
-    def discover_frameworks(self) -> Dict[str, FrameworkInfo]:
+    def discover_frameworks(self) -> dict[str, FrameworkInfo]:
         """Discover all installed frameworks from entry points.
 
         Scans the ``darnit.frameworks`` entry point group.
@@ -292,7 +285,7 @@ class PluginRegistry:
         logger.info(f"Discovered {len(self._frameworks)} framework(s)")
         return self._frameworks
 
-    def discover_check_adapters(self) -> Dict[str, AdapterInfo]:
+    def discover_check_adapters(self) -> dict[str, AdapterInfo]:
         """Discover all installed check adapters from entry points.
 
         Scans the ``darnit.check_adapters`` entry point group.
@@ -330,7 +323,7 @@ class PluginRegistry:
         logger.info(f"Discovered {len(self._check_adapters)} check adapter(s)")
         return self._check_adapters
 
-    def discover_remediation_adapters(self) -> Dict[str, AdapterInfo]:
+    def discover_remediation_adapters(self) -> dict[str, AdapterInfo]:
         """Discover all installed remediation adapters from entry points.
 
         Scans the ``darnit.remediation_adapters`` entry point group.
@@ -369,7 +362,7 @@ class PluginRegistry:
     # Framework Access
     # =========================================================================
 
-    def list_frameworks(self) -> List[str]:
+    def list_frameworks(self) -> list[str]:
         """List all available framework names.
 
         Returns:
@@ -384,7 +377,7 @@ class PluginRegistry:
         self.discover_frameworks()
         return sorted(self._frameworks.keys())
 
-    def get_framework_info(self, name: str) -> Optional[FrameworkInfo]:
+    def get_framework_info(self, name: str) -> FrameworkInfo | None:
         """Get framework info by name.
 
         Args:
@@ -396,7 +389,7 @@ class PluginRegistry:
         self.discover_frameworks()
         return self._frameworks.get(name)
 
-    def get_framework_path(self, name: str) -> Optional[Path]:
+    def get_framework_path(self, name: str) -> Path | None:
         """Get the TOML path for a framework.
 
         Args:
@@ -429,7 +422,7 @@ class PluginRegistry:
     # Check Adapter Access
     # =========================================================================
 
-    def list_check_adapters(self) -> List[str]:
+    def list_check_adapters(self) -> list[str]:
         """List all available check adapter names.
 
         Returns:
@@ -445,7 +438,7 @@ class PluginRegistry:
         self.discover_check_adapters()
         return sorted(self._check_adapters.keys())
 
-    def get_check_adapter_info(self, name: str) -> Optional[AdapterInfo]:
+    def get_check_adapter_info(self, name: str) -> AdapterInfo | None:
         """Get check adapter info by name.
 
         Args:
@@ -457,7 +450,7 @@ class PluginRegistry:
         self.discover_check_adapters()
         return self._check_adapters.get(name)
 
-    def get_check_adapter(self, name: str) -> Optional[CheckAdapter]:
+    def get_check_adapter(self, name: str) -> CheckAdapter | None:
         """Get a check adapter instance by name.
 
         Instances are cached for reuse.
@@ -502,7 +495,7 @@ class PluginRegistry:
     # Remediation Adapter Access
     # =========================================================================
 
-    def list_remediation_adapters(self) -> List[str]:
+    def list_remediation_adapters(self) -> list[str]:
         """List all available remediation adapter names.
 
         Returns:
@@ -511,7 +504,7 @@ class PluginRegistry:
         self.discover_remediation_adapters()
         return sorted(self._remediation_adapters.keys())
 
-    def get_remediation_adapter_info(self, name: str) -> Optional[AdapterInfo]:
+    def get_remediation_adapter_info(self, name: str) -> AdapterInfo | None:
         """Get remediation adapter info by name.
 
         Args:
@@ -523,7 +516,7 @@ class PluginRegistry:
         self.discover_remediation_adapters()
         return self._remediation_adapters.get(name)
 
-    def get_remediation_adapter(self, name: str) -> Optional[RemediationAdapter]:
+    def get_remediation_adapter(self, name: str) -> RemediationAdapter | None:
         """Get a remediation adapter instance by name.
 
         Args:
@@ -591,7 +584,7 @@ class PluginRegistry:
     def register_check_adapter(
         self,
         name: str,
-        adapter: Union[Type[CheckAdapter], CheckAdapter],
+        adapter: type[CheckAdapter] | CheckAdapter,
         package: str = "manual",
     ) -> None:
         """Manually register a check adapter.
@@ -631,7 +624,7 @@ class PluginRegistry:
     def register_remediation_adapter(
         self,
         name: str,
-        adapter: Union[Type[RemediationAdapter], RemediationAdapter],
+        adapter: type[RemediationAdapter] | RemediationAdapter,
         package: str = "manual",
     ) -> None:
         """Manually register a remediation adapter.
@@ -664,8 +657,8 @@ class PluginRegistry:
     def register_from_adapter_config(
         self,
         name: str,
-        config: Dict[str, Any],
-    ) -> Optional[CheckAdapter]:
+        config: dict[str, Any],
+    ) -> CheckAdapter | None:
         """Register a check adapter from configuration dict.
 
         Supports the following adapter types:
@@ -751,7 +744,7 @@ class PluginRegistry:
         self._discovered.clear()
         logger.debug("Plugin registry cache cleared")
 
-    def get_plugin_summary(self) -> Dict[str, Any]:
+    def get_plugin_summary(self) -> dict[str, Any]:
         """Get summary of all discovered plugins.
 
         Returns:
@@ -789,18 +782,9 @@ class PluginRegistry:
 
     def _iter_entry_points(self, group: str):
         """Iterate entry points for a group (Python version compatible)."""
-        if sys.version_info >= (3, 10):
-            from importlib.metadata import entry_points
+        from importlib.metadata import entry_points
 
-            return entry_points(group=group)
-        else:
-            from importlib.metadata import entry_points
-
-            all_eps = entry_points()
-            if hasattr(all_eps, "select"):
-                return all_eps.select(group=group)
-            else:
-                return all_eps.get(group, [])
+        return entry_points(group=group)
 
     def _get_package_name(self, entry_point) -> str:
         """Extract package name from entry point."""
@@ -815,8 +799,8 @@ class PluginRegistry:
     def _load_python_adapter(
         self,
         name: str,
-        config: Dict[str, Any],
-    ) -> Optional[CheckAdapter]:
+        config: dict[str, Any],
+    ) -> CheckAdapter | None:
         """Load a Python adapter from module path."""
         module_path = config.get("module")
         class_name = config.get("class", "Adapter")
@@ -850,7 +834,7 @@ class PluginRegistry:
 # Global Registry Instance
 # =============================================================================
 
-_global_registry: Optional[PluginRegistry] = None
+_global_registry: PluginRegistry | None = None
 
 
 def get_plugin_registry() -> PluginRegistry:

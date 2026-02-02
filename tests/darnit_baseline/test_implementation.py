@@ -2,9 +2,9 @@
 
 import pytest
 
+from darnit.core.plugin import ComplianceImplementation, ControlSpec
 from darnit_baseline import register
 from darnit_baseline.implementation import OSPSBaselineImplementation
-from darnit.core.plugin import ComplianceImplementation, ControlSpec
 
 
 class TestOSPSBaselineImplementation:

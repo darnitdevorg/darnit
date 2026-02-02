@@ -35,7 +35,7 @@ Example:
 """
 
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -46,7 +46,6 @@ from .framework_schema import (
     PassesConfig,
     RemediationConfig,
 )
-
 
 # =============================================================================
 # Enums
@@ -108,20 +107,20 @@ class ControlOverride(BaseModel):
         ```
     """
     # Override status
-    status: Optional[ControlStatus] = None
-    reason: Optional[str] = None  # Required if status is n/a
+    status: ControlStatus | None = None
+    reason: str | None = None  # Required if status is n/a
 
     # Override check routing
-    check: Optional[CheckConfig] = None
+    check: CheckConfig | None = None
 
     # Override remediation routing
-    remediation: Optional[RemediationConfig] = None
+    remediation: RemediationConfig | None = None
 
     # Override verification passes (advanced)
-    passes: Optional[PassesConfig] = None
+    passes: PassesConfig | None = None
 
     # Additional config passed to adapter
-    config: Dict[str, Any] = Field(default_factory=dict)
+    config: dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="allow")
 
@@ -143,10 +142,10 @@ class ControlGroup(BaseModel):
         check = { adapter = "kusari" }
         ```
     """
-    controls: List[str]  # List of control IDs
-    check: Optional[CheckConfig] = None
-    remediation: Optional[RemediationConfig] = None
-    config: Dict[str, Any] = Field(default_factory=dict)
+    controls: list[str]  # List of control IDs
+    check: CheckConfig | None = None
+    remediation: RemediationConfig | None = None
+    config: dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="allow")
 
@@ -241,22 +240,22 @@ class UserConfig(BaseModel):
     version: str = "1.0"
 
     # Framework to inherit from
-    extends: Optional[str] = None  # e.g., "openssf-baseline"
+    extends: str | None = None  # e.g., "openssf-baseline"
 
     # Global settings
     settings: UserSettings = Field(default_factory=UserSettings)
 
     # Custom adapter definitions
-    adapters: Dict[str, AdapterConfig] = Field(default_factory=dict)
+    adapters: dict[str, AdapterConfig] = Field(default_factory=dict)
 
     # Control overrides and custom controls
     # Values can be ControlOverride (for overrides) or CustomControl (for new controls)
-    controls: Dict[str, Union[ControlOverride, CustomControl, Dict[str, Any]]] = Field(
+    controls: dict[str, ControlOverride | CustomControl | dict[str, Any]] = Field(
         default_factory=dict
     )
 
     # Control groups for batch configuration
-    control_groups: Dict[str, ControlGroup] = Field(default_factory=dict)
+    control_groups: dict[str, ControlGroup] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="allow")
 
@@ -264,7 +263,7 @@ class UserConfig(BaseModel):
     # Convenience Methods
     # =========================================================================
 
-    def get_control_override(self, control_id: str) -> Optional[ControlOverride]:
+    def get_control_override(self, control_id: str) -> ControlOverride | None:
         """Get override for a specific control, including from groups."""
         # Check direct override first
         override = self.controls.get(control_id)
@@ -296,14 +295,14 @@ class UserConfig(BaseModel):
             return False, override.reason
         return True, None
 
-    def get_check_adapter(self, control_id: str) -> Optional[str]:
+    def get_check_adapter(self, control_id: str) -> str | None:
         """Get the adapter name for checking a control, if overridden."""
         override = self.get_control_override(control_id)
         if override and override.check:
             return override.check.adapter
         return None
 
-    def get_custom_controls(self) -> Dict[str, CustomControl]:
+    def get_custom_controls(self) -> dict[str, CustomControl]:
         """Get all user-defined custom controls."""
         custom = {}
         for control_id, control in self.controls.items():
@@ -315,11 +314,11 @@ class UserConfig(BaseModel):
                 custom[control_id] = control
         return custom
 
-    def get_adapter_config(self, name: str) -> Optional[AdapterConfig]:
+    def get_adapter_config(self, name: str) -> AdapterConfig | None:
         """Get adapter configuration by name."""
         return self.adapters.get(name)
 
-    def get_all_adapter_names(self) -> List[str]:
+    def get_all_adapter_names(self) -> list[str]:
         """Get names of all defined adapters."""
         return list(self.adapters.keys())
 
@@ -330,7 +329,7 @@ class UserConfig(BaseModel):
 
 
 def create_user_config(
-    extends: Optional[str] = "openssf-baseline",
+    extends: str | None = "openssf-baseline",
 ) -> UserConfig:
     """Create a minimal user configuration.
 
@@ -348,7 +347,7 @@ def create_user_config(
 
 
 def create_user_config_with_kusari(
-    controls: Optional[List[str]] = None,
+    controls: list[str] | None = None,
 ) -> UserConfig:
     """Create a user configuration with Kusari adapter for specified controls.
 

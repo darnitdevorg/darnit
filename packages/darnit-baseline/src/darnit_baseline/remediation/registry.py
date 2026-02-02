@@ -4,11 +4,10 @@ This module defines which remediation functions address which OSPS controls,
 enabling automated detection of applicable fixes based on audit failures.
 """
 
-from typing import Dict, List, Any
-
+from typing import Any
 
 # Remediation categories with their associated control IDs and fix functions
-REMEDIATION_REGISTRY: Dict[str, Dict[str, Any]] = {
+REMEDIATION_REGISTRY: dict[str, dict[str, Any]] = {
     "branch_protection": {
         "description": "Enable branch protection rules",
         "controls": ["OSPS-AC-03.01", "OSPS-AC-03.02", "OSPS-QA-07.01"],
@@ -24,9 +23,16 @@ REMEDIATION_REGISTRY: Dict[str, Dict[str, Any]] = {
         "requires_api": True,
     },
     "security_policy": {
-        "description": "Create SECURITY.md with vulnerability reporting",
-        "controls": ["OSPS-VM-01.01", "OSPS-VM-02.01", "OSPS-VM-03.01"],
+        "description": "Create SECURITY.md with vulnerability reporting and VEX policy",
+        "controls": ["OSPS-VM-01.01", "OSPS-VM-02.01", "OSPS-VM-03.01", "OSPS-VM-04.02"],
         "function": "create_security_policy",
+        "safe": True,
+        "requires_api": False,
+    },
+    "vex_policy": {
+        "description": "Add VEX policy section to existing SECURITY.md",
+        "controls": ["OSPS-VM-04.02"],
+        "function": "ensure_vex_policy",
         "safe": True,
         "requires_api": False,
     },
@@ -36,6 +42,29 @@ REMEDIATION_REGISTRY: Dict[str, Dict[str, Any]] = {
         "function": "create_codeowners",
         "safe": True,
         "requires_api": False,
+        # Context requirements (fallback for plugins - TOML is primary)
+        "requires_context": [{
+            "key": "maintainers",
+            "required": True,
+            "confidence_threshold": 0.9,
+            "prompt_if_auto_detected": True,
+            "warning": "GitHub collaborators are not necessarily project maintainers. Please confirm who should be code owners.",
+        }],
+    },
+    "maintainers": {
+        "description": "Create MAINTAINERS.md with project maintainers",
+        "controls": ["OSPS-GV-01.01", "OSPS-GV-01.02", "OSPS-GV-04.01"],
+        "function": "create_maintainers_doc",
+        "safe": True,
+        "requires_api": False,
+        # Context requirements (fallback for plugins - TOML is primary)
+        "requires_context": [{
+            "key": "maintainers",
+            "required": True,
+            "confidence_threshold": 0.9,
+            "prompt_if_auto_detected": True,
+            "warning": "GitHub collaborators are not necessarily project maintainers. Please confirm the actual project maintainers.",
+        }],
     },
     "governance": {
         "description": "Create GOVERNANCE.md",
@@ -43,6 +72,14 @@ REMEDIATION_REGISTRY: Dict[str, Dict[str, Any]] = {
         "function": "create_governance_doc",
         "safe": True,
         "requires_api": False,
+        # Context requirements (fallback for plugins - TOML is primary)
+        "requires_context": [{
+            "key": "maintainers",
+            "required": True,
+            "confidence_threshold": 0.9,
+            "prompt_if_auto_detected": True,
+            "warning": "GitHub collaborators are not necessarily project maintainers. Please confirm the actual project maintainers.",
+        }],
     },
     "contributing": {
         "description": "Create CONTRIBUTING.md guide",
@@ -82,7 +119,7 @@ REMEDIATION_REGISTRY: Dict[str, Dict[str, Any]] = {
 }
 
 
-def get_control_to_category_map() -> Dict[str, str]:
+def get_control_to_category_map() -> dict[str, str]:
     """Build reverse mapping from control ID to remediation category.
 
     Returns:
@@ -96,7 +133,7 @@ def get_control_to_category_map() -> Dict[str, str]:
     return mapping
 
 
-def get_categories_for_failures(failures: List[Dict[str, Any]]) -> List[str]:
+def get_categories_for_failures(failures: list[dict[str, Any]]) -> list[str]:
     """Determine which remediation categories apply to the given failures.
 
     Args:
@@ -116,12 +153,12 @@ def get_categories_for_failures(failures: List[Dict[str, Any]]) -> List[str]:
     return sorted(categories)
 
 
-def get_all_categories() -> List[str]:
+def get_all_categories() -> list[str]:
     """Get all available remediation category names."""
     return sorted(REMEDIATION_REGISTRY.keys())
 
 
-def get_category_info(category: str) -> Dict[str, Any]:
+def get_category_info(category: str) -> dict[str, Any]:
     """Get information about a specific remediation category.
 
     Args:
@@ -136,7 +173,7 @@ def get_category_info(category: str) -> Dict[str, Any]:
     return REMEDIATION_REGISTRY[category]
 
 
-def get_controls_by_category(category: str) -> List[str]:
+def get_controls_by_category(category: str) -> list[str]:
     """Get list of control IDs addressed by a category.
 
     Args:

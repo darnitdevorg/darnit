@@ -41,6 +41,12 @@ Note:
 """
 
 # Git helpers
+# Generation
+from .generator import (
+    BASELINE_PREDICATE_TYPE,
+    build_unsigned_statement,
+    generate_attestation_from_results,
+)
 from .git import (
     get_git_commit,
     get_git_ref,
@@ -55,16 +61,9 @@ from .predicate import (
 from .signing import (
     ATTESTATION_AVAILABLE,
     SIGSTORE_API_VERSION,
-    is_attestation_available,
     get_sigstore_api_version,
+    is_attestation_available,
     sign_attestation,
-)
-
-# Generation
-from .generator import (
-    BASELINE_PREDICATE_TYPE,
-    build_unsigned_statement,
-    generate_attestation_from_results,
 )
 
 __all__ = [

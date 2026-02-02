@@ -1,12 +1,10 @@
 """Tests for darnit.server.factory module."""
 
-import tempfile
 from pathlib import Path
 
 import pytest
 
 from darnit.server.factory import create_server, create_server_from_dict
-from darnit.server.registry import ToolRegistry
 
 
 class TestCreateServerFromDict:

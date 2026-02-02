@@ -3,27 +3,27 @@
 Re-exports from core.utils and provides remediation-specific helpers.
 """
 
+import json
 import os
 import subprocess
-import json
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Any
 
 from darnit.core.logging import get_logger
 
 # Re-export from core utilities
 from darnit.core.utils import (
+    detect_repo_from_git,
+    file_exists,
     gh_api,
     gh_api_safe,
-    file_exists,
     read_file,
     validate_local_path,
-    detect_repo_from_git,
 )
 
 logger = get_logger("remediation.helpers")
 
 
-def ensure_directory(path: str) -> Optional[str]:
+def ensure_directory(path: str) -> str | None:
     """Ensure a directory exists, creating it if necessary.
 
     Args:
@@ -39,7 +39,7 @@ def ensure_directory(path: str) -> Optional[str]:
         return f"Failed to create directory {path}: {str(e)}"
 
 
-def write_file_safe(path: str, content: str) -> Tuple[bool, str]:
+def write_file_safe(path: str, content: str) -> tuple[bool, str]:
     """Safely write content to a file.
 
     Args:
@@ -53,11 +53,11 @@ def write_file_safe(path: str, content: str) -> Tuple[bool, str]:
         with open(path, 'w') as f:
             f.write(content)
         return True, f"Successfully wrote {path}"
-    except (IOError, OSError) as e:
+    except OSError as e:
         return False, f"Failed to write {path}: {str(e)}"
 
 
-def check_file_exists(local_path: str, *patterns: str) -> List[str]:
+def check_file_exists(local_path: str, *patterns: str) -> list[str]:
     """Check which of the given file patterns exist.
 
     Args:
@@ -74,7 +74,7 @@ def check_file_exists(local_path: str, *patterns: str) -> List[str]:
     return existing
 
 
-def get_repo_maintainers(owner: str, repo: str) -> List[str]:
+def get_repo_maintainers(owner: str, repo: str) -> list[str]:
     """Get repository maintainers/collaborators via GitHub API.
 
     Falls back to repo owner if collaborators endpoint is not accessible.
@@ -108,7 +108,7 @@ def get_repo_maintainers(owner: str, repo: str) -> List[str]:
     return maintainers
 
 
-def detect_workflow_checks(local_path: str) -> List[Dict[str, Any]]:
+def detect_workflow_checks(local_path: str) -> list[dict[str, Any]]:
     """Detect potential status check names from GitHub Actions workflows.
 
     Args:
@@ -185,13 +185,13 @@ def detect_workflow_checks(local_path: str) -> List[Dict[str, Any]]:
                             'file': filename
                         })
 
-        except (IOError, OSError, KeyError, TypeError, AttributeError):
+        except (OSError, KeyError, TypeError, AttributeError):
             continue
 
     return checks
 
 
-def format_success(message: str, details: Dict[str, Any], controls: List[str]) -> str:
+def format_success(message: str, details: dict[str, Any], controls: list[str]) -> str:
     """Format a success message for remediation output.
 
     Args:

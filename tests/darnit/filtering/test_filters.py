@@ -1,20 +1,20 @@
 """Tests for CLI filter parsing and matching."""
 
-import pytest
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
+
+import pytest
 
 from darnit.filtering import (
     ControlFilter,
-    parse_value,
-    parse_filter,
-    parse_tags_arg,
     compare,
+    filter_controls,
     matches_filter,
     matches_filters,
-    filter_controls,
+    parse_filter,
+    parse_tags_arg,
+    parse_value,
 )
-
 
 # =============================================================================
 # Mock Control for Testing
@@ -27,9 +27,9 @@ class MockControl:
 
     control_id: str
     level: int
-    domain: Optional[str] = None
+    domain: str | None = None
     name: str = "Test Control"
-    metadata: Dict[str, Any] = None
+    metadata: dict[str, Any] = None
     check_adapter: str = "builtin"
 
     def __post_init__(self):
@@ -596,8 +596,8 @@ class MockControlWithTags:
     level: int
     domain: str
     name: str = "Test Control"
-    tags: Dict[str, Any] = None
-    metadata: Dict[str, Any] = None
+    tags: dict[str, Any] = None
+    metadata: dict[str, Any] = None
 
     def __post_init__(self):
         if self.tags is None:

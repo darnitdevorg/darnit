@@ -6,13 +6,13 @@ This package provides:
 
 from .filters import (
     ControlFilter,
+    compare,
+    filter_controls,
+    matches_filter,
+    matches_filters,
     parse_filter,
     parse_tags_arg,
     parse_value,
-    compare,
-    matches_filter,
-    matches_filters,
-    filter_controls,
 )
 
 __all__ = [

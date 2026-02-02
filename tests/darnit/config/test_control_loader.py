@@ -4,39 +4,33 @@ This module tests the TOML-based declarative control definition system.
 """
 
 import pytest
-from pathlib import Path
-import tempfile
-import os
+
+from darnit.config.control_loader import (
+    _convert_deterministic_pass,
+    _convert_exec_pass,
+    _convert_manual_pass,
+    _convert_pattern_pass,
+    control_from_framework,
+    load_controls_from_framework,
+)
 
 # Test imports
 from darnit.config.framework_schema import (
-    FrameworkConfig,
-    FrameworkMetadata,
-    FrameworkDefaults,
     ControlConfig,
-    PassesConfig,
     DeterministicPassConfig,
     ExecPassConfig,
-    PatternPassConfig,
-    LLMPassConfig,
+    FrameworkConfig,
+    FrameworkMetadata,
     ManualPassConfig,
+    PassesConfig,
+    PatternPassConfig,
 )
-
-from darnit.config.control_loader import (
-    control_from_framework,
-    load_controls_from_framework,
-    _convert_deterministic_pass,
-    _convert_exec_pass,
-    _convert_pattern_pass,
-    _convert_manual_pass,
-)
-
-from darnit.sieve.models import ControlSpec, VerificationPhase
+from darnit.sieve.models import ControlSpec
 from darnit.sieve.passes import (
     DeterministicPass,
     ExecPass,
-    PatternPass,
     ManualPass,
+    PatternPass,
 )
 
 

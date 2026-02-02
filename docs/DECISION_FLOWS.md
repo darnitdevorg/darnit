@@ -7,11 +7,12 @@ This document maps out the decision-making processes in the OpenSSF Baseline MCP
 1. [Main Audit Flow](#main-audit-flow)
 2. [Sieve Verification Flow](#sieve-verification-flow) *(NEW)*
 3. [Project Context Flow](#project-context-flow) *(NEW)*
-4. [Project Configuration Lifecycle](#project-configuration-lifecycle)
-5. [Adapter Selection & Check Routing](#adapter-selection--check-routing)
-6. [Control Applicability](#control-applicability)
-7. [CI Discovery](#ci-discovery)
-8. [Attestation Generation](#attestation-generation)
+4. [Context Sieve Flow](#context-sieve-flow) *(NEW - Remediation)*
+5. [Project Configuration Lifecycle](#project-configuration-lifecycle)
+6. [Adapter Selection & Check Routing](#adapter-selection--check-routing)
+7. [Control Applicability](#control-applicability)
+8. [CI Discovery](#ci-discovery)
+9. [Attestation Generation](#attestation-generation)
 
 ---
 
@@ -381,6 +382,316 @@ ci_provider = "gitlab"
 
 # Path to CI config (for non-GitHub CI)
 ci_config_path = ".gitlab-ci.yml"
+```
+
+---
+
+## Context Sieve Flow
+
+The Context Sieve provides progressive auto-detection of project context (maintainers, security contacts, governance model) for remediation. It runs cheap/fast checks first and stops when confidence is sufficient.
+
+### 4.1 Context Sieve Pipeline
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    ContextSieve.detect(key, local_path, owner, repo)         │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+                    ┌─────────────────────────────────┐
+                    │  Phase 1: DETERMINISTIC          │
+                    │  (High confidence: 0.9)          │
+                    │                                  │
+                    │  • MAINTAINERS.md parsing        │
+                    │  • CODEOWNERS file extraction    │
+                    │  • SECURITY.md email detection   │
+                    │  • GOVERNANCE.md model keywords  │
+                    └─────────────────────────────────┘
+                                      │
+                           ┌──────────┴──────────┐
+                           │                     │
+                           ▼                     ▼
+                   [Signals Found]         [No Signals]
+                           │                     │
+                           ▼                     │
+              ┌─────────────────────┐            │
+              │ confidence >= 0.9?  │            │
+              └─────────────────────┘            │
+                           │                     │
+                   ┌───────┴───────┐             │
+                   ▼               ▼             │
+                [Yes]            [No]            │
+                   │               │             │
+                   ▼               └──────┬──────┘
+          Return early                   │
+          (high confidence)              ▼
+                              ┌─────────────────────────────────┐
+                              │  Phase 2: HEURISTIC              │
+                              │  (Medium confidence: 0.7-0.8)    │
+                              │                                  │
+                              │  • package.json author/contribs  │
+                              │  • pyproject.toml authors        │
+                              │  • Git commit top contributors   │
+                              │  • README.md author mentions     │
+                              └─────────────────────────────────┘
+                                              │
+                                   ┌──────────┴──────────┐
+                                   │                     │
+                                   ▼                     ▼
+                           [Signals Found]         [No Signals]
+                                   │                     │
+                                   ▼                     │
+                  ┌─────────────────────┐                │
+                  │ confidence >= 0.7?  │                │
+                  └─────────────────────┘                │
+                                   │                     │
+                           ┌───────┴───────┐             │
+                           ▼               ▼             │
+                        [Yes]            [No]            │
+                           │               │             │
+                           ▼               └──────┬──────┘
+                  Return early                   │
+                  (good enough)                  ▼
+                              ┌─────────────────────────────────┐
+                              │  Phase 3: API                    │
+                              │  (Lower confidence: 0.6-0.7)     │
+                              │                                  │
+                              │  • GitHub collaborators API      │
+                              │    (admin/maintain roles)        │
+                              │  • GitHub security policy        │
+                              │  • Organization membership       │
+                              │                                  │
+                              │  (Requires owner/repo params)    │
+                              └─────────────────────────────────┘
+                                              │
+                                              ▼
+                              ┌─────────────────────────────────┐
+                              │  Phase 4: COMBINE SIGNALS        │
+                              │                                  │
+                              │  • Aggregate all signals         │
+                              │  • Calculate agreement factor    │
+                              │  • Apply agreement boost/penalty │
+                              │  • Return best value with        │
+                              │    provenance                    │
+                              └─────────────────────────────────┘
+                                              │
+                                              ▼
+                              ┌─────────────────────────────────┐
+                              │  ContextDetectionResult          │
+                              │                                  │
+                              │  • key: "maintainers"            │
+                              │  • value: ["@alice", "@bob"]     │
+                              │  • confidence: 0.78              │
+                              │  • signals: [ContextSignal...]   │
+                              │  • needs_confirmation: bool      │
+                              └─────────────────────────────────┘
+```
+
+### 4.2 Signal Source Weights
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          SIGNAL SOURCE WEIGHTS                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Source               │ Weight │ Rationale                                   │
+│  ─────────────────────┼────────┼─────────────────────────────────────────────│
+│  USER_CONFIRMED       │  1.0   │ User explicitly confirmed via MCP tool      │
+│  EXPLICIT_FILE        │  0.9   │ Dedicated files (MAINTAINERS.md) are        │
+│                       │        │ authoritative                               │
+│  PROJECT_MANIFEST     │  0.8   │ Package files (package.json) usually        │
+│                       │        │ accurate                                    │
+│  GITHUB_API           │  0.7   │ API data may include inactive contributors  │
+│  GIT_HISTORY          │  0.6   │ Commit count doesn't equal maintainership   │
+│  PATTERN_MATCH        │  0.5   │ Heuristic matching, may have false          │
+│                       │        │ positives                                   │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 4.3 Confidence Calculation
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      CONFIDENCE CALCULATION ALGORITHM                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Input: List[ContextSignal]                                                  │
+│                                                                              │
+│  Step 1: Calculate weighted confidence for each signal                       │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │  weighted_conf = signal.raw_confidence × SIGNAL_WEIGHTS[signal.source]  │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│  Step 2: Calculate agreement factor (do signals agree?)                      │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │  agreement = overlap(signal_values) / total_unique_values               │ │
+│  │                                                                         │ │
+│  │  • All agree (same values):     agreement = 1.0                         │ │
+│  │  • Partial overlap:             agreement = 0.5-0.9                     │ │
+│  │  • Complete disagreement:       agreement = 0.0                         │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│  Step 3: Apply agreement boost/penalty                                       │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │  • Multiple signals agree:      boost = 1.2                             │ │
+│  │  • Single signal:               boost = 1.0                             │ │
+│  │  • Signals conflict:            boost = 0.8                             │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│  Step 4: Final confidence                                                    │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │  final_confidence = weighted_avg × agreement_factor × boost             │ │
+│  │  final_confidence = min(1.0, final_confidence)  # Cap at 1.0            │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 4.4 Integration with Context Validator
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│        check_context_requirements(requirements, local_path, owner, repo)     │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+                    ┌─────────────────────────────────┐
+                    │  For each ContextRequirement:    │
+                    │  { key, required, threshold,     │
+                    │    prompt_if_auto_detected }     │
+                    └─────────────────────────────────┘
+                                      │
+                                      ▼
+                    ┌─────────────────────────────────┐
+                    │  get_context_value(local_path,   │
+                    │                    key)          │
+                    └─────────────────────────────────┘
+                                      │
+                           ┌──────────┴──────────┐
+                           │                     │
+                           ▼                     ▼
+                    [Value Found]          [Value Missing]
+                    (in .project.yaml)           │
+                           │                     │
+                           │                     ▼
+                           │     ┌─────────────────────────────────┐
+                           │     │  _try_sieve_detection(          │
+                           │     │      key, local_path,           │
+                           │     │      owner, repo)               │
+                           │     │                                 │
+                           │     │  Run Context Sieve pipeline     │
+                           │     └─────────────────────────────────┘
+                           │                     │
+                           │          ┌──────────┴──────────┐
+                           │          │                     │
+                           │          ▼                     ▼
+                           │   [Sieve Found]          [Nothing Found]
+                           │   (auto-detected)              │
+                           │          │                     │
+                           │          ▼                     ▼
+                           │   Store in result.       Mark as missing,
+                           │   auto_detected          add to prompts
+                           │          │
+                           └──────────┴──────────────┐
+                                                     │
+                                                     ▼
+                              ┌─────────────────────────────────┐
+                              │  Check confidence threshold      │
+                              │                                  │
+                              │  confidence >= threshold?        │
+                              │  prompt_if_auto_detected?        │
+                              └─────────────────────────────────┘
+                                                     │
+                              ┌───────────────────────┴───────────────────────┐
+                              │                                               │
+                              ▼                                               ▼
+                  ┌──────────────────────┐                    ┌──────────────────────┐
+                  │ Ready to proceed     │                    │ Needs confirmation   │
+                  │                      │                    │                      │
+                  │ result.ready = True  │                    │ result.ready = False │
+                  │                      │                    │ Add prompt message   │
+                  └──────────────────────┘                    └──────────────────────┘
+```
+
+### 4.5 Supported Context Keys
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      SUPPORTED CONTEXT DETECTION KEYS                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Key              │ Deterministic        │ Heuristic       │ API            │
+│  ─────────────────┼──────────────────────┼─────────────────┼────────────────│
+│  maintainers      │ MAINTAINERS.md       │ package.json    │ GitHub         │
+│                   │ CODEOWNERS           │ pyproject.toml  │ collaborators  │
+│                   │                      │ Git top commits │                │
+│  ─────────────────┼──────────────────────┼─────────────────┼────────────────│
+│  security_contact │ SECURITY.md email    │ README security │ GitHub         │
+│                   │ extraction           │ section         │ security       │
+│                   │                      │                 │ policy         │
+│  ─────────────────┼──────────────────────┼─────────────────┼────────────────│
+│  governance_model │ GOVERNANCE.md        │ README gov      │ -              │
+│                   │ keyword detection    │ section         │                │
+│                   │ (committee, bdfl,    │                 │                │
+│                   │  foundation, etc.)   │                 │                │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 4.6 Example: Maintainers Detection
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    Example: detect("maintainers", "/path/to/repo")           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Phase 1 (Deterministic):                                                    │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │  • Check MAINTAINERS.md → Not found                                    │ │
+│  │  • Check .github/CODEOWNERS → Found!                                   │ │
+│  │    Content: "* @alice @bob"                                            │ │
+│  │    Signal: { source: EXPLICIT_FILE, value: ["@alice", "@bob"],         │ │
+│  │              raw_confidence: 0.95 }                                    │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│  confidence = 0.95 × 0.9 (EXPLICIT_FILE weight) = 0.855                     │
+│  0.855 < 0.9 threshold → Continue to Phase 2                                │
+│                                                                              │
+│  Phase 2 (Heuristic):                                                        │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │  • Check package.json → Found!                                         │ │
+│  │    Content: { "author": "Alice Smith <alice@example.com>" }            │ │
+│  │    Signal: { source: PROJECT_MANIFEST, value: ["alice"],               │ │
+│  │              raw_confidence: 0.8 }                                     │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│  Phase 4 (Combine):                                                          │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │  Signals: [CODEOWNERS: @alice, @bob], [package.json: alice]            │ │
+│  │                                                                         │ │
+│  │  Agreement: "alice" appears in both → agreement_factor = 0.75          │ │
+│  │                                                                         │ │
+│  │  weighted_avg = (0.855 + 0.64) / 2 = 0.7475                            │ │
+│  │  boost = 1.2 (signals agree)                                           │ │
+│  │                                                                         │ │
+│  │  final_confidence = 0.7475 × 0.75 × 1.2 = 0.67                         │ │
+│  │                                                                         │ │
+│  │  Result: { value: ["@alice", "@bob"], confidence: 0.67,                │ │
+│  │            signals: [...], needs_confirmation: True }                  │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│  Output to user:                                                             │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │  🔍 Auto-detected maintainers (confidence: 67%):                       │ │
+│  │     - @alice (from CODEOWNERS, package.json)                           │ │
+│  │     - @bob (from CODEOWNERS)                                           │ │
+│  │                                                                         │ │
+│  │  Confidence below 90% threshold. Please confirm:                       │ │
+│  │     confirm_project_context(maintainers=["@alice", "@bob"])            │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---

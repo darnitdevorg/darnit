@@ -6,7 +6,7 @@ Sigstore keyless signing. It supports multiple Sigstore API versions
 """
 
 import json
-from typing import Dict, Any
+from typing import Any
 
 from darnit.core.logging import get_logger
 
@@ -14,14 +14,15 @@ logger = get_logger("attestation.signing")
 
 # Optional imports for attestation support
 try:
-    from sigstore.oidc import Issuer
-    from sigstore.dsse import StatementBuilder, Subject, DigestSet
     import hashlib
+
+    from sigstore.dsse import DigestSet, StatementBuilder, Subject
+    from sigstore.oidc import Issuer
 
     # Import the correct API based on sigstore version
     # sigstore >= 3.0 uses ClientTrustConfig
     try:
-        from sigstore.sign import SigningContext, ClientTrustConfig
+        from sigstore.sign import ClientTrustConfig, SigningContext
         SIGSTORE_API_VERSION = 3
     except ImportError:
         # sigstore < 3.0 - try older API
@@ -57,12 +58,12 @@ def get_sigstore_api_version() -> int:
 
 
 def sign_attestation(
-    predicate: Dict[str, Any],
+    predicate: dict[str, Any],
     predicate_type: str,
     subject_name: str,
     commit: str,
     use_staging: bool = False
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Sign an attestation using Sigstore.
 
     In CI environments (GitHub Actions, GitLab CI, etc.), this uses ambient

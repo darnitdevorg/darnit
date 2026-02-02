@@ -3,11 +3,11 @@
 import pytest
 
 from darnit.core.models import (
-    CheckStatus,
-    CheckResult,
-    RemediationResult,
     AdapterCapability,
     AuditResult,
+    CheckResult,
+    CheckStatus,
+    RemediationResult,
 )
 
 

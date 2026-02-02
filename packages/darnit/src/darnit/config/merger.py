@@ -61,7 +61,7 @@ See Also:
 import copy
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 try:
     import tomllib
@@ -79,7 +79,6 @@ from .user_schema import (
     ControlStatus,
     UserConfig,
 )
-
 
 # =============================================================================
 # Effective Configuration
@@ -99,40 +98,38 @@ class EffectiveControl:
     description: str
 
     # Optional framework-specific fields
-    level: Optional[int] = None  # Maturity level - None if framework doesn't use levels
-    domain: Optional[str] = None  # Domain code - None if not applicable
+    level: int | None = None  # Maturity level - None if framework doesn't use levels
+    domain: str | None = None  # Domain code - None if not applicable
 
     # Source tracking
     from_framework: bool = True
     from_user: bool = False
 
     # Status
-    status: Optional[ControlStatus] = None
-    status_reason: Optional[str] = None
+    status: ControlStatus | None = None
+    status_reason: str | None = None
 
     # Check routing
     check_adapter: str = "builtin"
-    check_handler: Optional[str] = None
-    check_config: Dict[str, Any] = field(default_factory=dict)
+    check_handler: str | None = None
+    check_config: dict[str, Any] = field(default_factory=dict)
 
     # Remediation routing
     remediation_adapter: str = "builtin"
-    remediation_handler: Optional[str] = None
-    remediation_config: Dict[str, Any] = field(default_factory=dict)
+    remediation_handler: str | None = None
+    remediation_config: dict[str, Any] = field(default_factory=dict)
 
     # Framework pass configuration (for sieve)
-    passes_config: Optional[Dict[str, Any]] = None
+    passes_config: dict[str, Any] | None = None
 
     # Flexible key-value tags for filtering and metadata
-    tags: Dict[str, Any] = field(default_factory=dict)
-    security_severity: Optional[float] = None
-    docs_url: Optional[str] = None
+    tags: dict[str, Any] = field(default_factory=dict)
+    security_severity: float | None = None
+    docs_url: str | None = None
 
     def is_applicable(self) -> bool:
         """Check if control should be evaluated."""
-        if self.status in (ControlStatus.NA, ControlStatus.DISABLED):
-            return False
-        return True
+        return self.status not in (ControlStatus.NA, ControlStatus.DISABLED)
 
 
 @dataclass
@@ -144,13 +141,13 @@ class EffectiveConfig:
     # Framework metadata
     framework_name: str
     framework_version: str
-    spec_version: Optional[str] = None
+    spec_version: str | None = None
 
     # Merged adapters (framework + user)
-    adapters: Dict[str, AdapterConfig] = field(default_factory=dict)
+    adapters: dict[str, AdapterConfig] = field(default_factory=dict)
 
     # Merged controls
-    controls: Dict[str, EffectiveControl] = field(default_factory=dict)
+    controls: dict[str, EffectiveControl] = field(default_factory=dict)
 
     # Settings from user config
     cache_results: bool = True
@@ -158,10 +155,10 @@ class EffectiveConfig:
     timeout: int = 300
 
     # Source configs (for reference)
-    _framework_config: Optional[FrameworkConfig] = None
-    _user_config: Optional[UserConfig] = None
+    _framework_config: FrameworkConfig | None = None
+    _user_config: UserConfig | None = None
 
-    def get_controls_by_level(self, level: int) -> Dict[str, EffectiveControl]:
+    def get_controls_by_level(self, level: int) -> dict[str, EffectiveControl]:
         """Get all applicable controls at a specific level.
 
         Note: Controls without a level (level=None) are not included.
@@ -171,7 +168,7 @@ class EffectiveConfig:
             if ctrl.level == level and ctrl.is_applicable()
         }
 
-    def get_controls_by_domain(self, domain: str) -> Dict[str, EffectiveControl]:
+    def get_controls_by_domain(self, domain: str) -> dict[str, EffectiveControl]:
         """Get all applicable controls in a specific domain.
 
         Note: Controls without a domain (domain=None) are not included.
@@ -181,7 +178,7 @@ class EffectiveConfig:
             if ctrl.domain == domain and ctrl.is_applicable()
         }
 
-    def get_excluded_controls(self) -> Dict[str, str]:
+    def get_excluded_controls(self) -> dict[str, str]:
         """Get all non-applicable controls with reasons."""
         return {
             cid: ctrl.status_reason or "No reason provided"
@@ -189,7 +186,7 @@ class EffectiveConfig:
             if not ctrl.is_applicable()
         }
 
-    def get_adapter(self, name: str) -> Optional[AdapterConfig]:
+    def get_adapter(self, name: str) -> AdapterConfig | None:
         """Get adapter configuration by name."""
         return self.adapters.get(name)
 
@@ -199,7 +196,7 @@ class EffectiveConfig:
 # =============================================================================
 
 
-def deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     """Deep merge two dictionaries.
 
     Rules:
@@ -229,8 +226,8 @@ def deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]
 
 def merge_control(
     control_id: str,
-    framework_control: Optional[ControlConfig],
-    user_override: Optional[ControlOverride],
+    framework_control: ControlConfig | None,
+    user_override: ControlOverride | None,
     defaults: FrameworkDefaults,
 ) -> EffectiveControl:
     """Merge a single control's framework config with user override.
@@ -341,7 +338,7 @@ def merge_control(
 
 def merge_configs(
     framework: FrameworkConfig,
-    user: Optional[UserConfig] = None,
+    user: UserConfig | None = None,
 ) -> EffectiveConfig:
     """Merge framework and user configurations into effective config.
 
@@ -374,7 +371,7 @@ def merge_configs(
         effective.timeout = user.settings.timeout
 
     # Collect all control IDs
-    all_control_ids: Set[str] = set(framework.controls.keys())
+    all_control_ids: set[str] = set(framework.controls.keys())
     if user:
         all_control_ids.update(user.controls.keys())
 
@@ -429,7 +426,7 @@ def load_framework_config(path: Path) -> FrameworkConfig:
     return FrameworkConfig(**data)
 
 
-def load_user_config(repo_path: Path) -> Optional[UserConfig]:
+def load_user_config(repo_path: Path) -> UserConfig | None:
     """Load user configuration from repository.
 
     Searches for .baseline.toml in the repository root.
@@ -453,7 +450,7 @@ def load_user_config(repo_path: Path) -> Optional[UserConfig]:
 
 def load_effective_config(
     framework_path: Path,
-    repo_path: Optional[Path] = None,
+    repo_path: Path | None = None,
 ) -> EffectiveConfig:
     """Load and merge framework and user configurations.
 
@@ -478,7 +475,7 @@ def load_effective_config(
 # =============================================================================
 
 
-def resolve_framework_path(name_or_path: str) -> Optional[Path]:
+def resolve_framework_path(name_or_path: str) -> Path | None:
     """Resolve a framework name or path to an actual path.
 
     Resolution order:
@@ -548,7 +545,7 @@ def load_framework_by_name(name: str) -> FrameworkConfig:
     return load_framework_config(path)
 
 
-def list_available_frameworks() -> List[str]:
+def list_available_frameworks() -> list[str]:
     """List all available framework names.
 
     Discovers frameworks via PluginRegistry entry points.
@@ -571,7 +568,7 @@ def list_available_frameworks() -> List[str]:
 
 def load_effective_config_by_name(
     framework_name: str,
-    repo_path: Optional[Path] = None,
+    repo_path: Path | None = None,
 ) -> EffectiveConfig:
     """Load and merge framework (by name) and user configurations.
 
@@ -606,8 +603,8 @@ def load_effective_config_by_name(
 
 def load_effective_config_auto(
     repo_path: Path,
-    framework_path: Optional[Path] = None,
-    framework_name: Optional[str] = None,
+    framework_path: Path | None = None,
+    framework_name: str | None = None,
 ) -> EffectiveConfig:
     """Load effective config with automatic framework resolution.
 
@@ -663,7 +660,7 @@ def load_effective_config_auto(
             raise ValueError(
                 "No framework specified and 'openssf-baseline' not found. "
                 "Please install darnit-baseline or specify a framework."
-            )
+            ) from None
 
     return merge_configs(framework, user)
 
@@ -673,7 +670,7 @@ def load_effective_config_auto(
 # =============================================================================
 
 
-def validate_framework_config(config: FrameworkConfig) -> List[str]:
+def validate_framework_config(config: FrameworkConfig) -> list[str]:
     """Validate framework configuration for common issues.
 
     Args:
@@ -711,8 +708,8 @@ def validate_framework_config(config: FrameworkConfig) -> List[str]:
 
 def validate_user_config(
     user: UserConfig,
-    framework: Optional[FrameworkConfig] = None,
-) -> List[str]:
+    framework: FrameworkConfig | None = None,
+) -> list[str]:
     """Validate user configuration for common issues.
 
     Args:
@@ -745,7 +742,7 @@ def validate_user_config(
     # Check control groups reference valid controls
     if framework:
         framework_controls = set(framework.controls.keys())
-        for group_name, group in user.control_groups.items():
+        for _group_name, group in user.control_groups.items():
             for control_id in group.controls:
                 if control_id not in framework_controls:
                     # Could be a custom control, so just warn

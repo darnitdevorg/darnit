@@ -8,14 +8,14 @@ as the main MCP entry point. This module provides supporting functions
 and can be used for programmatic access.
 """
 
-from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple, Set
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
 from darnit.core.logging import get_logger
 from darnit.core.utils import (
-    validate_local_path,
     detect_repo_from_git,
+    validate_local_path,
 )
 
 logger = get_logger("tools.audit")
@@ -55,9 +55,9 @@ def _get_sieve_components():
     if _sieve_components is None:
         try:
             from darnit.sieve import (
+                CheckContext,
                 SieveOrchestrator,
                 get_control_registry,
-                CheckContext,
             )
             _sieve_components = {
                 "SieveOrchestrator": SieveOrchestrator,
@@ -90,8 +90,8 @@ def _register_toml_controls() -> int:
 
     try:
         from darnit.config import (
-            load_framework_config,
             load_controls_from_framework,
+            load_framework_config,
         )
         from darnit.sieve.registry import register_control
 
@@ -124,10 +124,10 @@ def _register_toml_controls() -> int:
 # User Configuration Loading
 # =============================================================================
 
-_effective_config_cache: Dict[str, Any] = {}
+_effective_config_cache: dict[str, Any] = {}
 
 
-def _get_framework_config_path() -> Optional[Path]:
+def _get_framework_config_path() -> Path | None:
     """Get path to the framework TOML file from the installed package.
 
     Returns:
@@ -161,7 +161,7 @@ def _get_framework_config_path() -> Optional[Path]:
     return None
 
 
-def load_effective_audit_config(local_path: str) -> Optional[Any]:
+def load_effective_audit_config(local_path: str) -> Any | None:
     """Load the effective configuration for auditing.
 
     This loads the framework config (openssf-baseline.toml) and merges it
@@ -220,7 +220,7 @@ def clear_effective_config_cache():
     _effective_config_cache.clear()
 
 
-def get_excluded_control_ids(local_path: str) -> Dict[str, str]:
+def get_excluded_control_ids(local_path: str) -> dict[str, str]:
     """Get control IDs that are excluded via user config.
 
     Args:
@@ -235,7 +235,7 @@ def get_excluded_control_ids(local_path: str) -> Dict[str, str]:
     return {}
 
 
-def get_adapter_for_control(control_id: str, local_path: str) -> Optional[str]:
+def get_adapter_for_control(control_id: str, local_path: str) -> str | None:
     """Get the adapter name configured for a specific control.
 
     Args:
@@ -265,10 +265,10 @@ class AuditOptions:
 
 
 def prepare_audit(
-    owner: Optional[str],
-    repo: Optional[str],
+    owner: str | None,
+    repo: str | None,
     local_path: str
-) -> Tuple[Optional[str], Optional[str], str, str, Optional[str]]:
+) -> tuple[str | None, str | None, str, str, str | None]:
     """Prepare for running an audit by validating and resolving inputs.
 
     Args:
@@ -318,7 +318,7 @@ def run_checks(
     use_sieve: bool = False,
     stop_on_llm: bool = True,
     apply_user_config: bool = True,
-) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
+) -> tuple[list[dict[str, Any]], dict[str, str]]:
     """Run OSPS baseline checks at the specified level.
 
     Args:
@@ -336,8 +336,8 @@ def run_checks(
         where skipped_controls maps control_id to reason
     """
     # Load user config exclusions if enabled
-    skipped_controls: Dict[str, str] = {}
-    excluded_ids: Set[str] = set()
+    skipped_controls: dict[str, str] = {}
+    excluded_ids: set[str] = set()
 
     if apply_user_config:
         skipped_controls = get_excluded_control_ids(local_path)
@@ -394,7 +394,7 @@ def run_checks_legacy(
     level: int = 3,
     use_sieve: bool = False,
     stop_on_llm: bool = True,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Run OSPS baseline checks (legacy API without user config).
 
     This is a backwards-compatible wrapper that ignores user config.
@@ -426,7 +426,7 @@ def _run_sieve_checks(
     default_branch: str,
     level: int,
     stop_on_llm: bool,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Run checks using the progressive sieve verification pipeline.
 
     This implements the 4-phase verification model:
@@ -495,7 +495,7 @@ def _run_sieve_checks(
         logger.debug("UnifiedLocator created for .project/ integration")
     except ImportError:
         logger.debug("UnifiedLocator not available, using direct file resolution")
-    except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, IOError, OSError) as e:
+    except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as e:
         logger.warning(f"Failed to create UnifiedLocator: {e}")
 
     # Get all control specs for requested levels
@@ -560,9 +560,9 @@ def _run_sieve_checks(
 
 
 def calculate_compliance(
-    results: List[Dict[str, Any]],
+    results: list[dict[str, Any]],
     level: int = 3
-) -> Dict[int, bool]:
+) -> dict[int, bool]:
     """Calculate level compliance from check results.
 
     Args:
@@ -582,7 +582,7 @@ def calculate_compliance(
     return compliance
 
 
-def summarize_results(results: List[Dict[str, Any]]) -> Dict[str, int]:
+def summarize_results(results: list[dict[str, Any]]) -> dict[str, int]:
     """Summarize check results by status.
 
     Args:
@@ -614,10 +614,11 @@ def summarize_results(results: List[Dict[str, Any]]) -> Dict[str, int]:
 def format_results_markdown(
     owner: str,
     repo: str,
-    results: List[Dict[str, Any]],
-    summary: Dict[str, int],
-    compliance: Dict[int, bool],
-    level: int
+    results: list[dict[str, Any]],
+    summary: dict[str, int],
+    compliance: dict[int, bool],
+    level: int,
+    local_path: str | None = None,
 ) -> str:
     """Format audit results as Markdown.
 
@@ -628,20 +629,21 @@ def format_results_markdown(
         summary: Status summary
         compliance: Level compliance
         level: Maximum level checked
+        local_path: Path to the repository (for pending context)
 
     Returns:
         Markdown-formatted report
     """
     lines = [
-        f"# OpenSSF Baseline Audit Report",
-        f"",
+        "# OpenSSF Baseline Audit Report",
+        "",
         f"**Repository:** {owner}/{repo}",
         f"**Level Assessed:** {level}",
-        f"",
-        f"## Summary",
-        f"",
-        f"| Status | Count | Meaning |",
-        f"|--------|-------|---------|",
+        "",
+        "## Summary",
+        "",
+        "| Status | Count | Meaning |",
+        "|--------|-------|---------|",
         f"| ✅ Pass | {summary['PASS']} | Control satisfied |",
         f"| ❌ Fail | {summary['FAIL']} | **Control NOT satisfied - action required** |",
         f"| ⚠️ Needs Verification | {summary['WARN']} | **Could not verify automatically - manual review required** |",
@@ -649,23 +651,23 @@ def format_results_markdown(
         f"| ➖ N/A | {summary['N/A']} | Not applicable to this project |",
         f"| 🔴 Error | {summary['ERROR']} | Check could not run |",
         f"| **Total** | {summary['total']} | |",
-        f"",
-        f"> **Important:** Items marked ⚠️ Needs Verification are NOT informational warnings.",
-        f"> They represent controls that could not be automatically verified and **require manual review**",
-        f"> to determine compliance. Treat these as potential failures until verified.",
-        f"",
-        f"> **🔧 Remediation:** To fix failures, use the MCP tools provided by this server:",
-        f"> - `remediate_audit_findings()` - Auto-fix multiple issues",
-        f"> - `enable_branch_protection()` - Configure branch protection",
-        f"> - `create_security_policy()` - Generate SECURITY.md",
-        f"> ",
-        f"> **🔀 Git Workflow:** Use MCP tools for version control:",
-        f"> - `create_remediation_branch()` → `commit_remediation_changes()` → `create_remediation_pr()`",
-        f"> ",
-        f"> **Do NOT run `gh` or `git` commands directly.** Always use the MCP tools for remediation.",
-        f"",
-        f"## Level Compliance",
-        f"",
+        "",
+        "> **Important:** Items marked ⚠️ Needs Verification are NOT informational warnings.",
+        "> They represent controls that could not be automatically verified and **require manual review**",
+        "> to determine compliance. Treat these as potential failures until verified.",
+        "",
+        "> **🔧 Remediation:** To fix failures, use the MCP tools provided by this server:",
+        "> - `remediate_audit_findings()` - Auto-fix multiple issues",
+        "> - `enable_branch_protection()` - Configure branch protection",
+        "> - `create_security_policy()` - Generate SECURITY.md",
+        "> ",
+        "> **🔀 Git Workflow:** Use MCP tools for version control:",
+        "> - `create_remediation_branch()` → `commit_remediation_changes()` → `create_remediation_pr()`",
+        "> ",
+        "> **Do NOT run `gh` or `git` commands directly.** Always use the MCP tools for remediation.",
+        "",
+        "## Level Compliance",
+        "",
     ]
 
     for lvl in range(1, level + 1):
@@ -755,7 +757,7 @@ def format_results_markdown(
             lines.append("")
             lines.append("```python")
             lines.append("# Fix all applicable issues automatically")
-            lines.append(f'remediate_audit_findings(local_path="/path/to/repo", dry_run=False)')
+            lines.append('remediate_audit_findings(local_path="/path/to/repo", dry_run=False)')
             lines.append("")
             lines.append("# Or fix specific categories")
             lines.append(f'enable_branch_protection(owner="{owner}", repo="{repo}")')
@@ -777,16 +779,16 @@ def format_results_markdown(
         lines.append("**Recommended workflow:**")
         lines.append("```python")
         lines.append("# 1. Create a branch for remediation work")
-        lines.append(f'create_remediation_branch(branch_name="fix/openssf-baseline", local_path="/path/to/repo")')
+        lines.append('create_remediation_branch(branch_name="fix/openssf-baseline", local_path="/path/to/repo")')
         lines.append("")
         lines.append("# 2. Apply remediations (files will be created/modified)")
-        lines.append(f'remediate_audit_findings(local_path="/path/to/repo")')
+        lines.append('remediate_audit_findings(local_path="/path/to/repo")')
         lines.append("")
         lines.append("# 3. Commit the changes")
-        lines.append(f'commit_remediation_changes(message="Add OpenSSF Baseline compliance files", local_path="/path/to/repo")')
+        lines.append('commit_remediation_changes(message="Add OpenSSF Baseline compliance files", local_path="/path/to/repo")')
         lines.append("")
         lines.append("# 4. Open a pull request")
-        lines.append(f'create_remediation_pr(title="OpenSSF Baseline Compliance", local_path="/path/to/repo")')
+        lines.append('create_remediation_pr(title="OpenSSF Baseline Compliance", local_path="/path/to/repo")')
         lines.append("```")
         lines.append("")
         lines.append("Use `get_remediation_status()` at any time to check current git state and next steps.")
@@ -797,10 +799,96 @@ def format_results_markdown(
         lines.append("> and consistent implementation.")
         lines.append("")
 
+    # Add "Help Improve This Audit" section if there's pending context
+    pending_context_lines = _get_pending_context_section(local_path)
+    if pending_context_lines:
+        lines.extend(pending_context_lines)
+
     return "\n".join(lines)
 
 
-def list_available_checks() -> Dict[str, List[Dict[str, Any]]]:
+def _get_pending_context_section(local_path: str | None) -> list[str]:
+    """Get the "Help Improve This Audit" section with pending context.
+
+    Args:
+        local_path: Path to the repository
+
+    Returns:
+        List of markdown lines, or empty list if no pending context
+    """
+    if local_path is None:
+        return []
+
+    try:
+        from darnit.config.context_storage import get_pending_context
+
+        pending = get_pending_context(local_path)
+        if not pending:
+            return []
+
+        lines = [
+            "---",
+            "",
+            "## 🤔 Help Improve This Audit",
+            "",
+            "The following information would help verify additional controls more accurately.",
+            "Providing this context can improve audit results.",
+            "",
+        ]
+
+        # Show top 3-5 pending context items
+        top_pending = pending[:5]
+
+        for req in top_pending:
+            lines.append(f"### {req.key}")
+            lines.append(f"**Question:** {req.definition.prompt}")
+
+            if req.definition.hint:
+                lines.append(f"- *Hint:* {req.definition.hint}")
+
+            if req.definition.examples:
+                examples_str = ", ".join(f"`{e}`" for e in req.definition.examples[:3])
+                lines.append(f"- *Examples:* {examples_str}")
+
+            if req.definition.values:
+                values_str = ", ".join(f"`{v}`" for v in req.definition.values[:5])
+                lines.append(f"- *Valid values:* {values_str}")
+
+            lines.append(f"- *Affects:* {', '.join(req.control_ids[:5])}")
+            if len(req.control_ids) > 5:
+                lines.append(f"  (and {len(req.control_ids) - 5} more)")
+
+            # Add example usage based on type
+            if req.definition.type == "boolean":
+                lines.append(f'- *Set with:* `confirm_project_context({req.key}=True)`')
+            elif req.definition.type == "enum" and req.definition.values:
+                example_value = req.definition.values[0]
+                lines.append(f'- *Set with:* `confirm_project_context({req.key}="{example_value}")`')
+            elif req.definition.type == "list_or_path":
+                lines.append(f'- *Set with:* `confirm_project_context({req.key}=["@user1"])`')
+            else:
+                lines.append(f'- *Set with:* `confirm_project_context({req.key}="value")`')
+
+            lines.append("")
+
+        if len(pending) > 5:
+            lines.append(f"*...and {len(pending) - 5} more context items. Use `get_pending_context()` to see all.*")
+            lines.append("")
+
+        lines.append("---")
+        lines.append("")
+
+        return lines
+
+    except ImportError:
+        logger.debug("Context storage not available for pending context section")
+        return []
+    except Exception as e:
+        logger.debug(f"Error getting pending context: {e}")
+        return []
+
+
+def list_available_checks() -> dict[str, list[dict[str, Any]]]:
     """List all available OSPS baseline checks.
 
     Returns:

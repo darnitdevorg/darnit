@@ -5,7 +5,6 @@ remediation, ensuring proper error handling and workflow guidance.
 """
 
 import subprocess
-from typing import Optional
 
 from darnit.core.utils import validate_local_path
 
@@ -13,7 +12,7 @@ from darnit.core.utils import validate_local_path
 def create_remediation_branch_impl(
     branch_name: str = "fix/openssf-baseline-compliance",
     local_path: str = ".",
-    base_branch: Optional[str] = None
+    base_branch: str | None = None
 ) -> str:
     """Create a new branch for remediation work.
 
@@ -95,7 +94,7 @@ def create_remediation_branch_impl(
 
 def commit_remediation_changes_impl(
     local_path: str = ".",
-    message: Optional[str] = None,
+    message: str | None = None,
     add_all: bool = True
 ) -> str:
     """Commit remediation changes with a descriptive message.
@@ -225,9 +224,9 @@ Create a pull request: `create_remediation_pr(local_path="{resolved_path}")`
 
 def create_remediation_pr_impl(
     local_path: str = ".",
-    title: Optional[str] = None,
-    body: Optional[str] = None,
-    base_branch: Optional[str] = None,
+    title: str | None = None,
+    body: str | None = None,
+    base_branch: str | None = None,
     draft: bool = False
 ) -> str:
     """Create a pull request for remediation changes.

@@ -5,14 +5,14 @@ import json
 import os
 import re
 import subprocess
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Any
 
 from darnit.core.logging import get_logger
 
 logger = get_logger("utils")
 
 
-def gh_api(endpoint: str) -> Dict[str, Any]:
+def gh_api(endpoint: str) -> dict[str, Any]:
     """Execute a GitHub API call using the gh CLI.
 
     Raises:
@@ -29,10 +29,10 @@ def gh_api(endpoint: str) -> Dict[str, Any]:
     try:
         return json.loads(result.stdout)
     except json.JSONDecodeError as e:
-        raise RuntimeError(f"GitHub API returned invalid JSON for {endpoint}: {e}")
+        raise RuntimeError(f"GitHub API returned invalid JSON for {endpoint}: {e}") from e
 
 
-def gh_api_safe(endpoint: str) -> Optional[Dict[str, Any]]:
+def gh_api_safe(endpoint: str) -> dict[str, Any] | None:
     """Execute a GitHub API call, returning None on failure."""
     try:
         return gh_api(endpoint)
@@ -46,9 +46,9 @@ def gh_api_safe(endpoint: str) -> Optional[Dict[str, Any]]:
 
 def validate_local_path(
     local_path: str,
-    expected_owner: Optional[str] = None,
-    expected_repo: Optional[str] = None
-) -> Tuple[str, Optional[str]]:
+    expected_owner: str | None = None,
+    expected_repo: str | None = None
+) -> tuple[str, str | None]:
     """
     Validate and resolve the local_path.
     Returns (resolved_path, error_message).
@@ -146,7 +146,7 @@ def validate_local_path(
     return abs_path, None
 
 
-def detect_repo_from_git(local_path: str) -> Optional[Dict[str, str]]:
+def detect_repo_from_git(local_path: str) -> dict[str, str] | None:
     """Auto-detect owner and repo from git remote using gh CLI."""
     try:
         resolved_path, error = validate_local_path(local_path)
@@ -197,39 +197,39 @@ def file_exists(local_path: str, *patterns: str) -> bool:
     return False
 
 
-def file_contains(local_path: str, filename_patterns: List[str], content_pattern: str) -> bool:
+def file_contains(local_path: str, filename_patterns: list[str], content_pattern: str) -> bool:
     """Check if any matching file contains the content pattern."""
     for pattern in filename_patterns:
         for filepath in glob_module.glob(os.path.join(local_path, pattern), recursive=True):
             try:
-                with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                with open(filepath, encoding='utf-8', errors='ignore') as f:
                     if re.search(content_pattern, f.read(), re.IGNORECASE):
                         return True
-            except (IOError, OSError) as e:
+            except OSError as e:
                 logger.debug(f"Could not read {filepath}: {type(e).__name__}")
                 continue
     return False
 
 
-def read_file(local_path: str, filename: str) -> Optional[str]:
+def read_file(local_path: str, filename: str) -> str | None:
     """Read a file's contents, returning None if not found."""
     filepath = os.path.join(local_path, filename)
     if os.path.exists(filepath):
         try:
-            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+            with open(filepath, encoding='utf-8', errors='ignore') as f:
                 return f.read()
-        except (IOError, OSError) as e:
+        except OSError as e:
             logger.debug(f"Could not read {filepath}: {type(e).__name__}")
             return None
     return None
 
 
-def make_result(control_id: str, status: str, details: str, level: int = 1) -> Dict[str, Any]:
+def make_result(control_id: str, status: str, details: str, level: int = 1) -> dict[str, Any]:
     """Create a standardized result dictionary."""
     return {"id": control_id, "status": status, "details": details, "level": level}
 
 
-def get_git_commit(local_path: str) -> Optional[str]:
+def get_git_commit(local_path: str) -> str | None:
     """Get the current git commit SHA."""
     try:
         result = subprocess.run(
@@ -247,7 +247,7 @@ def get_git_commit(local_path: str) -> Optional[str]:
     return None
 
 
-def get_git_ref(local_path: str) -> Optional[str]:
+def get_git_ref(local_path: str) -> str | None:
     """Get the current git branch/ref."""
     try:
         result = subprocess.run(

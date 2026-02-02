@@ -28,9 +28,8 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import List, Optional
 
-from darnit.core.logging import get_logger, configure_logging
+from darnit.core.logging import configure_logging, get_logger
 
 logger = get_logger("cli")
 
@@ -59,7 +58,7 @@ def format_result_text(result: dict) -> str:
     return f"  {icon} {control_id}: {status} - {details}"
 
 
-def format_results_text(results: List[dict], framework_name: str) -> str:
+def format_results_text(results: list[dict], framework_name: str) -> str:
     """Format all results for text output."""
     lines = [f"\n=== {framework_name} Audit Results ===\n"]
 
@@ -101,7 +100,7 @@ def format_results_text(results: List[dict], framework_name: str) -> str:
     return "\n".join(lines)
 
 
-def format_results_json(results: List[dict], framework_name: str) -> str:
+def format_results_json(results: list[dict], framework_name: str) -> str:
     """Format results as JSON."""
     output = {
         "framework": framework_name,
@@ -130,13 +129,13 @@ def cmd_audit(args: argparse.Namespace) -> int:
     use 'darnit serve' and connect via MCP.
     """
     from darnit.config import (
-        load_effective_config,
-        load_effective_config_by_name,
-        load_effective_config_auto,
         load_controls_from_effective,
+        load_effective_config,
+        load_effective_config_auto,
+        load_effective_config_by_name,
     )
-    from darnit.sieve import SieveOrchestrator, CheckContext
-    from darnit.filtering import parse_tags_arg, filter_controls
+    from darnit.filtering import filter_controls, parse_tags_arg
+    from darnit.sieve import CheckContext, SieveOrchestrator
 
     # Warn about limited functionality in terminal mode
     logger.warning(
@@ -227,11 +226,11 @@ def cmd_plan(args: argparse.Namespace) -> int:
     run 'darnit serve' and connect via MCP.
     """
     from darnit.config import (
-        load_effective_config_auto,
         load_effective_config,
+        load_effective_config_auto,
         load_effective_config_by_name,
     )
-    from darnit.filtering import parse_tags_arg, matches_filters
+    from darnit.filtering import matches_filters, parse_tags_arg
 
     repo_path = Path(args.repo_path).resolve()
 
@@ -351,7 +350,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
 
         # Show level breakdown
         by_level = {}
-        for cid, ctrl in config.controls.items():
+        for _cid, ctrl in config.controls.items():
             by_level.setdefault(ctrl.level, 0)
             by_level[ctrl.level] += 1
 
@@ -365,7 +364,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     baseline_path = repo_path / ".baseline.toml"
 
     if baseline_path.exists() and not args.force:
-        logger.error(f".baseline.toml already exists. Use --force to overwrite.")
+        logger.error(".baseline.toml already exists. Use --force to overwrite.")
         return 1
 
     framework = args.framework or "openssf-baseline"
@@ -707,7 +706,7 @@ def create_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     """Main entry point for the CLI."""
     parser = create_parser()
     args = parser.parse_args(argv)

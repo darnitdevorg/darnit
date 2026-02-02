@@ -6,7 +6,7 @@ STRIDE threat analysis engine.
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Any
+from typing import Any
 
 
 class StrideCategory(Enum):
@@ -49,7 +49,7 @@ class EntryPoint:
     line: int
     authentication_required: bool
     framework: str
-    parameters: List[Dict[str, Any]] = field(default_factory=list)
+    parameters: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -95,7 +95,7 @@ class AuthMechanism:
     file: str
     line: int
     framework: str
-    assets: List[str] = field(default_factory=list)
+    assets: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -106,7 +106,7 @@ class RiskScore:
     likelihood: float
     impact: float
     control_effectiveness: float
-    factors: Dict[str, Any] = field(default_factory=dict)
+    factors: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -116,35 +116,35 @@ class Threat:
     category: StrideCategory
     title: str
     description: str
-    affected_assets: List[str]
+    affected_assets: list[str]
     attack_vector: str
-    prerequisites: List[str]
+    prerequisites: list[str]
     risk: RiskScore
-    existing_controls: List[str]
-    recommended_controls: List[str]
-    code_locations: List[CodeLocation]
-    references: List[str] = field(default_factory=list)
+    existing_controls: list[str]
+    recommended_controls: list[str]
+    code_locations: list[CodeLocation]
+    references: list[str] = field(default_factory=list)
 
 
 @dataclass
 class AssetInventory:
     """Inventory of security-relevant assets discovered in the codebase."""
-    entry_points: List[EntryPoint]
-    data_stores: List[DataStore]
-    sensitive_data: List[SensitiveData]
-    secrets: List[SecretReference]
-    authentication: List[AuthMechanism]
-    frameworks_detected: List[str]
-    external_services: List[Dict[str, Any]] = field(default_factory=list)
+    entry_points: list[EntryPoint]
+    data_stores: list[DataStore]
+    sensitive_data: list[SensitiveData]
+    secrets: list[SecretReference]
+    authentication: list[AuthMechanism]
+    frameworks_detected: list[str]
+    external_services: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
 class ThreatAnalysis:
     """Complete threat analysis result."""
     methodology: str
-    threats: List[Threat]
-    control_gaps: List[Dict[str, Any]]
-    summary: Dict[str, Any]
+    threats: list[Threat]
+    control_gaps: list[dict[str, Any]]
+    summary: dict[str, Any]
 
 
 __all__ = [

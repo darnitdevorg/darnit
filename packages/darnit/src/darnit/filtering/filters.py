@@ -34,7 +34,7 @@ Examples:
 
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 # Operators in order of precedence (longer operators first to avoid partial matches)
 OPERATORS = ["<=", ">=", "!=", "=", "<", ">"]
@@ -49,7 +49,7 @@ class ControlFilter:
     value: Any  # The value to compare
 
 
-def parse_value(value_str: str) -> Union[int, float, str]:
+def parse_value(value_str: str) -> int | float | str:
     """Parse a filter value string into appropriate type.
 
     Args:
@@ -110,7 +110,7 @@ def parse_filter(filter_str: str) -> ControlFilter:
     return ControlFilter(field="tags", operator="in", value=filter_str)
 
 
-def parse_tags_arg(tags_args: Optional[List[str]]) -> List[ControlFilter]:
+def parse_tags_arg(tags_args: list[str] | None) -> list[ControlFilter]:
     """Parse all --tags arguments into filters.
 
     Handles both multiple --tags args and comma-separated values within a single arg.
@@ -211,9 +211,7 @@ def matches_filter(control: Any, f: ControlFilter) -> bool:
         elif hasattr(control, "tags"):
             tags = control.tags or []
 
-        if f.operator == "in":
-            return f.value in tags
-        elif f.operator == "=":
+        if f.operator == "in" or f.operator == "=":
             return f.value in tags
         elif f.operator == "!=":
             return f.value not in tags
@@ -256,7 +254,7 @@ def matches_filter(control: Any, f: ControlFilter) -> bool:
         return False
 
 
-def group_filters_by_field(filters: List[ControlFilter]) -> Dict[str, List[ControlFilter]]:
+def group_filters_by_field(filters: list[ControlFilter]) -> dict[str, list[ControlFilter]]:
     """Group filters by field name.
 
     Args:
@@ -265,13 +263,13 @@ def group_filters_by_field(filters: List[ControlFilter]) -> Dict[str, List[Contr
     Returns:
         Dict mapping field names to lists of filters for that field
     """
-    grouped: Dict[str, List[ControlFilter]] = defaultdict(list)
+    grouped: dict[str, list[ControlFilter]] = defaultdict(list)
     for f in filters:
         grouped[f.field].append(f)
     return dict(grouped)
 
 
-def matches_filters(control: Any, filters: List[ControlFilter]) -> bool:
+def matches_filters(control: Any, filters: list[ControlFilter]) -> bool:
     """Check if a control matches filters using AND/OR logic.
 
     Logic:
@@ -297,7 +295,7 @@ def matches_filters(control: Any, filters: List[ControlFilter]) -> bool:
     grouped = group_filters_by_field(filters)
 
     # Each field group must have at least one match (AND between groups, OR within group)
-    for field, field_filters in grouped.items():
+    for _field, field_filters in grouped.items():
         # OR logic within the group - at least one must match
         group_matched = False
         for f in field_filters:
@@ -313,11 +311,11 @@ def matches_filters(control: Any, filters: List[ControlFilter]) -> bool:
 
 
 def filter_controls(
-    controls: List[Any],
-    filters: Optional[List[ControlFilter]] = None,
-    include_ids: Optional[set] = None,
-    exclude_ids: Optional[set] = None,
-) -> List[Any]:
+    controls: list[Any],
+    filters: list[ControlFilter] | None = None,
+    include_ids: set | None = None,
+    exclude_ids: set | None = None,
+) -> list[Any]:
     """Filter controls by filters and include/exclude lists.
 
     Args:

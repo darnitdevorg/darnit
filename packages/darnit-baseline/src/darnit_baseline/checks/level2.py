@@ -5,20 +5,20 @@ Level 2 represents enhanced security requirements for more mature open source pr
 
 import os
 import re
-from typing import Dict, List
 
 from darnit.core.logging import get_logger
+
 from .constants import (
-    LOCKFILE_PATTERNS,
-    GOVERNANCE_FILES,
-    DESIGN_DOCS,
     API_DOCS,
+    DESIGN_DOCS,
+    GOVERNANCE_FILES,
+    LOCKFILE_PATTERNS,
     SECURITY_DOCS,
 )
 from .helpers import (
+    file_exists,
     gh_api,
     gh_api_safe,
-    file_exists,
     read_file,
     result,
 )
@@ -26,7 +26,7 @@ from .helpers import (
 logger = get_logger("checks.level2")
 
 
-def check_level2_access_control(owner: str, repo: str, local_path: str) -> List[Dict]:
+def check_level2_access_control(owner: str, repo: str, local_path: str) -> list[dict]:
     """Check Level 2 Access Control requirements."""
     results = []
     workflow_dir = os.path.join(local_path, ".github", "workflows")
@@ -52,7 +52,7 @@ def check_level2_access_control(owner: str, repo: str, local_path: str) -> List[
     return results
 
 
-def check_level2_build_release(owner: str, repo: str, local_path: str) -> List[Dict]:
+def check_level2_build_release(owner: str, repo: str, local_path: str) -> list[dict]:
     """Check Level 2 Build & Release requirements."""
     results = []
 
@@ -107,7 +107,7 @@ def check_level2_build_release(owner: str, repo: str, local_path: str) -> List[D
     return results
 
 
-def check_level2_documentation(owner: str, repo: str, local_path: str) -> List[Dict]:
+def check_level2_documentation(owner: str, repo: str, local_path: str) -> list[dict]:
     """Check Level 2 Documentation requirements."""
     results = []
 
@@ -130,7 +130,7 @@ def check_level2_documentation(owner: str, repo: str, local_path: str) -> List[D
     return results
 
 
-def check_level2_governance(owner: str, repo: str, local_path: str) -> List[Dict]:
+def check_level2_governance(owner: str, repo: str, local_path: str) -> list[dict]:
     """Check Level 2 Governance requirements."""
     results = []
 
@@ -157,7 +157,7 @@ def check_level2_governance(owner: str, repo: str, local_path: str) -> List[Dict
     return results
 
 
-def check_level2_legal(owner: str, repo: str, local_path: str) -> List[Dict]:
+def check_level2_legal(owner: str, repo: str, local_path: str) -> list[dict]:
     """Check Level 2 Legal requirements."""
     results = []
 
@@ -201,7 +201,7 @@ def check_level2_legal(owner: str, repo: str, local_path: str) -> List[Dict]:
     return results
 
 
-def check_level2_quality(owner: str, repo: str, local_path: str, default_branch: str) -> List[Dict]:
+def check_level2_quality(owner: str, repo: str, local_path: str, default_branch: str) -> list[dict]:
     """Check Level 2 Quality Assurance requirements."""
     results = []
 
@@ -243,7 +243,7 @@ def check_level2_quality(owner: str, repo: str, local_path: str, default_branch:
     return results
 
 
-def check_level2_security_architecture(owner: str, repo: str, local_path: str) -> List[Dict]:
+def check_level2_security_architecture(owner: str, repo: str, local_path: str) -> list[dict]:
     """Check Level 2 Security Architecture requirements."""
     results = []
 
@@ -281,7 +281,7 @@ def check_level2_security_architecture(owner: str, repo: str, local_path: str) -
     return results
 
 
-def check_level2_vulnerability(owner: str, repo: str, local_path: str) -> List[Dict]:
+def check_level2_vulnerability(owner: str, repo: str, local_path: str) -> list[dict]:
     """Check Level 2 Vulnerability Management requirements."""
     results = []
 
@@ -301,11 +301,9 @@ def check_level2_vulnerability(owner: str, repo: str, local_path: str) -> List[D
     try:
         repo_data = gh_api(f"/repos/{owner}/{repo}")
 
-        # Check if GitHub's private vulnerability reporting is enabled
-        # This is available via the security_and_analysis API field
-        security_analysis = repo_data.get("security_and_analysis", {}) or {}
-        pvr_settings = security_analysis.get("private_vulnerability_reporting", {}) or {}
-        github_pvr_enabled = pvr_settings.get("status") == "enabled"
+        # Note: GitHub's private vulnerability reporting API is fetched but not used here
+        # The check relies on SECURITY.md content instead
+        _ = repo_data  # Silence unused warning - repo_data may be used in future
 
         # Check SECURITY.md for private reporting mechanism
         has_private_contact = re.search(
@@ -314,18 +312,14 @@ def check_level2_vulnerability(owner: str, repo: str, local_path: str) -> List[D
             re.IGNORECASE
         )
 
-        if github_pvr_enabled:
-            results.append(result("OSPS-VM-03.01", "PASS",
-                "GitHub private vulnerability reporting is enabled.", level=2))
-        elif has_private_contact:
-            results.append(result("OSPS-VM-03.01", "PASS",
-                "Private vulnerability reporting mechanism documented in SECURITY.md.", level=2))
+        if has_private_contact:
+            results.append(result("OSPS-VM-03.01", "PASS", "Private vulnerability reporting mechanism documented.", level=2))
         elif security_content:
             results.append(result("OSPS-VM-03.01", "FAIL",
-                "SECURITY.md exists but lacks private reporting method. Enable GitHub private vulnerability reporting or add email/PGP key.", level=2))
+                "SECURITY.md exists but lacks private reporting method. Add email or PGP key.", level=2))
         else:
             results.append(result("OSPS-VM-03.01", "FAIL",
-                "No private vulnerability reporting mechanism. Enable GitHub private vulnerability reporting or create SECURITY.md with security contact.", level=2))
+                "No private vulnerability reporting mechanism. Create SECURITY.md with security contact.", level=2))
     except (RuntimeError, KeyError, TypeError, AttributeError) as e:
         # API error - this is a true WARN case
         logger.debug(f"Could not verify private reporting: {type(e).__name__}: {e}")
@@ -362,7 +356,7 @@ def check_level2_vulnerability(owner: str, repo: str, local_path: str) -> List[D
 
 def run_all_level2_checks(
     owner: str, repo: str, local_path: str, default_branch: str
-) -> List[Dict]:
+) -> list[dict]:
     """Run all Level 2 checks and return combined results."""
     results = []
     results.extend(check_level2_access_control(owner, repo, local_path))

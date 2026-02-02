@@ -6,19 +6,19 @@ particularly for input validation, error formatting, and response building.
 
 import json
 import os
-from typing import Dict, Any, Optional, Tuple, List
+from typing import Any
 
 from darnit.core.logging import get_logger
-from darnit.core.utils import validate_local_path, detect_repo_from_git
+from darnit.core.utils import detect_repo_from_git, validate_local_path
 
 logger = get_logger("tools.helpers")
 
 
 def validate_and_resolve_repo(
-    owner: Optional[str],
-    repo: Optional[str],
+    owner: str | None,
+    repo: str | None,
     local_path: str
-) -> Tuple[Optional[str], Optional[str], str, Optional[str]]:
+) -> tuple[str | None, str | None, str, str | None]:
     """Validate inputs and resolve owner/repo from git if needed.
 
     Args:
@@ -50,7 +50,7 @@ def validate_and_resolve_repo(
     return owner, repo, resolved_path, None
 
 
-def format_error(message: str, details: Optional[Dict[str, Any]] = None) -> str:
+def format_error(message: str, details: dict[str, Any] | None = None) -> str:
     """Format an error response as JSON.
 
     Args:
@@ -66,7 +66,7 @@ def format_error(message: str, details: Optional[Dict[str, Any]] = None) -> str:
     return json.dumps(response, indent=2)
 
 
-def format_success(message: str, data: Optional[Dict[str, Any]] = None) -> str:
+def format_success(message: str, data: dict[str, Any] | None = None) -> str:
     """Format a success response as JSON.
 
     Args:
@@ -86,8 +86,8 @@ def format_audit_summary(
     owner: str,
     repo: str,
     level: int,
-    results: List[Dict[str, Any]],
-    compliance: Dict[int, bool]
+    results: list[dict[str, Any]],
+    compliance: dict[int, bool]
 ) -> str:
     """Format audit results as a summary string.
 
@@ -149,7 +149,7 @@ def write_file_safely(
     filepath: str,
     content: str,
     overwrite: bool = False
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """Write content to a file with safety checks.
 
     Args:
@@ -174,7 +174,7 @@ def write_file_safely(
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write(content)
         return True, f"Successfully wrote: {filepath}"
-    except (IOError, OSError) as e:
+    except OSError as e:
         return False, f"Failed to write {filepath}: {e}"
 
 

@@ -7,19 +7,19 @@ how controls are evaluated. Context can come from:
 3. Auto-detection from repository structure
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from darnit.core.logging import get_logger
 from darnit.config import (
-    load_project_config,
-    ProjectConfig,
     ControlStatusValue,
+    ProjectConfig,
+    load_project_config,
 )
+from darnit.core.logging import get_logger
 
 logger = get_logger("sieve.project_context")
 
 
-def get_project_config_for_context(local_path: str) -> Optional[ProjectConfig]:
+def get_project_config_for_context(local_path: str) -> ProjectConfig | None:
     """Load .project.yaml if it exists.
 
     Args:
@@ -31,7 +31,7 @@ def get_project_config_for_context(local_path: str) -> Optional[ProjectConfig]:
     return load_project_config(local_path)
 
 
-def get_project_context(local_path: str) -> Dict[str, Any]:
+def get_project_context(local_path: str) -> dict[str, Any]:
     """Get project context from .project.yaml.
 
     Returns a dict with user-confirmed context values.
@@ -66,7 +66,7 @@ def get_project_context(local_path: str) -> Dict[str, Any]:
     return {}
 
 
-def get_control_override(local_path: str, control_id: str) -> Optional[Dict[str, Any]]:
+def get_control_override(local_path: str, control_id: str) -> dict[str, Any] | None:
     """Get explicit override for a control from .project.yaml.
 
     Args:
@@ -93,7 +93,7 @@ def get_control_override(local_path: str, control_id: str) -> Optional[Dict[str,
     return None
 
 
-def is_control_applicable(local_path: str, control_id: str) -> tuple[bool, Optional[str]]:
+def is_control_applicable(local_path: str, control_id: str) -> tuple[bool, str | None]:
     """Check if a control is applicable for this project.
 
     Args:
@@ -187,7 +187,7 @@ CONTEXT_KEYS = {
 }
 
 
-def get_pending_confirmations(local_path: str, relevant_controls: List[str]) -> List[Dict[str, Any]]:
+def get_pending_confirmations(local_path: str, relevant_controls: list[str]) -> list[dict[str, Any]]:
     """Get list of context confirmations needed for the given controls.
 
     Args:
@@ -217,7 +217,7 @@ def get_pending_confirmations(local_path: str, relevant_controls: List[str]) -> 
     return pending
 
 
-def get_ci_provider(local_path: str) -> Optional[str]:
+def get_ci_provider(local_path: str) -> str | None:
     """Get the CI provider for a project.
 
     Checks:

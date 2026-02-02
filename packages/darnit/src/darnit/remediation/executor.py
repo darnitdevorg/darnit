@@ -27,7 +27,7 @@ import os
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from darnit.config.framework_schema import (
     ApiCallRemediationConfig,
@@ -55,7 +55,7 @@ class RemediationResult:
     control_id: str
     remediation_type: str  # "file_create", "exec", "api_call", "handler"
     dry_run: bool
-    details: Dict[str, Any]
+    details: dict[str, Any]
 
     def to_markdown(self) -> str:
         """Format result as markdown."""
@@ -105,10 +105,10 @@ class RemediationExecutor:
     def __init__(
         self,
         local_path: str = ".",
-        owner: Optional[str] = None,
-        repo: Optional[str] = None,
+        owner: str | None = None,
+        repo: str | None = None,
         default_branch: str = "main",
-        templates: Optional[Dict[str, TemplateConfig]] = None,
+        templates: dict[str, TemplateConfig] | None = None,
     ):
         """Initialize the executor.
 
@@ -133,7 +133,7 @@ class RemediationExecutor:
         self.owner = owner
         self.repo = repo
 
-    def _get_substitutions(self, control_id: str) -> Dict[str, str]:
+    def _get_substitutions(self, control_id: str) -> dict[str, str]:
         """Get variable substitutions for templates and commands."""
         now = datetime.now()
         return {
@@ -155,7 +155,7 @@ class RemediationExecutor:
                 result = result.replace(var, value)
         return result
 
-    def _substitute_command(self, command: List[str], control_id: str) -> List[str]:
+    def _substitute_command(self, command: list[str], control_id: str) -> list[str]:
         """Substitute variables in command list."""
         substitutions = self._get_substitutions(control_id)
         result = []
@@ -167,7 +167,7 @@ class RemediationExecutor:
             result.append(modified)
         return result
 
-    def _get_template_content(self, template_name: str) -> Optional[str]:
+    def _get_template_content(self, template_name: str) -> str | None:
         """Get content from a template by name.
 
         # TODO: Enhanced Template File Loading (Future Enhancement)
@@ -237,9 +237,9 @@ class RemediationExecutor:
                 template_path = os.path.join(self.local_path, template_path)
 
             try:
-                with open(template_path, "r") as f:
+                with open(template_path) as f:
                     return f.read()
-            except (IOError, OSError) as e:
+            except OSError as e:
                 logger.warning(f"Failed to read template file {template_path}: {e}")
                 return None
 
@@ -455,7 +455,7 @@ class RemediationExecutor:
             return RemediationResult(
                 success=success,
                 message=(
-                    f"Command succeeded"
+                    "Command succeeded"
                     if success
                     else f"Command failed with exit code {result.returncode}"
                 ),
@@ -571,7 +571,7 @@ class RemediationExecutor:
             return RemediationResult(
                 success=success,
                 message=(
-                    f"API call succeeded"
+                    "API call succeeded"
                     if success
                     else f"API call failed: {result.stderr[:100]}"
                 ),

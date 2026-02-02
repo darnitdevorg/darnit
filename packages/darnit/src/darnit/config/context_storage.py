@@ -1,0 +1,625 @@
+"""Context storage abstraction layer for interactive context collection.
+
+This module provides a unified interface for loading and saving context values
+with provenance tracking. It supports multiple storage formats:
+
+1. Legacy: .project.yaml x-openssf-baseline.context section
+2. CNCF: .project/project.yaml extensions.openssf-baseline.config.context section
+
+The abstraction layer isolates the rest of the codebase from storage format changes
+as the CNCF .project/ specification evolves.
+
+Note: The CNCF .project/ specification is still under development (PR #131).
+This module may need updates as the upstream spec evolves.
+"""
+
+from pathlib import Path
+from typing import Any
+
+from darnit.config.context_schema import (
+    ContextByCategory,
+    ContextDefinition,
+    ContextPromptRequest,
+    ContextSource,
+    ContextValue,
+)
+from darnit.config.loader import (
+    init_project_config,
+    load_project_config,
+    save_project_config,
+)
+from darnit.config.schema import (
+    BaselineExtension,
+    ProjectContext,
+)
+from darnit.core.logging import get_logger
+
+logger = get_logger("config.context_storage")
+
+
+# =============================================================================
+# Context Loading
+# =============================================================================
+
+
+def load_context(local_path: str) -> ContextByCategory:
+    """Load all context values with provenance from project config.
+
+    This function abstracts the storage format and returns context values
+    organized by category with full provenance tracking.
+
+    Priority order:
+    1. CNCF format: .project/project.yaml extensions.openssf-baseline.config.context
+    2. Legacy format: .project.yaml x-openssf-baseline.context
+
+    Args:
+        local_path: Path to the repository
+
+    Returns:
+        Dict of category -> {key -> ContextValue}
+        Categories include: governance, security, build, project, ci
+    """
+    config = load_project_config(local_path)
+    if not config:
+        return {}
+
+    context_by_category: ContextByCategory = {}
+
+    # Currently we support the legacy format
+    # TODO: Add CNCF format support when spec is finalized
+    if config.x_openssf_baseline and config.x_openssf_baseline.context:
+        ctx = config.x_openssf_baseline.context
+
+        # Build category
+        build_context: dict[str, ContextValue] = {}
+        if ctx.has_releases is not None:
+            build_context["has_releases"] = ContextValue.user_confirmed(ctx.has_releases)
+        if ctx.has_compiled_assets is not None:
+            build_context["has_compiled_assets"] = ContextValue.user_confirmed(ctx.has_compiled_assets)
+        if build_context:
+            context_by_category["build"] = build_context
+
+        # Project category
+        project_context: dict[str, ContextValue] = {}
+        if ctx.has_subprojects is not None:
+            project_context["has_subprojects"] = ContextValue.user_confirmed(ctx.has_subprojects)
+        if ctx.is_library is not None:
+            project_context["is_library"] = ContextValue.user_confirmed(ctx.is_library)
+        if project_context:
+            context_by_category["project"] = project_context
+
+        # CI category
+        ci_context: dict[str, ContextValue] = {}
+        if ctx.ci_provider is not None:
+            ci_context["provider"] = ContextValue.user_confirmed(ctx.ci_provider)
+        if ci_context:
+            context_by_category["ci"] = ci_context
+
+        # Governance category
+        governance_context: dict[str, ContextValue] = {}
+        if ctx.maintainers is not None:
+            governance_context["maintainers"] = ContextValue.user_confirmed(ctx.maintainers)
+        if ctx.governance_model is not None:
+            governance_context["governance_model"] = ContextValue.user_confirmed(ctx.governance_model)
+        if governance_context:
+            context_by_category["governance"] = governance_context
+
+        # Security category
+        security_context: dict[str, ContextValue] = {}
+        if ctx.security_contact is not None:
+            security_context["security_contact"] = ContextValue.user_confirmed(ctx.security_contact)
+        if security_context:
+            context_by_category["security"] = security_context
+
+    return context_by_category
+
+
+def get_context_value(
+    local_path: str,
+    key: str,
+    category: str | None = None,
+) -> ContextValue | None:
+    """Get a specific context value with provenance.
+
+    Args:
+        local_path: Path to the repository
+        key: Context key to retrieve (e.g., "has_releases", "maintainers")
+        category: Optional category to search in (e.g., "build", "governance")
+                 If not specified, searches all categories
+
+    Returns:
+        ContextValue if found, None otherwise
+    """
+    context = load_context(local_path)
+
+    if category:
+        # Search specific category
+        cat_context = context.get(category, {})
+        return cat_context.get(key)
+
+    # Search all categories
+    for cat_context in context.values():
+        if key in cat_context:
+            return cat_context[key]
+
+    return None
+
+
+def get_raw_value(
+    local_path: str,
+    key: str,
+    default: Any = None,
+) -> Any:
+    """Get a context value without provenance (just the raw value).
+
+    This is a convenience function for when you only need the value,
+    not the full ContextValue with provenance.
+
+    Args:
+        local_path: Path to the repository
+        key: Context key to retrieve
+        default: Default value if not found
+
+    Returns:
+        The raw value, or default if not found
+    """
+    ctx_value = get_context_value(local_path, key)
+    if ctx_value:
+        return ctx_value.value
+    return default
+
+
+def is_context_confirmed(local_path: str, key: str) -> bool:
+    """Check if a context key has been confirmed by the user.
+
+    Args:
+        local_path: Path to the repository
+        key: Context key to check
+
+    Returns:
+        True if the context value has been set
+    """
+    return get_context_value(local_path, key) is not None
+
+
+# =============================================================================
+# Context Saving
+# =============================================================================
+
+
+def save_context_value(
+    local_path: str,
+    key: str,
+    value: Any,
+    source: ContextSource = ContextSource.USER_CONFIRMED,
+    category: str | None = None,
+    detection_method: str | None = None,
+    confidence: float = 1.0,
+) -> str:
+    """Save a context value with provenance tracking.
+
+    This function saves the value to the appropriate storage format
+    and tracks how the value was obtained.
+
+    Args:
+        local_path: Path to the repository
+        key: Context key to save (e.g., "has_releases", "maintainers")
+        value: The value to save
+        source: How the value was obtained
+        category: Category for organization (e.g., "build", "governance")
+        detection_method: How auto-detected values were found
+        confidence: Confidence score (0.0-1.0)
+
+    Returns:
+        Path to the saved config file
+
+    Raises:
+        ValueError: If the key is not a known context key
+    """
+    resolved_path = Path(local_path).resolve()
+
+    # Load existing config or create new one
+    config = load_project_config(str(resolved_path))
+    if config is None:
+        config = init_project_config(str(resolved_path))
+
+    # Ensure baseline extension exists
+    if config.x_openssf_baseline is None:
+        config.x_openssf_baseline = BaselineExtension()
+
+    # Ensure context exists
+    if config.x_openssf_baseline.context is None:
+        config.x_openssf_baseline.context = ProjectContext()
+
+    ctx = config.x_openssf_baseline.context
+
+    # Map keys to context fields
+    # Note: Currently we store in the legacy flat format
+    # TODO: Add support for CNCF extensions format with full provenance
+    key_mapping = {
+        "has_subprojects": "has_subprojects",
+        "has_releases": "has_releases",
+        "is_library": "is_library",
+        "has_compiled_assets": "has_compiled_assets",
+        "ci_provider": "ci_provider",
+        "provider": "ci_provider",  # Alias for ci context
+        # New governance and security context keys
+        "maintainers": "maintainers",
+        "security_contact": "security_contact",
+        "governance_model": "governance_model",
+    }
+
+    mapped_key = key_mapping.get(key)
+    if mapped_key is None:
+        # Check if it's a new context key we don't have direct storage for yet
+        logger.warning(
+            f"Context key '{key}' does not have direct storage support yet. "
+            "Storing in generic context."
+        )
+        # For now, we can't store arbitrary keys in the legacy format
+        # This will be addressed when we implement CNCF format support
+        raise ValueError(
+            f"Unknown context key: {key}. "
+            f"Supported keys: {list(key_mapping.keys())}"
+        )
+
+    # Set the value
+    setattr(ctx, mapped_key, value)
+
+    # Log provenance (even though we can't store it in legacy format)
+    logger.info(
+        f"Saved context {key}={value} "
+        f"(source={source.value}, confidence={confidence})"
+    )
+
+    # Save config
+    config_path = save_project_config(config, str(resolved_path))
+    return config_path
+
+
+def save_context_values(
+    local_path: str,
+    values: dict[str, Any],
+    source: ContextSource = ContextSource.USER_CONFIRMED,
+) -> str:
+    """Save multiple context values at once.
+
+    Args:
+        local_path: Path to the repository
+        values: Dict of key -> value to save
+
+    Returns:
+        Path to the saved config file
+    """
+    config_path = None
+    for key, value in values.items():
+        if value is not None:
+            config_path = save_context_value(local_path, key, value, source)
+    return config_path or str(Path(local_path) / ".project.yaml")
+
+
+# =============================================================================
+# Context Definitions
+# =============================================================================
+
+
+def get_context_definitions(local_path: str) -> dict[str, ContextDefinition]:
+    """Get context definitions from the framework TOML.
+
+    This function loads the declarative context definitions from the
+    framework configuration (e.g., openssf-baseline.toml [context] section).
+
+    Args:
+        local_path: Path to the repository
+
+    Returns:
+        Dict of context_key -> ContextDefinition
+    """
+    from darnit.config.context_schema import ContextDefinition, ContextType
+    from darnit.config.merger import load_effective_config_auto
+
+    try:
+        effective_config = load_effective_config_auto(local_path)
+        # Access the underlying framework config
+        framework = effective_config._framework_config
+        if framework is None:
+            return {}
+
+        definitions: dict[str, ContextDefinition] = {}
+
+        for key, defn in framework.context.definitions.items():
+            # Convert ContextDefinitionConfig to ContextDefinition
+            definitions[key] = ContextDefinition(
+                type=ContextType(defn.type),
+                prompt=defn.prompt,
+                hint=defn.hint,
+                examples=defn.examples,
+                values=defn.values,
+                affects=defn.affects,
+                store_as=defn.store_as,
+                auto_detect=defn.auto_detect,
+                auto_detect_method=defn.auto_detect_method,
+                required=defn.required,
+            )
+
+        return definitions
+    except Exception as e:
+        logger.warning(f"Could not load context definitions: {e}")
+        return {}
+
+
+def get_pending_context(
+    local_path: str,
+    control_ids: list[str] | None = None,
+    level: int = 3,
+    owner: str | None = None,
+    repo: str | None = None,
+) -> list[ContextPromptRequest]:
+    """Get list of context values that would improve audit accuracy.
+
+    Returns context prompt requests sorted by priority (number of controls affected).
+    For context keys with auto_detect=true, attempts to auto-detect values
+    and includes them in the response for user confirmation.
+
+    Args:
+        local_path: Path to the repository
+        control_ids: Optional list of control IDs to check (default: all applicable)
+        level: Maximum level to consider (1, 2, or 3)
+        owner: GitHub owner (auto-detected from git if not provided)
+        repo: GitHub repo name (auto-detected from git if not provided)
+
+    Returns:
+        List of ContextPromptRequest sorted by priority (highest first)
+    """
+    # Get context definitions from framework
+    definitions = get_context_definitions(local_path)
+    if not definitions:
+        return []
+
+    # Get current context values
+    current_context = load_context(local_path)
+
+    # Flatten current context keys
+    confirmed_keys: set = set()
+    for category_values in current_context.values():
+        confirmed_keys.update(category_values.keys())
+
+    # Also check for legacy key names
+    legacy_context = _load_legacy_context(local_path)
+    confirmed_keys.update(legacy_context.keys())
+
+    # Auto-detect owner/repo if not provided
+    if owner is None or repo is None:
+        detected_owner, detected_repo = _detect_owner_repo(local_path)
+        owner = owner or detected_owner
+        repo = repo or detected_repo
+
+    pending: list[ContextPromptRequest] = []
+
+    for key, definition in definitions.items():
+        # Skip if already confirmed
+        if key in confirmed_keys:
+            continue
+
+        # Determine affected controls
+        affected = definition.affects
+        if control_ids:
+            # Filter to only specified controls
+            affected = [c for c in affected if c in control_ids]
+
+        if not affected:
+            continue
+
+        # Check if this context would be useful for the given level
+        # (We'd need control level info to filter properly)
+
+        # Get current value if auto-detected
+        current_value = None
+        if definition.auto_detect and owner and repo:
+            current_value = _auto_detect_context(
+                key, definition, owner, repo, local_path
+            )
+
+        pending.append(ContextPromptRequest(
+            key=key,
+            definition=definition,
+            control_ids=affected,
+            current_value=current_value,
+            priority=len(affected),  # Priority = number of controls affected
+        ))
+
+    # Sort by priority (highest first)
+    pending.sort(key=lambda x: x.priority, reverse=True)
+
+    return pending
+
+
+def _detect_owner_repo(local_path: str) -> tuple:
+    """Detect GitHub owner/repo from git remote.
+
+    Args:
+        local_path: Path to the repository
+
+    Returns:
+        Tuple of (owner, repo) or (None, None) if not detected
+    """
+    import re
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            cwd=local_path,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            url = result.stdout.strip()
+            # Parse GitHub URL patterns
+            # https://github.com/owner/repo.git
+            # git@github.com:owner/repo.git
+            match = re.search(r"github\.com[:/]([^/]+)/([^/.]+)", url)
+            if match:
+                return match.group(1), match.group(2)
+    except (subprocess.SubprocessError, FileNotFoundError, OSError):
+        pass
+
+    return None, None
+
+
+def _auto_detect_context(
+    key: str,
+    definition: ContextDefinition,
+    owner: str,
+    repo: str,
+    local_path: str,
+) -> ContextValue | None:
+    """Auto-detect a context value based on its definition.
+
+    Args:
+        key: The context key
+        definition: The context definition from TOML
+        owner: GitHub owner
+        repo: GitHub repo name
+        local_path: Path to the repository
+
+    Returns:
+        ContextValue with auto-detected value, or None if detection failed
+    """
+    method = definition.auto_detect_method
+
+    if method == "github_collaborators" and key == "maintainers":
+        # Use get_repo_maintainers from remediation helpers
+        try:
+            from darnit.remediation import get_repo_maintainers
+            maintainers = get_repo_maintainers(owner, repo)
+            if maintainers:
+                # Format as @username list
+                formatted = [f"@{m}" if not m.startswith("@") else m for m in maintainers]
+                return ContextValue.auto_detected(
+                    value=formatted,
+                    method="github_collaborators",
+                    confidence=0.8,
+                )
+        except Exception as e:
+            logger.debug(f"Failed to auto-detect maintainers: {e}")
+
+    # Add more auto-detection methods here as needed
+    # elif method == "some_other_method":
+    #     ...
+
+    return None
+
+
+def _load_legacy_context(local_path: str) -> dict[str, Any]:
+    """Load legacy flat context (for backwards compatibility).
+
+    Args:
+        local_path: Path to the repository
+
+    Returns:
+        Dict of context key -> raw value
+    """
+    config = load_project_config(local_path)
+    if not config:
+        return {}
+
+    if config.x_openssf_baseline and config.x_openssf_baseline.context:
+        ctx = config.x_openssf_baseline.context
+        result = {}
+        if ctx.has_subprojects is not None:
+            result["has_subprojects"] = ctx.has_subprojects
+        if ctx.has_releases is not None:
+            result["has_releases"] = ctx.has_releases
+        if ctx.is_library is not None:
+            result["is_library"] = ctx.is_library
+        if ctx.has_compiled_assets is not None:
+            result["has_compiled_assets"] = ctx.has_compiled_assets
+        if ctx.ci_provider is not None:
+            result["ci_provider"] = ctx.ci_provider
+        # New governance and security context keys
+        if ctx.maintainers is not None:
+            result["maintainers"] = ctx.maintainers
+        if ctx.security_contact is not None:
+            result["security_contact"] = ctx.security_contact
+        if ctx.governance_model is not None:
+            result["governance_model"] = ctx.governance_model
+        return result
+
+    return {}
+
+
+# =============================================================================
+# Format Conversion
+# =============================================================================
+
+
+def migrate_to_cncf_format(local_path: str) -> str | None:
+    """Migrate context from legacy format to CNCF extensions format.
+
+    This function will convert:
+        x-openssf-baseline.context.has_releases: true
+
+    To:
+        extensions:
+          openssf-baseline:
+            config:
+              context:
+                build:
+                  has_releases:
+                    source: user_confirmed
+                    value: true
+                    confirmed_at: ...
+
+    Args:
+        local_path: Path to the repository
+
+    Returns:
+        Path to migrated config file, or None if no migration needed
+
+    Note: This function is not yet implemented as the CNCF spec is not finalized.
+    """
+    logger.warning(
+        "CNCF format migration not yet implemented - "
+        "the .project/ specification is still under development"
+    )
+    return None
+
+
+def detect_storage_format(local_path: str) -> str:
+    """Detect which storage format is being used.
+
+    Args:
+        local_path: Path to the repository
+
+    Returns:
+        "cncf" for .project/project.yaml extensions format (future)
+        "legacy" for .project/ or .project.yaml x-openssf-baseline format
+        "none" if no context found
+    """
+    resolved_path = Path(local_path).resolve()
+
+    # Check for .project/ directory format
+    project_dir = resolved_path / ".project"
+    if project_dir.is_dir():
+        config = load_project_config(local_path)
+        if config and config.x_openssf_baseline and config.x_openssf_baseline.context:
+            # Check if any context values are set
+            ctx = config.x_openssf_baseline.context
+            if any([
+                ctx.has_subprojects is not None,
+                ctx.has_releases is not None,
+                ctx.is_library is not None,
+                ctx.has_compiled_assets is not None,
+                ctx.ci_provider is not None,
+            ]):
+                return "legacy"
+
+    # Check for legacy .project.yaml file format
+    legacy_path = resolved_path / ".project.yaml"
+    if legacy_path.exists():
+        config = load_project_config(local_path)
+        if config and config.x_openssf_baseline and config.x_openssf_baseline.context:
+            return "legacy"
+
+    return "none"

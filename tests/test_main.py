@@ -1,9 +1,8 @@
 """Tests for main.py MCP server entry point."""
 
-import pytest
-import tempfile
 import os
-from pathlib import Path
+
+import pytest
 
 
 class TestMainImports:

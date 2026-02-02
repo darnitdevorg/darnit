@@ -3,13 +3,13 @@
 import sys
 from pathlib import Path
 
-
 # Add package paths for testing without installation
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "darnit" / "src"))
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from darnit.config.merger import load_framework_config
-from darnit_testchecks import get_framework_path, __version__
+
+from darnit_testchecks import __version__, get_framework_path
 
 
 class TestFrameworkLoading:

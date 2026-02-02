@@ -18,21 +18,21 @@ Usage:
 """
 
 from .models import (
-    VerificationPhase,
+    CheckContext,
+    ControlSpec,
     PassOutcome,
     PassResult,
-    ControlSpec,
-    CheckContext,
     SieveResult,
+    VerificationPhase,
 )
+from .orchestrator import SieveOrchestrator
 from .passes import (
     DeterministicPass,
     ExecPass,
-    PatternPass,
     LLMPass,
     ManualPass,
+    PatternPass,
 )
-from .orchestrator import SieveOrchestrator
 from .registry import ControlRegistry, get_control_registry
 
 __all__ = [

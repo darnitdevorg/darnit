@@ -2,16 +2,15 @@
 
 import os
 import subprocess
-from typing import Tuple
 
+from darnit.config.models import ReferenceStatus, ResourceReference
 from darnit.core.logging import get_logger
-from darnit.config.models import ResourceReference, ReferenceStatus
 from darnit.core.utils import gh_api_safe
 
 logger = get_logger("config.validation")
 
 
-def validate_local_reference(ref: ResourceReference, local_path: str) -> Tuple[ReferenceStatus, str]:
+def validate_local_reference(ref: ResourceReference, local_path: str) -> tuple[ReferenceStatus, str]:
     """Validate a local file reference."""
     if not ref.path:
         return ReferenceStatus.UNKNOWN, "No path specified"
@@ -23,7 +22,7 @@ def validate_local_reference(ref: ResourceReference, local_path: str) -> Tuple[R
         return ReferenceStatus.MISSING, f"File not found: {ref.path}"
 
 
-def validate_url_reference(ref: ResourceReference) -> Tuple[ReferenceStatus, str]:
+def validate_url_reference(ref: ResourceReference) -> tuple[ReferenceStatus, str]:
     """Validate a URL reference by checking accessibility."""
     if not ref.url:
         return ReferenceStatus.UNKNOWN, "No URL specified"
@@ -43,7 +42,7 @@ def validate_url_reference(ref: ResourceReference) -> Tuple[ReferenceStatus, str
         elif status_code.startswith("3"):
             return ReferenceStatus.VERIFIED, f"URL redirects (HTTP {status_code})"
         elif status_code == "404":
-            return ReferenceStatus.MISSING, f"URL not found (HTTP 404)"
+            return ReferenceStatus.MISSING, "URL not found (HTTP 404)"
         else:
             return ReferenceStatus.EXTERNAL, f"URL returned HTTP {status_code}"
     except subprocess.TimeoutExpired:
@@ -52,7 +51,7 @@ def validate_url_reference(ref: ResourceReference) -> Tuple[ReferenceStatus, str
         return ReferenceStatus.EXTERNAL, f"Could not validate URL: {e}"
 
 
-def validate_repo_reference(ref: ResourceReference) -> Tuple[ReferenceStatus, str]:
+def validate_repo_reference(ref: ResourceReference) -> tuple[ReferenceStatus, str]:
     """Validate a cross-repository reference using GitHub API."""
     if not ref.repo:
         return ReferenceStatus.UNKNOWN, "No repository specified"
@@ -64,6 +63,8 @@ def validate_repo_reference(ref: ResourceReference) -> Tuple[ReferenceStatus, st
 
     # If path specified, check if it exists
     if ref.repo_path:
+        # Note: ref_name could be used to check specific branches in future
+        _ = ref.repo_ref or repo_data.get("default_branch", "main")
         try:
             result = subprocess.run(
                 ["gh", "api", f"repos/{ref.repo}/contents/{ref.repo_path}",
@@ -85,7 +86,7 @@ def validate_repo_reference(ref: ResourceReference) -> Tuple[ReferenceStatus, st
     return ReferenceStatus.VERIFIED, f"Repository exists: {ref.repo}"
 
 
-def validate_reference(ref: ResourceReference, local_path: str) -> Tuple[ReferenceStatus, str]:
+def validate_reference(ref: ResourceReference, local_path: str) -> tuple[ReferenceStatus, str]:
     """Validate any type of reference."""
     if ref.ref_type == "na":
         return ReferenceStatus.NA, ref.reason or "Marked as not applicable"

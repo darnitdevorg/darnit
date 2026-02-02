@@ -3,25 +3,25 @@
 import sys
 from pathlib import Path
 
-
 # Add package paths for testing without installation
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "darnit" / "src"))
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from darnit.core.models import CheckStatus
+
 from darnit_testchecks.adapters.builtin import (
-    check_test_doc_01,
-    check_test_doc_02,
-    check_test_lic_01,
-    check_test_ign_01,
-    check_test_qa_01,
-    check_test_qa_02,
     check_test_cfg_01,
     check_test_cfg_02,
-    check_test_sec_01,
-    check_test_sec_02,
     check_test_ci_01,
     check_test_ci_02,
+    check_test_doc_01,
+    check_test_doc_02,
+    check_test_ign_01,
+    check_test_lic_01,
+    check_test_qa_01,
+    check_test_qa_02,
+    check_test_sec_01,
+    check_test_sec_02,
 )
 
 

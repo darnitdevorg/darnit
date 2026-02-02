@@ -1,20 +1,18 @@
 """Tests for darnit.core.utils module."""
 
 import os
-import subprocess
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 import pytest
 
 from darnit.core.utils import (
-    validate_local_path,
-    file_exists,
     file_contains,
-    read_file,
-    make_result,
+    file_exists,
     get_git_commit,
     get_git_ref,
+    make_result,
+    read_file,
+    validate_local_path,
 )
 
 

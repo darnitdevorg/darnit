@@ -17,8 +17,8 @@ See Also:
     - :mod:`darnit.core.adapters` for adapter base classes
 """
 
-from .kusari import KusariCheckAdapter
 from .echo import EchoCheckAdapter
+from .kusari import KusariCheckAdapter
 
 __all__ = [
     "KusariCheckAdapter",

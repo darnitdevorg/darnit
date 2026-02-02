@@ -7,7 +7,7 @@ repository settings like branch protection rules.
 import json
 import os
 import subprocess
-from typing import Optional, List, Dict, Any
+from typing import Any
 
 from darnit.core.logging import get_logger
 from darnit.core.utils import detect_repo_from_git, gh_api_safe
@@ -15,7 +15,7 @@ from darnit.core.utils import detect_repo_from_git, gh_api_safe
 logger = get_logger("remediation.github")
 
 
-def detect_workflow_checks(local_path: str) -> List[Dict[str, Any]]:
+def detect_workflow_checks(local_path: str) -> list[dict[str, Any]]:
     """
     Detect potential status check names from GitHub Actions workflows.
 
@@ -50,7 +50,7 @@ def detect_workflow_checks(local_path: str) -> List[Dict[str, Any]]:
 
         filepath = os.path.join(workflow_dir, filename)
         try:
-            with open(filepath, 'r', encoding='utf-8') as f:
+            with open(filepath, encoding='utf-8') as f:
                 content = f.read()
 
             workflow = yaml.safe_load(content)
@@ -67,7 +67,7 @@ def detect_workflow_checks(local_path: str) -> List[Dict[str, Any]]:
 
                         if matrix:
                             # Expand matrix combinations for common patterns
-                            for key, values in matrix.items():
+                            for _key, values in matrix.items():
                                 if isinstance(values, list):
                                     for val in values:
                                         checks.append({
@@ -85,7 +85,7 @@ def detect_workflow_checks(local_path: str) -> List[Dict[str, Any]]:
                                 'check_name': job_name,
                                 'source': filename
                             })
-        except (IOError, OSError) as e:
+        except OSError as e:
             logger.debug(f"Cannot read workflow file {filename}: {e}")
             continue
         except yaml.YAMLError as e:
@@ -96,14 +96,14 @@ def detect_workflow_checks(local_path: str) -> List[Dict[str, Any]]:
 
 
 def enable_branch_protection(
-    owner: Optional[str] = None,
-    repo: Optional[str] = None,
+    owner: str | None = None,
+    repo: str | None = None,
     branch: str = "main",
     required_approvals: int = 1,
     enforce_admins: bool = True,
     require_pull_request: bool = True,
     require_status_checks: bool = False,
-    status_checks: Optional[List[str]] = None,
+    status_checks: list[str] | None = None,
     local_path: str = ".",
     dry_run: bool = False
 ) -> str:
@@ -181,7 +181,7 @@ To modify rulesets, go to: Settings → Rules → Rulesets
     endpoint = f"/repos/{owner}/{repo}/branches/{branch}/protection"
 
     # Build protection config as a proper dict (NOT string)
-    protection_config: Dict[str, Any] = {
+    protection_config: dict[str, Any] = {
         "enforce_admins": enforce_admins,
         "restrictions": None,
         "required_linear_history": False,

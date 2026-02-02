@@ -4,8 +4,8 @@ This module builds the in-toto attestation predicate for
 OpenSSF Baseline assessment results.
 """
 
-from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional, TYPE_CHECKING
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from darnit.config.models import ProjectConfig
@@ -15,12 +15,12 @@ def build_assessment_predicate(
     owner: str,
     repo: str,
     commit: str,
-    ref: Optional[str],
+    ref: str | None,
     level: int,
-    results: List[Dict[str, Any]],
+    results: list[dict[str, Any]],
     project_config: Optional["ProjectConfig"],
-    adapters_used: List[str]
-) -> Dict[str, Any]:
+    adapters_used: list[str]
+) -> dict[str, Any]:
     """Build the assessment attestation predicate.
 
     This creates a predicate conforming to the OpenSSF Baseline
@@ -107,7 +107,7 @@ def build_assessment_predicate(
             "version": "0.1.0",
             "uri": "https://github.com/ossf/baseline-mcp"
         },
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "baseline": {
             "version": "2025.10.10",
             "specification": "https://baseline.openssf.org/versions/2025-10-10"

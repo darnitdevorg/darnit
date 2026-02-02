@@ -37,47 +37,26 @@ See example.project.yaml for the correct schema.
 =============================================================================
 """
 
-import os
-import re
 import json
-import subprocess
-import glob as glob_module
-import sys
+import os
+from typing import Any
 
-# Use tomllib (Python 3.11+) or fall back to tomli
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    import tomli as tomllib
-
-from typing import Dict, List, Any, Optional, Tuple, Set
 from mcp.server.fastmcp import FastMCP
 
 # =============================================================================
 # IMPORTS FROM darnit FRAMEWORK
 # =============================================================================
-
 from darnit.core.logging import get_logger
 
 logger = get_logger("main")
 
 # Core models and utilities
-from darnit.core.models import (
-    CheckStatus,
-    CheckResult,
-    AuditResult,
-)
-from darnit.core.utils import (
-    gh_api,
-    gh_api_safe,
-    validate_local_path,
-    detect_repo_from_git,
-    file_exists,
-    file_contains,
-    read_file,
-    make_result,
-    get_git_commit,
-    get_git_ref,
+# Attestation - import only what's used by MCP tools
+from darnit.attestation import generate_attestation_from_results
+from darnit.config.discovery import (
+    discover_ci_config,
+    discover_files,
+    discover_project_name,
 )
 
 # Configuration
@@ -85,77 +64,68 @@ from darnit.config.loader import (
     load_project_config,
     save_project_config,
 )
-from darnit.config.discovery import (
-    discover_files,
-    discover_ci_config,
-    discover_project_name,
-)
-from darnit.config.validation import (
-    validate_reference,
+from darnit.core.models import AuditResult
+from darnit.core.utils import (
+    detect_repo_from_git,
+    file_contains,
+    file_exists,
+    get_git_commit,
+    get_git_ref,
+    gh_api,
+    gh_api_safe,
+    make_result,
+    read_file,
+    validate_local_path,
 )
 
-# Threat Model
+# Remediation (framework utilities)
+from darnit.remediation import enable_branch_protection as _enable_branch_protection_impl
+
+# Server tools (extracted implementations)
+from darnit.server import (
+    commit_remediation_changes_impl,
+    confirm_project_context_impl,
+    create_remediation_branch_impl,
+    create_remediation_pr_impl,
+    create_test_repository_impl,
+    get_remediation_status_impl,
+)
+
+# validate_reference available if needed but not currently used
+# Threat Model - import only what's used by MCP tools
 from darnit.threat_model import (
-    StrideCategory,
-    RiskLevel,
-    Threat,
-    AssetInventory,
+    analyze_stride_threats,
     detect_frameworks,
     discover_all_assets,
     discover_injection_sinks,
-    analyze_stride_threats,
-    identify_control_gaps,
+    generate_json_summary,
     generate_markdown_threat_model,
     generate_sarif_threat_model,
-    generate_json_summary,
+    identify_control_gaps,
 )
 
-# Attestation
-from darnit.attestation import (
-    get_git_commit as attestation_get_git_commit,
-    get_git_ref as attestation_get_git_ref,
-    build_assessment_predicate,
-    sign_attestation,
-    generate_attestation_from_results,
-    ATTESTATION_AVAILABLE,
-    SIGSTORE_API_VERSION,
-    is_attestation_available,
-    BASELINE_PREDICATE_TYPE,
-    build_unsigned_statement,
-)
-
-# Tools
+# Tools - import only what's used by MCP tools
 from darnit.tools import (
     SERVER_NAME,
+    calculate_compliance,
+    format_results_markdown,
     prepare_audit,
     run_checks,
-    calculate_compliance,
     summarize_results,
-    format_results_markdown,
+)
+from darnit.tools import (
     list_available_checks as get_available_checks,
-    validate_and_resolve_repo,
-    write_file_safely,
+)
+
+# Configuration models
+from darnit_baseline.config.mappings import (
+    ProjectConfig,
+    ResourceReference,
 )
 
 # Formatters (OSPS-specific)
 from darnit_baseline.formatters import (
     generate_sarif_audit,
-)
-
-# Remediation (framework utilities)
-from darnit.remediation import (
-    get_repo_maintainers,
-    enable_branch_protection as _enable_branch_protection_impl,
-)
-
-# Server tools (extracted implementations)
-from darnit.server import (
-    create_remediation_branch_impl,
-    commit_remediation_changes_impl,
-    create_remediation_pr_impl,
-    get_remediation_status_impl,
-    create_test_repository_impl,
-    confirm_project_context_impl,
 )
 
 # Remediation (OSPS-specific orchestrator)
@@ -166,56 +136,9 @@ from darnit_baseline.remediation import (
 # =============================================================================
 # IMPORTS FROM darnit-baseline IMPLEMENTATION
 # =============================================================================
-
-# Checks
-from darnit_baseline.checks import (
-    # Level 1
-    check_level1_access_control,
-    check_level1_build_release,
-    check_level1_documentation,
-    check_level1_governance,
-    check_level1_legal,
-    check_level1_quality,
-    check_level1_vulnerability,
-    run_level1_checks,
-    # Level 2
-    check_level2_access_control,
-    check_level2_build_release,
-    check_level2_documentation,
-    check_level2_governance,
-    check_level2_legal,
-    check_level2_quality,
-    check_level2_security_architecture,
-    check_level2_vulnerability,
-    run_level2_checks,
-    # Level 3
-    check_level3_access_control,
-    check_level3_build_release,
-    check_level3_documentation,
-    check_level3_governance,
-    check_level3_quality,
-    check_level3_security_architecture,
-    check_level3_vulnerability,
-    run_level3_checks,
-    # Constants
-    OSI_LICENSES,
-    BINARY_EXTENSIONS,
-)
-
-# Remediation (implementation-specific)
-from darnit_baseline.remediation import (
-    REMEDIATION_REGISTRY,
-)
+# Remediation actions
 from darnit_baseline.remediation.actions import (
     create_security_policy as _create_security_policy_impl,
-)
-
-# Configuration models (implementation-specific)
-from darnit_baseline.config.mappings import (
-    ProjectType,
-    ProjectConfig,
-    ResourceReference,
-    CONTROL_REFERENCE_MAPPING,
 )
 
 # =============================================================================
@@ -242,13 +165,13 @@ _get_git_ref = get_git_ref
 
 
 def _run_baseline_checks(
-    owner: Optional[str],
-    repo: Optional[str],
+    owner: str | None,
+    repo: str | None,
     local_path: str,
     level: int = 3,
     auto_init_config: bool = True,
     use_sieve: bool = True,
-) -> Tuple[Optional[AuditResult], Optional[str]]:
+) -> tuple[AuditResult | None, str | None]:
     """Run baseline checks and return audit result or error.
 
     Args:
@@ -294,7 +217,7 @@ def _run_baseline_checks(
             ci_config = discover_ci_config(resolved_path)
 
             # Build section dicts from discovered files
-            def build_section(section_name: str) -> Dict[str, Any]:
+            def build_section(section_name: str) -> dict[str, Any]:
                 section_refs = {}
                 prefix = f"{section_name}."
                 for ref_path, file_path in discovered.items():
@@ -324,7 +247,7 @@ def _run_baseline_checks(
             config_was_created = True
             logger.info(f"Created .project.yaml for {project_name}")
 
-        except (OSError, IOError, PermissionError) as e:
+        except (OSError, PermissionError) as e:
             config_error = f"Failed to create .project.yaml: {e}"
             logger.warning(config_error)
         except Exception as e:
@@ -368,8 +291,8 @@ def _generate_attestation_from_results(
     audit_result: AuditResult,
     sign: bool = True,
     staging: bool = False,
-    output_path: Optional[str] = None,
-    output_dir: Optional[str] = None
+    output_path: str | None = None,
+    output_dir: str | None = None
 ) -> str:
     """Generate attestation from audit results."""
     return generate_attestation_from_results(
@@ -387,8 +310,8 @@ def _generate_attestation_from_results(
 
 @mcp.tool()
 def audit_openssf_baseline(
-    owner: Optional[str] = None,
-    repo: Optional[str] = None,
+    owner: str | None = None,
+    repo: str | None = None,
     local_path: str = ".",
     level: int = 3,
     output_format: str = "markdown",
@@ -482,7 +405,8 @@ def audit_openssf_baseline(
             results=audit_result.all_results,
             summary=audit_result.summary,
             compliance=audit_result.level_compliance,
-            level=level
+            level=level,
+            local_path=local_path,
         )
 
     # Generate attestation if requested
@@ -556,7 +480,7 @@ def get_project_config(local_path: str = ".") -> str:
 @mcp.tool()
 def init_project_config(
     local_path: str = ".",
-    project_name: Optional[str] = None,
+    project_name: str | None = None,
     project_type: str = "software"
 ) -> str:
     """
@@ -597,7 +521,7 @@ def init_project_config(
     ci_config = discover_ci_config(resolved_path)
 
     # Build section dicts from discovered files
-    def build_section(section_name: str) -> Dict[str, Any]:
+    def build_section(section_name: str) -> dict[str, Any]:
         """Extract discovered files for a section."""
         section_refs = {}
         prefix = f"{section_name}."
@@ -637,8 +561,8 @@ def init_project_config(
 
 @mcp.tool()
 def generate_threat_model(
-    owner: Optional[str] = None,
-    repo: Optional[str] = None,
+    owner: str | None = None,
+    repo: str | None = None,
     local_path: str = ".",
     output_format: str = "markdown"
 ) -> str:
@@ -706,14 +630,14 @@ def generate_threat_model(
 
 @mcp.tool()
 def generate_attestation(
-    owner: Optional[str] = None,
-    repo: Optional[str] = None,
+    owner: str | None = None,
+    repo: str | None = None,
     local_path: str = ".",
     level: int = 3,
     sign: bool = True,
     staging: bool = False,
-    output_path: Optional[str] = None,
-    output_dir: Optional[str] = None,
+    output_path: str | None = None,
+    output_dir: str | None = None,
     use_sieve: bool = True
 ) -> str:
     """
@@ -767,8 +691,8 @@ def generate_attestation(
 
 @mcp.tool()
 def create_security_policy(
-    owner: Optional[str] = None,
-    repo: Optional[str] = None,
+    owner: str | None = None,
+    repo: str | None = None,
     local_path: str = ".",
     template: str = "standard"
 ) -> str:
@@ -796,14 +720,14 @@ def create_security_policy(
 
 @mcp.tool()
 def enable_branch_protection(
-    owner: Optional[str] = None,
-    repo: Optional[str] = None,
+    owner: str | None = None,
+    repo: str | None = None,
     branch: str = "main",
     required_approvals: int = 1,
     enforce_admins: bool = True,
     require_pull_request: bool = True,
     require_status_checks: bool = False,
-    status_checks: Optional[List[str]] = None,
+    status_checks: list[str] | None = None,
     local_path: str = ".",
     dry_run: bool = False
 ) -> str:
@@ -846,9 +770,9 @@ def enable_branch_protection(
 @mcp.tool()
 def remediate_audit_findings(
     local_path: str = ".",
-    owner: Optional[str] = None,
-    repo: Optional[str] = None,
-    categories: Optional[List[str]] = None,
+    owner: str | None = None,
+    repo: str | None = None,
+    categories: list[str] | None = None,
     dry_run: bool = True
 ) -> str:
     """
@@ -897,7 +821,7 @@ def remediate_audit_findings(
 def create_remediation_branch(
     branch_name: str = "fix/openssf-baseline-compliance",
     local_path: str = ".",
-    base_branch: Optional[str] = None
+    base_branch: str | None = None
 ) -> str:
     """
     Create a new branch for remediation work.
@@ -921,7 +845,7 @@ def create_remediation_branch(
 @mcp.tool()
 def commit_remediation_changes(
     local_path: str = ".",
-    message: Optional[str] = None,
+    message: str | None = None,
     add_all: bool = True
 ) -> str:
     """
@@ -945,9 +869,9 @@ def commit_remediation_changes(
 @mcp.tool()
 def create_remediation_pr(
     local_path: str = ".",
-    title: Optional[str] = None,
-    body: Optional[str] = None,
-    base_branch: Optional[str] = None,
+    title: str | None = None,
+    body: str | None = None,
+    base_branch: str | None = None,
     draft: bool = False
 ) -> str:
     """
@@ -996,7 +920,7 @@ def get_remediation_status(
 def create_test_repository(
     repo_name: str = "baseline-test-repo",
     parent_dir: str = ".",
-    github_org: Optional[str] = None,
+    github_org: str | None = None,
     create_github: bool = True,
     make_template: bool = False
 ) -> str:
@@ -1035,11 +959,11 @@ def create_test_repository(
 @mcp.tool()
 def confirm_project_context(
     local_path: str = ".",
-    has_subprojects: Optional[bool] = None,
-    has_releases: Optional[bool] = None,
-    is_library: Optional[bool] = None,
-    has_compiled_assets: Optional[bool] = None,
-    ci_provider: Optional[str] = None,
+    has_subprojects: bool | None = None,
+    has_releases: bool | None = None,
+    is_library: bool | None = None,
+    has_compiled_assets: bool | None = None,
+    ci_provider: str | None = None,
 ) -> str:
     """
     Record user-confirmed project context in .project.yaml.

@@ -6,8 +6,8 @@ to be discovered and used by the darnit framework.
 Implementations register via Python entry points under 'darnit.implementations'.
 """
 
-from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
 from dataclasses import dataclass, field
+from typing import Any, Protocol, runtime_checkable
 
 
 @dataclass
@@ -26,10 +26,10 @@ class ControlSpec:
     control_id: str
     name: str
     description: str
-    level: Optional[int]  # Maturity level (1, 2, 3) - None if framework doesn't use levels
-    domain: Optional[str]  # Domain code (e.g., "AC", "VM") - None if not applicable
-    metadata: Dict[str, Any]
-    tags: Dict[str, Any] = field(default_factory=dict)  # Additional tags for filtering
+    level: int | None  # Maturity level (1, 2, 3) - None if framework doesn't use levels
+    domain: str | None  # Domain code (e.g., "AC", "VM") - None if not applicable
+    metadata: dict[str, Any]
+    tags: dict[str, Any] = field(default_factory=dict)  # Additional tags for filtering
 
     def __post_init__(self):
         """Copy level/domain to tags for uniform filtering."""
@@ -77,15 +77,15 @@ class ComplianceImplementation(Protocol):
         """Specification version this implements (e.g., 'OSPS v2025.10.10')."""
         ...
 
-    def get_all_controls(self) -> List[ControlSpec]:
+    def get_all_controls(self) -> list[ControlSpec]:
         """Get all controls defined by this implementation."""
         ...
 
-    def get_controls_by_level(self, level: int) -> List[ControlSpec]:
+    def get_controls_by_level(self, level: int) -> list[ControlSpec]:
         """Get controls for a specific maturity level."""
         ...
 
-    def get_check_functions(self) -> Dict[str, Any]:
+    def get_check_functions(self) -> dict[str, Any]:
         """Get the check functions for running audits.
 
         Returns:
@@ -93,11 +93,11 @@ class ComplianceImplementation(Protocol):
         """
         ...
 
-    def get_rules_catalog(self) -> Dict[str, Any]:
+    def get_rules_catalog(self) -> dict[str, Any]:
         """Get the rules catalog for SARIF output."""
         ...
 
-    def get_remediation_registry(self) -> Dict[str, Any]:
+    def get_remediation_registry(self) -> dict[str, Any]:
         """Get the remediation registry for auto-fixes."""
         ...
 

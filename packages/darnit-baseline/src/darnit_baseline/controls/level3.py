@@ -3,23 +3,23 @@
 Level 3 represents the highest security requirements for critical open source projects.
 """
 
+import json
 import os
 import re
-import json
 import subprocess
-from typing import Dict, Optional, Callable
+from collections.abc import Callable
 
 from darnit.core.logging import get_logger
 from darnit.sieve.models import (
-    ControlSpec,
     CheckContext,
-    VerificationPhase,
-    PassResult,
+    ControlSpec,
     PassOutcome,
+    PassResult,
+    VerificationPhase,
 )
-from darnit.sieve.passes import DeterministicPass, PatternPass, ManualPass
+from darnit.sieve.passes import DeterministicPass, ManualPass, PatternPass
+from darnit.sieve.project_context import get_context_value, is_context_confirmed
 from darnit.sieve.registry import register_control
-from darnit.sieve.project_context import is_context_confirmed, get_context_value
 
 logger = get_logger("sieve.level3")
 
@@ -29,7 +29,7 @@ logger = get_logger("sieve.level3")
 # =============================================================================
 
 
-def _gh_api(endpoint: str) -> Optional[Dict]:
+def _gh_api(endpoint: str) -> dict | None:
     """Call GitHub API via gh CLI. Returns None on error."""
     try:
         result = subprocess.run(
@@ -69,14 +69,14 @@ def _file_exists(local_path: str, *patterns: str) -> bool:
     return False
 
 
-def _read_file(local_path: str, filename: str) -> Optional[str]:
+def _read_file(local_path: str, filename: str) -> str | None:
     """Read file content, return None if doesn't exist."""
     filepath = os.path.join(local_path, filename)
     if os.path.exists(filepath):
         try:
-            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+            with open(filepath, encoding='utf-8', errors='ignore') as f:
                 return f.read()
-        except (IOError, OSError) as e:
+        except OSError as e:
             logger.debug(f"Could not read {filepath}: {type(e).__name__}")
             return None
     return None
@@ -703,23 +703,25 @@ register_control(ControlSpec(
     control_id="OSPS-VM-04.02",
     level=3,
     domain="VM",
-    name="VEXDocuments",
-    description="VEX documents or VEX policy exists",
+    name="VEXPolicy",
+    description="VEX policy documented in SECURITY.md",
     passes=[
-        DeterministicPass(
-            file_must_exist=["*.vex.json", "vex.json", ".vex/*", "vex/*.json"]
-        ),
+        # Primary: VEX policy section in SECURITY.md (preferred)
         PatternPass(
-            file_patterns=["SECURITY.md"],
+            file_patterns=["SECURITY.md", ".github/SECURITY.md"],
             content_patterns={
                 "vex_policy": r"(vex|vulnerability.exploitability|exploitability.exchange|affected.*not.affected)",
             },
             pass_if_any_match=True,
         ),
+        # Secondary: VEX documents exist (acceptable but policy is preferred)
+        DeterministicPass(
+            file_must_exist=["*.vex.json", "vex.json", ".vex/*", "vex/*.json"]
+        ),
         ManualPass(
             verification_steps=[
-                "Check for VEX files in repository",
-                "Verify SECURITY.md mentions VEX policy",
+                "Verify SECURITY.md has a VEX policy section",
+                "Policy should explain how VEX statements will be handled",
             ],
         ),
     ],

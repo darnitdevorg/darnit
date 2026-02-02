@@ -9,11 +9,10 @@ This module contains pattern definitions for detecting:
 - Data stores
 """
 
-from typing import Dict, Any
-
+from typing import Any
 
 # Framework detection patterns
-FRAMEWORK_PATTERNS: Dict[str, Dict[str, Any]] = {
+FRAMEWORK_PATTERNS: dict[str, dict[str, Any]] = {
     "nextjs": {
         "indicators": [
             ("next.config.js", None),
@@ -93,7 +92,7 @@ FRAMEWORK_PATTERNS: Dict[str, Dict[str, Any]] = {
 
 
 # Authentication mechanism patterns
-AUTH_PATTERNS: Dict[str, Dict[str, Any]] = {
+AUTH_PATTERNS: dict[str, dict[str, Any]] = {
     "nextauth": {
         "pattern": r"NextAuth|getServerSession|useSession|authOptions",
         "assets": ["session tokens", "OAuth credentials", "CSRF tokens"],
@@ -143,7 +142,7 @@ AUTH_PATTERNS: Dict[str, Dict[str, Any]] = {
 
 
 # Sensitive data field patterns
-SENSITIVE_DATA_PATTERNS: Dict[str, Dict[str, Any]] = {
+SENSITIVE_DATA_PATTERNS: dict[str, dict[str, Any]] = {
     "pii": {
         "patterns": [
             r"(email|e_mail|user_email)",
@@ -191,7 +190,7 @@ SENSITIVE_DATA_PATTERNS: Dict[str, Dict[str, Any]] = {
 
 
 # Injection vulnerability patterns
-INJECTION_PATTERNS: Dict[str, Dict[str, Any]] = {
+INJECTION_PATTERNS: dict[str, dict[str, Any]] = {
     "sql_injection": {
         "patterns": [
             r"execute\s*\(.*\+",
@@ -276,7 +275,7 @@ INJECTION_PATTERNS: Dict[str, Dict[str, Any]] = {
 
 
 # Secret detection patterns
-SECRET_PATTERNS: Dict[str, Dict[str, Any]] = {
+SECRET_PATTERNS: dict[str, dict[str, Any]] = {
     "hardcoded_secret": {
         "pattern": r"(api[_-]?key|secret|password|token|credential)\s*[=:]\s*['\"][^'\"]{8,}['\"]",
         "severity": "critical",
@@ -306,7 +305,7 @@ SECRET_PATTERNS: Dict[str, Dict[str, Any]] = {
 
 
 # Data store detection patterns
-DATASTORE_PATTERNS: Dict[str, Dict[str, Any]] = {
+DATASTORE_PATTERNS: dict[str, dict[str, Any]] = {
     "postgresql": {
         "patterns": [r"pg\.|postgres|psycopg|PrismaClient.*postgres", r"postgresql://"],
         "type": "database",

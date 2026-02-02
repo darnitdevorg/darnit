@@ -6,7 +6,6 @@ controls, useful for testing and learning.
 
 import os
 import subprocess
-from typing import Optional
 
 from darnit.core.utils import validate_local_path
 
@@ -14,7 +13,7 @@ from darnit.core.utils import validate_local_path
 def create_test_repository_impl(
     repo_name: str = "baseline-test-repo",
     parent_dir: str = ".",
-    github_org: Optional[str] = None,
+    github_org: str | None = None,
     create_github: bool = True,
     make_template: bool = False
 ) -> str:

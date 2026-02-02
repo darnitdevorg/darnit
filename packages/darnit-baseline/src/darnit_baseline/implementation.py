@@ -4,7 +4,7 @@ This module provides the OSPSBaselineImplementation class that implements
 the darnit ComplianceImplementation protocol for OpenSSF Baseline (OSPS v2025.10.10).
 """
 
-from typing import List, Dict, Any
+from typing import Any
 
 from darnit.core.plugin import ControlSpec
 
@@ -34,14 +34,14 @@ class OSPSBaselineImplementation:
     def spec_version(self) -> str:
         return "OSPS v2025.10.10"
 
-    def get_all_controls(self) -> List[ControlSpec]:
+    def get_all_controls(self) -> list[ControlSpec]:
         """Get all OSPS controls."""
         controls = []
         for level in [1, 2, 3]:
             controls.extend(self.get_controls_by_level(level))
         return controls
 
-    def get_controls_by_level(self, level: int) -> List[ControlSpec]:
+    def get_controls_by_level(self, level: int) -> list[ControlSpec]:
         """Get controls for a specific maturity level."""
         from .rules.catalog import OSPS_RULES
 
@@ -61,7 +61,7 @@ class OSPSBaselineImplementation:
                 ))
         return controls
 
-    def get_check_functions(self) -> Dict[str, Any]:
+    def get_check_functions(self) -> dict[str, Any]:
         """Get the check functions for running audits."""
         from .checks import (
             run_level1_checks,
@@ -74,12 +74,12 @@ class OSPSBaselineImplementation:
             "level3": run_level3_checks,
         }
 
-    def get_rules_catalog(self) -> Dict[str, Any]:
+    def get_rules_catalog(self) -> dict[str, Any]:
         """Get the rules catalog for SARIF output."""
         from .rules.catalog import OSPS_RULES
         return OSPS_RULES
 
-    def get_remediation_registry(self) -> Dict[str, Any]:
+    def get_remediation_registry(self) -> dict[str, Any]:
         """Get the remediation registry for auto-fixes."""
         from .remediation.registry import REMEDIATION_REGISTRY
         return REMEDIATION_REGISTRY

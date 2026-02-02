@@ -1,18 +1,18 @@
 """Sieve orchestrator - runs verification passes in order."""
 
 import time
-from typing import Dict, Any, List
+from typing import Any
 
 from darnit.core.logging import get_logger
 
 from .models import (
     CheckContext,
     ControlSpec,
-    SieveResult,
+    LLMConsultationResponse,
     PassAttempt,
     PassOutcome,
+    SieveResult,
     VerificationPhase,
-    LLMConsultationResponse,
 )
 
 logger = get_logger("sieve.orchestrator")
@@ -49,15 +49,15 @@ class SieveOrchestrator:
         Returns:
             SieveResult with status and pass history
         """
-        pass_history: List[PassAttempt] = []
-        accumulated_evidence: Dict[str, Any] = {}
+        pass_history: list[PassAttempt] = []
+        accumulated_evidence: dict[str, Any] = {}
 
         for verification_pass in control_spec.passes:
             # Execute pass
             start_time = time.time()
             try:
                 result = verification_pass.execute(context)
-            except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, IOError, OSError) as e:
+            except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as e:
                 logger.debug(f"Pass execution error: {type(e).__name__}: {e}")
                 result = PassAttempt(
                     phase=verification_pass.phase,
@@ -257,9 +257,9 @@ class SieveOrchestrator:
 
     def verify_batch(
         self,
-        control_specs: List[ControlSpec],
+        control_specs: list[ControlSpec],
         context_factory: callable,
-    ) -> List[SieveResult]:
+    ) -> list[SieveResult]:
         """
         Verify multiple controls.
 

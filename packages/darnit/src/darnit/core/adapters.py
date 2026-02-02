@@ -7,18 +7,18 @@ This module provides:
 - Resolution functions for loading adapters from configuration
 """
 
-from abc import ABC, abstractmethod
 import importlib
 import json
 import logging
 import subprocess
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Type, Union
+from typing import Any
 
 from darnit.core.models import (
+    AdapterCapability,
     CheckResult,
     RemediationResult,
-    AdapterCapability,
 )
 
 logger = logging.getLogger(__name__)
@@ -64,19 +64,19 @@ class CheckAdapter(ABC):
         owner: str,
         repo: str,
         local_path: str,
-        config: Dict[str, Any]
+        config: dict[str, Any]
     ) -> CheckResult:
         """Run check for a specific control."""
         pass
 
     def check_batch(
         self,
-        control_ids: List[str],
+        control_ids: list[str],
         owner: str,
         repo: str,
         local_path: str,
-        config: Dict[str, Any]
-    ) -> List[CheckResult]:
+        config: dict[str, Any]
+    ) -> list[CheckResult]:
         """
         Run checks for multiple controls in a single invocation.
         Default implementation calls check() for each control.
@@ -131,7 +131,7 @@ class RemediationAdapter(ABC):
         owner: str,
         repo: str,
         local_path: str,
-        config: Dict[str, Any],
+        config: dict[str, Any],
         dry_run: bool = True
     ) -> RemediationResult:
         """Apply remediation for a specific control."""
@@ -143,7 +143,7 @@ class RemediationAdapter(ABC):
         owner: str,
         repo: str,
         local_path: str,
-        config: Dict[str, Any]
+        config: dict[str, Any]
     ) -> str:
         """Preview what remediation would do (dry run)."""
         result = self.remediate(control_id, owner, repo, local_path, config, dry_run=True)
@@ -180,7 +180,7 @@ class CommandCheckAdapter(CheckAdapter):
         command: str,
         output_format: str = "json",
         timeout: int = 300,
-        control_ids: Optional[List[str]] = None,
+        control_ids: list[str] | None = None,
     ):
         self._name = adapter_name
         self._command = command
@@ -203,7 +203,7 @@ class CommandCheckAdapter(CheckAdapter):
         owner: str,
         repo: str,
         local_path: str,
-        config: Dict[str, Any],
+        config: dict[str, Any],
     ) -> CheckResult:
         """Run command and parse output."""
 
@@ -309,7 +309,7 @@ class ScriptCheckAdapter(CheckAdapter):
         script_path: str,
         output_format: str = "json",
         timeout: int = 300,
-        control_ids: Optional[List[str]] = None,
+        control_ids: list[str] | None = None,
     ):
         self._name = adapter_name
         self._script_path = script_path
@@ -332,7 +332,7 @@ class ScriptCheckAdapter(CheckAdapter):
         owner: str,
         repo: str,
         local_path: str,
-        config: Dict[str, Any],
+        config: dict[str, Any],
     ) -> CheckResult:
         """Run script and parse output."""
         import os as _os
@@ -442,17 +442,17 @@ class AdapterRegistry:
     """
 
     # Registered adapter classes
-    _check_classes: Dict[str, Type[CheckAdapter]] = field(default_factory=dict)
-    _remediation_classes: Dict[str, Type[RemediationAdapter]] = field(
+    _check_classes: dict[str, type[CheckAdapter]] = field(default_factory=dict)
+    _remediation_classes: dict[str, type[RemediationAdapter]] = field(
         default_factory=dict
     )
 
     # Instantiated adapters (cached)
-    _check_instances: Dict[str, CheckAdapter] = field(default_factory=dict)
-    _remediation_instances: Dict[str, RemediationAdapter] = field(default_factory=dict)
+    _check_instances: dict[str, CheckAdapter] = field(default_factory=dict)
+    _remediation_instances: dict[str, RemediationAdapter] = field(default_factory=dict)
 
     # Config-based adapter definitions
-    _adapter_configs: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    _adapter_configs: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     # Allowed module prefixes for dynamic imports (security whitelist)
     ALLOWED_MODULE_PREFIXES: tuple = (
@@ -465,7 +465,7 @@ class AdapterRegistry:
     def register_check_adapter(
         self,
         name: str,
-        adapter: Union[Type[CheckAdapter], CheckAdapter],
+        adapter: type[CheckAdapter] | CheckAdapter,
     ) -> None:
         """Register a check adapter class or instance.
 
@@ -481,7 +481,7 @@ class AdapterRegistry:
     def register_remediation_adapter(
         self,
         name: str,
-        adapter: Union[Type[RemediationAdapter], RemediationAdapter],
+        adapter: type[RemediationAdapter] | RemediationAdapter,
     ) -> None:
         """Register a remediation adapter class or instance.
 
@@ -497,7 +497,7 @@ class AdapterRegistry:
     def register_from_config(
         self,
         name: str,
-        config: Dict[str, Any],
+        config: dict[str, Any],
     ) -> None:
         """Register an adapter from configuration.
 
@@ -507,7 +507,7 @@ class AdapterRegistry:
         """
         self._adapter_configs[name] = config
 
-    def get_check_adapter(self, name: str) -> Optional[CheckAdapter]:
+    def get_check_adapter(self, name: str) -> CheckAdapter | None:
         """Get a check adapter by name.
 
         Resolution order:
@@ -555,7 +555,7 @@ class AdapterRegistry:
 
         return None
 
-    def get_remediation_adapter(self, name: str) -> Optional[RemediationAdapter]:
+    def get_remediation_adapter(self, name: str) -> RemediationAdapter | None:
         """Get a remediation adapter by name.
 
         Resolution order:
@@ -596,8 +596,8 @@ class AdapterRegistry:
     def _create_check_adapter_from_config(
         self,
         name: str,
-        config: Dict[str, Any],
-    ) -> Optional[CheckAdapter]:
+        config: dict[str, Any],
+    ) -> CheckAdapter | None:
         """Create a check adapter from configuration.
 
         Args:
@@ -635,9 +635,9 @@ class AdapterRegistry:
     def _load_python_adapter(
         self,
         name: str,
-        config: Dict[str, Any],
+        config: dict[str, Any],
         expected_type: type,
-    ) -> Optional[Any]:
+    ) -> Any | None:
         """Load a Python adapter from module path.
 
         Args:
@@ -682,7 +682,7 @@ class AdapterRegistry:
             logger.error(f"Adapter {name}: class {class_name} not found: {e}")
             return None
 
-    def list_adapters(self) -> Dict[str, List[str]]:
+    def list_adapters(self) -> dict[str, list[str]]:
         """List all registered adapters.
 
         Returns:
@@ -706,7 +706,7 @@ class AdapterRegistry:
 
 
 # Global registry instance
-_global_registry: Optional[AdapterRegistry] = None
+_global_registry: AdapterRegistry | None = None
 
 
 def get_adapter_registry() -> AdapterRegistry:

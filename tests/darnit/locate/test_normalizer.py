@@ -1,15 +1,14 @@
 """Tests for the tool output normalizer."""
 
-import pytest
 
+from darnit.config.framework_schema import OutputMapping
 from darnit.locate import (
-    extract_jsonpath,
-    normalize_tool_output,
-    normalize_scorecard_output,
     CheckOutput,
     FoundEvidence,
+    extract_jsonpath,
+    normalize_scorecard_output,
+    normalize_tool_output,
 )
-from darnit.config.framework_schema import OutputMapping
 
 
 class TestExtractJsonpath:

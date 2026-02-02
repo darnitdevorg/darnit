@@ -3,34 +3,31 @@
 Level 2 represents enhanced security requirements for more mature open source projects.
 """
 
+import json
 import os
 import re
-import json
 import subprocess
-from typing import Dict, Optional, Callable
+from collections.abc import Callable
 
 from darnit.core.logging import get_logger
+from darnit.sieve.models import (
+    CheckContext,
+    ControlSpec,
+    PassOutcome,
+    PassResult,
+    VerificationPhase,
+)
+from darnit.sieve.passes import DeterministicPass, ManualPass, PatternPass
+from darnit.sieve.project_context import get_context_value, is_context_confirmed
+from darnit.sieve.registry import register_control
 
 logger = get_logger("sieve.level2")
-
-from darnit.sieve.models import (
-    ControlSpec,
-    CheckContext,
-    VerificationPhase,
-    PassResult,
-    PassOutcome,
-)
-from darnit.sieve.passes import DeterministicPass, PatternPass, ManualPass
-from darnit.sieve.registry import register_control
-from darnit.sieve.project_context import is_context_confirmed, get_context_value
-
-
 # =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
 
 
-def _gh_api(endpoint: str) -> Optional[Dict]:
+def _gh_api(endpoint: str) -> dict | None:
     """Call GitHub API via gh CLI. Returns None on error."""
     try:
         result = subprocess.run(
@@ -70,14 +67,14 @@ def _file_exists(local_path: str, *patterns: str) -> bool:
     return False
 
 
-def _read_file(local_path: str, filename: str) -> Optional[str]:
+def _read_file(local_path: str, filename: str) -> str | None:
     """Read file content, return None if doesn't exist."""
     filepath = os.path.join(local_path, filename)
     if os.path.exists(filepath):
         try:
-            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+            with open(filepath, encoding='utf-8', errors='ignore') as f:
                 return f.read()
-        except (IOError, OSError) as e:
+        except OSError as e:
             logger.debug(f"Could not read {filepath}: {type(e).__name__}")
             return None
     return None
@@ -676,7 +673,7 @@ def _create_status_checks_check() -> Callable[[CheckContext], PassResult]:
     return check
 
 
-def _detect_test_files(local_path: str) -> Optional[Dict]:
+def _detect_test_files(local_path: str) -> dict | None:
     """Detect test files in the repository."""
     import glob as glob_module
 
@@ -743,7 +740,7 @@ def _create_automated_tests_check() -> Callable[[CheckContext], PassResult]:
                                 return PassResult(
                                     phase=VerificationPhase.DETERMINISTIC,
                                     outcome=PassOutcome.PASS,
-                                    message=f"CI workflows include automated tests",
+                                    message="CI workflows include automated tests",
                                     evidence={"workflow": file, "source": "github_actions"},
                                 )
 

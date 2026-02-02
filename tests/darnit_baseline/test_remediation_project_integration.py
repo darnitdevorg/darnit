@@ -5,10 +5,9 @@ The project configuration uses a .project/ directory structure:
 - .project/darnit.yaml: x-openssf-baseline extension fields
 """
 
-import os
-import tempfile
-import pytest
 from pathlib import Path
+
+import pytest
 
 from darnit.config.loader import clear_config_cache
 from darnit_baseline.remediation.orchestrator import _apply_remediation
@@ -71,12 +70,14 @@ class TestProjectConfigIntegration:
     def test_skip_remediation_for_na_controls(self, tmp_path):
         """Test that remediation is skipped when all controls are marked N/A."""
         # Create .project/ config with all security_policy controls as N/A
+        # security_policy now covers: VM-01.01, VM-02.01, VM-03.01, VM-04.02
         _create_project_config(
             tmp_path,
             control_overrides={
                 "OSPS-VM-01.01": {"status": "n/a", "reason": "Security policy exists in parent organization"},
                 "OSPS-VM-02.01": {"status": "n/a", "reason": "Security policy exists in parent organization"},
                 "OSPS-VM-03.01": {"status": "n/a", "reason": "Security policy exists in parent organization"},
+                "OSPS-VM-04.02": {"status": "n/a", "reason": "VEX policy managed externally"},
             }
         )
 
@@ -93,11 +94,11 @@ class TestProjectConfigIntegration:
         assert result["status"] == "skipped"
         assert result["category"] == "security_policy"
         assert "skipped_controls" in result
-        assert len(result["skipped_controls"]) == 3
+        assert len(result["skipped_controls"]) == 4
 
-        # Verify the reason is included
+        # Verify the reason is included for each skipped control
         reasons = [s["reason"] for s in result["skipped_controls"]]
-        assert all("Security policy exists" in r for r in reasons)
+        assert all(len(r) > 0 for r in reasons)  # All should have a reason
 
     def test_partial_na_controls(self, tmp_path):
         """Test that remediation runs when only some controls are N/A."""

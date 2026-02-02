@@ -2,15 +2,15 @@
 
 from pathlib import Path
 
+from darnit.core.adapters import CheckAdapter
+from darnit.core.models import AdapterCapability, CheckResult, CheckStatus
 from darnit.core.registry import (
+    AdapterInfo,
+    FrameworkInfo,
     PluginRegistry,
     get_plugin_registry,
     reset_plugin_registry,
-    FrameworkInfo,
-    AdapterInfo,
 )
-from darnit.core.adapters import CheckAdapter
-from darnit.core.models import AdapterCapability, CheckResult, CheckStatus
 
 
 class MockCheckAdapter(CheckAdapter):

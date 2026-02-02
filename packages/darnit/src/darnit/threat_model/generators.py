@@ -5,22 +5,22 @@ in various formats including Markdown and SARIF.
 """
 
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import Any
 
 from .models import (
-    StrideCategory,
-    RiskLevel,
-    Threat,
     AssetInventory,
+    RiskLevel,
+    StrideCategory,
+    Threat,
 )
 
 
 def generate_markdown_threat_model(
     repo_path: str,
     assets: AssetInventory,
-    threats: List[Threat],
-    control_gaps: List[Dict],
-    frameworks: List[str]
+    threats: list[Threat],
+    control_gaps: list[dict],
+    frameworks: list[str]
 ) -> str:
     """Generate a markdown-formatted threat model document.
 
@@ -211,7 +211,7 @@ def generate_markdown_threat_model(
     return "\n".join(md)
 
 
-def generate_sarif_threat_model(repo_path: str, threats: List[Threat]) -> Dict[str, Any]:
+def generate_sarif_threat_model(repo_path: str, threats: list[Threat]) -> dict[str, Any]:
     """Generate SARIF format for IDE/CI integration.
 
     Args:
@@ -295,11 +295,11 @@ def generate_sarif_threat_model(repo_path: str, threats: List[Threat]) -> Dict[s
 
 def generate_json_summary(
     repo_path: str,
-    frameworks: List[str],
+    frameworks: list[str],
     assets: AssetInventory,
-    threats: List[Threat],
-    control_gaps: List[Dict]
-) -> Dict[str, Any]:
+    threats: list[Threat],
+    control_gaps: list[dict]
+) -> dict[str, Any]:
     """Generate a JSON summary of the threat model.
 
     Args:

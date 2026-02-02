@@ -29,7 +29,7 @@ Example usage:
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 from darnit.core.adapters import CheckAdapter, RemediationAdapter
 from darnit.core.models import (
@@ -78,7 +78,7 @@ logger = logging.getLogger(__name__)
 
 # Maps control ID prefixes to their check functions
 # Format: (domain_code, level) -> (function, requires_default_branch)
-DOMAIN_CHECK_FUNCTIONS: Dict[tuple, tuple] = {
+DOMAIN_CHECK_FUNCTIONS: dict[tuple, tuple] = {
     # Level 1
     ("AC", 1): (check_level1_access_control, True),
     ("BR", 1): (check_level1_build_release, False),
@@ -216,7 +216,7 @@ def status_from_string(status_str: str) -> CheckStatus:
     return status_map.get(status_str.upper(), CheckStatus.ERROR)
 
 
-def convert_legacy_result(result_dict: Dict[str, Any]) -> CheckResult:
+def convert_legacy_result(result_dict: dict[str, Any]) -> CheckResult:
     """Convert legacy result dict to CheckResult.
 
     Legacy format: {"id": str, "status": str, "details": str, "level": int}
@@ -265,7 +265,7 @@ class BuiltinCheckAdapter(CheckAdapter):
 
     def __init__(self):
         """Initialize the builtin adapter."""
-        self._result_cache: Dict[str, List[CheckResult]] = {}
+        self._result_cache: dict[str, list[CheckResult]] = {}
 
     def name(self) -> str:
         """Return adapter name."""
@@ -287,7 +287,7 @@ class BuiltinCheckAdapter(CheckAdapter):
         owner: str,
         repo: str,
         local_path: str,
-        config: Dict[str, Any],
+        config: dict[str, Any],
     ) -> CheckResult:
         """Run check for a specific control.
 
@@ -326,12 +326,12 @@ class BuiltinCheckAdapter(CheckAdapter):
 
     def check_batch(
         self,
-        control_ids: List[str],
+        control_ids: list[str],
         owner: str,
         repo: str,
         local_path: str,
-        config: Dict[str, Any],
-    ) -> List[CheckResult]:
+        config: dict[str, Any],
+    ) -> list[CheckResult]:
         """Run checks for multiple controls efficiently.
 
         Groups controls by domain and runs each domain check once,
@@ -348,7 +348,7 @@ class BuiltinCheckAdapter(CheckAdapter):
             List of CheckResult for all requested controls
         """
         results = []
-        checked_domains: Set[tuple] = set()
+        checked_domains: set[tuple] = set()
 
         for control_id in control_ids:
             domain = parse_control_id(control_id)
@@ -386,8 +386,8 @@ class BuiltinCheckAdapter(CheckAdapter):
         owner: str,
         repo: str,
         local_path: str,
-        config: Dict[str, Any],
-    ) -> List[CheckResult]:
+        config: dict[str, Any],
+    ) -> list[CheckResult]:
         """Run the domain check function for a control.
 
         Args:
@@ -464,7 +464,7 @@ class BuiltinRemediationAdapter(RemediationAdapter):
             supports_batch=False,
         )
 
-    def _get_supported_controls(self) -> Set[str]:
+    def _get_supported_controls(self) -> set[str]:
         """Get set of control IDs that can be remediated."""
         try:
             from darnit_baseline.remediation.registry import get_remediation_registry
@@ -479,7 +479,7 @@ class BuiltinRemediationAdapter(RemediationAdapter):
         owner: str,
         repo: str,
         local_path: str,
-        config: Dict[str, Any],
+        config: dict[str, Any],
         dry_run: bool = True,
     ) -> RemediationResult:
         """Apply remediation for a specific control.
@@ -562,8 +562,8 @@ class BuiltinRemediationAdapter(RemediationAdapter):
 # =============================================================================
 
 # Singleton instances
-_builtin_check_adapter: Optional[BuiltinCheckAdapter] = None
-_builtin_remediation_adapter: Optional[BuiltinRemediationAdapter] = None
+_builtin_check_adapter: BuiltinCheckAdapter | None = None
+_builtin_remediation_adapter: BuiltinRemediationAdapter | None = None
 
 
 def get_builtin_check_adapter() -> BuiltinCheckAdapter:

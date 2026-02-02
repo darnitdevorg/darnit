@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from darnit.core.models import CheckStatus
+
 from darnit_plugins.adapters.echo import EchoCheckAdapter
 
 

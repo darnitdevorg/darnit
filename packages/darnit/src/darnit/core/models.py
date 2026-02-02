@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Any, Optional, Set, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     pass
@@ -24,11 +24,11 @@ class CheckResult:
     status: CheckStatus
     message: str
     level: int = 1  # OSPS maturity level (1, 2, or 3)
-    details: Optional[Dict[str, Any]] = None
-    evidence: Optional[str] = None
+    details: dict[str, Any] | None = None
+    evidence: str | None = None
     source: str = "builtin"  # Which adapter produced this result
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary format matching existing _result() output."""
         return {
             "id": self.control_id,
@@ -45,18 +45,18 @@ class RemediationResult:
     control_id: str
     success: bool
     message: str
-    changes_made: List[str] = field(default_factory=list)
+    changes_made: list[str] = field(default_factory=list)
     requires_manual_action: bool = False
-    manual_steps: List[str] = field(default_factory=list)
+    manual_steps: list[str] = field(default_factory=list)
     source: str = "builtin"
 
 
 @dataclass
 class AdapterCapability:
     """Describes what controls an adapter can handle."""
-    control_ids: Set[str]  # Specific control IDs, or {"*"} for all
+    control_ids: set[str]  # Specific control IDs, or {"*"} for all
     supports_batch: bool = False  # Can handle multiple controls in one call
-    batch_command: Optional[str] = None  # Command for batch mode
+    batch_command: str | None = None  # Command for batch mode
     # TODO: Add cache_key for shared execution context
     # cache_key: Optional[str] = None  # Key for caching tool output (e.g., "scorecard")
 
@@ -118,14 +118,14 @@ class AuditResult:
     local_path: str
     level: int
     default_branch: str
-    all_results: List[Dict[str, Any]]
-    summary: Optional[Dict[str, int]] = None  # Status counts: PASS, FAIL, WARN, N/A, ERROR, total
-    level_compliance: Optional[Dict[int, bool]] = None  # Level -> compliance status
-    timestamp: Optional[str] = None  # ISO format timestamp
-    project_config: Optional[Any] = None  # ProjectConfig, but avoid circular import
+    all_results: list[dict[str, Any]]
+    summary: dict[str, int] | None = None  # Status counts: PASS, FAIL, WARN, N/A, ERROR, total
+    level_compliance: dict[int, bool] | None = None  # Level -> compliance status
+    timestamp: str | None = None  # ISO format timestamp
+    project_config: Any | None = None  # ProjectConfig, but avoid circular import
     config_was_created: bool = False
     config_was_updated: bool = False
-    config_changes: List[str] = field(default_factory=list)
-    skipped_controls: Dict[str, str] = field(default_factory=dict)
-    commit: Optional[str] = None
-    ref: Optional[str] = None
+    config_changes: list[str] = field(default_factory=list)
+    skipped_controls: dict[str, str] = field(default_factory=dict)
+    commit: str | None = None
+    ref: str | None = None

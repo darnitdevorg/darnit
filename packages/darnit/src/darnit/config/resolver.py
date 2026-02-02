@@ -10,12 +10,11 @@ and .project/ configuration.
 """
 
 import os
-from typing import Dict, List, Optional, Tuple
 
-from darnit.core.logging import get_logger
+from darnit.config.discovery import _set_config_path, discover_files
 from darnit.config.loader import load_project_config, save_project_config
 from darnit.config.schema import create_minimal_config
-from darnit.config.discovery import discover_files, _set_config_path
+from darnit.core.logging import get_logger
 
 logger = get_logger("config.resolver")
 
@@ -23,9 +22,9 @@ logger = get_logger("config.resolver")
 def resolve_file_for_control(
     local_path: str,
     control_id: str,
-    file_locations: Dict[str, List[str]],
-    control_reference_mapping: Dict[str, str],
-) -> Tuple[Optional[str], str]:
+    file_locations: dict[str, list[str]],
+    control_reference_mapping: dict[str, str],
+) -> tuple[str | None, str]:
     """Resolve file path for a control, checking .project/ first.
 
     This function implements a two-phase lookup:
@@ -84,7 +83,7 @@ def update_config_after_file_create(
     local_path: str,
     control_id: str,
     created_file_path: str,
-    control_reference_mapping: Dict[str, str],
+    control_reference_mapping: dict[str, str],
 ) -> bool:
     """Update .project/ config after a file is created.
 
@@ -153,7 +152,7 @@ def sync_discovered_file_to_config(
     local_path: str,
     control_id: str,
     discovered_path: str,
-    control_reference_mapping: Dict[str, str],
+    control_reference_mapping: dict[str, str],
 ) -> bool:
     """Sync a discovered file to .project/ config.
 

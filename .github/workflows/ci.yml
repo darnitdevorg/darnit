@@ -65,6 +65,14 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras
 
+      # Ruff linting - catches unused imports, variables, and common issues
+      - name: Run ruff linter
+        run: uv run ruff check . --output-format=github
+
+      - name: Run ruff formatter check
+        run: uv run ruff format --check --diff .
+        continue-on-error: true  # Don't fail CI on formatting yet
+
       - name: Check Python syntax
         run: |
           uv run python -m py_compile main.py

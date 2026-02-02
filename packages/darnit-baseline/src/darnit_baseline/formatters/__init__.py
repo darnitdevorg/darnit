@@ -1,10 +1,10 @@
 """OSPS-specific output formatters."""
 
 from .sarif import (
-    generate_sarif_audit,
     build_sarif_rules,
-    result_to_sarif_result,
+    generate_sarif_audit,
     get_location_for_control,
+    result_to_sarif_result,
 )
 
 __all__ = [

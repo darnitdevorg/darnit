@@ -11,9 +11,10 @@ Since MCP servers cannot call LLMs directly, the protocol works by:
 
 import json
 import re
-from typing import Dict, Any, Optional
+from typing import Any
 
 from darnit.core.logging import get_logger
+
 from .models import (
     LLMConsultationRequest,
     LLMConsultationResponse,
@@ -89,7 +90,7 @@ Provide your analysis below:"""
     return prompt
 
 
-def parse_llm_response(response_text: str) -> Optional[LLMConsultationResponse]:
+def parse_llm_response(response_text: str) -> LLMConsultationResponse | None:
     """
     Parse an LLM response into a structured consultation response.
 
@@ -183,7 +184,7 @@ def parse_llm_response(response_text: str) -> Optional[LLMConsultationResponse]:
 
 def format_consultation_result(
     control_id: str, response: LLMConsultationResponse
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Format a consultation response as a result dict.
 
@@ -207,8 +208,8 @@ def format_consultation_result(
 
 
 def create_verification_request_for_pending(
-    pending_result: Dict[str, Any]
-) -> Optional[str]:
+    pending_result: dict[str, Any]
+) -> str | None:
     """
     Create a verification prompt from a PENDING_LLM result.
 

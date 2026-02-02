@@ -1,13 +1,12 @@
 """Tests for darnit.core.discovery module."""
 
 import pytest
-from unittest.mock import patch, MagicMock
 
 from darnit.core.discovery import (
-    discover_implementations,
-    get_implementation,
-    get_default_implementation,
     clear_cache,
+    discover_implementations,
+    get_default_implementation,
+    get_implementation,
 )
 from darnit.core.plugin import ComplianceImplementation
 

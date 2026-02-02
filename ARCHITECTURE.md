@@ -438,6 +438,43 @@ This would allow integrating results from:
 
 The remediation system automatically fixes common compliance gaps based on audit failures.
 
+### Context Sieve (Progressive Detection)
+
+Before applying remediations that require context (like maintainers for CODEOWNERS), the system uses a **Context Sieve** for progressive auto-detection:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    CONTEXT SIEVE PIPELINE                        │
+├─────────────────────────────────────────────────────────────────┤
+│  Phase 1: DETERMINISTIC (conf: 0.9)                              │
+│  └─ MAINTAINERS.md, CODEOWNERS, SECURITY.md                      │
+│                     │                                            │
+│  Phase 2: HEURISTIC (conf: 0.7)                                  │
+│  └─ package.json authors, git history, README                    │
+│                     │                                            │
+│  Phase 3: API (conf: 0.6)                                        │
+│  └─ GitHub collaborators with admin/maintain access              │
+│                     │                                            │
+│  Phase 4: COMBINE                                                │
+│  └─ Aggregate signals, calculate agreement, return best value    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+| Source | Weight | Example |
+|--------|--------|---------|
+| `USER_CONFIRMED` | 1.0 | User ran `confirm_project_context()` |
+| `EXPLICIT_FILE` | 0.9 | Found in MAINTAINERS.md |
+| `PROJECT_MANIFEST` | 0.8 | Found in package.json author |
+| `GITHUB_API` | 0.7 | GitHub collaborators API |
+| `GIT_HISTORY` | 0.6 | Top git contributors |
+| `PATTERN_MATCH` | 0.5 | README author mention |
+
+**Key Components** (in `packages/darnit/src/darnit/context/`):
+- `confidence.py` - Signal weighting and confidence calculation
+- `sieve.py` - Progressive detection pipeline
+
+See [CONTEXT_SIEVE_DESIGN.md](docs/design/CONTEXT_SIEVE_DESIGN.md) for full design.
+
 ### Registry Structure
 ```python
 REMEDIATION_REGISTRY = {

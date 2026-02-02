@@ -7,24 +7,25 @@ data stores, sensitive data, and secrets.
 
 import os
 import re
-from typing import List, Dict, Any, Optional
+from typing import Any
 
 from darnit.core.logging import get_logger
+
 from .models import (
-    EntryPoint,
-    DataStore,
-    SensitiveData,
-    SecretReference,
-    AuthMechanism,
     AssetInventory,
+    AuthMechanism,
+    DataStore,
+    EntryPoint,
+    SecretReference,
+    SensitiveData,
 )
 from .patterns import (
-    FRAMEWORK_PATTERNS,
     AUTH_PATTERNS,
-    SENSITIVE_DATA_PATTERNS,
-    SECRET_PATTERNS,
     DATASTORE_PATTERNS,
+    FRAMEWORK_PATTERNS,
     INJECTION_PATTERNS,
+    SECRET_PATTERNS,
+    SENSITIVE_DATA_PATTERNS,
     SKIP_DIRECTORIES,
     SOURCE_EXTENSIONS,
 )
@@ -32,7 +33,7 @@ from .patterns import (
 logger = get_logger("threat_model.discovery")
 
 
-def detect_frameworks(local_path: str) -> List[str]:
+def detect_frameworks(local_path: str) -> list[str]:
     """Detect frameworks used in the project.
 
     Args:
@@ -52,12 +53,12 @@ def detect_frameworks(local_path: str) -> List[str]:
                 if os.path.exists(filepath):
                     if pattern:
                         try:
-                            with open(filepath, 'r', errors='ignore') as f:
+                            with open(filepath, errors='ignore') as f:
                                 content = f.read()
                                 if re.search(pattern, content):
                                     detected.append(framework)
                                     break
-                        except (IOError, OSError):
+                        except OSError:
                             pass
                     else:
                         detected.append(framework)
@@ -70,12 +71,12 @@ def detect_frameworks(local_path: str) -> List[str]:
                         if fn.endswith(SOURCE_EXTENSIONS):
                             filepath = os.path.join(root, fn)
                             try:
-                                with open(filepath, 'r', errors='ignore') as f:
+                                with open(filepath, errors='ignore') as f:
                                     content = f.read(10000)  # Read first 10KB
                                     if re.search(pattern, content):
                                         detected.append(framework)
                                         break
-                            except (IOError, OSError):
+                            except OSError:
                                 pass
                     if framework in detected:
                         break
@@ -83,7 +84,7 @@ def detect_frameworks(local_path: str) -> List[str]:
     return list(set(detected))
 
 
-def discover_entry_points(local_path: str, frameworks: List[str]) -> List[EntryPoint]:
+def discover_entry_points(local_path: str, frameworks: list[str]) -> list[EntryPoint]:
     """Discover API entry points in the codebase.
 
     Args:
@@ -107,10 +108,10 @@ def discover_entry_points(local_path: str, frameworks: List[str]) -> List[EntryP
             rel_path = os.path.relpath(filepath, local_path)
 
             try:
-                with open(filepath, 'r', errors='ignore') as f:
+                with open(filepath, errors='ignore') as f:
                     content = f.read()
                     lines = content.split('\n')
-            except (IOError, OSError):
+            except OSError:
                 continue
 
             # Check Next.js API routes
@@ -242,7 +243,7 @@ def discover_entry_points(local_path: str, frameworks: List[str]) -> List[EntryP
     return entry_points
 
 
-def discover_authentication(local_path: str) -> List[AuthMechanism]:
+def discover_authentication(local_path: str) -> list[AuthMechanism]:
     """Discover authentication mechanisms in the codebase.
 
     Args:
@@ -265,9 +266,9 @@ def discover_authentication(local_path: str) -> List[AuthMechanism]:
             rel_path = os.path.relpath(filepath, local_path)
 
             try:
-                with open(filepath, 'r', errors='ignore') as f:
+                with open(filepath, errors='ignore') as f:
                     content = f.read()
-            except (IOError, OSError):
+            except OSError:
                 continue
 
             for auth_type, config in AUTH_PATTERNS.items():
@@ -290,7 +291,7 @@ def discover_authentication(local_path: str) -> List[AuthMechanism]:
     return auth_mechanisms
 
 
-def discover_sensitive_data(local_path: str) -> List[SensitiveData]:
+def discover_sensitive_data(local_path: str) -> list[SensitiveData]:
     """Discover sensitive data fields in the codebase.
 
     Args:
@@ -313,10 +314,10 @@ def discover_sensitive_data(local_path: str) -> List[SensitiveData]:
             rel_path = os.path.relpath(filepath, local_path)
 
             try:
-                with open(filepath, 'r', errors='ignore') as f:
+                with open(filepath, errors='ignore') as f:
                     content = f.read()
                     lines = content.split('\n')
-            except (IOError, OSError):
+            except OSError:
                 continue
 
             for data_type, config in SENSITIVE_DATA_PATTERNS.items():
@@ -339,7 +340,7 @@ def discover_sensitive_data(local_path: str) -> List[SensitiveData]:
     return sensitive_data
 
 
-def discover_secrets(local_path: str) -> List[SecretReference]:
+def discover_secrets(local_path: str) -> list[SecretReference]:
     """Discover potential secrets in the codebase.
 
     Args:
@@ -367,10 +368,10 @@ def discover_secrets(local_path: str) -> List[SecretReference]:
             rel_path = os.path.relpath(filepath, local_path)
 
             try:
-                with open(filepath, 'r', errors='ignore') as f:
+                with open(filepath, errors='ignore') as f:
                     content = f.read()
                     lines = content.split('\n')
-            except (IOError, OSError):
+            except OSError:
                 continue
 
             for secret_type, config in SECRET_PATTERNS.items():
@@ -396,7 +397,7 @@ def discover_secrets(local_path: str) -> List[SecretReference]:
     return secrets
 
 
-def discover_data_stores(local_path: str) -> List[DataStore]:
+def discover_data_stores(local_path: str) -> list[DataStore]:
     """Discover data stores used in the project.
 
     Args:
@@ -420,9 +421,9 @@ def discover_data_stores(local_path: str) -> List[DataStore]:
             rel_path = os.path.relpath(filepath, local_path)
 
             try:
-                with open(filepath, 'r', errors='ignore') as f:
+                with open(filepath, errors='ignore') as f:
                     content = f.read()
-            except (IOError, OSError):
+            except OSError:
                 continue
 
             for store_name, config in DATASTORE_PATTERNS.items():
@@ -447,7 +448,7 @@ def discover_data_stores(local_path: str) -> List[DataStore]:
     return data_stores
 
 
-def discover_injection_sinks(local_path: str) -> List[Dict[str, Any]]:
+def discover_injection_sinks(local_path: str) -> list[dict[str, Any]]:
     """Discover potential injection vulnerabilities.
 
     Args:
@@ -469,10 +470,10 @@ def discover_injection_sinks(local_path: str) -> List[Dict[str, Any]]:
             rel_path = os.path.relpath(filepath, local_path)
 
             try:
-                with open(filepath, 'r', errors='ignore') as f:
+                with open(filepath, errors='ignore') as f:
                     content = f.read()
                     lines = content.split('\n')
-            except (IOError, OSError):
+            except OSError:
                 continue
 
             for injection_type, config in INJECTION_PATTERNS.items():
@@ -492,7 +493,7 @@ def discover_injection_sinks(local_path: str) -> List[Dict[str, Any]]:
     return sinks
 
 
-def discover_all_assets(local_path: str, frameworks: Optional[List[str]] = None) -> AssetInventory:
+def discover_all_assets(local_path: str, frameworks: list[str] | None = None) -> AssetInventory:
     """Discover all security-relevant assets in the codebase.
 
     Args:

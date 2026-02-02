@@ -126,10 +126,9 @@ Example:
 """
 
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # =============================================================================
 # Enums
@@ -161,7 +160,7 @@ class PythonAdapterConfig(BaseModel):
     """Configuration for Python module-based adapters."""
     type: AdapterType = AdapterType.PYTHON
     module: str  # e.g., "darnit_baseline.adapters.builtin"
-    class_name: Optional[str] = Field(default=None, alias="class")
+    class_name: str | None = Field(default=None, alias="class")
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
@@ -203,20 +202,20 @@ class HttpAdapterConfig(BaseModel):
     type: AdapterType = AdapterType.HTTP
     endpoint: str  # e.g., "https://api.example.com/check"
     method: str = "POST"
-    auth: Optional[Dict[str, str]] = None  # auth config
+    auth: dict[str, str] | None = None  # auth config
     timeout: int = 30
 
     model_config = ConfigDict(extra="allow")
 
 
 # Union of all adapter configs
-AdapterConfig = Union[
-    PythonAdapterConfig,
-    CommandAdapterConfig,
-    ScriptAdapterConfig,
-    HttpAdapterConfig,
-    Dict[str, Any],  # Fallback for simple inline definitions
-]
+AdapterConfig = (
+    PythonAdapterConfig
+    | CommandAdapterConfig
+    | ScriptAdapterConfig
+    | HttpAdapterConfig
+    | dict[str, Any]  # Fallback for simple inline definitions
+)
 
 
 # =============================================================================
@@ -226,31 +225,31 @@ AdapterConfig = Union[
 
 class DeterministicPassConfig(BaseModel):
     """Configuration for deterministic verification pass."""
-    file_must_exist: Optional[List[str]] = None
-    file_must_not_exist: Optional[List[str]] = None
-    api_check: Optional[str] = None  # Function name or "module:function"
-    config_check: Optional[str] = None  # Function name or "module:function"
+    file_must_exist: list[str] | None = None
+    file_must_not_exist: list[str] | None = None
+    api_check: str | None = None  # Function name or "module:function"
+    config_check: str | None = None  # Function name or "module:function"
 
     model_config = ConfigDict(extra="allow")
 
 
 class PatternPassConfig(BaseModel):
     """Configuration for pattern matching verification pass."""
-    files: Optional[List[str]] = None  # Files to search
-    patterns: Optional[Dict[str, str]] = None  # name -> regex pattern
+    files: list[str] | None = None  # Files to search
+    patterns: dict[str, str] | None = None  # name -> regex pattern
     pass_if_any_match: bool = Field(default=True, alias="pass_if_any")
     fail_if_no_match: bool = False
-    custom_analyzer: Optional[str] = None  # Function reference
+    custom_analyzer: str | None = None  # Function reference
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
 
 class LLMPassConfig(BaseModel):
     """Configuration for LLM-assisted verification pass."""
-    prompt: Optional[str] = None  # Inline prompt template
-    prompt_file: Optional[str] = None  # Path to prompt file
-    files_to_include: Optional[List[str]] = None
-    hints: List[str] = Field(default_factory=list, alias="analysis_hints")
+    prompt: str | None = None  # Inline prompt template
+    prompt_file: str | None = None  # Path to prompt file
+    files_to_include: list[str] | None = None
+    hints: list[str] = Field(default_factory=list, alias="analysis_hints")
     confidence_threshold: float = 0.8
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
@@ -258,8 +257,8 @@ class LLMPassConfig(BaseModel):
 
 class ManualPassConfig(BaseModel):
     """Configuration for manual verification pass."""
-    steps: List[str] = Field(default_factory=list, alias="verification_steps")
-    docs_url: Optional[str] = Field(default=None, alias="verification_docs_url")
+    steps: list[str] = Field(default_factory=list, alias="verification_steps")
+    docs_url: str | None = Field(default=None, alias="verification_docs_url")
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
@@ -286,50 +285,50 @@ class ExecPassConfig(BaseModel):
     """
     # Command as list (secure - no shell interpolation)
     # Supports $PATH, $OWNER, $REPO as whole-element substitution
-    command: List[str]
+    command: list[str]
 
     # Exit codes that indicate pass (default: [0])
-    pass_exit_codes: List[int] = Field(default_factory=lambda: [0])
+    pass_exit_codes: list[int] = Field(default_factory=lambda: [0])
 
     # Exit codes that indicate fail (all others = inconclusive)
-    fail_exit_codes: Optional[List[int]] = None
+    fail_exit_codes: list[int] | None = None
 
     # Output format for parsing (json, sarif, text)
     output_format: str = "text"
 
     # JSONPath to extract pass/fail from JSON output
-    pass_if_json_path: Optional[str] = None  # e.g., "$.status" == "pass"
-    pass_if_json_value: Optional[str] = None
+    pass_if_json_path: str | None = None  # e.g., "$.status" == "pass"
+    pass_if_json_value: str | None = None
 
     # Regex pattern to match in output for pass
-    pass_if_output_matches: Optional[str] = None
+    pass_if_output_matches: str | None = None
 
     # Regex pattern to match in output for fail
-    fail_if_output_matches: Optional[str] = None
+    fail_if_output_matches: str | None = None
 
     # Timeout in seconds
     timeout: int = 300
 
     # Working directory (default: repo path)
-    cwd: Optional[str] = None
+    cwd: str | None = None
 
     # Environment variables to set
-    env: Dict[str, str] = Field(default_factory=dict)
+    env: dict[str, str] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="allow")
 
 
 class PassesConfig(BaseModel):
     """Configuration for all verification passes of a control."""
-    deterministic: Optional[DeterministicPassConfig] = None
-    exec: Optional[ExecPassConfig] = None  # External command execution
-    pattern: Optional[PatternPassConfig] = None
-    llm: Optional[LLMPassConfig] = None
-    manual: Optional[ManualPassConfig] = None
+    deterministic: DeterministicPassConfig | None = None
+    exec: ExecPassConfig | None = None  # External command execution
+    pattern: PatternPassConfig | None = None
+    llm: LLMPassConfig | None = None
+    manual: ManualPassConfig | None = None
 
     model_config = ConfigDict(extra="allow")
 
-    def get_ordered_passes(self) -> List[tuple]:
+    def get_ordered_passes(self) -> list[tuple]:
         """Return passes in execution order: deterministic -> exec -> pattern -> llm -> manual."""
         passes = []
         if self.deterministic:
@@ -365,10 +364,10 @@ class LocatorLLMHints(BaseModel):
         ```
     """
     # Keywords to search for in the codebase
-    search_for: Optional[str] = None
+    search_for: str | None = None
 
     # Files to search within for references
-    check_files: List[str] = Field(default_factory=list)
+    check_files: list[str] = Field(default_factory=list)
 
     # Whether to look for external URLs (e.g., docs.example.com/security)
     look_for_urls: bool = False
@@ -399,11 +398,11 @@ class LocatorConfig(BaseModel):
     """
     # .project/ field reference (e.g., "security.policy", "governance.contributing")
     # Uses dot notation: section.field
-    project_path: Optional[str] = None
+    project_path: str | None = None
 
     # Discovery patterns (fallback if not in .project/)
     # Order matters: first match wins
-    discover: List[str] = Field(default_factory=list)
+    discover: list[str] = Field(default_factory=list)
 
     # Kind of evidence being located
     # - file: Local file in repository
@@ -413,7 +412,7 @@ class LocatorConfig(BaseModel):
     kind: str = "file"  # file | url | api | config
 
     # LLM hints for investigation fallback
-    llm_hints: Optional[LocatorLLMHints] = None
+    llm_hints: LocatorLLMHints | None = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -435,23 +434,23 @@ class OutputMapping(BaseModel):
         ```
     """
     # JSONPath to extract pass/fail status (bool or "pass"/"fail" string)
-    status_path: Optional[str] = None
+    status_path: str | None = None
 
     # JSONPath to extract numeric score (0-10 scale)
-    score_path: Optional[str] = None
+    score_path: str | None = None
 
     # Score threshold for pass (when using score_path)
     # If score >= pass_threshold, status = "pass"
-    pass_threshold: Optional[float] = None
+    pass_threshold: float | None = None
 
     # JSONPath to extract message/reason
-    message_path: Optional[str] = None
+    message_path: str | None = None
 
     # JSONPath to extract found evidence location (file path or URL)
-    found_path: Optional[str] = None
+    found_path: str | None = None
 
     # JSONPath to extract evidence kind (file, url, api, config)
-    found_kind_path: Optional[str] = None
+    found_kind_path: str | None = None
 
     # Default kind if not extractable
     found_kind_default: str = "file"
@@ -507,12 +506,12 @@ class CheckConfig(BaseModel):
     # the specific result from the cached tool output.
     """
     adapter: str = "builtin"  # Adapter name
-    handler: Optional[str] = None  # Specific handler function
-    config: Dict[str, Any] = Field(default_factory=dict)  # Adapter-specific config
+    handler: str | None = None  # Specific handler function
+    config: dict[str, Any] = Field(default_factory=dict)  # Adapter-specific config
 
     # Output mapping for external tools
     # Maps tool output to standardized CheckOutput contract
-    output_mapping: Optional[OutputMapping] = None
+    output_mapping: OutputMapping | None = None
 
     # TODO: extract: Optional[str] = None  # JSONPath to extract from cached tool output
 
@@ -527,10 +526,28 @@ class RemediationConfig(BaseModel):
     - file_create: Create a file from template
     - exec: Execute external command
     - api_call: Make GitHub API call
+
+    Context Requirements:
+    The requires_context field defines what context must be confirmed before
+    this remediation can run. The orchestrator checks these requirements and
+    prompts the user if needed.
+
+    Example:
+        ```toml
+        [controls."OSPS-GV-04.01".remediation]
+        handler = "create_codeowners"
+
+        [[controls."OSPS-GV-04.01".remediation.requires_context]]
+        key = "maintainers"
+        required = true
+        confidence_threshold = 0.9
+        prompt_if_auto_detected = true
+        warning = "GitHub collaborators are not necessarily project maintainers"
+        ```
     """
     # Legacy Python handler reference
     adapter: str = "builtin"
-    handler: Optional[str] = None  # e.g., "create_security_policy"
+    handler: str | None = None  # e.g., "create_security_policy"
 
     # Declarative remediation types
     file_create: Optional["FileCreateRemediationConfig"] = None
@@ -538,12 +555,16 @@ class RemediationConfig(BaseModel):
     api_call: Optional["ApiCallRemediationConfig"] = None
 
     # Common settings
-    template: Optional[str] = None  # Template name reference
+    template: str | None = None  # Template name reference
     safe: bool = True  # Safe to auto-apply without confirmation
     requires_api: bool = False  # Requires API access (GitHub, etc.)
     requires_confirmation: bool = False  # Require user confirmation
     dry_run_supported: bool = True  # Supports dry-run mode
-    config: Dict[str, Any] = Field(default_factory=dict)
+    config: dict[str, Any] = Field(default_factory=dict)
+
+    # Context requirements - checked by orchestrator before running remediation
+    # If any required context is missing or unconfirmed, user is prompted
+    requires_context: list["ContextRequirement"] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="allow")
 
@@ -565,10 +586,10 @@ class FileCreateRemediationConfig(BaseModel):
     path: str
 
     # Template to use (references templates section)
-    template: Optional[str] = None
+    template: str | None = None
 
     # Inline content (alternative to template)
-    content: Optional[str] = None
+    content: str | None = None
 
     # Whether to overwrite existing files
     overwrite: bool = False
@@ -594,22 +615,22 @@ class ExecRemediationConfig(BaseModel):
         ```
     """
     # Command as list (secure - no shell interpolation)
-    command: List[str]
+    command: list[str]
 
     # Template for stdin input (for API payloads)
-    stdin_template: Optional[str] = None
+    stdin_template: str | None = None
 
     # Inline stdin content
-    stdin: Optional[str] = None
+    stdin: str | None = None
 
     # Exit codes that indicate success
-    success_exit_codes: List[int] = Field(default_factory=lambda: [0])
+    success_exit_codes: list[int] = Field(default_factory=lambda: [0])
 
     # Timeout in seconds
     timeout: int = 300
 
     # Environment variables
-    env: Dict[str, str] = Field(default_factory=dict)
+    env: dict[str, str] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="allow")
 
@@ -635,13 +656,13 @@ class ApiCallRemediationConfig(BaseModel):
     endpoint: str
 
     # JSON payload template name
-    payload_template: Optional[str] = None
+    payload_template: str | None = None
 
     # Inline JSON payload
-    payload: Optional[Dict[str, Any]] = None
+    payload: dict[str, Any] | None = None
 
     # JQ filter for response
-    jq_filter: Optional[str] = None
+    jq_filter: str | None = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -675,13 +696,13 @@ class TemplateConfig(BaseModel):
         ```
     """
     # Template content (inline)
-    content: Optional[str] = None
+    content: str | None = None
 
     # Path to template file (alternative to inline)
-    file: Optional[str] = None
+    file: str | None = None
 
     # Description of this template
-    description: Optional[str] = None
+    description: str | None = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -724,36 +745,36 @@ class ControlConfig(BaseModel):
 
     # Optional framework-specific fields (for backward compatibility)
     # These are also copied into tags dict for uniform filtering
-    level: Optional[int] = None  # Maturity level (1, 2, 3) - None if framework doesn't use levels
-    domain: Optional[str] = None  # Domain code (e.g., "AC", "VM") - None if not applicable
-    security_severity: Optional[float] = None  # 0.0-10.0 CVSS-like - None if not applicable
+    level: int | None = None  # Maturity level (1, 2, 3) - None if framework doesn't use levels
+    domain: str | None = None  # Domain code (e.g., "AC", "VM") - None if not applicable
+    security_severity: float | None = None  # 0.0-10.0 CVSS-like - None if not applicable
 
     # Evidence location configuration
     # Defines where to find the artifact that satisfies this control
-    locator: Optional[LocatorConfig] = None
+    locator: LocatorConfig | None = None
 
     # Verification passes
-    passes: Optional[PassesConfig] = None
+    passes: PassesConfig | None = None
 
     # Check routing (which adapter verifies this control)
-    check: Optional[CheckConfig] = None
+    check: CheckConfig | None = None
 
     # Remediation routing
-    remediation: Optional[RemediationConfig] = None
+    remediation: RemediationConfig | None = None
 
     # Flexible key-value tags for filtering and metadata
     # Can include any attributes: level, domain, severity, category, priority, etc.
     # For backward compatibility, also accepts List[str] which converts to Dict[str, bool]
-    tags: Dict[str, Any] = Field(default_factory=dict)
-    help_md: Optional[str] = None  # Inline markdown help
-    help_file: Optional[str] = None  # Path to help markdown file
-    docs_url: Optional[str] = None  # Link to external docs
+    tags: dict[str, Any] = Field(default_factory=dict)
+    help_md: str | None = None  # Inline markdown help
+    help_file: str | None = None  # Path to help markdown file
+    docs_url: str | None = None  # Link to external docs
 
     model_config = ConfigDict(extra="allow")
 
     @field_validator("tags", mode="before")
     @classmethod
-    def convert_tags_list_to_dict(cls, v: Any) -> Dict[str, Any]:
+    def convert_tags_list_to_dict(cls, v: Any) -> dict[str, Any]:
         """Convert List[str] tags to Dict[str, bool] for backward compatibility.
 
         Allows both formats:
@@ -761,10 +782,196 @@ class ControlConfig(BaseModel):
             tags = { level = 1, category = "auth" }  # New format (preferred)
         """
         if isinstance(v, list):
-            return {tag: True for tag in v}
+            return dict.fromkeys(v, True)
         if v is None:
             return {}
         return v
+
+
+# =============================================================================
+# Context Configuration (Interactive Context Collection)
+# =============================================================================
+
+
+class ContextDefinitionConfig(BaseModel):
+    """Configuration for a context key from TOML [context.key] section.
+
+    Defines how a context key should be prompted, validated, and stored.
+    This enables declarative context prompts instead of hardcoded Python dicts.
+
+    Example:
+        ```toml
+        [context.maintainers]
+        type = "list_or_path"
+        prompt = "Who are the project maintainers?"
+        hint = "Provide GitHub usernames or path to MAINTAINERS.md"
+        examples = ["@user1, @user2", "MAINTAINERS.md"]
+        affects = ["OSPS-GV-01.01", "OSPS-GV-01.02", "OSPS-GV-04.01"]
+        store_as = "governance.maintainers"
+        auto_detect = false
+        required = false
+        ```
+    """
+    # Type of the context value (for validation)
+    type: str  # boolean, string, enum, list, path, list_or_path, email, url
+
+    # The question to ask the user
+    prompt: str
+
+    # Additional hint to help the user
+    hint: str | None = None
+
+    # Example values to show the user
+    examples: list[str] = Field(default_factory=list)
+
+    # For enum type - the allowed values
+    values: list[str] | None = None
+
+    # Control IDs that are affected by this context
+    affects: list[str] = Field(default_factory=list)
+
+    # Where to store in .project/ (e.g., "governance.maintainers")
+    store_as: str | None = None
+
+    # Whether this can be auto-detected from repo structure
+    auto_detect: bool = False
+
+    # Method to use for auto-detection (e.g., "github_collaborators")
+    auto_detect_method: str | None = None
+
+    # Whether this context is required for accurate audit
+    required: bool = False
+
+    model_config = ConfigDict(extra="allow")
+
+
+class ContextRequirement(BaseModel):
+    """Defines when context needs user confirmation before remediation.
+
+    This model enables TOML-driven context requirements for remediations.
+    Instead of hardcoding confirmation logic in each remediation function,
+    requirements are declared in TOML and the orchestrator handles prompting.
+
+    Example TOML:
+        ```toml
+        [controls."OSPS-GV-04.01".remediation]
+        handler = "create_codeowners"
+
+        [[controls."OSPS-GV-04.01".remediation.requires_context]]
+        key = "maintainers"
+        required = true
+        confidence_threshold = 0.9
+        prompt_if_auto_detected = true
+        warning = "GitHub collaborators are not necessarily project maintainers"
+        ```
+
+    The orchestrator checks these requirements before running the remediation:
+    1. If context is missing → prompt user
+    2. If context is AUTO_DETECTED and prompt_if_auto_detected → prompt user
+    3. If context confidence < threshold → prompt user
+    4. Otherwise → proceed with remediation
+    """
+    # Context key name (e.g., "maintainers", "has_releases")
+    key: str
+
+    # Whether this context MUST be confirmed to proceed
+    # If False, remediation can proceed without but may use defaults
+    required: bool = True
+
+    # Confidence threshold (0.0-1.0)
+    # Values with confidence below this trigger a prompt
+    confidence_threshold: float = 0.9
+
+    # Whether to prompt even if value was auto-detected
+    # True = always ask user to confirm auto-detected values
+    # False = trust auto-detection if confidence >= threshold
+    prompt_if_auto_detected: bool = True
+
+    # Warning message shown when prompting
+    # Explains why confirmation is needed
+    warning: str | None = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class FrameworkContextConfig(BaseModel):
+    """Container for all context definitions from [context] section.
+
+    Groups all context key definitions together. Each key in the context
+    section becomes a ContextDefinitionConfig.
+
+    Example TOML:
+        ```toml
+        [context]
+        # Context definitions follow
+
+        [context.has_releases]
+        type = "boolean"
+        prompt = "Does this project make releases?"
+        affects = ["OSPS-BR-02.01"]
+
+        [context.maintainers]
+        type = "list_or_path"
+        prompt = "Who are the maintainers?"
+        affects = ["OSPS-GV-01.01"]
+        ```
+    """
+    # Dictionary of context key -> definition
+    # This is populated by the TOML loader from [context.key] sections
+    definitions: dict[str, ContextDefinitionConfig] = Field(default_factory=dict)
+
+    model_config = ConfigDict(extra="allow")
+
+    @model_validator(mode="before")
+    @classmethod
+    def transform_toml_structure(cls, data: Any) -> Any:
+        """Transform TOML [context.key] structure to {definitions: {key: ...}}.
+
+        TOML structure:
+            [context.maintainers]
+            type = "list_or_path"
+            ...
+
+        Gets parsed as:
+            {"maintainers": {"type": "list_or_path", ...}}
+
+        We transform to:
+            {"definitions": {"maintainers": {"type": "list_or_path", ...}}}
+        """
+        if isinstance(data, dict):
+            # If 'definitions' already exists, pass through as-is
+            if "definitions" in data:
+                return data
+
+            # Otherwise, treat all keys as context definitions
+            # (except known metadata keys if any)
+            definitions = {}
+            for key, value in data.items():
+                # Each context key should have a 'type' field
+                if isinstance(value, dict) and "type" in value:
+                    definitions[key] = value
+            if definitions:
+                return {"definitions": definitions}
+        return data
+
+    def get_definition(self, key: str) -> ContextDefinitionConfig | None:
+        """Get the definition for a context key."""
+        return self.definitions.get(key)
+
+    def get_definitions_for_control(self, control_id: str) -> dict[str, ContextDefinitionConfig]:
+        """Get all context definitions that affect a specific control."""
+        return {
+            key: defn
+            for key, defn in self.definitions.items()
+            if control_id in defn.affects
+        }
+
+    def get_all_affected_controls(self) -> set:
+        """Get all control IDs that are affected by context."""
+        controls: set = set()
+        for defn in self.definitions.values():
+            controls.update(defn.affects)
+        return controls
 
 
 # =============================================================================
@@ -802,9 +1009,9 @@ class FrameworkMetadata(BaseModel):
     display_name: str  # e.g., "OpenSSF Baseline"
     version: str  # e.g., "0.1.0"
     schema_version: str = "0.1.0-alpha"  # TOML config format version
-    spec_version: Optional[str] = None  # e.g., "OSPS v2025.10.10"
-    description: Optional[str] = None
-    url: Optional[str] = None  # Link to spec
+    spec_version: str | None = None  # e.g., "OSPS v2025.10.10"
+    description: str | None = None
+    url: str | None = None  # Link to spec
 
     model_config = ConfigDict(extra="allow")
 
@@ -854,16 +1061,19 @@ class FrameworkConfig(BaseModel):
     defaults: FrameworkDefaults = Field(default_factory=FrameworkDefaults)
 
     # Adapter definitions
-    adapters: Dict[str, AdapterConfig] = Field(default_factory=dict)
+    adapters: dict[str, AdapterConfig] = Field(default_factory=dict)
 
     # Template definitions for remediation
-    templates: Dict[str, TemplateConfig] = Field(default_factory=dict)
+    templates: dict[str, TemplateConfig] = Field(default_factory=dict)
 
     # Control definitions
-    controls: Dict[str, ControlConfig] = Field(default_factory=dict)
+    controls: dict[str, ControlConfig] = Field(default_factory=dict)
 
     # Control groups (for batch configuration)
-    control_groups: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    control_groups: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
+    # Context definitions (for interactive context collection)
+    context: FrameworkContextConfig = Field(default_factory=FrameworkContextConfig)
 
     model_config = ConfigDict(extra="allow")
 
@@ -871,7 +1081,7 @@ class FrameworkConfig(BaseModel):
     # Convenience Methods
     # =========================================================================
 
-    def get_controls_by_level(self, level: int) -> Dict[str, ControlConfig]:
+    def get_controls_by_level(self, level: int) -> dict[str, ControlConfig]:
         """Get all controls at a specific maturity level.
 
         Note: Controls without a level (level=None) are not included.
@@ -882,7 +1092,7 @@ class FrameworkConfig(BaseModel):
             if control.level == level
         }
 
-    def get_controls_by_domain(self, domain: str) -> Dict[str, ControlConfig]:
+    def get_controls_by_domain(self, domain: str) -> dict[str, ControlConfig]:
         """Get all controls in a specific domain.
 
         Note: Controls without a domain (domain=None) are not included.
@@ -893,7 +1103,7 @@ class FrameworkConfig(BaseModel):
             if control.domain == domain
         }
 
-    def get_adapter_config(self, name: str) -> Optional[AdapterConfig]:
+    def get_adapter_config(self, name: str) -> AdapterConfig | None:
         """Get adapter configuration by name."""
         return self.adapters.get(name)
 
@@ -921,7 +1131,7 @@ def create_framework_config(
     name: str,
     display_name: str,
     version: str = "0.1.0",
-    spec_version: Optional[str] = None,
+    spec_version: str | None = None,
 ) -> FrameworkConfig:
     """Create a minimal framework configuration.
 

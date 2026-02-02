@@ -1,17 +1,18 @@
 """Control registry with sieve-enabled control definitions."""
 
-from typing import Dict, Optional, List, Callable
-import subprocess
 import json
+import subprocess
+from collections.abc import Callable
 
 from darnit.core.logging import get_logger
+
 from .models import (
     ControlSpec,
-    VerificationPhase,
-    PassResult,
     PassOutcome,
+    PassResult,
+    VerificationPhase,
 )
-from .passes import DeterministicPass, PatternPass, LLMPass, ManualPass
+from .passes import DeterministicPass, LLMPass, ManualPass, PatternPass
 
 logger = get_logger("sieve.registry")
 
@@ -20,8 +21,8 @@ class ControlRegistry:
     """Registry of controls with sieve verification definitions."""
 
     def __init__(self):
-        self._specs: Dict[str, ControlSpec] = {}
-        self._legacy_checks: Dict[str, Callable] = {}
+        self._specs: dict[str, ControlSpec] = {}
+        self._legacy_checks: dict[str, Callable] = {}
 
     def register(self, spec: ControlSpec, overwrite: bool = False) -> bool:
         """Register a control specification.
@@ -44,7 +45,7 @@ class ControlRegistry:
         """Register a legacy check function for gradual migration."""
         self._legacy_checks[control_id] = check_fn
 
-    def get(self, control_id: str) -> Optional[ControlSpec]:
+    def get(self, control_id: str) -> ControlSpec | None:
         """Get control specification by ID."""
         return self._specs.get(control_id)
 
@@ -56,27 +57,27 @@ class ControlRegistry:
         """Check if control has legacy check."""
         return control_id in self._legacy_checks
 
-    def get_legacy(self, control_id: str) -> Optional[Callable]:
+    def get_legacy(self, control_id: str) -> Callable | None:
         """Get legacy check function."""
         return self._legacy_checks.get(control_id)
 
-    def list_sieve_controls(self) -> List[str]:
+    def list_sieve_controls(self) -> list[str]:
         """List all controls with sieve definitions."""
         return list(self._specs.keys())
 
-    def list_legacy_controls(self) -> List[str]:
+    def list_legacy_controls(self) -> list[str]:
         """List all controls with legacy checks."""
         return list(self._legacy_checks.keys())
 
-    def get_all_specs(self) -> List[ControlSpec]:
+    def get_all_specs(self) -> list[ControlSpec]:
         """Get all registered control specifications."""
         return list(self._specs.values())
 
-    def get_specs_by_level(self, level: int) -> List[ControlSpec]:
+    def get_specs_by_level(self, level: int) -> list[ControlSpec]:
         """Get control specifications for a specific level."""
         return [s for s in self._specs.values() if s.level == level]
 
-    def get_specs_by_domain(self, domain: str) -> List[ControlSpec]:
+    def get_specs_by_domain(self, domain: str) -> list[ControlSpec]:
         """Get control specifications for a specific domain."""
         return [s for s in self._specs.values() if s.domain == domain]
 
@@ -104,7 +105,7 @@ def register_control(spec: ControlSpec) -> bool:
 # ============================================================================
 
 
-def _gh_api(endpoint: str) -> Optional[Dict]:
+def _gh_api(endpoint: str) -> dict | None:
     """Call GitHub API via gh CLI. Returns None on error."""
     try:
         result = subprocess.run(
@@ -168,7 +169,7 @@ def create_branch_protection_check() -> Callable[[str, str], PassResult]:
                 return PassResult(
                     phase=VerificationPhase.DETERMINISTIC,
                     outcome=PassOutcome.FAIL,
-                    message=f"Branch protection exists but doesn't prevent direct commits",
+                    message="Branch protection exists but doesn't prevent direct commits",
                     evidence={"branch": default_branch, "protection": protection},
                 )
 
@@ -241,7 +242,7 @@ def create_mfa_check() -> Callable[[str, str], PassResult]:
 # ============================================================================
 
 
-def _get_rule_metadata(control_id: str) -> Dict:
+def _get_rule_metadata(control_id: str) -> dict:
     """Try to get rule metadata from rules catalog."""
     try:
         from darnit.formatters.rules_catalog import get_rule

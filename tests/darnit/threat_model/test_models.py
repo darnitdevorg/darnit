@@ -3,17 +3,17 @@
 import pytest
 
 from darnit.threat_model.models import (
-    StrideCategory,
-    RiskLevel,
-    CodeLocation,
-    EntryPoint,
-    DataStore,
-    SensitiveData,
-    SecretReference,
-    AuthMechanism,
-    RiskScore,
-    Threat,
     AssetInventory,
+    AuthMechanism,
+    CodeLocation,
+    DataStore,
+    EntryPoint,
+    RiskLevel,
+    RiskScore,
+    SecretReference,
+    SensitiveData,
+    StrideCategory,
+    Threat,
     ThreatAnalysis,
 )
 

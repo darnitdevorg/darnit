@@ -4,8 +4,6 @@ This module discovers installed compliance implementations via Python entry poin
 Implementations register under the 'darnit.implementations' group.
 """
 
-import sys
-from typing import Dict, Optional
 
 from .logging import get_logger
 from .plugin import ComplianceImplementation
@@ -13,10 +11,10 @@ from .plugin import ComplianceImplementation
 logger = get_logger("core.discovery")
 
 # Cache for discovered implementations
-_implementations: Optional[Dict[str, ComplianceImplementation]] = None
+_implementations: dict[str, ComplianceImplementation] | None = None
 
 
-def discover_implementations() -> Dict[str, ComplianceImplementation]:
+def discover_implementations() -> dict[str, ComplianceImplementation]:
     """Discover all installed compliance implementations.
 
     Implementations are discovered via Python entry points registered under
@@ -39,16 +37,8 @@ def discover_implementations() -> Dict[str, ComplianceImplementation]:
     _implementations = {}
 
     # Use importlib.metadata for Python 3.9+
-    if sys.version_info >= (3, 10):
-        from importlib.metadata import entry_points
-        eps = entry_points(group="darnit.implementations")
-    else:
-        from importlib.metadata import entry_points
-        all_eps = entry_points()
-        if hasattr(all_eps, "select"):
-            eps = all_eps.select(group="darnit.implementations")
-        else:
-            eps = all_eps.get("darnit.implementations", [])
+    from importlib.metadata import entry_points
+    eps = entry_points(group="darnit.implementations")
 
     for ep in eps:
         try:
@@ -72,7 +62,7 @@ def discover_implementations() -> Dict[str, ComplianceImplementation]:
     return _implementations
 
 
-def get_implementation(name: str) -> Optional[ComplianceImplementation]:
+def get_implementation(name: str) -> ComplianceImplementation | None:
     """Get a specific implementation by name.
 
     Args:
@@ -85,7 +75,7 @@ def get_implementation(name: str) -> Optional[ComplianceImplementation]:
     return implementations.get(name)
 
 
-def get_default_implementation() -> Optional[ComplianceImplementation]:
+def get_default_implementation() -> ComplianceImplementation | None:
     """Get the default implementation.
 
     Returns the first discovered implementation, preferring 'openssf-baseline'

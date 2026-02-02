@@ -5,14 +5,13 @@ needed for building attestation subjects and predicates.
 """
 
 import subprocess
-from typing import Optional
 
 from darnit.core.logging import get_logger
 
 logger = get_logger("attestation.git")
 
 
-def get_git_commit(local_path: str) -> Optional[str]:
+def get_git_commit(local_path: str) -> str | None:
     """Get the current git commit SHA.
 
     Args:
@@ -35,7 +34,7 @@ def get_git_commit(local_path: str) -> Optional[str]:
     return None
 
 
-def get_git_ref(local_path: str) -> Optional[str]:
+def get_git_ref(local_path: str) -> str | None:
     """Get the current git ref (branch or tag).
 
     Args:

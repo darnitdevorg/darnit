@@ -1,17 +1,14 @@
 """Tests for config-aware file resolution."""
 
-import os
 import pytest
-from pathlib import Path
 
 from darnit.config.loader import clear_config_cache, save_project_config
-from darnit.config.schema import create_minimal_config, PathRef, SecurityConfig
 from darnit.config.resolver import (
     resolve_file_for_control,
-    update_config_after_file_create,
     sync_discovered_file_to_config,
+    update_config_after_file_create,
 )
-
+from darnit.config.schema import PathRef, SecurityConfig, create_minimal_config
 
 # Test mappings (subset of the real mappings for testing)
 TEST_CONTROL_REFERENCE_MAPPING = {

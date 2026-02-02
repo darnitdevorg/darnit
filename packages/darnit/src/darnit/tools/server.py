@@ -4,9 +4,9 @@ This module provides the MCP server instance and registration functions
 for organizing tool implementations across multiple modules.
 """
 
-from typing import Callable, List, Optional
-from mcp.server.fastmcp import FastMCP
+from collections.abc import Callable
 
+from mcp.server.fastmcp import FastMCP
 
 # Server name and version
 SERVER_NAME = "Darnit Compliance Framework"
@@ -26,7 +26,7 @@ def create_server(name: str = SERVER_NAME) -> FastMCP:
 
 
 # Default server instance for module-level registration
-_default_server: Optional[FastMCP] = None
+_default_server: FastMCP | None = None
 
 
 def get_server() -> FastMCP:
@@ -56,7 +56,7 @@ def register_tool(server: FastMCP, func: Callable) -> Callable:
     return server.tool()(func)
 
 
-def register_tools(server: FastMCP, tools: List[Callable]) -> None:
+def register_tools(server: FastMCP, tools: list[Callable]) -> None:
     """Register multiple functions as MCP tools.
 
     Args:

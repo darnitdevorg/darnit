@@ -1,29 +1,26 @@
 """OSPS-specific configuration mappings for OpenSSF Baseline."""
 
-from typing import Dict, List, Set
-
-# Re-export from darnit.config.schema for convenience
-from darnit.config.schema import (
-    ProjectType,
-    ProjectConfig,
-    ControlOverride,
-    ControlStatusValue,
-    PathRef,
-    BaselineExtension,
-)
 
 # Re-export legacy ResourceReference for backward compatibility
-from darnit.config import ResourceReference
-
 # Also re-export discovery utilities
 from darnit.config import (
+    ResourceReference,
     discover_files,
     sync_discovered_to_config,
 )
 
+# Re-export from darnit.config.schema for convenience
+from darnit.config.schema import (
+    BaselineExtension,
+    ControlOverride,
+    ControlStatusValue,
+    PathRef,
+    ProjectConfig,
+    ProjectType,
+)
 
 # Controls excluded by default for each project type
-PROJECT_TYPE_EXCLUSIONS: Dict[str, Set[str]] = {
+PROJECT_TYPE_EXCLUSIONS: dict[str, set[str]] = {
     "software": set(),  # All controls apply
 
     "specification": {
@@ -58,7 +55,7 @@ PROJECT_TYPE_EXCLUSIONS: Dict[str, Set[str]] = {
 
 # Mapping of OSPS controls to .project.yaml reference paths
 # Format: "section.field" - resolver will check both standard and extension sections
-CONTROL_REFERENCE_MAPPING: Dict[str, str] = {
+CONTROL_REFERENCE_MAPPING: dict[str, str] = {
     # Security (standard .project fields)
     # SECURITY.md addresses multiple controls (VM and DO domains)
     "OSPS-VM-01.01": "security.policy",           # SECURITY.md - vulnerability reporting contact
@@ -100,7 +97,7 @@ CONTROL_REFERENCE_MAPPING: Dict[str, str] = {
 
 # Default file locations for discovery
 # These are used when no .project.yaml exists to auto-discover files
-DEFAULT_FILE_LOCATIONS: Dict[str, List[str]] = {
+DEFAULT_FILE_LOCATIONS: dict[str, list[str]] = {
     # Security documentation
     "security.policy": [
         "SECURITY.md", "security.md", ".github/SECURITY.md",

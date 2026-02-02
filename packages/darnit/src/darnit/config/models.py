@@ -7,47 +7,47 @@ import warnings
 
 # Re-export everything from schema
 from .schema import (
-    # Enums
-    ProjectType,
-    ControlStatusValue,
-    ContributorAgreementType,
-    SBOMFormat,
-    SigningMethod,
-    ProvenanceFormat,
-    # Reference types
-    PathRef,
-    UrlRef,
-    RepoRef,
-    SectionRef,
-    NARef,
-    ResourceRef,
-    parse_resource_ref,
-    get_path_from_ref,
-    # CNCF standard
-    MaturityEntry,
+    ArtifactConfig,
+    ArtifactsConfig,
     Audit,
-    SecurityConfig,
-    GovernanceConfig,
-    LegalConfig,
-    DocumentationConfig,
+    BaselineExtension,
+    CIConfig,
+    ContributorAgreementConfig,
+    ContributorAgreementType,
     # Baseline extension
     ControlOverride,
-    ArtifactConfig,
-    ContributorAgreementConfig,
-    CIConfig,
-    ProjectContext,
+    ControlStatusValue,
+    DependenciesConfig,
+    DocumentationConfig,
     ExtendedGovernance,
+    ExtendedLegal,
     ExtendedQuality,
     ExtendedSecurity,
-    ExtendedLegal,
-    DependenciesConfig,
-    ArtifactsConfig,
-    BaselineExtension,
+    GovernanceConfig,
+    LegalConfig,
+    # CNCF standard
+    MaturityEntry,
+    NARef,
+    # Reference types
+    PathRef,
     # Main config
     ProjectConfig,
+    ProjectContext,
+    # Enums
+    ProjectType,
+    ProvenanceFormat,
+    RepoRef,
+    ResourceRef,
+    SBOMFormat,
+    SectionRef,
+    SecurityConfig,
+    SigningMethod,
+    UrlRef,
+    create_full_config,
     # Factory functions
     create_minimal_config,
-    create_full_config,
+    get_path_from_ref,
+    parse_resource_ref,
 )
 
 

@@ -6,21 +6,21 @@ Level 1 represents the baseline security requirements for open source projects.
 import glob as glob_module
 import os
 import re
-from typing import Dict, List
 
 from darnit.core.logging import get_logger
+
 from .constants import (
-    OSI_LICENSES,
     BINARY_EXTENSIONS,
     DANGEROUS_CONTEXTS,
     DANGEROUS_SECRET_FILES,
     DEPENDENCY_FILES,
+    OSI_LICENSES,
 )
 from .helpers import (
+    file_contains,
+    file_exists,
     gh_api,
     gh_api_safe,
-    file_exists,
-    file_contains,
     read_file,
     result,
 )
@@ -30,7 +30,7 @@ logger = get_logger("checks.level1")
 
 def check_level1_access_control(
     owner: str, repo: str, local_path: str, default_branch: str
-) -> List[Dict]:
+) -> list[dict]:
     """Check Level 1 Access Control requirements."""
     results = []
 
@@ -84,7 +84,7 @@ def check_level1_access_control(
         if protection.get("required_pull_request_reviews") or protection.get("restrictions"):
             results.append(result("OSPS-AC-03.01", "PASS", f"Direct commits to '{default_branch}' are restricted."))
         else:
-            results.append(result("OSPS-AC-03.01", "FAIL", f"Branch protection exists but doesn't prevent direct commits."))
+            results.append(result("OSPS-AC-03.01", "FAIL", "Branch protection exists but doesn't prevent direct commits."))
     except RuntimeError as e:
         if "404" in str(e):
             results.append(result("OSPS-AC-03.01", "FAIL", f"Branch '{default_branch}' is not protected."))
@@ -107,7 +107,7 @@ def check_level1_access_control(
     return results
 
 
-def check_level1_build_release(owner: str, repo: str, local_path: str) -> List[Dict]:
+def check_level1_build_release(owner: str, repo: str, local_path: str) -> list[dict]:
     """Check Level 1 Build & Release requirements."""
     results = []
     workflow_dir = os.path.join(local_path, ".github", "workflows")
@@ -123,7 +123,7 @@ def check_level1_build_release(owner: str, repo: str, local_path: str) -> List[D
                 if file.endswith(('.yml', '.yaml')):
                     filepath = os.path.join(root, file)
                     try:
-                        with open(filepath, 'r') as f:
+                        with open(filepath) as f:
                             content = f.read()
                             lines = content.splitlines()
 
@@ -152,7 +152,7 @@ def check_level1_build_release(owner: str, repo: str, local_path: str) -> List[D
                                 if "github.head_ref" in line or "github.ref_name" in line:
                                     branch_name_risks.append(f"{file}:{i+1}")
 
-                    except (IOError, OSError) as e:
+                    except OSError as e:
                         logger.debug(f"Could not read workflow {filepath}: {type(e).__name__}")
                         continue
 
@@ -214,7 +214,7 @@ def check_level1_build_release(owner: str, repo: str, local_path: str) -> List[D
     return results
 
 
-def check_level1_documentation(owner: str, repo: str, local_path: str) -> List[Dict]:
+def check_level1_documentation(owner: str, repo: str, local_path: str) -> list[dict]:
     """Check Level 1 Documentation requirements."""
     results = []
 
@@ -250,7 +250,7 @@ def check_level1_documentation(owner: str, repo: str, local_path: str) -> List[D
     return results
 
 
-def check_level1_governance(owner: str, repo: str, local_path: str) -> List[Dict]:
+def check_level1_governance(owner: str, repo: str, local_path: str) -> list[dict]:
     """Check Level 1 Governance requirements."""
     results = []
 
@@ -301,7 +301,7 @@ def check_level1_governance(owner: str, repo: str, local_path: str) -> List[Dict
     return results
 
 
-def check_level1_legal(owner: str, repo: str, local_path: str) -> List[Dict]:
+def check_level1_legal(owner: str, repo: str, local_path: str) -> list[dict]:
     """Check Level 1 Legal requirements."""
     results = []
 
@@ -386,7 +386,7 @@ def check_level1_legal(owner: str, repo: str, local_path: str) -> List[Dict]:
     return results
 
 
-def check_level1_quality(owner: str, repo: str, local_path: str) -> List[Dict]:
+def check_level1_quality(owner: str, repo: str, local_path: str) -> list[dict]:
     """Check Level 1 Quality Assurance requirements."""
     results = []
 
@@ -446,7 +446,7 @@ def check_level1_quality(owner: str, repo: str, local_path: str) -> List[Dict]:
     return results
 
 
-def check_level1_vulnerability(owner: str, repo: str, local_path: str) -> List[Dict]:
+def check_level1_vulnerability(owner: str, repo: str, local_path: str) -> list[dict]:
     """Check Level 1 Vulnerability Management requirements."""
     results = []
 
@@ -485,7 +485,7 @@ def check_level1_vulnerability(owner: str, repo: str, local_path: str) -> List[D
 
 def run_all_level1_checks(
     owner: str, repo: str, local_path: str, default_branch: str
-) -> List[Dict]:
+) -> list[dict]:
     """Run all Level 1 checks and return combined results."""
     results = []
     results.extend(check_level1_access_control(owner, repo, local_path, default_branch))

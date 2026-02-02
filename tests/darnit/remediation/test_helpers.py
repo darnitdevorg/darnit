@@ -1,18 +1,17 @@
 """Tests for darnit.remediation.helpers module."""
 
-import os
 from pathlib import Path
 
 import pytest
 
 from darnit.remediation.helpers import (
-    ensure_directory,
-    write_file_safe,
     check_file_exists,
     detect_workflow_checks,
-    format_success,
+    ensure_directory,
     format_error,
+    format_success,
     format_warning,
+    write_file_safe,
 )
 
 

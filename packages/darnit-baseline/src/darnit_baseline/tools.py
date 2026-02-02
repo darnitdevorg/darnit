@@ -10,15 +10,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional, Union, List
 
 
 def audit_openssf_baseline(
-    owner: Optional[str] = None,
-    repo: Optional[str] = None,
+    owner: str | None = None,
+    repo: str | None = None,
     local_path: str = ".",
     level: int = 3,
-    tags: Optional[Union[str, List[str]]] = None,
+    tags: str | list[str] | None = None,
     output_format: str = "markdown",
     auto_init_config: bool = True,
     attest: bool = False,
@@ -52,11 +51,11 @@ def audit_openssf_baseline(
         Formatted audit report with compliance status and remediation instructions
     """
     from darnit.config import (
-        load_effective_config_by_name,
         load_controls_from_effective,
+        load_effective_config_by_name,
     )
-    from darnit.filtering import parse_tags_arg, filter_controls
-    from darnit.sieve import SieveOrchestrator, CheckContext
+    from darnit.filtering import filter_controls, parse_tags_arg
+    from darnit.sieve import CheckContext, SieveOrchestrator
     from darnit.tools.audit import format_results_markdown
 
     # Resolve path
@@ -140,6 +139,7 @@ def audit_openssf_baseline(
             summary=summary,
             compliance={},
             level=level,
+            local_path=str(repo_path),
         )
 
 
@@ -183,7 +183,8 @@ def get_project_config(local_path: str = ".") -> str:
     Returns:
         Current configuration or instructions to create one
     """
-    from darnit.config import get_project_config as _get_config, config_exists
+    from darnit.config import config_exists
+    from darnit.config import get_project_config as _get_config
 
     repo_path = Path(local_path).resolve()
 
@@ -204,8 +205,8 @@ def get_project_config(local_path: str = ".") -> str:
 
 
 def create_security_policy(
-    owner: Optional[str] = None,
-    repo: Optional[str] = None,
+    owner: str | None = None,
+    repo: str | None = None,
     local_path: str = ".",
     template: str = "standard",
 ) -> str:
@@ -245,14 +246,14 @@ def create_security_policy(
 
 
 def enable_branch_protection(
-    owner: Optional[str] = None,
-    repo: Optional[str] = None,
+    owner: str | None = None,
+    repo: str | None = None,
     branch: str = "main",
     required_approvals: int = 1,
     enforce_admins: bool = True,
     require_pull_request: bool = True,
     require_status_checks: bool = False,
-    status_checks: Optional[list] = None,
+    status_checks: list | None = None,
     local_path: str = ".",
     dry_run: bool = False,
 ) -> str:
@@ -309,7 +310,7 @@ def enable_branch_protection(
 
 def init_project_config(
     local_path: str = ".",
-    project_name: Optional[str] = None,
+    project_name: str | None = None,
     project_type: str = "software",
 ) -> str:
     """
@@ -325,7 +326,8 @@ def init_project_config(
     Returns:
         Success message with created configuration
     """
-    from darnit.config import init_project_config as _init, config_exists
+    from darnit.config import config_exists
+    from darnit.config import init_project_config as _init
 
     repo_path = Path(local_path).resolve()
 
@@ -341,11 +343,15 @@ def init_project_config(
 
 def confirm_project_context(
     local_path: str = ".",
-    has_subprojects: Optional[bool] = None,
-    has_releases: Optional[bool] = None,
-    is_library: Optional[bool] = None,
-    has_compiled_assets: Optional[bool] = None,
-    ci_provider: Optional[str] = None,
+    has_subprojects: bool | None = None,
+    has_releases: bool | None = None,
+    is_library: bool | None = None,
+    has_compiled_assets: bool | None = None,
+    ci_provider: str | None = None,
+    # New governance and security context
+    maintainers: list[str] | str | None = None,
+    security_contact: str | None = None,
+    governance_model: str | None = None,
 ) -> str:
     """
     Record user-confirmed project context in .project.yaml.
@@ -359,6 +365,9 @@ def confirm_project_context(
         is_library: Is this a library/framework consumed by other projects?
         has_compiled_assets: Does this project release compiled binaries?
         ci_provider: CI/CD system (github, gitlab, jenkins, circleci, azure, travis, none, other)
+        maintainers: Project maintainers - list of GitHub usernames or path to MAINTAINERS file
+        security_contact: Security contact for vulnerability reports (email, URL, or file reference)
+        governance_model: Governance model (bdfl, meritocracy, democracy, corporate, foundation, committee, other)
 
     Returns:
         Confirmation of what was recorded
@@ -372,7 +381,161 @@ def confirm_project_context(
         is_library=is_library,
         has_compiled_assets=has_compiled_assets,
         ci_provider=ci_provider,
+        maintainers=maintainers,
+        security_contact=security_contact,
+        governance_model=governance_model,
     )
+
+
+def get_pending_context(
+    local_path: str = ".",
+    control_ids: list[str] | None = None,
+    level: int = 3,
+    owner: str | None = None,
+    repo: str | None = None,
+) -> str:
+    """
+    Get context values that would improve audit accuracy.
+
+    Returns information about context that hasn't been confirmed yet,
+    organized by priority (number of controls affected). For context keys
+    with auto-detection enabled, shows auto-detected values for user confirmation.
+
+    Args:
+        local_path: Path to the repository
+        control_ids: Optional list of control IDs to check (default: all applicable)
+        level: Maximum level to consider (1, 2, or 3)
+        owner: GitHub owner (auto-detected from git if not provided)
+        repo: GitHub repo name (auto-detected from git if not provided)
+
+    Returns:
+        Markdown-formatted list of pending context with prompts, hints, and examples
+    """
+    from darnit.config.context_storage import get_pending_context as _get_pending
+
+    repo_path = Path(local_path).resolve()
+
+    # Auto-detect owner/repo from git
+    if owner is None or repo is None:
+        detected_owner, detected_repo = _detect_owner_repo(repo_path)
+        owner = owner or detected_owner
+        repo = repo or detected_repo
+
+    try:
+        pending = _get_pending(
+            str(repo_path),
+            control_ids=control_ids,
+            level=level,
+            owner=owner,
+            repo=repo,
+        )
+
+        if not pending:
+            return """✅ All context has been confirmed!
+
+No additional context is needed to improve audit accuracy.
+"""
+
+        # Build markdown output
+        lines = [
+            "# 🤔 Pending Context",
+            "",
+            "The following information would help verify additional controls:",
+            "",
+        ]
+
+        # Group by priority
+        high_priority = [p for p in pending if p.priority >= 5]
+        medium_priority = [p for p in pending if 2 <= p.priority < 5]
+        low_priority = [p for p in pending if p.priority < 2]
+
+        if high_priority:
+            lines.append("## High Priority (affects 5+ controls)")
+            lines.append("")
+            for req in high_priority:
+                lines.extend(_format_context_request(req))
+            lines.append("")
+
+        if medium_priority:
+            lines.append("## Medium Priority (affects 2-4 controls)")
+            lines.append("")
+            for req in medium_priority:
+                lines.extend(_format_context_request(req))
+            lines.append("")
+
+        if low_priority:
+            lines.append("## Low Priority (affects 1 control)")
+            lines.append("")
+            for req in low_priority:
+                lines.extend(_format_context_request(req))
+            lines.append("")
+
+        lines.append("---")
+        lines.append("")
+        lines.append("**Tip:** Use `confirm_project_context()` to set these values.")
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        return f"❌ Error getting pending context: {e}"
+
+
+def _format_context_request(req) -> list[str]:
+    """Format a single context request as markdown."""
+    lines = [
+        f"### {req.key}",
+        f"**Question:** {req.definition.prompt}",
+    ]
+
+    # Show auto-detected value if available
+    if req.current_value is not None:
+        value = req.current_value.value
+        method = req.current_value.detection_method or "auto"
+        confidence = req.current_value.confidence
+
+        # Format the value for display
+        if isinstance(value, list):
+            value_str = ", ".join(str(v) for v in value)
+        else:
+            value_str = str(value)
+
+        lines.append(f"- **🔍 Auto-detected:** `{value_str}` (via {method}, {int(confidence * 100)}% confidence)")
+        lines.append("- *Please confirm or update this value below*")
+
+    if req.definition.hint:
+        lines.append(f"- *Hint:* {req.definition.hint}")
+
+    if req.definition.examples:
+        examples_str = ", ".join(f"`{e}`" for e in req.definition.examples)
+        lines.append(f"- *Examples:* {examples_str}")
+
+    if req.definition.values:
+        values_str = ", ".join(f"`{v}`" for v in req.definition.values)
+        lines.append(f"- *Valid values:* {values_str}")
+
+    lines.append(f"- *Affects:* {', '.join(req.control_ids)}")
+
+    # Add example usage based on type, pre-fill with auto-detected value if available
+    if req.current_value is not None:
+        value = req.current_value.value
+        if isinstance(value, list):
+            # Format list for Python syntax
+            formatted_value = repr(value)
+            lines.append(f'- *Confirm with:* `confirm_project_context({req.key}={formatted_value})`')
+        else:
+            lines.append(f'- *Confirm with:* `confirm_project_context({req.key}="{value}")`')
+    elif req.definition.type == "boolean":
+        lines.append(f'- *Set with:* `confirm_project_context({req.key}=True)`')
+    elif req.definition.type == "enum":
+        example_value = req.definition.values[0] if req.definition.values else "value"
+        lines.append(f'- *Set with:* `confirm_project_context({req.key}="{example_value}")`')
+    elif req.definition.type == "list_or_path":
+        lines.append(f'- *Set with:* `confirm_project_context({req.key}=["@user1", "@user2"])` or `confirm_project_context({req.key}="MAINTAINERS.md")`')
+    else:
+        lines.append(f'- *Set with:* `confirm_project_context({req.key}="value")`')
+
+    lines.append("")
+    return lines
 
 
 # =============================================================================
@@ -381,8 +544,8 @@ def confirm_project_context(
 
 
 def generate_threat_model(
-    owner: Optional[str] = None,
-    repo: Optional[str] = None,
+    owner: str | None = None,
+    repo: str | None = None,
     local_path: str = ".",
     output_format: str = "markdown",
 ) -> str:
@@ -402,14 +565,14 @@ def generate_threat_model(
         Threat model report with identified threats and recommendations
     """
     from darnit.threat_model import (
+        analyze_stride_threats,
         detect_frameworks,
         discover_all_assets,
         discover_injection_sinks,
-        analyze_stride_threats,
-        identify_control_gaps,
+        generate_json_summary,
         generate_markdown_threat_model,
         generate_sarif_threat_model,
-        generate_json_summary,
+        identify_control_gaps,
     )
 
     repo_path = Path(local_path).resolve()
@@ -448,14 +611,14 @@ def generate_threat_model(
 
 
 def generate_attestation(
-    owner: Optional[str] = None,
-    repo: Optional[str] = None,
+    owner: str | None = None,
+    repo: str | None = None,
     local_path: str = ".",
     level: int = 3,
     sign: bool = True,
     staging: bool = False,
-    output_path: Optional[str] = None,
-    output_dir: Optional[str] = None,
+    output_path: str | None = None,
+    output_dir: str | None = None,
     use_sieve: bool = True,
 ) -> str:
     """
@@ -510,9 +673,9 @@ def generate_attestation(
 
 def remediate_audit_findings(
     local_path: str = ".",
-    owner: Optional[str] = None,
-    repo: Optional[str] = None,
-    categories: Optional[list] = None,
+    owner: str | None = None,
+    repo: str | None = None,
+    categories: list | None = None,
     dry_run: bool = True,
 ) -> str:
     """
@@ -571,7 +734,7 @@ def remediate_audit_findings(
 def create_remediation_branch(
     branch_name: str = "fix/openssf-baseline-compliance",
     local_path: str = ".",
-    base_branch: Optional[str] = None,
+    base_branch: str | None = None,
 ) -> str:
     """
     Create a new branch for remediation work.
@@ -597,7 +760,7 @@ def create_remediation_branch(
 
 def commit_remediation_changes(
     local_path: str = ".",
-    message: Optional[str] = None,
+    message: str | None = None,
     add_all: bool = True,
 ) -> str:
     """
@@ -624,9 +787,9 @@ def commit_remediation_changes(
 
 def create_remediation_pr(
     local_path: str = ".",
-    title: Optional[str] = None,
-    body: Optional[str] = None,
-    base_branch: Optional[str] = None,
+    title: str | None = None,
+    body: str | None = None,
+    base_branch: str | None = None,
     draft: bool = False,
 ) -> str:
     """
@@ -680,7 +843,7 @@ def get_remediation_status(local_path: str = ".") -> str:
 def create_test_repository(
     repo_name: str = "baseline-test-repo",
     parent_dir: str = ".",
-    github_org: Optional[str] = None,
+    github_org: str | None = None,
     create_github: bool = True,
     make_template: bool = False,
 ) -> str:
@@ -767,6 +930,7 @@ __all__ = [
     "get_project_config",
     "init_project_config",
     "confirm_project_context",
+    "get_pending_context",
     # Threat Model & Attestation
     "generate_threat_model",
     "generate_attestation",

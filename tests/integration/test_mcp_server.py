@@ -4,21 +4,17 @@ These tests start the actual MCP server and connect to it as a client,
 simulating how Claude Code would interact with the server.
 """
 
-import asyncio
 import json
-import tempfile
 from pathlib import Path
 
 import pytest
-import pytest_asyncio
 
 # Configure pytest-asyncio
 pytestmark = pytest.mark.asyncio(loop_scope="function")
 
-from mcp.client.stdio import stdio_client
-from mcp.client.session import ClientSession
 from mcp import StdioServerParameters
-
+from mcp.client.session import ClientSession
+from mcp.client.stdio import stdio_client
 
 # Path to the openssf-baseline.toml config
 BASELINE_TOML = (

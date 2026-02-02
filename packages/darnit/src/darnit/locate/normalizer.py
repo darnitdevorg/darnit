@@ -7,17 +7,17 @@ The normalizer uses JSONPath expressions from OutputMapping to extract
 relevant fields from tool outputs.
 """
 
-from typing import Any, Dict, Optional, Union
+from typing import Any
 
-from darnit.core.logging import get_logger
 from darnit.config.framework_schema import OutputMapping
+from darnit.core.logging import get_logger
 
 from .models import CheckOutput, FoundEvidence, create_error_output
 
 logger = get_logger("locate.normalizer")
 
 
-def extract_jsonpath(data: Any, path: Optional[str]) -> Any:
+def extract_jsonpath(data: Any, path: str | None) -> Any:
     """Extract a value from data using a simple JSONPath expression.
 
     Supports a subset of JSONPath:
@@ -90,7 +90,7 @@ def extract_jsonpath(data: Any, path: Optional[str]) -> Any:
 
 
 def normalize_tool_output(
-    raw_output: Union[Dict[str, Any], str],
+    raw_output: dict[str, Any] | str,
     output_mapping: OutputMapping,
 ) -> CheckOutput:
     """Normalize external tool output to CheckOutput contract.
@@ -156,7 +156,7 @@ def normalize_tool_output(
 
 
 def _extract_status(
-    raw_output: Dict[str, Any],
+    raw_output: dict[str, Any],
     output_mapping: OutputMapping,
 ) -> str:
     """Extract status from raw output.
@@ -200,7 +200,7 @@ def _extract_status(
 
 
 def _extract_message(
-    raw_output: Dict[str, Any],
+    raw_output: dict[str, Any],
     output_mapping: OutputMapping,
     status: str,
 ) -> str:
@@ -231,9 +231,9 @@ def _extract_message(
 
 
 def _extract_found(
-    raw_output: Dict[str, Any],
+    raw_output: dict[str, Any],
     output_mapping: OutputMapping,
-) -> Optional[FoundEvidence]:
+) -> FoundEvidence | None:
     """Extract found evidence from raw output.
 
     Args:
@@ -272,7 +272,7 @@ def _extract_found(
 
 
 def normalize_scorecard_output(
-    raw_output: Dict[str, Any],
+    raw_output: dict[str, Any],
     check_name: str,
 ) -> CheckOutput:
     """Convenience function to normalize Scorecard output.
@@ -286,10 +286,11 @@ def normalize_scorecard_output(
     Returns:
         Normalized CheckOutput
     """
-    # Scorecard uses 0-10 scale, 8.0+ is considered passing
-    pass_threshold = 8.0
+    # Note: OutputMapping with JSONPath filter expressions ($.checks[?(@.name=='...')])
+    # is not supported by extract_jsonpath, so we manually find the check below.
+    # Scorecard uses 0-10 scale with pass_threshold of 8.0.
 
-    # Find the check manually (JSONPath filter expressions not supported)
+    # Manually find the check since we don't support JSONPath filter expressions
     checks = raw_output.get("checks", [])
     target_check = None
     for check in checks:
@@ -319,7 +320,7 @@ def normalize_scorecard_output(
         )
 
     # Apply threshold
-    status = "pass" if score >= pass_threshold else "fail"
+    status = "pass" if score >= 8 else "fail"
 
     return CheckOutput(
         status=status,

@@ -2,11 +2,11 @@
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Optional, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from darnit.locate import UnifiedLocator
     from darnit.config.framework_schema import LocatorConfig
+    from darnit.locate import UnifiedLocator
 
 
 class VerificationPhase(Enum):
@@ -36,9 +36,9 @@ class CheckContext:
     local_path: str
     default_branch: str
     control_id: str
-    control_metadata: Dict[str, Any] = field(default_factory=dict)
+    control_metadata: dict[str, Any] = field(default_factory=dict)
     # Accumulated data from previous passes
-    gathered_evidence: Dict[str, Any] = field(default_factory=dict)
+    gathered_evidence: dict[str, Any] = field(default_factory=dict)
 
     # Locator integration (Phase 6)
     # UnifiedLocator instance for .project/-aware file resolution
@@ -54,9 +54,9 @@ class PassResult:
     phase: VerificationPhase
     outcome: PassOutcome
     message: str
-    evidence: Optional[Dict[str, Any]] = None
-    confidence: Optional[float] = None  # 0.0-1.0, primarily for LLM pass
-    details: Optional[Dict[str, Any]] = None
+    evidence: dict[str, Any] | None = None
+    confidence: float | None = None  # 0.0-1.0, primarily for LLM pass
+    details: dict[str, Any] | None = None
 
 
 @dataclass
@@ -64,9 +64,9 @@ class PassAttempt:
     """Record of what a pass attempted (for transparency)."""
 
     phase: VerificationPhase
-    checks_performed: List[str]  # Human-readable list of what was checked
+    checks_performed: list[str]  # Human-readable list of what was checked
     result: PassResult
-    duration_ms: Optional[int] = None
+    duration_ms: int | None = None
 
 
 @dataclass
@@ -77,8 +77,8 @@ class LLMConsultationRequest:
     control_name: str
     control_description: str
     prompt: str
-    context: Dict[str, Any]
-    analysis_hints: List[str]
+    context: dict[str, Any]
+    analysis_hints: list[str]
     expected_response: str  # JSON schema or format description
 
 
@@ -89,7 +89,7 @@ class LLMConsultationResponse:
     status: PassOutcome  # PASS, FAIL, or INCONCLUSIVE
     confidence: float
     reasoning: str
-    evidence_cited: List[str] = field(default_factory=list)
+    evidence_cited: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -102,14 +102,14 @@ class SieveResult:
     level: int
 
     # Sieve-specific transparency fields
-    conclusive_phase: Optional[VerificationPhase] = None
-    pass_history: List[PassAttempt] = field(default_factory=list)
-    confidence: Optional[float] = None
-    evidence: Optional[Dict[str, Any]] = None
-    verification_steps: Optional[List[str]] = None  # For MANUAL phase
+    conclusive_phase: VerificationPhase | None = None
+    pass_history: list[PassAttempt] = field(default_factory=list)
+    confidence: float | None = None
+    evidence: dict[str, Any] | None = None
+    verification_steps: list[str] | None = None  # For MANUAL phase
     source: str = "sieve"
 
-    def to_legacy_dict(self) -> Dict[str, Any]:
+    def to_legacy_dict(self) -> dict[str, Any]:
         """Convert to legacy result format for backward compatibility."""
         result = {
             "id": self.control_id,
@@ -155,13 +155,13 @@ class ControlSpec:
     """
 
     control_id: str
-    level: Optional[int]  # Maturity level (1, 2, 3) - None if framework doesn't use levels
-    domain: Optional[str]  # Domain code (e.g., "AC", "VM") - None if not applicable
+    level: int | None  # Maturity level (1, 2, 3) - None if framework doesn't use levels
+    domain: str | None  # Domain code (e.g., "AC", "VM") - None if not applicable
     name: str
     description: str
-    passes: List[Any]  # List of pass implementations (VerificationPassProtocol)
-    tags: Dict[str, Any] = field(default_factory=dict)  # Additional tags for filtering
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    passes: list[Any]  # List of pass implementations (VerificationPassProtocol)
+    tags: dict[str, Any] = field(default_factory=dict)  # Additional tags for filtering
+    metadata: dict[str, Any] = field(default_factory=dict)
     # Locator configuration for this control (from TOML)
     locator_config: Optional["LocatorConfig"] = None
 
@@ -193,7 +193,7 @@ class ControlSpec:
 
                 warnings.warn(
                     f"Control {self.control_id}: passes are not in recommended order "
-                    f"(DETERMINISTIC -> PATTERN -> LLM -> MANUAL)"
+                    f"(DETERMINISTIC -> PATTERN -> LLM -> MANUAL)", stacklevel=2
                 )
                 break
             prev_order = current_order

@@ -3,12 +3,12 @@
 import pytest
 
 from darnit.sieve.models import (
-    VerificationPhase,
+    CheckContext,
+    PassAttempt,
     PassOutcome,
     PassResult,
-    PassAttempt,
     SieveResult,
-    CheckContext,
+    VerificationPhase,
 )
 
 

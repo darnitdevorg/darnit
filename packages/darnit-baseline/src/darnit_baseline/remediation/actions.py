@@ -10,24 +10,26 @@ Design Philosophy:
 - Use detected project context (e.g., single maintainer) to make smart defaults
 """
 
-import os
 import json
+import os
 import subprocess
-from typing import Optional, List
+from pathlib import Path
 
+from darnit.config.context_storage import get_context_value
 from darnit.core.logging import get_logger
-from darnit.core.utils import validate_local_path, detect_repo_from_git
-from darnit.tools import write_file_safely
+from darnit.core.utils import detect_repo_from_git, file_exists, validate_local_path
 from darnit.remediation.helpers import (
-    get_repo_maintainers,
     ensure_directory,
     format_error,
+    get_repo_maintainers,
+    write_file_safe,
 )
+from darnit.tools import write_file_safely
 
 logger = get_logger("remediation.actions")
 
 
-def _detect_package_ecosystems(local_path: str) -> List[str]:
+def _detect_package_ecosystems(local_path: str) -> list[str]:
     """Detect package ecosystems used in the repository.
 
     Returns list of Dependabot ecosystem names.
@@ -73,7 +75,7 @@ def _get_project_description(local_path: str, repo: str) -> str:
         readme_path = os.path.join(local_path, readme)
         if os.path.exists(readme_path):
             try:
-                with open(readme_path, 'r', encoding='utf-8') as f:
+                with open(readme_path, encoding='utf-8') as f:
                     content = f.read()
                     # Get first non-empty, non-header line
                     for line in content.split('\n'):
@@ -81,37 +83,63 @@ def _get_project_description(local_path: str, repo: str) -> str:
                         if line and not line.startswith('#') and not line.startswith('='):
                             if len(line) > 20:
                                 return line[:200]
-            except (IOError, OSError):
+            except OSError:
                 pass
 
     # Try package.json
     pkg_path = os.path.join(local_path, "package.json")
     if os.path.exists(pkg_path):
         try:
-            with open(pkg_path, 'r') as f:
+            with open(pkg_path) as f:
                 pkg = json.load(f)
                 if pkg.get("description"):
                     return pkg["description"]
-        except (IOError, json.JSONDecodeError):
+        except (OSError, json.JSONDecodeError):
             pass
 
     # Try pyproject.toml
     pyproject_path = os.path.join(local_path, "pyproject.toml")
     if os.path.exists(pyproject_path):
         try:
-            with open(pyproject_path, 'r') as f:
+            with open(pyproject_path) as f:
                 content = f.read()
                 import re
                 match = re.search(r'description\s*=\s*"([^"]+)"', content)
                 if match:
                     return match.group(1)
-        except (IOError, OSError):
+        except OSError:
             pass
 
     return f"A project for {repo}"
 
 
-def _is_single_maintainer_project(owner: str, repo: str, maintainers: List[str]) -> bool:
+def _ensure_owner_repo(
+    owner: str | None,
+    repo: str | None,
+    local_path: Path
+) -> tuple:
+    """Auto-detect owner/repo from git if not provided.
+
+    Args:
+        owner: GitHub owner (or None to auto-detect)
+        repo: Repository name (or None to auto-detect)
+        local_path: Path to the repository
+
+    Returns:
+        Tuple of (owner, repo) - uses defaults if detection fails
+    """
+    if not owner or not repo:
+        detected = detect_repo_from_git(str(local_path))
+        if detected:
+            owner = owner or detected["owner"]
+            repo = repo or detected["repo"]
+        else:
+            owner = owner or "OWNER"
+            repo = repo or "REPO"
+    return owner, repo
+
+
+def _is_single_maintainer_project(owner: str, repo: str, maintainers: list[str]) -> bool:
     """Detect if this appears to be a single-maintainer project."""
     if len(maintainers) <= 1:
         return True
@@ -131,16 +159,118 @@ def _is_single_maintainer_project(owner: str, repo: str, maintainers: List[str])
     return False
 
 
+def _get_vex_section() -> str:
+    """Get the VEX policy section to add to SECURITY.md."""
+    return """
+## Vulnerability Exploitability (VEX)
+
+When vulnerabilities are reported in our dependencies that do not affect this project,
+we will provide VEX (Vulnerability Exploitability eXchange) statements explaining why
+the vulnerability is not exploitable in our context.
+
+VEX statements will be published as:
+- GitHub Security Advisories with "not affected" status
+- VEX documents in this repository (when applicable)
+
+For more information about VEX, see:
+- [OpenVEX Specification](https://openvex.dev/)
+- [CISA VEX Guide](https://www.cisa.gov/resources-tools/resources/vulnerability-exploitability-exchange-vex-overview)
+"""
+
+
+def _has_vex_section(content: str) -> bool:
+    """Check if content already has a VEX section."""
+    import re
+    # Same pattern used by the control check
+    pattern = r"(vex|vulnerability.exploitability|exploitability.exchange|affected.*not.affected)"
+    return bool(re.search(pattern, content, re.IGNORECASE))
+
+
+def ensure_vex_policy(local_path: str = ".") -> str:
+    """
+    Ensure SECURITY.md has a VEX policy section.
+
+    If SECURITY.md exists but doesn't have a VEX section, appends one.
+    If SECURITY.md doesn't exist, returns a message to create it first.
+
+    Satisfies: OSPS-VM-04.02
+
+    Args:
+        local_path: Path to repository
+
+    Returns:
+        Success message or instructions
+    """
+    resolved_path, error = validate_local_path(local_path)
+    if error:
+        return f"❌ Error: {error}"
+
+    # Check for SECURITY.md in common locations
+    security_paths = [
+        os.path.join(resolved_path, "SECURITY.md"),
+        os.path.join(resolved_path, ".github", "SECURITY.md"),
+    ]
+
+    security_file = None
+    for path in security_paths:
+        if os.path.exists(path):
+            security_file = path
+            break
+
+    if not security_file:
+        return """ℹ️ No SECURITY.md found.
+
+Run `create_security_policy()` to create one with VEX policy included.
+"""
+
+    # Read existing content
+    try:
+        with open(security_file, encoding='utf-8') as f:
+            content = f.read()
+    except OSError as e:
+        return f"❌ Failed to read {security_file}: {e}"
+
+    # Check if VEX section already exists
+    if _has_vex_section(content):
+        return f"""✅ SECURITY.md already has VEX policy section.
+
+**File:** {security_file}
+**Control:** OSPS-VM-04.02 ✓
+"""
+
+    # Append VEX section
+    vex_section = _get_vex_section()
+    updated_content = content.rstrip() + "\n" + vex_section
+
+    try:
+        with open(security_file, 'w', encoding='utf-8') as f:
+            f.write(updated_content)
+    except OSError as e:
+        return f"❌ Failed to update {security_file}: {e}"
+
+    logger.info(f"Added VEX policy section to {security_file}")
+    return f"""✅ Added VEX policy section to SECURITY.md
+
+**File:** {security_file}
+**Control addressed:** OSPS-VM-04.02 (VEX policy documented)
+
+The VEX section explains how the project handles vulnerability exploitability
+statements for dependencies that don't affect this project.
+"""
+
+
 def create_security_policy(
-    owner: Optional[str] = None,
-    repo: Optional[str] = None,
+    owner: str | None = None,
+    repo: str | None = None,
     local_path: str = ".",
     template: str = "standard"
 ) -> str:
     """
     Create a SECURITY.md file for vulnerability reporting.
 
-    Satisfies: OSPS-VM-01.01, OSPS-VM-02.01, OSPS-VM-03.01
+    If SECURITY.md already exists, checks for and adds VEX section if missing.
+
+    Satisfies: OSPS-VM-01.01, OSPS-VM-02.01, OSPS-VM-03.01, OSPS-VM-04.02
 
     Args:
         owner: GitHub Org/User (auto-detected if not provided)
@@ -155,6 +285,17 @@ def create_security_policy(
     if error:
         logger.warning(f"Invalid path for security policy: {error}")
         return f"❌ Error: {error}"
+
+    # Check if SECURITY.md already exists
+    existing_security = file_exists(resolved_path, "SECURITY.md", ".github/SECURITY.md")
+    if existing_security:
+        # File exists - ensure it has VEX section
+        vex_result = ensure_vex_policy(local_path)
+        return f"""ℹ️ SECURITY.md already exists: {existing_security}
+
+{vex_result}
+**Note:** To regenerate the entire file, remove it first and re-run this command.
+"""
 
     # Auto-detect owner/repo
     if not owner or not repo:
@@ -212,7 +353,29 @@ When contributing, please ensure:
 - Dependencies are up to date
 - Input validation is implemented
 - Secure coding practices are followed
+
+## Vulnerability Exploitability (VEX)
+
+When vulnerabilities are reported in our dependencies that do not affect this project,
+we will provide VEX (Vulnerability Exploitability eXchange) statements explaining why
+the vulnerability is not exploitable in our context.
+
+VEX statements will be published as:
+- GitHub Security Advisories with "not affected" status
+- VEX documents in this repository (when applicable)
+
+For more information about VEX, see:
+- [OpenVEX Specification](https://openvex.dev/)
+- [CISA VEX Guide](https://www.cisa.gov/resources-tools/resources/vulnerability-exploitability-exchange-vex-overview)
 """
+
+    # TODO: Add tooling or guidance for repo owners on how to create VEX documents.
+    # This could include:
+    # - Integration with `vexctl` CLI tool (https://github.com/openvex/vexctl)
+    # - Templates for common VEX statements (not_affected, under_investigation, etc.)
+    # - Guidance on when to create VEX vs when to use GitHub Security Advisories
+    # - Example VEX document structure
+    # See: https://github.com/openvex/spec for the OpenVEX specification
 
     filepath = os.path.join(resolved_path, "SECURITY.md")
     success, message = write_file_safely(filepath, content)
@@ -225,6 +388,7 @@ When contributing, please ensure:
 - OSPS-VM-01.01: Security contact defined
 - OSPS-VM-02.01: Vulnerability reporting process
 - OSPS-VM-03.01: Response timeline documented
+- OSPS-VM-04.02: VEX policy documented
 
 **File:** {filepath}
 """
@@ -234,8 +398,8 @@ When contributing, please ensure:
 
 
 def create_contributing_guide(
-    owner: Optional[str] = None,
-    repo: Optional[str] = None,
+    owner: str | None = None,
+    repo: str | None = None,
     local_path: str = ".",
 ) -> str:
     """
@@ -375,8 +539,8 @@ Thank you for contributing!
 
 
 def create_codeowners(
-    owner: Optional[str] = None,
-    repo: Optional[str] = None,
+    owner: str | None = None,
+    repo: str | None = None,
     local_path: str = ".",
 ) -> str:
     """
@@ -384,8 +548,8 @@ def create_codeowners(
 
     Satisfies: OSPS-GV-01.01, OSPS-GV-01.02, OSPS-GV-04.01
 
-    Intelligently detects maintainers from GitHub API and creates appropriate
-    ownership rules. For single-maintainer projects, uses a simple global pattern.
+    Requires maintainers to be confirmed via confirm_project_context() first.
+    If not confirmed, shows auto-detected collaborators and prompts for confirmation.
 
     Args:
         owner: GitHub Org/User (auto-detected if not provided)
@@ -393,66 +557,68 @@ def create_codeowners(
         local_path: Path to repository
 
     Returns:
-        Success message with created file path
+        Success message with created file path, or prompt to confirm maintainers
     """
-    resolved_path, error = validate_local_path(local_path)
-    if error:
-        logger.warning(f"Invalid path for CODEOWNERS: {error}")
-        return format_error(error)
+    resolved_path = Path(local_path).resolve()
 
-    # Auto-detect owner/repo
-    if not owner or not repo:
-        detected = detect_repo_from_git(resolved_path)
-        if detected:
-            owner = owner or detected["owner"]
-            repo = repo or detected["repo"]
-        else:
-            owner = owner or "OWNER"
-            repo = repo or "REPO"
+    # Detect owner/repo if not provided
+    owner, repo = _ensure_owner_repo(owner, repo, resolved_path)
 
-    # Get maintainers
-    maintainers = get_repo_maintainers(owner, repo)
-    is_single = _is_single_maintainer_project(owner, repo, maintainers)
+    # Check if file already exists
+    existing = file_exists(resolved_path, "CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS")
+    if existing:
+        return f"""ℹ️ CODEOWNERS file already exists: {existing}
 
-    # Build maintainer string
-    if maintainers:
-        maintainer_handles = " ".join(f"@{m}" for m in maintainers[:5])
-    else:
-        maintainer_handles = f"@{owner}"
-
-    # Create content
-    if is_single:
-        content = f"""# CODEOWNERS - Defines code ownership for review requirements
-# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
-
-# Global ownership - all files
-* {maintainer_handles}
+No changes made. To regenerate, remove the existing file first.
 """
+
+    # Get maintainers from context (orchestrator validates this before calling us)
+    # Context may be USER_CONFIRMED or AUTO_DETECTED (sieve detected it)
+    context_value = get_context_value(str(resolved_path), "maintainers", "governance")
+
+    if context_value and context_value.value:
+        # Use confirmed/detected maintainers
+        maintainers = context_value.value
+        if isinstance(maintainers, str):
+            maintainers = [maintainers]
+        # Normalize: remove @ prefix if present for consistency
+        maintainers = [m.lstrip("@") for m in maintainers]
     else:
-        content = f"""# CODEOWNERS - Defines code ownership for review requirements
+        # Context missing - shouldn't happen if called through orchestrator
+        # Return a simple error directing users to use the orchestrator
+        return f"""⚠️ **Maintainers context required**
+
+The maintainers context is not set. Please use `remediate_audit_findings()` which will
+auto-detect maintainers and prompt for confirmation.
+
+Or set context directly:
+```
+confirm_project_context(maintainers=["@{owner}", "@other_maintainer"])
+```
+
+Then run this remediation again.
+"""
+
+    # Build maintainer string from confirmed maintainers
+    maintainer_handles = " ".join(f"@{m}" for m in maintainers)
+
+    # Simple CODEOWNERS - global ownership only
+    # Users can customize with path-specific rules as needed
+    content = f"""# CODEOWNERS - Defines code ownership for review requirements
 # See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
 
-# Global ownership - default reviewers for all files
+# Global ownership - all files require review from these owners
 * {maintainer_handles}
-
-# Examples - customize based on your project structure:
-# /docs/       @{maintainers[0] if maintainers else owner}
-# /src/        {maintainer_handles}
-# *.md         @{maintainers[0] if maintainers else owner}
-
-# Security-sensitive files should have explicit owners:
-# /security/   {maintainer_handles}
-# SECURITY.md  {maintainer_handles}
 """
 
     # Prefer .github/CODEOWNERS location
-    github_dir = os.path.join(resolved_path, ".github")
-    if os.path.exists(github_dir):
-        filepath = os.path.join(github_dir, "CODEOWNERS")
+    github_dir = resolved_path / ".github"
+    if github_dir.exists():
+        filepath = github_dir / "CODEOWNERS"
     else:
-        filepath = os.path.join(resolved_path, "CODEOWNERS")
+        filepath = resolved_path / "CODEOWNERS"
 
-    success, message = write_file_safely(filepath, content)
+    success, message = write_file_safe(filepath, content)
 
     if success:
         logger.info(f"Created CODEOWNERS at {filepath}")
@@ -464,9 +630,9 @@ def create_codeowners(
 - OSPS-GV-04.01: Code ownership defined
 
 **File:** {filepath}
-**Maintainers:** {maintainer_handles}
+**Code Owners:** {maintainer_handles}
 
-{"ℹ️ Single-maintainer project detected - using simple global ownership." if is_single else "ℹ️ Customize the file to match your team's code ownership structure."}
+ℹ️ Customize with path-specific rules as your project grows.
 """
     else:
         logger.error(f"Failed to create CODEOWNERS: {message}")
@@ -474,8 +640,8 @@ def create_codeowners(
 
 
 def create_governance_doc(
-    owner: Optional[str] = None,
-    repo: Optional[str] = None,
+    owner: str | None = None,
+    repo: str | None = None,
     local_path: str = ".",
 ) -> str:
     """
@@ -483,44 +649,67 @@ def create_governance_doc(
 
     Satisfies: OSPS-GV-01.01, OSPS-GV-01.02
 
+    Requires maintainers to be confirmed via confirm_project_context() first.
+    If not confirmed, shows auto-detected collaborators and prompts for confirmation.
+
     Args:
         owner: GitHub Org/User (auto-detected if not provided)
         repo: Repository Name (auto-detected if not provided)
         local_path: Path to repository
 
     Returns:
-        Success message with created file path
+        Success message with created file path, or prompt to confirm maintainers
     """
-    resolved_path, error = validate_local_path(local_path)
-    if error:
-        logger.warning(f"Invalid path for GOVERNANCE.md: {error}")
-        return format_error(error)
+    resolved_path = Path(local_path).resolve()
 
-    # Auto-detect owner/repo
-    if not owner or not repo:
-        detected = detect_repo_from_git(resolved_path)
-        if detected:
-            owner = owner or detected["owner"]
-            repo = repo or detected["repo"]
-        else:
-            owner = owner or "OWNER"
-            repo = repo or "REPO"
+    # Detect owner/repo if not provided
+    owner, repo = _ensure_owner_repo(owner, repo, resolved_path)
 
-    # Get maintainers
-    maintainers = get_repo_maintainers(owner, repo)
-    is_single = _is_single_maintainer_project(owner, repo, maintainers)
+    # Check if file already exists
+    existing = file_exists(resolved_path, "GOVERNANCE.md", "docs/GOVERNANCE.md")
+    if existing:
+        return f"""ℹ️ GOVERNANCE.md already exists: {existing}
 
-    if maintainers:
-        maintainer_list = "\n".join(f"- @{m}" for m in maintainers)
+No changes made. To regenerate, remove the existing file first.
+"""
+
+    # Get maintainers from context (orchestrator validates this before calling us)
+    # Context may be USER_CONFIRMED or AUTO_DETECTED (sieve detected it)
+    context_value = get_context_value(str(resolved_path), "maintainers", "governance")
+
+    if context_value and context_value.value:
+        # Use confirmed/detected maintainers
+        maintainers = context_value.value
+        if isinstance(maintainers, str):
+            maintainers = [maintainers]
+        # Normalize: remove @ prefix if present for consistency
+        maintainers = [m.lstrip("@") for m in maintainers]
     else:
-        maintainer_list = f"- @{owner}"
+        # Context missing - shouldn't happen if called through orchestrator
+        # Return a simple error directing users to use the orchestrator
+        return f"""⚠️ **Maintainers context required**
+
+The maintainers context is not set. Please use `remediate_audit_findings()` which will
+auto-detect maintainers and prompt for confirmation.
+
+Or set context directly:
+```
+confirm_project_context(maintainers=["@{owner}", "@other_maintainer"])
+```
+
+Then run this remediation again.
+"""
+
+    # Build maintainer list from confirmed maintainers
+    maintainer_list = "\n".join(f"- [@{m}](https://github.com/{m})" for m in maintainers)
+    is_single = len(maintainers) <= 1
 
     if is_single:
         content = f"""# Governance
 
 ## Project Maintainer
 
-This project is currently maintained by @{maintainers[0] if maintainers else owner}.
+This project is currently maintained by @{maintainers[0]}.
 
 ## Decision Making
 
@@ -582,8 +771,8 @@ Significant changes to governance require consensus among maintainers and should
 be discussed openly before implementation.
 """
 
-    filepath = os.path.join(resolved_path, "GOVERNANCE.md")
-    success, message = write_file_safely(filepath, content)
+    filepath = resolved_path / "GOVERNANCE.md"
+    success, message = write_file_safe(filepath, content)
 
     if success:
         logger.info(f"Created GOVERNANCE.md at {filepath}")
@@ -594,6 +783,7 @@ be discussed openly before implementation.
 - OSPS-GV-01.02: Maintainers documented
 
 **File:** {filepath}
+**Maintainers (confirmed):** {', '.join(f'@{m}' for m in maintainers)}
 
 {"ℹ️ Single-maintainer governance template used. Update as your project grows." if is_single else "ℹ️ Review and customize the governance model for your project's needs."}
 """
@@ -602,9 +792,133 @@ be discussed openly before implementation.
         return format_error(message)
 
 
+def create_maintainers_doc(
+    owner: str | None = None,
+    repo: str | None = None,
+    local_path: str = ".",
+) -> str:
+    """
+    Create a MAINTAINERS.md file listing project maintainers.
+
+    Satisfies: OSPS-GV-01.01, OSPS-GV-01.02, OSPS-GV-04.01
+
+    Requires maintainers to be confirmed via confirm_project_context() first.
+    If not confirmed, shows auto-detected maintainers and prompts for confirmation.
+
+    Args:
+        owner: GitHub Org/User (auto-detected if not provided)
+        repo: Repository Name (auto-detected if not provided)
+        local_path: Path to repository
+
+    Returns:
+        Success message with created file path, or prompt to confirm maintainers
+    """
+    resolved_path = Path(local_path).resolve()
+
+    # Detect owner/repo if not provided
+    owner, repo = _ensure_owner_repo(owner, repo, resolved_path)
+
+    # Check if file already exists
+    existing = file_exists(resolved_path, "MAINTAINERS.md", "MAINTAINERS")
+    if existing:
+        return f"""ℹ️ Maintainers file already exists: {existing}
+
+No changes made. To regenerate, remove the existing file first.
+"""
+
+    # Get maintainers from context (orchestrator validates this before calling us)
+    # Context may be USER_CONFIRMED or AUTO_DETECTED (sieve detected it)
+    context_value = get_context_value(str(resolved_path), "maintainers", "governance")
+
+    if context_value and context_value.value:
+        # Use confirmed/detected maintainers
+        maintainers = context_value.value
+        if isinstance(maintainers, str):
+            maintainers = [maintainers]
+        # Normalize: remove @ prefix if present for consistency
+        maintainers = [m.lstrip("@") for m in maintainers]
+        maintainer_list = "\n".join(f"- [@{m}](https://github.com/{m})" for m in maintainers)
+    else:
+        # Context missing - shouldn't happen if called through orchestrator
+        # Return a simple error directing users to use the orchestrator
+        return f"""⚠️ **Maintainers context required**
+
+The maintainers context is not set. Please use `remediate_audit_findings()` which will
+auto-detect maintainers and prompt for confirmation.
+
+Or set context directly:
+```
+confirm_project_context(maintainers=["@{owner}", "@other_maintainer"])
+```
+
+Then run this remediation again.
+"""
+
+    content = f"""# Maintainers
+
+This document lists the maintainers for {repo}.
+
+## Current Maintainers
+
+{maintainer_list}
+
+## Maintainer Responsibilities
+
+Maintainers are responsible for:
+
+- Reviewing and merging pull requests
+- Triaging issues and feature requests
+- Ensuring code quality and security standards
+- Making release decisions
+- Guiding the project's technical direction
+
+## Becoming a Maintainer
+
+New maintainers are nominated by existing maintainers based on:
+
+- Sustained, high-quality contributions
+- Deep understanding of the codebase
+- Demonstrated commitment to the project
+- Constructive collaboration with the community
+
+## Emeritus Maintainers
+
+Former maintainers who have stepped back from active maintenance:
+
+- (none yet)
+
+---
+
+*This file was auto-generated. Please review and update as needed.*
+"""
+
+    filepath = resolved_path / "MAINTAINERS.md"
+    success, message = write_file_safe(filepath, content)
+
+    if success:
+        logger.info(f"Created MAINTAINERS.md at {filepath}")
+        return f"""✅ Created MAINTAINERS.md
+
+**Controls addressed:**
+- OSPS-GV-01.01: Project maintainers documented
+- OSPS-GV-01.02: Maintainer responsibilities defined
+- OSPS-GV-04.01: Trusted contributors identified
+
+**File:** {filepath}
+
+**Maintainers:**
+{maintainer_list}
+
+ℹ️ Please review and update the maintainer list as needed.
+"""
+    else:
+        logger.error(f"Failed to create MAINTAINERS.md: {message}")
+        return format_error(message)
+
+
 def create_dependabot_config(
-    owner: Optional[str] = None,
-    repo: Optional[str] = None,
+    owner: str | None = None,
+    repo: str | None = None,
     local_path: str = ".",
 ) -> str:
     """
@@ -714,8 +1028,8 @@ Review and merge these PRs to keep dependencies secure and up-to-date.
 
 
 def create_support_doc(
-    owner: Optional[str] = None,
-    repo: Optional[str] = None,
+    owner: str | None = None,
+    repo: str | None = None,
     local_path: str = ".",
 ) -> str:
     """
@@ -817,8 +1131,8 @@ Want to help improve {repo}? See our [Contributing Guide](CONTRIBUTING.md).
 
 
 def create_bug_report_template(
-    owner: Optional[str] = None,
-    repo: Optional[str] = None,
+    owner: str | None = None,
+    repo: str | None = None,
     local_path: str = ".",
 ) -> str:
     """
@@ -922,8 +1236,8 @@ Consider also creating a feature request template for completeness.
 
 
 def configure_dco_enforcement(
-    owner: Optional[str] = None,
-    repo: Optional[str] = None,
+    owner: str | None = None,
+    repo: str | None = None,
     local_path: str = ".",
 ) -> str:
     """
@@ -988,7 +1302,7 @@ Then use `git commit -s` for all commits.
 
     if os.path.exists(contributing_path):
         try:
-            with open(contributing_path, 'r') as f:
+            with open(contributing_path) as f:
                 content = f.read()
 
             # Check if DCO section already exists
@@ -996,13 +1310,13 @@ Then use `git commit -s` for all commits.
                 content += dco_section
                 success, message = write_file_safely(contributing_path, content)
                 if success:
-                    logger.info(f"Added DCO section to CONTRIBUTING.md")
+                    logger.info("Added DCO section to CONTRIBUTING.md")
                     contributing_updated = True
                 else:
                     contributing_updated = False
             else:
                 contributing_updated = False  # Already has DCO info
-        except (IOError, OSError):
+        except OSError:
             contributing_updated = False
     else:
         contributing_updated = False
@@ -1054,8 +1368,10 @@ jobs:
 
 __all__ = [
     "create_security_policy",
+    "ensure_vex_policy",
     "create_contributing_guide",
     "create_codeowners",
+    "create_maintainers_doc",
     "create_governance_doc",
     "create_dependabot_config",
     "create_support_doc",

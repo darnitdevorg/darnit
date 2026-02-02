@@ -5,12 +5,12 @@ Re-exports common utilities from core.utils for convenience within the checks pa
 
 # Re-export from core utilities for convenience
 from darnit.core.utils import (
+    file_contains,
+    file_exists,
     gh_api,
     gh_api_safe,
-    file_exists,
-    file_contains,
-    read_file,
     make_result,
+    read_file,
 )
 
 # Alias for backward compatibility with main.py naming

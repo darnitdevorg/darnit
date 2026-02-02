@@ -10,11 +10,13 @@ To get controls, use the registry:
 """
 
 # Import control modules to trigger registration with global registry
-from . import level1  # noqa: F401
-from . import level2  # noqa: F401
-from . import level3  # noqa: F401
-
 from darnit.sieve.registry import get_control_registry
+
+from . import (
+    level1,  # noqa: F401
+    level2,  # noqa: F401
+    level3,  # noqa: F401
+)
 
 
 def get_level1_controls():

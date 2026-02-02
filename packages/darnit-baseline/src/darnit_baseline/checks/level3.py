@@ -5,17 +5,17 @@ Level 3 represents the highest security requirements for critical open source pr
 
 import os
 import re
-from typing import Dict, List
 
 from darnit.core.logging import get_logger
+
 from .constants import (
-    THREAT_MODEL_DOCS,
     SCA_TOOL_PATTERNS,
+    THREAT_MODEL_DOCS,
 )
 from .helpers import (
+    file_exists,
     gh_api,
     gh_api_safe,
-    file_exists,
     read_file,
     result,
 )
@@ -23,7 +23,7 @@ from .helpers import (
 logger = get_logger("checks.level3")
 
 
-def check_level3_access_control(owner: str, repo: str, local_path: str) -> List[Dict]:
+def check_level3_access_control(owner: str, repo: str, local_path: str) -> list[dict]:
     """Check Level 3 Access Control requirements."""
     results = []
     workflow_dir = os.path.join(local_path, ".github", "workflows")
@@ -89,7 +89,7 @@ def check_level3_access_control(owner: str, repo: str, local_path: str) -> List[
     return results
 
 
-def check_level3_build_release(owner: str, repo: str, local_path: str) -> List[Dict]:
+def check_level3_build_release(owner: str, repo: str, local_path: str) -> list[dict]:
     """Check Level 3 Build & Release requirements."""
     results = []
 
@@ -124,7 +124,7 @@ def check_level3_build_release(owner: str, repo: str, local_path: str) -> List[D
     return results
 
 
-def check_level3_documentation(owner: str, repo: str, local_path: str) -> List[Dict]:
+def check_level3_documentation(owner: str, repo: str, local_path: str) -> list[dict]:
     """Check Level 3 Documentation requirements."""
     results = []
 
@@ -164,7 +164,7 @@ def check_level3_documentation(owner: str, repo: str, local_path: str) -> List[D
     return results
 
 
-def check_level3_governance(owner: str, repo: str, local_path: str) -> List[Dict]:
+def check_level3_governance(owner: str, repo: str, local_path: str) -> list[dict]:
     """Check Level 3 Governance requirements."""
     results = []
 
@@ -182,7 +182,7 @@ def check_level3_governance(owner: str, repo: str, local_path: str) -> List[Dict
     return results
 
 
-def check_level3_quality(owner: str, repo: str, local_path: str, default_branch: str) -> List[Dict]:
+def check_level3_quality(owner: str, repo: str, local_path: str, default_branch: str) -> list[dict]:
     """Check Level 3 Quality Assurance requirements."""
     results = []
 
@@ -252,7 +252,7 @@ def check_level3_quality(owner: str, repo: str, local_path: str, default_branch:
     return results
 
 
-def check_level3_security_architecture(owner: str, repo: str, local_path: str) -> List[Dict]:
+def check_level3_security_architecture(owner: str, repo: str, local_path: str) -> list[dict]:
     """Check Level 3 Security Architecture requirements."""
     results = []
 
@@ -270,7 +270,7 @@ def check_level3_security_architecture(owner: str, repo: str, local_path: str) -
     return results
 
 
-def check_level3_vulnerability(owner: str, repo: str, local_path: str) -> List[Dict]:
+def check_level3_vulnerability(owner: str, repo: str, local_path: str) -> list[dict]:
     """Check Level 3 Vulnerability Management requirements."""
     results = []
     workflow_dir = os.path.join(local_path, ".github", "workflows")
@@ -388,7 +388,7 @@ def check_level3_vulnerability(owner: str, repo: str, local_path: str) -> List[D
 
 def run_all_level3_checks(
     owner: str, repo: str, local_path: str, default_branch: str
-) -> List[Dict]:
+) -> list[dict]:
     """Run all Level 3 checks and return combined results."""
     results = []
     results.extend(check_level3_access_control(owner, repo, local_path))

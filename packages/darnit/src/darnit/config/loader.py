@@ -15,16 +15,16 @@ modifying the core loading/saving logic.
 
 import os
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, List
+from typing import Any
 
 import yaml
 from pydantic import ValidationError
 
-from darnit.core.logging import get_logger
 from darnit.config.schema import (
     ProjectConfig,
     create_minimal_config,
 )
+from darnit.core.logging import get_logger
 
 logger = get_logger("config.loader")
 
@@ -54,13 +54,13 @@ class ExtensionSpec:
     """Specification for an extension file."""
     filename: str
     schema_key: str  # Key in ProjectConfig (e.g., "x-openssf-baseline")
-    header: List[str]  # Comment lines for file header
+    header: list[str]  # Comment lines for file header
     is_default: bool = False  # If True, catches all non-CNCF fields
 
 
 # Registry of extension files
 # Order matters: default extension should be last
-EXTENSION_REGISTRY: List[ExtensionSpec] = [
+EXTENSION_REGISTRY: list[ExtensionSpec] = [
     ExtensionSpec(
         filename="darnit.yaml",
         schema_key="x-openssf-baseline",
@@ -81,7 +81,7 @@ EXTENSION_REGISTRY: List[ExtensionSpec] = [
 ]
 
 
-def get_extension_by_key(schema_key: str) -> Optional[ExtensionSpec]:
+def get_extension_by_key(schema_key: str) -> ExtensionSpec | None:
     """Get extension spec by schema key."""
     for ext in EXTENSION_REGISTRY:
         if ext.schema_key == schema_key:
@@ -89,7 +89,7 @@ def get_extension_by_key(schema_key: str) -> Optional[ExtensionSpec]:
     return None
 
 
-def get_default_extension() -> Optional[ExtensionSpec]:
+def get_default_extension() -> ExtensionSpec | None:
     """Get the default extension (catches unmatched fields)."""
     for ext in EXTENSION_REGISTRY:
         if ext.is_default:
@@ -131,18 +131,18 @@ CleanDumper.add_representer(str, _str_representer)
 # Loading Functions
 # =============================================================================
 
-def _load_yaml_file(path: str) -> Optional[Dict[str, Any]]:
+def _load_yaml_file(path: str) -> dict[str, Any] | None:
     """Load a YAML file and return its contents."""
     try:
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(path, encoding='utf-8') as f:
             data = yaml.safe_load(f)
         return data if data else None
-    except (yaml.YAMLError, IOError, OSError) as e:
+    except (yaml.YAMLError, OSError) as e:
         logger.debug(f"Failed to load {path}: {e}")
         return None
 
 
-def load_project_config(local_path: str) -> Optional[ProjectConfig]:
+def load_project_config(local_path: str) -> ProjectConfig | None:
     """Load project configuration from .project/ directory.
 
     Loads project.yaml and all registered extension files, merging them
@@ -195,8 +195,8 @@ def load_project_config(local_path: str) -> Optional[ProjectConfig]:
 # =============================================================================
 
 def _split_config_data(
-    data: Dict[str, Any]
-) -> tuple[Dict[str, Any], Dict[str, Dict[str, Any]]]:
+    data: dict[str, Any]
+) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
     """Split config data into CNCF fields and extension files.
 
     Returns:
@@ -204,7 +204,7 @@ def _split_config_data(
         where extension_files is {filename: data}
     """
     project_data = {}
-    extension_files: Dict[str, Dict[str, Any]] = {}
+    extension_files: dict[str, dict[str, Any]] = {}
     default_ext = get_default_extension()
 
     for key, value in data.items():
@@ -229,7 +229,7 @@ def _split_config_data(
     return project_data, extension_files
 
 
-def _write_yaml_file(path: str, data: Dict[str, Any], header_lines: List[str]) -> None:
+def _write_yaml_file(path: str, data: dict[str, Any], header_lines: list[str]) -> None:
     """Write data to a YAML file with header comments."""
     with open(path, 'w', encoding='utf-8') as f:
         for line in header_lines:
@@ -303,7 +303,7 @@ def save_project_config(config: ProjectConfig, local_path: str) -> str:
 def get_project_config(
     local_path: str,
     force_reload: bool = False
-) -> Optional[ProjectConfig]:
+) -> ProjectConfig | None:
     """Get project config, using cache if available."""
     abs_path = os.path.abspath(local_path)
 
@@ -324,7 +324,7 @@ def clear_config_cache():
 
 def init_project_config(
     local_path: str,
-    name: Optional[str] = None,
+    name: str | None = None,
     project_type: str = "software",
     description: str = ""
 ) -> ProjectConfig:
@@ -349,7 +349,7 @@ def config_exists(local_path: str) -> bool:
     return os.path.exists(project_path)
 
 
-def get_config_path(local_path: str) -> Optional[str]:
+def get_config_path(local_path: str) -> str | None:
     """Get path to .project/project.yaml if it exists."""
     project_path = os.path.join(local_path, PROJECT_DIR, PROJECT_FILE)
     if os.path.exists(project_path):
@@ -357,7 +357,7 @@ def get_config_path(local_path: str) -> Optional[str]:
     return None
 
 
-def get_extension_path(local_path: str, extension: Optional[str] = None) -> Optional[str]:
+def get_extension_path(local_path: str, extension: str | None = None) -> str | None:
     """Get path to an extension file.
 
     Args:
@@ -374,7 +374,7 @@ def get_extension_path(local_path: str, extension: Optional[str] = None) -> Opti
     return None
 
 
-def list_extension_files(local_path: str) -> List[str]:
+def list_extension_files(local_path: str) -> list[str]:
     """List all extension files that exist in .project/ directory.
 
     Returns:

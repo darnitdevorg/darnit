@@ -1,12 +1,11 @@
 """Tests for the UnifiedLocator class."""
 
 import pytest
-from pathlib import Path
 
-from darnit.locate import UnifiedLocator, FoundEvidence, LocateResult
-from darnit.config.framework_schema import LocatorConfig, LocatorLLMHints
+from darnit.config.framework_schema import LocatorConfig
 from darnit.config.loader import clear_config_cache, save_project_config
-from darnit.config.schema import create_minimal_config, SecurityConfig, PathRef
+from darnit.config.schema import PathRef, SecurityConfig, create_minimal_config
+from darnit.locate import FoundEvidence, LocateResult, UnifiedLocator
 
 
 @pytest.fixture(autouse=True)

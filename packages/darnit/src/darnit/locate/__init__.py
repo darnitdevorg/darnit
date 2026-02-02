@@ -17,24 +17,22 @@ which enables:
 - Remediation context (issues, suggestions)
 """
 
+from .locator import UnifiedLocator
 from .models import (
+    CheckOutput,
     # Core models
     FoundEvidence,
     LocateResult,
-    CheckOutput,
+    create_error_output,
+    create_fail_output,
+    create_inconclusive_output,
     # Factory functions
     create_pass_output,
-    create_fail_output,
-    create_error_output,
-    create_inconclusive_output,
 )
-
-from .locator import UnifiedLocator
-
 from .normalizer import (
     extract_jsonpath,
-    normalize_tool_output,
     normalize_scorecard_output,
+    normalize_tool_output,
 )
 
 __all__ = [

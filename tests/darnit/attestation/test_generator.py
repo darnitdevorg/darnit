@@ -1,7 +1,6 @@
 """Tests for darnit.attestation.generator module."""
 
 import json
-import os
 from pathlib import Path
 
 import pytest
@@ -165,7 +164,7 @@ class TestGenerateAttestationFromResults:
     @pytest.mark.unit
     def test_unsigned_attestation_subject(self, sample_audit_result, temp_dir: Path):
         """Test unsigned attestation has correct subject."""
-        result = generate_attestation_from_results(
+        generate_attestation_from_results(
             audit_result=sample_audit_result,
             sign=False,
             output_path=str(temp_dir / "test.intoto.json")
@@ -181,7 +180,7 @@ class TestGenerateAttestationFromResults:
     @pytest.mark.unit
     def test_unsigned_attestation_predicate(self, sample_audit_result, temp_dir: Path):
         """Test unsigned attestation has correct predicate."""
-        result = generate_attestation_from_results(
+        generate_attestation_from_results(
             audit_result=sample_audit_result,
             sign=False,
             output_path=str(temp_dir / "test.intoto.json")
@@ -200,7 +199,7 @@ class TestGenerateAttestationFromResults:
     @pytest.mark.unit
     def test_default_output_path(self, sample_audit_result, temp_dir: Path):
         """Test default output path is used."""
-        result = generate_attestation_from_results(
+        generate_attestation_from_results(
             audit_result=sample_audit_result,
             sign=False
         )
@@ -215,7 +214,7 @@ class TestGenerateAttestationFromResults:
         output_dir = temp_dir / "output"
         output_dir.mkdir()
 
-        result = generate_attestation_from_results(
+        generate_attestation_from_results(
             audit_result=sample_audit_result,
             sign=False,
             output_dir=str(output_dir)

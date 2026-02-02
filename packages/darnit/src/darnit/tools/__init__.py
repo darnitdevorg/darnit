@@ -32,6 +32,26 @@ Usage:
 """
 
 # Server factory
+# Audit tools
+from .audit import (
+    AuditOptions,
+    calculate_compliance,
+    format_results_markdown,
+    list_available_checks,
+    prepare_audit,
+    run_checks,
+    summarize_results,
+)
+
+# Tool helpers
+from .helpers import (
+    ensure_directory,
+    format_audit_summary,
+    format_error,
+    format_success,
+    validate_and_resolve_repo,
+    write_file_safely,
+)
 from .server import (
     SERVER_NAME,
     SERVER_VERSION,
@@ -39,27 +59,6 @@ from .server import (
     get_server,
     register_tool,
     register_tools,
-)
-
-# Tool helpers
-from .helpers import (
-    validate_and_resolve_repo,
-    format_error,
-    format_success,
-    format_audit_summary,
-    ensure_directory,
-    write_file_safely,
-)
-
-# Audit tools
-from .audit import (
-    AuditOptions,
-    prepare_audit,
-    run_checks,
-    calculate_compliance,
-    summarize_results,
-    format_results_markdown,
-    list_available_checks,
 )
 
 __all__ = [

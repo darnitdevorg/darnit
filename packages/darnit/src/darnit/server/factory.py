@@ -18,7 +18,7 @@ from .registry import ToolRegistry
 logger = logging.getLogger(__name__)
 
 
-def create_server(config_path: str | Path) -> "FastMCP":
+def create_server(config_path: str | Path) -> FastMCP:
     """Create an MCP server from a TOML configuration file.
 
     Reads the TOML config, discovers tools from the [mcp.tools] section,
@@ -81,7 +81,7 @@ def create_server(config_path: str | Path) -> "FastMCP":
     return server
 
 
-def create_server_from_dict(config: dict) -> "FastMCP":
+def create_server_from_dict(config: dict) -> FastMCP:
     """Create an MCP server from a configuration dictionary.
 
     This is useful for testing or when the config is already parsed.

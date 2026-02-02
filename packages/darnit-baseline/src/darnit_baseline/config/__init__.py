@@ -1,10 +1,10 @@
 """OSPS-specific configuration mappings."""
 
 from .mappings import (
-    ProjectType,
-    PROJECT_TYPE_EXCLUSIONS,
     CONTROL_REFERENCE_MAPPING,
     DEFAULT_FILE_LOCATIONS,
+    PROJECT_TYPE_EXCLUSIONS,
+    ProjectType,
 )
 
 __all__ = [

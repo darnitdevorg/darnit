@@ -13,8 +13,7 @@ Each rule includes:
 - Location hints for code linking
 """
 
-from typing import Dict, Any, Optional
-
+from typing import Any
 
 # Domain descriptions for tags
 DOMAIN_INFO = {
@@ -54,7 +53,7 @@ DOMAIN_INFO = {
 
 
 # Complete OSPS rules catalog
-OSPS_RULES: Dict[str, Dict[str, Any]] = {
+OSPS_RULES: dict[str, dict[str, Any]] = {
     # ==========================================================================
     # Level 1 - Access Control (AC)
     # ==========================================================================
@@ -1227,17 +1226,22 @@ git commit -s -m "Your commit message"
         "name": "VEXDocumentsOrPolicy",
         "domain": "VM",
         "level": 3,
-        "short": "VEX documents or policy exists",
+        "short": "VEX policy documented",
         "full": "While active, any vulnerabilities in the software components not affecting the project MUST be accounted for in a VEX document, augmenting the vulnerability report with non-exploitability details.",
-        "help_md": """Create VEX documents for non-applicable vulnerabilities.
+        "help_md": """Document your VEX (Vulnerability Exploitability eXchange) policy.
 
 **Remediation:**
-1. Create VEX policy in SECURITY.md
-2. Generate VEX documents for dependencies
-3. Explain why CVEs are not applicable
+Add a VEX policy section to SECURITY.md explaining how you will handle VEX statements
+for vulnerabilities that don't affect your project.
+
+**IMPORTANT:** This control requires documenting your POLICY for handling VEX - it does
+NOT require creating actual vex.json files. The remediation tool will add a VEX policy
+section to your SECURITY.md file.
+
+Run: `create_security_policy()` or `ensure_vex_policy()`
 """,
         "security_severity": 4.0,
-        "tags": ["vex", "vulnerability"],
+        "tags": ["vex", "vulnerability", "policy"],
         "location_hint": "SECURITY.md",
         "default_level": "warning",
     },
@@ -1334,7 +1338,7 @@ git commit -s -m "Your commit message"
 }
 
 
-def get_rule(control_id: str) -> Optional[Dict[str, Any]]:
+def get_rule(control_id: str) -> dict[str, Any] | None:
     """Get rule metadata for a control ID.
 
     Args:
@@ -1346,7 +1350,7 @@ def get_rule(control_id: str) -> Optional[Dict[str, Any]]:
     return OSPS_RULES.get(control_id)
 
 
-def get_all_rules() -> Dict[str, Dict[str, Any]]:
+def get_all_rules() -> dict[str, dict[str, Any]]:
     """Get all rule definitions.
 
     Returns:
@@ -1355,7 +1359,7 @@ def get_all_rules() -> Dict[str, Dict[str, Any]]:
     return OSPS_RULES
 
 
-def get_rules_by_level(level: int) -> Dict[str, Dict[str, Any]]:
+def get_rules_by_level(level: int) -> dict[str, dict[str, Any]]:
     """Get rules filtered by maturity level.
 
     Args:
@@ -1371,7 +1375,7 @@ def get_rules_by_level(level: int) -> Dict[str, Dict[str, Any]]:
     }
 
 
-def get_rules_by_domain(domain: str) -> Dict[str, Dict[str, Any]]:
+def get_rules_by_domain(domain: str) -> dict[str, dict[str, Any]]:
     """Get rules filtered by domain.
 
     Args:
@@ -1387,7 +1391,7 @@ def get_rules_by_domain(domain: str) -> Dict[str, Dict[str, Any]]:
     }
 
 
-def get_domain_info(domain: str) -> Optional[Dict[str, Any]]:
+def get_domain_info(domain: str) -> dict[str, Any] | None:
     """Get domain information.
 
     Args:

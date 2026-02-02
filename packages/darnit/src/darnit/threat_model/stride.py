@@ -9,16 +9,17 @@ This module implements the STRIDE methodology for threat analysis:
 - Elevation of Privilege
 """
 
-from typing import List, Dict, Any
+from typing import Any
 
 from darnit.core.logging import get_logger
+
 from .models import (
-    StrideCategory,
+    AssetInventory,
+    CodeLocation,
     RiskLevel,
     RiskScore,
+    StrideCategory,
     Threat,
-    CodeLocation,
-    AssetInventory,
 )
 
 logger = get_logger("threat_model.stride")
@@ -29,7 +30,7 @@ def calculate_risk_score(
     data_sensitivity: str,
     has_auth: bool,
     has_input_validation: bool,
-    existing_controls: List[str]
+    existing_controls: list[str]
 ) -> RiskScore:
     """Calculate risk score based on multiple factors.
 
@@ -120,8 +121,8 @@ def calculate_risk_score(
 
 def analyze_stride_threats(
     assets: AssetInventory,
-    injection_sinks: List[Dict[str, Any]]
-) -> List[Threat]:
+    injection_sinks: list[dict[str, Any]]
+) -> list[Threat]:
     """Analyze assets using STRIDE methodology.
 
     Args:
@@ -433,8 +434,8 @@ def analyze_stride_threats(
 
 def identify_control_gaps(
     assets: AssetInventory,
-    threats: List[Threat]
-) -> List[Dict[str, Any]]:
+    threats: list[Threat]
+) -> list[dict[str, Any]]:
     """Identify missing security controls.
 
     Args:

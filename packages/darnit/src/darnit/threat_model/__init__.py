@@ -31,57 +31,56 @@ Note:
 """
 
 # Data models
+# Discovery functions
+from .discovery import (
+    detect_frameworks,
+    discover_all_assets,
+    discover_authentication,
+    discover_data_stores,
+    discover_entry_points,
+    discover_injection_sinks,
+    discover_secrets,
+    discover_sensitive_data,
+)
+
+# Output generators
+from .generators import (
+    generate_json_summary,
+    generate_markdown_threat_model,
+    generate_sarif_threat_model,
+)
 from .models import (
-    StrideCategory,
-    RiskLevel,
-    CodeLocation,
-    EntryPoint,
-    DataStore,
-    SensitiveData,
-    SecretReference,
-    AuthMechanism,
-    RiskScore,
-    Threat,
     AssetInventory,
+    AuthMechanism,
+    CodeLocation,
+    DataStore,
+    EntryPoint,
+    RiskLevel,
+    RiskScore,
+    SecretReference,
+    SensitiveData,
+    StrideCategory,
+    Threat,
     ThreatAnalysis,
 )
 
 # Detection patterns
 from .patterns import (
-    FRAMEWORK_PATTERNS,
     AUTH_PATTERNS,
-    SENSITIVE_DATA_PATTERNS,
+    DATASTORE_PATTERNS,
+    FRAMEWORK_PATTERNS,
     INJECTION_PATTERNS,
     SECRET_PATTERNS,
-    DATASTORE_PATTERNS,
+    SENSITIVE_DATA_PATTERNS,
     SKIP_DIRECTORIES,
     SOURCE_EXTENSIONS,
 )
 
-# Discovery functions
-from .discovery import (
-    detect_frameworks,
-    discover_entry_points,
-    discover_authentication,
-    discover_sensitive_data,
-    discover_secrets,
-    discover_data_stores,
-    discover_injection_sinks,
-    discover_all_assets,
-)
-
 # STRIDE analysis
 from .stride import (
-    calculate_risk_score,
     analyze_stride_threats,
+    calculate_risk_score,
     identify_control_gaps,
-)
-
-# Output generators
-from .generators import (
-    generate_markdown_threat_model,
-    generate_sarif_threat_model,
-    generate_json_summary,
 )
 
 __all__ = [

@@ -4,33 +4,25 @@ This module tests the framework + user config merging system.
 """
 
 import pytest
-from pathlib import Path
-import tempfile
-import os
 
 from darnit.config.framework_schema import (
-    FrameworkConfig,
-    FrameworkMetadata,
-    FrameworkDefaults,
-    ControlConfig,
-    PassesConfig,
-    DeterministicPassConfig,
-    ManualPassConfig,
     CheckConfig,
+    ControlConfig,
+    FrameworkConfig,
+    FrameworkDefaults,
+    FrameworkMetadata,
 )
-
-from darnit.config.user_schema import (
-    UserConfig,
-    UserSettings,
-    ControlOverride,
-    ControlStatus,
-)
-
 from darnit.config.merger import (
-    merge_configs,
-    merge_control,
     EffectiveConfig,
     EffectiveControl,
+    merge_configs,
+    merge_control,
+)
+from darnit.config.user_schema import (
+    ControlOverride,
+    ControlStatus,
+    UserConfig,
+    UserSettings,
 )
 
 

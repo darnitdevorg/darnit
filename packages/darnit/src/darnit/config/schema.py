@@ -15,10 +15,9 @@ Reference:
 
 from datetime import date
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, EmailStr
-
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl
 
 # =============================================================================
 # Enums
@@ -89,8 +88,8 @@ class UrlRef(BaseModel):
 class RepoRef(BaseModel):
     """Reference to a file in another repository."""
     repo: str  # "owner/repo" format
-    path: Optional[str] = None
-    ref: Optional[str] = None  # branch, tag, or commit
+    path: str | None = None
+    ref: str | None = None  # branch, tag, or commit
 
     model_config = ConfigDict(extra="forbid")
 
@@ -111,10 +110,10 @@ class NARef(BaseModel):
 
 
 # Union type for flexible references
-ResourceRef = Union[PathRef, UrlRef, RepoRef, SectionRef, NARef, str]
+ResourceRef = PathRef | UrlRef | RepoRef | SectionRef | NARef | str
 
 
-def parse_resource_ref(value: Any) -> Optional[ResourceRef]:
+def parse_resource_ref(value: Any) -> ResourceRef | None:
     """Parse a resource reference from YAML data."""
     if value is None:
         return None
@@ -137,7 +136,7 @@ def parse_resource_ref(value: Any) -> Optional[ResourceRef]:
     return None
 
 
-def get_path_from_ref(ref: Optional[ResourceRef]) -> Optional[str]:
+def get_path_from_ref(ref: ResourceRef | None) -> str | None:
     """Extract path from a resource reference."""
     if ref is None:
         return None
@@ -159,7 +158,7 @@ class MaturityEntry(BaseModel):
     """CNCF maturity phase entry."""
     phase: str  # sandbox, incubating, graduated
     date: date
-    issue: Optional[str] = None  # URL to maturity issue
+    issue: str | None = None  # URL to maturity issue
 
     model_config = ConfigDict(extra="forbid")
 
@@ -175,36 +174,36 @@ class Audit(BaseModel):
 
 class SecurityConfig(BaseModel):
     """Security documentation references (CNCF standard)."""
-    policy: Optional[PathRef] = None
-    threat_model: Optional[PathRef] = None
-    contact: Optional[EmailStr] = None
+    policy: PathRef | None = None
+    threat_model: PathRef | None = None
+    contact: EmailStr | None = None
 
     model_config = ConfigDict(extra="allow")  # Allow extension fields
 
 
 class GovernanceConfig(BaseModel):
     """Governance documentation references (CNCF standard)."""
-    contributing: Optional[PathRef] = None
-    codeowners: Optional[PathRef] = None
-    governance_doc: Optional[PathRef] = None
-    gitvote_config: Optional[PathRef] = None
+    contributing: PathRef | None = None
+    codeowners: PathRef | None = None
+    governance_doc: PathRef | None = None
+    gitvote_config: PathRef | None = None
 
     model_config = ConfigDict(extra="allow")  # Allow extension fields
 
 
 class LegalConfig(BaseModel):
     """Legal documentation references (CNCF standard)."""
-    license: Optional[PathRef] = None
+    license: PathRef | None = None
 
     model_config = ConfigDict(extra="allow")  # Allow extension fields
 
 
 class DocumentationConfig(BaseModel):
     """Project documentation references (CNCF standard)."""
-    readme: Optional[PathRef] = None
-    support: Optional[PathRef] = None
-    architecture: Optional[PathRef] = None
-    api: Optional[PathRef] = None
+    readme: PathRef | None = None
+    support: PathRef | None = None
+    architecture: PathRef | None = None
+    api: PathRef | None = None
 
     model_config = ConfigDict(extra="allow")  # Allow extension fields
 
@@ -217,17 +216,17 @@ class DocumentationConfig(BaseModel):
 class ControlOverride(BaseModel):
     """Override status for a specific OSPS control."""
     status: ControlStatusValue
-    reason: Optional[str] = None
+    reason: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 
 
 class ArtifactConfig(BaseModel):
     """Build artifact configuration."""
-    path: Optional[str] = None
-    format: Optional[str] = None  # cyclonedx, spdx, slsa
-    enabled: Optional[bool] = None
-    method: Optional[str] = None  # sigstore, gpg
+    path: str | None = None
+    format: str | None = None  # cyclonedx, spdx, slsa
+    enabled: bool | None = None
+    method: str | None = None  # sigstore, gpg
 
     model_config = ConfigDict(extra="forbid")
 
@@ -235,81 +234,92 @@ class ArtifactConfig(BaseModel):
 class ContributorAgreementConfig(BaseModel):
     """Contributor licensing configuration."""
     type: ContributorAgreementType
-    url: Optional[str] = None
+    url: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 
 
 class CIConfig(BaseModel):
     """CI/CD configuration references."""
-    provider: Optional[str] = None  # github, gitlab, jenkins
-    workflows: List[str] = Field(default_factory=list)
-    dependency_scanning: Optional[str] = None
-    security_scanning: List[str] = Field(default_factory=list)
-    testing: List[str] = Field(default_factory=list)
-    code_quality: List[str] = Field(default_factory=list)
+    provider: str | None = None  # github, gitlab, jenkins
+    workflows: list[str] = Field(default_factory=list)
+    dependency_scanning: str | None = None
+    security_scanning: list[str] = Field(default_factory=list)
+    testing: list[str] = Field(default_factory=list)
+    code_quality: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="allow")
 
 
 class ProjectContext(BaseModel):
     """User-confirmed project context that affects control evaluation."""
-    has_subprojects: Optional[bool] = None
-    has_releases: Optional[bool] = None
-    is_library: Optional[bool] = None
-    has_compiled_assets: Optional[bool] = None
-    ci_provider: Optional[str] = None
+    # Existing context keys
+    has_subprojects: bool | None = None
+    has_releases: bool | None = None
+    is_library: bool | None = None
+    has_compiled_assets: bool | None = None
+    ci_provider: str | None = None
+
+    # New context keys for governance and security
+    maintainers: list[str] | str | None = None
+    """Project maintainers - list of GitHub usernames or path to MAINTAINERS file."""
+
+    security_contact: str | None = None
+    """Security contact for vulnerability reports - email, URL, or reference."""
+
+    governance_model: str | None = None
+    """Governance model - bdfl, meritocracy, democracy, corporate, foundation, committee, other."""
 
     model_config = ConfigDict(extra="allow")
 
 
 class ExtendedGovernance(BaseModel):
     """Extended governance fields not in CNCF spec (yet)."""
-    maintainers: Optional[PathRef] = None
-    code_of_conduct: Optional[PathRef] = None
+    maintainers: PathRef | None = None
+    code_of_conduct: PathRef | None = None
 
     model_config = ConfigDict(extra="allow")
 
 
 class ExtendedQuality(BaseModel):
     """Quality tracking fields."""
-    changelog: Optional[PathRef] = None
+    changelog: PathRef | None = None
 
     model_config = ConfigDict(extra="allow")
 
 
 class ExtendedSecurity(BaseModel):
     """Extended security fields."""
-    advisories: Optional[str] = None  # URL or path
-    secrets_policy: Optional[PathRef] = None
-    vex_policy: Optional[SectionRef] = None
-    sca_policy: Optional[SectionRef] = None
-    sast_policy: Optional[SectionRef] = None
+    advisories: str | None = None  # URL or path
+    secrets_policy: PathRef | None = None
+    vex_policy: SectionRef | None = None
+    sca_policy: SectionRef | None = None
+    sast_policy: SectionRef | None = None
 
     model_config = ConfigDict(extra="allow")
 
 
 class ExtendedLegal(BaseModel):
     """Extended legal fields."""
-    contributor_agreement: Optional[ContributorAgreementConfig] = None
+    contributor_agreement: ContributorAgreementConfig | None = None
 
     model_config = ConfigDict(extra="allow")
 
 
 class DependenciesConfig(BaseModel):
     """Dependency management configuration."""
-    lockfile: Optional[str] = None
-    manifest: Optional[str] = None
-    docs: Optional[str] = None
+    lockfile: str | None = None
+    manifest: str | None = None
+    docs: str | None = None
 
     model_config = ConfigDict(extra="allow")
 
 
 class ArtifactsConfig(BaseModel):
     """Build artifacts configuration."""
-    sbom: Optional[ArtifactConfig] = None
-    signing: Optional[ArtifactConfig] = None
-    provenance: Optional[ArtifactConfig] = None
+    sbom: ArtifactConfig | None = None
+    signing: ArtifactConfig | None = None
+    provenance: ArtifactConfig | None = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -322,22 +332,22 @@ class BaselineExtension(BaseModel):
     """
     # Extension metadata
     version: str = "1.0"
-    osps_version: Optional[str] = None  # e.g., "v2025.10.10"
+    osps_version: str | None = None  # e.g., "v2025.10.10"
 
     # Control overrides - mark controls as N/A with reasoning
-    controls: Dict[str, ControlOverride] = Field(default_factory=dict)
+    controls: dict[str, ControlOverride] = Field(default_factory=dict)
 
     # User-confirmed project context
-    context: Optional[ProjectContext] = None
+    context: ProjectContext | None = None
 
     # Extended fields (to be upstreamed to CNCF)
-    governance: Optional[ExtendedGovernance] = None
-    quality: Optional[ExtendedQuality] = None
-    security: Optional[ExtendedSecurity] = None
-    legal: Optional[ExtendedLegal] = None
-    artifacts: Optional[ArtifactsConfig] = None
-    dependencies: Optional[DependenciesConfig] = None
-    ci: Optional[CIConfig] = None
+    governance: ExtendedGovernance | None = None
+    quality: ExtendedQuality | None = None
+    security: ExtendedSecurity | None = None
+    legal: ExtendedLegal | None = None
+    artifacts: ArtifactsConfig | None = None
+    dependencies: DependenciesConfig | None = None
+    ci: CIConfig | None = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -378,32 +388,32 @@ class ProjectConfig(BaseModel):
     type: str = "software"
 
     # CNCF-specific metadata
-    maturity_log: List[MaturityEntry] = Field(default_factory=list)
-    repositories: List[str] = Field(default_factory=list)
-    website: Optional[str] = None
-    artwork: Optional[str] = None
-    social: Dict[str, str] = Field(default_factory=dict)
-    mailing_lists: List[str] = Field(default_factory=list)
+    maturity_log: list[MaturityEntry] = Field(default_factory=list)
+    repositories: list[str] = Field(default_factory=list)
+    website: str | None = None
+    artwork: str | None = None
+    social: dict[str, str] = Field(default_factory=dict)
+    mailing_lists: list[str] = Field(default_factory=list)
 
     # Documentation sections (CNCF standard)
-    security: Optional[SecurityConfig] = None
-    governance: Optional[GovernanceConfig] = None
-    legal: Optional[LegalConfig] = None
-    documentation: Optional[DocumentationConfig] = None
-    audits: List[Audit] = Field(default_factory=list)
+    security: SecurityConfig | None = None
+    governance: GovernanceConfig | None = None
+    legal: LegalConfig | None = None
+    documentation: DocumentationConfig | None = None
+    audits: list[Audit] = Field(default_factory=list)
 
     # OpenSSF Baseline extension
-    x_openssf_baseline: Optional[BaselineExtension] = Field(
+    x_openssf_baseline: BaselineExtension | None = Field(
         default=None,
         alias="x-openssf-baseline"
     )
 
     # Internal tracking (not serialized)
-    config_path: Optional[str] = Field(default=None, exclude=True)
-    local_path: Optional[str] = Field(default=None, exclude=True)
+    config_path: str | None = Field(default=None, exclude=True)
+    local_path: str | None = Field(default=None, exclude=True)
 
     # Project type exclusions (set by implementation)
-    _type_exclusions: Dict[str, Set[str]] = {}
+    _type_exclusions: dict[str, set[str]] = {}
 
     model_config = ConfigDict(
         populate_by_name=True,  # Allow both alias and field name
@@ -420,7 +430,7 @@ class ProjectConfig(BaseModel):
             self.x_openssf_baseline = BaselineExtension()
         return self.x_openssf_baseline
 
-    def get_path(self, section: str, field: str) -> Optional[str]:
+    def get_path(self, section: str, field: str) -> str | None:
         """Get a path reference with extension fallback.
 
         Resolution order:
@@ -465,7 +475,7 @@ class ProjectConfig(BaseModel):
 
         return None
 
-    def is_control_applicable(self, control_id: str) -> Tuple[bool, Optional[str]]:
+    def is_control_applicable(self, control_id: str) -> tuple[bool, str | None]:
         """Check if control is applicable (not overridden as N/A).
 
         Args:
@@ -488,13 +498,13 @@ class ProjectConfig(BaseModel):
 
         return True, None
 
-    def set_type_exclusions(self, exclusions: Dict[str, Set[str]]):
+    def set_type_exclusions(self, exclusions: dict[str, set[str]]):
         """Set project type exclusions from implementation."""
         self._type_exclusions = exclusions
 
-    def get_excluded_controls(self) -> Dict[str, str]:
+    def get_excluded_controls(self) -> dict[str, str]:
         """Get all excluded controls with reasons."""
-        excluded: Dict[str, str] = {}
+        excluded: dict[str, str] = {}
 
         # Add project type exclusions
         type_exclusions = self._type_exclusions.get(self.type, set())
@@ -509,17 +519,17 @@ class ProjectConfig(BaseModel):
 
         return excluded
 
-    def get_security_contact(self) -> Optional[str]:
+    def get_security_contact(self) -> str | None:
         """Get security contact email."""
         if self.security and self.security.contact:
             return str(self.security.contact)
         return None
 
-    def get_audits(self) -> List[Audit]:
+    def get_audits(self) -> list[Audit]:
         """Get list of audits."""
         return self.audits
 
-    def get_ci_provider(self) -> Optional[str]:
+    def get_ci_provider(self) -> str | None:
         """Get CI provider name."""
         # Check extension first
         if self.x_openssf_baseline and self.x_openssf_baseline.ci:
@@ -531,7 +541,7 @@ class ProjectConfig(BaseModel):
 
         return None
 
-    def get_contributor_agreement_type(self) -> Optional[str]:
+    def get_contributor_agreement_type(self) -> str | None:
         """Get contributor agreement type (dco/cla/none)."""
         if self.x_openssf_baseline and self.x_openssf_baseline.legal:
             if self.x_openssf_baseline.legal.contributor_agreement:

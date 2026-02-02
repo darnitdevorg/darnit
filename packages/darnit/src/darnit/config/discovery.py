@@ -4,29 +4,28 @@ import glob as glob_module
 import json
 import os
 import re
-from typing import Dict, List, Optional
 
-from darnit.core.logging import get_logger
 from darnit.config.schema import (
-    ProjectConfig,
-    PathRef,
-    SecurityConfig,
-    GovernanceConfig,
-    LegalConfig,
+    CIConfig,
+    DependenciesConfig,
     DocumentationConfig,
     ExtendedGovernance,
     ExtendedQuality,
-    DependenciesConfig,
-    CIConfig,
+    GovernanceConfig,
+    LegalConfig,
+    PathRef,
+    ProjectConfig,
+    SecurityConfig,
 )
+from darnit.core.logging import get_logger
 
 logger = get_logger("config.discovery")
 
 
 def discover_files(
     local_path: str,
-    file_locations: Optional[Dict[str, List[str]]] = None
-) -> Dict[str, str]:
+    file_locations: dict[str, list[str]] | None = None
+) -> dict[str, str]:
     """Discover existing files that map to .project.yaml references.
 
     Args:
@@ -55,7 +54,7 @@ def discover_files(
     return discovered
 
 
-def discover_ci_config(local_path: str) -> Optional[CIConfig]:
+def discover_ci_config(local_path: str) -> CIConfig | None:
     """Discover CI/CD configuration from the repository.
 
     Args:
@@ -80,7 +79,7 @@ def discover_ci_config(local_path: str) -> Optional[CIConfig]:
         for workflow_path in workflows:
             full_path = os.path.join(local_path, workflow_path)
             try:
-                with open(full_path, 'r', encoding='utf-8') as f:
+                with open(full_path, encoding='utf-8') as f:
                     content = f.read()
 
                 # Detect testing
@@ -98,7 +97,7 @@ def discover_ci_config(local_path: str) -> Optional[CIConfig]:
                     if workflow_path not in config.security_scanning:
                         config.security_scanning.append(workflow_path)
 
-            except (IOError, OSError):
+            except OSError:
                 continue
 
         # Check for dependabot
@@ -129,7 +128,7 @@ def discover_ci_config(local_path: str) -> Optional[CIConfig]:
     return None
 
 
-def discover_project_name(local_path: str) -> Optional[str]:
+def discover_project_name(local_path: str) -> str | None:
     """Try to discover the project name from various sources.
 
     Args:
@@ -142,11 +141,11 @@ def discover_project_name(local_path: str) -> Optional[str]:
     try:
         pkg_path = os.path.join(local_path, "package.json")
         if os.path.exists(pkg_path):
-            with open(pkg_path, 'r') as f:
+            with open(pkg_path) as f:
                 data = json.load(f)
                 if "name" in data:
                     return data["name"]
-    except (IOError, OSError, json.JSONDecodeError):
+    except (OSError, json.JSONDecodeError):
         pass
 
     # Try pyproject.toml
@@ -158,7 +157,7 @@ def discover_project_name(local_path: str) -> Optional[str]:
                 data = tomllib.load(f)
                 if "project" in data and "name" in data["project"]:
                     return data["project"]["name"]
-    except (IOError, OSError, ImportError):
+    except (OSError, ImportError):
         pass
 
     # Try Cargo.toml
@@ -170,20 +169,20 @@ def discover_project_name(local_path: str) -> Optional[str]:
                 data = tomllib.load(f)
                 if "package" in data and "name" in data["package"]:
                     return data["package"]["name"]
-    except (IOError, OSError, ImportError):
+    except (OSError, ImportError):
         pass
 
     # Try go.mod
     try:
         go_mod_path = os.path.join(local_path, "go.mod")
         if os.path.exists(go_mod_path):
-            with open(go_mod_path, 'r') as f:
+            with open(go_mod_path) as f:
                 first_line = f.readline().strip()
                 if first_line.startswith("module "):
                     module_path = first_line[7:].strip()
                     # Return last part of module path
                     return module_path.split("/")[-1]
-    except (IOError, OSError):
+    except OSError:
         pass
 
     # Fall back to directory name
@@ -233,9 +232,9 @@ def _set_config_path(config: ProjectConfig, section: str, field: str, path: str)
 def sync_discovered_to_config(
     config: ProjectConfig,
     local_path: str,
-    file_locations: Optional[Dict[str, List[str]]] = None,
+    file_locations: dict[str, list[str]] | None = None,
     fix: bool = False
-) -> List[str]:
+) -> list[str]:
     """Synchronize discovered files with project configuration.
 
     Args:
@@ -304,8 +303,8 @@ def sync_discovered_to_config(
 
 def discover_and_create_config(
     local_path: str,
-    file_locations: Optional[Dict[str, List[str]]] = None,
-    name: Optional[str] = None,
+    file_locations: dict[str, list[str]] | None = None,
+    name: str | None = None,
     project_type: str = "software"
 ) -> ProjectConfig:
     """Discover files and create a new config with discovered values.

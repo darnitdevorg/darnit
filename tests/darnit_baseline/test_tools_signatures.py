@@ -7,8 +7,7 @@ These tests catch issues like:
 """
 
 import inspect
-from typing import Callable, Set, get_type_hints
-import pytest
+from collections.abc import Callable
 
 
 class TestToolsImports:
@@ -32,16 +31,6 @@ class TestToolsImports:
     def test_threat_model_imports(self) -> None:
         """Threat model tool should import all required functions."""
         # These are the functions used inside generate_threat_model
-        from darnit.threat_model import (
-            detect_frameworks,
-            discover_all_assets,
-            discover_injection_sinks,
-            analyze_stride_threats,
-            identify_control_gaps,
-            generate_markdown_threat_model,
-            generate_sarif_threat_model,
-            generate_json_summary,
-        )
         # All imports should succeed - no assertion needed
 
     def test_remediation_imports(self) -> None:
@@ -53,17 +42,17 @@ class TestToolsImports:
 class TestToolsSignatures:
     """Test that tool wrapper functions pass valid parameters to underlying functions."""
 
-    def _get_param_names(self, func: Callable) -> Set[str]:
+    def _get_param_names(self, func: Callable) -> set[str]:
         """Get parameter names from a function signature."""
         sig = inspect.signature(func)
         return set(sig.parameters.keys())
 
     def test_remediate_audit_findings_signature(self) -> None:
         """remediate_audit_findings wrapper should pass valid parameters."""
-        from darnit_baseline.tools import remediate_audit_findings as wrapper
         from darnit_baseline.remediation import remediate_audit_findings as impl
+        from darnit_baseline.tools import remediate_audit_findings as wrapper
 
-        wrapper_params = self._get_param_names(wrapper)
+        self._get_param_names(wrapper)
         impl_params = self._get_param_names(impl)
 
         # Check that common parameters match
@@ -77,7 +66,6 @@ class TestToolsSignatures:
 
     def test_create_security_policy_signature(self) -> None:
         """create_security_policy wrapper should pass valid parameters."""
-        from darnit_baseline.tools import create_security_policy as wrapper
         from darnit_baseline.remediation.actions import create_security_policy as impl
 
         impl_params = self._get_param_names(impl)
@@ -92,7 +80,6 @@ class TestToolsSignatures:
 
     def test_enable_branch_protection_signature(self) -> None:
         """enable_branch_protection wrapper should pass valid parameters."""
-        from darnit_baseline.tools import enable_branch_protection as wrapper
         from darnit.remediation.github import enable_branch_protection as impl
 
         impl_params = self._get_param_names(impl)
@@ -109,8 +96,9 @@ class TestToolsSmoke:
 
     def test_list_available_checks_callable(self) -> None:
         """list_available_checks should be callable and return JSON."""
-        from darnit_baseline.tools import list_available_checks
         import json
+
+        from darnit_baseline.tools import list_available_checks
 
         result = list_available_checks()
         # Should return valid JSON

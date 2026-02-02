@@ -1,24 +1,25 @@
 """Verification pass implementations for the sieve system."""
 
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
-import re
 import os
+import re
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import Any
 
 from darnit.core.logging import get_logger
 
 from .models import (
     CheckContext,
-    PassResult,
-    PassOutcome,
-    VerificationPhase,
     LLMConsultationRequest,
+    PassOutcome,
+    PassResult,
+    VerificationPhase,
 )
 
 logger = get_logger("sieve.passes")
 
 
-def _file_exists(local_path: str, *patterns: str) -> Optional[str]:
+def _file_exists(local_path: str, *patterns: str) -> str | None:
     """Check if any file matching patterns exists. Returns first match or None."""
     for pattern in patterns:
         # Handle simple glob-like patterns
@@ -35,7 +36,7 @@ def _file_exists(local_path: str, *patterns: str) -> Optional[str]:
     return None
 
 
-def _read_file(local_path: str, filename: str) -> Optional[str]:
+def _read_file(local_path: str, filename: str) -> str | None:
     """Read file contents, return None if not found."""
     # Try multiple locations
     candidates = [
@@ -46,15 +47,15 @@ def _read_file(local_path: str, filename: str) -> Optional[str]:
     for path in candidates:
         if os.path.isfile(path):
             try:
-                with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                with open(path, encoding="utf-8", errors="ignore") as f:
                     return f.read()
-            except (IOError, OSError):
+            except OSError:
                 pass
     return None
 
 
 def _file_contains(
-    local_path: str, file_patterns: List[str], content_pattern: str
+    local_path: str, file_patterns: list[str], content_pattern: str
 ) -> bool:
     """Check if any matching file contains the content pattern."""
     for file_pattern in file_patterns:
@@ -73,12 +74,12 @@ class DeterministicPass:
     )
 
     # Configurable checks
-    file_must_exist: Optional[List[str]] = None  # Any of these patterns
-    file_must_not_exist: Optional[List[str]] = None
-    api_check: Optional[Callable[[str, str], PassResult]] = None
-    config_check: Optional[Callable[[CheckContext], PassResult]] = None
+    file_must_exist: list[str] | None = None  # Any of these patterns
+    file_must_not_exist: list[str] | None = None
+    api_check: Callable[[str, str], PassResult] | None = None
+    config_check: Callable[[CheckContext], PassResult] | None = None
 
-    def _locate_file_with_locator(self, context: CheckContext) -> tuple[Optional[str], str, bool]:
+    def _locate_file_with_locator(self, context: CheckContext) -> tuple[str | None, str, bool]:
         """Try to locate file using UnifiedLocator if available.
 
         Returns:
@@ -108,7 +109,7 @@ class DeterministicPass:
                             context.locator_config,
                         )
                         logger.debug(f"Auto-synced {result.found.path} to .project/")
-                    except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, IOError, OSError) as e:
+                    except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as e:
                         logger.warning(f"Failed to sync to .project/: {e}")
 
                 return os.path.join(context.local_path, result.found.path), result.source, result.needs_sync
@@ -181,7 +182,7 @@ class DeterministicPass:
             checks_performed.append("api_check()")
             try:
                 return self.api_check(context.owner, context.repo)
-            except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, IOError, OSError) as e:
+            except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as e:
                 return PassResult(
                     phase=self.phase,
                     outcome=PassOutcome.ERROR,
@@ -194,7 +195,7 @@ class DeterministicPass:
             checks_performed.append("config_check()")
             try:
                 return self.config_check(context)
-            except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, IOError, OSError) as e:
+            except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as e:
                 return PassResult(
                     phase=self.phase,
                     outcome=PassOutcome.ERROR,
@@ -230,11 +231,11 @@ class PatternPass:
     phase: VerificationPhase = field(default=VerificationPhase.PATTERN, init=False)
 
     # Configurable pattern checks
-    file_patterns: Optional[List[str]] = None  # Files to search
-    content_patterns: Optional[Dict[str, str]] = None  # name -> regex
+    file_patterns: list[str] | None = None  # Files to search
+    content_patterns: dict[str, str] | None = None  # name -> regex
     pass_if_any_match: bool = True  # vs pass_if_all_match
     fail_if_no_match: bool = False  # Return FAIL instead of INCONCLUSIVE
-    custom_analyzer: Optional[Callable[[CheckContext], PassResult]] = None
+    custom_analyzer: Callable[[CheckContext], PassResult] | None = None
 
     def execute(self, context: CheckContext) -> PassResult:
         checks_performed = []
@@ -297,7 +298,7 @@ class PatternPass:
             checks_performed.append("custom_analyzer()")
             try:
                 return self.custom_analyzer(context)
-            except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, IOError, OSError) as e:
+            except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as e:
                 return PassResult(
                     phase=self.phase,
                     outcome=PassOutcome.ERROR,
@@ -331,8 +332,8 @@ class LLMPass:
 
     # Consultation configuration
     prompt_template: str = ""
-    files_to_include: Optional[List[str]] = None  # Include file contents in context
-    analysis_hints: List[str] = field(default_factory=list)
+    files_to_include: list[str] | None = None  # Include file contents in context
+    analysis_hints: list[str] = field(default_factory=list)
     confidence_threshold: float = 0.8
     max_file_content_length: int = 5000  # Truncate long files
 
@@ -398,8 +399,8 @@ class ManualPass:
 
     phase: VerificationPhase = field(default=VerificationPhase.MANUAL, init=False)
 
-    verification_steps: List[str] = field(default_factory=list)
-    verification_docs_url: Optional[str] = None
+    verification_steps: list[str] = field(default_factory=list)
+    verification_docs_url: str | None = None
 
     def execute(self, context: CheckContext) -> PassResult:
         steps = self.verification_steps or [
@@ -443,31 +444,31 @@ class ExecPass:
     phase: VerificationPhase = field(default=VerificationPhase.DETERMINISTIC, init=False)
 
     # Command as list - supports $PATH, $OWNER, $REPO substitution
-    command: List[str] = field(default_factory=list)
+    command: list[str] = field(default_factory=list)
 
     # Exit codes that indicate pass
-    pass_exit_codes: List[int] = field(default_factory=lambda: [0])
+    pass_exit_codes: list[int] = field(default_factory=lambda: [0])
 
     # Exit codes that indicate fail (others = inconclusive)
-    fail_exit_codes: Optional[List[int]] = None
+    fail_exit_codes: list[int] | None = None
 
     # Output format for parsing
     output_format: str = "text"
 
     # Output pattern matching
-    pass_if_output_matches: Optional[str] = None
-    fail_if_output_matches: Optional[str] = None
+    pass_if_output_matches: str | None = None
+    fail_if_output_matches: str | None = None
 
     # JSON output evaluation
-    pass_if_json_path: Optional[str] = None
-    pass_if_json_value: Optional[str] = None
+    pass_if_json_path: str | None = None
+    pass_if_json_value: str | None = None
 
     # Execution settings
     timeout: int = 300
-    cwd: Optional[str] = None
-    env: Dict[str, str] = field(default_factory=dict)
+    cwd: str | None = None
+    env: dict[str, str] = field(default_factory=dict)
 
-    def _substitute_variables(self, context: CheckContext) -> List[str]:
+    def _substitute_variables(self, context: CheckContext) -> list[str]:
         """Substitute variables in command list.
 
         Security: Since we use shell=False and values come from trusted
@@ -500,8 +501,8 @@ class ExecPass:
         return result
 
     def execute(self, context: CheckContext) -> PassResult:
-        import subprocess
         import json as json_lib
+        import subprocess
 
         if not self.command:
             return PassResult(
@@ -543,7 +544,7 @@ class ExecPass:
                     return PassResult(
                         phase=self.phase,
                         outcome=PassOutcome.FAIL,
-                        message=f"Command output matched fail pattern",
+                        message="Command output matched fail pattern",
                         evidence={
                             "command": cmd[0],
                             "exit_code": exit_code,
@@ -557,7 +558,7 @@ class ExecPass:
                     return PassResult(
                         phase=self.phase,
                         outcome=PassOutcome.PASS,
-                        message=f"Command output matched pass pattern",
+                        message="Command output matched pass pattern",
                         evidence={
                             "command": cmd[0],
                             "exit_code": exit_code,

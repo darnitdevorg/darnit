@@ -1,7 +1,8 @@
 """Tests for darnit.attestation.predicate module."""
 
+from datetime import datetime
+
 import pytest
-from datetime import datetime, timezone
 
 from darnit.attestation.predicate import build_assessment_predicate
 

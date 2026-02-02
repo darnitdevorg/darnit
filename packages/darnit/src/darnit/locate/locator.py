@@ -8,13 +8,12 @@ location for controls, including:
 """
 
 import os
-from typing import List, Optional
 
-from darnit.core.logging import get_logger
-from darnit.config.loader import load_project_config, save_project_config
-from darnit.config.schema import create_minimal_config, ProjectConfig
-from darnit.config.discovery import discover_files, _set_config_path
+from darnit.config.discovery import _set_config_path, discover_files
 from darnit.config.framework_schema import LocatorConfig
+from darnit.config.loader import load_project_config, save_project_config
+from darnit.config.schema import ProjectConfig, create_minimal_config
+from darnit.core.logging import get_logger
 
 from .models import FoundEvidence, LocateResult
 
@@ -51,7 +50,7 @@ class UnifiedLocator:
     def __init__(
         self,
         local_path: str,
-        project_config: Optional[ProjectConfig] = None,
+        project_config: ProjectConfig | None = None,
     ):
         """Initialize the locator.
 
@@ -64,7 +63,7 @@ class UnifiedLocator:
         self._config_loaded = project_config is not None
 
     @property
-    def project_config(self) -> Optional[ProjectConfig]:
+    def project_config(self) -> ProjectConfig | None:
         """Lazy-load project config on first access."""
         if not self._config_loaded:
             self._project_config = load_project_config(self.local_path)
@@ -90,7 +89,7 @@ class UnifiedLocator:
         Returns:
             LocateResult with found evidence and source
         """
-        searched_locations: List[str] = []
+        searched_locations: list[str] = []
 
         # Phase 1: Check .project/ reference
         if locator_config.project_path:
@@ -138,14 +137,14 @@ class UnifiedLocator:
         Returns:
             LocateResult (may be empty if not found via config)
         """
-        searched: List[str] = []
+        searched: list[str] = []
 
         if not locator_config.project_path:
             return LocateResult(source="none", searched_locations=searched)
 
         config = self.project_config
         if not config:
-            searched.append(f".project/ (not found)")
+            searched.append(".project/ (not found)")
             return LocateResult(source="none", searched_locations=searched)
 
         # Parse project_path (e.g., "security.policy" -> section="security", field="policy")
@@ -198,7 +197,7 @@ class UnifiedLocator:
         Returns:
             LocateResult (may be empty if not found via discovery)
         """
-        searched: List[str] = []
+        searched: list[str] = []
 
         if not locator_config.discover:
             return LocateResult(source="none", searched_locations=searched)

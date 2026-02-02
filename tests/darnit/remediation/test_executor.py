@@ -2,17 +2,17 @@
 
 import os
 import tempfile
-import pytest
-from pathlib import Path
 
-from darnit.remediation.executor import RemediationExecutor, RemediationResult
+import pytest
+
 from darnit.config.framework_schema import (
-    RemediationConfig,
-    FileCreateRemediationConfig,
-    ExecRemediationConfig,
     ApiCallRemediationConfig,
+    ExecRemediationConfig,
+    FileCreateRemediationConfig,
+    RemediationConfig,
     TemplateConfig,
 )
+from darnit.remediation.executor import RemediationExecutor, RemediationResult
 
 
 class TestRemediationResult:

@@ -1,11 +1,12 @@
 """Tests for darnit.core.plugin module."""
 
+from typing import Any
+
 import pytest
-from typing import List, Dict, Any
 
 from darnit.core.plugin import (
-    ControlSpec,
     ComplianceImplementation,
+    ControlSpec,
 )
 
 
@@ -65,7 +66,7 @@ class MockImplementation:
     def spec_version(self) -> str:
         return "Mock v1.0"
 
-    def get_all_controls(self) -> List[ControlSpec]:
+    def get_all_controls(self) -> list[ControlSpec]:
         return [
             ControlSpec(
                 control_id="MOCK-01",
@@ -85,16 +86,16 @@ class MockImplementation:
             ),
         ]
 
-    def get_controls_by_level(self, level: int) -> List[ControlSpec]:
+    def get_controls_by_level(self, level: int) -> list[ControlSpec]:
         return [c for c in self.get_all_controls() if c.level == level]
 
-    def get_check_functions(self) -> Dict[str, Any]:
+    def get_check_functions(self) -> dict[str, Any]:
         return {"level1": lambda: [], "level2": lambda: []}
 
-    def get_rules_catalog(self) -> Dict[str, Any]:
+    def get_rules_catalog(self) -> dict[str, Any]:
         return {"MOCK-01": {"name": "Mock Control 1"}}
 
-    def get_remediation_registry(self) -> Dict[str, Any]:
+    def get_remediation_registry(self) -> dict[str, Any]:
         return {}
 
 
