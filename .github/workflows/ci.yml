@@ -75,7 +75,6 @@ jobs:
 
       - name: Check Python syntax
         run: |
-          uv run python -m py_compile main.py
           uv run python -m py_compile packages/darnit/src/darnit/__init__.py
           uv run python -m py_compile packages/darnit-baseline/src/darnit_baseline/__init__.py
 
