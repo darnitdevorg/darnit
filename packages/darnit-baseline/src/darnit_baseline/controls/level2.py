@@ -56,6 +56,7 @@ def _gh_api(endpoint: str) -> dict | None:
 def _file_exists(local_path: str, *patterns: str) -> bool:
     """Check if any of the given file patterns exist."""
     import glob as glob_module
+
     for pattern in patterns:
         if "*" in pattern:
             matches = glob_module.glob(os.path.join(local_path, pattern), recursive=True)
@@ -72,7 +73,7 @@ def _read_file(local_path: str, filename: str) -> str | None:
     filepath = os.path.join(local_path, filename)
     if os.path.exists(filepath):
         try:
-            with open(filepath, encoding='utf-8', errors='ignore') as f:
+            with open(filepath, encoding="utf-8", errors="ignore") as f:
                 return f.read()
         except OSError as e:
             logger.debug(f"Could not read {filepath}: {type(e).__name__}")
@@ -133,10 +134,10 @@ def _create_permissions_check() -> Callable[[CheckContext], PassResult]:
 
         for root, _, files in os.walk(workflow_dir):
             for file in files:
-                if file.endswith(('.yml', '.yaml')):
+                if file.endswith((".yml", ".yaml")):
                     workflows_checked.append(file)
                     content = _read_file(root, file) or ""
-                    if re.search(r'^permissions:', content, re.MULTILINE):
+                    if re.search(r"^permissions:", content, re.MULTILINE):
                         has_permissions_defined = True
 
         if has_permissions_defined:
@@ -157,23 +158,25 @@ def _create_permissions_check() -> Callable[[CheckContext], PassResult]:
     return check
 
 
-register_control(ControlSpec(
-    control_id="OSPS-AC-04.01",
-    level=2,
-    domain="AC",
-    name="CICDLowestPermissions",
-    description="CI/CD pipelines default to lowest permissions",
-    passes=[
-        DeterministicPass(config_check=_create_permissions_check()),
-        ManualPass(
-            verification_steps=[
-                "Check GitHub Actions workflows for 'permissions:' block",
-                "Verify permissions are set to minimum required",
-                "Consider adding 'permissions: {}' at workflow level",
-            ],
-        ),
-    ],
-))
+register_control(
+    ControlSpec(
+        control_id="OSPS-AC-04.01",
+        level=2,
+        domain="AC",
+        name="CICDLowestPermissions",
+        description="CI/CD pipelines default to lowest permissions",
+        passes=[
+            DeterministicPass(config_check=_create_permissions_check()),
+            ManualPass(
+                verification_steps=[
+                    "Check GitHub Actions workflows for 'permissions:' block",
+                    "Verify permissions are set to minimum required",
+                    "Consider adding 'permissions: {}' at workflow level",
+                ],
+            ),
+        ],
+    )
+)
 
 
 # =============================================================================
@@ -224,17 +227,37 @@ def _create_releases_check() -> Callable[[CheckContext], PassResult]:
 
 
 def _create_changelog_check() -> Callable[[CheckContext], PassResult]:
-    """Check release contains changelog (OSPS-BR-04.01)."""
+    """Check release contains changelog (OSPS-BR-04.01).
+
+    Returns:
+    - PASS (N/A) if has_releases=false in project context
+    - PASS if releases have release notes
+    - FAIL if releases exist but lack notes
+    - INCONCLUSIVE if no releases found (to allow file_must_exist fallback to run)
+    """
 
     def check(ctx: CheckContext) -> PassResult:
+        # Check if user has confirmed they don't make releases
+        if is_context_confirmed(ctx.local_path, "has_releases"):
+            has_releases = get_context_value(ctx.local_path, "has_releases")
+            if has_releases is False:
+                return PassResult(
+                    phase=VerificationPhase.DETERMINISTIC,
+                    outcome=PassOutcome.PASS,  # N/A
+                    message="Project does not make releases (confirmed in .project.yaml)",
+                    evidence={"has_releases": False, "source": ".project.yaml"},
+                )
+
         try:
             releases = _gh_api(f"/repos/{ctx.owner}/{ctx.repo}/releases?per_page=5")
 
             if not releases:
+                # Return INCONCLUSIVE so file_must_exist fallback can check for CHANGELOG.md
                 return PassResult(
                     phase=VerificationPhase.DETERMINISTIC,
-                    outcome=PassOutcome.PASS,  # N/A
-                    message="No releases found",
+                    outcome=PassOutcome.INCONCLUSIVE,
+                    message="No releases found - checking for changelog file",
+                    evidence={"has_releases": False},
                 )
 
             latest = releases[0]
@@ -265,10 +288,19 @@ def _create_changelog_check() -> Callable[[CheckContext], PassResult]:
 
 
 LOCKFILE_PATTERNS = [
-    "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
-    "Pipfile.lock", "poetry.lock", "pdm.lock", "uv.lock",
-    "Gemfile.lock", "go.sum", "Cargo.lock",
-    "composer.lock", "mix.lock", "pubspec.lock",
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "Pipfile.lock",
+    "poetry.lock",
+    "pdm.lock",
+    "uv.lock",
+    "Gemfile.lock",
+    "go.sum",
+    "Cargo.lock",
+    "composer.lock",
+    "mix.lock",
+    "pubspec.lock",
 ]
 
 
@@ -311,13 +343,9 @@ def _create_signed_releases_check() -> Callable[[CheckContext], PassResult]:
 
             latest = releases[0]
             assets = latest.get("assets", [])
-            has_signature = any(
-                a.get("name", "").endswith((".sig", ".asc", ".gpg"))
-                for a in assets
-            )
+            has_signature = any(a.get("name", "").endswith((".sig", ".asc", ".gpg")) for a in assets)
             has_checksum = any(
-                a.get("name", "").endswith((".sha256", ".sha512", "checksums.txt", "SHASUMS"))
-                for a in assets
+                a.get("name", "").endswith((".sha256", ".sha512", "checksums.txt", "SHASUMS")) for a in assets
             )
 
             if has_signature or has_checksum:
@@ -346,77 +374,66 @@ def _create_signed_releases_check() -> Callable[[CheckContext], PassResult]:
     return check
 
 
-register_control(ControlSpec(
-    control_id="OSPS-BR-02.01",
-    level=2,
-    domain="BR",
-    name="UniqueVersions",
-    description="Releases have unique version identifiers",
-    passes=[
-        DeterministicPass(config_check=_create_releases_check()),
-        ManualPass(
-            verification_steps=[
-                "Check release tags in repository",
-                "Verify each release has a unique version number",
-                "Use semantic versioning (semver.org)",
-            ],
-        ),
-    ],
-))
+register_control(
+    ControlSpec(
+        control_id="OSPS-BR-02.01",
+        level=2,
+        domain="BR",
+        name="UniqueVersions",
+        description="Releases have unique version identifiers",
+        passes=[
+            DeterministicPass(config_check=_create_releases_check()),
+            ManualPass(
+                verification_steps=[
+                    "Check release tags in repository",
+                    "Verify each release has a unique version number",
+                    "Use semantic versioning (semver.org)",
+                ],
+            ),
+        ],
+    )
+)
 
-register_control(ControlSpec(
-    control_id="OSPS-BR-04.01",
-    level=2,
-    domain="BR",
-    name="ReleaseChangelog",
-    description="Releases contain changelog/release notes",
-    passes=[
-        DeterministicPass(config_check=_create_changelog_check()),
-        DeterministicPass(
-            file_must_exist=["CHANGELOG.md", "CHANGELOG", "HISTORY.md", "NEWS.md"]
-        ),
-        ManualPass(
-            verification_steps=[
-                "Check release notes on GitHub releases",
-                "Verify CHANGELOG.md exists and is updated",
-            ],
-        ),
-    ],
-))
+# OSPS-BR-04.01 is now defined in openssf-baseline.toml with config_check reference
+# to _create_changelog_check(). The TOML is the single source of truth.
 
-register_control(ControlSpec(
-    control_id="OSPS-BR-05.01",
-    level=2,
-    domain="BR",
-    name="StandardizedDependencyTooling",
-    description="Uses standardized dependency tooling with lockfiles",
-    passes=[
-        DeterministicPass(config_check=_create_lockfile_check()),
-        ManualPass(
-            verification_steps=[
-                "Check for package-lock.json, yarn.lock, poetry.lock, etc.",
-                "Verify dependencies are pinned to specific versions",
-            ],
-        ),
-    ],
-))
+register_control(
+    ControlSpec(
+        control_id="OSPS-BR-05.01",
+        level=2,
+        domain="BR",
+        name="StandardizedDependencyTooling",
+        description="Uses standardized dependency tooling with lockfiles",
+        passes=[
+            DeterministicPass(config_check=_create_lockfile_check()),
+            ManualPass(
+                verification_steps=[
+                    "Check for package-lock.json, yarn.lock, poetry.lock, etc.",
+                    "Verify dependencies are pinned to specific versions",
+                ],
+            ),
+        ],
+    )
+)
 
-register_control(ControlSpec(
-    control_id="OSPS-BR-06.01",
-    level=2,
-    domain="BR",
-    name="SignedReleases",
-    description="Releases are signed or have checksums",
-    passes=[
-        DeterministicPass(config_check=_create_signed_releases_check()),
-        ManualPass(
-            verification_steps=[
-                "Check release assets for .sig, .asc, or checksum files",
-                "Verify signatures can be validated",
-            ],
-        ),
-    ],
-))
+register_control(
+    ControlSpec(
+        control_id="OSPS-BR-06.01",
+        level=2,
+        domain="BR",
+        name="SignedReleases",
+        description="Releases are signed or have checksums",
+        passes=[
+            DeterministicPass(config_check=_create_signed_releases_check()),
+            ManualPass(
+                verification_steps=[
+                    "Check release assets for .sig, .asc, or checksum files",
+                    "Verify signatures can be validated",
+                ],
+            ),
+        ],
+    )
+)
 
 
 # =============================================================================
@@ -424,31 +441,31 @@ register_control(ControlSpec(
 # =============================================================================
 
 
-register_control(ControlSpec(
-    control_id="OSPS-DO-06.01",
-    level=2,
-    domain="DO",
-    name="DependencyManagementDocs",
-    description="Dependency management process is documented",
-    passes=[
-        DeterministicPass(
-            file_must_exist=["DEPENDENCIES.md", "docs/DEPENDENCIES.md", "docs/dependencies.md"]
-        ),
-        PatternPass(
-            file_patterns=["README.md", "CONTRIBUTING.md"],
-            content_patterns={
-                "dependency_docs": r"(dependenc|package|install|requirements)",
-            },
-            pass_if_any_match=True,
-        ),
-        ManualPass(
-            verification_steps=[
-                "Check README for dependency installation instructions",
-                "Verify CONTRIBUTING.md mentions dependency management",
-            ],
-        ),
-    ],
-))
+register_control(
+    ControlSpec(
+        control_id="OSPS-DO-06.01",
+        level=2,
+        domain="DO",
+        name="DependencyManagementDocs",
+        description="Dependency management process is documented",
+        passes=[
+            DeterministicPass(file_must_exist=["DEPENDENCIES.md", "docs/DEPENDENCIES.md", "docs/dependencies.md"]),
+            PatternPass(
+                file_patterns=["README.md", "CONTRIBUTING.md"],
+                content_patterns={
+                    "dependency_docs": r"(dependenc|package|install|requirements)",
+                },
+                pass_if_any_match=True,
+            ),
+            ManualPass(
+                verification_steps=[
+                    "Check README for dependency installation instructions",
+                    "Verify CONTRIBUTING.md mentions dependency management",
+                ],
+            ),
+        ],
+    )
+)
 
 
 # =============================================================================
@@ -457,8 +474,13 @@ register_control(ControlSpec(
 
 
 GOVERNANCE_FILES = [
-    "GOVERNANCE.md", "MAINTAINERS.md", "MAINTAINERS", "CODEOWNERS",
-    ".github/CODEOWNERS", "docs/GOVERNANCE.md", "OWNERS.md",
+    "GOVERNANCE.md",
+    "MAINTAINERS.md",
+    "MAINTAINERS",
+    "CODEOWNERS",
+    ".github/CODEOWNERS",
+    "docs/GOVERNANCE.md",
+    "OWNERS.md",
 ]
 
 
@@ -484,65 +506,69 @@ def _create_governance_check() -> Callable[[CheckContext], PassResult]:
     return check
 
 
-register_control(ControlSpec(
-    control_id="OSPS-GV-01.01",
-    level=2,
-    domain="GV",
-    name="SensitiveAccessList",
-    description="List of members with sensitive access is documented",
-    passes=[
-        DeterministicPass(config_check=_create_governance_check()),
-        ManualPass(
-            verification_steps=[
-                "Check for MAINTAINERS.md or CODEOWNERS",
-                "Verify list of people with commit/admin access",
-            ],
-        ),
-    ],
-))
+register_control(
+    ControlSpec(
+        control_id="OSPS-GV-01.01",
+        level=2,
+        domain="GV",
+        name="SensitiveAccessList",
+        description="List of members with sensitive access is documented",
+        passes=[
+            DeterministicPass(config_check=_create_governance_check()),
+            ManualPass(
+                verification_steps=[
+                    "Check for MAINTAINERS.md or CODEOWNERS",
+                    "Verify list of people with commit/admin access",
+                ],
+            ),
+        ],
+    )
+)
 
-register_control(ControlSpec(
-    control_id="OSPS-GV-01.02",
-    level=2,
-    domain="GV",
-    name="RolesAndResponsibilities",
-    description="Roles and responsibilities are documented",
-    passes=[
-        DeterministicPass(config_check=_create_governance_check()),
-        ManualPass(
-            verification_steps=[
-                "Check GOVERNANCE.md for role definitions",
-                "Verify responsibilities are clearly defined",
-            ],
-        ),
-    ],
-))
+register_control(
+    ControlSpec(
+        control_id="OSPS-GV-01.02",
+        level=2,
+        domain="GV",
+        name="RolesAndResponsibilities",
+        description="Roles and responsibilities are documented",
+        passes=[
+            DeterministicPass(config_check=_create_governance_check()),
+            ManualPass(
+                verification_steps=[
+                    "Check GOVERNANCE.md for role definitions",
+                    "Verify responsibilities are clearly defined",
+                ],
+            ),
+        ],
+    )
+)
 
-register_control(ControlSpec(
-    control_id="OSPS-GV-03.02",
-    level=2,
-    domain="GV",
-    name="ContributionRequirements",
-    description="Contribution requirements are documented",
-    passes=[
-        DeterministicPass(
-            file_must_exist=["CONTRIBUTING.md", ".github/CONTRIBUTING.md"]
-        ),
-        PatternPass(
-            file_patterns=["CONTRIBUTING.md", ".github/CONTRIBUTING.md"],
-            content_patterns={
-                "requirements": r"(requirement|guideline|standard|convention|must|should)",
-            },
-            pass_if_any_match=True,
-        ),
-        ManualPass(
-            verification_steps=[
-                "Check CONTRIBUTING.md for specific requirements",
-                "Verify coding standards are documented",
-            ],
-        ),
-    ],
-))
+register_control(
+    ControlSpec(
+        control_id="OSPS-GV-03.02",
+        level=2,
+        domain="GV",
+        name="ContributionRequirements",
+        description="Contribution requirements are documented",
+        passes=[
+            DeterministicPass(file_must_exist=["CONTRIBUTING.md", ".github/CONTRIBUTING.md"]),
+            PatternPass(
+                file_patterns=["CONTRIBUTING.md", ".github/CONTRIBUTING.md"],
+                content_patterns={
+                    "requirements": r"(requirement|guideline|standard|convention|must|should)",
+                },
+                pass_if_any_match=True,
+            ),
+            ManualPass(
+                verification_steps=[
+                    "Check CONTRIBUTING.md for specific requirements",
+                    "Verify coding standards are documented",
+                ],
+            ),
+        ],
+    )
+)
 
 
 # =============================================================================
@@ -575,7 +601,7 @@ def _create_dco_check() -> Callable[[CheckContext], PassResult]:
         if os.path.exists(workflow_dir):
             for root, _, files in os.walk(workflow_dir):
                 for file in files:
-                    if file.endswith(('.yml', '.yaml')):
+                    if file.endswith((".yml", ".yaml")):
                         content = _read_file(root, file) or ""
                         if any(kw in content.lower() for kw in ["dco", "cla", "signed-off-by"]):
                             return PassResult(
@@ -587,10 +613,15 @@ def _create_dco_check() -> Callable[[CheckContext], PassResult]:
         # Check CONTRIBUTING.md
         contributing = _read_file(ctx.local_path, "CONTRIBUTING.md") or ""
         dco_markers = [
-            "signed-off-by", "sign-off", "signoff",
-            "developer certificate of origin", "dco",
-            "git commit -s", "commit -s -m",
-            "contributor license agreement", "cla"
+            "signed-off-by",
+            "sign-off",
+            "signoff",
+            "developer certificate of origin",
+            "dco",
+            "git commit -s",
+            "commit -s -m",
+            "contributor license agreement",
+            "cla",
         ]
         if any(marker in contributing.lower() for marker in dco_markers):
             return PassResult(
@@ -608,23 +639,25 @@ def _create_dco_check() -> Callable[[CheckContext], PassResult]:
     return check
 
 
-register_control(ControlSpec(
-    control_id="OSPS-LE-01.01",
-    level=2,
-    domain="LE",
-    name="DCOCLARequirement",
-    description="DCO or CLA is required for contributions",
-    passes=[
-        DeterministicPass(config_check=_create_dco_check()),
-        ManualPass(
-            verification_steps=[
-                "Check for DCO.md or CLA.md file",
-                "Verify CONTRIBUTING.md mentions sign-off requirement",
-                "Check if DCO GitHub App is installed",
-            ],
-        ),
-    ],
-))
+register_control(
+    ControlSpec(
+        control_id="OSPS-LE-01.01",
+        level=2,
+        domain="LE",
+        name="DCOCLARequirement",
+        description="DCO or CLA is required for contributions",
+        passes=[
+            DeterministicPass(config_check=_create_dco_check()),
+            ManualPass(
+                verification_steps=[
+                    "Check for DCO.md or CLA.md file",
+                    "Verify CONTRIBUTING.md mentions sign-off requirement",
+                    "Check if DCO GitHub App is installed",
+                ],
+            ),
+        ],
+    )
+)
 
 
 # =============================================================================
@@ -637,9 +670,7 @@ def _create_status_checks_check() -> Callable[[CheckContext], PassResult]:
 
     def check(ctx: CheckContext) -> PassResult:
         try:
-            protection = _gh_api(
-                f"/repos/{ctx.owner}/{ctx.repo}/branches/{ctx.default_branch}/protection"
-            )
+            protection = _gh_api(f"/repos/{ctx.owner}/{ctx.repo}/branches/{ctx.default_branch}/protection")
 
             if protection and protection.get("required_status_checks"):
                 contexts = protection["required_status_checks"].get("contexts", [])
@@ -680,8 +711,16 @@ def _detect_test_files(local_path: str) -> dict | None:
     test_patterns = {
         "go": ["*_test.go", "**/*_test.go"],
         "python": ["test_*.py", "*_test.py", "tests/*.py", "tests/**/*.py"],
-        "javascript": ["*.test.js", "*.spec.js", "**/*.test.js", "**/*.spec.js",
-                      "*.test.ts", "*.spec.ts", "**/*.test.ts", "**/*.spec.ts"],
+        "javascript": [
+            "*.test.js",
+            "*.spec.js",
+            "**/*.test.js",
+            "**/*.spec.js",
+            "*.test.ts",
+            "*.spec.ts",
+            "**/*.test.ts",
+            "**/*.spec.ts",
+        ],
         "ruby": ["*_spec.rb", "**/*_spec.rb", "*_test.rb", "**/*_test.rb"],
         "rust": ["**/tests/*.rs"],
         "java": ["**/src/test/**/*.java", "**/*Test.java"],
@@ -720,20 +759,30 @@ def _create_automated_tests_check() -> Callable[[CheckContext], PassResult]:
         }
 
         test_command_patterns = [
-            r'npm\s+test', r'yarn\s+test', r'pnpm\s+test',
-            r'pytest', r'python\s+-m\s+pytest', r'uv\s+run\s+pytest',
-            r'jest', r'mocha', r'vitest',
-            r'go\s+test', r'cargo\s+test',
-            r'rspec', r'bundle\s+exec\s+rspec',
-            r'mvn\s+test', r'gradle\s+test',
-            r'dotnet\s+test', r'mix\s+test',
+            r"npm\s+test",
+            r"yarn\s+test",
+            r"pnpm\s+test",
+            r"pytest",
+            r"python\s+-m\s+pytest",
+            r"uv\s+run\s+pytest",
+            r"jest",
+            r"mocha",
+            r"vitest",
+            r"go\s+test",
+            r"cargo\s+test",
+            r"rspec",
+            r"bundle\s+exec\s+rspec",
+            r"mvn\s+test",
+            r"gradle\s+test",
+            r"dotnet\s+test",
+            r"mix\s+test",
         ]
 
         # First, check GitHub Actions
         if os.path.exists(workflow_dir):
             for root, _, files in os.walk(workflow_dir):
                 for file in files:
-                    if file.endswith(('.yml', '.yaml')):
+                    if file.endswith((".yml", ".yaml")):
                         content = _read_file(root, file) or ""
                         for pattern in test_command_patterns:
                             if re.search(pattern, content, re.IGNORECASE):
@@ -765,9 +814,7 @@ def _create_automated_tests_check() -> Callable[[CheckContext], PassResult]:
             # Has test files - this is strong evidence tests exist,
             # but we should verify CI runs them
             if os.path.exists(workflow_dir) or any(
-                os.path.exists(os.path.join(ctx.local_path, c))
-                for configs in ci_configs.values()
-                for c in configs
+                os.path.exists(os.path.join(ctx.local_path, c)) for configs in ci_configs.values() for c in configs
             ):
                 # Has CI config + test files - likely tests run in CI
                 return PassResult(
@@ -822,39 +869,43 @@ def _create_automated_tests_check() -> Callable[[CheckContext], PassResult]:
     return check
 
 
-register_control(ControlSpec(
-    control_id="OSPS-QA-03.01",
-    level=2,
-    domain="QA",
-    name="RequiredStatusChecks",
-    description="Status checks must pass before merging",
-    passes=[
-        DeterministicPass(config_check=_create_status_checks_check()),
-        ManualPass(
-            verification_steps=[
-                "Check branch protection settings",
-                "Verify required status checks are configured",
-            ],
-        ),
-    ],
-))
+register_control(
+    ControlSpec(
+        control_id="OSPS-QA-03.01",
+        level=2,
+        domain="QA",
+        name="RequiredStatusChecks",
+        description="Status checks must pass before merging",
+        passes=[
+            DeterministicPass(config_check=_create_status_checks_check()),
+            ManualPass(
+                verification_steps=[
+                    "Check branch protection settings",
+                    "Verify required status checks are configured",
+                ],
+            ),
+        ],
+    )
+)
 
-register_control(ControlSpec(
-    control_id="OSPS-QA-06.01",
-    level=2,
-    domain="QA",
-    name="AutomatedTestSuite",
-    description="Automated test suite runs in CI",
-    passes=[
-        DeterministicPass(config_check=_create_automated_tests_check()),
-        ManualPass(
-            verification_steps=[
-                "Check GitHub Actions for test commands",
-                "Verify tests run on pull requests",
-            ],
-        ),
-    ],
-))
+register_control(
+    ControlSpec(
+        control_id="OSPS-QA-06.01",
+        level=2,
+        domain="QA",
+        name="AutomatedTestSuite",
+        description="Automated test suite runs in CI",
+        passes=[
+            DeterministicPass(config_check=_create_automated_tests_check()),
+            ManualPass(
+                verification_steps=[
+                    "Check GitHub Actions for test commands",
+                    "Verify tests run on pull requests",
+                ],
+            ),
+        ],
+    )
+)
 
 
 # =============================================================================
@@ -863,37 +914,54 @@ register_control(ControlSpec(
 
 
 DESIGN_DOCS = [
-    "ARCHITECTURE.md", "DESIGN.md", "docs/ARCHITECTURE.md", "docs/DESIGN.md",
-    "docs/architecture/", "docs/design/", "doc/architecture.md",
+    "ARCHITECTURE.md",
+    "DESIGN.md",
+    "docs/ARCHITECTURE.md",
+    "docs/DESIGN.md",
+    "docs/architecture/",
+    "docs/design/",
+    "doc/architecture.md",
 ]
 
 API_DOCS = [
-    "API.md", "docs/API.md", "docs/api/", "openapi.yaml", "openapi.json",
-    "swagger.yaml", "swagger.json", "api-docs/",
+    "API.md",
+    "docs/API.md",
+    "docs/api/",
+    "openapi.yaml",
+    "openapi.json",
+    "swagger.yaml",
+    "swagger.json",
+    "api-docs/",
 ]
 
 # Files that commonly contain API/interface documentation inline
 DOCS_WITH_API_SECTIONS = [
-    "README.md", "README.rst", "README.txt", "README",
-    "docs/README.md", "USAGE.md", "docs/USAGE.md",
-    "docs/index.md", "docs/getting-started.md",
+    "README.md",
+    "README.rst",
+    "README.txt",
+    "README",
+    "docs/README.md",
+    "USAGE.md",
+    "docs/USAGE.md",
+    "docs/index.md",
+    "docs/getting-started.md",
 ]
 
 # Patterns that indicate API/interface documentation sections
 API_SECTION_PATTERNS = [
     # Markdown headings for API documentation
-    r'^#+\s*(API|Interface|External\s+Interface|Public\s+Interface)',
-    r'^#+\s*(Usage|How\s+to\s+Use)',
-    r'^#+\s*(Methods|Functions|Endpoints)',
-    r'^#+\s*(CLI|Command[s]?|Command[\s-]Line)',
-    r'^#+\s*(Reference|API\s+Reference)',
-    r'^#+\s*(Parameters|Arguments|Options)',
+    r"^#+\s*(API|Interface|External\s+Interface|Public\s+Interface)",
+    r"^#+\s*(Usage|How\s+to\s+Use)",
+    r"^#+\s*(Methods|Functions|Endpoints)",
+    r"^#+\s*(CLI|Command[s]?|Command[\s-]Line)",
+    r"^#+\s*(Reference|API\s+Reference)",
+    r"^#+\s*(Parameters|Arguments|Options)",
     # Code blocks with function/method definitions
-    r'```[a-z]*\s*\n[^`]*def\s+\w+\s*\([^)]*\)',  # Python functions
-    r'```[a-z]*\s*\n[^`]*function\s+\w+\s*\([^)]*\)',  # JS functions
-    r'```[a-z]*\s*\n[^`]*func\s+\w+\s*\([^)]*\)',  # Go functions
+    r"```[a-z]*\s*\n[^`]*def\s+\w+\s*\([^)]*\)",  # Python functions
+    r"```[a-z]*\s*\n[^`]*function\s+\w+\s*\([^)]*\)",  # JS functions
+    r"```[a-z]*\s*\n[^`]*func\s+\w+\s*\([^)]*\)",  # Go functions
     # API-related keywords in context
-    r'(endpoint|route|method|parameter|return|response)s?\s*:',
+    r"(endpoint|route|method|parameter|return|response)s?\s*:",
 ]
 
 
@@ -902,7 +970,7 @@ def _has_api_documentation_section(content: str) -> bool:
     content_lower = content.lower()
 
     # Quick check: must have some API-related keywords
-    api_keywords = ['api', 'usage', 'interface', 'method', 'function', 'endpoint', 'cli', 'command']
+    api_keywords = ["api", "usage", "interface", "method", "function", "endpoint", "cli", "command"]
     if not any(kw in content_lower for kw in api_keywords):
         return False
 
@@ -978,65 +1046,69 @@ def _create_api_docs_check() -> Callable[[CheckContext], PassResult]:
     return check
 
 
-register_control(ControlSpec(
-    control_id="OSPS-SA-01.01",
-    level=2,
-    domain="SA",
-    name="DesignDocumentation",
-    description="Architecture/design documentation exists",
-    passes=[
-        DeterministicPass(config_check=_create_design_docs_check()),
-        ManualPass(
-            verification_steps=[
-                "Check for ARCHITECTURE.md or DESIGN.md",
-                "Verify docs/ folder contains architecture documentation",
-            ],
-        ),
-    ],
-))
+register_control(
+    ControlSpec(
+        control_id="OSPS-SA-01.01",
+        level=2,
+        domain="SA",
+        name="DesignDocumentation",
+        description="Architecture/design documentation exists",
+        passes=[
+            DeterministicPass(config_check=_create_design_docs_check()),
+            ManualPass(
+                verification_steps=[
+                    "Check for ARCHITECTURE.md or DESIGN.md",
+                    "Verify docs/ folder contains architecture documentation",
+                ],
+            ),
+        ],
+    )
+)
 
-register_control(ControlSpec(
-    control_id="OSPS-SA-02.01",
-    level=2,
-    domain="SA",
-    name="ExternalInterfaceDocs",
-    description="External interface documentation exists",
-    passes=[
-        DeterministicPass(config_check=_create_api_docs_check()),
-        ManualPass(
-            verification_steps=[
-                "Check for API.md or openapi.yaml",
-                "Verify API documentation is complete",
-            ],
-        ),
-    ],
-))
+register_control(
+    ControlSpec(
+        control_id="OSPS-SA-02.01",
+        level=2,
+        domain="SA",
+        name="ExternalInterfaceDocs",
+        description="External interface documentation exists",
+        passes=[
+            DeterministicPass(config_check=_create_api_docs_check()),
+            ManualPass(
+                verification_steps=[
+                    "Check for API.md or openapi.yaml",
+                    "Verify API documentation is complete",
+                ],
+            ),
+        ],
+    )
+)
 
-register_control(ControlSpec(
-    control_id="OSPS-SA-03.01",
-    level=2,
-    domain="SA",
-    name="SecurityAssessment",
-    description="Security assessment documentation exists",
-    passes=[
-        PatternPass(
-            file_patterns=["SECURITY.md", ".github/SECURITY.md"],
-            content_patterns={
-                "threat_assessment": r"(threat|risk|assessment|vulnerability|attack)",
-            },
-            pass_if_any_match=True,
-        ),
-        DeterministicPass(
-            file_must_exist=["SECURITY.md", ".github/SECURITY.md", "docs/security/"]
-        ),
-        ManualPass(
-            verification_steps=[
-                "Check SECURITY.md for threat modeling",
-                "Verify security considerations are documented",
-            ],
-        ),
-    ],
-))
+register_control(
+    ControlSpec(
+        control_id="OSPS-SA-03.01",
+        level=2,
+        domain="SA",
+        name="SecurityAssessment",
+        description="Security assessment documentation exists",
+        passes=[
+            PatternPass(
+                file_patterns=["SECURITY.md", ".github/SECURITY.md"],
+                content_patterns={
+                    "threat_assessment": r"(threat|risk|assessment|vulnerability|attack)",
+                },
+                pass_if_any_match=True,
+            ),
+            DeterministicPass(file_must_exist=["SECURITY.md", ".github/SECURITY.md", "docs/security/"]),
+            ManualPass(
+                verification_steps=[
+                    "Check SECURITY.md for threat modeling",
+                    "Verify security considerations are documented",
+                ],
+            ),
+        ],
+    )
+)
 
 
 # =============================================================================
@@ -1044,55 +1116,57 @@ register_control(ControlSpec(
 # =============================================================================
 
 
-register_control(ControlSpec(
-    control_id="OSPS-VM-01.01",
-    level=2,
-    domain="VM",
-    name="CVDPolicy",
-    description="Coordinated vulnerability disclosure policy with timeframe",
-    passes=[
-        PatternPass(
-            file_patterns=["SECURITY.md", ".github/SECURITY.md"],
-            content_patterns={
-                "disclosure_policy": r"(disclosure|response|timeframe|\d+\s*days)",
-            },
-            pass_if_any_match=True,
-        ),
-        DeterministicPass(
-            file_must_exist=["SECURITY.md", ".github/SECURITY.md"]
-        ),
-        ManualPass(
-            verification_steps=[
-                "Check SECURITY.md for disclosure timeline",
-                "Verify response timeframe is documented",
-            ],
-        ),
-    ],
-))
+register_control(
+    ControlSpec(
+        control_id="OSPS-VM-01.01",
+        level=2,
+        domain="VM",
+        name="CVDPolicy",
+        description="Coordinated vulnerability disclosure policy with timeframe",
+        passes=[
+            PatternPass(
+                file_patterns=["SECURITY.md", ".github/SECURITY.md"],
+                content_patterns={
+                    "disclosure_policy": r"(disclosure|response|timeframe|\d+\s*days)",
+                },
+                pass_if_any_match=True,
+            ),
+            DeterministicPass(file_must_exist=["SECURITY.md", ".github/SECURITY.md"]),
+            ManualPass(
+                verification_steps=[
+                    "Check SECURITY.md for disclosure timeline",
+                    "Verify response timeframe is documented",
+                ],
+            ),
+        ],
+    )
+)
 
-register_control(ControlSpec(
-    control_id="OSPS-VM-03.01",
-    level=2,
-    domain="VM",
-    name="PrivateVulnerabilityReporting",
-    description="Private vulnerability reporting mechanism exists",
-    passes=[
-        PatternPass(
-            file_patterns=["SECURITY.md", ".github/SECURITY.md"],
-            content_patterns={
-                "private_reporting": r"(private|confidential|email|pgp|gpg|security@|privately)",
-            },
-            pass_if_any_match=True,
-        ),
-        ManualPass(
-            verification_steps=[
-                "Check SECURITY.md for private contact method",
-                "Verify email or PGP key is provided",
-                "Check if GitHub private vulnerability reporting is enabled",
-            ],
-        ),
-    ],
-))
+register_control(
+    ControlSpec(
+        control_id="OSPS-VM-03.01",
+        level=2,
+        domain="VM",
+        name="PrivateVulnerabilityReporting",
+        description="Private vulnerability reporting mechanism exists",
+        passes=[
+            PatternPass(
+                file_patterns=["SECURITY.md", ".github/SECURITY.md"],
+                content_patterns={
+                    "private_reporting": r"(private|confidential|email|pgp|gpg|security@|privately)",
+                },
+                pass_if_any_match=True,
+            ),
+            ManualPass(
+                verification_steps=[
+                    "Check SECURITY.md for private contact method",
+                    "Verify email or PGP key is provided",
+                    "Check if GitHub private vulnerability reporting is enabled",
+                ],
+            ),
+        ],
+    )
+)
 
 
 def _create_advisories_check() -> Callable[[CheckContext], PassResult]:
@@ -1142,19 +1216,21 @@ def _create_advisories_check() -> Callable[[CheckContext], PassResult]:
     return check
 
 
-register_control(ControlSpec(
-    control_id="OSPS-VM-04.01",
-    level=2,
-    domain="VM",
-    name="PublicVulnerabilityData",
-    description="Public vulnerability data via security advisories",
-    passes=[
-        DeterministicPass(config_check=_create_advisories_check()),
-        ManualPass(
-            verification_steps=[
-                "Check if GitHub Security Advisories are enabled",
-                "Verify Issues are enabled (required for advisories)",
-            ],
-        ),
-    ],
-))
+register_control(
+    ControlSpec(
+        control_id="OSPS-VM-04.01",
+        level=2,
+        domain="VM",
+        name="PublicVulnerabilityData",
+        description="Public vulnerability data via security advisories",
+        passes=[
+            DeterministicPass(config_check=_create_advisories_check()),
+            ManualPass(
+                verification_steps=[
+                    "Check if GitHub Security Advisories are enabled",
+                    "Verify Issues are enabled (required for advisories)",
+                ],
+            ),
+        ],
+    )
+)

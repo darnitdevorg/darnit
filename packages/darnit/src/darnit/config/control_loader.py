@@ -18,7 +18,9 @@ Example:
         register_control(control)
 """
 
+import importlib
 from collections.abc import Callable
+from importlib.metadata import entry_points
 from pathlib import Path
 from typing import Any
 
@@ -49,8 +51,149 @@ logger = get_logger("config.control_loader")
 
 
 # =============================================================================
+# Module Import Security
+# =============================================================================
+
+# Base whitelist - always allowed
+_BASE_ALLOWED_PREFIXES = (
+    "darnit.",
+    "darnit_baseline.",
+    "darnit_plugins.",
+    "darnit_testchecks.",
+)
+
+# Cache for dynamically discovered prefixes
+_discovered_prefixes: set[str] | None = None
+
+
+def _get_allowed_module_prefixes() -> tuple[str, ...]:
+    """Get allowed module prefixes, including registered plugins.
+
+    Combines the base whitelist with prefixes from all registered
+    entry points in darnit.* groups. This allows third-party plugins
+    to register their modules as trusted.
+
+    Returns:
+        Tuple of allowed module prefixes (e.g., ("darnit.", "darnit_baseline."))
+    """
+    global _discovered_prefixes
+
+    if _discovered_prefixes is None:
+        _discovered_prefixes = set(_BASE_ALLOWED_PREFIXES)
+
+        # Discover prefixes from registered entry points
+        for group in (
+            "darnit.implementations",
+            "darnit.frameworks",
+            "darnit.check_adapters",
+            "darnit.remediation_adapters",
+        ):
+            try:
+                eps = entry_points(group=group)
+                for ep in eps:
+                    # Entry point value is "package.module:function"
+                    module_path = ep.value.split(":")[0]
+                    package_name = module_path.split(".")[0]
+                    _discovered_prefixes.add(f"{package_name}.")
+            except Exception:
+                pass  # Entry point group might not exist
+
+    return tuple(_discovered_prefixes)
+
+
+def _is_module_allowed(module_path: str) -> bool:
+    """Check if a module path is in the allowed whitelist.
+
+    Args:
+        module_path: Full module path (e.g., "darnit_baseline.controls.level2")
+
+    Returns:
+        True if the module is allowed to be imported
+    """
+    allowed = _get_allowed_module_prefixes()
+    return module_path.startswith(allowed)
+
+
+# =============================================================================
 # Pass Converters
 # =============================================================================
+
+
+def _resolve_check_function(reference: str) -> Callable | None:
+    """Resolve a 'module:function' reference to a callable.
+
+    Supports two patterns:
+    1. Factory functions that return a callable: module:factory_func
+       - The factory is called, and its return value is used as the check
+    2. Direct check functions: module:check_func
+       - The function itself is used as the check
+
+    Security: Only allows loading modules from whitelisted prefixes
+    to prevent arbitrary code execution from malicious TOML files.
+    The whitelist includes base darnit packages plus any packages
+    registered via entry points.
+
+    Args:
+        reference: String like "darnit_baseline.controls.level2:_create_changelog_check"
+
+    Returns:
+        The resolved function, or None if resolution fails
+    """
+    if not reference or ":" not in reference:
+        logger.warning(f"Invalid check function reference (missing ':'): {reference}")
+        return None
+
+    module_path, func_name = reference.rsplit(":", 1)
+
+    # Security: Validate module path against whitelist
+    if not _is_module_allowed(module_path):
+        logger.warning(
+            f"Blocked import of '{module_path}': not in allowed module prefixes. "
+            f"Register your plugin via entry points to allow imports."
+        )
+        return None
+
+    try:
+        module = importlib.import_module(module_path)
+        func = getattr(module, func_name)
+
+        if not callable(func):
+            logger.warning(f"Reference {reference} is not callable")
+            return None
+
+        # Try calling the function to see if it's a factory
+        # Factory functions have no required parameters and return a callable
+        try:
+            import inspect
+
+            sig = inspect.signature(func)
+            # Check if all parameters have defaults (i.e., can be called with no args)
+            can_call_no_args = all(
+                p.default is not inspect.Parameter.empty
+                or p.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+                for p in sig.parameters.values()
+            )
+
+            if can_call_no_args:
+                result = func()
+                if callable(result):
+                    logger.debug(f"Resolved factory function {reference} -> {result}")
+                    return result
+
+            # Not a factory, return the function itself
+            logger.debug(f"Resolved direct function {reference}")
+            return func
+
+        except (TypeError, ValueError):
+            # If we can't inspect or call, just return the function
+            return func
+
+    except ImportError as e:
+        logger.warning(f"Could not import module for check function {reference}: {e}")
+        return None
+    except AttributeError as e:
+        logger.warning(f"Function not found in module for {reference}: {e}")
+        return None
 
 
 def _convert_deterministic_pass(config: DeterministicPassConfig) -> DeterministicPass:
@@ -62,13 +205,15 @@ def _convert_deterministic_pass(config: DeterministicPassConfig) -> Deterministi
     Returns:
         Executable DeterministicPass
     """
-    # For now, we support file_must_exist and file_must_not_exist directly
-    # api_check and config_check require function resolution (advanced)
+    # Resolve function references for api_check and config_check
+    api_check = _resolve_check_function(config.api_check) if config.api_check else None
+    config_check = _resolve_check_function(config.config_check) if config.config_check else None
+
     return DeterministicPass(
         file_must_exist=config.file_must_exist,
         file_must_not_exist=config.file_must_not_exist,
-        # Note: api_check and config_check are function references
-        # These would need adapter resolution for full support
+        api_check=api_check,
+        config_check=config_check,
     )
 
 
@@ -422,6 +567,7 @@ def register_controls_from_config(
     """
     if registry_func is None:
         from darnit.sieve.registry import register_control
+
         registry_func = register_control
 
     controls = load_controls_from_effective(config)

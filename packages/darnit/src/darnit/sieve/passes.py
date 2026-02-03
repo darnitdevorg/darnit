@@ -54,9 +54,7 @@ def _read_file(local_path: str, filename: str) -> str | None:
     return None
 
 
-def _file_contains(
-    local_path: str, file_patterns: list[str], content_pattern: str
-) -> bool:
+def _file_contains(local_path: str, file_patterns: list[str], content_pattern: str) -> bool:
     """Check if any matching file contains the content pattern."""
     for file_pattern in file_patterns:
         content = _read_file(local_path, file_pattern)
@@ -69,9 +67,7 @@ def _file_contains(
 class DeterministicPass:
     """Pass 1: Deterministic checks (file existence, API booleans, config)."""
 
-    phase: VerificationPhase = field(
-        default=VerificationPhase.DETERMINISTIC, init=False
-    )
+    phase: VerificationPhase = field(default=VerificationPhase.DETERMINISTIC, init=False)
 
     # Configurable checks
     file_must_exist: list[str] | None = None  # Any of these patterns
@@ -129,7 +125,49 @@ class DeterministicPass:
     def execute(self, context: CheckContext) -> PassResult:
         checks_performed = []
 
-        # File existence checks
+        # API check first (most authoritative)
+        if self.api_check:
+            checks_performed.append("api_check()")
+            try:
+                result = self.api_check(context.owner, context.repo)
+                # Only return if conclusive (PASS/FAIL), continue to fallbacks if INCONCLUSIVE
+                if result.outcome in (PassOutcome.PASS, PassOutcome.FAIL):
+                    return result
+                # Store evidence for potential later use
+                context.gathered_evidence["api_check_result"] = {
+                    "outcome": result.outcome.value,
+                    "message": result.message,
+                }
+            except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as e:
+                return PassResult(
+                    phase=self.phase,
+                    outcome=PassOutcome.ERROR,
+                    message=f"API check failed: {str(e)}",
+                    evidence={"error": str(e)},
+                )
+
+        # Config check second (also authoritative)
+        if self.config_check:
+            checks_performed.append("config_check()")
+            try:
+                result = self.config_check(context)
+                # Only return if conclusive (PASS/FAIL), continue to fallbacks if INCONCLUSIVE
+                if result.outcome in (PassOutcome.PASS, PassOutcome.FAIL):
+                    return result
+                # Store evidence for potential later use
+                context.gathered_evidence["config_check_result"] = {
+                    "outcome": result.outcome.value,
+                    "message": result.message,
+                }
+            except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as e:
+                return PassResult(
+                    phase=self.phase,
+                    outcome=PassOutcome.ERROR,
+                    message=f"Config check failed: {str(e)}",
+                    evidence={"error": str(e)},
+                )
+
+        # File existence checks (fallback when api_check/config_check are not set or inconclusive)
         if self.file_must_exist:
             checks_performed.append(f"file_exists({self.file_must_exist})")
 
@@ -175,32 +213,6 @@ class DeterministicPass:
                     outcome=PassOutcome.FAIL,
                     message=f"Prohibited file found: {os.path.basename(found)}",
                     evidence={"file_found": found},
-                )
-
-        # API check
-        if self.api_check:
-            checks_performed.append("api_check()")
-            try:
-                return self.api_check(context.owner, context.repo)
-            except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as e:
-                return PassResult(
-                    phase=self.phase,
-                    outcome=PassOutcome.ERROR,
-                    message=f"API check failed: {str(e)}",
-                    evidence={"error": str(e)},
-                )
-
-        # Config check
-        if self.config_check:
-            checks_performed.append("config_check()")
-            try:
-                return self.config_check(context)
-            except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as e:
-                return PassResult(
-                    phase=self.phase,
-                    outcome=PassOutcome.ERROR,
-                    message=f"Config check failed: {str(e)}",
-                    evidence={"error": str(e)},
                 )
 
         # No deterministic check configured - inconclusive
@@ -255,9 +267,7 @@ class PatternPass:
                     message=f"Pattern matches found: {matches_found}",
                     evidence={"patterns_matched": matches_found},
                 )
-            elif not self.pass_if_any_match and len(matches_found) == len(
-                self.content_patterns
-            ):
+            elif not self.pass_if_any_match and len(matches_found) == len(self.content_patterns):
                 return PassResult(
                     phase=self.phase,
                     outcome=PassOutcome.PASS,
@@ -272,9 +282,7 @@ class PatternPass:
                     message=f"Partial pattern matches: {matches_found}",
                     evidence={
                         "patterns_matched": matches_found,
-                        "patterns_missing": list(
-                            set(self.content_patterns.keys()) - set(matches_found)
-                        ),
+                        "patterns_missing": list(set(self.content_patterns.keys()) - set(matches_found)),
                     },
                 )
             else:
@@ -316,9 +324,7 @@ class PatternPass:
     def describe(self) -> str:
         parts = []
         if self.content_patterns:
-            parts.append(
-                f"Pattern match in {self.file_patterns}: {list(self.content_patterns.keys())}"
-            )
+            parts.append(f"Pattern match in {self.file_patterns}: {list(self.content_patterns.keys())}")
         if self.custom_analyzer:
             parts.append("Custom content analyzer")
         return "; ".join(parts) or "No pattern checks"
@@ -348,8 +354,7 @@ class LLMPass:
                     # Truncate long content
                     if len(content) > self.max_file_content_length:
                         content = (
-                            content[: self.max_file_content_length]
-                            + f"\n... [truncated, {len(content)} total chars]"
+                            content[: self.max_file_content_length] + f"\n... [truncated, {len(content)} total chars]"
                         )
                     gathered_context[f"file:{pattern}"] = content
 

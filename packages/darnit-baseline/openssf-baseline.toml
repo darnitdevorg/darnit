@@ -566,13 +566,10 @@ project_path = "documentation.changelog"
 discover = ["CHANGELOG.md", "CHANGES.md", "HISTORY.md", "NEWS.md"]
 kind = "file"
 
-[controls."OSPS-BR-04.01".passes]
-deterministic = { file_must_exist = [
-    "CHANGELOG.md",
-    "CHANGES.md",
-    "HISTORY.md",
-    "NEWS.md",
-]}
+# Check order: config_check (GitHub releases API) runs first; file_must_exist is fallback
+[controls."OSPS-BR-04.01".passes.deterministic]
+config_check = "darnit_baseline.controls.level2:_create_changelog_check"
+file_must_exist = ["CHANGELOG.md", "CHANGES.md", "HISTORY.md", "NEWS.md"]
 
 [controls."OSPS-BR-04.01".passes.manual]
 steps = [

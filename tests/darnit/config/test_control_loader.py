@@ -10,6 +10,9 @@ from darnit.config.control_loader import (
     _convert_exec_pass,
     _convert_manual_pass,
     _convert_pattern_pass,
+    _get_allowed_module_prefixes,
+    _is_module_allowed,
+    _resolve_check_function,
     control_from_framework,
     load_controls_from_framework,
 )
@@ -428,6 +431,66 @@ class TestFrameworkSchemaValidation:
             security_severity=7.5,
         )
         assert control.security_severity == 7.5
+
+
+class TestModuleImportSecurity:
+    """Test security whitelist for dynamic module imports."""
+
+    def test_base_prefixes_always_allowed(self):
+        """Test that base darnit prefixes are always allowed."""
+        assert _is_module_allowed("darnit.core.plugin")
+        assert _is_module_allowed("darnit_baseline.controls.level1")
+        assert _is_module_allowed("darnit_plugins.custom")
+        assert _is_module_allowed("darnit_testchecks.fixtures")
+
+    def test_blocks_standard_library(self):
+        """Test that standard library modules are blocked."""
+        assert not _is_module_allowed("os")
+        assert not _is_module_allowed("subprocess")
+        assert not _is_module_allowed("sys")
+        assert not _is_module_allowed("importlib")
+
+    def test_blocks_arbitrary_packages(self):
+        """Test that arbitrary third-party packages are blocked."""
+        assert not _is_module_allowed("requests")
+        assert not _is_module_allowed("flask.app")
+        assert not _is_module_allowed("malicious_package.evil")
+
+    def test_resolve_blocks_unauthorized_modules(self):
+        """Test that _resolve_check_function blocks unauthorized modules."""
+        # These should return None and log a warning
+        assert _resolve_check_function("os:system") is None
+        assert _resolve_check_function("subprocess:run") is None
+        assert _resolve_check_function("malicious:payload") is None
+
+    def test_resolve_allows_registered_modules(self):
+        """Test that _resolve_check_function allows registered modules."""
+        # This test requires darnit_baseline to be installed
+        result = _resolve_check_function(
+            "darnit_baseline.controls.level2:_create_changelog_check"
+        )
+        # Should be callable (the factory returns a check function)
+        assert callable(result)
+
+    def test_resolve_invalid_reference_format(self):
+        """Test that invalid references are rejected."""
+        assert _resolve_check_function("") is None
+        assert _resolve_check_function("no_colon_here") is None
+        assert _resolve_check_function(None) is None  # type: ignore
+
+    def test_get_allowed_prefixes_includes_base(self):
+        """Test that base prefixes are in allowed list."""
+        prefixes = _get_allowed_module_prefixes()
+        assert "darnit." in prefixes
+        assert "darnit_baseline." in prefixes
+        assert "darnit_plugins." in prefixes
+        assert "darnit_testchecks." in prefixes
+
+    def test_prefix_matching_is_strict(self):
+        """Test that prefix matching requires the dot."""
+        # These should be blocked - they look similar but aren't valid prefixes
+        assert not _is_module_allowed("darnit_malicious.evil")
+        assert not _is_module_allowed("darnitfake.payload")
 
 
 if __name__ == "__main__":
