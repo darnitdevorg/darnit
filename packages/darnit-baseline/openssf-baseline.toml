@@ -598,6 +598,19 @@ steps = [
 name = "ReleaseChangelog"
 description = "Releases include log of functional and security modifications"
 tags = { level = 2, domain = "BR", build = true, releases = true, documentation = true }
+help_md = """This control can be satisfied in two ways:
+
+1. **GitHub Releases with notes** (preferred for projects using GitHub releases):
+   - Create releases via GitHub's release feature
+   - Include release notes in the release body describing changes
+   - No CHANGELOG.md file is needed if releases have notes
+
+2. **CHANGELOG.md file** (for projects not using GitHub releases):
+   - Create a CHANGELOG.md, CHANGES.md, HISTORY.md, or NEWS.md file
+   - Document functional and security-relevant changes for each version
+
+**Note:** If you use GitHub releases for release notes, you do NOT need a CHANGELOG.md file.
+"""
 
 [controls."OSPS-BR-04.01".locator]
 project_path = "documentation.changelog"
@@ -611,8 +624,8 @@ file_must_exist = ["CHANGELOG.md", "CHANGES.md", "HISTORY.md", "NEWS.md"]
 
 [controls."OSPS-BR-04.01".passes.manual]
 steps = [
-    "Verify CHANGELOG.md or equivalent exists",
-    "Check that each release documents functional changes",
+    "Verify releases have release notes OR a CHANGELOG.md equivalent exists",
+    "Check that each release/version documents functional changes",
     "Confirm security-relevant changes are clearly marked",
 ]
 
