@@ -23,6 +23,7 @@ def audit_openssf_baseline(
     attest: bool = False,
     sign_attestation: bool = True,
     staging: bool = False,
+    prefer_upstream: bool = True,
 ) -> str:
     """
     Run a comprehensive OpenSSF Baseline audit on a repository.
@@ -44,6 +45,8 @@ def audit_openssf_baseline(
         attest: Generate in-toto attestation after audit. Default: False
         sign_attestation: Sign attestation with Sigstore. Default: True
         staging: Use Sigstore staging environment. Default: False
+        prefer_upstream: If True, prefer 'upstream' git remote when auto-detecting owner/repo.
+                         Useful for auditing forks against their upstream repository. Default: True
 
     Returns:
         Formatted audit report with compliance status and remediation instructions
@@ -62,7 +65,8 @@ def audit_openssf_baseline(
         return f"❌ Error: Repository path not found: {repo_path}"
 
     # Auto-detect owner/repo from git
-    detected_owner, detected_repo = _detect_owner_repo(repo_path)
+    # When prefer_upstream=True (default), check 'upstream' remote first for forks
+    detected_owner, detected_repo = _detect_owner_repo(repo_path, prefer_upstream=prefer_upstream)
     owner = owner or detected_owner
     repo = repo or detected_repo
 
@@ -874,26 +878,49 @@ def create_test_repository(
 # =============================================================================
 
 
-def _detect_owner_repo(repo_path: Path) -> tuple[str, str]:
-    """Detect owner/repo from git remote."""
+def _detect_owner_repo(repo_path: Path, prefer_upstream: bool = False) -> tuple[str, str]:
+    """Detect owner/repo from git remote.
+
+    Args:
+        repo_path: Path to the repository
+        prefer_upstream: If True, check for 'upstream' remote first (useful for forks)
+
+    Returns:
+        Tuple of (owner, repo) detected from git remotes
+    """
     import subprocess
 
-    try:
-        result = subprocess.run(
-            ["git", "remote", "get-url", "origin"],
-            capture_output=True,
-            text=True,
-            cwd=repo_path,
-            timeout=5,
-        )
-        if result.returncode == 0:
-            url = result.stdout.strip()
-            if "github.com" in url:
-                parts = url.replace(".git", "").split("/")
-                if len(parts) >= 2:
-                    return parts[-2], parts[-1]
-    except (subprocess.SubprocessError, FileNotFoundError):
-        pass
+    def get_remote_url(remote_name: str) -> str | None:
+        try:
+            result = subprocess.run(
+                ["git", "remote", "get-url", remote_name],
+                capture_output=True,
+                text=True,
+                cwd=repo_path,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                return result.stdout.strip()
+        except (subprocess.SubprocessError, FileNotFoundError):
+            pass
+        return None
+
+    def parse_github_url(url: str) -> tuple[str, str] | None:
+        if "github.com" in url:
+            parts = url.replace(".git", "").split("/")
+            if len(parts) >= 2:
+                return parts[-2], parts[-1]
+        return None
+
+    # Order of remotes to check
+    remotes = ["upstream", "origin"] if prefer_upstream else ["origin", "upstream"]
+
+    for remote in remotes:
+        url = get_remote_url(remote)
+        if url:
+            parsed = parse_github_url(url)
+            if parsed:
+                return parsed
 
     return "unknown", repo_path.name
 
