@@ -18,10 +18,11 @@ Example:
     result = sieve.detect("maintainers", "/path/to/repo", "owner", "repo")
     if result.confidence >= 0.9:
         # High confidence - can use directly
-        pass
+        maintainers = result.value
     else:
         # Lower confidence - show to user for confirmation
-        print(f"Detected: {result.value} ({result.confidence:.0%} confidence)")
+        suggested = result.value
+        confidence = result.confidence  # 0.0-1.0 scale
 """
 
 import json

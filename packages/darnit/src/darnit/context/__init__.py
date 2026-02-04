@@ -16,10 +16,12 @@ Example:
     result = sieve.detect("maintainers", "/path/to/repo", "owner", "repo")
 
     if result.is_high_confidence:
-        print(f"Maintainers: {result.value}")
+        # Confidence >= 90%, safe to use directly
+        maintainers = result.value
     else:
-        print(f"Detected (needs confirmation): {result.value}")
-        print(f"Confidence: {result.confidence:.0%}")
+        # Lower confidence, show to user for confirmation
+        suggested = result.value
+        confidence = result.confidence  # e.g., 0.75 for 75%
 """
 
 from .confidence import (
