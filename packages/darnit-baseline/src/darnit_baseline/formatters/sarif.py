@@ -3,19 +3,171 @@
 This module generates SARIF (Static Analysis Results Interchange Format)
 output compatible with GitHub Code Scanning and other SARIF tools.
 
+SARIF metadata is read from the framework TOML config (openssf-baseline.toml).
+The rules/catalog.py is deprecated and used only as a fallback.
+
 Specification: https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html
 """
 
 import hashlib
 import os
 from datetime import UTC, datetime
+from functools import lru_cache
 from typing import Any
 
 from darnit.core.logging import get_logger
 from darnit.core.models import AuditResult
-from darnit_baseline.rules.catalog import DOMAIN_INFO, OSPS_RULES, get_rule
 
 logger = get_logger("formatters.sarif")
+
+
+# =============================================================================
+# Framework Config Loading (Primary source - TOML)
+# =============================================================================
+
+
+@lru_cache(maxsize=1)
+def _load_framework_config():
+    """Load framework config from TOML (cached).
+
+    Returns:
+        FrameworkConfig or None if loading fails
+    """
+    try:
+        from darnit.config.merger import load_framework_by_name
+        return load_framework_by_name("openssf-baseline")
+    except Exception as e:
+        logger.debug(f"Could not load framework config: {e}")
+        return None
+
+
+def _get_control_from_toml(control_id: str) -> dict[str, Any] | None:
+    """Get control metadata from TOML framework config.
+
+    Args:
+        control_id: OSPS control ID
+
+    Returns:
+        Control metadata dict or None if not found
+    """
+    config = _load_framework_config()
+    if not config:
+        return None
+
+    control = config.controls.get(control_id)
+    if not control:
+        return None
+
+    # Convert ControlConfig to dict compatible with old catalog format
+    # Extract level/domain/security_severity from tags if not top-level
+    level = control.level
+    if level is None and control.tags:
+        level = control.tags.get("level", 1)
+
+    domain = control.domain
+    if domain is None and control.tags:
+        domain = control.tags.get("domain", "")
+
+    security_severity = control.security_severity
+    if security_severity is None and control.tags:
+        security_severity = control.tags.get("security_severity", 5.0)
+
+    # Build tags list from tags dict keys that have truthy values
+    tag_list = []
+    if control.tags:
+        for key, value in control.tags.items():
+            if isinstance(value, bool) and value:
+                tag_list.append(key)
+            elif key not in ("level", "domain", "security_severity"):
+                # Include non-metadata tags
+                if isinstance(value, bool) and value:
+                    tag_list.append(key)
+
+    # Map severity to default_level
+    if security_severity is not None:
+        if security_severity >= 7.0:
+            default_level = "error"
+        elif security_severity >= 4.0:
+            default_level = "warning"
+        else:
+            default_level = "note"
+    else:
+        default_level = "warning"
+
+    return {
+        "name": control.name,
+        "domain": domain or "",
+        "level": level or 1,
+        "short": control.description[:100] if control.description else control.name,
+        "full": control.description or "",
+        "help_md": control.help_md or "",
+        "security_severity": security_severity or 5.0,
+        "tags": tag_list,
+        "location_hint": "",  # TODO: Extract from locator if present
+        "default_level": default_level,
+        "docs_url": control.docs_url or f"https://baseline.openssf.org/versions/2025-10-10#{control_id}",
+    }
+
+
+# =============================================================================
+# Legacy Catalog Fallback (Deprecated)
+# =============================================================================
+
+
+def _get_rule_from_catalog(control_id: str) -> dict[str, Any] | None:
+    """Get rule from legacy catalog (fallback).
+
+    DEPRECATED: This function will be removed once all metadata
+    is migrated to TOML.
+    """
+    try:
+        from darnit_baseline.rules.catalog import get_rule
+        return get_rule(control_id)
+    except ImportError:
+        return None
+
+
+def _get_domain_info_from_catalog(domain: str) -> dict[str, Any]:
+    """Get domain info from legacy catalog (fallback)."""
+    try:
+        from darnit_baseline.rules.catalog import DOMAIN_INFO
+        return DOMAIN_INFO.get(domain, {})
+    except ImportError:
+        return {}
+
+
+def get_rule(control_id: str) -> dict[str, Any] | None:
+    """Get rule metadata for a control ID.
+
+    Primary source: TOML framework config
+    Fallback: Legacy rules/catalog.py
+
+    Args:
+        control_id: OSPS control ID
+
+    Returns:
+        Rule metadata dict or None
+    """
+    # Try TOML first
+    rule = _get_control_from_toml(control_id)
+    if rule:
+        return rule
+
+    # Fallback to legacy catalog
+    return _get_rule_from_catalog(control_id)
+
+
+# Domain info - merged from both sources
+DOMAIN_INFO = {
+    "AC": {"name": "Access Control", "tags": ["access-control", "authentication", "authorization"]},
+    "BR": {"name": "Build and Release", "tags": ["build", "release", "ci-cd", "supply-chain"]},
+    "DO": {"name": "Documentation", "tags": ["documentation"]},
+    "GV": {"name": "Governance", "tags": ["governance", "maintainership"]},
+    "LE": {"name": "Legal", "tags": ["legal", "licensing"]},
+    "QA": {"name": "Quality Assurance", "tags": ["quality", "testing"]},
+    "SA": {"name": "Security Assessment", "tags": ["security-analysis", "architecture"]},
+    "VM": {"name": "Vulnerability Management", "tags": ["vulnerability", "security"]},
+}
 
 
 # SARIF schema URL
@@ -137,8 +289,21 @@ def build_sarif_rules(
     """
     rules = []
 
-    # Use specified controls or all controls
-    ids_to_include = control_ids if control_ids else list(OSPS_RULES.keys())
+    # Use specified controls or get all from framework config
+    if control_ids:
+        ids_to_include = control_ids
+    else:
+        # Get all control IDs from framework config
+        config = _load_framework_config()
+        if config:
+            ids_to_include = list(config.controls.keys())
+        else:
+            # Fallback to legacy catalog
+            try:
+                from darnit_baseline.rules.catalog import OSPS_RULES
+                ids_to_include = list(OSPS_RULES.keys())
+            except ImportError:
+                ids_to_include = []
 
     for control_id in sorted(ids_to_include):
         rule_meta = get_rule(control_id)

@@ -1,8 +1,13 @@
 # Security Assurance Framework - Design Document
 
-> **Status**: Draft
+> **Status**: ⚠️ DEPRECATED - See authoritative spec
 > **Version**: 0.1.0
 > **Last Updated**: 2024-12-01
+>
+> **DEPRECATION NOTICE**: This document has been superseded by the authoritative
+> framework specification at `openspec/specs/framework-design/spec.md`.
+> Please refer to that document for current framework design decisions.
+> Generated documentation is available at `docs/generated/`.
 
 ## Executive Summary
 

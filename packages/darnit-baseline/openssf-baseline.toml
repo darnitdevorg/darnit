@@ -335,8 +335,18 @@ required = false
 [controls."OSPS-AC-01.01"]
 name = "RequireMFA"
 description = "Require multi-factor authentication for organization members"
-tags = { level = 1, domain = "AC", security_severity = 8.0, access-control = true, authentication = true }
+tags = { level = 1, domain = "AC", security_severity = 9.0, access-control = true, authentication = true }
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-AC-01.01"
+help_md = """Enable MFA for all organization members with elevated permissions.
+
+**Remediation:**
+1. Go to Organization Settings → Security
+2. Enable 'Require two-factor authentication for everyone'
+3. Set a grace period for existing members to enable MFA
+
+**References:**
+- [GitHub MFA Documentation](https://docs.github.com/en/authentication/securing-your-account-with-two-factor-authentication-2fa)
+"""
 
 # ExecPass: Use gh CLI to check MFA requirement
 [controls."OSPS-AC-01.01".passes.exec]
@@ -378,8 +388,18 @@ steps = [
 [controls."OSPS-AC-03.01"]
 name = "PreventDirectCommits"
 description = "Prevent direct commits to primary branch"
-tags = { level = 1, domain = "AC", security_severity = 7.5, access-control = true, branch-protection = true }
+tags = { level = 1, domain = "AC", security_severity = 8.0, access-control = true, branch-protection = true }
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-AC-03.01"
+help_md = """Enable branch protection to require pull requests.
+
+**Remediation:**
+1. Go to Repository Settings → Branches
+2. Add branch protection rule for main/master
+3. Enable 'Require a pull request before merging'
+
+**References:**
+- [GitHub Branch Protection](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)
+"""
 
 # ExecPass: Use gh CLI to check branch protection
 [controls."OSPS-AC-03.01".passes.exec]
@@ -439,6 +459,24 @@ steps = [
 name = "SecureWorkflowInputs"
 description = "Workflows handle untrusted inputs safely"
 tags = { level = 1, domain = "BR", security_severity = 8.5, build = true, security = true, ci-cd = true }
+help_md = """Sanitize all CI/CD input parameters to prevent injection attacks.
+
+**Remediation:**
+1. Review workflow files for input usage
+2. Use intermediate environment variables instead of direct interpolation
+3. Validate inputs before use in shell commands
+
+**Example:**
+```yaml
+env:
+  INPUT_VALUE: ${{ inputs.value }}
+run: |
+  # Validate before use
+  if [[ "$INPUT_VALUE" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    echo "Valid input: $INPUT_VALUE"
+  fi
+```
+"""
 
 [controls."OSPS-BR-01.01".passes.pattern]
 files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]

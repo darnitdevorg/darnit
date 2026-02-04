@@ -1,7 +1,12 @@
 # Darnit Framework - Design Document
 
-> **Status**: Draft v0.3
+> **Status**: ⚠️ DEPRECATED - See authoritative spec
 > **Last Updated**: 2025-12-04
+>
+> **DEPRECATION NOTICE**: This document has been superseded by the authoritative
+> framework specification at `openspec/specs/framework-design/spec.md`.
+> Please refer to that document for current framework design decisions.
+> Generated documentation is available at `docs/generated/`.
 >
 > *"Darnit patches holes in your software - like darning a sock, but for code."*
 

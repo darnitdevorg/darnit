@@ -35,6 +35,18 @@ repos:
         additional_dependencies: ["bandit[toml]"]
         exclude: ^tests/
 
+  # Local hooks for project-specific validation
+  - repo: local
+    hooks:
+      # Validate spec-implementation synchronization
+      - id: sync-validation
+        name: Validate spec-implementation sync
+        entry: uv run python scripts/validate_sync.py --changed-files
+        language: system
+        files: ^(packages/darnit/|openspec/specs/framework-design/)
+        pass_filenames: false
+        stages: [pre-commit]
+
 # CI configuration
 ci:
   autofix_commit_msg: "style: auto-fix linting issues [pre-commit.ci]"

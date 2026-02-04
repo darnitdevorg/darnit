@@ -1,5 +1,15 @@
 """OSPS Baseline rules catalog for SARIF generation.
 
+.. deprecated::
+    This module is deprecated. Control metadata should be defined in
+    openssf-baseline.toml instead. The SARIF formatter now reads from
+    TOML as the primary source, with this module as a fallback.
+
+    Migration: Add `help_md`, `security_severity`, and other metadata
+    directly to control definitions in openssf-baseline.toml.
+
+    See: openspec/specs/framework-design/spec.md for the authoritative schema.
+
 This module contains metadata for all 62 OSPS controls from the
 OpenSSF Baseline v2025.10.10 specification.
 
@@ -12,6 +22,15 @@ Each rule includes:
 - Tags for categorization
 - Location hints for code linking
 """
+
+import warnings
+
+warnings.warn(
+    "darnit_baseline.rules.catalog is deprecated. "
+    "Control metadata should be defined in openssf-baseline.toml instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 from typing import Any
 

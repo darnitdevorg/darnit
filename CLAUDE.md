@@ -186,6 +186,50 @@ uv run ruff check --fix .
 uv run ruff format .
 ```
 
+## Spec-Implementation Synchronization
+
+The framework design is governed by the authoritative specification at:
+`openspec/specs/framework-design/spec.md`
+
+### Sync Enforcement Rules
+
+1. **TOML is Source of Truth**: Control metadata (descriptions, severity, help URLs) should be defined in `openssf-baseline.toml`, not in Python code.
+
+2. **Spec Changes Require Validation**: When modifying framework behavior:
+   - Update the spec first
+   - Run `uv run python scripts/validate_sync.py --verbose`
+   - Ensure pass types in code match spec definitions
+
+3. **Generated Docs Must Stay Fresh**: After spec changes:
+   - Run `uv run python scripts/generate_docs.py`
+   - Commit any changes to `docs/generated/`
+
+4. **CI Enforces Sync**: PRs are blocked if:
+   - TOML configs don't validate against framework schema
+   - Pass types in spec don't match implementation
+   - Generated docs would change
+
+### Validation Commands
+
+```bash
+# Validate spec-implementation sync
+uv run python scripts/validate_sync.py --verbose
+
+# Regenerate docs from spec
+uv run python scripts/generate_docs.py
+
+# Check if docs are stale
+git diff docs/generated/
+```
+
+### Legacy Code Migration
+
+The `rules/catalog.py` is deprecated. SARIF metadata now reads from TOML:
+- Primary source: `openssf-baseline.toml` control definitions
+- Fallback: `rules/catalog.py` (for unmigrated controls)
+
+When adding new controls, define all metadata in TOML.
+
 ## Common Patterns
 
 ### Checking for Protocol Methods
