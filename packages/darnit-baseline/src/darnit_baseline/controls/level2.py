@@ -233,7 +233,7 @@ def _create_changelog_check() -> Callable[[CheckContext], PassResult]:
     - PASS (N/A) if has_releases=false in project context
     - PASS if releases have release notes
     - FAIL if releases exist but lack notes
-    - INCONCLUSIVE if no releases found (to allow file_must_exist fallback to run)
+    - INCONCLUSIVE if no releases found or API unavailable (to allow file_must_exist fallback)
     """
 
     def check(ctx: CheckContext) -> PassResult:
@@ -248,32 +248,68 @@ def _create_changelog_check() -> Callable[[CheckContext], PassResult]:
                     evidence={"has_releases": False, "source": ".project.yaml"},
                 )
 
+        endpoint = f"/repos/{ctx.owner}/{ctx.repo}/releases?per_page=5"
+        logger.debug(f"Checking releases for {ctx.owner}/{ctx.repo}")
+
         try:
-            releases = _gh_api(f"/repos/{ctx.owner}/{ctx.repo}/releases?per_page=5")
+            releases = _gh_api(endpoint)
+
+            # _gh_api returns None on error, [] if no releases
+            if releases is None:
+                # API call failed (gh not installed, auth error, etc.)
+                # Fall through to file check
+                logger.debug(f"GitHub API call failed for {endpoint}")
+                return PassResult(
+                    phase=VerificationPhase.DETERMINISTIC,
+                    outcome=PassOutcome.INCONCLUSIVE,
+                    message="Could not access GitHub API - checking for changelog file",
+                    evidence={
+                        "api_endpoint": endpoint,
+                        "api_status": "unavailable",
+                        "note": "GitHub releases with notes can also satisfy this control",
+                    },
+                )
 
             if not releases:
-                # Return INCONCLUSIVE so file_must_exist fallback can check for CHANGELOG.md
+                # API worked but no releases exist
+                # Fall through to file check
+                logger.debug(f"No releases found for {ctx.owner}/{ctx.repo}")
                 return PassResult(
                     phase=VerificationPhase.DETERMINISTIC,
                     outcome=PassOutcome.INCONCLUSIVE,
                     message="No releases found - checking for changelog file",
-                    evidence={"has_releases": False},
+                    evidence={
+                        "has_releases": False,
+                        "api_status": "success",
+                        "note": "Create GitHub releases with notes, or add a CHANGELOG.md file",
+                    },
                 )
 
             latest = releases[0]
+            tag = latest.get("tag_name", "unknown")
             if latest.get("body"):
+                logger.debug(f"Found release {tag} with notes")
                 return PassResult(
                     phase=VerificationPhase.DETERMINISTIC,
                     outcome=PassOutcome.PASS,
-                    message="Latest release has release notes",
-                    evidence={"tag": latest.get("tag_name")},
+                    message=f"Latest release ({tag}) has release notes",
+                    evidence={
+                        "tag": tag,
+                        "has_body": True,
+                        "total_releases": len(releases),
+                    },
                 )
             else:
+                logger.debug(f"Found release {tag} without notes")
                 return PassResult(
                     phase=VerificationPhase.DETERMINISTIC,
                     outcome=PassOutcome.FAIL,
-                    message="Latest release has no release notes",
-                    evidence={"tag": latest.get("tag_name")},
+                    message=f"Latest release ({tag}) has no release notes",
+                    evidence={
+                        "tag": tag,
+                        "has_body": False,
+                        "note": "Add release notes to your GitHub release, or create a CHANGELOG.md file",
+                    },
                 )
 
         except (KeyError, TypeError, AttributeError) as e:
@@ -282,6 +318,7 @@ def _create_changelog_check() -> Callable[[CheckContext], PassResult]:
                 phase=VerificationPhase.DETERMINISTIC,
                 outcome=PassOutcome.INCONCLUSIVE,
                 message=f"Could not check releases: {e}",
+                evidence={"error": str(e)},
             )
 
     return check

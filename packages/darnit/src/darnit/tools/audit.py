@@ -612,6 +612,30 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, int]:
     return summary
 
 
+def _get_control_help(control_id: str) -> str | None:
+    """Get help_md for a control from the framework config.
+
+    Args:
+        control_id: Control identifier (e.g., "OSPS-BR-04.01")
+
+    Returns:
+        Help markdown string or None if not found
+    """
+    try:
+        framework_path = _get_framework_config_path()
+        if not framework_path:
+            return None
+
+        from darnit.config import load_framework_config
+        framework = load_framework_config(framework_path)
+
+        if framework.controls and control_id in framework.controls:
+            return framework.controls[control_id].help_md
+    except Exception:
+        pass
+    return None
+
+
 def format_results_markdown(
     owner: str,
     repo: str,
@@ -700,7 +724,22 @@ def format_results_markdown(
                 lines.append(f"*{config['description']}*")
                 lines.append("")
             for r in status_results:
-                lines.append(f"- **{r['id']}** (L{r.get('level', 1)}): {r.get('details', 'No details')}")
+                control_id = r.get('id', '')
+                lines.append(f"- **{control_id}** (L{r.get('level', 1)}): {r.get('details', 'No details')}")
+
+                # Include help_md for failed controls to explain remediation options
+                if status == "FAIL":
+                    help_md = _get_control_help(control_id)
+                    if help_md:
+                        # Indent help text and add as a sub-item
+                        help_lines = help_md.strip().split('\n')
+                        lines.append("")
+                        lines.append(f"  > **ℹ️ Note for {control_id}:**")
+                        for help_line in help_lines[:10]:  # Limit to first 10 lines
+                            lines.append(f"  > {help_line}")
+                        if len(help_lines) > 10:
+                            lines.append("  > *(truncated)*")
+                        lines.append("")
             lines.append("")
 
     # Add remediation section if there are failures
