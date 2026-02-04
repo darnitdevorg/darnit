@@ -24,6 +24,7 @@ Each rule includes:
 """
 
 import warnings
+from typing import Any
 
 warnings.warn(
     "darnit_baseline.rules.catalog is deprecated. "
@@ -31,8 +32,6 @@ warnings.warn(
     DeprecationWarning,
     stacklevel=2,
 )
-
-from typing import Any
 
 # Domain descriptions for tags
 DOMAIN_INFO = {

@@ -20,7 +20,6 @@ Usage:
 """
 
 import argparse
-import subprocess
 import sys
 from pathlib import Path
 from typing import NamedTuple
@@ -207,7 +206,7 @@ def validate_docs_freshness() -> ValidationResult:
         return ValidationResult(
             passed=False,
             message="Generated docs directory not found",
-            details=f"Run: python scripts/generate_docs.py",
+            details="Run: python scripts/generate_docs.py",
             is_warning=True,
         )
 
