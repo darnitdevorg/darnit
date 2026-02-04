@@ -127,7 +127,6 @@ def _run_baseline_checks(
     repo: str | None,
     local_path: str,
     level: int = 3,
-    use_sieve: bool = True,
 ) -> tuple[AuditResult | None, str | None]:
     """Run baseline checks and return audit result or error.
 
@@ -136,7 +135,6 @@ def _run_baseline_checks(
         repo: Repository name
         local_path: Path to local repository
         level: Maximum OSPS level to check (1, 2, or 3)
-        use_sieve: Use progressive verification pipeline (default True)
 
     Returns:
         Tuple of (AuditResult, None) on success or (None, error_message) on failure
@@ -147,7 +145,7 @@ def _run_baseline_checks(
         return None, error
 
     # Run checks - returns (results_list, skipped_controls_dict)
-    all_results, skipped_controls = run_checks(owner, repo, resolved_path, default_branch, level, use_sieve=use_sieve)
+    all_results, skipped_controls = run_checks(owner, repo, resolved_path, default_branch, level)
 
     # Calculate summary
     summary = summarize_results(all_results)
@@ -786,7 +784,7 @@ def remediate_audit_findings(
     if not categories:
         # Run audit to find failures and determine applicable remediations
         audit_result, error = _run_baseline_checks(
-            owner=owner, repo=repo, local_path=local_path, use_sieve=True
+            owner=owner, repo=repo, local_path=local_path
         )
         if error:
             return f"❌ Error running audit: {error}"

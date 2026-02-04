@@ -20,31 +20,7 @@ from darnit.core.utils import (
 
 logger = get_logger("tools.audit")
 
-# Check functions are loaded lazily from the registered implementation via plugin system
-_check_functions = None
-
-
-def _get_check_functions():
-    """Lazily load check functions from the discovered implementation."""
-    global _check_functions
-    if _check_functions is None:
-        from darnit.core.discovery import get_default_implementation
-
-        impl = get_default_implementation()
-        if impl:
-            _check_functions = impl.get_check_functions()
-            logger.info(f"Using check functions from {impl.name} v{impl.version}")
-        else:
-            logger.warning("No compliance implementation found. Install darnit-baseline or another implementation.")
-            _check_functions = {
-                "level1": lambda *args, **kwargs: [],
-                "level2": lambda *args, **kwargs: [],
-                "level3": lambda *args, **kwargs: [],
-            }
-    return _check_functions
-
-
-# Sieve system imports - also lazy loaded
+# Sieve system imports - lazy loaded
 _sieve_components = None
 _toml_controls_registered = False
 
@@ -255,7 +231,6 @@ class AuditOptions:
     auto_init_config: bool = True
     output_format: str = "markdown"  # markdown, json, sarif
     include_evidence: bool = True
-    use_sieve: bool = False  # Enable progressive verification pipeline
     stop_on_llm: bool = True  # Return PENDING_LLM for LLM consultation
 
 
@@ -310,11 +285,13 @@ def run_checks(
     local_path: str,
     default_branch: str,
     level: int = 3,
-    use_sieve: bool = False,
     stop_on_llm: bool = True,
     apply_user_config: bool = True,
 ) -> tuple[list[dict[str, Any]], dict[str, str]]:
     """Run OSPS baseline checks at the specified level.
+
+    All checks are defined in TOML with optional Python functions for complex
+    checks referenced via config_check.
 
     Args:
         owner: GitHub org/user
@@ -322,8 +299,7 @@ def run_checks(
         local_path: Path to repository
         default_branch: Default branch name
         level: Maximum level to check (1, 2, or 3)
-        use_sieve: Enable progressive verification pipeline
-        stop_on_llm: Return PENDING_LLM for LLM consultation (when use_sieve=True)
+        stop_on_llm: Return PENDING_LLM for LLM consultation
         apply_user_config: Apply .baseline.toml user config overrides
 
     Returns:
@@ -340,26 +316,10 @@ def run_checks(
         if excluded_ids:
             logger.info(f"Skipping {len(excluded_ids)} controls per user config")
 
-    if use_sieve:
-        results = _run_sieve_checks(
-            owner, repo, local_path, default_branch, level, stop_on_llm
-        )
-    else:
-        # Legacy check execution
-        results = []
-        check_funcs = _get_check_functions()
-
-        # Run Level 1 checks (always)
-        if level >= 1:
-            results.extend(check_funcs["level1"](owner, repo, local_path, default_branch))
-
-        # Run Level 2 checks
-        if level >= 2:
-            results.extend(check_funcs["level2"](owner, repo, local_path, default_branch))
-
-        # Run Level 3 checks
-        if level >= 3:
-            results.extend(check_funcs["level3"](owner, repo, local_path, default_branch))
+    # Use TOML-based sieve execution
+    results = _run_sieve_checks(
+        owner, repo, local_path, default_branch, level, stop_on_llm
+    )
 
     # Filter out excluded controls and mark them as N/A
     if excluded_ids:
@@ -381,39 +341,6 @@ def run_checks(
     return results, skipped_controls
 
 
-def run_checks_legacy(
-    owner: str,
-    repo: str,
-    local_path: str,
-    default_branch: str,
-    level: int = 3,
-    use_sieve: bool = False,
-    stop_on_llm: bool = True,
-) -> list[dict[str, Any]]:
-    """Run OSPS baseline checks (legacy API without user config).
-
-    This is a backwards-compatible wrapper that ignores user config.
-
-    Args:
-        owner: GitHub org/user
-        repo: Repository name
-        local_path: Path to repository
-        default_branch: Default branch name
-        level: Maximum level to check (1, 2, or 3)
-        use_sieve: Enable progressive verification pipeline
-        stop_on_llm: Return PENDING_LLM for LLM consultation
-
-    Returns:
-        List of check results
-    """
-    results, _ = run_checks(
-        owner, repo, local_path, default_branch,
-        level, use_sieve, stop_on_llm,
-        apply_user_config=False
-    )
-    return results
-
-
 def _run_sieve_checks(
     owner: str,
     repo: str,
@@ -430,8 +357,8 @@ def _run_sieve_checks(
     3. LLM - LLM-assisted analysis (returns PENDING_LLM for consultation)
     4. MANUAL - Always returns WARN with verification steps
 
-    Controls can be defined either in Python (via level1.py, level2.py, level3.py)
-    or declaratively in TOML (via openssf-baseline.toml).
+    Controls are defined in TOML (openssf-baseline.toml) with optional Python
+    functions for complex checks referenced via config_check.
 
     Args:
         owner: GitHub org/user
@@ -446,24 +373,17 @@ def _run_sieve_checks(
     """
     sieve = _get_sieve_components()
     if not sieve:
-        logger.warning("Sieve components not available, falling back to legacy checks")
-        # Use legacy execution directly (don't go through run_checks to avoid recursion)
-        results = []
-        check_funcs = _get_check_functions()
-        if level >= 1:
-            results.extend(check_funcs["level1"](owner, repo, local_path, default_branch))
-        if level >= 2:
-            results.extend(check_funcs["level2"](owner, repo, local_path, default_branch))
-        if level >= 3:
-            results.extend(check_funcs["level3"](owner, repo, local_path, default_branch))
-        return results
+        raise RuntimeError(
+            "Sieve components not available. "
+            "Ensure darnit is properly installed with all dependencies."
+        )
 
     get_control_registry = sieve["get_control_registry"]
     SieveOrchestrator = sieve["SieveOrchestrator"]
     CheckContext = sieve["CheckContext"]
 
-    # Register Python-defined controls first via plugin system
-    # These take priority over TOML definitions for the same control_id
+    # Register Python-defined controls via plugin system
+    # These provide complex check functions referenced by TOML config_check
     try:
         from darnit.core.discovery import get_default_implementation
 
@@ -478,17 +398,14 @@ def _run_sieve_checks(
     except Exception as e:
         logger.debug(f"Python control modules not available: {e}")
 
-    # Register controls from TOML framework definition
-    # This enables declarative control definitions alongside Python-defined controls
-    # Note: Controls already registered from Python will be skipped
+    # Register controls from TOML framework definition (primary source of truth)
     _register_toml_controls()
 
     registry = get_control_registry()
     orchestrator = SieveOrchestrator(stop_on_llm=stop_on_llm)
     all_results = []
 
-    # Create UnifiedLocator for .project/-aware file resolution (Phase 6)
-    # This enables checks to use .project/ references and auto-sync discovered files
+    # Create UnifiedLocator for .project/-aware file resolution
     locator = None
     try:
         from darnit.locate import UnifiedLocator
@@ -499,63 +416,31 @@ def _run_sieve_checks(
     except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as e:
         logger.warning(f"Failed to create UnifiedLocator: {e}")
 
-    # Get all control specs for requested levels
-    sieve_control_ids = set()
+    # Get all control specs for requested levels from registry
     for lvl in range(1, level + 1):
         specs = registry.get_specs_by_level(lvl)
-        sieve_control_ids.update(spec.control_id for spec in specs)
+        for spec in specs:
+            # Create check context
+            context = CheckContext(
+                owner=owner,
+                repo=repo,
+                local_path=local_path,
+                default_branch=default_branch,
+                control_id=spec.control_id,
+                control_metadata={
+                    "name": spec.name,
+                    "description": spec.description,
+                    "full": spec.metadata.get("full", ""),
+                },
+                locator=locator,
+                locator_config=spec.locator_config,
+            )
 
-    # Run legacy checks for all levels
-    check_funcs = _get_check_functions()
-    legacy_results = []
-    if level >= 1:
-        legacy_results.extend(check_funcs["level1"](owner, repo, local_path, default_branch))
-    if level >= 2:
-        legacy_results.extend(check_funcs["level2"](owner, repo, local_path, default_branch))
-    if level >= 3:
-        legacy_results.extend(check_funcs["level3"](owner, repo, local_path, default_branch))
+            # Run sieve verification
+            sieve_result = orchestrator.verify(spec, context)
 
-    # Process each result - use sieve when available, otherwise keep legacy
-    processed_control_ids = set()
-
-    for legacy_result in legacy_results:
-        control_id = legacy_result.get("id", "")
-
-        if control_id in processed_control_ids:
-            continue
-
-        if control_id in sieve_control_ids:
-            # Use sieve for this control
-            spec = registry.get(control_id)
-            if spec:
-                # Create check context with locator integration
-                context = CheckContext(
-                    owner=owner,
-                    repo=repo,
-                    local_path=local_path,
-                    default_branch=default_branch,
-                    control_id=control_id,
-                    control_metadata={
-                        "name": spec.name,
-                        "description": spec.description,
-                        "full": spec.metadata.get("full", ""),
-                    },
-                    # Phase 6: Pass locator and locator_config for .project/ integration
-                    locator=locator,
-                    locator_config=spec.locator_config,
-                )
-
-                # Run sieve verification
-                sieve_result = orchestrator.verify(spec, context)
-
-                # Convert to legacy format
-                all_results.append(sieve_result.to_legacy_dict())
-                processed_control_ids.add(control_id)
-                continue
-
-        # Keep legacy result for non-sieve controls
-        all_results.append(legacy_result)
-        processed_control_ids.add(control_id)
+            # Convert to legacy dict format
+            all_results.append(sieve_result.to_legacy_dict())
 
     return all_results
 
@@ -962,7 +847,6 @@ __all__ = [
     "AuditOptions",
     "prepare_audit",
     "run_checks",
-    "run_checks_legacy",
     "calculate_compliance",
     "summarize_results",
     "format_results_markdown",

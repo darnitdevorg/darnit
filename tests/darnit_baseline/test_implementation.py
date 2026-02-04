@@ -85,17 +85,6 @@ class TestOSPSBaselineImplementation:
             assert control.domain in valid_domains, f"Invalid domain: {control.domain}"
 
     @pytest.mark.unit
-    def test_get_check_functions(self, impl):
-        """Test get_check_functions returns callable functions."""
-        funcs = impl.get_check_functions()
-        assert "level1" in funcs
-        assert "level2" in funcs
-        assert "level3" in funcs
-        assert callable(funcs["level1"])
-        assert callable(funcs["level2"])
-        assert callable(funcs["level3"])
-
-    @pytest.mark.unit
     def test_get_rules_catalog(self, impl):
         """Test get_rules_catalog returns non-empty dict."""
         catalog = impl.get_rules_catalog()

@@ -22,7 +22,6 @@ class ControlRegistry:
 
     def __init__(self):
         self._specs: dict[str, ControlSpec] = {}
-        self._legacy_checks: dict[str, Callable] = {}
 
     def register(self, spec: ControlSpec, overwrite: bool = False) -> bool:
         """Register a control specification.
@@ -41,33 +40,17 @@ class ControlRegistry:
         self._specs[spec.control_id] = spec
         return True
 
-    def register_legacy(self, control_id: str, check_fn: Callable) -> None:
-        """Register a legacy check function for gradual migration."""
-        self._legacy_checks[control_id] = check_fn
-
     def get(self, control_id: str) -> ControlSpec | None:
         """Get control specification by ID."""
         return self._specs.get(control_id)
 
-    def has_sieve(self, control_id: str) -> bool:
-        """Check if control has sieve definition."""
+    def has(self, control_id: str) -> bool:
+        """Check if control is registered."""
         return control_id in self._specs
 
-    def has_legacy(self, control_id: str) -> bool:
-        """Check if control has legacy check."""
-        return control_id in self._legacy_checks
-
-    def get_legacy(self, control_id: str) -> Callable | None:
-        """Get legacy check function."""
-        return self._legacy_checks.get(control_id)
-
-    def list_sieve_controls(self) -> list[str]:
-        """List all controls with sieve definitions."""
+    def list_controls(self) -> list[str]:
+        """List all registered control IDs."""
         return list(self._specs.keys())
-
-    def list_legacy_controls(self) -> list[str]:
-        """List all controls with legacy checks."""
-        return list(self._legacy_checks.keys())
 
     def get_all_specs(self) -> list[ControlSpec]:
         """Get all registered control specifications."""

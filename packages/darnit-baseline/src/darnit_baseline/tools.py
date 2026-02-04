@@ -23,7 +23,6 @@ def audit_openssf_baseline(
     attest: bool = False,
     sign_attestation: bool = True,
     staging: bool = False,
-    use_sieve: bool = True,
 ) -> str:
     """
     Run a comprehensive OpenSSF Baseline audit on a repository.
@@ -45,7 +44,6 @@ def audit_openssf_baseline(
         attest: Generate in-toto attestation after audit. Default: False
         sign_attestation: Sign attestation with Sigstore. Default: True
         staging: Use Sigstore staging environment. Default: False
-        use_sieve: Use progressive verification pipeline. Default: True
 
     Returns:
         Formatted audit report with compliance status and remediation instructions
@@ -619,7 +617,6 @@ def generate_attestation(
     staging: bool = False,
     output_path: str | None = None,
     output_dir: str | None = None,
-    use_sieve: bool = True,
 ) -> str:
     """
     Generate an in-toto attestation for OpenSSF Baseline compliance.
@@ -635,7 +632,6 @@ def generate_attestation(
         staging: Use Sigstore staging environment. Default: False
         output_path: Explicit path for attestation file
         output_dir: Directory to save attestation
-        use_sieve: Use progressive verification pipeline. Default: True
 
     Returns:
         JSON attestation and path to saved file

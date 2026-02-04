@@ -86,14 +86,6 @@ class ComplianceImplementation(Protocol):
         """Get controls for a specific maturity level."""
         ...
 
-    def get_check_functions(self) -> dict[str, Any]:
-        """Get the check functions for running audits.
-
-        Returns:
-            Dict with 'level1', 'level2', 'level3' keys mapping to check functions.
-        """
-        ...
-
     def get_rules_catalog(self) -> dict[str, Any]:
         """Get the rules catalog for SARIF output."""
         ...

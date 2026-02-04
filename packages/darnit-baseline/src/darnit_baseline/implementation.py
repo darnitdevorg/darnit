@@ -62,19 +62,6 @@ class OSPSBaselineImplementation:
                 ))
         return controls
 
-    def get_check_functions(self) -> dict[str, Any]:
-        """Get the check functions for running audits."""
-        from .checks import (
-            run_level1_checks,
-            run_level2_checks,
-            run_level3_checks,
-        )
-        return {
-            "level1": run_level1_checks,
-            "level2": run_level2_checks,
-            "level3": run_level3_checks,
-        }
-
     def get_rules_catalog(self) -> dict[str, Any]:
         """Get the rules catalog for SARIF output."""
         from .rules.catalog import OSPS_RULES
