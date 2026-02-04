@@ -58,6 +58,10 @@ markers = [
     "unit: Unit tests (no external dependencies)",
     "integration: Integration tests (may require git/gh)",
     "slow: Slow tests",
+    "upstream: Upstream spec sync tests (run nightly, excluded by default)",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning:darnit_baseline.rules",
 ]
 
 [tool.coverage.run]

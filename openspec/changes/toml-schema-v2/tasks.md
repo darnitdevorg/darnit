@@ -40,10 +40,10 @@ This ensures CI will pass and prevents broken commits from being pushed.
 
 ### 1.4 Upstream Tracking
 
-- [ ] 1.4.1 Create GitHub Action workflow for weekly .project/ spec check
-- [ ] 1.4.2 Implement hash comparison against cncf/automation types.go
-- [ ] 1.4.3 Auto-create issue when upstream changes detected
-- [ ] 1.4.4 Document targeted .project/ spec version in README
+- [x] 1.4.1 Create GitHub Action workflow for nightly .project/ spec check
+- [x] 1.4.2 Implement hash comparison against cncf/automation types.go
+- [x] 1.4.3 Auto-create issue when upstream changes detected
+- [x] 1.4.4 Document targeted .project/ spec version in code (DOT_PROJECT_SPEC_VERSION)
 
 ### 1.5 Testing
 
