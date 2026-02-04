@@ -56,36 +56,36 @@ This ensures CI will pass and prevents broken commits from being pushed.
 
 ### 2.1 Schema Definition
 
-- [ ] 2.1.1 Add `[context]` section to framework_schema.py
-- [ ] 2.1.2 Define ContextVariable Pydantic model with all fields
-- [ ] 2.1.3 Support types: string, list[string], boolean, email
-- [ ] 2.1.4 Add validation for pattern constraints
+- [x] 2.1.1 Add `[context]` section to framework_schema.py
+- [x] 2.1.2 Define ContextVariable Pydantic model with all fields
+- [x] 2.1.3 Support types: string, list[string], boolean, email
+- [x] 2.1.4 Add validation for pattern constraints
 
 ### 2.2 Resolution Logic
 
-- [ ] 2.2.1 Create `packages/darnit/src/darnit/context/collection.py`
-- [ ] 2.2.2 Implement resolution priority: .project/ → file source → prompt
-- [ ] 2.2.3 Implement file parsers: markdown_list, yaml_path, json_path
-- [ ] 2.2.4 Implement user confirmation flow for auto-detected values
+- [x] 2.2.1 Create `packages/darnit/src/darnit/context/collection.py`
+- [x] 2.2.2 Implement resolution priority: .project/ → file source → prompt
+- [x] 2.2.3 Implement file parsers: markdown_list, yaml_path, json_path
+- [x] 2.2.4 Implement user confirmation flow for auto-detected values
 
 ### 2.3 Prompt UI
 
-- [ ] 2.3.1 Add context prompt capability to MCP tools
-- [ ] 2.3.2 Implement multi-line input for list types
-- [ ] 2.3.3 Implement validation feedback (re-prompt on invalid input)
-- [ ] 2.3.4 Add --non-interactive flag to skip prompts
+- [x] 2.3.1 Add context prompt capability to MCP tools
+- [x] 2.3.2 Implement multi-line input for list types
+- [x] 2.3.3 Implement validation feedback (re-prompt on invalid input)
+- [x] 2.3.4 Add --non-interactive flag to skip prompts (N/A for MCP tools - inherently interactive)
 
 ### 2.4 Persistence
 
-- [ ] 2.4.1 Implement save-to-.project/ for collected context
-- [ ] 2.4.2 Implement save-to-.baseline.toml for darnit-specific context
-- [ ] 2.4.3 Add user prompt "Save this value for future runs?"
+- [x] 2.4.1 Implement save-to-.project/ for collected context
+- [x] 2.4.2 Implement save-to-.baseline.toml for darnit-specific context
+- [x] 2.4.3 Add user prompt "Save this value for future runs?" (handled by confirm_project_context flow)
 
 ### 2.5 Testing
 
-- [ ] 2.5.1 Add unit tests for context resolution priority
-- [ ] 2.5.2 Add unit tests for file parsers
-- [ ] 2.5.3 Add integration test for context flow into remediation
+- [x] 2.5.1 Add unit tests for context resolution priority
+- [x] 2.5.2 Add unit tests for file parsers
+- [x] 2.5.3 Add integration test for context flow into remediation
 
 ## 3. Phase 3: CEL Expressions
 

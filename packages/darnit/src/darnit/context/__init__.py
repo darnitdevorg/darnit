@@ -24,6 +24,15 @@ Example:
         confidence = result.confidence  # e.g., 0.75 for 75%
 """
 
+from .collection import (
+    coerce_context_value,
+    parse_codeowners,
+    parse_json_path,
+    parse_markdown_list,
+    parse_yaml_path,
+    resolve_context_value,
+    validate_context_value,
+)
 from .confidence import (
     SIGNAL_WEIGHTS,
     CombinedConfidence,
@@ -71,4 +80,12 @@ __all__ = [
     "create_check_context_with_project",
     "get_project_value",
     "has_project_value",
+    # Context collection
+    "parse_markdown_list",
+    "parse_yaml_path",
+    "parse_json_path",
+    "parse_codeowners",
+    "resolve_context_value",
+    "validate_context_value",
+    "coerce_context_value",
 ]
