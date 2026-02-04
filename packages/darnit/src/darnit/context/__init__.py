@@ -32,6 +32,18 @@ from .confidence import (
     calculate_confidence,
     format_confidence_explanation,
 )
+from .dot_project import (
+    DotProjectReader,
+    DotProjectWriter,
+    ProjectConfig,
+)
+from .dot_project_mapper import DotProjectMapper
+from .inject import (
+    create_check_context_with_project,
+    get_project_value,
+    has_project_value,
+    inject_project_context,
+)
 from .sieve import (
     ContextDetectionResult,
     ContextSieve,
@@ -50,4 +62,13 @@ __all__ = [
     "ContextSieve",
     "ContextDetectionResult",
     "get_context_sieve",
+    # .project/ integration
+    "DotProjectReader",
+    "DotProjectWriter",
+    "ProjectConfig",
+    "DotProjectMapper",
+    "inject_project_context",
+    "create_check_context_with_project",
+    "get_project_value",
+    "has_project_value",
 ]

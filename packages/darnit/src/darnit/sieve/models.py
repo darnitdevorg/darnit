@@ -46,6 +46,10 @@ class CheckContext:
     # LocatorConfig for this specific control (from TOML)
     locator_config: Optional["LocatorConfig"] = None
 
+    # .project/ context (from DotProjectMapper)
+    # Contains flattened project metadata like project.security.policy_path, project.maintainers
+    project_context: dict[str, Any] = field(default_factory=dict)
+
 
 @dataclass
 class PassResult:

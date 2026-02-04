@@ -553,6 +553,7 @@ class RemediationConfig(BaseModel):
     file_create: Optional["FileCreateRemediationConfig"] = None
     exec: Optional["ExecRemediationConfig"] = None
     api_call: Optional["ApiCallRemediationConfig"] = None
+    project_update: Optional["ProjectUpdateRemediationConfig"] = None
 
     # Common settings
     template: str | None = None  # Template name reference
@@ -663,6 +664,32 @@ class ApiCallRemediationConfig(BaseModel):
 
     # JQ filter for response
     jq_filter: str | None = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class ProjectUpdateRemediationConfig(BaseModel):
+    """Configuration for .project/ file update remediation.
+
+    Updates .project/project.yaml with new values after remediation actions.
+    This keeps .project/ in sync with the actual project state.
+
+    Example:
+        ```toml
+        [controls."OSPS-VM-02.01".remediation.project_update]
+        set = { "security.policy.path" = "SECURITY.md" }
+        ```
+
+    The `set` dictionary uses dotted paths to specify nested YAML updates:
+    - "security.policy.path" -> updates security.policy.path in project.yaml
+    - "governance.codeowners.path" -> updates governance.codeowners.path
+    """
+    # Values to set in .project/project.yaml
+    # Keys are dotted paths, values are the new values
+    set: dict[str, Any] = Field(default_factory=dict)
+
+    # Whether to create .project/ directory if it doesn't exist
+    create_if_missing: bool = True
 
     model_config = ConfigDict(extra="allow")
 
