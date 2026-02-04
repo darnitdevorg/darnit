@@ -225,18 +225,9 @@ def validate_docs_freshness() -> ValidationResult:
             is_warning=True,
         )
 
-    # Check if spec is newer than generated docs
-    if SPEC_PATH.exists():
-        spec_mtime = SPEC_PATH.stat().st_mtime
-        for filename in expected_files:
-            doc_path = GENERATED_DOCS_DIR / filename
-            if doc_path.stat().st_mtime < spec_mtime:
-                return ValidationResult(
-                    passed=False,
-                    message="Generated docs may be stale",
-                    details=f"Spec modified after {filename}. Run: python scripts/generate_docs.py",
-                    is_warning=True,
-                )
+    # Note: We don't check timestamps here because git doesn't preserve mtime.
+    # The CI doc-generation job handles staleness by regenerating and checking
+    # for git diff, which is more reliable.
 
     return ValidationResult(
         passed=True,
