@@ -475,8 +475,12 @@ class TestModuleImportSecurity:
     def test_resolve_invalid_reference_format(self):
         """Test that invalid references are rejected."""
         assert _resolve_check_function("") is None
-        assert _resolve_check_function("no_colon_here") is None
         assert _resolve_check_function(None) is None  # type: ignore
+
+    def test_resolve_short_name_not_found_without_colon(self):
+        """Test helpful error for unregistered short name."""
+        # Short name without colon should suggest registration
+        assert _resolve_check_function("unknown_handler") is None
 
     def test_get_allowed_prefixes_includes_base(self):
         """Test that base prefixes are in allowed list."""
@@ -491,6 +495,57 @@ class TestModuleImportSecurity:
         # These should be blocked - they look similar but aren't valid prefixes
         assert not _is_module_allowed("darnit_malicious.evil")
         assert not _is_module_allowed("darnitfake.payload")
+
+
+class TestHandlerRegistryResolution:
+    """Test handler registry integration with _resolve_check_function."""
+
+    def test_resolve_from_registry_short_name(self):
+        """Test that registered handlers are resolved by short name."""
+        from darnit.core.handlers import get_handler_registry
+
+        registry = get_handler_registry()
+
+        # Register a test handler
+        def test_handler(context):
+            return True
+
+        registry.register_handler("test_check_handler", test_handler, plugin="test")
+
+        try:
+            # Should resolve from registry
+            resolved = _resolve_check_function("test_check_handler")
+            assert resolved is test_handler
+        finally:
+            # Cleanup
+            registry._handlers.pop("test_check_handler", None)
+
+    def test_resolve_fallback_to_module_path(self):
+        """Test that module:function paths work when not in registry."""
+        # This should fall back to module path resolution
+        result = _resolve_check_function(
+            "darnit_baseline.controls.level2:_create_changelog_check"
+        )
+        assert callable(result)
+
+    def test_resolve_registry_takes_precedence(self):
+        """Test that registry lookup happens before module path parsing."""
+        from darnit.core.handlers import get_handler_registry
+
+        registry = get_handler_registry()
+
+        # Register a handler with a name that looks like a module path
+        def custom_handler(context):
+            return "custom"
+
+        registry.register_handler("my_custom_check", custom_handler, plugin="test")
+
+        try:
+            # Should find in registry, not try to parse as module:function
+            resolved = _resolve_check_function("my_custom_check")
+            assert resolved is custom_handler
+        finally:
+            registry._handlers.pop("my_custom_check", None)
 
 
 if __name__ == "__main__":

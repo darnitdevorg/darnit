@@ -332,3 +332,55 @@ class TestRegistryClear:
         assert registry.get_handler("h") is None
         assert registry.get_pass("p") is None
         assert registry._current_plugin is None
+
+
+class TestDarnitBaselineIntegration:
+    """Integration tests with darnit-baseline plugin."""
+
+    def test_resolve_baseline_handler_by_module_path(self) -> None:
+        """Test resolving darnit-baseline handler via module:function path."""
+        registry = HandlerRegistry()
+
+        # Should resolve darnit_baseline module path
+        handler = registry.get_handler(
+            "darnit_baseline.controls.level2:_create_changelog_check"
+        )
+        assert handler is not None
+        assert callable(handler)
+
+    def test_resolve_blocked_module_path(self) -> None:
+        """Test that non-allowlisted modules are blocked."""
+        registry = HandlerRegistry()
+
+        # Should block arbitrary modules
+        handler = registry.get_handler("os:system")
+        assert handler is None
+
+        handler = registry.get_handler("subprocess:run")
+        assert handler is None
+
+    def test_allowlist_includes_darnit_packages(self) -> None:
+        """Test that allowlist includes all darnit package prefixes."""
+        from darnit.core.handlers import HandlerRegistry
+
+        allowed = HandlerRegistry.ALLOWED_MODULE_PREFIXES
+
+        assert "darnit." in allowed
+        assert "darnit_baseline." in allowed
+        assert "darnit_testchecks." in allowed
+
+    def test_get_handler_with_colon_tries_module_resolution(self) -> None:
+        """Test that handler names with ':' trigger module resolution."""
+        registry = HandlerRegistry()
+
+        # Valid darnit_baseline path should resolve
+        handler = registry.get_handler(
+            "darnit_baseline.controls.level1:_create_license_check"
+        )
+        assert callable(handler)
+
+        # Invalid path (bad function name) should return None gracefully
+        handler = registry.get_handler(
+            "darnit_baseline.controls.level1:nonexistent_function"
+        )
+        assert handler is None

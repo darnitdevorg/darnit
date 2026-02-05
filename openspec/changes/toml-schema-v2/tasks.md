@@ -153,9 +153,9 @@ This ensures CI will pass and prevents broken commits from being pushed.
 
 ### 4.3 Plugin Resolution
 
-- [ ] 4.3.1 Resolve handler references by short name from registry
-- [ ] 4.3.2 Validate explicit module paths against whitelist
-- [ ] 4.3.3 Add helpful error for missing handlers
+- [x] 4.3.1 Resolve handler references by short name from registry
+- [x] 4.3.2 Validate explicit module paths against allowlist
+- [x] 4.3.3 Add helpful error for missing handlers
 
 ### 4.4 Sigstore Integration
 
@@ -182,7 +182,7 @@ This ensures CI will pass and prevents broken commits from being pushed.
 - [x] 4.7.1 Add unit tests for auto-registration
 - [x] 4.7.2 Add unit tests for handler resolution
 - [ ] 4.7.3 Add unit tests for Sigstore verification (mocked)
-- [ ] 4.7.4 Add integration test with darnit-baseline plugin
+- [x] 4.7.4 Add integration test with darnit-baseline plugin
 
 ## 5. Documentation & Cleanup
 

@@ -120,13 +120,15 @@ def _is_module_allowed(module_path: str) -> bool:
 
 
 def _resolve_check_function(reference: str) -> Callable | None:
-    """Resolve a 'module:function' reference to a callable.
+    """Resolve a handler reference to a callable.
 
-    Supports two patterns:
-    1. Factory functions that return a callable: module:factory_func
-       - The factory is called, and its return value is used as the check
-    2. Direct check functions: module:check_func
-       - The function itself is used as the check
+    Supports three resolution strategies (in order):
+    1. Short name lookup: Check the handler registry for registered handlers
+       - e.g., "check_branch_protection" → registered handler function
+    2. Module:function path: Load from allowlisted module path
+       - e.g., "darnit_baseline.controls.level2:_create_changelog_check"
+    3. Factory pattern: If the resolved function can be called with no args
+       and returns a callable, use the returned callable
 
     Security: Only allows loading modules from allowlisted prefixes
     to prevent arbitrary code execution from malicious TOML files.
@@ -134,13 +136,29 @@ def _resolve_check_function(reference: str) -> Callable | None:
     registered via entry points.
 
     Args:
-        reference: String like "darnit_baseline.controls.level2:_create_changelog_check"
+        reference: Handler short name or "module:function" path
 
     Returns:
         The resolved function, or None if resolution fails
     """
-    if not reference or ":" not in reference:
-        logger.warning(f"Invalid check function reference (missing ':'): {reference}")
+    if not reference:
+        logger.warning("Empty check function reference")
+        return None
+
+    # Strategy 1: Check handler registry for short names first
+    from darnit.core.handlers import get_handler
+
+    handler = get_handler(reference)
+    if handler is not None:
+        logger.debug(f"Resolved handler '{reference}' from registry")
+        return handler
+
+    # Strategy 2: Parse as module:function path
+    if ":" not in reference:
+        logger.warning(
+            f"Handler '{reference}' not found in registry and not a module:function path. "
+            f"Register it with @register_handler or use full module:function syntax."
+        )
         return None
 
     module_path, func_name = reference.rsplit(":", 1)
