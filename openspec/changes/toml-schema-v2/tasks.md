@@ -117,16 +117,16 @@ This ensures CI will pass and prevents broken commits from being pushed.
 
 ### 3.5 Pass Integration
 
-- [ ] 3.5.1 Add `expr` field to pass schema
-- [ ] 3.5.2 Integrate CEL evaluator into exec pass
-- [ ] 3.5.3 Integrate CEL evaluator into pattern pass
-- [ ] 3.5.4 Integrate CEL evaluator into deterministic pass
+- [x] 3.5.1 Add `expr` field to pass schema
+- [x] 3.5.2 Integrate CEL evaluator into exec pass
+- [x] 3.5.3 Integrate CEL evaluator into pattern pass
+- [x] 3.5.4 Integrate CEL evaluator into deterministic pass
 
 ### 3.6 Backward Compatibility
 
-- [ ] 3.6.1 Keep old-style fields working (pass_if_json_path, etc.)
-- [ ] 3.6.2 Add deprecation warnings with migration hints
-- [ ] 3.6.3 Implement precedence: expr > old-style fields
+- [x] 3.6.1 Keep old-style fields working (pass_if_json_path, etc.)
+- [x] 3.6.2 Add deprecation warnings with migration hints
+- [x] 3.6.3 Implement precedence: expr > old-style fields
 
 ### 3.7 Testing
 
