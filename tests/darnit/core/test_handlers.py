@@ -92,19 +92,31 @@ class TestHandlerRegistry:
         assert registry.get_handler("handler") is handler_v2
 
     def test_load_handler_from_module_path(self) -> None:
-        """Test loading handler from module:function path."""
+        """Test loading handler from allowed module:function path."""
         registry = HandlerRegistry()
 
-        # Use a known function from the standard library
-        handler = registry._load_handler_from_path("os.path:exists")
+        # Use a known function from the darnit package (allowed prefix)
+        handler = registry._load_handler_from_path("darnit.core.logging:get_logger")
         assert handler is not None
         assert callable(handler)
+
+    def test_load_handler_blocked_module_path(self) -> None:
+        """Test that non-whitelisted module paths are blocked."""
+        registry = HandlerRegistry()
+
+        # os.path is not in ALLOWED_MODULE_PREFIXES, should be blocked
+        handler = registry._load_handler_from_path("os.path:exists")
+        assert handler is None
+
+        # subprocess is not allowed either
+        handler = registry._load_handler_from_path("subprocess:run")
+        assert handler is None
 
     def test_load_handler_invalid_path(self) -> None:
         """Test loading handler from invalid path returns None."""
         registry = HandlerRegistry()
         assert registry._load_handler_from_path("invalid") is None
-        assert registry._load_handler_from_path("nonexistent.module:func") is None
+        assert registry._load_handler_from_path("darnit.nonexistent.module:func") is None
 
 
 class TestPassRegistry:

@@ -202,17 +202,37 @@ class HandlerRegistry:
             handlers = [h for h in handlers if h.plugin == plugin]
         return handlers
 
+    # Allowed module prefixes for handler imports (security whitelist)
+    # Only modules starting with these prefixes can be dynamically loaded
+    ALLOWED_MODULE_PREFIXES = (
+        "darnit.",
+        "darnit_baseline.",
+        "darnit_testchecks.",
+    )
+
     def _load_handler_from_path(self, path: str) -> Callable[..., Any] | None:
         """Load handler from module:function path.
+
+        Security: Only modules matching ALLOWED_MODULE_PREFIXES can be loaded
+        to prevent arbitrary code execution via malicious module paths.
 
         Args:
             path: String in format "module.path:function_name"
 
         Returns:
-            Handler function or None if loading fails
+            Handler function or None if loading fails or module not allowed
         """
         try:
             module_path, func_name = path.rsplit(":", 1)
+
+            # Validate module path against whitelist to prevent arbitrary imports
+            if not any(module_path.startswith(prefix) for prefix in self.ALLOWED_MODULE_PREFIXES):
+                logger.warning(
+                    f"Module path '{module_path}' not in allowed prefixes: "
+                    f"{self.ALLOWED_MODULE_PREFIXES}"
+                )
+                return None
+
             module = importlib.import_module(module_path)
             return getattr(module, func_name, None)
         except (ValueError, ImportError, AttributeError) as e:
