@@ -38,6 +38,11 @@ def _gh_api(endpoint: str) -> dict | None:
         )
         if result.returncode == 0:
             return json.loads(result.stdout)
+        # Log the actual error for debugging intermittent failures
+        logger.warning(
+            f"gh api failed for {endpoint}: exit_code={result.returncode}, "
+            f"stderr={result.stderr.strip() if result.stderr else '<empty>'}"
+        )
         return None
     except subprocess.TimeoutExpired:
         logger.warning(f"gh api timed out for {endpoint}")
