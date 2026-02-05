@@ -354,8 +354,7 @@ command = ["gh", "api", "/orgs/$OWNER"]
 pass_exit_codes = [0]
 fail_exit_codes = [1]
 output_format = "json"
-pass_if_json_path = "two_factor_requirement_enabled"
-pass_if_json_value = "true"
+expr = 'output.json.two_factor_requirement_enabled == true'
 timeout = 30
 
 [controls."OSPS-AC-01.01".passes.manual]
@@ -375,8 +374,7 @@ command = ["gh", "api", "/repos/$OWNER/$REPO"]
 pass_exit_codes = [0]
 fail_exit_codes = [1]
 output_format = "json"
-pass_if_json_path = "allow_forking"
-pass_if_json_value = "true"
+expr = 'output.json.allow_forking == true'
 timeout = 30
 
 [controls."OSPS-AC-02.01".passes.manual]
@@ -407,7 +405,7 @@ command = ["gh", "api", "/repos/$OWNER/$REPO/branches/$BRANCH/protection"]
 pass_exit_codes = [0]
 fail_exit_codes = [1]
 output_format = "json"
-pass_if_json_path = "required_pull_request_reviews"
+expr = 'has(output.json.required_pull_request_reviews)'
 timeout = 30
 
 [controls."OSPS-AC-03.01".passes.manual]
@@ -440,8 +438,7 @@ command = ["gh", "api", "/repos/$OWNER/$REPO/branches/$BRANCH/protection"]
 pass_exit_codes = [0]
 fail_exit_codes = [1]
 output_format = "json"
-pass_if_json_path = "allow_deletions.enabled"
-pass_if_json_value = "false"
+expr = 'output.json.allow_deletions.enabled == false'
 timeout = 30
 
 [controls."OSPS-AC-03.02".passes.manual]
@@ -523,7 +520,7 @@ command = ["gh", "api", "/repos/$OWNER/$REPO", "--jq", ".html_url"]
 pass_exit_codes = [0]
 fail_exit_codes = [1]
 output_format = "text"
-pass_if_output_matches = "^https://"
+expr = 'output.stdout.startsWith("https://")'
 timeout = 30
 
 [controls."OSPS-BR-03.01".passes.manual]
@@ -788,7 +785,7 @@ command = ["gh", "api", "/repos/$OWNER/$REPO", "--jq", ".has_issues or .has_disc
 pass_exit_codes = [0]
 fail_exit_codes = [1]
 output_format = "text"
-pass_if_output_matches = "^true"
+expr = 'output.stdout.startsWith("true")'
 timeout = 30
 
 [controls."OSPS-GV-02.01".passes.manual]
@@ -879,7 +876,7 @@ pass_exit_codes = [0]
 fail_exit_codes = [1]
 output_format = "text"
 # Match common OSI-approved licenses (case-insensitive handled by spdx_id)
-pass_if_output_matches = "^(MIT|Apache-2\\.0|GPL-[23]\\.0|LGPL-[23]\\.[01]|BSD-[23]-Clause|MPL-2\\.0|ISC|Unlicense|0BSD|AGPL-3\\.0|EPL-[12]\\.0|CC0-1\\.0)$"
+expr = 'output.stdout.matches("^(MIT|Apache-2\\\\.0|GPL-[23]\\\\.0|LGPL-[23]\\\\.[01]|BSD-[23]-Clause|MPL-2\\\\.0|ISC|Unlicense|0BSD|AGPL-3\\\\.0|EPL-[12]\\\\.0|CC0-1\\\\.0)\\n?$")'
 timeout = 30
 
 [controls."OSPS-LE-02.01".passes.manual]
@@ -968,8 +965,7 @@ command = ["gh", "api", "/repos/$OWNER/$REPO"]
 pass_exit_codes = [0]
 fail_exit_codes = [1]
 output_format = "json"
-pass_if_json_path = "private"
-pass_if_json_value = "false"
+expr = 'output.json.private == false'
 timeout = 30
 
 [controls."OSPS-QA-01.01".passes.manual]
@@ -1253,7 +1249,7 @@ command = ["gh", "api", "/repos/$OWNER/$REPO/branches/$BRANCH/protection"]
 pass_exit_codes = [0]
 fail_exit_codes = [1]
 output_format = "json"
-pass_if_json_path = "required_status_checks"
+expr = 'has(output.json.required_status_checks)'
 timeout = 30
 
 [controls."OSPS-QA-03.01".passes.manual]
@@ -1355,7 +1351,7 @@ command = ["gh", "api", "/repos/$OWNER/$REPO", "--jq", ".has_issues"]
 pass_exit_codes = [0]
 fail_exit_codes = [1]
 output_format = "text"
-pass_if_output_matches = "^true"
+expr = 'output.stdout.startsWith("true")'
 timeout = 30
 
 [controls."OSPS-VM-04.01".passes.manual]
@@ -1487,7 +1483,7 @@ command = ["gh", "api", "/repos/$OWNER/$REPO/branches/$BRANCH/protection", "--jq
 pass_exit_codes = [0]
 fail_exit_codes = [1]
 output_format = "text"
-pass_if_output_matches = "^true"
+expr = 'output.stdout.startsWith("true")'
 timeout = 30
 
 [controls."OSPS-QA-07.01".passes.manual]
