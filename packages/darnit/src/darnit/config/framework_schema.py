@@ -230,6 +230,10 @@ class DeterministicPassConfig(BaseModel):
     api_check: str | None = None  # Function name or "module:function"
     config_check: str | None = None  # Function name or "module:function"
 
+    # CEL expression for pass/fail evaluation (takes precedence over other fields)
+    # Example: 'size(files) > 0 && file_exists("SECURITY.md")'
+    expr: str | None = None
+
     model_config = ConfigDict(extra="allow")
 
 
@@ -240,6 +244,11 @@ class PatternPassConfig(BaseModel):
     pass_if_any_match: bool = Field(default=True, alias="pass_if_any")
     fail_if_no_match: bool = False
     custom_analyzer: str | None = None  # Function reference
+
+    # CEL expression for pass/fail evaluation (takes precedence over other fields)
+    # Context includes: files (list of matched paths), matches (list of match objects)
+    # Example: 'size(matches) > 0 && matches.exists(m, m.content.contains("vulnerability"))'
+    expr: str | None = None
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
@@ -297,14 +306,22 @@ class ExecPassConfig(BaseModel):
     output_format: str = "text"
 
     # JSONPath to extract pass/fail from JSON output
+    # DEPRECATED: Use expr instead for CEL-based evaluation
     pass_if_json_path: str | None = None  # e.g., "$.status" == "pass"
     pass_if_json_value: str | None = None
 
     # Regex pattern to match in output for pass
+    # DEPRECATED: Use expr instead for CEL-based evaluation
     pass_if_output_matches: str | None = None
 
     # Regex pattern to match in output for fail
+    # DEPRECATED: Use expr instead for CEL-based evaluation
     fail_if_output_matches: str | None = None
+
+    # CEL expression for pass/fail evaluation (takes precedence over other fields)
+    # Context includes: output.stdout, output.stderr, output.exit_code, output.json
+    # Example: 'output.exit_code == 0 && output.json.status == "pass"'
+    expr: str | None = None
 
     # Timeout in seconds
     timeout: int = 300

@@ -2,12 +2,19 @@
 
 import os
 import re
+import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from darnit.core.logging import get_logger
 
+from .cel_evaluator import (
+    CELCompilationError,
+    CELContext,
+    CELEvaluator,
+)
 from .models import (
     CheckContext,
     LLMConsultationRequest,
@@ -17,6 +24,79 @@ from .models import (
 )
 
 logger = get_logger("sieve.passes")
+
+
+def _evaluate_cel_expression(
+    expr: str,
+    context: CheckContext,
+    cel_context: CELContext,
+    phase: VerificationPhase,
+) -> PassResult | None:
+    """Evaluate a CEL expression and return PassResult if conclusive.
+
+    Args:
+        expr: CEL expression string
+        context: Check context with repo info
+        cel_context: CEL-specific context with pass variables
+        phase: Verification phase for the result
+
+    Returns:
+        PassResult if expression evaluates successfully, None on error
+    """
+    try:
+        evaluator = CELEvaluator(repo_path=Path(context.local_path))
+        program = evaluator.compile(expr)
+        result = evaluator.evaluate(program, cel_context)
+
+        if not result.success:
+            return PassResult(
+                phase=phase,
+                outcome=PassOutcome.ERROR,
+                message=f"CEL evaluation error: {result.error}",
+                evidence={"expression": expr, "error": result.error},
+            )
+
+        # CEL expression should evaluate to boolean
+        if result.value is True:
+            return PassResult(
+                phase=phase,
+                outcome=PassOutcome.PASS,
+                message=f"CEL expression passed: {expr}",
+                evidence={"expression": expr, "result": True},
+            )
+        elif result.value is False:
+            return PassResult(
+                phase=phase,
+                outcome=PassOutcome.FAIL,
+                message=f"CEL expression failed: {expr}",
+                evidence={"expression": expr, "result": False},
+            )
+        else:
+            # Non-boolean result - inconclusive
+            return PassResult(
+                phase=phase,
+                outcome=PassOutcome.INCONCLUSIVE,
+                message=f"CEL expression returned non-boolean: {type(result.value).__name__}",
+                evidence={"expression": expr, "result": result.value},
+            )
+
+    except CELCompilationError as e:
+        return PassResult(
+            phase=phase,
+            outcome=PassOutcome.ERROR,
+            message=f"CEL compilation error: {e}",
+            evidence={"expression": expr, "error": str(e)},
+        )
+
+
+def _warn_deprecated_field(field_name: str, expr_equivalent: str, control_id: str) -> None:
+    """Emit deprecation warning for old-style pass fields."""
+    warnings.warn(
+        f"Control {control_id}: '{field_name}' is deprecated. "
+        f"Migrate to: expr = \"{expr_equivalent}\"",
+        DeprecationWarning,
+        stacklevel=4,
+    )
 
 
 def _file_exists(local_path: str, *patterns: str) -> str | None:
@@ -68,6 +148,10 @@ class DeterministicPass:
     """Pass 1: Deterministic checks (file existence, API booleans, config)."""
 
     phase: VerificationPhase = field(default=VerificationPhase.DETERMINISTIC, init=False)
+
+    # CEL expression for pass/fail evaluation (takes precedence over other fields)
+    # Context: files (list of found files), project, context, repo
+    expr: str | None = None
 
     # Configurable checks
     file_must_exist: list[str] | None = None  # Any of these patterns
@@ -124,6 +208,25 @@ class DeterministicPass:
 
     def execute(self, context: CheckContext) -> PassResult:
         checks_performed = []
+
+        # CEL expression evaluation (takes precedence over all other fields)
+        if self.expr:
+            checks_performed.append(f"cel_expr({self.expr[:30]}...)")
+            cel_context = CELContext(
+                files=[],  # Will be populated if file checks are done
+                project=context.gathered_evidence.get("project_context", {}),
+                context=context.gathered_evidence.get("user_context", {}),
+                repo={
+                    "path": context.local_path,
+                    "owner": context.owner,
+                    "name": context.repo,
+                },
+            )
+            cel_result = _evaluate_cel_expression(
+                self.expr, context, cel_context, self.phase
+            )
+            if cel_result:
+                return cel_result
 
         # API check first (most authoritative)
         if self.api_check:
@@ -242,6 +345,10 @@ class PatternPass:
 
     phase: VerificationPhase = field(default=VerificationPhase.PATTERN, init=False)
 
+    # CEL expression for pass/fail evaluation (takes precedence over other fields)
+    # Context: files (list of matched file paths), matches (list of match objects)
+    expr: str | None = None
+
     # Configurable pattern checks
     file_patterns: list[str] | None = None  # Files to search
     content_patterns: dict[str, str] | None = None  # name -> regex
@@ -252,13 +359,50 @@ class PatternPass:
     def execute(self, context: CheckContext) -> PassResult:
         checks_performed = []
         matches_found = []
+        matched_files: list[str] = []
+        match_objects: list[dict[str, Any]] = []
 
-        # Content pattern matching
+        # Gather pattern matches first (needed for both CEL and legacy evaluation)
         if self.file_patterns and self.content_patterns:
             for pattern_name, regex in self.content_patterns.items():
+                for file_pattern in self.file_patterns:
+                    content = _read_file(context.local_path, file_pattern)
+                    if content:
+                        match = re.search(regex, content, re.IGNORECASE)
+                        if match:
+                            matches_found.append(pattern_name)
+                            if file_pattern not in matched_files:
+                                matched_files.append(file_pattern)
+                            match_objects.append({
+                                "pattern": pattern_name,
+                                "file": file_pattern,
+                                "content": match.group(0)[:200],  # First 200 chars
+                            })
+
+        # CEL expression evaluation (takes precedence over all other fields)
+        if self.expr:
+            checks_performed.append(f"cel_expr({self.expr[:30]}...)")
+            cel_context = CELContext(
+                files=matched_files,
+                matches=match_objects,
+                project=context.gathered_evidence.get("project_context", {}),
+                context=context.gathered_evidence.get("user_context", {}),
+                repo={
+                    "path": context.local_path,
+                    "owner": context.owner,
+                    "name": context.repo,
+                },
+            )
+            cel_result = _evaluate_cel_expression(
+                self.expr, context, cel_context, self.phase
+            )
+            if cel_result:
+                return cel_result
+
+        # Legacy: Content pattern matching (matches already gathered above)
+        if self.file_patterns and self.content_patterns:
+            for pattern_name in self.content_patterns:
                 checks_performed.append(f"pattern({pattern_name})")
-                if _file_contains(context.local_path, self.file_patterns, regex):
-                    matches_found.append(pattern_name)
 
             if self.pass_if_any_match and matches_found:
                 return PassResult(
@@ -437,7 +581,14 @@ class ExecPass:
         - Variable substitution ($PATH, $OWNER, $REPO) replaces whole list elements only
         - No string interpolation that could enable injection
 
-    Example:
+    Example (CEL expression - recommended):
+        exec_pass = ExecPass(
+            command=["kusari", "repo", "scan", "$PATH", "HEAD"],
+            expr='output.exit_code == 0 && !output.stdout.contains("Flagged Issues")',
+        )
+        result = exec_pass.execute(context)
+
+    Example (legacy - deprecated):
         exec_pass = ExecPass(
             command=["kusari", "repo", "scan", "$PATH", "HEAD"],
             pass_exit_codes=[0],
@@ -451,6 +602,10 @@ class ExecPass:
     # Command as list - supports $PATH, $OWNER, $REPO substitution
     command: list[str] = field(default_factory=list)
 
+    # CEL expression for pass/fail evaluation (takes precedence over other fields)
+    # Context: output.stdout, output.stderr, output.exit_code, output.json
+    expr: str | None = None
+
     # Exit codes that indicate pass
     pass_exit_codes: list[int] = field(default_factory=lambda: [0])
 
@@ -460,11 +615,11 @@ class ExecPass:
     # Output format for parsing
     output_format: str = "text"
 
-    # Output pattern matching
+    # Output pattern matching (DEPRECATED: use expr instead)
     pass_if_output_matches: str | None = None
     fail_if_output_matches: str | None = None
 
-    # JSON output evaluation
+    # JSON output evaluation (DEPRECATED: use expr instead)
     pass_if_json_path: str | None = None
     pass_if_json_value: str | None = None
 
@@ -543,8 +698,46 @@ class ExecPass:
             stderr = result.stderr
             exit_code = result.returncode
 
-            # First check output patterns (take precedence over exit codes)
+            # Parse JSON output if format is json
+            json_output = None
+            if self.output_format == "json":
+                try:
+                    json_output = json_lib.loads(stdout)
+                except json_lib.JSONDecodeError:
+                    logger.debug(f"ExecPass: Could not parse JSON output from {cmd[0]}")
+
+            # CEL expression evaluation (takes precedence over all other fields)
+            if self.expr:
+                cel_context = CELContext(
+                    output={
+                        "stdout": stdout,
+                        "stderr": stderr,
+                        "exit_code": exit_code,
+                        "json": json_output,
+                    },
+                    repo={
+                        "path": context.local_path,
+                        "owner": context.owner,
+                        "name": context.repo,
+                    },
+                )
+                cel_result = _evaluate_cel_expression(
+                    self.expr, context, cel_context, self.phase
+                )
+                if cel_result:
+                    # Add command execution evidence
+                    cel_result.evidence = cel_result.evidence or {}
+                    cel_result.evidence["command"] = cmd[0]
+                    cel_result.evidence["exit_code"] = exit_code
+                    return cel_result
+
+            # Legacy: output patterns (DEPRECATED - emit warning)
             if self.fail_if_output_matches:
+                _warn_deprecated_field(
+                    "fail_if_output_matches",
+                    f'!output.stdout.matches("{self.fail_if_output_matches}")',
+                    context.control_id,
+                )
                 if re.search(self.fail_if_output_matches, stdout, re.IGNORECASE):
                     return PassResult(
                         phase=self.phase,
@@ -559,6 +752,11 @@ class ExecPass:
                     )
 
             if self.pass_if_output_matches:
+                _warn_deprecated_field(
+                    "pass_if_output_matches",
+                    f'output.stdout.matches("{self.pass_if_output_matches}")',
+                    context.control_id,
+                )
                 if re.search(self.pass_if_output_matches, stdout, re.IGNORECASE):
                     return PassResult(
                         phase=self.phase,
@@ -571,10 +769,15 @@ class ExecPass:
                         },
                     )
 
-            # Check JSON output if configured
+            # Check JSON output if configured (DEPRECATED)
             if self.output_format == "json" and self.pass_if_json_path:
+                _warn_deprecated_field(
+                    "pass_if_json_path",
+                    f'output.json.{self.pass_if_json_path.lstrip("$.")} == {self.pass_if_json_value}',
+                    context.control_id,
+                )
                 try:
-                    data = json_lib.loads(stdout)
+                    data = json_lib.loads(stdout) if json_output is None else json_output
                     # Simple dot-notation path evaluation
                     value = self._extract_json_path(data, self.pass_if_json_path)
                     if str(value) == self.pass_if_json_value:
