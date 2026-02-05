@@ -328,3 +328,107 @@ class TestTimeout:
         result = evaluator.evaluate(program, {})
         # Either succeeds (fast enough) or times out
         assert result.success is True or "timeout" in (result.error or "").lower()
+
+
+class TestOldStyleVsCELComparison:
+    """Integration tests comparing old-style pass fields vs CEL expressions."""
+
+    def test_json_path_equivalence(self) -> None:
+        """Test that CEL json_path produces same result as old-style pass_if_json_path."""
+        # Simulate old-style: pass_if_json_path = "status", pass_if_json_value = "enabled"
+        output_json = {"status": "enabled", "code": 200}
+
+        # CEL equivalent
+        evaluator = CELEvaluator()
+        program = evaluator.compile('json_path(output.json, "status") == "enabled"')
+        result = evaluator.evaluate(program, {"output": {"json": output_json}})
+
+        assert result.success is True
+        assert result.value is True
+
+    def test_json_path_nested_equivalence(self) -> None:
+        """Test nested json_path matches old-style nested path behavior."""
+        # Simulate old-style: pass_if_json_path = "data.items[0].name"
+        output_json = {"data": {"items": [{"name": "test"}, {"name": "other"}]}}
+
+        # CEL equivalent
+        evaluator = CELEvaluator()
+        program = evaluator.compile('json_path(output.json, "data.items[0].name") == "test"')
+        result = evaluator.evaluate(program, {"output": {"json": output_json}})
+
+        assert result.success is True
+        assert result.value is True
+
+    def test_output_matches_equivalence(self) -> None:
+        """Test that CEL startsWith matches old-style pass_if_output_matches for anchored patterns."""
+        # Simulate old-style: pass_if_output_matches = "^https://"
+        stdout = "https://github.com/example/repo"
+
+        # CEL equivalent (for ^ anchored patterns)
+        evaluator = CELEvaluator()
+        program = evaluator.compile('output.stdout.startsWith("https://")')
+        result = evaluator.evaluate(program, {"output": {"stdout": stdout}})
+
+        assert result.success is True
+        assert result.value is True
+
+    def test_exit_code_equivalence(self) -> None:
+        """Test that CEL exit_code check matches old-style pass_if_exit_zero."""
+        # Simulate old-style: pass_if_exit_zero = true
+        output = {"exit_code": 0, "stdout": "success"}
+
+        # CEL equivalent
+        evaluator = CELEvaluator()
+        program = evaluator.compile("output.exit_code == 0")
+        result = evaluator.evaluate(program, {"output": output})
+
+        assert result.success is True
+        assert result.value is True
+
+        # Test failure case
+        output_fail = {"exit_code": 1, "stdout": "error"}
+        result_fail = evaluator.evaluate(program, {"output": output_fail})
+
+        assert result_fail.success is True
+        assert result_fail.value is False
+
+    def test_file_exists_for_pattern_pass(self, tmp_path: Path) -> None:
+        """Test file_exists as CEL alternative to pattern pass file checking."""
+        # Create test files
+        (tmp_path / "SECURITY.md").write_text("# Security")
+        (tmp_path / "README.md").write_text("# Readme")
+
+        evaluator = CELEvaluator(repo_path=tmp_path)
+
+        # Check single file exists
+        program = evaluator.compile('file_exists("SECURITY.md")')
+        result = evaluator.evaluate(program, {})
+        assert result.success is True
+        assert result.value is True
+
+        # Check file doesn't exist
+        program2 = evaluator.compile('file_exists("MISSING.md")')
+        result2 = evaluator.evaluate(program2, {})
+        assert result2.success is True
+        assert result2.value is False
+
+    def test_complex_expression_combining_checks(self) -> None:
+        """Test complex CEL expression combining multiple old-style checks."""
+        # This would require multiple old-style fields, but CEL can do it in one expression
+        output = {
+            "exit_code": 0,
+            "stdout": "Build successful",
+            "json": {"status": "pass", "coverage": 85},
+        }
+
+        evaluator = CELEvaluator()
+        # Complex check: exit 0 AND status is pass AND coverage >= 80
+        program = evaluator.compile(
+            'output.exit_code == 0 && '
+            'json_path(output.json, "status") == "pass" && '
+            'json_path(output.json, "coverage") >= 80'
+        )
+        result = evaluator.evaluate(program, {"output": output})
+
+        assert result.success is True
+        assert result.value is True

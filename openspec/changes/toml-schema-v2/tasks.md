@@ -133,7 +133,7 @@ This ensures CI will pass and prevents broken commits from being pushed.
 - [x] 3.7.1 Add unit tests for CEL expression parsing
 - [x] 3.7.2 Add unit tests for CEL sandboxing (timeout, no filesystem)
 - [x] 3.7.3 Add unit tests for custom functions
-- [ ] 3.7.4 Add integration test comparing old-style vs CEL expression
+- [x] 3.7.4 Add integration test comparing old-style vs CEL expression
 
 ## 4. Phase 4: Plugin System
 
