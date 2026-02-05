@@ -202,7 +202,7 @@ class HandlerRegistry:
             handlers = [h for h in handlers if h.plugin == plugin]
         return handlers
 
-    # Allowed module prefixes for handler imports (security whitelist)
+    # Allowed module prefixes for handler imports (security allowlist)
     # Only modules starting with these prefixes can be dynamically loaded
     ALLOWED_MODULE_PREFIXES = (
         "darnit.",
@@ -225,7 +225,7 @@ class HandlerRegistry:
         try:
             module_path, func_name = path.rsplit(":", 1)
 
-            # Validate module path against whitelist to prevent arbitrary imports
+            # Validate module path against allowlist to prevent arbitrary imports
             if not any(module_path.startswith(prefix) for prefix in self.ALLOWED_MODULE_PREFIXES):
                 logger.warning(
                     f"Module path '{module_path}' not in allowed prefixes: "

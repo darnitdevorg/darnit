@@ -219,7 +219,7 @@ class PluginRegistry:
     # Discovery state
     _discovered: set[str] = field(default_factory=set)
 
-    # Allowed module prefixes for dynamic imports (security whitelist)
+    # Allowed module prefixes for dynamic imports (security allowlist)
     ALLOWED_MODULE_PREFIXES: tuple = (
         "darnit.",
         "darnit_baseline.",
@@ -809,7 +809,7 @@ class PluginRegistry:
             logger.error(f"Adapter {name} missing 'module' in config")
             return None
 
-        # Security: Validate module path against whitelist to prevent arbitrary code loading
+        # Security: Validate module path against allowlist to prevent arbitrary code loading
         if not any(module_path.startswith(prefix) for prefix in self.ALLOWED_MODULE_PREFIXES):
             logger.error(
                 f"Adapter {name}: module '{module_path}' not in allowed prefixes. "

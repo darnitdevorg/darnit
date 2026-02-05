@@ -101,7 +101,7 @@ class TestHandlerRegistry:
         assert callable(handler)
 
     def test_load_handler_blocked_module_path(self) -> None:
-        """Test that non-whitelisted module paths are blocked."""
+        """Test that non-allowlisted module paths are blocked."""
         registry = HandlerRegistry()
 
         # os.path is not in ALLOWED_MODULE_PREFIXES, should be blocked

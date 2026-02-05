@@ -54,7 +54,7 @@ logger = get_logger("config.control_loader")
 # Module Import Security
 # =============================================================================
 
-# Base whitelist - always allowed
+# Base allowlist - always allowed
 _BASE_ALLOWED_PREFIXES = (
     "darnit.",
     "darnit_baseline.",
@@ -69,7 +69,7 @@ _discovered_prefixes: set[str] | None = None
 def _get_allowed_module_prefixes() -> tuple[str, ...]:
     """Get allowed module prefixes, including registered plugins.
 
-    Combines the base whitelist with prefixes from all registered
+    Combines the base allowlist with prefixes from all registered
     entry points in darnit.* groups. This allows third-party plugins
     to register their modules as trusted.
 
@@ -102,7 +102,7 @@ def _get_allowed_module_prefixes() -> tuple[str, ...]:
 
 
 def _is_module_allowed(module_path: str) -> bool:
-    """Check if a module path is in the allowed whitelist.
+    """Check if a module path is in the allowed allowlist.
 
     Args:
         module_path: Full module path (e.g., "darnit_baseline.controls.level2")
@@ -128,9 +128,9 @@ def _resolve_check_function(reference: str) -> Callable | None:
     2. Direct check functions: module:check_func
        - The function itself is used as the check
 
-    Security: Only allows loading modules from whitelisted prefixes
+    Security: Only allows loading modules from allowlisted prefixes
     to prevent arbitrary code execution from malicious TOML files.
-    The whitelist includes base darnit packages plus any packages
+    The allowlist includes base darnit packages plus any packages
     registered via entry points.
 
     Args:
@@ -145,7 +145,7 @@ def _resolve_check_function(reference: str) -> Callable | None:
 
     module_path, func_name = reference.rsplit(":", 1)
 
-    # Security: Validate module path against whitelist
+    # Security: Validate module path against allowlist
     if not _is_module_allowed(module_path):
         logger.warning(
             f"Blocked import of '{module_path}': not in allowed module prefixes. "

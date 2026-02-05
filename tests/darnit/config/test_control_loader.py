@@ -434,7 +434,7 @@ class TestFrameworkSchemaValidation:
 
 
 class TestModuleImportSecurity:
-    """Test security whitelist for dynamic module imports."""
+    """Test security allowlist for dynamic module imports."""
 
     def test_base_prefixes_always_allowed(self):
         """Test that base darnit prefixes are always allowed."""

@@ -454,7 +454,7 @@ class AdapterRegistry:
     # Config-based adapter definitions
     _adapter_configs: dict[str, dict[str, Any]] = field(default_factory=dict)
 
-    # Allowed module prefixes for dynamic imports (security whitelist)
+    # Allowed module prefixes for dynamic imports (security allowlist)
     ALLOWED_MODULE_PREFIXES: tuple = (
         "darnit.",
         "darnit_baseline.",
@@ -655,7 +655,7 @@ class AdapterRegistry:
             logger.error(f"Adapter {name} missing 'module' in config")
             return None
 
-        # Security: Validate module path against whitelist to prevent arbitrary code loading
+        # Security: Validate module path against allowlist to prevent arbitrary code loading
         if not any(module_path.startswith(prefix) for prefix in self.ALLOWED_MODULE_PREFIXES):
             logger.error(
                 f"Adapter {name}: module '{module_path}' not in allowed prefixes. "

@@ -21,7 +21,7 @@ Example:
 Security:
     - CEL is inherently sandboxed (no I/O, no imports, bounded execution)
     - Evaluation timeout enforced (default 1 second)
-    - Only whitelisted custom functions available
+    - Only allowlisted custom functions available
     - No direct filesystem or network access
     - Memory limiting: CEL's non-Turing complete nature prevents unbounded
       memory allocation. Combined with timeout, this provides adequate protection.
