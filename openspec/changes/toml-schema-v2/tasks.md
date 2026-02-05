@@ -139,17 +139,17 @@ This ensures CI will pass and prevents broken commits from being pushed.
 
 ### 4.1 Schema
 
-- [ ] 4.1.1 Add `[plugins]` section to framework_schema.py
-- [ ] 4.1.2 Define PluginConfig model with version constraints
-- [ ] 4.1.3 Add allow_unsigned and trusted_publishers fields
+- [x] 4.1.1 Add `[plugins]` section to framework_schema.py
+- [x] 4.1.2 Define PluginConfig model with version constraints
+- [x] 4.1.3 Add allow_unsigned and trusted_publishers fields
 
 ### 4.2 Auto-Registration
 
-- [ ] 4.2.1 Create `@register_handler` decorator
-- [ ] 4.2.2 Create `@register_pass` decorator
-- [ ] 4.2.3 Implement handler discovery on plugin load
-- [ ] 4.2.4 Implement template discovery from plugin templates/ directory
-- [ ] 4.2.5 Build handler registry keyed by short name
+- [x] 4.2.1 Create `@register_handler` decorator
+- [x] 4.2.2 Create `@register_pass` decorator
+- [x] 4.2.3 Implement handler discovery on plugin load
+- [x] 4.2.4 Implement template discovery from plugin templates/ directory
+- [x] 4.2.5 Build handler registry keyed by short name
 
 ### 4.3 Plugin Resolution
 
@@ -179,8 +179,8 @@ This ensures CI will pass and prevents broken commits from being pushed.
 
 ### 4.7 Testing
 
-- [ ] 4.7.1 Add unit tests for auto-registration
-- [ ] 4.7.2 Add unit tests for handler resolution
+- [x] 4.7.1 Add unit tests for auto-registration
+- [x] 4.7.2 Add unit tests for handler resolution
 - [ ] 4.7.3 Add unit tests for Sigstore verification (mocked)
 - [ ] 4.7.4 Add integration test with darnit-baseline plugin
 

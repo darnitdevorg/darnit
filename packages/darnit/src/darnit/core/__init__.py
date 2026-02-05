@@ -43,6 +43,18 @@ from .discovery import (
     get_default_implementation,
     get_implementation,
 )
+from .handlers import (
+    HandlerInfo,
+    HandlerRegistry,
+    PassInfo,
+    TemplateInfo,
+    get_handler,
+    get_handler_registry,
+    get_template,
+    list_handlers,
+    register_handler,
+    register_pass,
+)
 from .logging import get_logger
 from .models import AuditResult, CheckResult
 from .plugin import (
@@ -97,4 +109,15 @@ __all__ = [
     "ENTRY_POINT_FRAMEWORKS",
     "ENTRY_POINT_CHECK_ADAPTERS",
     "ENTRY_POINT_REMEDIATION_ADAPTERS",
+    # Handler registry (new)
+    "HandlerRegistry",
+    "HandlerInfo",
+    "PassInfo",
+    "TemplateInfo",
+    "get_handler_registry",
+    "get_handler",
+    "list_handlers",
+    "get_template",
+    "register_handler",
+    "register_pass",
 ]

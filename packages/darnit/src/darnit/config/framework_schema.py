@@ -1030,6 +1030,166 @@ class FrameworkContextConfig(BaseModel):
 
 
 # =============================================================================
+# Plugin Configuration
+# =============================================================================
+
+
+class PluginConfig(BaseModel):
+    """Configuration for a plugin/extension.
+
+    Plugins extend the framework with additional handlers, passes, and templates.
+    Each plugin can be configured with version constraints and security settings.
+
+    Example:
+        ```toml
+        [plugins."darnit-baseline"]
+        version = ">=1.0.0"
+        allow_unsigned = false
+        trusted_publishers = ["kusari-oss"]
+
+        [plugins."my-custom-plugin"]
+        version = ">=0.5.0,<2.0.0"
+        allow_unsigned = true
+        ```
+
+    Security:
+        By default, plugins must be signed via Sigstore. Set allow_unsigned=true
+        to allow unsigned plugins (NOT recommended for production). The
+        trusted_publishers list specifies GitHub organizations/users whose
+        signatures are trusted.
+    """
+    # Version constraint (pip-style specifier)
+    # Examples: ">=1.0.0", ">=1.0.0,<2.0.0", "==1.2.3"
+    version: str | None = None
+
+    # Whether to allow unsigned packages (default: False for security)
+    # If False, plugin must be signed via Sigstore
+    allow_unsigned: bool = False
+
+    # List of trusted Sigstore publishers (GitHub orgs or users)
+    # If empty and allow_unsigned=False, any valid Sigstore signature is accepted
+    # If non-empty, only signatures from these publishers are accepted
+    trusted_publishers: list[str] = Field(default_factory=list)
+
+    # Whether this plugin is required (fail audit if not installed)
+    required: bool = False
+
+    # Plugin-specific configuration passed to plugin initialization
+    config: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(extra="allow")
+
+
+class PluginsConfig(BaseModel):
+    """Container for plugin configurations.
+
+    Groups all plugin definitions together. Each key in the plugins
+    section is the plugin package name.
+
+    Example TOML:
+        ```toml
+        [plugins]
+        # Plugin definitions follow
+
+        [plugins."darnit-baseline"]
+        version = ">=1.0.0"
+
+        [plugins."darnit-custom"]
+        version = ">=0.1.0"
+        allow_unsigned = true
+        ```
+    """
+    # Dictionary of plugin name -> configuration
+    plugins: dict[str, PluginConfig] = Field(default_factory=dict)
+
+    # Global settings for plugin loading
+    # If True, allow any unsigned plugin (overrides per-plugin setting)
+    global_allow_unsigned: bool = False
+
+    # Global list of trusted publishers (merged with per-plugin lists)
+    global_trusted_publishers: list[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="allow")
+
+    @model_validator(mode="before")
+    @classmethod
+    def transform_toml_structure(cls, data: Any) -> Any:
+        """Transform TOML [plugins.name] structure to {plugins: {name: ...}}.
+
+        TOML structure:
+            [plugins."darnit-baseline"]
+            version = ">=1.0.0"
+            ...
+
+        Gets parsed as:
+            {"darnit-baseline": {"version": ">=1.0.0", ...}}
+
+        We transform to:
+            {"plugins": {"darnit-baseline": {"version": ">=1.0.0", ...}}}
+        """
+        if isinstance(data, dict):
+            # If 'plugins' already exists, pass through as-is
+            if "plugins" in data:
+                return data
+
+            # Check for global settings
+            global_allow_unsigned = data.pop("global_allow_unsigned", False)
+            global_trusted_publishers = data.pop("global_trusted_publishers", [])
+
+            # Treat remaining keys as plugin names
+            plugins = {}
+            for key, value in list(data.items()):
+                if isinstance(value, dict):
+                    plugins[key] = value
+
+            return {
+                "plugins": plugins,
+                "global_allow_unsigned": global_allow_unsigned,
+                "global_trusted_publishers": global_trusted_publishers,
+            }
+        return data
+
+    def get_plugin_config(self, name: str) -> PluginConfig | None:
+        """Get configuration for a specific plugin."""
+        return self.plugins.get(name)
+
+    def is_plugin_trusted(self, name: str, publisher: str | None = None) -> bool:
+        """Check if a plugin/publisher combination is trusted.
+
+        Args:
+            name: Plugin package name
+            publisher: Sigstore publisher identity (optional)
+
+        Returns:
+            True if the plugin is allowed to run
+        """
+        plugin_config = self.plugins.get(name)
+
+        # Check global unsigned allowance
+        if self.global_allow_unsigned:
+            return True
+
+        # Check per-plugin unsigned allowance
+        if plugin_config and plugin_config.allow_unsigned:
+            return True
+
+        # If no publisher, unsigned is not allowed
+        if publisher is None:
+            return False
+
+        # Check trusted publishers (global + per-plugin)
+        trusted = set(self.global_trusted_publishers)
+        if plugin_config:
+            trusted.update(plugin_config.trusted_publishers)
+
+        # Empty trusted list means any valid signature is accepted
+        if not trusted:
+            return True
+
+        return publisher in trusted
+
+
+# =============================================================================
 # Framework Defaults
 # =============================================================================
 
@@ -1129,6 +1289,9 @@ class FrameworkConfig(BaseModel):
 
     # Context definitions (for interactive context collection)
     context: FrameworkContextConfig = Field(default_factory=FrameworkContextConfig)
+
+    # Plugin configurations (for extending framework with additional handlers)
+    plugins: PluginsConfig = Field(default_factory=PluginsConfig)
 
     model_config = ConfigDict(extra="allow")
 
