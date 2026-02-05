@@ -224,13 +224,8 @@ class TestCELResult:
 
 
 class TestFileExistsFunction:
-    """Tests for file_exists custom function.
+    """Tests for file_exists custom function."""
 
-    Note: Custom function registration in cel-python requires more complex setup.
-    These tests are marked as xfail until custom function support is fully implemented.
-    """
-
-    @pytest.mark.xfail(reason="Custom function registration not yet implemented")
     def test_file_exists_true(self, tmp_path: Path) -> None:
         """Test file_exists returns true for existing file."""
         # Create a test file
@@ -244,7 +239,6 @@ class TestFileExistsFunction:
         assert result.success is True
         assert result.value is True
 
-    @pytest.mark.xfail(reason="Custom function registration not yet implemented")
     def test_file_exists_false(self, tmp_path: Path) -> None:
         """Test file_exists returns false for missing file."""
         evaluator = CELEvaluator(repo_path=tmp_path)
@@ -254,7 +248,6 @@ class TestFileExistsFunction:
         assert result.success is True
         assert result.value is False
 
-    @pytest.mark.xfail(reason="Custom function registration not yet implemented")
     def test_file_exists_no_repo_path(self) -> None:
         """Test file_exists returns false when no repo_path set."""
         evaluator = CELEvaluator()  # No repo_path
@@ -266,13 +259,8 @@ class TestFileExistsFunction:
 
 
 class TestJsonPathFunction:
-    """Tests for json_path custom function.
+    """Tests for json_path custom function."""
 
-    Note: Custom function registration in cel-python requires more complex setup.
-    These tests are marked as xfail until custom function support is fully implemented.
-    """
-
-    @pytest.mark.xfail(reason="Custom function registration not yet implemented")
     def test_json_path_simple(self) -> None:
         """Test json_path extracts simple value."""
         evaluator = CELEvaluator()
@@ -284,7 +272,6 @@ class TestJsonPathFunction:
         assert result.success is True
         assert result.value is True
 
-    @pytest.mark.xfail(reason="Custom function registration not yet implemented")
     def test_json_path_nested(self) -> None:
         """Test json_path extracts nested value."""
         evaluator = CELEvaluator()

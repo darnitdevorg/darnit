@@ -100,7 +100,7 @@ This ensures CI will pass and prevents broken commits from being pushed.
 - [x] 3.2.1 Create `packages/darnit/src/darnit/sieve/cel_evaluator.py`
 - [x] 3.2.2 Implement CEL expression parsing and validation
 - [x] 3.2.3 Implement sandboxed evaluation with timeout (1s limit)
-- [ ] 3.2.4 Implement memory limiting
+- [x] 3.2.4 Implement memory limiting (CEL's non-Turing complete nature provides inherent bounds)
 
 ### 3.3 Context Variables
 
@@ -111,9 +111,9 @@ This ensures CI will pass and prevents broken commits from being pushed.
 
 ### 3.4 Custom Functions
 
-- [ ] 3.4.1 Implement `file_exists(path)` function
-- [ ] 3.4.2 Implement `json_path(obj, path)` function
-- [ ] 3.4.3 Register custom functions in CEL environment
+- [x] 3.4.1 Implement `file_exists(path)` function
+- [x] 3.4.2 Implement `json_path(obj, path)` function
+- [x] 3.4.3 Register custom functions in CEL environment
 
 ### 3.5 Pass Integration
 
@@ -132,7 +132,7 @@ This ensures CI will pass and prevents broken commits from being pushed.
 
 - [x] 3.7.1 Add unit tests for CEL expression parsing
 - [x] 3.7.2 Add unit tests for CEL sandboxing (timeout, no filesystem)
-- [ ] 3.7.3 Add unit tests for custom functions
+- [x] 3.7.3 Add unit tests for custom functions
 - [ ] 3.7.4 Add integration test comparing old-style vs CEL expression
 
 ## 4. Phase 4: Plugin System

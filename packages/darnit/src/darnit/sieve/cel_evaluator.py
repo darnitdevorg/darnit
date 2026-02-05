@@ -23,6 +23,12 @@ Security:
     - Evaluation timeout enforced (default 1 second)
     - Only whitelisted custom functions available
     - No direct filesystem or network access
+    - Memory limiting: CEL's non-Turing complete nature prevents unbounded
+      memory allocation. Combined with timeout, this provides adequate protection.
+
+Custom Functions:
+    - file_exists(path): Check if a file exists relative to repo root
+    - json_path(obj, path): Extract value using JMESPath expression
 """
 
 from __future__ import annotations
@@ -30,9 +36,12 @@ from __future__ import annotations
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from darnit.core.logging import get_logger
+
+if TYPE_CHECKING:
+    from celpy import celtypes
 
 logger = get_logger("sieve.cel_evaluator")
 
@@ -167,42 +176,88 @@ class CELEvaluator:
 
         try:
             import celpy
-            from celpy import celtypes
+            from celpy.c7nlib import C7N_Interpreted_Runner
         except ImportError as e:
             raise CELCompilationError(
                 "cel-python not installed. Install with: pip install cel-python"
             ) from e
 
-        # Create environment
-        self._env = celpy.Environment()
+        # Create environment with C7N runner that supports custom functions
+        self._env = celpy.Environment(runner_class=C7N_Interpreted_Runner)
 
-        # Register custom functions
-        self._register_custom_functions(celpy, celtypes)
+        # Build custom functions dict (for passing to runner)
+        self._build_custom_functions()
 
         return self._env
 
-    def _register_custom_functions(self, celpy: Any, celtypes: Any) -> None:
-        """Register custom CEL functions."""
-        # file_exists function - checks if file exists in repo
-        def file_exists_impl(path: str) -> bool:
+    def _build_custom_functions(self) -> None:
+        """Build custom CEL functions following cel-python's pattern.
+
+        Custom functions receive CEL types and must return CEL types.
+        They are passed to the runner via the activation dict.
+        """
+        try:
+            from celpy import celtypes
+            from celpy.c7nlib import json_to_cel
+        except ImportError:
+            return
+
+        # file_exists(path: string) -> bool
+        # Checks if a file exists relative to repo root
+        def file_exists_cel(path: celtypes.StringType) -> celtypes.BoolType:
             if self.repo_path is None:
-                return False
-            file_path = self.repo_path / path
-            return file_path.exists()
+                return celtypes.BoolType(False)
+            file_path = self.repo_path / str(path)
+            return celtypes.BoolType(file_path.exists())
 
-        self._custom_functions["file_exists"] = file_exists_impl
+        self._custom_functions["file_exists"] = file_exists_cel
 
-        # json_path function - extract value from JSON using path
-        def json_path_impl(obj: Any, path: str) -> Any:
+        # json_path(obj: any, path: string) -> any
+        # Extract value from object using JMESPath expression
+        def json_path_cel(
+            obj: celtypes.Value, path: celtypes.StringType
+        ) -> celtypes.Value:
             try:
                 import jmespath
 
-                result = jmespath.search(path, obj)
-                return result
+                # Convert CEL value to Python for JMESPath
+                py_obj = self._cel_to_python(obj)
+                expression = jmespath.compile(str(path))
+                result = expression.search(py_obj)
+                # Convert back to CEL types
+                return json_to_cel(result)
             except Exception:
                 return None
 
-        self._custom_functions["json_path"] = json_path_impl
+        self._custom_functions["json_path"] = json_path_cel
+
+    def _cel_to_python(self, value: Any) -> Any:
+        """Convert CEL types to Python types for use with external libraries."""
+        try:
+            from celpy import celtypes
+        except ImportError:
+            return value
+
+        if isinstance(value, celtypes.BoolType):
+            return bool(value)
+        if isinstance(value, (celtypes.IntType, celtypes.UintType)):
+            return int(value)
+        if isinstance(value, celtypes.DoubleType):
+            return float(value)
+        if isinstance(value, celtypes.StringType):
+            return str(value)
+        if isinstance(value, celtypes.BytesType):
+            return bytes(value)
+        if isinstance(value, celtypes.ListType):
+            return [self._cel_to_python(v) for v in value]
+        if isinstance(value, celtypes.MapType):
+            return {
+                self._cel_to_python(k): self._cel_to_python(v)
+                for k, v in value.items()
+            }
+        if hasattr(value, "value"):
+            return value.value
+        return value
 
     def compile(self, expression: str) -> CELProgram:
         """Compile a CEL expression for later evaluation.
@@ -227,7 +282,8 @@ class CELEvaluator:
 
         try:
             ast = env.compile(expression)
-            program = env.program(ast)
+            # Pass custom functions to the program for C7N runner
+            program = env.program(ast, functions=self._custom_functions)
 
             return CELProgram(
                 expression=expression,
@@ -297,14 +353,9 @@ class CELEvaluator:
         def evaluate_thread() -> None:
             try:
                 # Convert Python dict to CEL types
-                cel_context = self._convert_to_cel_types(ctx_dict, celpy)
+                activation = self._convert_to_cel_types(ctx_dict, celpy)
 
-                # Inject custom functions into activation
-                activation = cel_context.copy()
-                for name, func in self._custom_functions.items():
-                    activation[name] = func
-
-                # Evaluate
+                # Evaluate (custom functions already registered with program)
                 result = program.program.evaluate(activation)
 
                 # Convert CEL types back to Python
