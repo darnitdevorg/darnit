@@ -10,6 +10,7 @@ dependencies = [
     "pyyaml>=6.0.0",
     "pydantic[email]>=2.0.0",
     "ruamel.yaml>=0.18.0",  # For .project/ round-trip YAML parsing
+    "cel-python>=0.5.0",  # CEL expression evaluation for pass logic
     "tomli>=2.0.0;python_version<'3.11'",
     "tomllib-stubs>=0.1.0;python_version<'3.11'",
 ]

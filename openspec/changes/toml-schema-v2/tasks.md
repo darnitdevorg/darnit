@@ -91,23 +91,23 @@ This ensures CI will pass and prevents broken commits from being pushed.
 
 ### 3.1 Dependencies
 
-- [ ] 3.1.1 Evaluate cel-python vs celpy libraries
-- [ ] 3.1.2 Add chosen CEL library to pyproject.toml
-- [ ] 3.1.3 Document CEL library choice and rationale
+- [x] 3.1.1 Evaluate cel-python vs celpy libraries
+- [x] 3.1.2 Add chosen CEL library to pyproject.toml
+- [x] 3.1.3 Document CEL library choice and rationale
 
 ### 3.2 CEL Evaluator
 
-- [ ] 3.2.1 Create `packages/darnit/src/darnit/sieve/cel_evaluator.py`
-- [ ] 3.2.2 Implement CEL expression parsing and validation
-- [ ] 3.2.3 Implement sandboxed evaluation with timeout (1s limit)
+- [x] 3.2.1 Create `packages/darnit/src/darnit/sieve/cel_evaluator.py`
+- [x] 3.2.2 Implement CEL expression parsing and validation
+- [x] 3.2.3 Implement sandboxed evaluation with timeout (1s limit)
 - [ ] 3.2.4 Implement memory limiting
 
 ### 3.3 Context Variables
 
-- [ ] 3.3.1 Define standard CEL context variables (output, files, response, project, context)
-- [ ] 3.3.2 Implement output.stdout, output.stderr, output.exit_code, output.json for exec
-- [ ] 3.3.3 Implement response.status_code, response.body, response.headers for API
-- [ ] 3.3.4 Implement files, matches for pattern pass
+- [x] 3.3.1 Define standard CEL context variables (output, files, response, project, context)
+- [x] 3.3.2 Implement output.stdout, output.stderr, output.exit_code, output.json for exec
+- [x] 3.3.3 Implement response.status_code, response.body, response.headers for API
+- [x] 3.3.4 Implement files, matches for pattern pass
 
 ### 3.4 Custom Functions
 
@@ -130,8 +130,8 @@ This ensures CI will pass and prevents broken commits from being pushed.
 
 ### 3.7 Testing
 
-- [ ] 3.7.1 Add unit tests for CEL expression parsing
-- [ ] 3.7.2 Add unit tests for CEL sandboxing (timeout, no filesystem)
+- [x] 3.7.1 Add unit tests for CEL expression parsing
+- [x] 3.7.2 Add unit tests for CEL sandboxing (timeout, no filesystem)
 - [ ] 3.7.3 Add unit tests for custom functions
 - [ ] 3.7.4 Add integration test comparing old-style vs CEL expression
 
