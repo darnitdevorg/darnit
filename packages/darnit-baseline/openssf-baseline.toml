@@ -232,6 +232,128 @@ updates:
   #     prefix: "deps"
 """
 
+[templates.readme_basic]
+description = "Basic README.md template"
+content = """# $REPO
+
+<!-- TODO: Add project description -->
+
+## Installation
+
+<!-- TODO: Add installation instructions -->
+
+## Usage
+
+<!-- TODO: Add usage examples -->
+
+## Contributing
+
+<!-- TODO: Add contributing guidelines or link to CONTRIBUTING.md -->
+
+## License
+
+<!-- TODO: Specify license -->
+"""
+
+[templates.license_mit]
+description = "MIT License template"
+content = """MIT License
+
+Copyright (c) $YEAR $OWNER
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+"""
+
+[templates.threat_model_basic]
+description = "Basic STRIDE-based threat model template"
+content = """# Threat Model — $REPO
+
+## Overview
+
+<!-- TODO: Describe the system and its security boundaries -->
+
+## Assets
+
+<!-- TODO: List key assets (data, services, credentials, infrastructure) -->
+
+## Threat Analysis (STRIDE)
+
+### Spoofing
+<!-- TODO: How could an attacker impersonate a legitimate user or component? -->
+
+### Tampering
+<!-- TODO: How could an attacker modify data or code? -->
+
+### Repudiation
+<!-- TODO: How could an attacker deny their actions? -->
+
+### Information Disclosure
+<!-- TODO: How could sensitive information be exposed? -->
+
+### Denial of Service
+<!-- TODO: How could the system be made unavailable? -->
+
+### Elevation of Privilege
+<!-- TODO: How could an attacker gain unauthorized access? -->
+
+## Mitigations
+
+<!-- TODO: Document controls and mitigations for identified threats -->
+
+## References
+
+- [STRIDE Threat Model](https://learn.microsoft.com/en-us/azure/security/develop/threat-modeling-tool-threats)
+- [OpenSSF Baseline](https://baseline.openssf.org)
+"""
+
+[templates.gitignore_secrets]
+description = "Gitignore patterns for common secret files"
+content = """# Secrets and credentials
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+.secret*
+*.secrets
+
+# Cloud provider credentials
+.aws/credentials
+.gcp/credentials.json
+.azure/credentials
+"""
+
+[templates.status_checks_payload]
+description = "GitHub API payload for required status checks"
+content = """{
+  "required_status_checks": {
+    "strict": true,
+    "contexts": $REQUIRED_CHECKS
+  },
+  "enforce_admins": true,
+  "required_pull_request_reviews": null,
+  "restrictions": null
+}
+"""
+
 # =============================================================================
 # Context Definitions (Interactive Context Collection)
 # =============================================================================
@@ -363,6 +485,21 @@ steps = [
     "Verify 'Require two-factor authentication' is enabled",
 ]
 
+[controls."OSPS-AC-01.01".remediation]
+safe = false
+requires_api = true
+dry_run_supported = false
+
+[controls."OSPS-AC-01.01".remediation.manual]
+steps = [
+    "Go to Organization Settings → Authentication security",
+    "Enable 'Require two-factor authentication for everyone in the organization'",
+    "Set a grace period for existing members to enable MFA",
+    "Notify members who haven't enabled MFA",
+]
+docs_url = "https://docs.github.com/en/organizations/keeping-your-organization-secure/managing-two-factor-authentication-for-your-organization/requiring-two-factor-authentication-in-your-organization"
+context_hints = ["org_admin_access"]
+
 [controls."OSPS-AC-02.01"]
 name = "AllowForking"
 description = "Allow repository forking for public collaboration"
@@ -382,6 +519,18 @@ steps = [
     "Navigate to Repository Settings → General",
     "Under 'Features', verify 'Allow forking' is enabled",
 ]
+
+[controls."OSPS-AC-02.01".remediation]
+safe = true
+requires_api = true
+dry_run_supported = false
+
+[controls."OSPS-AC-02.01".remediation.manual]
+steps = [
+    "Navigate to Repository Settings → General",
+    "Under 'Features', check the 'Allow forking' checkbox",
+]
+docs_url = "https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/managing-repository-settings/managing-the-forking-policy-for-your-repository"
 
 [controls."OSPS-AC-03.01"]
 name = "PreventDirectCommits"
@@ -448,6 +597,19 @@ steps = [
     "Verify 'Allow deletions' is NOT checked",
 ]
 
+[controls."OSPS-AC-03.02".remediation]
+safe = true
+requires_api = true
+dry_run_supported = false
+
+[controls."OSPS-AC-03.02".remediation.manual]
+steps = [
+    "Navigate to Repository Settings → Branches → Branch protection rules",
+    "Edit the rule for the primary branch",
+    "Ensure 'Allow deletions' is unchecked",
+]
+docs_url = "https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches"
+
 # =============================================================================
 # Level 1 Controls - Build & Release (BR)
 # =============================================================================
@@ -489,6 +651,19 @@ steps = [
     "Verify ${{ github.event.* }} expressions are properly sanitized",
 ]
 
+[controls."OSPS-BR-01.01".remediation]
+safe = false
+dry_run_supported = false
+
+[controls."OSPS-BR-01.01".remediation.manual]
+steps = [
+    "Audit all .github/workflows/*.yml files for ${{ github.event.* }} usage in run: blocks",
+    "Replace direct interpolation with environment variables: env: MY_VAR: ${{ github.event.issue.title }}",
+    "Use actions/github-script for complex event data handling",
+]
+docs_url = "https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#understanding-the-risk-of-script-injections"
+context_hints = ["ci.provider"]
+
 [controls."OSPS-BR-01.02"]
 name = "SecureBranchNames"
 description = "Branch names are handled safely in workflows"
@@ -508,6 +683,19 @@ steps = [
     "Verify branch names are not used in shell commands without sanitization",
     "Check for proper quoting and escaping of branch name variables",
 ]
+
+[controls."OSPS-BR-01.02".remediation]
+safe = false
+dry_run_supported = false
+
+[controls."OSPS-BR-01.02".remediation.manual]
+steps = [
+    "Review CI/CD workflows for direct use of branch names in shell commands",
+    "Ensure branch name references are quoted: \"$GITHUB_REF_NAME\" not $GITHUB_REF_NAME",
+    "Consider using actions/checkout with ref parameter instead of manual branch handling",
+]
+docs_url = "https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions"
+context_hints = ["ci.provider"]
 
 [controls."OSPS-BR-03.01"]
 name = "SecureRepositoryURL"
@@ -568,6 +756,15 @@ files = [".gitignore"]
 env_files = "\\.env"
 key_files = "\\*\\.key|\\*\\.pem"
 
+[controls."OSPS-BR-07.01".remediation]
+safe = true
+dry_run_supported = true
+
+[controls."OSPS-BR-07.01".remediation.file_create]
+path = ".gitignore"
+template = "gitignore_secrets"
+overwrite = false
+
 # =============================================================================
 # Level 2 Controls - Build & Release (BR)
 # =============================================================================
@@ -590,6 +787,19 @@ steps = [
     "Check that version identifiers are not reused across releases",
     "Confirm releases are tagged with their version identifiers in the VCS",
 ]
+
+[controls."OSPS-BR-02.01".remediation]
+safe = false
+dry_run_supported = false
+
+[controls."OSPS-BR-02.01".remediation.manual]
+steps = [
+    "Adopt semantic versioning (semver) for all releases",
+    "Tag each release in git with its version number: git tag v1.2.3",
+    "Use 'gh release create' or CI automation to create GitHub releases from tags",
+]
+docs_url = "https://semver.org/"
+context_hints = ["build.has_releases"]
 
 [controls."OSPS-BR-04.01"]
 name = "ReleaseChangelog"
@@ -626,6 +836,20 @@ steps = [
     "Confirm security-relevant changes are clearly marked",
 ]
 
+[controls."OSPS-BR-04.01".remediation]
+safe = false
+dry_run_supported = false
+
+[controls."OSPS-BR-04.01".remediation.manual]
+steps = [
+    "Create a CHANGELOG.md in the repository root",
+    "Document functional changes for each release version",
+    "Use GitHub release notes or 'gh release create --generate-notes' for automation",
+    "Mark security-relevant changes clearly (e.g., with [SECURITY] prefix)",
+]
+docs_url = "https://keepachangelog.com/"
+context_hints = ["build.has_releases"]
+
 [controls."OSPS-BR-05.01"]
 name = "StandardizedDependencyTools"
 description = "Use standardized tooling for dependency ingestion"
@@ -653,6 +877,17 @@ steps = [
     "Confirm dependency resolution uses reproducible tooling",
 ]
 
+[controls."OSPS-BR-05.01".remediation]
+safe = false
+dry_run_supported = false
+
+[controls."OSPS-BR-05.01".remediation.manual]
+steps = [
+    "Use a standard package manager for your ecosystem (npm, pip/uv, cargo, go mod, etc.)",
+    "Ensure all dependencies are declared in manifest files (package.json, pyproject.toml, etc.)",
+    "Use lockfiles (package-lock.json, uv.lock, Cargo.lock) for reproducible builds",
+]
+
 [controls."OSPS-BR-06.01"]
 name = "SignReleases"
 description = "Sign releases or provide signed manifest containing hashes"
@@ -671,6 +906,20 @@ steps = [
     "Or verify a signed manifest with hashes is provided for release assets",
     "Check that public keys or verification instructions are documented",
 ]
+
+[controls."OSPS-BR-06.01".remediation]
+safe = false
+dry_run_supported = false
+
+[controls."OSPS-BR-06.01".remediation.manual]
+steps = [
+    "Set up Sigstore cosign or GPG signing in your release workflow",
+    "For Sigstore: add sigstore/cosign-installer action and sign release artifacts",
+    "For GPG: configure GPG key in CI and sign tags with 'git tag -s'",
+    "Document verification instructions in your release notes or README",
+]
+docs_url = "https://docs.sigstore.dev/signing/quickstart/"
+context_hints = ["build.signing_method", "build.has_releases"]
 
 # =============================================================================
 # Level 1 Controls - Documentation (DO)
@@ -701,6 +950,18 @@ steps = [
     "Verify a README file exists (README.md, README.rst, or similar)",
     "Check that README contains project description and basic usage",
 ]
+
+[controls."OSPS-DO-01.01".remediation]
+safe = true
+dry_run_supported = true
+
+[controls."OSPS-DO-01.01".remediation.file_create]
+path = "README.md"
+template = "readme_basic"
+overwrite = false
+
+[controls."OSPS-DO-01.01".remediation.project_update]
+set = { "documentation.readme.path" = "README.md" }
 
 [controls."OSPS-DO-02.01"]
 name = "BugReportingProcess"
@@ -864,6 +1125,18 @@ steps = [
     "Confirm license type is clearly identified",
 ]
 
+[controls."OSPS-LE-01.01".remediation]
+safe = true
+dry_run_supported = true
+
+[controls."OSPS-LE-01.01".remediation.file_create]
+path = "LICENSE"
+template = "license_mit"
+overwrite = false
+
+[controls."OSPS-LE-01.01".remediation.project_update]
+set = { "legal.license.path" = "LICENSE" }
+
 [controls."OSPS-LE-02.01"]
 name = "OSIApprovedLicense"
 description = "License is OSI-approved"
@@ -975,6 +1248,18 @@ steps = [
     "Check repository settings to confirm visibility is 'Public'",
 ]
 
+[controls."OSPS-QA-01.01".remediation]
+safe = false
+dry_run_supported = false
+
+[controls."OSPS-QA-01.01".remediation.manual]
+steps = [
+    "Navigate to Repository Settings → General → Danger Zone",
+    "Click 'Change repository visibility' and select 'Public'",
+    "Note: This requires repository admin permissions and may affect billing",
+]
+docs_url = "https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/managing-repository-settings/setting-repository-visibility"
+
 [controls."OSPS-QA-01.02"]
 name = "PublicCommitHistory"
 description = "Commit history is publicly visible"
@@ -991,6 +1276,16 @@ steps = [
     "Navigate to repository main page",
     "Click on commit history (X commits link)",
     "Verify commit history is accessible and not hidden",
+]
+
+[controls."OSPS-QA-01.02".remediation]
+safe = false
+dry_run_supported = false
+
+[controls."OSPS-QA-01.02".remediation.manual]
+steps = [
+    "Commit history visibility is controlled by repository visibility — ensure the repository is public (see OSPS-QA-01.01)",
+    "If history was previously rewritten or squashed, consider force-pushing the full history (with caution)",
 ]
 
 [controls."OSPS-QA-02.01"]
@@ -1025,6 +1320,17 @@ steps = [
     "Confirm manifest is appropriate for the project's primary language",
 ]
 
+[controls."OSPS-QA-02.01".remediation]
+safe = false
+dry_run_supported = false
+
+[controls."OSPS-QA-02.01".remediation.manual]
+steps = [
+    "Create a dependency manifest file appropriate for your language/ecosystem",
+    "For Python: pyproject.toml or requirements.txt; for Node: package.json; for Go: go.mod; for Rust: Cargo.toml",
+    "List all direct dependencies with version constraints",
+]
+
 [controls."OSPS-QA-04.01"]
 name = "DocumentSubprojects"
 description = "Subprojects are documented"
@@ -1049,6 +1355,18 @@ steps = [
     "If no subprojects, mark as N/A",
 ]
 
+[controls."OSPS-QA-04.01".remediation]
+safe = false
+dry_run_supported = false
+
+[controls."OSPS-QA-04.01".remediation.manual]
+steps = [
+    "Add a 'Subprojects' or 'Packages' section to README.md listing all subprojects",
+    "For each subproject, include a brief description and link to its own README or docs",
+    "For monorepos, consider a top-level directory listing with purpose descriptions",
+]
+context_hints = ["has_subprojects"]
+
 [controls."OSPS-QA-05.01"]
 name = "NoGeneratedExecutables"
 description = "No generated executables in repository"
@@ -1066,6 +1384,18 @@ steps = [
     "Check .gitignore excludes build output directories",
 ]
 
+[controls."OSPS-QA-05.01".remediation]
+safe = false
+dry_run_supported = false
+
+[controls."OSPS-QA-05.01".remediation.manual]
+steps = [
+    "Run 'git ls-files' and filter for executable extensions (.exe, .dll, .so, .dylib, .bin)",
+    "Remove any found executables with 'git rm <file>' and commit",
+    "Add executable patterns to .gitignore: *.exe, *.dll, *.so, *.dylib, *.bin",
+    "Add build output directories to .gitignore (e.g., build/, dist/, target/)",
+]
+
 [controls."OSPS-QA-05.02"]
 name = "NoUnreviewableBinaries"
 description = "No unreviewable binary artifacts"
@@ -1081,6 +1411,18 @@ steps = [
     "Search repository for binary artifacts (.jar, .war, .pyc, .class)",
     "Verify no unreviewable binaries are committed",
     "Check that build artifacts are in .gitignore",
+]
+
+[controls."OSPS-QA-05.02".remediation]
+safe = false
+dry_run_supported = false
+
+[controls."OSPS-QA-05.02".remediation.manual]
+steps = [
+    "Run 'git ls-files' and filter for binary extensions (.jar, .war, .pyc, .class, .o)",
+    "Remove any found binaries with 'git rm <file>' and commit",
+    "Add binary patterns to .gitignore: *.jar, *.war, *.pyc, *.class, *.o",
+    "Consider using Git LFS for legitimate large binary files that must be tracked",
 ]
 
 # =============================================================================
@@ -1149,6 +1491,19 @@ steps = [
     "Verify 'permissions:' block is defined at workflow or job level",
     "Check permissions follow least-privilege principle",
 ]
+
+[controls."OSPS-AC-04.01".remediation]
+safe = false
+dry_run_supported = false
+
+[controls."OSPS-AC-04.01".remediation.manual]
+steps = [
+    "Add a top-level 'permissions: {}' block to each workflow in .github/workflows/",
+    "Grant only the specific permissions each job needs (e.g., contents: read)",
+    "See GitHub's documentation for available permission scopes",
+]
+docs_url = "https://docs.github.com/en/actions/using-jobs/assigning-permissions-to-jobs"
+context_hints = ["ci.provider"]
 
 # =============================================================================
 # Level 2 Controls - Governance (GV)
@@ -1259,6 +1614,22 @@ steps = [
     "Verify 'Require status checks to pass before merging' is enabled",
 ]
 
+[controls."OSPS-QA-03.01".remediation]
+safe = true
+requires_api = true
+dry_run_supported = true
+
+[controls."OSPS-QA-03.01".remediation.api_call]
+method = "PUT"
+endpoint = "/repos/$OWNER/$REPO/branches/$BRANCH/protection"
+payload_template = "status_checks_payload"
+
+[[controls."OSPS-QA-03.01".remediation.requires_context]]
+key = "ci.required_checks"
+required = true
+prompt_if_auto_detected = true
+warning = "Check names must match exactly what your CI reports to GitHub"
+
 [controls."OSPS-QA-06.01"]
 name = "AutomatedTests"
 description = "CI workflows include automated tests"
@@ -1277,6 +1648,20 @@ steps = [
     "Verify test commands are present (npm test, pytest, etc.)",
     "Confirm tests run on pull requests and pushes",
 ]
+
+[controls."OSPS-QA-06.01".remediation]
+safe = false
+dry_run_supported = false
+
+[controls."OSPS-QA-06.01".remediation.manual]
+steps = [
+    "Create a CI workflow file at .github/workflows/test.yml",
+    "Add a test step appropriate for your language: 'npm test', 'pytest', 'go test ./...', 'cargo test', etc.",
+    "Configure triggers: 'on: [push, pull_request]' for the main branch",
+    "Verify the workflow passes by pushing a commit and checking the Actions tab",
+]
+docs_url = "https://docs.github.com/en/actions/automating-builds-and-tests"
+context_hints = ["ci.provider"]
 
 # =============================================================================
 # Level 2 Controls - Vulnerability Management (VM)
@@ -1311,6 +1696,19 @@ steps = [
     "Confirm expected timeline for acknowledgment/response is provided",
 ]
 
+[controls."OSPS-VM-01.01".remediation]
+safe = false
+dry_run_supported = false
+
+[controls."OSPS-VM-01.01".remediation.manual]
+steps = [
+    "Add a 'Disclosure Policy' section to SECURITY.md",
+    "Document the process for reporting vulnerabilities (email, GitHub Security Advisories, etc.)",
+    "Specify expected response timeline (e.g., 'We will acknowledge within 48 hours')",
+    "Include information about coordinated disclosure timeline (e.g., 90 days)",
+]
+docs_url = "https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/about-coordinated-disclosure-of-security-vulnerabilities"
+
 [controls."OSPS-VM-03.01"]
 name = "PrivateReporting"
 description = "Private vulnerability reporting is enabled"
@@ -1340,6 +1738,19 @@ steps = [
     "Confirm GitHub Security Advisories is enabled in Settings → Security",
 ]
 
+[controls."OSPS-VM-03.01".remediation]
+safe = false
+dry_run_supported = false
+
+[controls."OSPS-VM-03.01".remediation.manual]
+steps = [
+    "Enable GitHub Security Advisories: Settings → Security → 'Private vulnerability reporting'",
+    "Add a security contact email to SECURITY.md (e.g., security@yourproject.org)",
+    "Optionally provide a PGP/GPG key for encrypted communications",
+    "Document the private reporting mechanism clearly in SECURITY.md",
+]
+docs_url = "https://docs.github.com/en/code-security/security-advisories/working-with-repository-security-advisories/configuring-private-vulnerability-reporting-for-a-repository"
+
 [controls."OSPS-VM-04.01"]
 name = "SecurityAdvisories"
 description = "Repository supports security advisories"
@@ -1360,6 +1771,19 @@ steps = [
     "Verify 'Issues' is enabled (required for Security Advisories)",
     "Check Security tab for advisory capability",
 ]
+
+[controls."OSPS-VM-04.01".remediation]
+safe = false
+dry_run_supported = false
+
+[controls."OSPS-VM-04.01".remediation.manual]
+steps = [
+    "Navigate to Repository Settings → General → Features",
+    "Enable 'Issues' if not already enabled (required for Security Advisories)",
+    "Navigate to Settings → Security → 'Private vulnerability reporting' and enable it",
+    "Verify the Security tab shows advisory creation capability",
+]
+docs_url = "https://docs.github.com/en/code-security/security-advisories/working-with-repository-security-advisories/about-repository-security-advisories"
 
 # =============================================================================
 # Level 3 Controls - Access Control (AC)
@@ -1384,6 +1808,19 @@ steps = [
     "Confirm read-only access is used where write access isn't needed",
 ]
 
+[controls."OSPS-AC-04.02".remediation]
+safe = false
+dry_run_supported = false
+
+[controls."OSPS-AC-04.02".remediation.manual]
+steps = [
+    "Review each workflow and replace broad permissions with scoped ones",
+    "Use 'contents: read' instead of 'contents: write' where only reading is needed",
+    "Scope permissions at the job level rather than the workflow level when jobs have different needs",
+]
+docs_url = "https://docs.github.com/en/actions/using-jobs/assigning-permissions-to-jobs"
+context_hints = ["ci.provider"]
+
 # =============================================================================
 # Level 3 Controls - Build & Release (BR)
 # =============================================================================
@@ -1407,6 +1844,18 @@ steps = [
     "Confirm release notes link assets to the correct release",
 ]
 
+[controls."OSPS-BR-02.02".remediation]
+safe = false
+dry_run_supported = false
+
+[controls."OSPS-BR-02.02".remediation.manual]
+steps = [
+    "Include version identifiers in release asset filenames (e.g., myapp-v1.2.3.tar.gz)",
+    "Use 'gh release upload' to associate assets with specific releases",
+    "Document asset-to-version mapping in release notes",
+]
+context_hints = ["build.has_releases", "build.has_compiled_assets"]
+
 [controls."OSPS-BR-07.02"]
 name = "SecretsManagementPolicy"
 description = "Define policy for managing secrets and credentials"
@@ -1424,6 +1873,19 @@ steps = [
     "Check that credential rotation practices are defined",
     "Confirm guidance for handling sensitive values is documented",
 ]
+
+[controls."OSPS-BR-07.02".remediation]
+safe = false
+dry_run_supported = false
+
+[controls."OSPS-BR-07.02".remediation.manual]
+steps = [
+    "Document your secrets management policy (e.g., in SECURITY.md or a dedicated doc)",
+    "Define credential rotation schedules and procedures",
+    "Use GitHub Actions secrets or a vault service for CI/CD credentials",
+    "Never store secrets in code or configuration files committed to version control",
+]
+docs_url = "https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions"
 
 # =============================================================================
 # Level 3 Controls - Quality Assurance (QA)
@@ -1446,6 +1908,20 @@ steps = [
     "Check for SBOM generation tools in CI/CD (Syft, CycloneDX, etc.)",
     "Confirm SBOM is published alongside release artifacts",
 ]
+
+[controls."OSPS-QA-02.02".remediation]
+safe = false
+dry_run_supported = false
+
+[controls."OSPS-QA-02.02".remediation.manual]
+steps = [
+    "Choose an SBOM generation tool: Syft (recommended), CycloneDX, or SPDX tools",
+    "Add SBOM generation step to your release workflow: 'syft packages dir:. -o spdx-json > sbom.spdx.json'",
+    "Upload the SBOM as a release artifact alongside your compiled assets",
+    "Consider using GitHub's built-in dependency graph as supplementary SBOM source",
+]
+docs_url = "https://github.com/anchore/syft"
+context_hints = ["has_compiled_assets", "has_releases"]
 
 [controls."OSPS-QA-04.02"]
 name = "SubprojectSecurity"
@@ -1471,6 +1947,19 @@ steps = [
     "Check that security policies apply uniformly across all subprojects",
     "Confirm subprojects have equivalent branch protection and review requirements",
 ]
+
+[controls."OSPS-QA-04.02".remediation]
+safe = false
+dry_run_supported = false
+
+[controls."OSPS-QA-04.02".remediation.manual]
+steps = [
+    "Audit each subproject for consistent security configuration (SECURITY.md, CODEOWNERS, CI workflows)",
+    "Ensure branch protection rules apply to all subproject branches",
+    "Add shared CI workflows that run security checks across all subprojects",
+    "Document security standards in a top-level SECURITY.md that applies to all subprojects",
+]
+context_hints = ["has_subprojects"]
 
 [controls."OSPS-QA-07.01"]
 name = "RequiredApprovals"
@@ -1516,6 +2005,18 @@ steps = [
     "Confirm any required setup or dependencies for testing are documented",
 ]
 
+[controls."OSPS-QA-06.02".remediation]
+safe = false
+dry_run_supported = false
+
+[controls."OSPS-QA-06.02".remediation.manual]
+steps = [
+    "Add a 'Testing' section to README.md or CONTRIBUTING.md",
+    "Document how to install test dependencies and run the test suite",
+    "Include examples of running specific test subsets if applicable",
+    "Document any environment setup required (databases, env vars, fixtures)",
+]
+
 [controls."OSPS-QA-06.03"]
 name = "TestRequirements"
 description = "Test requirements for contributions are documented"
@@ -1532,6 +2033,18 @@ steps = [
     "Review CONTRIBUTING.md for test requirements",
     "Verify contributors are informed that tests are required",
     "Confirm testing expectations are clearly stated",
+]
+
+[controls."OSPS-QA-06.03".remediation]
+safe = false
+dry_run_supported = false
+
+[controls."OSPS-QA-06.03".remediation.manual]
+steps = [
+    "Add test requirements to CONTRIBUTING.md (create the file if it doesn't exist)",
+    "State that all PRs must include tests for new functionality",
+    "Describe minimum test coverage expectations",
+    "Explain how to run the test suite before submitting a PR",
 ]
 
 # =============================================================================
@@ -1586,6 +2099,18 @@ steps = [
     "Confirm timelines for remediation are specified",
 ]
 
+[controls."OSPS-VM-05.01".remediation]
+safe = false
+dry_run_supported = false
+
+[controls."OSPS-VM-05.01".remediation.manual]
+steps = [
+    "Add an 'SCA Remediation Policy' section to SECURITY.md",
+    "Document how dependency vulnerabilities are triaged and prioritized",
+    "Specify remediation timelines by severity (e.g., Critical: 7 days, High: 30 days, Medium: 90 days)",
+    "Describe the tools used for dependency scanning (Dependabot, Trivy, Snyk, etc.)",
+]
+
 [controls."OSPS-VM-05.02"]
 name = "PreReleaseSCA"
 description = "Pre-release SCA workflow configured"
@@ -1603,6 +2128,19 @@ steps = [
     "Verify dependency scanning runs before releases",
     "Confirm SCA tool (dependency-review-action, trivy, snyk) is configured",
 ]
+
+[controls."OSPS-VM-05.02".remediation]
+safe = false
+dry_run_supported = false
+
+[controls."OSPS-VM-05.02".remediation.manual]
+steps = [
+    "Add a dependency review step to your release or PR workflow",
+    "For GitHub: use 'actions/dependency-review-action' in .github/workflows/",
+    "For other CI: integrate Trivy, Snyk, or similar SCA tool in pre-release pipeline",
+    "Configure the tool to fail builds on critical/high severity vulnerabilities",
+]
+docs_url = "https://github.com/actions/dependency-review-action"
 
 [controls."OSPS-VM-05.03"]
 name = "AutomatedDependencyScanning"
@@ -1659,6 +2197,18 @@ steps = [
     "Confirm timelines for fixing code issues are specified",
 ]
 
+[controls."OSPS-VM-06.01".remediation]
+safe = false
+dry_run_supported = false
+
+[controls."OSPS-VM-06.01".remediation.manual]
+steps = [
+    "Add a 'SAST Remediation Policy' section to SECURITY.md",
+    "Document how static analysis findings are triaged and prioritized",
+    "Specify remediation timelines by severity (e.g., Critical: 7 days, High: 30 days)",
+    "Describe the SAST tools used (CodeQL, Semgrep, Bandit, etc.)",
+]
+
 [controls."OSPS-VM-06.02"]
 name = "AutomatedSAST"
 description = "Automated SAST in CI pipeline"
@@ -1676,6 +2226,19 @@ steps = [
     "Verify SAST tool (CodeQL, Semgrep, Bandit, etc.) is configured",
     "Confirm SAST runs on pull requests and/or main branch",
 ]
+
+[controls."OSPS-VM-06.02".remediation]
+safe = false
+dry_run_supported = false
+
+[controls."OSPS-VM-06.02".remediation.manual]
+steps = [
+    "Add a SAST workflow to .github/workflows/ (e.g., codeql-analysis.yml)",
+    "For GitHub: use 'github/codeql-action' for CodeQL analysis",
+    "For other tools: integrate Semgrep, Bandit (Python), Gosec (Go), or Brakeman (Ruby)",
+    "Configure to run on pull requests and pushes to the main branch",
+]
+docs_url = "https://docs.github.com/en/code-security/code-scanning/introduction-to-code-scanning/about-code-scanning"
 
 # =============================================================================
 # Level 3 Controls - Documentation (DO)
@@ -1915,6 +2478,18 @@ files = ["SECURITY.md", "docs/security.md"]
 
 [controls."OSPS-SA-03.02".passes.pattern.patterns]
 threat_model = "(threat model|STRIDE|attack surface|security assessment)"
+
+[controls."OSPS-SA-03.02".remediation]
+safe = true
+dry_run_supported = true
+
+[controls."OSPS-SA-03.02".remediation.file_create]
+path = "THREAT_MODEL.md"
+template = "threat_model_basic"
+overwrite = false
+
+[controls."OSPS-SA-03.02".remediation.project_update]
+set = { "security.threat_model.path" = "THREAT_MODEL.md" }
 
 # =============================================================================
 # MCP Server Configuration

@@ -550,6 +550,7 @@ def generate_threat_model(
     repo: str | None = None,
     local_path: str = ".",
     output_format: str = "markdown",
+    output_path: str | None = None,
 ) -> str:
     """
     Generate a STRIDE-based threat model for a repository.
@@ -562,9 +563,12 @@ def generate_threat_model(
         repo: Repository Name (auto-detected if not provided)
         local_path: ABSOLUTE path to repo
         output_format: Output format - "markdown", "sarif", or "json"
+        output_path: Optional file path (relative to local_path) to write
+            the threat model to disk. If not provided, returns content as string.
 
     Returns:
-        Threat model report with identified threats and recommendations
+        Threat model report with identified threats and recommendations,
+        or a confirmation message if output_path is provided.
     """
     from darnit.threat_model import (
         analyze_stride_threats,
@@ -603,11 +607,20 @@ def generate_threat_model(
 
         # Generate output
         if output_format == "sarif":
-            return json.dumps(generate_sarif_threat_model(str(repo_path), threats), indent=2)
+            content = json.dumps(generate_sarif_threat_model(str(repo_path), threats), indent=2)
         elif output_format == "json":
-            return json.dumps(generate_json_summary(str(repo_path), frameworks, assets, threats, control_gaps), indent=2)
+            content = json.dumps(generate_json_summary(str(repo_path), frameworks, assets, threats, control_gaps), indent=2)
         else:
-            return generate_markdown_threat_model(str(repo_path), assets, threats, control_gaps, frameworks)
+            content = generate_markdown_threat_model(str(repo_path), assets, threats, control_gaps, frameworks)
+
+        # Write to disk if output_path provided
+        if output_path:
+            target = repo_path / output_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content)
+            return f"Threat model written to {output_path} ({len(content)} bytes)"
+
+        return content
     except Exception as e:
         return f"❌ Error generating threat model: {e}"
 

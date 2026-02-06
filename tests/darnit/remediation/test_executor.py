@@ -9,6 +9,7 @@ from darnit.config.framework_schema import (
     ApiCallRemediationConfig,
     ExecRemediationConfig,
     FileCreateRemediationConfig,
+    ManualRemediationConfig,
     RemediationConfig,
     TemplateConfig,
 )
@@ -177,7 +178,7 @@ class TestFileCreateRemediation:
             assert "testorg" in content
 
     def test_file_create_no_overwrite(self):
-        """Test that existing files are not overwritten when overwrite=False."""
+        """Test that existing files return success=True with skipped type."""
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create existing file
             existing_path = os.path.join(tmpdir, "EXISTING.md")
@@ -203,12 +204,47 @@ class TestFileCreateRemediation:
 
             result = executor.execute("TEST-01", config, dry_run=False)
 
-            assert not result.success
+            assert result.success
+            assert result.remediation_type == "file_create_skipped"
             assert "already exists" in result.message
 
             # Verify original content is preserved
             with open(existing_path) as f:
                 assert f.read() == "Original content"
+
+    def test_file_create_overwrite(self):
+        """Test that existing files are overwritten when overwrite=True."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create existing file
+            existing_path = os.path.join(tmpdir, "EXISTING.md")
+            with open(existing_path, "w") as f:
+                f.write("Original content")
+
+            templates = {
+                "test_template": TemplateConfig(content="New content")
+            }
+
+            executor = RemediationExecutor(
+                local_path=tmpdir,
+                templates=templates,
+            )
+
+            config = RemediationConfig(
+                file_create=FileCreateRemediationConfig(
+                    path="EXISTING.md",
+                    template="test_template",
+                    overwrite=True,
+                )
+            )
+
+            result = executor.execute("TEST-01", config, dry_run=False)
+
+            assert result.success
+            assert result.remediation_type == "file_create"
+
+            # Verify content was overwritten
+            with open(existing_path) as f:
+                assert f.read() == "New content"
 
     def test_file_create_with_dirs(self):
         """Test file creation with directory creation."""
@@ -359,6 +395,127 @@ class TestNoRemediationConfig:
         assert not result.success
         assert result.remediation_type == "none"
         assert "No remediation action" in result.message
+
+
+class TestManualRemediation:
+    """Test manual remediation guidance."""
+
+    def test_manual_basic(self):
+        """Test manual remediation returns guidance as success."""
+        executor = RemediationExecutor(local_path=".")
+
+        config = RemediationConfig(
+            manual=ManualRemediationConfig(
+                steps=[
+                    "Go to Organization Settings",
+                    "Enable two-factor authentication",
+                ],
+                docs_url="https://docs.github.com/en/orgs/mfa",
+            )
+        )
+
+        result = executor.execute("OSPS-AC-01.01", config, dry_run=False)
+
+        assert result.success
+        assert result.remediation_type == "manual"
+        assert result.details["steps"] == [
+            "Go to Organization Settings",
+            "Enable two-factor authentication",
+        ]
+        assert result.details["docs_url"] == "https://docs.github.com/en/orgs/mfa"
+
+    def test_manual_dry_run_same_as_normal(self):
+        """Test that dry_run returns same result for manual remediations."""
+        executor = RemediationExecutor(local_path=".")
+
+        config = RemediationConfig(
+            manual=ManualRemediationConfig(
+                steps=["Step 1", "Step 2"],
+            )
+        )
+
+        result_dry = executor.execute("TEST-01", config, dry_run=True)
+        result_normal = executor.execute("TEST-01", config, dry_run=False)
+
+        assert result_dry.success == result_normal.success
+        assert result_dry.remediation_type == result_normal.remediation_type
+        assert result_dry.details["steps"] == result_normal.details["steps"]
+        assert result_dry.dry_run is True
+        assert result_normal.dry_run is False
+
+    def test_manual_with_context_hints(self):
+        """Test manual remediation includes context_hints."""
+        executor = RemediationExecutor(local_path=".")
+
+        config = RemediationConfig(
+            manual=ManualRemediationConfig(
+                steps=["Configure checks"],
+                context_hints=["ci.required_checks", "ci.provider"],
+            )
+        )
+
+        result = executor.execute("TEST-01", config, dry_run=False)
+
+        assert result.success
+        assert result.details["context_hints"] == ["ci.required_checks", "ci.provider"]
+
+    def test_manual_no_context_hints_omitted(self):
+        """Test manual remediation omits context_hints when empty."""
+        executor = RemediationExecutor(local_path=".")
+
+        config = RemediationConfig(
+            manual=ManualRemediationConfig(
+                steps=["Step 1"],
+            )
+        )
+
+        result = executor.execute("TEST-01", config, dry_run=False)
+
+        assert result.success
+        assert "context_hints" not in result.details
+
+    def test_manual_no_docs_url_omitted(self):
+        """Test manual remediation omits docs_url when None."""
+        executor = RemediationExecutor(local_path=".")
+
+        config = RemediationConfig(
+            manual=ManualRemediationConfig(
+                steps=["Step 1"],
+            )
+        )
+
+        result = executor.execute("TEST-01", config, dry_run=False)
+
+        assert result.success
+        assert "docs_url" not in result.details
+
+    def test_automated_type_wins_over_manual(self):
+        """Test that automated remediation types take precedence over manual."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            templates = {
+                "test_template": TemplateConfig(content="# Test")
+            }
+
+            executor = RemediationExecutor(
+                local_path=tmpdir,
+                templates=templates,
+            )
+
+            # Both file_create and manual defined — file_create should win
+            config = RemediationConfig(
+                file_create=FileCreateRemediationConfig(
+                    path="TEST.md",
+                    template="test_template",
+                ),
+                manual=ManualRemediationConfig(
+                    steps=["Manual fallback"],
+                ),
+            )
+
+            result = executor.execute("TEST-01", config, dry_run=True)
+
+            assert result.success
+            assert result.remediation_type == "file_create"
 
 
 if __name__ == "__main__":

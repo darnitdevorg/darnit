@@ -543,6 +543,7 @@ class RemediationConfig(BaseModel):
     - file_create: Create a file from template
     - exec: Execute external command
     - api_call: Make GitHub API call
+    - manual: Structured guidance for non-automatable controls
 
     Context Requirements:
     The requires_context field defines what context must be confirmed before
@@ -570,6 +571,7 @@ class RemediationConfig(BaseModel):
     file_create: Optional["FileCreateRemediationConfig"] = None
     exec: Optional["ExecRemediationConfig"] = None
     api_call: Optional["ApiCallRemediationConfig"] = None
+    manual: Optional["ManualRemediationConfig"] = None
     project_update: Optional["ProjectUpdateRemediationConfig"] = None
 
     # Common settings
@@ -707,6 +709,36 @@ class ProjectUpdateRemediationConfig(BaseModel):
 
     # Whether to create .project/ directory if it doesn't exist
     create_if_missing: bool = True
+
+    model_config = ConfigDict(extra="allow")
+
+
+class ManualRemediationConfig(BaseModel):
+    """Configuration for manual remediation guidance.
+
+    Provides structured human-readable steps for controls that cannot
+    be automated. The executor returns these as a successful "informational"
+    result rather than executing any action.
+
+    Example:
+        ```toml
+        [controls."OSPS-AC-01.01".remediation.manual]
+        steps = [
+            "Go to Organization Settings → Authentication security",
+            "Enable 'Require two-factor authentication'",
+        ]
+        docs_url = "https://docs.github.com/en/organizations/keeping-your-organization-secure/managing-two-factor-authentication-for-your-organization"
+        context_hints = ["org_admin_access"]
+        ```
+    """
+    # Ordered human-readable remediation steps
+    steps: list[str] = Field(default_factory=list)
+
+    # Link to relevant documentation
+    docs_url: str | None = None
+
+    # Context keys that would enable future automation of this control
+    context_hints: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="allow")
 

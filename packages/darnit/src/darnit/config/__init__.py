@@ -72,6 +72,7 @@ from .framework_schema import (
     LocatorConfig,
     LocatorLLMHints,
     ManualPassConfig,
+    ManualRemediationConfig,
     OutputMapping,
     PassesConfig,
     PassPhase,
@@ -264,6 +265,7 @@ __all__ = [
     "PatternPassConfig",
     "LLMPassConfig",
     "ManualPassConfig",
+    "ManualRemediationConfig",
     "AdapterType",
     "PassPhase",
     # Locator configuration (evidence location)

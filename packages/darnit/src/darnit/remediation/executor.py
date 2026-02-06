@@ -1,10 +1,11 @@
 """Declarative remediation executor.
 
 This module executes remediations defined in the framework TOML files.
-It supports three remediation types:
+It supports four remediation types:
 - FileCreate: Create files from templates
 - Exec: Execute external commands
 - ApiCall: Make GitHub API calls
+- Manual: Return structured guidance for non-automatable controls
 
 Example:
     ```python
@@ -273,6 +274,20 @@ class RemediationExecutor:
             result = self._execute_exec(control_id, config.exec, dry_run)
         elif config.api_call:
             result = self._execute_api_call(control_id, config.api_call, dry_run)
+        elif config.manual:
+            details: dict[str, Any] = {"steps": config.manual.steps}
+            if config.manual.docs_url:
+                details["docs_url"] = config.manual.docs_url
+            if config.manual.context_hints:
+                details["context_hints"] = config.manual.context_hints
+            return RemediationResult(
+                success=True,
+                message="Manual remediation guidance",
+                control_id=control_id,
+                remediation_type="manual",
+                dry_run=dry_run,
+                details=details,
+            )
         elif config.handler:
             # Legacy handler reference - return info about it
             return RemediationResult(
@@ -361,15 +376,15 @@ class RemediationExecutor:
         file_exists = os.path.exists(target_path)
         if file_exists and not config.overwrite:
             return RemediationResult(
-                success=False,
-                message=f"File already exists: {config.path}",
+                success=True,
+                message=f"File already exists — control may already be satisfied: {config.path}",
                 control_id=control_id,
-                remediation_type="file_create",
+                remediation_type="file_create_skipped",
                 dry_run=dry_run,
                 details={
                     "path": config.path,
                     "overwrite": config.overwrite,
-                    "note": "Set overwrite=true to replace existing file",
+                    "note": "File exists; set overwrite=true to replace",
                 },
             )
 
