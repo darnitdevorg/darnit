@@ -40,6 +40,15 @@ def discover_implementations() -> dict[str, ComplianceImplementation]:
     from importlib.metadata import entry_points
     eps = entry_points(group="darnit.implementations")
 
+    # TODO: Integrate plugin verification before loading.
+    # The PluginVerifier (darnit.core.verification) is fully implemented but
+    # not yet called here. Before loading each entry point, we should:
+    #   1. Call PluginVerifier.verify_plugin(ep.name)
+    #   2. Skip plugins that fail verification (when allow_unsigned=False)
+    #   3. Log warnings for unsigned plugins (when allow_unsigned=True)
+    # This requires reading VerificationConfig from the user's .baseline.toml.
+    # See: docs/SECURITY_GUIDE.md "Plugin Security Model" for configuration details.
+
     for ep in eps:
         try:
             # Load the entry point (calls the register() function)

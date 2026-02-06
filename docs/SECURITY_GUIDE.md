@@ -289,6 +289,22 @@ remediate_audit_findings(
 
 Darnit's plugin system allows extending functionality through third-party packages. This section describes the security model for plugins.
 
+### Current Status
+
+> **Note:** The Sigstore verification module (`darnit.core.verification`) is fully
+> implemented and tested, but it is **not yet integrated into plugin discovery**.
+> Currently, `discover_implementations()` loads all entry-point plugins
+> unconditionally. The verification infrastructure is ready to be wired in — see
+> the TODO in `packages/darnit/src/darnit/core/discovery.py`.
+>
+> In practice this means:
+> - **Local development**: All plugins load without verification (expected behavior).
+> - **Published releases**: The GitHub Actions publish workflow supports Sigstore
+>   attestations (`attestations: true`), but the release trigger is not yet active.
+> - **Production hardening**: Once verification is integrated into discovery and
+>   packages are published with attestations, set `allow_unsigned = false` to
+>   enforce signed-only plugins.
+
 ### Plugin Verification with Sigstore
 
 Darnit supports [Sigstore](https://www.sigstore.dev/)-based plugin verification to ensure plugins come from trusted sources.
