@@ -145,13 +145,14 @@ def _resolve_check_function(reference: str) -> Callable | None:
         logger.warning("Empty check function reference")
         return None
 
-    # Strategy 1: Check handler registry for short names first
-    from darnit.core.handlers import get_handler
+    # Strategy 1: Check handler registry for short names (no colon) first
+    if ":" not in reference:
+        from darnit.core.handlers import get_handler
 
-    handler = get_handler(reference)
-    if handler is not None:
-        logger.debug(f"Resolved handler '{reference}' from registry")
-        return handler
+        handler = get_handler(reference)
+        if handler is not None:
+            logger.debug(f"Resolved handler '{reference}' from registry")
+            return handler
 
     # Strategy 2: Parse as module:function path
     if ":" not in reference:
