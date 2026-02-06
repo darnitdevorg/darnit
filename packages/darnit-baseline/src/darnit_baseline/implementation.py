@@ -89,5 +89,49 @@ class OSPSBaselineImplementation:
         """
         from .controls import level1, level2, level3  # noqa: F401
 
+    def register_handlers(self) -> None:
+        """Register handlers with the handler registry.
+
+        This explicitly registers all tool handlers with the registry.
+        The handlers are then available by short name in TOML configurations.
+
+        This method can be called multiple times (e.g., after clearing the registry
+        in tests) to re-register handlers.
+        """
+        from darnit.core.handlers import get_handler_registry
+
+        from . import tools
+
+        # Set plugin context so handlers know which plugin registered them
+        registry = get_handler_registry()
+        registry.set_plugin_context(self.name)
+
+        # Explicitly register each handler
+        # This allows re-registration after registry.clear() in tests
+        handlers = [
+            ("audit_openssf_baseline", tools.audit_openssf_baseline),
+            ("list_available_checks", tools.list_available_checks),
+            ("get_project_config", tools.get_project_config),
+            ("create_security_policy", tools.create_security_policy),
+            ("enable_branch_protection", tools.enable_branch_protection),
+            ("init_project_config", tools.init_project_config),
+            ("confirm_project_context", tools.confirm_project_context),
+            ("get_pending_context", tools.get_pending_context),
+            ("generate_threat_model", tools.generate_threat_model),
+            ("generate_attestation", tools.generate_attestation),
+            ("remediate_audit_findings", tools.remediate_audit_findings),
+            ("create_remediation_branch", tools.create_remediation_branch),
+            ("commit_remediation_changes", tools.commit_remediation_changes),
+            ("create_remediation_pr", tools.create_remediation_pr),
+            ("get_remediation_status", tools.get_remediation_status),
+            ("create_test_repository", tools.create_test_repository),
+        ]
+
+        for name, handler in handlers:
+            registry.register_handler(name, handler)
+
+        # Clear plugin context
+        registry.set_plugin_context(None)
+
 
 __all__ = ["OSPSBaselineImplementation"]

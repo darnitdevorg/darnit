@@ -106,6 +106,68 @@ class TestOSPSBaselineImplementation:
         assert isinstance(registry, dict)
 
 
+class TestHandlerRegistration:
+    """Tests for auto-registration of handlers."""
+
+    @pytest.fixture(autouse=True)
+    def clear_registry(self):
+        """Clear handler registry before each test."""
+        from darnit.core.handlers import get_handler_registry
+
+        registry = get_handler_registry()
+        registry.clear()
+        yield
+        registry.clear()
+
+    @pytest.mark.unit
+    def test_register_handlers_adds_tools(self):
+        """Test register_handlers adds tool handlers to registry."""
+        from darnit.core.handlers import get_handler_registry
+
+        impl = OSPSBaselineImplementation()
+        impl.register_handlers()
+
+        registry = get_handler_registry()
+        handlers = registry.list_handlers()
+
+        # Should have handlers registered
+        assert len(handlers) > 0
+
+        # Check some specific handlers exist
+        handler_names = {h.name for h in handlers}
+        assert "audit_openssf_baseline" in handler_names
+        assert "create_security_policy" in handler_names
+        assert "enable_branch_protection" in handler_names
+
+    @pytest.mark.unit
+    def test_handlers_have_plugin_context(self):
+        """Test registered handlers have correct plugin context."""
+        from darnit.core.handlers import get_handler_registry
+
+        impl = OSPSBaselineImplementation()
+        impl.register_handlers()
+
+        registry = get_handler_registry()
+        handler_info = registry.get_handler_info("audit_openssf_baseline")
+
+        assert handler_info is not None
+        assert handler_info.plugin == "openssf-baseline"
+
+    @pytest.mark.unit
+    def test_handlers_are_callable(self):
+        """Test registered handlers are callable."""
+        from darnit.core.handlers import get_handler_registry
+
+        impl = OSPSBaselineImplementation()
+        impl.register_handlers()
+
+        registry = get_handler_registry()
+        handler = registry.get_handler("list_available_checks")
+
+        assert handler is not None
+        assert callable(handler)
+
+
 class TestRegisterFunction:
     """Tests for the register() entry point function."""
 
