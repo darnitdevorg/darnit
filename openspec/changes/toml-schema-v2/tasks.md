@@ -167,7 +167,7 @@ This ensures CI will pass and prevents broken commits from being pushed.
 
 ### 4.5 Migration
 
-- [ ] 4.5.1 Migrate darnit-baseline to use auto-registration
+- [x] 4.5.1 Migrate darnit-baseline to use auto-registration
 - [ ] 4.5.2 Sign darnit-baseline package with Sigstore
 - [ ] 4.5.3 Update existing handler references to short names
 
