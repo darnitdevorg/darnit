@@ -1,0 +1,210 @@
+"""Tests for project_update remediation support.
+
+Tests that the RemediationExecutor correctly applies project_update
+after successful remediations, and that the standalone apply_project_update
+function works for nested dotted paths.
+"""
+
+from darnit.config.framework_schema import (
+    FileCreateRemediationConfig,
+    ProjectUpdateRemediationConfig,
+    RemediationConfig,
+    TemplateConfig,
+)
+from darnit.remediation.executor import (
+    RemediationExecutor,
+    _set_nested_value,
+    apply_project_update,
+)
+
+
+class TestSetNestedValue:
+    """Tests for the _set_nested_value helper."""
+
+    def test_single_key_dict(self):
+        """Set a top-level key in a dict."""
+        obj = {}
+        _set_nested_value(obj, "key", "value")
+        assert obj["key"] == "value"
+
+    def test_nested_dict(self):
+        """Set a nested key in a dict."""
+        obj = {}
+        _set_nested_value(obj, "a.b.c", "deep")
+        assert obj["a"]["b"]["c"] == "deep"
+
+    def test_existing_intermediate(self):
+        """Set a nested key when intermediate dicts exist."""
+        obj = {"a": {"b": {}}}
+        _set_nested_value(obj, "a.b.c", "value")
+        assert obj["a"]["b"]["c"] == "value"
+
+    def test_overwrite_value(self):
+        """Overwrite an existing value."""
+        obj = {"a": {"b": "old"}}
+        _set_nested_value(obj, "a.b", "new")
+        assert obj["a"]["b"] == "new"
+
+
+class TestProjectUpdateRemediationConfig:
+    """Tests for ProjectUpdateRemediationConfig schema."""
+
+    def test_create_with_set(self):
+        """Create config with set values."""
+        config = ProjectUpdateRemediationConfig(
+            set={"security.policy.path": "SECURITY.md"}
+        )
+        assert config.set == {"security.policy.path": "SECURITY.md"}
+
+    def test_create_empty(self):
+        """Create config with no set values."""
+        config = ProjectUpdateRemediationConfig()
+        assert config.set == {}
+
+    def test_create_if_missing_default(self):
+        """create_if_missing defaults to True."""
+        config = ProjectUpdateRemediationConfig()
+        assert config.create_if_missing is True
+
+
+class TestExecutorProjectUpdate:
+    """Tests for RemediationExecutor project_update integration."""
+
+    def test_project_update_applied_after_file_create(self, tmp_path):
+        """project_update is applied after successful file_create."""
+        # Set up executor with a template
+        templates = {
+            "test_template": TemplateConfig(content="# Test file\n"),
+        }
+        executor = RemediationExecutor(
+            local_path=str(tmp_path),
+            owner="testowner",
+            repo="testrepo",
+            templates=templates,
+        )
+
+        # Config with file_create AND project_update
+        config = RemediationConfig(
+            file_create=FileCreateRemediationConfig(
+                path="SECURITY.md",
+                template="test_template",
+            ),
+            project_update=ProjectUpdateRemediationConfig(
+                set={"security.policy.path": "SECURITY.md"},
+            ),
+        )
+
+        result = executor.execute("TEST-01", config, dry_run=False)
+        assert result.success
+
+        # project_update should be noted in details
+        assert "project_update" in result.details
+
+    def test_project_update_dry_run_preview(self, tmp_path):
+        """Dry run shows project_update preview."""
+        templates = {
+            "test_template": TemplateConfig(content="# Test\n"),
+        }
+        executor = RemediationExecutor(
+            local_path=str(tmp_path),
+            owner="testowner",
+            repo="testrepo",
+            templates=templates,
+        )
+
+        config = RemediationConfig(
+            file_create=FileCreateRemediationConfig(
+                path="README.md",
+                template="test_template",
+            ),
+            project_update=ProjectUpdateRemediationConfig(
+                set={"documentation.readme.path": "README.md"},
+            ),
+        )
+
+        result = executor.execute("TEST-01", config, dry_run=True)
+        assert result.success
+        assert "project_update" in result.details
+        assert "would set" in result.details["project_update"]
+
+    def test_project_update_not_applied_on_failure(self, tmp_path):
+        """project_update is NOT applied when remediation fails."""
+        executor = RemediationExecutor(
+            local_path=str(tmp_path),
+            owner="testowner",
+            repo="testrepo",
+        )
+
+        # Config with file_create that will fail (no template)
+        config = RemediationConfig(
+            file_create=FileCreateRemediationConfig(
+                path="README.md",
+                template="nonexistent_template",
+            ),
+            project_update=ProjectUpdateRemediationConfig(
+                set={"documentation.readme.path": "README.md"},
+            ),
+        )
+
+        result = executor.execute("TEST-01", config, dry_run=False)
+        assert not result.success
+        # project_update should NOT be in details
+        assert "project_update" not in result.details
+
+    def test_project_update_without_primary_remediation(self, tmp_path):
+        """project_update alone (no file_create/exec/api_call) doesn't run."""
+        executor = RemediationExecutor(
+            local_path=str(tmp_path),
+            owner="testowner",
+            repo="testrepo",
+        )
+
+        # Config with only project_update, no primary action
+        config = RemediationConfig(
+            project_update=ProjectUpdateRemediationConfig(
+                set={"key": "value"},
+            ),
+        )
+
+        # Should fall through to "no remediation action configured"
+        result = executor.execute("TEST-01", config, dry_run=False)
+        assert not result.success
+        assert result.remediation_type == "none"
+
+
+class TestApplyProjectUpdate:
+    """Tests for standalone apply_project_update function."""
+
+    def test_creates_project_dir(self, tmp_path):
+        """Creates .project/ directory if it doesn't exist."""
+        config = ProjectUpdateRemediationConfig(
+            set={"security.policy.path": "SECURITY.md"},
+            create_if_missing=True,
+        )
+
+        apply_project_update(str(tmp_path), config, "TEST-01")
+
+        # Check .project/ was created
+        project_dir = tmp_path / ".project"
+        assert project_dir.exists()
+
+    def test_skip_if_no_project_and_not_create(self, tmp_path):
+        """Skip if no .project/ and create_if_missing=False."""
+        config = ProjectUpdateRemediationConfig(
+            set={"security.policy.path": "SECURITY.md"},
+            create_if_missing=False,
+        )
+
+        # Should not raise, just skip
+        apply_project_update(str(tmp_path), config, "TEST-01")
+
+        # .project/ should NOT be created
+        project_dir = tmp_path / ".project"
+        assert not project_dir.exists()
+
+    def test_empty_set_is_noop(self, tmp_path):
+        """Empty set dict is a no-op."""
+        config = ProjectUpdateRemediationConfig(set={})
+        apply_project_update(str(tmp_path), config, "TEST-01")
+        # Should not create .project/
+        assert not (tmp_path / ".project").exists()

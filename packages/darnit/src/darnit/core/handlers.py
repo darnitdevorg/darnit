@@ -207,6 +207,7 @@ class HandlerRegistry:
     ALLOWED_MODULE_PREFIXES = (
         "darnit.",
         "darnit_baseline.",
+        "darnit_example.",
         "darnit_testchecks.",
     )
 

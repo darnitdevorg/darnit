@@ -1,0 +1,409 @@
+# Project Hygiene Standard Framework Definition
+# Example darnit implementation with 8 controls across 2 maturity levels.
+#
+# This file accompanies the darnit-example package and demonstrates how to
+# define controls declaratively in TOML. See docs/IMPLEMENTATION_GUIDE.md.
+
+[metadata]
+name = "example-hygiene"
+display_name = "Project Hygiene Standard (Example)"
+version = "0.1.0"
+schema_version = "0.1.0-alpha"
+spec_version = "PH v1.0"
+description = "Example project hygiene controls for open source projects"
+
+[defaults]
+check_adapter = "builtin"
+remediation_adapter = "builtin"
+
+# =============================================================================
+# Templates for Remediation
+# =============================================================================
+
+[templates.readme_standard]
+description = "Standard README.md template for new projects"
+content = """# $REPO
+
+A brief description of what this project does.
+
+## Installation
+
+```bash
+# Add installation instructions here
+```
+
+## Usage
+
+```bash
+# Add usage examples here
+```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to contribute.
+
+## License
+
+See [LICENSE](LICENSE) for details.
+"""
+
+[templates.gitignore_standard]
+description = "Standard .gitignore template"
+content = """# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*$py.class
+"""
+
+[templates.license_mit]
+description = "MIT License template"
+content = """MIT License
+
+Copyright (c) $YEAR $OWNER
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+"""
+
+[templates.security_policy]
+description = "Basic security policy template"
+content = """# Security Policy
+
+## Reporting a Vulnerability
+
+To report a security vulnerability, please open an issue or email the maintainers.
+
+We will acknowledge receipt within 48 hours and provide a timeline for a fix.
+"""
+
+[templates.editorconfig_standard]
+description = "Standard .editorconfig template"
+content = """root = true
+
+[*]
+indent_style = space
+indent_size = 4
+end_of_line = lf
+charset = utf-8
+trim_trailing_whitespace = true
+insert_final_newline = true
+"""
+
+[templates.contributing_standard]
+description = "Basic CONTRIBUTING guide template"
+content = """# Contributing to $REPO
+
+## How to Contribute
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Open a pull request
+
+## Code of Conduct
+
+Be respectful and constructive in all interactions.
+"""
+
+[templates.ci_github_actions]
+description = "Minimal GitHub Actions CI workflow"
+content = """name: CI
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+"""
+
+# =============================================================================
+# Context Definitions
+# =============================================================================
+
+[context.project_name]
+type = "string"
+prompt = "What is the project name?"
+hint = "Used for README template rendering"
+affects = ["PH-DOC-01"]
+store_as = "project.name"
+auto_detect = true
+required = false
+
+# =============================================================================
+# Level 1 Controls — Basic Project Setup (6 controls)
+# =============================================================================
+
+# --- PH-DOC-01: ReadmeExists (TOML-defined) ---
+[controls."PH-DOC-01"]
+name = "ReadmeExists"
+description = "Project has a README file"
+tags = { level = 1, domain = "DOC", documentation = true }
+help_md = """Every project should have a README explaining what it does.
+
+**Remediation:**
+1. Create a README.md in the project root
+2. Include project name, description, and basic usage
+"""
+
+[controls."PH-DOC-01".passes]
+deterministic = { file_must_exist = [
+    "README.md",
+    "README",
+    "README.rst",
+    "README.txt",
+]}
+
+[controls."PH-DOC-01".passes.manual]
+steps = [
+    "Check that a README file exists in the project root",
+    "Verify it contains meaningful content (not just a title)",
+]
+
+[controls."PH-DOC-01".on_pass]
+project_update = { "documentation.readme.path" = "README.md" }
+
+[controls."PH-DOC-01".remediation]
+handler = "create_readme"
+safe = true
+dry_run_supported = true
+
+[controls."PH-DOC-01".remediation.file_create]
+path = "README.md"
+template = "readme_standard"
+overwrite = false
+
+[controls."PH-DOC-01".remediation.project_update]
+set = { "documentation.readme.path" = "README.md" }
+
+# --- PH-DOC-02: LicenseExists (TOML-defined) ---
+[controls."PH-DOC-02"]
+name = "LicenseExists"
+description = "Project has a LICENSE file"
+tags = { level = 1, domain = "DOC", documentation = true, legal = true }
+help_md = """A LICENSE file clarifies how others can use the project.
+
+**Remediation:**
+1. Choose a license (e.g., MIT, Apache-2.0, GPL)
+2. Create a LICENSE file in the project root
+"""
+
+[controls."PH-DOC-02".passes]
+deterministic = { file_must_exist = [
+    "LICENSE",
+    "LICENSE.md",
+    "LICENSE.txt",
+    "LICENCE",
+    "LICENCE.md",
+]}
+
+[controls."PH-DOC-02".passes.manual]
+steps = [
+    "Check that a LICENSE file exists in the project root",
+    "Verify it contains a recognized open source license",
+]
+
+[controls."PH-DOC-02".remediation]
+safe = true
+dry_run_supported = true
+
+[controls."PH-DOC-02".remediation.file_create]
+path = "LICENSE"
+template = "license_mit"
+overwrite = false
+
+[controls."PH-DOC-02".remediation.project_update]
+set = { "legal.license.path" = "LICENSE" }
+
+# --- PH-DOC-03: ReadmeHasDescription ---
+# This control is Python-defined in controls/level1.py
+# (demonstrates multi-phase sieve with custom analyzer)
+
+# --- PH-SEC-01: SecurityPolicyExists (TOML-defined, multi-phase) ---
+[controls."PH-SEC-01"]
+name = "SecurityPolicyExists"
+description = "Project has a security policy for vulnerability reporting"
+tags = { level = 1, domain = "SEC", security = true }
+help_md = """A SECURITY.md tells users how to report vulnerabilities.
+
+**Remediation:**
+1. Create SECURITY.md in the project root or .github/ directory
+2. Include instructions for reporting vulnerabilities
+3. Specify a response timeline
+"""
+
+[controls."PH-SEC-01".passes]
+deterministic = { file_must_exist = [
+    "SECURITY.md",
+    ".github/SECURITY.md",
+    "docs/SECURITY.md",
+]}
+
+# Pattern pass: also check if README mentions security reporting
+[controls."PH-SEC-01".passes.pattern]
+file_patterns = ["README.md", "README.rst", "README"]
+
+[controls."PH-SEC-01".passes.pattern.content_patterns]
+security_section = "(?i)(security|vulnerability|report.*vulnerabilit)"
+
+[controls."PH-SEC-01".passes.manual]
+steps = [
+    "Look for SECURITY.md in the repository root or .github/ directory",
+    "Verify it contains vulnerability reporting instructions",
+    "Check for a security contact or email address",
+]
+
+[controls."PH-SEC-01".on_pass]
+project_update = { "security.policy.path" = "SECURITY.md" }
+
+[controls."PH-SEC-01".remediation]
+safe = true
+dry_run_supported = true
+
+[controls."PH-SEC-01".remediation.file_create]
+path = "SECURITY.md"
+template = "security_policy"
+overwrite = false
+
+[controls."PH-SEC-01".remediation.project_update]
+set = { "security.policy.path" = "SECURITY.md" }
+
+# --- PH-CFG-01: GitignoreExists (TOML-defined) ---
+[controls."PH-CFG-01"]
+name = "GitignoreExists"
+description = "Project has a .gitignore file"
+tags = { level = 1, domain = "CFG", configuration = true }
+help_md = """A .gitignore prevents committing build artifacts and secrets.
+
+**Remediation:**
+1. Create a .gitignore in the project root
+2. Add patterns for your language/framework
+"""
+
+[controls."PH-CFG-01".passes]
+deterministic = { file_must_exist = [".gitignore"] }
+
+[controls."PH-CFG-01".remediation]
+handler = "create_gitignore"
+safe = true
+dry_run_supported = true
+
+[controls."PH-CFG-01".remediation.file_create]
+path = ".gitignore"
+template = "gitignore_standard"
+overwrite = false
+
+# --- PH-CFG-02: EditorConfigExists (TOML-defined) ---
+[controls."PH-CFG-02"]
+name = "EditorConfigExists"
+description = "Project has an .editorconfig file"
+tags = { level = 1, domain = "CFG", configuration = true }
+help_md = """An .editorconfig ensures consistent formatting across editors.
+
+**Remediation:**
+1. Create an .editorconfig in the project root
+2. Define indent style, charset, and line endings
+"""
+
+[controls."PH-CFG-02".passes]
+deterministic = { file_must_exist = [".editorconfig"] }
+
+[controls."PH-CFG-02".remediation]
+safe = true
+dry_run_supported = true
+
+[controls."PH-CFG-02".remediation.file_create]
+path = ".editorconfig"
+template = "editorconfig_standard"
+overwrite = false
+
+# =============================================================================
+# Level 2 Controls — Quality Practices (2 controls)
+# =============================================================================
+
+# --- PH-QA-01: ContributingGuideExists (TOML-defined) ---
+[controls."PH-QA-01"]
+name = "ContributingGuideExists"
+description = "Project has a CONTRIBUTING guide"
+tags = { level = 2, domain = "QA", documentation = true, quality = true }
+help_md = """A CONTRIBUTING guide helps new contributors get started.
+
+**Remediation:**
+1. Create CONTRIBUTING.md in the project root
+2. Include setup instructions, coding standards, and PR process
+"""
+
+[controls."PH-QA-01".passes]
+deterministic = { file_must_exist = [
+    "CONTRIBUTING.md",
+    "CONTRIBUTING",
+    "CONTRIBUTING.rst",
+    ".github/CONTRIBUTING.md",
+]}
+
+[controls."PH-QA-01".remediation]
+safe = true
+dry_run_supported = true
+
+[controls."PH-QA-01".remediation.file_create]
+path = "CONTRIBUTING.md"
+template = "contributing_standard"
+overwrite = false
+
+[controls."PH-QA-01".remediation.project_update]
+set = { "governance.contributing.path" = "CONTRIBUTING.md" }
+
+# --- PH-CI-01: CIConfigExists ---
+# This control is Python-defined in controls/level1.py
+# (demonstrates glob pattern checking in Python)
+
+# =============================================================================
+# MCP Server Configuration
+# =============================================================================
+
+[mcp]
+name = "example-hygiene"
+description = "Project Hygiene Standard compliance tools (example)"
+
+[mcp.tools.example_hygiene_check]
+handler = "example_hygiene_check"
+description = "Run a project hygiene audit. Checks all PH controls via the sieve pipeline and returns a markdown report with pass/fail status and remediation guidance."
+
+[mcp.tools.remediate_hygiene]
+handler = "remediate_hygiene"
+description = "Auto-fix failing hygiene controls by creating missing files from TOML-defined templates. Run example_hygiene_check first to see what will be fixed. Use dry_run=true (default) to preview changes."

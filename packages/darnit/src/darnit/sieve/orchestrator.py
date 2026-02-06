@@ -92,7 +92,7 @@ class SieveOrchestrator:
 
             # Check if conclusive
             if result.outcome == PassOutcome.PASS:
-                return SieveResult(
+                sieve_result = SieveResult(
                     control_id=control_spec.control_id,
                     status="PASS",
                     message=result.message,
@@ -103,6 +103,13 @@ class SieveOrchestrator:
                     evidence=accumulated_evidence,
                     source="sieve",
                 )
+
+                # Apply on_pass context update if configured
+                self._apply_on_pass(
+                    control_spec, context, accumulated_evidence
+                )
+
+                return sieve_result
 
             elif result.outcome == PassOutcome.FAIL:
                 return SieveResult(
@@ -276,3 +283,69 @@ class SieveOrchestrator:
             result = self.verify(spec, context)
             results.append(result)
         return results
+
+    def _apply_on_pass(
+        self,
+        control_spec: ControlSpec,
+        context: CheckContext,
+        evidence: dict[str, Any],
+    ) -> None:
+        """Apply on_pass project_update when a control passes.
+
+        Reads on_pass config from control_spec.metadata and updates
+        .project/project.yaml with the specified values.
+
+        Values can reference evidence using $EVIDENCE.<key> syntax.
+
+        Args:
+            control_spec: The control that passed
+            context: Check context with local_path
+            evidence: Accumulated evidence from passes
+        """
+        on_pass = control_spec.metadata.get("on_pass")
+        if not on_pass:
+            return
+
+        # on_pass can be an OnPassConfig pydantic model or a dict
+        if hasattr(on_pass, "project_update"):
+            updates = on_pass.project_update
+        elif isinstance(on_pass, dict):
+            updates = on_pass.get("project_update", {})
+        else:
+            return
+
+        if not updates:
+            return
+
+        # Substitute $EVIDENCE references
+        resolved: dict[str, Any] = {}
+        for key, value in updates.items():
+            if isinstance(value, str) and value.startswith("$EVIDENCE."):
+                evidence_key = value[len("$EVIDENCE."):]
+                resolved[key] = evidence.get(evidence_key, value)
+            else:
+                resolved[key] = value
+
+        # Apply updates to .project/project.yaml
+        local_path = context.local_path
+        if not local_path:
+            return
+
+        try:
+            from darnit.remediation.executor import (
+                ProjectUpdateRemediationConfig,
+                apply_project_update,
+            )
+
+            config = ProjectUpdateRemediationConfig(set=resolved)
+            apply_project_update(local_path, config, control_spec.control_id)
+            logger.debug(
+                f"Applied on_pass for {control_spec.control_id}: "
+                f"set {len(resolved)} values"
+            )
+        except ImportError:
+            logger.debug("Remediation executor not available for on_pass")
+        except Exception as e:
+            logger.warning(
+                f"Failed to apply on_pass for {control_spec.control_id}: {e}"
+            )

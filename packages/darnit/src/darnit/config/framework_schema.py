@@ -712,6 +712,35 @@ class ProjectUpdateRemediationConfig(BaseModel):
 
 
 # =============================================================================
+# Post-Check Context Update
+# =============================================================================
+
+
+class OnPassConfig(BaseModel):
+    """Configuration for actions to take when a control passes.
+
+    When a check passes, the sieve has found evidence (e.g., "SECURITY.md
+    exists at path X"). This config feeds that finding back into .project/
+    so subsequent checks can use it.
+
+    The `project_update` field uses the same dotted-path format as
+    ``ProjectUpdateRemediationConfig.set``. Values can reference evidence
+    from the sieve result using ``$EVIDENCE.<key>`` syntax.
+
+    Example:
+        ```toml
+        [controls."PH-SEC-01".on_pass]
+        project_update = { "security.policy.path" = "SECURITY.md" }
+        ```
+    """
+    # Values to set in .project/project.yaml on pass
+    # Keys are dotted paths, values are literals or $EVIDENCE references
+    project_update: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(extra="allow")
+
+
+# =============================================================================
 # Template Configuration
 # =============================================================================
 
@@ -805,6 +834,9 @@ class ControlConfig(BaseModel):
 
     # Remediation routing
     remediation: RemediationConfig | None = None
+
+    # Post-check context update (applied when this control passes)
+    on_pass: OnPassConfig | None = None
 
     # Flexible key-value tags for filtering and metadata
     # Can include any attributes: level, domain, severity, category, priority, etc.

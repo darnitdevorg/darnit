@@ -446,6 +446,16 @@ def control_from_framework(
     if security_severity is None and "security_severity" in tags:
         security_severity = tags["security_severity"]
 
+    # Build metadata dict
+    metadata: dict = {
+        "security_severity": security_severity,
+        "docs_url": control_config.docs_url,
+    }
+
+    # Carry on_pass config through metadata for the orchestrator
+    if hasattr(control_config, "on_pass") and control_config.on_pass:
+        metadata["on_pass"] = control_config.on_pass
+
     return ControlSpec(
         control_id=control_id,
         level=level,
@@ -454,10 +464,7 @@ def control_from_framework(
         description=control_config.description,
         passes=passes,
         tags=tags,  # Pass tags directly, ControlSpec.__post_init__ will add level/domain
-        metadata={
-            "security_severity": security_severity,
-            "docs_url": control_config.docs_url,
-        },
+        metadata=metadata,
     )
 
 

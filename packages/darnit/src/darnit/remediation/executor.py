@@ -33,6 +33,7 @@ from darnit.config.framework_schema import (
     ApiCallRemediationConfig,
     ExecRemediationConfig,
     FileCreateRemediationConfig,
+    ProjectUpdateRemediationConfig,
     RemediationConfig,
     TemplateConfig,
 )
@@ -253,6 +254,9 @@ class RemediationExecutor:
     ) -> RemediationResult:
         """Execute a remediation based on its configuration.
 
+        After a successful remediation action, also applies any project_update
+        to keep .project/project.yaml in sync with the actual project state.
+
         Args:
             control_id: The control ID being remediated
             config: Remediation configuration from TOML
@@ -262,12 +266,13 @@ class RemediationExecutor:
             RemediationResult with execution outcome
         """
         # Determine which remediation type to use
+        result = None
         if config.file_create:
-            return self._execute_file_create(control_id, config.file_create, dry_run)
+            result = self._execute_file_create(control_id, config.file_create, dry_run)
         elif config.exec:
-            return self._execute_exec(control_id, config.exec, dry_run)
+            result = self._execute_exec(control_id, config.exec, dry_run)
         elif config.api_call:
-            return self._execute_api_call(control_id, config.api_call, dry_run)
+            result = self._execute_api_call(control_id, config.api_call, dry_run)
         elif config.handler:
             # Legacy handler reference - return info about it
             return RemediationResult(
@@ -291,6 +296,26 @@ class RemediationExecutor:
                 dry_run=dry_run,
                 details={},
             )
+
+        # Apply project_update if the primary remediation succeeded
+        if result.success and not dry_run and config.project_update:
+            try:
+                apply_project_update(
+                    self.local_path, config.project_update, control_id
+                )
+                result.details["project_update"] = "applied"
+            except Exception as e:
+                logger.warning(
+                    f"Remediation for {control_id} succeeded but "
+                    f"project_update failed: {e}"
+                )
+                result.details["project_update"] = f"failed: {e}"
+        elif result.success and dry_run and config.project_update:
+            result.details["project_update"] = (
+                f"would set: {config.project_update.set}"
+            )
+
+        return result
 
     def _execute_file_create(
         self,
@@ -610,7 +635,118 @@ class RemediationExecutor:
             )
 
 
+def apply_project_update(
+    local_path: str,
+    project_update: ProjectUpdateRemediationConfig,
+    control_id: str,
+) -> None:
+    """Apply a project_update to .project/project.yaml.
+
+    Updates the project configuration with values specified in the
+    project_update config. Uses dotted paths to set nested values.
+
+    Args:
+        local_path: Path to the repository root
+        project_update: Configuration specifying what to update
+        control_id: Control ID for logging context
+
+    Raises:
+        RuntimeError: If .project/ cannot be created or updated
+
+    Example:
+        Given project_update.set = {"security.policy.path": "SECURITY.md"},
+        this updates .project/project.yaml:
+
+            security:
+              policy:
+                path: SECURITY.md
+    """
+    if not project_update.set:
+        return
+
+    try:
+        from darnit.config.loader import load_project_config, save_project_config
+        from darnit.config.models import ProjectConfig
+    except ImportError as e:
+        logger.warning(f"Config loader not available for project_update: {e}")
+        return
+
+    # Load or create project config
+    config = load_project_config(local_path)
+    if config is None:
+        if not project_update.create_if_missing:
+            logger.debug(
+                f"No .project/ found for {control_id} and create_if_missing=False"
+            )
+            return
+        config = ProjectConfig(name="unknown")
+
+    # Apply each dotted path update
+    for dotted_path, value in project_update.set.items():
+        _set_nested_value(config, dotted_path, value)
+        logger.debug(f"project_update for {control_id}: set {dotted_path} = {value}")
+
+    # Save
+    save_project_config(config, local_path)
+    logger.info(
+        f"Applied project_update for {control_id}: "
+        f"set {len(project_update.set)} values"
+    )
+
+
+def _set_nested_value(obj: object, dotted_path: str, value: object) -> None:
+    """Set a nested attribute/dict value using a dotted path.
+
+    Supports both attribute access (for Pydantic models) and dict access.
+    Creates intermediate dicts as needed.
+
+    Args:
+        obj: Root object to update
+        dotted_path: Dot-separated path (e.g., "security.policy.path")
+        value: Value to set
+    """
+    parts = dotted_path.split(".")
+    current = obj
+
+    for part in parts[:-1]:
+        if isinstance(current, dict):
+            if part not in current:
+                current[part] = {}
+            current = current[part]
+        elif hasattr(current, part):
+            next_val = getattr(current, part)
+            if next_val is None:
+                # Try to create the expected type
+                next_val = {}
+                try:
+                    setattr(current, part, next_val)
+                except (AttributeError, TypeError, ValueError):
+                    pass
+            current = next_val
+        else:
+            # Create as dict
+            new_dict: dict = {}
+            try:
+                setattr(current, part, new_dict)
+            except (AttributeError, TypeError, ValueError):
+                pass
+            current = new_dict
+
+    # Set the final value
+    final_key = parts[-1]
+    if isinstance(current, dict):
+        current[final_key] = value
+    else:
+        try:
+            setattr(current, final_key, value)
+        except (AttributeError, TypeError, ValueError) as e:
+            logger.warning(
+                f"Could not set {dotted_path} = {value}: {e}"
+            )
+
+
 __all__ = [
     "RemediationExecutor",
     "RemediationResult",
+    "apply_project_update",
 ]

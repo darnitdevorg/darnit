@@ -96,6 +96,10 @@ def create_server(config_path: str | Path) -> FastMCP:
     # This enables short name resolution for handler references
     _register_implementation_handlers(config)
 
+    # Extract framework name for built-in tool binding
+    metadata = config.get("metadata", {})
+    framework_name = metadata.get("name")
+
     # Create registry and server
     registry = ToolRegistry.from_toml(config)
     server = FastMCP(server_name)
@@ -104,7 +108,7 @@ def create_server(config_path: str | Path) -> FastMCP:
     registered_count = 0
     for name, spec in registry.tools.items():
         try:
-            handler = registry.load_handler(spec)
+            handler = registry.load_handler(spec, framework_name=framework_name)
             server.add_tool(handler, name=name, description=spec.description)
             registered_count += 1
             logger.debug(f"Registered tool: {name}")
@@ -138,12 +142,16 @@ def create_server_from_dict(config: dict) -> FastMCP:
     # Register handlers from implementation before loading tools
     _register_implementation_handlers(config)
 
+    # Extract framework name for built-in tool binding
+    metadata = config.get("metadata", {})
+    framework_name = metadata.get("name")
+
     registry = ToolRegistry.from_toml(config)
     server = FastMCP(server_name)
 
     for name, spec in registry.tools.items():
         try:
-            handler = registry.load_handler(spec)
+            handler = registry.load_handler(spec, framework_name=framework_name)
             server.add_tool(handler, name=name, description=spec.description)
         except (ImportError, AttributeError, ValueError) as e:
             logger.warning(f"Failed to load tool '{name}': {e}")

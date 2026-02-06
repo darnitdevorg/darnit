@@ -10,6 +10,7 @@ resolution-markers = [
 members = [
     "darnit",
     "darnit-baseline",
+    "darnit-example",
     "darnit-mcp",
     "darnit-plugins",
     "darnit-testchecks",
@@ -442,12 +443,24 @@ dependencies = [
 requires-dist = [{ name = "darnit", editable = "packages/darnit" }]
 
 [[package]]
+name = "darnit-example"
+version = "0.1.0"
+source = { editable = "packages/darnit-example" }
+dependencies = [
+    { name = "darnit" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "darnit", editable = "packages/darnit" }]
+
+[[package]]
 name = "darnit-mcp"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "darnit" },
     { name = "darnit-baseline" },
+    { name = "darnit-example" },
 ]
 
 [package.optional-dependencies]
@@ -473,6 +486,7 @@ requires-dist = [
     { name = "darnit", editable = "packages/darnit" },
     { name = "darnit", extras = ["attestation"], marker = "extra == 'attestation'", editable = "packages/darnit" },
     { name = "darnit-baseline", editable = "packages/darnit-baseline" },
+    { name = "darnit-example", editable = "packages/darnit-example" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.0.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0.0" },

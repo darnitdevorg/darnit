@@ -20,6 +20,7 @@ classifiers = [
 dependencies = [
     "darnit",
     "darnit-baseline",
+    "darnit-example",
 ]
 
 [project.urls]
@@ -44,6 +45,7 @@ members = ["packages/*"]
 [tool.uv.sources]
 darnit = { workspace = true }
 darnit-baseline = { workspace = true }
+darnit-example = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -143,7 +145,7 @@ ignore = [
 "docs/examples/*" = ["B", "SIM", "E402"]  # Less strict for examples
 
 [tool.ruff.lint.isort]
-known-first-party = ["darnit", "darnit_baseline"]
+known-first-party = ["darnit", "darnit_baseline", "darnit_example"]
 
 [tool.bandit]
 exclude_dirs = ["tests", "docs/examples"]
