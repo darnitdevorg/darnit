@@ -230,6 +230,82 @@ The `rules/catalog.py` is deprecated. SARIF metadata now reads from TOML:
 
 When adding new controls, define all metadata in TOML.
 
+## TOML Schema Features
+
+### CEL Expressions
+
+Controls can use CEL (Common Expression Language) for pass logic:
+
+```toml
+[controls."OSPS-AC-01.01".passes.deterministic]
+exec = { command = "gh api /orgs/{org}/settings" }
+expr = 'response.two_factor_requirement_enabled == true'
+```
+
+Available context variables:
+- `output.stdout`, `output.stderr`, `output.exit_code`, `output.json` (for exec)
+- `response.status_code`, `response.body`, `response.headers` (for API)
+- `files`, `matches` (for pattern pass)
+- `project.*` (from .project/ context)
+
+Custom functions: `file_exists(path)`, `json_path(obj, path)`
+
+### Context System
+
+The framework supports project context from `.project/project.yaml`:
+
+```yaml
+# .project/project.yaml
+name: my-project
+security:
+  policy:
+    type: SECURITY.md
+governance:
+  maintainers:
+    - "@alice"
+    - "@bob"
+```
+
+Context is injected into sieve orchestrator and available to CEL expressions.
+
+### Handler Registration
+
+Plugins register handlers using the `register_handlers()` method:
+
+```python
+class MyImplementation:
+    def register_handlers(self) -> None:
+        from darnit.core.handlers import get_handler_registry
+        from . import tools
+
+        registry = get_handler_registry()
+        registry.set_plugin_context(self.name)
+
+        registry.register_handler("my_tool", tools.my_tool)
+
+        registry.set_plugin_context(None)
+```
+
+Handlers can then be referenced by short name in TOML:
+
+```toml
+[mcp.tools.my_tool]
+handler = "my_tool"  # Short name instead of full module path
+```
+
+### Plugin Security
+
+Plugins support Sigstore verification:
+
+```toml
+# .baseline.toml
+[plugins]
+allow_unsigned = false
+trusted_publishers = ["https://github.com/kusari-oss"]
+```
+
+Default trusted publishers: `kusari-oss`, `kusaridev`
+
 ## Common Patterns
 
 ### Checking for Protocol Methods

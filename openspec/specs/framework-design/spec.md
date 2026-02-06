@@ -233,6 +233,7 @@ env = { "TOOL_VERBOSE" = "true" }
 | `fail_if_output_matches` | `str` | Regex pattern - if matches stdout → FAIL |
 | `pass_if_json_path` | `str` | JSONPath to extract value |
 | `pass_if_json_value` | `str` | Expected value at JSON path for PASS |
+| `expr` | `str` | CEL expression for pass logic (see Section 3.7) |
 | `timeout` | `int` | Timeout in seconds (default: 300) |
 | `env` | `dict` | Additional environment variables |
 
@@ -331,6 +332,52 @@ docs_url = "https://baseline.openssf.org/..."
 |-------|------|-------------|
 | `steps` | `list[str]` | Verification steps for human reviewer |
 | `docs_url` | `str` | Link to verification documentation |
+
+### 3.7 CEL Expressions
+
+Pass types support Common Expression Language (CEL) for flexible result evaluation.
+
+**Purpose**: Replace multiple `pass_if_*` fields with a single declarative expression.
+
+**TOML Schema**:
+```toml
+[controls."EXAMPLE".passes.deterministic]
+exec = { command = "gh api /orgs/{org}/settings" }
+expr = 'response.two_factor_requirement_enabled == true'
+
+[controls."EXAMPLE2".passes.exec]
+command = ["kusari", "scan"]
+output_format = "json"
+expr = 'output.json.status == "pass" && size(output.json.issues) == 0'
+```
+
+**Context Variables**:
+
+| Variable | Pass Type | Description |
+|----------|-----------|-------------|
+| `output.stdout` | exec | Command stdout |
+| `output.stderr` | exec | Command stderr |
+| `output.exit_code` | exec | Command exit code |
+| `output.json` | exec | Parsed JSON from stdout (if `output_format = "json"`) |
+| `response.status_code` | api_check | HTTP status code |
+| `response.body` | api_check | Response body |
+| `response.headers` | api_check | Response headers |
+| `files` | pattern | List of matched file paths |
+| `matches` | pattern | Dict of pattern name → match results |
+| `project.*` | all | Values from `.project/` context |
+
+**Custom Functions**:
+
+| Function | Description |
+|----------|-------------|
+| `file_exists(path)` | Check if file exists |
+| `json_path(obj, path)` | Extract value from JSON using JSONPath |
+
+**Behavior**:
+- `expr` takes precedence over legacy fields (`pass_if_json_path`, etc.)
+- Expression must return `true` for PASS, `false` for FAIL
+- Expressions are sandboxed with 1s timeout
+- CEL is non-Turing complete, preventing infinite loops
 
 ---
 
@@ -548,9 +595,38 @@ class MyImplementation:
     def register_controls(self) -> None:
         # Register Python-defined controls with sieve
         ...
+
+    def register_handlers(self) -> None:
+        # Register MCP tool handlers with registry
+        ...
 ```
 
-### 6.4 Function Reference Security
+### 6.4 Handler Registration
+
+Implementations can register handlers by short name for TOML reference:
+
+```python
+def register_handlers(self) -> None:
+    from darnit.core.handlers import get_handler_registry
+    from . import tools
+
+    registry = get_handler_registry()
+    registry.set_plugin_context(self.name)
+
+    registry.register_handler("my_audit", tools.my_audit)
+    registry.register_handler("my_remediate", tools.my_remediate)
+
+    registry.set_plugin_context(None)
+```
+
+TOML can then reference handlers by short name:
+
+```toml
+[mcp.tools.my_audit]
+handler = "my_audit"  # Short name instead of "my_plugin.tools:my_audit"
+```
+
+### 6.5 Function Reference Security
 
 TOML can reference Python functions via `module:function` syntax:
 
@@ -562,6 +638,41 @@ api_check = "darnit_baseline.checks:check_branch_protection"
 - Only whitelisted module prefixes are allowed
 - Base whitelist: `darnit.`, `darnit_baseline.`, `darnit_plugins.`
 - Additional prefixes discovered from registered entry points
+
+### 6.6 Plugin Verification with Sigstore
+
+Plugins can be verified using Sigstore-based attestations:
+
+```toml
+# .baseline.toml
+[plugins]
+allow_unsigned = false
+trusted_publishers = [
+    "https://github.com/kusari-oss",
+    "https://github.com/openssf",
+]
+
+[plugins."darnit-baseline"]
+version = ">=1.0.0"
+```
+
+**Configuration Fields**:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `allow_unsigned` | `bool` | Allow plugins without Sigstore signatures (default: false in production) |
+| `trusted_publishers` | `list[str]` | OIDC identities to trust (GitHub org URLs, email addresses) |
+
+**Default Trusted Publishers**:
+- `https://github.com/kusari-oss`
+- `https://github.com/kusaridev`
+
+**Verification Flow**:
+1. Plugin loaded via entry point
+2. Check for Sigstore attestation on PyPI
+3. Verify signature against trusted publishers
+4. Cache verification result (24h TTL)
+5. If unsigned and `allow_unsigned = false`, reject plugin
 
 ---
 
@@ -740,4 +851,5 @@ help_md = "..."
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.2 | 2026-02-05 | Added CEL expressions, handler registration, Sigstore verification |
 | 1.0.0-alpha | 2026-02-04 | Initial authoritative specification |

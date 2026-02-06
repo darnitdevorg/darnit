@@ -1927,7 +1927,7 @@ name = "openssf-baseline"
 description = "OpenSSF Baseline security compliance tools for MCP clients"
 
 [mcp.tools.audit_openssf_baseline]
-handler = "darnit_baseline.tools:audit_openssf_baseline"
+handler = "audit_openssf_baseline"
 description = """Run OpenSSF Baseline audit on a repository.
 
 Supports filtering by:
@@ -1941,27 +1941,27 @@ Examples:
 """
 
 [mcp.tools.list_available_checks]
-handler = "darnit_baseline.tools:list_available_checks"
+handler = "list_available_checks"
 description = "List all available OpenSSF Baseline checks organized by level"
 
 [mcp.tools.get_project_config]
-handler = "darnit_baseline.tools:get_project_config"
+handler = "get_project_config"
 description = "Get the current project configuration for OpenSSF Baseline"
 
 [mcp.tools.create_security_policy]
-handler = "darnit_baseline.tools:create_security_policy"
+handler = "create_security_policy"
 description = "Create SECURITY.md file for vulnerability reporting"
 
 [mcp.tools.enable_branch_protection]
-handler = "darnit_baseline.tools:enable_branch_protection"
+handler = "enable_branch_protection"
 description = "Enable branch protection rules on GitHub repository"
 
 [mcp.tools.init_project_config]
-handler = "darnit_baseline.tools:init_project_config"
+handler = "init_project_config"
 description = "Initialize a new .project.yaml configuration file"
 
 [mcp.tools.confirm_project_context]
-handler = "darnit_baseline.tools:confirm_project_context"
+handler = "confirm_project_context"
 description = """Record user-confirmed project context in .project.yaml.
 
 **IMPORTANT**: This is the ONLY way to set project context. DO NOT directly edit
@@ -1995,34 +1995,46 @@ confirm_project_context(
 ```
 """
 
+[mcp.tools.get_pending_context]
+handler = "get_pending_context"
+description = """Get context values that would improve audit accuracy.
+
+Returns information about context that hasn't been confirmed yet,
+organized by priority (number of controls affected). For context keys
+with auto-detection enabled, shows auto-detected values for user confirmation.
+
+Use this before running an audit to see what context information is missing
+and would improve accuracy.
+"""
+
 [mcp.tools.generate_threat_model]
-handler = "darnit_baseline.tools:generate_threat_model"
+handler = "generate_threat_model"
 description = "Generate a STRIDE-based threat model for a repository"
 
 [mcp.tools.generate_attestation]
-handler = "darnit_baseline.tools:generate_attestation"
+handler = "generate_attestation"
 description = "Generate an in-toto attestation for OpenSSF Baseline compliance"
 
 [mcp.tools.remediate_audit_findings]
-handler = "darnit_baseline.tools:remediate_audit_findings"
+handler = "remediate_audit_findings"
 description = "Apply automated remediations for failed audit controls"
 
 [mcp.tools.create_remediation_branch]
-handler = "darnit_baseline.tools:create_remediation_branch"
+handler = "create_remediation_branch"
 description = "Create a new branch for remediation work"
 
 [mcp.tools.commit_remediation_changes]
-handler = "darnit_baseline.tools:commit_remediation_changes"
+handler = "commit_remediation_changes"
 description = "Commit remediation changes with a descriptive message"
 
 [mcp.tools.create_remediation_pr]
-handler = "darnit_baseline.tools:create_remediation_pr"
+handler = "create_remediation_pr"
 description = "Create a pull request for remediation changes"
 
 [mcp.tools.get_remediation_status]
-handler = "darnit_baseline.tools:get_remediation_status"
+handler = "get_remediation_status"
 description = "Get the current git status for remediation work"
 
 [mcp.tools.create_test_repository]
-handler = "darnit_baseline.tools:create_test_repository"
+handler = "create_test_repository"
 description = "Create a minimal test repository that fails all OpenSSF Baseline controls"

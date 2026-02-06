@@ -55,8 +55,9 @@ jobs:
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
-      id-token: write  # OIDC for trusted publishing (scoped to this job only)
+      id-token: write  # OIDC for trusted publishing and Sigstore signing
       contents: read
+      attestations: write  # Required for Sigstore attestations
 
     steps:
       - name: Download build artifacts
@@ -70,6 +71,7 @@ jobs:
         with:
           packages-dir: dist/
           skip-existing: true
+          attestations: true  # Sign with Sigstore
 
   publish-darnit-baseline:
     name: Publish darnit-baseline
@@ -77,8 +79,9 @@ jobs:
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
-      id-token: write  # OIDC for trusted publishing (scoped to this job only)
+      id-token: write  # OIDC for trusted publishing and Sigstore signing
       contents: read
+      attestations: write  # Required for Sigstore attestations
 
     steps:
       - name: Download build artifacts
@@ -92,3 +95,4 @@ jobs:
         with:
           packages-dir: dist/
           skip-existing: true
+          attestations: true  # Sign with Sigstore

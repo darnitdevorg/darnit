@@ -21,6 +21,8 @@ This repository includes an MCP (Model Context Protocol) server for AI assistant
 - **Project Configuration**: Canonical `.project.yaml` for project metadata and documentation locations
 - **Attestation Generation**: Create cryptographically signed in-toto attestations
 - **STRIDE Threat Modeling**: (Alpha) Built-in security threat analysis. To be only used for basic drafting.
+- **CEL Expressions**: Flexible pass logic using Common Expression Language
+- **Plugin Verification**: Sigstore-based plugin signing and verification
 
 ## Included Implementation: OpenSSF Baseline
 
@@ -369,6 +371,22 @@ Darnit is designed with security in mind. Key security features include:
 - **Module Whitelist**: Dynamic adapter loading is restricted to trusted module prefixes (`darnit.*`, `darnit_baseline.*`, `darnit_plugins.*`, `darnit_testchecks.*`)
 - **Dry-Run Mode**: All remediation actions support dry-run to preview changes before applying
 - **Sigstore Attestations**: Cryptographically signed compliance attestations with transparency logging
+- **Plugin Verification**: Sigstore-based verification of plugin packages
+
+### Plugin Security
+
+Configure trusted publishers in `.baseline.toml`:
+
+```toml
+[plugins]
+allow_unsigned = false
+trusted_publishers = [
+    "https://github.com/kusari-oss",
+    "https://github.com/my-org",
+]
+```
+
+Default trusted publishers: `kusari-oss`, `kusaridev`
 
 ### Quick Security Checklist
 
@@ -376,6 +394,7 @@ Darnit is designed with security in mind. Key security features include:
 - [ ] Always use `dry_run=True` first when remediating
 - [ ] Review `.baseline.toml` changes in pull requests
 - [ ] Name custom adapter packages with `darnit_` prefix
+- [ ] Enable plugin verification in production (`allow_unsigned = false`)
 
 For comprehensive security guidance, see [docs/SECURITY_GUIDE.md](docs/SECURITY_GUIDE.md).
 

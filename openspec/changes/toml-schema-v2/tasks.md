@@ -168,8 +168,8 @@ This ensures CI will pass and prevents broken commits from being pushed.
 ### 4.5 Migration
 
 - [x] 4.5.1 Migrate darnit-baseline to use auto-registration
-- [ ] 4.5.2 Sign darnit-baseline package with Sigstore
-- [ ] 4.5.3 Update existing handler references to short names
+- [x] 4.5.2 Sign darnit-baseline package with Sigstore
+- [x] 4.5.3 Update existing handler references to short names
 
 ### 4.6 Documentation
 
@@ -186,8 +186,8 @@ This ensures CI will pass and prevents broken commits from being pushed.
 
 ## 5. Documentation & Cleanup
 
-- [ ] 5.1 Update CLAUDE.md with new TOML schema sections
-- [ ] 5.2 Update framework-design spec with final schema
-- [ ] 5.3 Regenerate docs/generated/ from updated spec
-- [ ] 5.4 Add migration guide for existing configs
-- [ ] 5.5 Update README with new features
+- [x] 5.1 Update CLAUDE.md with new TOML schema sections
+- [x] 5.2 Update framework-design spec with final schema
+- [x] 5.3 Regenerate docs/generated/ from updated spec
+- [x] 5.4 Add migration guide for existing configs
+- [x] 5.5 Update README with new features

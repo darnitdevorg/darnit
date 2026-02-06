@@ -163,9 +163,38 @@ class MyImplementation:
     def register_controls(self) -> None:
         # Register Python-defined controls with sieve
         ...
+
+    def register_handlers(self) -> None:
+        # Register MCP tool handlers with registry
+        ...
 ```
 
-### 6.4 Function Reference Security
+### 6.4 Handler Registration
+
+Implementations can register handlers by short name for TOML reference:
+
+```python
+def register_handlers(self) -> None:
+    from darnit.core.handlers import get_handler_registry
+    from . import tools
+
+    registry = get_handler_registry()
+    registry.set_plugin_context(self.name)
+
+    registry.register_handler("my_audit", tools.my_audit)
+    registry.register_handler("my_remediate", tools.my_remediate)
+
+    registry.set_plugin_context(None)
+```
+
+TOML can then reference handlers by short name:
+
+```toml
+[mcp.tools.my_audit]
+handler = "my_audit"  # Short name instead of "my_plugin.tools:my_audit"
+```
+
+### 6.5 Function Reference Security
 
 TOML can reference Python functions via `module:function` syntax:
 
@@ -178,5 +207,9 @@ api_check = "darnit_baseline.checks:check_branch_protection"
 - Base whitelist: `darnit.`, `darnit_baseline.`, `darnit_plugins.`
 - Additional prefixes discovered from registered entry points
 
----
+### 6.6 Plugin Verification with Sigstore
+
+Plugins can be verified using Sigstore-based attestations:
+
+```toml
 

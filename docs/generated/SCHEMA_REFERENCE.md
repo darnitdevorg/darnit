@@ -145,6 +145,7 @@ env = { "TOOL_VERBOSE" = "true" }
 | `fail_if_output_matches` | `str` | Regex pattern - if matches stdout → FAIL |
 | `pass_if_json_path` | `str` | JSONPath to extract value |
 | `pass_if_json_value` | `str` | Expected value at JSON path for PASS |
+| `expr` | `str` | CEL expression for pass logic (see Section 3.7) |
 | `timeout` | `int` | Timeout in seconds (default: 300) |
 | `env` | `dict` | Additional environment variables |
 
@@ -252,6 +253,52 @@ docs_url = "https://baseline.openssf.org/..."
 |-------|------|-------------|
 | `steps` | `list[str]` | Verification steps for human reviewer |
 | `docs_url` | `str` | Link to verification documentation |
+
+### 3.7 CEL Expressions
+
+Pass types support Common Expression Language (CEL) for flexible result evaluation.
+
+**Purpose**: Replace multiple `pass_if_*` fields with a single declarative expression.
+
+**TOML Schema**:
+```toml
+[controls."EXAMPLE".passes.deterministic]
+exec = { command = "gh api /orgs/{org}/settings" }
+expr = 'response.two_factor_requirement_enabled == true'
+
+[controls."EXAMPLE2".passes.exec]
+command = ["kusari", "scan"]
+output_format = "json"
+expr = 'output.json.status == "pass" && size(output.json.issues) == 0'
+```
+
+**Context Variables**:
+
+| Variable | Pass Type | Description |
+|----------|-----------|-------------|
+| `output.stdout` | exec | Command stdout |
+| `output.stderr` | exec | Command stderr |
+| `output.exit_code` | exec | Command exit code |
+| `output.json` | exec | Parsed JSON from stdout (if `output_format = "json"`) |
+| `response.status_code` | api_check | HTTP status code |
+| `response.body` | api_check | Response body |
+| `response.headers` | api_check | Response headers |
+| `files` | pattern | List of matched file paths |
+| `matches` | pattern | Dict of pattern name → match results |
+| `project.*` | all | Values from `.project/` context |
+
+**Custom Functions**:
+
+| Function | Description |
+|----------|-------------|
+| `file_exists(path)` | Check if file exists |
+| `json_path(obj, path)` | Extract value from JSON using JSONPath |
+
+**Behavior**:
+- `expr` takes precedence over legacy fields (`pass_if_json_path`, etc.)
+- Expression must return `true` for PASS, `false` for FAIL
+- Expressions are sandboxed with 1s timeout
+- CEL is non-Turing complete, preventing infinite loops
 
 ---
 
