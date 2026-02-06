@@ -159,11 +159,11 @@ This ensures CI will pass and prevents broken commits from being pushed.
 
 ### 4.4 Sigstore Integration
 
-- [ ] 4.4.1 Add sigstore-python dependency
-- [ ] 4.4.2 Implement signature verification for installed packages
-- [ ] 4.4.3 Implement trusted_publishers verification
-- [ ] 4.4.4 Implement graceful degradation when Sigstore unavailable
-- [ ] 4.4.5 Cache verification results
+- [x] 4.4.1 Add sigstore-python dependency
+- [x] 4.4.2 Implement signature verification for installed packages
+- [x] 4.4.3 Implement trusted_publishers verification
+- [x] 4.4.4 Implement graceful degradation when Sigstore unavailable
+- [x] 4.4.5 Cache verification results
 
 ### 4.5 Migration
 
@@ -173,15 +173,15 @@ This ensures CI will pass and prevents broken commits from being pushed.
 
 ### 4.6 Documentation
 
-- [ ] 4.6.1 Document plugin security model
-- [ ] 4.6.2 Document signing process for plugin authors
-- [ ] 4.6.3 Add warning about arbitrary code execution
+- [x] 4.6.1 Document plugin security model
+- [x] 4.6.2 Document signing process for plugin authors
+- [x] 4.6.3 Add warning about arbitrary code execution
 
 ### 4.7 Testing
 
 - [x] 4.7.1 Add unit tests for auto-registration
 - [x] 4.7.2 Add unit tests for handler resolution
-- [ ] 4.7.3 Add unit tests for Sigstore verification (mocked)
+- [x] 4.7.3 Add unit tests for Sigstore verification (mocked)
 - [x] 4.7.4 Add integration test with darnit-baseline plugin
 
 ## 5. Documentation & Cleanup

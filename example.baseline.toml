@@ -29,6 +29,35 @@ parallel_checks = true
 max_parallel = 5
 
 # =============================================================================
+# Plugin Security Configuration
+# =============================================================================
+# Configure trusted publishers for plugin verification.
+# By default, kusari-oss and kusaridev are trusted.
+
+[plugins]
+# Global settings for all plugins
+# global_allow_unsigned = false              # Require signed plugins (production)
+# global_trusted_publishers = [              # Additional orgs to trust globally
+#     "https://github.com/my-company",
+# ]
+
+# Per-plugin configuration examples:
+
+# Trust default publishers (kusari-oss, kusaridev) - no extra config needed
+# [plugins."darnit-baseline"]
+# version = ">=1.0.0"
+
+# Allow a specific plugin to be unsigned (for local development)
+# [plugins."my-dev-plugin"]
+# version = ">=0.1.0"
+# allow_unsigned = true
+
+# Trust a third-party plugin publisher
+# [plugins."third-party-compliance"]
+# version = ">=2.0.0"
+# trusted_publishers = ["https://github.com/trusted-vendor"]
+
+# =============================================================================
 # Custom Adapters
 # =============================================================================
 

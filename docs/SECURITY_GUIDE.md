@@ -9,6 +9,7 @@ This document describes security considerations, best practices, and configurati
 - [Custom Adapter Security](#custom-adapter-security)
 - [Configuration Security](#configuration-security)
 - [MCP Server Security](#mcp-server-security)
+- [Plugin Security Model](#plugin-security-model)
 - [Attestation Security](#attestation-security)
 - [Remediation Security](#remediation-security)
 
@@ -16,7 +17,7 @@ This document describes security considerations, best practices, and configurati
 
 ## Dynamic Module Loading Security
 
-Darnit uses dynamic module loading to instantiate adapters defined in configuration files. To prevent arbitrary code execution, **module paths are validated against a whitelist** before loading.
+Darnit uses dynamic module loading to instantiate adapters defined in configuration files. To prevent arbitrary code execution, **module paths are validated against a allowlist** before loading.
 
 ### Allowed Module Prefixes
 
@@ -64,7 +65,7 @@ class = "MyCustomAdapter"
 
 #### Option 2: Modify the Whitelist (Advanced)
 
-For enterprise deployments, you can subclass `AdapterRegistry` or `PluginRegistry` to extend the whitelist:
+For enterprise deployments, you can subclass `AdapterRegistry` or `PluginRegistry` to extend the allowlist:
 
 ```python
 from darnit.core.registry import PluginRegistry
@@ -76,7 +77,7 @@ class EnterprisePluginRegistry(PluginRegistry):
     )
 ```
 
-> **Warning**: Extending the whitelist increases your attack surface. Only add trusted module prefixes.
+> **Warning**: Extending the allowlist increases your attack surface. Only add trusted module prefixes.
 
 ---
 
@@ -200,7 +201,7 @@ The `.baseline.toml` file in your repository can override framework behavior. Co
 | Risk | Mitigation |
 |------|------------|
 | Disabling security controls | Review `.baseline.toml` changes in PRs |
-| Custom adapters loading malicious code | Module whitelist prevents arbitrary loading |
+| Custom adapters loading malicious code | Module allowlist prevents arbitrary loading |
 | Marking controls as N/A inappropriately | Require justification in `reason` field |
 
 ### Secure Configuration Example
@@ -281,6 +282,255 @@ remediate_audit_findings(
     dry_run=True  # Preview only
 )
 ```
+
+---
+
+## Plugin Security Model
+
+Darnit's plugin system allows extending functionality through third-party packages. This section describes the security model for plugins.
+
+### Plugin Verification with Sigstore
+
+Darnit supports [Sigstore](https://www.sigstore.dev/)-based plugin verification to ensure plugins come from trusted sources.
+
+#### Configuration
+
+```toml
+# .baseline.toml
+[plugins]
+allow_unsigned = false          # Reject unsigned plugins (use true for local dev)
+trusted_publishers = [          # Trust plugins signed by these OIDC identities
+    "https://github.com/kusari-oss",
+    "https://github.com/openssf",
+]
+```
+
+#### Trusted Publisher Formats
+
+The `trusted_publishers` list supports multiple identity formats:
+
+| Format | Example | Matches |
+|--------|---------|---------|
+| Full GitHub URL | `https://github.com/kusari-oss` | Any repo in that org |
+| GitHub org name | `kusari-oss` | Substring match in identity |
+| Specific repo | `https://github.com/kusari-oss/darnit` | Exact repo match |
+| Email identity | `security@example.com` | Email-based OIDC |
+
+**Example with multiple formats:**
+
+```toml
+[plugins]
+allow_unsigned = false
+trusted_publishers = [
+    "https://github.com/kusari-oss",     # Trust all repos in org
+    "https://github.com/openssf",         # Trust OpenSSF org
+    "mycompany",                          # Trust by org name substring
+]
+```
+
+#### Verification Modes
+
+| Mode | `allow_unsigned` | Behavior |
+|------|------------------|----------|
+| Strict | `false` | Only signed plugins from trusted publishers load |
+| Permissive | `true` | All plugins load, warnings for unsigned |
+
+#### Using the Verifier
+
+```python
+from darnit.core.verification import PluginVerifier, VerificationConfig
+
+# Production mode: require signed plugins from trusted publishers
+config = VerificationConfig(
+    allow_unsigned=False,
+    trusted_publishers=[
+        "https://github.com/kusari-oss",
+        "https://github.com/openssf",
+    ],
+)
+verifier = PluginVerifier(config)
+
+result = verifier.verify_plugin("darnit-baseline")
+if result.verified:
+    if result.signed:
+        print(f"Plugin verified (signed by {result.publisher})")
+    else:
+        print(f"Plugin allowed (unsigned): {result.warning}")
+elif result.error:
+    print(f"Verification failed: {result.error}")
+
+# Development mode: allow all plugins with warnings
+dev_config = VerificationConfig(allow_unsigned=True)
+dev_verifier = PluginVerifier(dev_config)
+```
+
+### Handler Registration Security
+
+Plugins register handlers using the `@register_handler` decorator. Only modules matching the allowlist can register handlers.
+
+#### Allowlist
+
+```python
+ALLOWED_MODULE_PREFIXES = (
+    "darnit.",           # Core framework
+    "darnit_baseline.",  # OpenSSF Baseline implementation
+    "darnit_plugins.",   # Official plugins
+    "darnit_testchecks.",# Test utilities
+)
+```
+
+#### Registering Handlers
+
+```python
+from darnit.core.handlers import register_handler
+
+@register_handler("my_custom_check")
+def my_custom_check(context):
+    """Custom check implementation."""
+    # Check logic here
+    return PassResult(outcome=PassOutcome.PASS, ...)
+```
+
+The handler can then be referenced in TOML by short name:
+
+```toml
+[controls."MY-01.01".passes.deterministic]
+config_check = "my_custom_check"  # Short name from registry
+```
+
+Or by full module path (must match allowlist):
+
+```toml
+[controls."MY-01.01".passes.deterministic]
+config_check = "darnit_baseline.controls.level1:_create_mfa_check"
+```
+
+### Security Recommendations
+
+1. **Enable strict verification** in production (`allow_unsigned = false`)
+2. **Verify trusted publishers** match expected identities
+3. **Review plugin code** before adding to trusted list
+4. **Use short names** when possible for better auditability
+5. **Monitor verification cache** at `~/.darnit/verification_cache/`
+
+### Verification Cache
+
+Verification results are cached to handle Sigstore service unavailability:
+
+- **Cache location**: `~/.darnit/verification_cache/`
+- **TTL**: 24 hours by default
+- **Format**: JSON files keyed by package name and version
+
+To clear the cache:
+
+```bash
+rm -rf ~/.darnit/verification_cache/
+```
+
+### Graceful Degradation
+
+When Sigstore services are unavailable:
+
+1. **Cached results** are used if available
+2. **Warning logged** if no cached result exists
+3. **Behavior depends on `allow_unsigned`**:
+   - `true`: Plugin loads with warning
+   - `false`: Plugin rejected
+
+### Signing Plugins with Sigstore
+
+Plugin authors can sign their packages using Sigstore for trusted distribution.
+
+#### GitHub Actions Workflow (Recommended)
+
+The easiest way to sign plugins is via GitHub Actions with OIDC:
+
+```yaml
+# .github/workflows/release.yml
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  id-token: write  # Required for Sigstore OIDC
+  contents: read
+  attestations: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: pip install build twine
+
+      - name: Build package
+        run: python -m build
+
+      - name: Publish to PyPI with attestations
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          attestations: true
+```
+
+#### Manual Signing
+
+For local signing:
+
+```bash
+# Install sigstore
+pip install sigstore
+
+# Sign a distribution file
+python -m sigstore sign dist/my_plugin-1.0.0-py3-none-any.whl
+
+# This creates:
+# - dist/my_plugin-1.0.0-py3-none-any.whl.sigstore
+```
+
+#### Verification by Users
+
+Users can verify signed plugins:
+
+```bash
+python -m sigstore verify identity \
+  --cert-identity your-email@example.com \
+  --cert-oidc-issuer https://github.com/login/oauth \
+  dist/my_plugin-1.0.0-py3-none-any.whl
+```
+
+### Arbitrary Code Execution Warning
+
+> **⚠️ Security Warning**: Plugins can execute arbitrary code in your environment.
+
+Darnit plugins have full Python execution capabilities and can:
+
+- **Read and write files** on your filesystem
+- **Make network requests** to any host
+- **Execute system commands** via subprocess
+- **Access environment variables** including secrets
+
+**Before installing any plugin:**
+
+1. **Review the source code** or trust the publisher
+2. **Check the publisher identity** via Sigstore signature
+3. **Use `allow_unsigned = false`** to require signed plugins
+4. **Run in isolated environments** (containers, VMs) for untrusted plugins
+
+**For plugin authors:**
+
+- Follow secure coding practices (input validation, no shell injection)
+- Sign your releases with Sigstore
+- Document required permissions clearly
+- Avoid hardcoded secrets or credentials
 
 ---
 
