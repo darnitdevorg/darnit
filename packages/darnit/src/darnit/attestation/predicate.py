@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
-    from darnit.config.models import ProjectConfig
+    from darnit.config.schema import ProjectConfig
 
 
 def build_assessment_predicate(

@@ -117,13 +117,6 @@ from .merger import (
     validate_framework_config,
     validate_user_config,
 )
-
-# Legacy exports (deprecated)
-from .models import (
-    ControlStatus,
-    ReferenceStatus,
-    ResourceReference,
-)
 from .resolver import (
     resolve_file_for_control,
     sync_discovered_file_to_config,
@@ -258,10 +251,6 @@ __all__ = [
     "resolve_file_for_control",
     "update_config_after_file_create",
     "sync_discovered_file_to_config",
-    # Legacy (deprecated)
-    "ReferenceStatus",
-    "ResourceReference",
-    "ControlStatus",
     # Framework configuration schema
     "FrameworkConfig",
     "FrameworkMetadata",

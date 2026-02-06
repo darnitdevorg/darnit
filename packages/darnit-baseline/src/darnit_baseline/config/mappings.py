@@ -1,10 +1,8 @@
 """OSPS-specific configuration mappings for OpenSSF Baseline."""
 
 
-# Re-export legacy ResourceReference for backward compatibility
-# Also re-export discovery utilities
+# Re-export discovery utilities
 from darnit.config import (
-    ResourceReference,
     discover_files,
     sync_discovered_to_config,
 )
@@ -287,7 +285,6 @@ __all__ = [
     "ControlStatusValue",
     "PathRef",
     "BaselineExtension",
-    "ResourceReference",
     "discover_files",
     "sync_discovered_to_config",
     # OSPS-specific

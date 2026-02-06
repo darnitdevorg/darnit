@@ -666,7 +666,7 @@ def apply_project_update(
 
     try:
         from darnit.config.loader import load_project_config, save_project_config
-        from darnit.config.models import ProjectConfig
+        from darnit.config.schema import ProjectConfig
     except ImportError as e:
         logger.warning(f"Config loader not available for project_update: {e}")
         return

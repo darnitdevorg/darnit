@@ -818,7 +818,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from .models import CheckResult, CheckStatus, AuditResult
 from .adapters import CheckAdapter, CheckContext
 from .registry import PluginRegistry
-from ..config.models import ProjectConfig
+from ..config.schema import ProjectConfig
 from ..standards.base import Standard
 
 logger = logging.getLogger(__name__)
