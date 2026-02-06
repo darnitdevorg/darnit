@@ -84,23 +84,37 @@ class ToolRegistry:
     def load_handler(self, spec: ToolSpec) -> Callable[..., Any]:
         """Dynamically import and return the handler function.
 
+        Supports two formats:
+        1. Short name: "audit_openssf_baseline" - looks up in handler registry
+        2. Module path: "module.path:function_name" - imports directly
+
         Args:
-            spec: Tool specification containing the handler import path
+            spec: Tool specification containing the handler name or import path
 
         Returns:
             The imported function
 
         Raises:
-            ValueError: If handler path is invalid format
+            ValueError: If handler cannot be resolved
             ImportError: If module cannot be imported
             AttributeError: If function doesn't exist in module
         """
+        # If no colon, try to resolve from handler registry
         if ":" not in spec.handler:
+            from darnit.core.handlers import get_handler_registry
+
+            registry = get_handler_registry()
+            handler = registry.get_handler(spec.handler)
+            if handler is not None:
+                return handler
+
             raise ValueError(
-                f"Invalid handler format '{spec.handler}'. "
-                "Expected 'module.path:function_name'"
+                f"Handler '{spec.handler}' not found in registry. "
+                "Either register it via register_handlers() or use "
+                "full module path 'module.path:function_name'"
             )
 
+        # Full module path format
         module_path, func_name = spec.handler.rsplit(":", 1)
         module = importlib.import_module(module_path)
         return getattr(module, func_name)

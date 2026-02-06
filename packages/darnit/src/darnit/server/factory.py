@@ -18,6 +18,40 @@ from .registry import ToolRegistry
 logger = logging.getLogger(__name__)
 
 
+def _register_implementation_handlers(config: dict) -> None:
+    """Register handlers from the implementation specified in config.
+
+    This enables short name resolution for handler references in TOML.
+    The implementation is discovered from the metadata.name field.
+
+    Args:
+        config: Parsed TOML configuration dictionary
+    """
+    from darnit.core.discovery import get_implementation
+
+    # Get framework name from metadata
+    metadata = config.get("metadata", {})
+    framework_name = metadata.get("name")
+
+    if not framework_name:
+        logger.debug("No metadata.name in config, skipping handler registration")
+        return
+
+    # Get the implementation
+    impl = get_implementation(framework_name)
+    if impl is None:
+        logger.debug(f"No implementation found for '{framework_name}'")
+        return
+
+    # Register handlers if the method exists
+    if hasattr(impl, "register_handlers"):
+        try:
+            impl.register_handlers()
+            logger.debug(f"Registered handlers for '{framework_name}'")
+        except Exception as e:
+            logger.warning(f"Failed to register handlers for '{framework_name}': {e}")
+
+
 def create_server(config_path: str | Path) -> FastMCP:
     """Create an MCP server from a TOML configuration file.
 
@@ -58,6 +92,10 @@ def create_server(config_path: str | Path) -> FastMCP:
     mcp_config = config.get("mcp", {})
     server_name = mcp_config.get("name", "darnit")
 
+    # Register handlers from implementation before loading tools
+    # This enables short name resolution for handler references
+    _register_implementation_handlers(config)
+
     # Create registry and server
     registry = ToolRegistry.from_toml(config)
     server = FastMCP(server_name)
@@ -96,6 +134,9 @@ def create_server_from_dict(config: dict) -> FastMCP:
 
     mcp_config = config.get("mcp", {})
     server_name = mcp_config.get("name", "darnit")
+
+    # Register handlers from implementation before loading tools
+    _register_implementation_handlers(config)
 
     registry = ToolRegistry.from_toml(config)
     server = FastMCP(server_name)

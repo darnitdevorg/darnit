@@ -167,7 +167,7 @@ class TestToolRegistry:
             description="Test",
         )
         registry = ToolRegistry()
-        with pytest.raises(ValueError, match="Invalid handler format"):
+        with pytest.raises(ValueError, match="not found in registry"):
             registry.load_handler(spec)
 
     def test_load_handler_module_not_found(self):
