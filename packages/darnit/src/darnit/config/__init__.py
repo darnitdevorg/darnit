@@ -28,7 +28,6 @@ from .context_schema import (
 
 # Context storage abstraction layer
 from .context_storage import (
-    detect_storage_format,
     get_context_definitions,
     get_context_value,
     get_pending_context,
@@ -330,5 +329,4 @@ __all__ = [
     "save_context_values",
     "get_context_definitions",
     "get_pending_context",
-    "detect_storage_format",
 ]

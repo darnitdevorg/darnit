@@ -11,8 +11,6 @@ import yaml
 
 from darnit.config.context_schema import ContextValue
 from darnit.config.context_storage import (
-    _load_legacy_context,
-    detect_storage_format,
     get_context_definitions,
     get_context_value,
     get_pending_context,
@@ -286,71 +284,6 @@ context:
         assert "ci_provider" not in pending_keys
 
 
-class TestDetectStorageFormat:
-    """Tests for detect_storage_format function."""
-
-    def test_no_config(self, tmp_path: Path) -> None:
-        """Test detection when no config exists."""
-        result = detect_storage_format(str(tmp_path))
-        assert result == "none"
-
-    def test_legacy_format(self, tmp_path: Path) -> None:
-        """Test detection of legacy format."""
-        project_dir = tmp_path / ".project"
-        project_dir.mkdir()
-        (project_dir / "project.yaml").write_text("name: test-project\n")
-        (project_dir / "darnit.yaml").write_text("""
-context:
-  has_releases: true
-""")
-        result = detect_storage_format(str(tmp_path))
-        assert result == "legacy"
-
-
-class TestLoadLegacyContext:
-    """Tests for _load_legacy_context function."""
-
-    def test_load_all_fields(self, tmp_path: Path) -> None:
-        """Test loading all legacy context fields."""
-        project_dir = tmp_path / ".project"
-        project_dir.mkdir()
-        (project_dir / "project.yaml").write_text("name: test-project\n")
-        (project_dir / "darnit.yaml").write_text("""
-context:
-  has_subprojects: true
-  has_releases: true
-  is_library: false
-  has_compiled_assets: true
-  ci_provider: gitlab
-""")
-        result = _load_legacy_context(str(tmp_path))
-
-        assert result["has_subprojects"] is True
-        assert result["has_releases"] is True
-        assert result["is_library"] is False
-        assert result["has_compiled_assets"] is True
-        assert result["ci_provider"] == "gitlab"
-
-    def test_load_new_governance_fields(self, tmp_path: Path) -> None:
-        """Test loading new governance context fields."""
-        project_dir = tmp_path / ".project"
-        project_dir.mkdir()
-        (project_dir / "project.yaml").write_text("name: test-project\n")
-        (project_dir / "darnit.yaml").write_text("""
-context:
-  maintainers:
-    - "@user1"
-    - "@user2"
-  governance_model: meritocracy
-  security_contact: security@example.com
-""")
-        result = _load_legacy_context(str(tmp_path))
-
-        assert result["maintainers"] == ["@user1", "@user2"]
-        assert result["governance_model"] == "meritocracy"
-        assert result["security_contact"] == "security@example.com"
-
-
 class TestLoadContextWithNewFields:
     """Tests for load_context with new governance and security fields."""
 
@@ -442,3 +375,21 @@ class TestSaveNewContextFields:
 
         result = get_raw_value(str(tmp_path), "governance_model")
         assert result == "bdfl"
+
+    def test_maintainers_round_trip(self, tmp_path: Path) -> None:
+        """Test that maintainers survive save → load_context round-trip."""
+        (tmp_path / ".git").mkdir()
+        maintainers = ["@alice", "@bob", "@charlie"]
+
+        save_context_value(str(tmp_path), "maintainers", maintainers)
+
+        # Load via load_context and verify category + value
+        context = load_context(str(tmp_path))
+        assert "governance" in context
+        assert "maintainers" in context["governance"]
+        assert context["governance"]["maintainers"].value == maintainers
+
+        # Also verify via get_context_value (searches all categories)
+        cv = get_context_value(str(tmp_path), "maintainers")
+        assert cv is not None
+        assert cv.value == maintainers

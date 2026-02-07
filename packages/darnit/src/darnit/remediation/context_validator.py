@@ -77,7 +77,7 @@ def check_context_requirements(
     result = ContextCheckResult()
 
     for req in requirements:
-        context_value = get_context_value(local_path, req.key, "governance")
+        context_value = get_context_value(local_path, req.key)
 
         # Check 1: Is context missing entirely?
         if context_value is None:

@@ -384,7 +384,7 @@ class TestPreflightContextCheck:
         )
 
         # Should return early with context prompt (not "Would Apply")
-        assert "Context Confirmation Required" in result
+        assert "BLOCKED: Remediation Cannot Proceed" in result
         # Should NOT have "Would Apply" section - remediation blocked
         assert "Would Apply (0 remediations)" not in result or "Would Apply (0" in result
 
@@ -407,9 +407,9 @@ class TestPreflightContextCheck:
             dry_run=True,
         )
 
-        # Should now show "Would Apply" (not "Context Confirmation Required")
+        # Should now show "Would Apply" (not "BLOCKED: Remediation Cannot Proceed")
         assert "Would Apply" in result
-        assert "Context Confirmation Required" not in result
+        assert "BLOCKED: Remediation Cannot Proceed" not in result
 
 
 class TestExplicitWarningAgainstDirectEdits:

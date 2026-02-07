@@ -42,9 +42,9 @@ class TestRemediationE2EFlow:
             dry_run=False,
         )
 
-        # Pre-flight check now returns early with "Context Confirmation Required"
+        # Pre-flight check now returns early with "BLOCKED" message
         # (instead of running remediations and returning "Needs Confirmation")
-        assert "Context Confirmation Required" in result1 or "Needs Confirmation" in result1
+        assert "BLOCKED: Remediation Cannot Proceed" in result1 or "Needs Confirmation" in result1
         assert "confirm_project_context" in result1
         assert not (Path(temp_git_repo) / "MAINTAINERS.md").exists()
 

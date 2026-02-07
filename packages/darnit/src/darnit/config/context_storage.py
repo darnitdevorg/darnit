@@ -379,26 +379,29 @@ def get_pending_context(
     # Get current context values
     current_context = load_context(local_path)
 
-    # Flatten current context keys
+    # Flatten current context keys (both stored keys and definition keys)
     confirmed_keys: set = set()
-    for category_values in current_context.values():
-        confirmed_keys.update(category_values.keys())
-
-    # Also check for legacy key names
-    legacy_context = _load_legacy_context(local_path)
-    confirmed_keys.update(legacy_context.keys())
+    for category_name, category_values in current_context.items():
+        for stored_key in category_values:
+            confirmed_keys.add(stored_key)
+            # Also add "category.stored_key" for store_as reverse lookup
+            confirmed_keys.add(f"{category_name}.{stored_key}")
 
     # Auto-detect owner/repo if not provided
     if owner is None or repo is None:
-        detected_owner, detected_repo = _detect_owner_repo(local_path)
-        owner = owner or detected_owner
-        repo = repo or detected_repo
+        from darnit.core.utils import detect_owner_repo
+
+        detected_owner, detected_repo = detect_owner_repo(local_path)
+        owner = owner or detected_owner or None
+        repo = repo or detected_repo or None
 
     pending: list[ContextPromptRequest] = []
 
     for key, definition in definitions.items():
-        # Skip if already confirmed
+        # Skip if already confirmed (check both definition key and store_as target)
         if key in confirmed_keys:
+            continue
+        if definition.store_as and definition.store_as in confirmed_keys:
             continue
 
         # Determine affected controls
@@ -413,12 +416,10 @@ def get_pending_context(
         # Check if this context would be useful for the given level
         # (We'd need control level info to filter properly)
 
-        # Get current value if auto-detected
+        # Get current value if auto-detected (via context sieve)
         current_value = None
-        if definition.auto_detect and owner and repo:
-            current_value = _auto_detect_context(
-                key, definition, owner, repo, local_path
-            )
+        if definition.auto_detect:
+            current_value = _try_sieve_detection(key, local_path, owner, repo)
 
         pending.append(ContextPromptRequest(
             key=key,
@@ -434,192 +435,40 @@ def get_pending_context(
     return pending
 
 
-def _detect_owner_repo(local_path: str) -> tuple:
-    """Detect GitHub owner/repo from git remote.
-
-    Args:
-        local_path: Path to the repository
-
-    Returns:
-        Tuple of (owner, repo) or (None, None) if not detected
-    """
-    import re
-    import subprocess
-
-    try:
-        result = subprocess.run(
-            ["git", "remote", "get-url", "origin"],
-            cwd=local_path,
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode == 0:
-            url = result.stdout.strip()
-            # Parse GitHub URL patterns
-            # https://github.com/owner/repo.git
-            # git@github.com:owner/repo.git
-            match = re.search(r"github\.com[:/]([^/]+)/([^/.]+)", url)
-            if match:
-                return match.group(1), match.group(2)
-    except (subprocess.SubprocessError, FileNotFoundError, OSError):
-        pass
-
-    return None, None
-
-
-def _auto_detect_context(
+def _try_sieve_detection(
     key: str,
-    definition: ContextDefinition,
-    owner: str,
-    repo: str,
     local_path: str,
+    owner: str | None,
+    repo: str | None,
 ) -> ContextValue | None:
-    """Auto-detect a context value based on its definition.
+    """Try to auto-detect context using the context sieve.
+
+    Uses progressive detection: deterministic → heuristic → API.
 
     Args:
-        key: The context key
-        definition: The context definition from TOML
-        owner: GitHub owner
-        repo: GitHub repo name
+        key: Context key to detect (e.g., "maintainers")
         local_path: Path to the repository
+        owner: GitHub owner (optional)
+        repo: GitHub repo name (optional)
 
     Returns:
-        ContextValue with auto-detected value, or None if detection failed
+        ContextValue with auto-detected value if found, None otherwise
     """
-    method = definition.auto_detect_method
+    try:
+        from darnit.context import get_context_sieve
 
-    if method == "github_collaborators" and key == "maintainers":
-        # Use get_repo_maintainers from remediation helpers
-        try:
-            from darnit.remediation import get_repo_maintainers
-            maintainers = get_repo_maintainers(owner, repo)
-            if maintainers:
-                # Format as @username list
-                formatted = [f"@{m}" if not m.startswith("@") else m for m in maintainers]
-                return ContextValue.auto_detected(
-                    value=formatted,
-                    method="github_collaborators",
-                    confidence=0.8,
-                )
-        except Exception as e:
-            logger.debug(f"Failed to auto-detect maintainers: {e}")
+        sieve = get_context_sieve()
+        result = sieve.detect(key, local_path, owner, repo)
 
-    # Add more auto-detection methods here as needed
-    # elif method == "some_other_method":
-    #     ...
+        if result.is_usable:
+            return ContextValue.auto_detected(
+                value=result.value,
+                method=f"context_sieve ({len(result.signals)} signals)",
+                confidence=result.confidence,
+            )
+    except ImportError:
+        logger.debug("Context sieve not available, skipping auto-detection")
+    except Exception as e:
+        logger.warning(f"Context sieve detection failed for '{key}': {e}")
 
     return None
-
-
-def _load_legacy_context(local_path: str) -> dict[str, Any]:
-    """Load legacy flat context (for backwards compatibility).
-
-    Args:
-        local_path: Path to the repository
-
-    Returns:
-        Dict of context key -> raw value
-    """
-    config = load_project_config(local_path)
-    if not config:
-        return {}
-
-    if config.x_openssf_baseline and config.x_openssf_baseline.context:
-        ctx = config.x_openssf_baseline.context
-        result = {}
-        if ctx.has_subprojects is not None:
-            result["has_subprojects"] = ctx.has_subprojects
-        if ctx.has_releases is not None:
-            result["has_releases"] = ctx.has_releases
-        if ctx.is_library is not None:
-            result["is_library"] = ctx.is_library
-        if ctx.has_compiled_assets is not None:
-            result["has_compiled_assets"] = ctx.has_compiled_assets
-        if ctx.ci_provider is not None:
-            result["ci_provider"] = ctx.ci_provider
-        # New governance and security context keys
-        if ctx.maintainers is not None:
-            result["maintainers"] = ctx.maintainers
-        if ctx.security_contact is not None:
-            result["security_contact"] = ctx.security_contact
-        if ctx.governance_model is not None:
-            result["governance_model"] = ctx.governance_model
-        return result
-
-    return {}
-
-
-# =============================================================================
-# Format Conversion
-# =============================================================================
-
-
-def migrate_to_cncf_format(local_path: str) -> str | None:
-    """Migrate context from legacy format to CNCF extensions format.
-
-    This function will convert:
-        x-openssf-baseline.context.has_releases: true
-
-    To:
-        extensions:
-          openssf-baseline:
-            config:
-              context:
-                build:
-                  has_releases:
-                    source: user_confirmed
-                    value: true
-                    confirmed_at: ...
-
-    Args:
-        local_path: Path to the repository
-
-    Returns:
-        Path to migrated config file, or None if no migration needed
-
-    Note: This function is not yet implemented as the CNCF spec is not finalized.
-    """
-    logger.warning(
-        "CNCF format migration not yet implemented - "
-        "the .project/ specification is still under development"
-    )
-    return None
-
-
-def detect_storage_format(local_path: str) -> str:
-    """Detect which storage format is being used.
-
-    Args:
-        local_path: Path to the repository
-
-    Returns:
-        "cncf" for .project/project.yaml extensions format (future)
-        "legacy" for .project/ or .project.yaml x-openssf-baseline format
-        "none" if no context found
-    """
-    resolved_path = Path(local_path).resolve()
-
-    # Check for .project/ directory format
-    project_dir = resolved_path / ".project"
-    if project_dir.is_dir():
-        config = load_project_config(local_path)
-        if config and config.x_openssf_baseline and config.x_openssf_baseline.context:
-            # Check if any context values are set
-            ctx = config.x_openssf_baseline.context
-            if any([
-                ctx.has_subprojects is not None,
-                ctx.has_releases is not None,
-                ctx.is_library is not None,
-                ctx.has_compiled_assets is not None,
-                ctx.ci_provider is not None,
-            ]):
-                return "legacy"
-
-    # Check for legacy .project.yaml file format
-    legacy_path = resolved_path / ".project.yaml"
-    if legacy_path.exists():
-        config = load_project_config(local_path)
-        if config and config.x_openssf_baseline and config.x_openssf_baseline.context:
-            return "legacy"
-
-    return "none"

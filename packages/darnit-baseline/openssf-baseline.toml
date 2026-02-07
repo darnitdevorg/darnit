@@ -341,19 +341,6 @@ credentials.json
 .azure/credentials
 """
 
-[templates.status_checks_payload]
-description = "GitHub API payload for required status checks"
-content = """{
-  "required_status_checks": {
-    "strict": true,
-    "contexts": $REQUIRED_CHECKS
-  },
-  "enforce_admins": true,
-  "required_pull_request_reviews": null,
-  "restrictions": null
-}
-"""
-
 # =============================================================================
 # Context Definitions (Interactive Context Collection)
 # =============================================================================
@@ -1616,19 +1603,18 @@ steps = [
 
 [controls."OSPS-QA-03.01".remediation]
 safe = true
-requires_api = true
-dry_run_supported = true
+requires_api = false
+dry_run_supported = false
 
-[controls."OSPS-QA-03.01".remediation.api_call]
-method = "PUT"
-endpoint = "/repos/$OWNER/$REPO/branches/$BRANCH/protection"
-payload_template = "status_checks_payload"
-
-[[controls."OSPS-QA-03.01".remediation.requires_context]]
-key = "ci.required_checks"
-required = true
-prompt_if_auto_detected = true
-warning = "Check names must match exactly what your CI reports to GitHub"
+[controls."OSPS-QA-03.01".remediation.manual]
+steps = [
+    "Identify the CI status check names reported to GitHub (e.g., from Actions workflow names or external CI)",
+    "Navigate to Repository Settings → Branches → Branch protection rules",
+    "Edit the rule for your default branch (or create one)",
+    "Enable 'Require status checks to pass before merging'",
+    "Search for and select each required status check by name",
+    "Save changes",
+]
 
 [controls."OSPS-QA-06.01"]
 name = "AutomatedTests"

@@ -15,7 +15,6 @@ from darnit.config.resolver import update_config_after_file_create
 from darnit.core.logging import get_logger
 from darnit.core.models import AuditResult
 from darnit.core.utils import (
-    detect_repo_from_git,
     get_git_commit,
     get_git_ref,
     validate_local_path,
@@ -116,7 +115,7 @@ def _get_declarative_remediation(
 
     # Check if this has a declarative remediation type
     remediation = control.remediation
-    if remediation.file_create or remediation.exec or remediation.api_call:
+    if remediation.file_create or remediation.exec or remediation.api_call or remediation.manual:
         return remediation, framework.templates
 
     return None, None
@@ -692,13 +691,16 @@ def _format_preflight_prompt(
         Markdown-formatted prompt for user
     """
     md = []
-    md.append("# ⚠️ Context Confirmation Required")
+    md.append("# BLOCKED: Remediation Cannot Proceed")
     md.append("")
-    md.append("Before proceeding with remediation, please confirm the following:")
+    md.append(
+        "Remediation has **NOT** been applied and **WILL NOT** proceed "
+        "until the following context is confirmed."
+    )
     md.append("")
     md.append("---")
     md.append("")
-    md.append("## 🚨 IMPORTANT: DO NOT directly edit `.project/` files!")
+    md.append("## DO NOT directly edit `.project/` files!")
     md.append("")
     md.append("You **MUST** use the `confirm_project_context()` tool to set context values.")
     md.append("Direct file edits will be rejected and may cause inconsistent state.")
@@ -722,12 +724,36 @@ def _format_preflight_prompt(
                 md.append(f"- `{key}`: {', '.join(cats)}")
         md.append("")
 
+    # Build a ready-to-use confirm_project_context() call from auto-detected values
+    auto_detected = context_info.get("auto_detected", {})
+    missing = context_info.get("missing_context", [])
+    tool_args = []
+    for key in missing:
+        if key in auto_detected:
+            value = auto_detected[key]
+            if isinstance(value, str):
+                tool_args.append(f'{key}="{value}"')
+            elif isinstance(value, bool):
+                tool_args.append(f"{key}={value}")
+            elif isinstance(value, list):
+                formatted = [f'"{v}"' for v in value]
+                tool_args.append(f"{key}=[{', '.join(formatted)}]")
+            else:
+                tool_args.append(f"{key}={value!r}")
+
     md.append("---")
     md.append("")
-    md.append("**After confirming context, re-run remediation:**")
-    md.append("```python")
-    md.append(f'remediate_audit_findings(local_path="{local_path}", dry_run=True)')
-    md.append("```")
+    if tool_args:
+        md.append("**Run this tool call to confirm auto-detected values, then re-run remediation:**")
+        md.append("```python")
+        args_str = ",\n    ".join(tool_args)
+        md.append(f'confirm_project_context(\n    local_path="{local_path}",\n    {args_str}\n)')
+        md.append("```")
+    else:
+        md.append("**Confirm the missing context above, then re-run remediation:**")
+        md.append("```python")
+        md.append(f'confirm_project_context(local_path="{local_path}", ...)')
+        md.append("```")
 
     return "\n".join(md)
 
@@ -773,12 +799,13 @@ def remediate_audit_findings(
         return f"❌ Error: {path_error}"
     local_path = resolved_path
 
-    # Auto-detect owner/repo
-    detected = detect_repo_from_git(local_path)
+    # Auto-detect owner/repo (upstream-first by default)
+    from darnit.core.utils import detect_owner_repo
+
     if not owner or not repo:
-        if detected:
-            owner = owner or detected.get("owner")
-            repo = repo or detected.get("repo")
+        detected_owner, detected_repo = detect_owner_repo(local_path)
+        owner = owner or detected_owner
+        repo = repo or detected_repo
 
     # Determine categories to apply
     if not categories:

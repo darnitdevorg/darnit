@@ -160,11 +160,56 @@ confirm_project_context(
     except Exception as e:
         return f"❌ Error saving config: {e}"
 
+    # Round-trip verification: read back persisted values to catch path-mismatch bugs
+    from darnit.config.context_storage import load_context
+
+    verified_values: list[str] = []
+    try:
+        readback = load_context(resolved_path)
+        # Flatten all categories into a single dict of key -> value
+        all_values: dict[str, object] = {}
+        for cat_values in readback.values():
+            for k, v in cat_values.items():
+                all_values[k] = v.value
+
+        # Check each value we just saved
+        check_pairs: list[tuple[str, object]] = []
+        if has_subprojects is not None:
+            check_pairs.append(("has_subprojects", has_subprojects))
+        if has_releases is not None:
+            check_pairs.append(("has_releases", has_releases))
+        if is_library is not None:
+            check_pairs.append(("is_library", is_library))
+        if has_compiled_assets is not None:
+            check_pairs.append(("has_compiled_assets", has_compiled_assets))
+        if ci_provider is not None:
+            # ci_provider is stored as "provider" in the ci category
+            check_pairs.append(("provider", ci_provider))
+        if maintainers is not None:
+            check_pairs.append(("maintainers", maintainers))
+        if security_contact is not None:
+            check_pairs.append(("security_contact", security_contact))
+        if governance_model is not None:
+            check_pairs.append(("governance_model", governance_model))
+
+        for key, expected in check_pairs:
+            actual = all_values.get(key)
+            if actual == expected:
+                verified_values.append(f"  - ✅ `{key}`: {actual}")
+            else:
+                verified_values.append(f"  - ❌ `{key}`: expected {expected!r}, got {actual!r}")
+    except Exception as e:
+        verified_values.append(f"  - ⚠️ Round-trip verification failed: {e}")
+
     updates_str = '\n'.join(updates)
+    verified_str = '\n'.join(verified_values)
     return f"""✅ Project context updated in .project.yaml
 
 **Recorded:**
 {updates_str}
+
+**Verified (round-trip read-back):**
+{verified_str}
 
 **File:** {config_path}
 
