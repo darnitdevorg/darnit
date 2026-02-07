@@ -20,11 +20,11 @@ from .executor import (
     RemediationResult,
 )
 from .github import (
+    detect_workflow_checks,
     enable_branch_protection,
 )
 from .helpers import (
     check_file_exists,
-    detect_workflow_checks,
     ensure_directory,
     format_error,
     format_success,

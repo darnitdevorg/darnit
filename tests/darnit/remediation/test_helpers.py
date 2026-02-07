@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
+from darnit.remediation.github import detect_workflow_checks
 from darnit.remediation.helpers import (
     check_file_exists,
-    detect_workflow_checks,
     ensure_directory,
     format_error,
     format_success,

@@ -290,8 +290,9 @@ def run_checks(
 ) -> tuple[list[dict[str, Any]], dict[str, str]]:
     """Run OSPS baseline checks at the specified level.
 
-    All checks are defined in TOML with optional Python functions for complex
-    checks referenced via config_check.
+    Thin wrapper around run_sieve_audit() that returns the
+    (results, skipped_controls) tuple expected by CLI and
+    remediation orchestrator callers.
 
     Args:
         owner: GitHub org/user
@@ -306,50 +307,33 @@ def run_checks(
         Tuple of (check_results, skipped_controls)
         where skipped_controls maps control_id to reason
     """
-    # Load user config exclusions if enabled
-    skipped_controls: dict[str, str] = {}
-    excluded_ids: set[str] = set()
+    skipped_controls = get_excluded_control_ids(local_path) if apply_user_config else {}
 
-    if apply_user_config:
-        skipped_controls = get_excluded_control_ids(local_path)
-        excluded_ids = set(skipped_controls.keys())
-        if excluded_ids:
-            logger.info(f"Skipping {len(excluded_ids)} controls per user config")
-
-    # Use TOML-based sieve execution
-    results = _run_sieve_checks(
-        owner, repo, local_path, default_branch, level, stop_on_llm
+    results, _summary = run_sieve_audit(
+        owner, repo, local_path, default_branch, level,
+        apply_user_config=apply_user_config,
+        stop_on_llm=stop_on_llm,
     )
-
-    # Filter out excluded controls and mark them as N/A
-    if excluded_ids:
-        filtered_results = []
-        for r in results:
-            control_id = r.get("id", "")
-            if control_id in excluded_ids:
-                # Replace result with N/A status
-                filtered_results.append({
-                    "id": control_id,
-                    "status": "N/A",
-                    "details": f"Excluded via .baseline.toml: {skipped_controls.get(control_id, 'User override')}",
-                    "level": r.get("level", 1),
-                })
-            else:
-                filtered_results.append(r)
-        results = filtered_results
 
     return results, skipped_controls
 
 
-def _run_sieve_checks(
+def run_sieve_audit(
     owner: str,
     repo: str,
     local_path: str,
     default_branch: str,
-    level: int,
-    stop_on_llm: bool,
-) -> list[dict[str, Any]]:
-    """Run checks using the progressive sieve verification pipeline.
+    level: int = 3,
+    *,
+    controls: list | None = None,
+    tags: list[str] | None = None,
+    apply_user_config: bool = True,
+    stop_on_llm: bool = True,
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """Run a sieve-based compliance audit — the canonical audit pipeline.
+
+    All code paths that run audits MUST delegate to this function.
+    No other module SHALL reimplement the sieve verification loop.
 
     This implements the 4-phase verification model:
     1. DETERMINISTIC - File existence, API checks, config lookups, external commands
@@ -357,19 +341,21 @@ def _run_sieve_checks(
     3. LLM - LLM-assisted analysis (returns PENDING_LLM for consultation)
     4. MANUAL - Always returns WARN with verification steps
 
-    Controls are defined in TOML (openssf-baseline.toml) with optional Python
-    functions for complex checks referenced via config_check.
-
     Args:
         owner: GitHub org/user
         repo: Repository name
         local_path: Path to repository
         default_branch: Default branch name
         level: Maximum level to check (1, 2, or 3)
-        stop_on_llm: Return PENDING_LLM for LLM consultation
+        controls: Pre-loaded ControlSpec objects. If None, loads from
+            TOML/registry automatically.
+        tags: Tag filters to apply to controls (e.g., ["domain=AC"]).
+        apply_user_config: Apply .baseline.toml user config exclusions.
+        stop_on_llm: Return PENDING_LLM for LLM consultation.
 
     Returns:
-        List of check results in legacy format
+        Tuple of (results, summary) where results is a list of check result
+        dicts and summary contains status counts (PASS, FAIL, WARN, etc.).
     """
     sieve = _get_sieve_components()
     if not sieve:
@@ -382,26 +368,55 @@ def _run_sieve_checks(
     SieveOrchestrator = sieve["SieveOrchestrator"]
     CheckContext = sieve["CheckContext"]
 
-    # Register Python-defined controls via plugin system
-    # These provide complex check functions referenced by TOML config_check
-    try:
-        from darnit.core.discovery import get_default_implementation
+    # Load user config exclusions if enabled
+    excluded_ids: set[str] = set()
+    if apply_user_config:
+        skipped = get_excluded_control_ids(local_path)
+        excluded_ids = set(skipped.keys())
+        if excluded_ids:
+            logger.info(f"Skipping {len(excluded_ids)} controls per user config")
 
-        impl = get_default_implementation()
-        if impl and hasattr(impl, "register_controls"):
-            impl.register_controls()
-            logger.debug(f"Registered Python control definitions from {impl.name}")
-        elif impl:
-            logger.debug(f"Implementation {impl.name} does not provide register_controls()")
-        else:
-            logger.debug("No compliance implementation found for control registration")
-    except Exception as e:
-        logger.debug(f"Python control modules not available: {e}")
+    # Resolve controls: use provided list or load from TOML/registry
+    if controls is not None:
+        all_controls = list(controls)
+    else:
+        # Register Python-defined controls via plugin system
+        try:
+            from darnit.core.discovery import get_default_implementation
 
-    # Register controls from TOML framework definition (primary source of truth)
-    _register_toml_controls()
+            impl = get_default_implementation()
+            if impl and hasattr(impl, "register_controls"):
+                impl.register_controls()
+                logger.debug(f"Registered Python control definitions from {impl.name}")
+            elif impl:
+                logger.debug(f"Implementation {impl.name} does not provide register_controls()")
+            else:
+                logger.debug("No compliance implementation found for control registration")
+        except Exception as e:
+            logger.debug(f"Python control modules not available: {e}")
 
-    registry = get_control_registry()
+        # Register controls from TOML framework definition (primary source of truth)
+        _register_toml_controls()
+
+        registry = get_control_registry()
+        all_controls = []
+        for lvl in range(1, level + 1):
+            all_controls.extend(registry.get_specs_by_level(lvl))
+
+    # Filter by level (applies to both provided and loaded controls)
+    all_controls = [c for c in all_controls if (c.level or 0) <= level]
+
+    # Filter by tags if specified
+    if tags:
+        try:
+            from darnit.filtering import filter_controls, parse_tags_arg
+            tag_filters = parse_tags_arg(tags) if isinstance(tags, (str, list)) else tags
+            if isinstance(tag_filters, str):
+                tag_filters = [tag_filters]
+            all_controls = filter_controls(all_controls, tag_filters)
+        except ImportError:
+            logger.debug("Filtering module not available, skipping tag filter")
+
     orchestrator = SieveOrchestrator(stop_on_llm=stop_on_llm)
     all_results = []
 
@@ -416,33 +431,44 @@ def _run_sieve_checks(
     except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as e:
         logger.warning(f"Failed to create UnifiedLocator: {e}")
 
-    # Get all control specs for requested levels from registry
-    for lvl in range(1, level + 1):
-        specs = registry.get_specs_by_level(lvl)
-        for spec in specs:
-            # Create check context
-            context = CheckContext(
-                owner=owner,
-                repo=repo,
-                local_path=local_path,
-                default_branch=default_branch,
-                control_id=spec.control_id,
-                control_metadata={
-                    "name": spec.name,
-                    "description": spec.description,
-                    "full": spec.metadata.get("full", ""),
-                },
-                locator=locator,
-                locator_config=spec.locator_config,
-            )
+    # Run sieve verification for each control
+    for spec in all_controls:
+        control_id = spec.control_id
 
-            # Run sieve verification
-            sieve_result = orchestrator.verify(spec, context)
+        # Handle user config exclusions
+        if control_id in excluded_ids:
+            all_results.append({
+                "id": control_id,
+                "status": "N/A",
+                "details": "Excluded via .baseline.toml",
+                "level": spec.level or 1,
+            })
+            continue
 
-            # Convert to legacy dict format
-            all_results.append(sieve_result.to_legacy_dict())
+        # Create check context
+        context = CheckContext(
+            owner=owner,
+            repo=repo,
+            local_path=local_path,
+            default_branch=default_branch,
+            control_id=control_id,
+            control_metadata={
+                "name": spec.name,
+                "description": spec.description,
+                "full": spec.metadata.get("full", ""),
+            },
+            locator=locator,
+            locator_config=spec.locator_config,
+        )
 
-    return all_results
+        # Run sieve verification
+        sieve_result = orchestrator.verify(spec, context)
+
+        # Convert to legacy dict format
+        all_results.append(sieve_result.to_legacy_dict())
+
+    summary = summarize_results(all_results)
+    return all_results, summary
 
 
 def calculate_compliance(
@@ -927,6 +953,7 @@ def list_available_checks() -> dict[str, list[dict[str, Any]]]:
 __all__ = [
     "AuditOptions",
     "prepare_audit",
+    "run_sieve_audit",
     "run_checks",
     "calculate_compliance",
     "summarize_results",

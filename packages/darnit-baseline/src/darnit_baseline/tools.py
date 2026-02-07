@@ -55,9 +55,11 @@ def audit_openssf_baseline(
         load_controls_from_effective,
         load_effective_config_by_name,
     )
-    from darnit.filtering import filter_controls, parse_tags_arg
-    from darnit.sieve import CheckContext, SieveOrchestrator
-    from darnit.tools.audit import format_results_markdown
+    from darnit.tools.audit import (
+        calculate_compliance,
+        format_results_markdown,
+        run_sieve_audit,
+    )
 
     # Resolve path
     repo_path = Path(local_path).resolve()
@@ -83,49 +85,31 @@ def audit_openssf_baseline(
     controls = load_controls_from_effective(config)
     controls = [c for c in controls if c.level <= level]
 
-    # Apply tag-based filtering if specified
+    if not controls:
+        return "❌ No controls loaded"
+
+    # Normalize tags
+    tags_list: list[str] | None = None
     if tags:
-        # Normalize tags to a list
         if isinstance(tags, str):
             tags_list = [tags]
         else:
             tags_list = list(tags)
-        tag_filters = parse_tags_arg(tags_list)
-        controls = filter_controls(controls, filters=tag_filters)
 
-    if not controls:
-        return "❌ No controls loaded"
-
-    # Run checks via sieve
-    orchestrator = SieveOrchestrator()
     default_branch = _detect_default_branch(repo_path)
 
-    results = []
-    for control in controls:
-        context = CheckContext(
-            owner=owner,
-            repo=repo,
-            local_path=str(repo_path),
-            default_branch=default_branch,
-            control_id=control.control_id,
-            control_metadata={
-                "name": control.name,
-                "description": control.description,
-            },
-        )
-        result = orchestrator.verify(control, context)
-        results.append(result.to_legacy_dict())
-
-    # Calculate summary (uppercase keys for format_results_markdown compatibility)
-    summary = {
-        "total": len(results),
-        "PASS": len([r for r in results if r.get("status") == "PASS"]),
-        "FAIL": len([r for r in results if r.get("status") == "FAIL"]),
-        "WARN": len([r for r in results if r.get("status") == "WARN"]),
-        "N/A": len([r for r in results if r.get("status") == "NA"]),
-        "ERROR": len([r for r in results if r.get("status") == "ERROR"]),
-        "PENDING_LLM": len([r for r in results if r.get("status") == "PENDING_LLM"]),
-    }
+    # Delegate to canonical audit pipeline
+    results, summary = run_sieve_audit(
+        owner=owner,
+        repo=repo,
+        local_path=str(repo_path),
+        default_branch=default_branch,
+        level=level,
+        controls=controls,
+        tags=tags_list,
+        apply_user_config=True,
+        stop_on_llm=True,
+    )
 
     # Format output
     if output_format == "json":
@@ -137,12 +121,13 @@ def audit_openssf_baseline(
             "results": results,
         }, indent=2)
     else:
+        compliance = calculate_compliance(results, level)
         return format_results_markdown(
             owner=owner,
             repo=repo,
             results=results,
             summary=summary,
-            compliance={},
+            compliance=compliance,
             level=level,
             local_path=str(repo_path),
         )

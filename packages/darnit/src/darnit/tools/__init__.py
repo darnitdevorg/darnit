@@ -40,6 +40,7 @@ from .audit import (
     list_available_checks,
     prepare_audit,
     run_checks,
+    run_sieve_audit,
     summarize_results,
 )
 
@@ -79,6 +80,7 @@ __all__ = [
     # Audit
     "AuditOptions",
     "prepare_audit",
+    "run_sieve_audit",
     "run_checks",
     "calculate_compliance",
     "summarize_results",

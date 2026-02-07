@@ -108,88 +108,6 @@ def get_repo_maintainers(owner: str, repo: str) -> list[str]:
     return maintainers
 
 
-def detect_workflow_checks(local_path: str) -> list[dict[str, Any]]:
-    """Detect potential status check names from GitHub Actions workflows.
-
-    Args:
-        local_path: Path to repository
-
-    Returns:
-        List of dicts with workflow/job info
-    """
-    import re
-
-    workflow_dir = os.path.join(local_path, ".github", "workflows")
-    checks = []
-
-    if not os.path.exists(workflow_dir):
-        return checks
-
-    try:
-        import yaml
-        has_yaml = True
-    except ImportError:
-        has_yaml = False
-
-    for filename in os.listdir(workflow_dir):
-        if not filename.endswith(('.yml', '.yaml')):
-            continue
-
-        try:
-            content = read_file(workflow_dir, filename) or ""
-
-            if has_yaml:
-                try:
-                    workflow = yaml.safe_load(content)
-                except yaml.YAMLError:
-                    workflow = None
-
-                if workflow and isinstance(workflow, dict):
-                    workflow_name = workflow.get('name', filename.replace('.yml', '').replace('.yaml', ''))
-                    jobs = workflow.get('jobs', {})
-
-                    for job_id, job_config in jobs.items():
-                        if isinstance(job_config, dict):
-                            job_name = job_config.get('name', job_id)
-                            checks.append({
-                                'workflow': workflow_name,
-                                'job_id': job_id,
-                                'job_name': job_name,
-                                'check_name': f"{workflow_name} / {job_name}" if workflow_name != job_name else job_name,
-                                'file': filename
-                            })
-                else:
-                    # Regex fallback
-                    job_matches = re.findall(r'^\s{2}(\w+):\s*$', content, re.MULTILINE)
-                    workflow_name = filename.replace('.yml', '').replace('.yaml', '')
-                    for job_id in job_matches:
-                        if job_id not in ('on', 'name', 'env', 'permissions', 'defaults', 'concurrency'):
-                            checks.append({
-                                'workflow': workflow_name,
-                                'job_id': job_id,
-                                'job_name': job_id,
-                                'check_name': job_id,
-                                'file': filename
-                            })
-            else:
-                # No yaml module - use regex
-                job_matches = re.findall(r'^\s{2}(\w+):\s*$', content, re.MULTILINE)
-                workflow_name = filename.replace('.yml', '').replace('.yaml', '')
-                for job_id in job_matches:
-                    if job_id not in ('on', 'name', 'env', 'permissions', 'defaults', 'concurrency'):
-                        checks.append({
-                            'workflow': workflow_name,
-                            'job_id': job_id,
-                            'job_name': job_id,
-                            'check_name': job_id,
-                            'file': filename
-                        })
-
-        except (OSError, KeyError, TypeError, AttributeError):
-            continue
-
-    return checks
-
 
 def format_success(message: str, details: dict[str, Any], controls: list[str]) -> str:
     """Format a success message for remediation output.
@@ -240,7 +158,6 @@ __all__ = [
     "write_file_safe",
     "check_file_exists",
     "get_repo_maintainers",
-    "detect_workflow_checks",
     "format_success",
     "format_error",
     "format_warning",

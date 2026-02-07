@@ -135,7 +135,6 @@ def cmd_audit(args: argparse.Namespace) -> int:
         load_effective_config_by_name,
     )
     from darnit.filtering import filter_controls, parse_tags_arg
-    from darnit.sieve import CheckContext, SieveOrchestrator
 
     # Warn about limited functionality in terminal mode
     logger.warning(
@@ -184,31 +183,25 @@ def cmd_audit(args: argparse.Namespace) -> int:
 
     logger.info(f"Auditing {repo_path} with {len(controls)} controls")
 
-    # Create orchestrator and run checks
-    orchestrator = SieveOrchestrator()
-
     # Detect owner/repo from git if available
     from darnit.core.utils import detect_owner_repo
 
     owner, repo = detect_owner_repo(str(repo_path))
     default_branch = _detect_default_branch(repo_path)
 
-    results = []
-    for control in controls:
-        context = CheckContext(
-            owner=owner,
-            repo=repo,
-            local_path=str(repo_path),
-            default_branch=default_branch,
-            control_id=control.control_id,
-            control_metadata={
-                "name": control.name,
-                "description": control.description,
-            },
-        )
+    # Delegate to canonical audit pipeline
+    from darnit.tools.audit import run_sieve_audit
 
-        result = orchestrator.verify(control, context)
-        results.append(result.to_legacy_dict())
+    results, _summary = run_sieve_audit(
+        owner=owner,
+        repo=repo,
+        local_path=str(repo_path),
+        default_branch=default_branch,
+        level=3,
+        controls=controls,
+        apply_user_config=False,  # CLI already applied filters above
+        stop_on_llm=True,
+    )
 
     # Output results
     if args.output == "json":

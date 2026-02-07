@@ -12,7 +12,6 @@ Usage in TOML:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 from darnit.core.logging import get_logger
 
@@ -30,7 +29,7 @@ async def builtin_audit(
     """Run a compliance audit on a repository.
 
     Loads controls from the framework TOML, runs each through the sieve
-    verification pipeline, and returns a formatted report.
+    verification pipeline via run_sieve_audit(), and returns a formatted report.
 
     Args:
         local_path: Path to the repository to audit.
@@ -49,8 +48,12 @@ async def builtin_audit(
         load_effective_config_by_name,
     )
     from darnit.core.discovery import get_implementation
-    from darnit.sieve import CheckContext, SieveOrchestrator
     from darnit.sieve.registry import get_control_registry
+    from darnit.tools.audit import (
+        calculate_compliance,
+        format_results_markdown,
+        run_sieve_audit,
+    )
 
     repo_path = Path(local_path).resolve()
     if not repo_path.exists():
@@ -89,22 +92,6 @@ async def builtin_audit(
     ]
 
     all_controls = toml_controls + python_controls
-
-    # Filter by level
-    all_controls = [c for c in all_controls if (c.level or 0) <= level]
-
-    # Filter by tags if specified
-    if tags:
-        try:
-            from darnit.filtering import filter_controls, parse_tags_arg
-
-            parsed_tags = parse_tags_arg(tags) if isinstance(tags, str) else tags
-            all_controls = filter_controls(all_controls, parsed_tags)
-        except ImportError:
-            logger.debug("Filtering module not available, skipping tag filter")
-        except Exception as e:
-            return f"Error filtering controls: {e}"
-
     all_controls.sort(key=lambda c: c.control_id)
 
     if not all_controls:
@@ -115,127 +102,41 @@ async def builtin_audit(
 
     owner, repo = detect_owner_repo(str(repo_path))
 
-    # Run sieve verification
-    orchestrator = SieveOrchestrator()
-    results: list[dict[str, Any]] = []
+    # Normalize tags
+    tags_list: list[str] | None = None
+    if tags:
+        if isinstance(tags, str):
+            tags_list = [tags]
+        else:
+            tags_list = list(tags)
 
-    for control in all_controls:
-        context = CheckContext(
-            owner=owner,
-            repo=repo,
-            local_path=str(repo_path),
-            default_branch="main",
-            control_id=control.control_id,
-            control_metadata={
-                "name": control.name,
-                "description": control.description,
-            },
-        )
-        result = orchestrator.verify(control, context)
-        results.append(result.to_legacy_dict())
+    # Delegate to canonical audit pipeline
+    results, summary = run_sieve_audit(
+        owner=owner,
+        repo=repo,
+        local_path=str(repo_path),
+        default_branch="main",
+        level=level,
+        controls=all_controls,
+        tags=tags_list,
+        apply_user_config=True,
+        stop_on_llm=True,
+    )
 
     # Format output
     if output_format == "json":
         return json_mod.dumps(results, indent=2, default=str)
 
-    return _format_audit_report(
-        framework_name=_framework_name,
-        repo_path=str(repo_path),
-        level=level,
+    compliance = calculate_compliance(results, level)
+    return format_results_markdown(
+        owner=owner,
+        repo=repo,
         results=results,
+        summary=summary,
+        compliance=compliance,
+        level=level,
+        local_path=str(repo_path),
     )
-
-
-
-def _format_audit_report(
-    framework_name: str,
-    repo_path: str,
-    level: int,
-    results: list[dict[str, Any]],
-) -> str:
-    """Format audit results as a markdown report."""
-    passed = [r for r in results if r.get("status") == "PASS"]
-    failed = [r for r in results if r.get("status") == "FAIL"]
-    warned = [r for r in results if r.get("status") == "WARN"]
-    other = [r for r in results if r.get("status") not in ("PASS", "FAIL", "WARN")]
-
-    lines: list[str] = []
-    lines.append(f"# {framework_name} Audit Report")
-    lines.append("")
-    lines.append(f"**Path:** {repo_path}")
-    lines.append(f"**Level Assessed:** {level}")
-    lines.append("")
-
-    # Summary
-    lines.append("## Summary")
-    lines.append("")
-    lines.append("| Status | Count |")
-    lines.append("|--------|-------|")
-    lines.append(f"| Pass | {len(passed)} |")
-    lines.append(f"| Fail | {len(failed)} |")
-    if warned:
-        lines.append(f"| Needs Verification | {len(warned)} |")
-    if other:
-        lines.append(f"| Other | {len(other)} |")
-    lines.append(f"| **Total** | **{len(results)}** |")
-    lines.append("")
-
-    # Detailed results
-    lines.append("## Results")
-    lines.append("")
-
-    if failed:
-        lines.append(f"### FAIL ({len(failed)})")
-        lines.append("")
-        for r in failed:
-            cid = r.get("id", "?")
-            lvl = r.get("level", "?")
-            detail = r.get("details", "No details")
-            lines.append(f"- **{cid}** (L{lvl}): {detail}")
-        lines.append("")
-
-    if warned:
-        lines.append(f"### NEEDS VERIFICATION ({len(warned)})")
-        lines.append("")
-        for r in warned:
-            cid = r.get("id", "?")
-            lvl = r.get("level", "?")
-            detail = r.get("details", "")
-            lines.append(f"- **{cid}** (L{lvl}): {detail}")
-        lines.append("")
-
-    if passed:
-        lines.append(f"### PASS ({len(passed)})")
-        lines.append("")
-        for r in passed:
-            cid = r.get("id", "?")
-            lvl = r.get("level", "?")
-            detail = r.get("details", "")
-            lines.append(f"- **{cid}** (L{lvl}): {detail}")
-        lines.append("")
-
-    if other:
-        lines.append(f"### OTHER ({len(other)})")
-        lines.append("")
-        for r in other:
-            cid = r.get("id", "?")
-            lvl = r.get("level", "?")
-            status = r.get("status", "?")
-            detail = r.get("details", "")
-            lines.append(f"- **{cid}** (L{lvl}) [{status}]: {detail}")
-        lines.append("")
-
-    # Remediation guidance
-    if failed:
-        lines.append("## Remediation")
-        lines.append("")
-        lines.append(
-            "Run the `remediate` tool to auto-fix controls with "
-            "TOML-defined templates."
-        )
-        lines.append("")
-
-    return "\n".join(lines)
 
 
 __all__ = ["builtin_audit"]
