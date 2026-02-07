@@ -113,12 +113,51 @@ def _get_declarative_remediation(
     if not control or not control.remediation:
         return None, None
 
-    # Check if this has a declarative remediation type
+    # Check if this has an executable declarative remediation type
+    # (manual steps are guidance, not executable — handled separately)
     remediation = control.remediation
-    if remediation.file_create or remediation.exec or remediation.api_call or remediation.manual:
+    if remediation.file_create or remediation.exec or remediation.api_call:
         return remediation, framework.templates
 
     return None, None
+
+
+def _get_manual_remediation(control_ids: list[str]) -> str | None:
+    """Get manual remediation steps from TOML for the given controls.
+
+    Returns formatted markdown with manual steps, or None if no manual
+    remediation is defined.
+    """
+    framework = _get_framework_config()
+    if not framework:
+        return None
+
+    steps_by_control: list[tuple[str, list[str], str | None]] = []
+    for control_id in control_ids:
+        control = framework.controls.get(control_id)
+        if not control or not control.remediation or not control.remediation.manual:
+            continue
+        manual = control.remediation.manual
+        if manual.steps:
+            steps_by_control.append(
+                (control_id, manual.steps, getattr(manual, "docs_url", None))
+            )
+
+    if not steps_by_control:
+        return None
+
+    lines: list[str] = []
+    lines.append("**Manual remediation required** — follow these steps:")
+    lines.append("")
+    for control_id, steps, docs_url in steps_by_control:
+        lines.append(f"**{control_id}:**")
+        for i, step in enumerate(steps, 1):
+            lines.append(f"{i}. {step}")
+        if docs_url:
+            lines.append(f"\nSee: {docs_url}")
+        lines.append("")
+
+    return "\n".join(lines)
 
 
 def _run_baseline_checks(
@@ -496,6 +535,16 @@ def _apply_legacy_remediation(
 
     func = func_map.get(func_name)
     if not func:
+        # Check for manual remediation steps in TOML before returning error
+        manual_result = _get_manual_remediation(info.get("controls", []))
+        if manual_result:
+            return {
+                "category": category,
+                "status": "manual",
+                "description": info["description"],
+                "controls": info["controls"],
+                "result": manual_result,
+            }
         return {
             "category": category,
             "status": "error",
@@ -859,6 +908,7 @@ def remediate_audit_findings(
     applied = [r for r in results if r.get("status") == "applied"]
     would_apply = [r for r in results if r.get("status") == "would_apply"]
     needs_confirmation = [r for r in results if r.get("status") == "needs_confirmation"]
+    manual = [r for r in results if r.get("status") == "manual"]
     skipped = [r for r in results if r.get("status") == "skipped"]
     errors = [r for r in results if r.get("status") == "error"]
 
@@ -947,6 +997,19 @@ def remediate_audit_findings(
             if r.get("skipped_controls"):
                 for s in r["skipped_controls"]:
                     md.append(f"  - `{s['id']}`: {s['reason']}")
+            md.append("")
+
+    if manual:
+        md.append(f"## 📋 Manual Steps Required ({len(manual)})")
+        md.append("")
+        for r in manual:
+            controls_str = ", ".join(r.get("controls", []))
+            md.append(f"### {r['category']}")
+            md.append(f"- **Description:** {r.get('description', 'N/A')}")
+            md.append(f"- **Controls:** {controls_str}")
+            md.append("")
+            if r.get("result"):
+                md.append(r["result"])
             md.append("")
 
     if errors:
