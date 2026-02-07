@@ -724,93 +724,174 @@ def format_results_markdown(
         lines.append("> and consistent implementation.")
         lines.append("")
 
-    # Add "Help Improve This Audit" section if there's pending context
-    pending_context_lines = _get_pending_context_section(local_path)
-    if pending_context_lines:
-        lines.extend(pending_context_lines)
+    # Add "Next Steps" section with ordered agent directives
+    next_steps_lines = _get_next_steps_section(local_path, summary)
+    if next_steps_lines:
+        lines.extend(next_steps_lines)
 
     return "\n".join(lines)
 
 
-def _get_pending_context_section(local_path: str | None) -> list[str]:
-    """Get the "Help Improve This Audit" section with pending context.
+def _get_next_steps_section(
+    local_path: str | None,
+    summary: dict[str, int],
+) -> list[str]:
+    """Get the "Next Steps" section with ordered agent directives.
+
+    Produces imperative instructions for LLM agents:
+    1. Collect pending context (if any) with ready-to-execute tool calls
+    2. Remediate failures (if any)
+    3. Review manual controls (if WARN results exist)
+
+    Steps are numbered dynamically — only applicable steps appear.
 
     Args:
         local_path: Path to the repository
+        summary: Status summary dict with FAIL, WARN counts etc.
 
     Returns:
-        List of markdown lines, or empty list if no pending context
+        List of markdown lines, or empty list when no steps apply
     """
-    if local_path is None:
+    # Determine which steps are needed
+    has_failures = summary.get("FAIL", 0) > 0
+    has_warnings = summary.get("WARN", 0) > 0
+
+    # Check for pending context
+    pending_context = []
+    if local_path is not None:
+        try:
+            from darnit.config.context_storage import get_pending_context
+
+            pending_context = get_pending_context(local_path)
+        except ImportError:
+            logger.debug("Context storage not available for next steps section")
+        except Exception as e:
+            logger.debug(f"Error getting pending context: {e}")
+
+    has_pending_context = len(pending_context) > 0
+
+    # No steps needed
+    if not has_pending_context and not has_failures and not has_warnings:
         return []
 
-    try:
-        from darnit.config.context_storage import get_pending_context
+    lines = [
+        "---",
+        "",
+        "## Next Steps",
+        "",
+    ]
 
-        pending = get_pending_context(local_path)
-        if not pending:
-            return []
+    step = 1
 
-        lines = [
-            "---",
-            "",
-            "## 🤔 Help Improve This Audit",
-            "",
-            "The following information would help verify additional controls more accurately.",
-            "Providing this context can improve audit results.",
-            "",
-        ]
+    # Step: Collect pending context
+    if has_pending_context:
+        lines.extend(_format_context_collection_step(
+            step, pending_context, local_path or "."
+        ))
+        step += 1
 
-        # Show top 3-5 pending context items
-        top_pending = pending[:5]
+    # Step: Remediate failures
+    if has_failures:
+        lines.append(f"**Step {step}: Remediate failures** ({summary['FAIL']} controls failed)")
+        lines.append("")
+        lines.append("```python")
+        lines.append(f'remediate_audit_findings(local_path="{local_path}", dry_run=True)')
+        lines.append("```")
+        lines.append("")
+        step += 1
 
-        for req in top_pending:
-            lines.append(f"### {req.key}")
-            lines.append(f"**Question:** {req.definition.prompt}")
-
-            if req.definition.hint:
-                lines.append(f"- *Hint:* {req.definition.hint}")
-
-            if req.definition.examples:
-                examples_str = ", ".join(f"`{e}`" for e in req.definition.examples[:3])
-                lines.append(f"- *Examples:* {examples_str}")
-
-            if req.definition.values:
-                values_str = ", ".join(f"`{v}`" for v in req.definition.values[:5])
-                lines.append(f"- *Valid values:* {values_str}")
-
-            lines.append(f"- *Affects:* {', '.join(req.control_ids[:5])}")
-            if len(req.control_ids) > 5:
-                lines.append(f"  (and {len(req.control_ids) - 5} more)")
-
-            # Add example usage based on type
-            if req.definition.type == "boolean":
-                lines.append(f'- *Set with:* `confirm_project_context({req.key}=True)`')
-            elif req.definition.type == "enum" and req.definition.values:
-                example_value = req.definition.values[0]
-                lines.append(f'- *Set with:* `confirm_project_context({req.key}="{example_value}")`')
-            elif req.definition.type == "list_or_path":
-                lines.append(f'- *Set with:* `confirm_project_context({req.key}=["@user1"])`')
-            else:
-                lines.append(f'- *Set with:* `confirm_project_context({req.key}="value")`')
-
-            lines.append("")
-
-        if len(pending) > 5:
-            lines.append(f"*...and {len(pending) - 5} more context items. Use `get_pending_context()` to see all.*")
-            lines.append("")
-
-        lines.append("---")
+    # Step: Manual review
+    if has_warnings:
+        lines.append(f"**Step {step}: Review manual controls** ({summary['WARN']} controls need verification)")
+        lines.append("")
+        lines.append("These controls could not be verified automatically. Review the ⚠️ items above")
+        lines.append("and confirm whether they pass or fail for your project.")
         lines.append("")
 
-        return lines
+    lines.append("---")
+    lines.append("")
 
-    except ImportError:
-        logger.debug("Context storage not available for pending context section")
-        return []
-    except Exception as e:
-        logger.debug(f"Error getting pending context: {e}")
-        return []
+    return lines
+
+
+def _format_context_collection_step(
+    step: int,
+    pending: list,
+    local_path: str,
+) -> list[str]:
+    """Format the context collection step with grouped tool calls.
+
+    Auto-detected values are combined into a single compound
+    confirm_project_context() call. Unknown values are listed individually.
+
+    Args:
+        step: Step number for display
+        pending: List of ContextPromptRequest items
+        local_path: Path to the repository
+
+    Returns:
+        List of markdown lines for the context collection step
+    """
+    lines = []
+
+    # Split into auto-detected vs unknown
+    auto_detected = [p for p in pending if p.current_value is not None][:8]
+    unknown = [p for p in pending if p.current_value is None][:8]
+
+    lines.append(f"**Step {step}: Confirm project context** (improves audit accuracy)")
+    lines.append("")
+
+    # Auto-detected values: single compound tool call
+    if auto_detected:
+        lines.append("The following values were auto-detected. Verify and correct if needed, then execute:")
+        lines.append("")
+        lines.append("```python")
+        lines.append("confirm_project_context(")
+        lines.append(f'    local_path="{local_path}",')
+        for item in auto_detected:
+            value = item.current_value.value
+            comment = f"  # {item.current_value.detection_method}" if hasattr(item.current_value, "detection_method") and item.current_value.detection_method else ""
+            if isinstance(value, list):
+                formatted = [f'"{v}"' for v in value]
+                lines.append(f"    {item.key}=[{', '.join(formatted)}],{comment}")
+            elif isinstance(value, bool):
+                lines.append(f"    {item.key}={value},{comment}")
+            elif isinstance(value, str):
+                lines.append(f'    {item.key}="{value}",{comment}')
+            else:
+                lines.append(f"    {item.key}={value!r},{comment}")
+        lines.append(")")
+        lines.append("```")
+        lines.append("")
+
+    # Unknown values: individual prompts
+    if unknown:
+        lines.append("The following context needs your input:")
+        lines.append("")
+        for item in unknown:
+            lines.append(f"- **{item.key}**: {item.definition.prompt}")
+            if item.definition.values:
+                values_str = ", ".join(f"`{v}`" for v in item.definition.values[:6])
+                lines.append(f"  Options: {values_str}")
+            elif item.definition.hint:
+                lines.append(f"  *{item.definition.hint}*")
+            lines.append("  ```python")
+            lines.append(f'  confirm_project_context({item.key}="<ask user>")')
+            lines.append("  ```")
+            lines.append("")
+
+    # Overflow indicator
+    total_pending = len(pending)
+    shown = len(auto_detected) + len(unknown)
+    if total_pending > shown:
+        lines.append(f"*...and {total_pending - shown} more. Use `get_pending_context()` to see all.*")
+        lines.append("")
+
+    # Re-audit directive
+    lines.append(f'> After confirming context, re-run the audit for updated results: `audit_openssf_baseline(local_path="{local_path}")`')
+    lines.append("")
+
+    return lines
 
 
 def list_available_checks() -> dict[str, list[dict[str, Any]]]:

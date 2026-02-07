@@ -273,7 +273,7 @@ def resolve_context_value(
                 return value, f"file:{hint_source}"
 
     # 4. Auto-detection not yet implemented in this layer
-    # (handled by context_storage._auto_detect_context)
+    # (handled by context sieve via _try_sieve_detection)
 
     return None, None
 
