@@ -492,6 +492,13 @@ or use GitHub's "Report a vulnerability" feature.
 | `$DATE` | Current date (ISO format) |
 | `$MAINTAINERS` | Detected maintainers (if available) |
 
+**Variable Resolution**: `$OWNER`, `$REPO`, and `$BRANCH` MUST be resolved
+using `detect_repo_from_git()` from `darnit.core.utils` — the canonical repo
+identity detector. This function prefers the `upstream` git remote over
+`origin` so that audits on forks evaluate the upstream project. No other
+module SHALL implement repo identity detection logic (parsing git remotes,
+calling `gh repo view`, etc.).
+
 ---
 
 ## 5. Sieve Orchestrator

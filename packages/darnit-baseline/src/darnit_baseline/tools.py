@@ -64,9 +64,12 @@ def audit_openssf_baseline(
     if not repo_path.exists():
         return f"❌ Error: Repository path not found: {repo_path}"
 
-    # Auto-detect owner/repo from git
-    # When prefer_upstream=True (default), check 'upstream' remote first for forks
-    detected_owner, detected_repo = _detect_owner_repo(repo_path, prefer_upstream=prefer_upstream)
+    # Auto-detect owner/repo from git (upstream-first by default)
+    from darnit.core.utils import detect_owner_repo
+
+    detected_owner, detected_repo = detect_owner_repo(
+        str(repo_path), prefer_upstream=prefer_upstream
+    )
     owner = owner or detected_owner
     repo = repo or detected_repo
 
@@ -231,7 +234,9 @@ def create_security_policy(
     repo_path = Path(local_path).resolve()
 
     # Auto-detect owner/repo
-    detected_owner, detected_repo = _detect_owner_repo(repo_path)
+    from darnit.core.utils import detect_owner_repo
+
+    detected_owner, detected_repo = detect_owner_repo(str(repo_path))
     owner = owner or detected_owner
     repo = repo or detected_repo
 
@@ -284,7 +289,9 @@ def enable_branch_protection(
     repo_path = Path(local_path).resolve()
 
     # Auto-detect owner/repo
-    detected_owner, detected_repo = _detect_owner_repo(repo_path)
+    from darnit.core.utils import detect_owner_repo
+
+    detected_owner, detected_repo = detect_owner_repo(str(repo_path))
     owner = owner or detected_owner
     repo = repo or detected_repo
 
@@ -419,7 +426,9 @@ def get_pending_context(
 
     # Auto-detect owner/repo from git
     if owner is None or repo is None:
-        detected_owner, detected_repo = _detect_owner_repo(repo_path)
+        from darnit.core.utils import detect_owner_repo
+
+        detected_owner, detected_repo = detect_owner_repo(str(repo_path))
         owner = owner or detected_owner
         repo = repo or detected_repo
 
@@ -585,7 +594,9 @@ def generate_threat_model(
     if not repo_path.exists():
         return f"❌ Error: Repository path not found: {repo_path}"
 
-    detected_owner, detected_repo = _detect_owner_repo(repo_path)
+    from darnit.core.utils import detect_owner_repo
+
+    detected_owner, detected_repo = detect_owner_repo(str(repo_path))
     owner = owner or detected_owner
     repo = repo or detected_repo
 
@@ -659,7 +670,9 @@ def generate_attestation(
     if not repo_path.exists():
         return f"❌ Error: Repository path not found: {repo_path}"
 
-    detected_owner, detected_repo = _detect_owner_repo(repo_path)
+    from darnit.core.utils import detect_owner_repo
+
+    detected_owner, detected_repo = detect_owner_repo(str(repo_path))
     owner = owner or detected_owner
     repo = repo or detected_repo
 
@@ -722,7 +735,9 @@ def remediate_audit_findings(
     if not repo_path.exists():
         return f"❌ Error: Repository path not found: {repo_path}"
 
-    detected_owner, detected_repo = _detect_owner_repo(repo_path)
+    from darnit.core.utils import detect_owner_repo
+
+    detected_owner, detected_repo = detect_owner_repo(str(repo_path))
     owner = owner or detected_owner
     repo = repo or detected_repo
 
@@ -890,52 +905,6 @@ def create_test_repository(
 # Helper Functions
 # =============================================================================
 
-
-def _detect_owner_repo(repo_path: Path, prefer_upstream: bool = False) -> tuple[str, str]:
-    """Detect owner/repo from git remote.
-
-    Args:
-        repo_path: Path to the repository
-        prefer_upstream: If True, check for 'upstream' remote first (useful for forks)
-
-    Returns:
-        Tuple of (owner, repo) detected from git remotes
-    """
-    import subprocess
-
-    def get_remote_url(remote_name: str) -> str | None:
-        try:
-            result = subprocess.run(
-                ["git", "remote", "get-url", remote_name],
-                capture_output=True,
-                text=True,
-                cwd=repo_path,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                return result.stdout.strip()
-        except (subprocess.SubprocessError, FileNotFoundError):
-            pass
-        return None
-
-    def parse_github_url(url: str) -> tuple[str, str] | None:
-        if "github.com" in url:
-            parts = url.replace(".git", "").split("/")
-            if len(parts) >= 2:
-                return parts[-2], parts[-1]
-        return None
-
-    # Order of remotes to check
-    remotes = ["upstream", "origin"] if prefer_upstream else ["origin", "upstream"]
-
-    for remote in remotes:
-        url = get_remote_url(remote)
-        if url:
-            parsed = parse_github_url(url)
-            if parsed:
-                return parsed
-
-    return "unknown", repo_path.name
 
 
 def _detect_default_branch(repo_path: Path) -> str:

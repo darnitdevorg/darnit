@@ -112,7 +112,9 @@ async def builtin_remediate(
         return "No controls found."
 
     # Run audit to find failures
-    owner, repo = _detect_owner_repo(repo_path)
+    from darnit.core.utils import detect_owner_repo
+
+    owner, repo = detect_owner_repo(str(repo_path))
     orchestrator = SieveOrchestrator()
     failed_ids: set[str] = set()
 
@@ -181,18 +183,6 @@ async def builtin_remediate(
         skipped=skipped,
     )
 
-
-def _detect_owner_repo(repo_path: Path) -> tuple[str, str]:
-    """Detect owner/repo from git remote."""
-    try:
-        from darnit.core.utils import detect_repo_from_git
-
-        detected = detect_repo_from_git(str(repo_path))
-        if detected:
-            return detected.get("owner", ""), detected.get("repo", repo_path.name)
-    except Exception:
-        pass
-    return "", repo_path.name
 
 
 def _apply_project_update(

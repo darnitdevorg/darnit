@@ -146,46 +146,166 @@ def validate_local_path(
     return abs_path, None
 
 
-def detect_repo_from_git(local_path: str) -> dict[str, str] | None:
-    """Auto-detect owner and repo from git remote using gh CLI."""
+def _get_remote_url(remote_name: str, cwd: str) -> str | None:
+    """Get the URL of a named git remote."""
     try:
-        resolved_path, error = validate_local_path(local_path)
-        if error:
-            return None
-
         result = subprocess.run(
-            ["gh", "repo", "view", "--json", "nameWithOwner,owner,name,url,isPrivate,defaultBranchRef"],
+            ["git", "remote", "get-url", remote_name],
             capture_output=True,
             text=True,
-            cwd=resolved_path,
-            timeout=30
+            cwd=cwd,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except (subprocess.SubprocessError, FileNotFoundError):
+        pass
+    return None
+
+
+def _parse_github_url(url: str) -> tuple[str, str] | None:
+    """Parse owner/repo from a GitHub remote URL."""
+    match = re.search(r"[:/]([^/:]+)/([^/]+?)(?:\.git)?$", url)
+    if match:
+        return match.group(1), match.group(2)
+    return None
+
+
+def detect_repo_from_git(
+    local_path: str,
+    *,
+    prefer_upstream: bool = True,
+    owner: str | None = None,
+    repo: str | None = None,
+) -> dict[str, str] | None:
+    """Canonical repo identity detection — single source of truth.
+
+    Resolves the repository owner, name, and metadata. This is the ONLY
+    function in the codebase that should parse git remotes or call external
+    tools for owner/repo detection.
+
+    Resolution order:
+    1. If both owner and repo are provided explicitly, return immediately.
+    2. Check git remotes (upstream first, then origin) for owner/repo.
+    3. Enrich with metadata from gh CLI if available.
+
+    Args:
+        local_path: Path to the git repository.
+        prefer_upstream: If True (default), check 'upstream' remote before
+            'origin'. Set to False to prefer origin (rare).
+        owner: Explicit owner override. Skips detection if both owner and
+            repo are provided.
+        repo: Explicit repo override. Skips detection if both owner and
+            repo are provided.
+
+    Returns:
+        Dict with owner, repo, url, is_private, default_branch,
+        resolved_path, and source — or None if detection fails entirely.
+    """
+    resolved_path, error = validate_local_path(local_path)
+    if error:
+        return None
+
+    # Short-circuit: both explicitly provided
+    if owner and repo:
+        return {
+            "owner": owner,
+            "repo": repo,
+            "url": "",
+            "is_private": False,
+            "default_branch": "main",
+            "resolved_path": resolved_path,
+            "source": "explicit",
+        }
+
+    # Detect from git remotes
+    remotes = ["upstream", "origin"] if prefer_upstream else ["origin", "upstream"]
+    detected_owner = None
+    detected_repo = None
+    source = None
+
+    for remote in remotes:
+        url = _get_remote_url(remote, resolved_path)
+        if url:
+            parsed = _parse_github_url(url)
+            if parsed:
+                detected_owner, detected_repo = parsed
+                source = remote
+                break
+
+    # Apply explicit overrides for partial specification
+    final_owner = owner or detected_owner
+    final_repo = repo or detected_repo
+
+    if not final_owner or not final_repo:
+        return None
+
+    if (owner and not repo) or (repo and not owner):
+        source = source or "explicit"
+
+    # Enrich with gh metadata
+    metadata = _gh_enrich(final_owner, final_repo, resolved_path)
+
+    return {
+        "owner": final_owner,
+        "repo": final_repo,
+        "url": metadata.get("url", ""),
+        "is_private": metadata.get("is_private", False),
+        "default_branch": metadata.get("default_branch", "main"),
+        "resolved_path": resolved_path,
+        "source": source or "fallback",
+    }
+
+
+def _gh_enrich(owner: str, repo: str, cwd: str) -> dict[str, Any]:
+    """Fetch enriched metadata from gh CLI for a specific owner/repo."""
+    try:
+        result = subprocess.run(
+            [
+                "gh", "repo", "view", f"{owner}/{repo}",
+                "--json", "url,isPrivate,defaultBranchRef",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+            timeout=30,
         )
         if result.returncode != 0:
-            return None
+            return {}
         data = json.loads(result.stdout)
         return {
-            "owner": data["owner"]["login"],
-            "repo": data["name"],
             "url": data.get("url", ""),
             "is_private": data.get("isPrivate", False),
             "default_branch": data.get("defaultBranchRef", {}).get("name", "main"),
-            "resolved_path": resolved_path
         }
-    except subprocess.TimeoutExpired:
-        logger.warning(f"gh repo view timed out for {local_path}")
-        return None
-    except FileNotFoundError:
-        logger.debug("gh CLI not found - is it installed?")
-        return None
-    except json.JSONDecodeError as e:
-        logger.warning(f"gh repo view returned invalid JSON: {e}")
-        return None
-    except KeyError as e:
-        logger.debug(f"Unexpected response format from gh repo view: missing {e}")
-        return None
-    except (OSError, subprocess.SubprocessError) as e:
-        logger.debug(f"gh repo view failed: {type(e).__name__}: {e}")
-        return None
+    except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError,
+            OSError, subprocess.SubprocessError) as e:
+        logger.debug(f"gh enrichment failed for {owner}/{repo}: {type(e).__name__}: {e}")
+        return {}
+
+
+def detect_owner_repo(
+    local_path: str,
+    *,
+    prefer_upstream: bool = True,
+    owner: str | None = None,
+    repo: str | None = None,
+) -> tuple[str, str]:
+    """Convenience wrapper returning (owner, repo) tuple.
+
+    Delegates to detect_repo_from_git() and extracts the owner/repo.
+    Returns ("", directory_name) if detection fails.
+    """
+    info = detect_repo_from_git(
+        local_path,
+        prefer_upstream=prefer_upstream,
+        owner=owner,
+        repo=repo,
+    )
+    if info:
+        return info["owner"], info["repo"]
+    path_name = os.path.basename(os.path.abspath(local_path))
+    return "", path_name
 
 
 def file_exists(local_path: str, *patterns: str) -> bool:

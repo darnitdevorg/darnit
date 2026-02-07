@@ -188,7 +188,9 @@ def cmd_audit(args: argparse.Namespace) -> int:
     orchestrator = SieveOrchestrator()
 
     # Detect owner/repo from git if available
-    owner, repo = _detect_owner_repo(repo_path)
+    from darnit.core.utils import detect_owner_repo
+
+    owner, repo = detect_owner_repo(str(repo_path))
     default_branch = _detect_default_branch(repo_path)
 
     results = []
@@ -494,32 +496,6 @@ def cmd_serve(args: argparse.Namespace) -> int:
 # Helpers
 # =============================================================================
 
-
-def _detect_owner_repo(repo_path: Path) -> tuple:
-    """Detect owner/repo from git remote."""
-    import subprocess
-
-    try:
-        result = subprocess.run(
-            ["git", "remote", "get-url", "origin"],
-            capture_output=True,
-            text=True,
-            cwd=repo_path,
-            timeout=5,
-        )
-        if result.returncode == 0:
-            url = result.stdout.strip()
-            # Parse GitHub URL
-            if "github.com" in url:
-                # https://github.com/owner/repo.git or git@github.com:owner/repo.git
-                parts = url.replace(".git", "").split("/")
-                if len(parts) >= 2:
-                    return parts[-2], parts[-1]
-    except (subprocess.SubprocessError, FileNotFoundError):
-        pass
-
-    # Fallback
-    return "unknown", repo_path.name
 
 
 def _detect_default_branch(repo_path: Path) -> str:

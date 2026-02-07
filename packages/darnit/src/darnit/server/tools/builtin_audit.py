@@ -111,7 +111,9 @@ async def builtin_audit(
         return "No controls found for the requested level and filters."
 
     # Detect owner/repo for context
-    owner, repo = _detect_owner_repo(repo_path)
+    from darnit.core.utils import detect_owner_repo
+
+    owner, repo = detect_owner_repo(str(repo_path))
 
     # Run sieve verification
     orchestrator = SieveOrchestrator()
@@ -143,18 +145,6 @@ async def builtin_audit(
         results=results,
     )
 
-
-def _detect_owner_repo(repo_path: Path) -> tuple[str, str]:
-    """Detect owner/repo from git remote."""
-    try:
-        from darnit.core.utils import detect_repo_from_git
-
-        detected = detect_repo_from_git(str(repo_path))
-        if detected:
-            return detected.get("owner", ""), detected.get("repo", repo_path.name)
-    except Exception:
-        pass
-    return "", repo_path.name
 
 
 def _format_audit_report(

@@ -72,6 +72,7 @@ from .registry import (
     reset_plugin_registry,
 )
 from .utils import (
+    detect_owner_repo,
     detect_repo_from_git,
     get_git_commit,
     get_git_ref,
@@ -96,6 +97,7 @@ __all__ = [
     "CheckResult",
     # Utils
     "validate_local_path",
+    "detect_owner_repo",
     "detect_repo_from_git",
     "get_git_commit",
     "get_git_ref",
