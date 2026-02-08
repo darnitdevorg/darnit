@@ -320,7 +320,7 @@ def _apply_remediation(
             "message": "All controls marked as N/A in .project.yaml",
         }
 
-    # Try declarative remediation first (only for applicable controls)
+    # Try executable declarative remediation first (only for applicable controls)
     for control_id in applicable_controls:
         remediation_config, templates = _get_declarative_remediation(control_id)
         if remediation_config:
@@ -339,6 +339,21 @@ def _apply_remediation(
             if skipped_controls:
                 result["skipped_controls"] = skipped_controls
             return result
+
+    # Try manual-only declarative remediation before legacy fallthrough
+    manual_result = _get_manual_remediation(applicable_controls)
+    if manual_result:
+        result = {
+            "category": category,
+            "status": "manual",
+            "description": info["description"],
+            "controls": info["controls"],
+            "result": manual_result,
+            "declarative": True,
+        }
+        if skipped_controls:
+            result["skipped_controls"] = skipped_controls
+        return result
 
     # Fall back to legacy Python functions
     result = _apply_legacy_remediation(
