@@ -87,19 +87,15 @@ def get_implementation(name: str) -> ComplianceImplementation | None:
 def get_default_implementation() -> ComplianceImplementation | None:
     """Get the default implementation.
 
-    Returns the first discovered implementation, preferring 'openssf-baseline'
-    if available.
+    Returns the first discovered implementation. If multiple implementations
+    are installed, the caller should use get_implementation(name) to select
+    a specific one.
 
     Returns:
         Implementation instance or None if no implementations found.
     """
     implementations = discover_implementations()
 
-    # Prefer openssf-baseline as the default
-    if "openssf-baseline" in implementations:
-        return implementations["openssf-baseline"]
-
-    # Otherwise return the first available
     if implementations:
         return next(iter(implementations.values()))
 

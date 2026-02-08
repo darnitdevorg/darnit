@@ -1,14 +1,14 @@
 """darnit - Generic compliance audit framework with plugin architecture.
 
 This framework provides the core infrastructure for running compliance audits
-against various standards. Implementations (like darnit-baseline for OpenSSF
-Baseline) register via Python entry points.
+against various standards. Implementations register via Python entry points.
 
 Usage:
-    from darnit.core.discovery import discover_implementations
+    from darnit.core.discovery import get_default_implementation
 
-    implementations = discover_implementations()
-    baseline = implementations.get("openssf-baseline")
+    impl = get_default_implementation()
+    if impl:
+        controls = impl.get_all_controls()
 """
 
 __version__ = "0.1.0"

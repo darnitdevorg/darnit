@@ -882,12 +882,36 @@ A given function signature and purpose MUST NOT appear more than once within the
 
 All audit entry points that produce markdown output SHALL use `format_results_markdown()` from `darnit.tools.audit`. No other module SHALL maintain a separate audit report formatter.
 
+#### Requirement: Report formatter is parameterized
+- **WHEN** `format_results_markdown()` is called
+- **THEN** it SHALL accept optional `report_title` and `remediation_map` parameters
+- **AND** SHALL NOT contain hardcoded implementation-specific control IDs or branding
+
+### 10.4 Framework Contains No Implementation-Specific Code
+
+The darnit framework package SHALL NOT contain code, modules, or string literals specific to any particular compliance implementation.
+
+#### Requirement: No OSPS control IDs in framework
+- **WHEN** the `packages/darnit/src/darnit/` source tree is searched
+- **THEN** no hardcoded OSPS control ID patterns (e.g., `OSPS-AC-03.01`) SHALL exist in executable code
+
+#### Requirement: No attestation or threat model modules in framework
+- **WHEN** the `packages/darnit/src/darnit/` directory listing is checked
+- **THEN** `attestation/` and `threat_model/` directories SHALL NOT exist
+- **AND** these modules SHALL reside in the implementation package
+
+#### Requirement: No hardcoded implementation preference in discovery
+- **WHEN** `get_default_implementation()` is called
+- **THEN** it SHALL return the first discovered implementation
+- **AND** SHALL NOT hardcode a preference for any specific implementation name
+
 ---
 
 ## Version History
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.4 | 2026-02-07 | Added framework purity requirements (Section 10.4), report parameterization |
 | 1.0.0-alpha.3 | 2026-02-06 | Added audit pipeline requirements (Section 10) |
 | 1.0.0-alpha.2 | 2026-02-05 | Added CEL expressions, handler registration, Sigstore verification |
 | 1.0.0-alpha | 2026-02-04 | Initial authoritative specification |

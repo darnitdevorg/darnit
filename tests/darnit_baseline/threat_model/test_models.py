@@ -1,8 +1,8 @@
-"""Tests for darnit.threat_model.models module."""
+"""Tests for darnit_baseline.threat_model.models module."""
 
 import pytest
 
-from darnit.threat_model.models import (
+from darnit_baseline.threat_model.models import (
     AssetInventory,
     AuthMechanism,
     CodeLocation,

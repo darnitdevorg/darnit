@@ -555,6 +555,8 @@ def format_results_markdown(
     compliance: dict[int, bool],
     level: int,
     local_path: str | None = None,
+    report_title: str = "Compliance Audit Report",
+    remediation_map: dict[str, Any] | None = None,
 ) -> str:
     """Format audit results as Markdown.
 
@@ -566,12 +568,23 @@ def format_results_markdown(
         compliance: Level compliance
         level: Maximum level checked
         local_path: Path to the repository (for pending context)
+        report_title: Title for the report H1 heading.
+        remediation_map: Implementation-provided mapping of control IDs to
+            remediation tools. Structure:
+            {
+                "groups": [{"name": str, "tool": str, "description": str,
+                            "control_ids": set[str]}],
+                "bulk_tool": str,
+                "bulk_description": str,
+                "branch_name": str,
+                "framework_name": str,
+            }
 
     Returns:
         Markdown-formatted report
     """
     lines = [
-        "# OpenSSF Baseline Audit Report",
+        f"# {report_title}",
         "",
         f"**Repository:** {owner}/{repo}",
         f"**Level Assessed:** {level}",
@@ -666,34 +679,31 @@ def format_results_markdown(
         # Determine which remediation categories apply
         control_ids = {r.get("id", "") for r in fail_results}
 
-        # Map controls to remediation tools
+        # Build remediation suggestions from implementation-provided map
         remediation_suggestions = []
+        if remediation_map:
+            for group in remediation_map.get("groups", []):
+                matched = control_ids & set(group.get("control_ids", set()))
+                if matched:
+                    remediation_suggestions.append({
+                        "tool": group["tool"],
+                        "description": group["description"],
+                        "controls": sorted(matched),
+                    })
 
-        # Branch protection controls
-        branch_controls = {"OSPS-AC-03.01", "OSPS-AC-03.02", "OSPS-QA-07.01", "OSPS-QA-03.01"}
-        if control_ids & branch_controls:
-            remediation_suggestions.append({
-                "tool": "enable_branch_protection",
-                "description": "Configure branch protection rules",
-                "controls": sorted(control_ids & branch_controls)
-            })
+            # General bulk remediation for multiple issues
+            bulk_tool = remediation_map.get("bulk_tool")
+            if bulk_tool and len(fail_results) > 2:
+                remediation_suggestions.insert(0, {
+                    "tool": bulk_tool,
+                    "description": remediation_map.get("bulk_description", "Auto-fix multiple issues"),
+                    "controls": ["multiple"],
+                })
 
-        # Security policy controls
-        security_controls = {"OSPS-VM-01.01", "OSPS-VM-02.01", "OSPS-VM-03.01"}
-        if control_ids & security_controls:
-            remediation_suggestions.append({
-                "tool": "create_security_policy",
-                "description": "Generate SECURITY.md with vulnerability reporting",
-                "controls": sorted(control_ids & security_controls)
-            })
-
-        # General remediation for multiple issues
-        if len(fail_results) > 2:
-            remediation_suggestions.insert(0, {
-                "tool": "remediate_audit_findings",
-                "description": "Auto-fix multiple compliance issues at once",
-                "controls": ["multiple"]
-            })
+        # Extract shared values from remediation_map
+        bulk_tool_name = remediation_map.get("bulk_tool", "remediate_audit_findings") if remediation_map else "remediate_audit_findings"
+        branch_name = remediation_map.get("branch_name", "fix/compliance") if remediation_map else "fix/compliance"
+        framework_name = remediation_map.get("framework_name", "Compliance") if remediation_map else "Compliance"
 
         if remediation_suggestions:
             lines.append("### Available MCP Tools")
@@ -708,14 +718,10 @@ def format_results_markdown(
             lines.append("")
             lines.append("```python")
             lines.append("# Fix all applicable issues automatically")
-            lines.append('remediate_audit_findings(local_path="/path/to/repo", dry_run=False)')
-            lines.append("")
-            lines.append("# Or fix specific categories")
-            lines.append(f'enable_branch_protection(owner="{owner}", repo="{repo}")')
+            lines.append(f'{bulk_tool_name}(local_path="/path/to/repo", dry_run=False)')
             lines.append("```")
             lines.append("")
 
-        # Always show the git workflow section when there are failures
         lines.append("### 🔀 Git Workflow for Remediations")
         lines.append("")
         lines.append("Use these MCP tools to manage remediation changes through Git:")
@@ -730,16 +736,16 @@ def format_results_markdown(
         lines.append("**Recommended workflow:**")
         lines.append("```python")
         lines.append("# 1. Create a branch for remediation work")
-        lines.append('create_remediation_branch(branch_name="fix/openssf-baseline", local_path="/path/to/repo")')
+        lines.append(f'create_remediation_branch(branch_name="{branch_name}", local_path="/path/to/repo")')
         lines.append("")
         lines.append("# 2. Apply remediations (files will be created/modified)")
-        lines.append('remediate_audit_findings(local_path="/path/to/repo")')
+        lines.append(f'{bulk_tool_name}(local_path="/path/to/repo")')
         lines.append("")
         lines.append("# 3. Commit the changes")
-        lines.append('commit_remediation_changes(message="Add OpenSSF Baseline compliance files", local_path="/path/to/repo")')
+        lines.append(f'commit_remediation_changes(message="Add {framework_name} compliance files", local_path="/path/to/repo")')
         lines.append("")
         lines.append("# 4. Open a pull request")
-        lines.append('create_remediation_pr(title="OpenSSF Baseline Compliance", local_path="/path/to/repo")')
+        lines.append(f'create_remediation_pr(title="{framework_name} Compliance", local_path="/path/to/repo")')
         lines.append("```")
         lines.append("")
         lines.append("Use `get_remediation_status()` at any time to check current git state and next steps.")

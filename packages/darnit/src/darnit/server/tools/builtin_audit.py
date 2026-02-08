@@ -127,6 +127,9 @@ async def builtin_audit(
     if output_format == "json":
         return json_mod.dumps(results, indent=2, default=str)
 
+    # Use implementation display_name for report title
+    report_title = f"{impl.display_name} Audit Report" if impl else "Compliance Audit Report"
+
     compliance = calculate_compliance(results, level)
     return format_results_markdown(
         owner=owner,
@@ -136,6 +139,7 @@ async def builtin_audit(
         compliance=compliance,
         level=level,
         local_path=str(repo_path),
+        report_title=report_title,
     )
 
 

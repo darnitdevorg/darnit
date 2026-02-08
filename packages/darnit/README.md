@@ -9,8 +9,6 @@ Generic compliance audit framework with plugin architecture.
 - **Plugin System**: Discover and load compliance implementations via Python entry points
 - **Configuration Management**: `.project.yaml` for project metadata and file locations
 - **Progressive Verification**: "Sieve" model for efficient compliance checking
-- **Attestation Generation**: Create cryptographically signed in-toto attestations
-- **Threat Modeling**: Built-in STRIDE analysis
 - **Remediation Framework**: Auto-fix infrastructure for compliance gaps
 - **MCP Server Tools**: Ready-to-use tools for AI assistant integration
 
@@ -20,23 +18,17 @@ Generic compliance audit framework with plugin architecture.
 pip install darnit
 ```
 
-For attestation support:
-```bash
-pip install darnit[attestation]
-```
-
 ## Usage
 
 ### Discover Implementations
 
 ```python
-from darnit.core.discovery import discover_implementations
+from darnit.core.discovery import get_default_implementation
 
-# Discover all installed compliance implementations
-implementations = discover_implementations()
-
-# Get a specific implementation
-baseline = implementations.get("openssf-baseline")
+# Get the default installed compliance implementation
+impl = get_default_implementation()
+if impl:
+    controls = impl.get_all_controls()
 ```
 
 ### Configuration Management
@@ -50,18 +42,6 @@ discovered = discover_files("/path/to/repo")
 
 # Load project configuration
 config = load_project_config("/path/to/repo")
-```
-
-### Generate Attestations
-
-```python
-from darnit.attestation import generate_attestation_from_results
-
-# Generate a signed attestation
-attestation = generate_attestation_from_results(
-    audit_result=result,
-    sign=True
-)
 ```
 
 ## Creating Implementations
@@ -94,8 +74,6 @@ darnit/
 ├── core/           # Plugin system, models, discovery
 ├── config/         # Project configuration (.project.yaml)
 ├── sieve/          # Progressive verification pipeline
-├── attestation/    # in-toto attestation generation
-├── threat_model/   # STRIDE threat modeling
 ├── remediation/    # Auto-fix framework
 ├── server/         # MCP server tool implementations
 └── tools/          # MCP tool helpers and utilities

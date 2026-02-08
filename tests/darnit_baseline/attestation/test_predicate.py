@@ -1,10 +1,10 @@
-"""Tests for darnit.attestation.predicate module."""
+"""Tests for darnit_baseline.attestation.predicate module."""
 
 from datetime import datetime
 
 import pytest
 
-from darnit.attestation.predicate import build_assessment_predicate
+from darnit_baseline.attestation.predicate import build_assessment_predicate
 
 
 class TestBuildAssessmentPredicate:

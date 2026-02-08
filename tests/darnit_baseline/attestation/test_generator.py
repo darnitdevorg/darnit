@@ -1,16 +1,16 @@
-"""Tests for darnit.attestation.generator module."""
+"""Tests for darnit_baseline.attestation.generator module."""
 
 import json
 from pathlib import Path
 
 import pytest
 
-from darnit.attestation.generator import (
+from darnit.core.models import AuditResult
+from darnit_baseline.attestation.generator import (
     BASELINE_PREDICATE_TYPE,
     build_unsigned_statement,
     generate_attestation_from_results,
 )
-from darnit.core.models import AuditResult
 
 
 class TestBaselinePredicateType:

@@ -11,6 +11,29 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+# OSPS control-ID-to-tool mapping for audit report remediation suggestions.
+# This keeps all OSPS-specific knowledge in the implementation package.
+OSPS_REMEDIATION_MAP: dict = {
+    "groups": [
+        {
+            "name": "Branch Protection",
+            "tool": "enable_branch_protection",
+            "description": "Configure branch protection rules",
+            "control_ids": {"OSPS-AC-03.01", "OSPS-AC-03.02", "OSPS-QA-07.01", "OSPS-QA-03.01"},
+        },
+        {
+            "name": "Security Policy",
+            "tool": "create_security_policy",
+            "description": "Generate SECURITY.md with vulnerability reporting",
+            "control_ids": {"OSPS-VM-01.01", "OSPS-VM-02.01", "OSPS-VM-03.01"},
+        },
+    ],
+    "bulk_tool": "remediate_audit_findings",
+    "bulk_description": "Auto-fix multiple compliance issues at once",
+    "branch_name": "fix/openssf-baseline",
+    "framework_name": "OpenSSF Baseline",
+}
+
 
 def audit_openssf_baseline(
     owner: str | None = None,
@@ -130,6 +153,8 @@ def audit_openssf_baseline(
             compliance=compliance,
             level=level,
             local_path=str(repo_path),
+            report_title="OpenSSF Baseline Audit Report",
+            remediation_map=OSPS_REMEDIATION_MAP,
         )
 
 
@@ -564,7 +589,7 @@ def generate_threat_model(
         Threat model report with identified threats and recommendations,
         or a confirmation message if output_path is provided.
     """
-    from darnit.threat_model import (
+    from darnit_baseline.threat_model import (
         analyze_stride_threats,
         detect_frameworks,
         discover_all_assets,
@@ -649,7 +674,7 @@ def generate_attestation(
     Returns:
         JSON attestation and path to saved file
     """
-    from darnit.attestation import generate_attestation as _generate
+    from darnit_baseline.attestation import generate_attestation as _generate
 
     repo_path = Path(local_path).resolve()
     if not repo_path.exists():

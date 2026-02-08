@@ -17,7 +17,7 @@ Usage:
 Examples:
     # Start the MCP server (recommended for production)
     darnit serve
-    darnit serve --framework openssf-baseline
+    darnit serve --framework <name>
 
     # Debug/development commands (no LLM consultation)
     darnit audit /path/to/repo
@@ -362,7 +362,13 @@ def cmd_init(args: argparse.Namespace) -> int:
         logger.error(".baseline.toml already exists. Use --force to overwrite.")
         return 1
 
-    framework = args.framework or "openssf-baseline"
+    # Auto-detect framework from installed implementations
+    if args.framework:
+        framework = args.framework
+    else:
+        from darnit.core.discovery import get_default_implementation
+        impl = get_default_implementation()
+        framework = impl.name if impl else "openssf-baseline"
 
     template = f'''# Darnit configuration file
 # See: https://github.com/kusari-oss/darnit
@@ -381,12 +387,12 @@ timeout = 300
 # output_format = "json"
 
 # Control overrides
-# [controls."OSPS-BR-02.01"]
+# [controls."CONTROL-ID"]
 # status = "n/a"
 # reason = "Pre-release project"
 
 # Use custom adapter for specific controls
-# [controls."OSPS-VM-05.02"]
+# [controls."CONTROL-ID"]
 # check = {{ adapter = "kusari" }}
 '''
 
@@ -554,7 +560,7 @@ def create_parser() -> argparse.ArgumentParser:
     serve_parser.add_argument(
         "config",
         nargs="?",
-        help="Path to TOML config file (e.g., openssf-baseline.toml)",
+        help="Path to TOML config file (e.g., my-framework.toml)",
     )
     serve_parser.add_argument(
         "-f", "--framework",
@@ -659,7 +665,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     init_parser.add_argument(
         "-f", "--framework",
-        help="Framework to extend (default: openssf-baseline)",
+        help="Framework to extend (default: auto-detect)",
     )
     init_parser.add_argument(
         "--force",

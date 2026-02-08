@@ -7,7 +7,7 @@ This module provides automated threat analysis for codebases, including:
 - Report generation (Markdown, SARIF, JSON)
 
 Usage:
-    from darnit.threat_model import (
+    from darnit_baseline.threat_model import (
         discover_all_assets,
         analyze_stride_threats,
         generate_markdown_threat_model,

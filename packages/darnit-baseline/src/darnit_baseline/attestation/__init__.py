@@ -5,7 +5,7 @@ a repository's compliance status at a specific git commit. Attestations
 follow the in-toto Statement v1 format and use Sigstore for keyless signing.
 
 Usage:
-    from darnit.attestation import (
+    from darnit_baseline.attestation import (
         generate_attestation_from_results,
         build_assessment_predicate,
         sign_attestation,
