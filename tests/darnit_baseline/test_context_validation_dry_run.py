@@ -48,7 +48,7 @@ class TestContextValidationInDryRunMode:
         from darnit_baseline.remediation.orchestrator import _apply_remediation
 
         result = _apply_remediation(
-            category="maintainers",
+            category="governance",
             local_path=temp_repo,
             owner="test-owner",
             repo="test-repo",
@@ -58,7 +58,7 @@ class TestContextValidationInDryRunMode:
         # CRITICAL: Must return needs_confirmation, NOT skip the check
         assert result["status"] == "needs_confirmation", \
             f"dry_run=True bypassed context validation! Got status: {result['status']}"
-        assert result["category"] == "maintainers"
+        assert result["category"] == "governance"
         assert "maintainers" in result.get("missing_context", [])
         assert "confirm_project_context" in result.get("result", "")
 
@@ -108,7 +108,7 @@ class TestContextValidationInDryRunFalse:
         from darnit_baseline.remediation.orchestrator import _apply_remediation
 
         result = _apply_remediation(
-            category="maintainers",
+            category="governance",
             local_path=temp_repo,
             owner="test-owner",
             repo="test-repo",
@@ -116,7 +116,7 @@ class TestContextValidationInDryRunFalse:
         )
 
         assert result["status"] == "needs_confirmation"
-        assert result["category"] == "maintainers"
+        assert result["category"] == "governance"
         assert "maintainers" in result.get("missing_context", [])
 
     @pytest.mark.unit
@@ -169,7 +169,7 @@ class TestContextValidationAfterConfirmation:
 
         # Now try remediation
         result = _apply_remediation(
-            category="maintainers",
+            category="governance",
             local_path=temp_repo,
             owner="test-owner",
             repo="test-repo",
@@ -196,7 +196,7 @@ class TestContextValidationAfterConfirmation:
 
         # Now try remediation
         result = _apply_remediation(
-            category="maintainers",
+            category="governance",
             local_path=temp_repo,
             owner="test-owner",
             repo="test-repo",
@@ -205,27 +205,27 @@ class TestContextValidationAfterConfirmation:
 
         # Should NOT be needs_confirmation anymore
         assert result["status"] != "needs_confirmation"
-        # File should be created
-        assert (Path(temp_repo) / "MAINTAINERS.md").exists()
+        # File should be created (governance category creates GOVERNANCE.md)
+        assert (Path(temp_repo) / "GOVERNANCE.md").exists()
 
 
 class TestAllContextRequiringCategories:
     """Verify ALL categories that require context are properly tested."""
 
-    CONTEXT_REQUIRING_CATEGORIES = ["codeowners", "maintainers", "governance"]
+    CONTEXT_REQUIRING_CATEGORIES = ["codeowners", "governance"]
 
     @pytest.mark.unit
-    def test_registry_has_context_requirements(self):
-        """Verify registry defines context requirements for expected categories."""
-        from darnit_baseline.remediation.registry import REMEDIATION_REGISTRY
+    def test_categories_exist_in_registry(self):
+        """Verify expected categories exist in REMEDIATION_CATEGORIES."""
+        from darnit_baseline.remediation.orchestrator import REMEDIATION_CATEGORIES
 
         for category in self.CONTEXT_REQUIRING_CATEGORIES:
-            assert category in REMEDIATION_REGISTRY, f"Missing category: {category}"
-            info = REMEDIATION_REGISTRY[category]
-            assert "requires_context" in info, \
-                f"Category {category} missing requires_context in registry"
-            assert len(info["requires_context"]) > 0, \
-                f"Category {category} has empty requires_context"
+            assert category in REMEDIATION_CATEGORIES, f"Missing category: {category}"
+            info = REMEDIATION_CATEGORIES[category]
+            assert "controls" in info, \
+                f"Category {category} missing controls in registry"
+            assert len(info["controls"]) > 0, \
+                f"Category {category} has empty controls"
 
     @pytest.mark.unit
     @pytest.mark.parametrize("category", CONTEXT_REQUIRING_CATEGORIES)
@@ -444,7 +444,7 @@ class TestExplicitWarningAgainstDirectEdits:
         from darnit_baseline.remediation.orchestrator import _apply_remediation
 
         result = _apply_remediation(
-            category="maintainers",
+            category="governance",
             local_path=temp_repo,
             owner="test-owner",
             repo="test-repo",

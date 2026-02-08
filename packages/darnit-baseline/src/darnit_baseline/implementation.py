@@ -68,9 +68,9 @@ class OSPSBaselineImplementation:
         return OSPS_RULES
 
     def get_remediation_registry(self) -> dict[str, Any]:
-        """Get the remediation registry for auto-fixes."""
-        from .remediation.registry import REMEDIATION_REGISTRY
-        return REMEDIATION_REGISTRY
+        """Get the remediation category registry for auto-fixes."""
+        from .remediation.orchestrator import REMEDIATION_CATEGORIES
+        return REMEDIATION_CATEGORIES
 
     def get_framework_config_path(self) -> Path | None:
         """Get path to the OpenSSF Baseline framework TOML file.

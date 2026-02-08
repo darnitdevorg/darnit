@@ -467,9 +467,11 @@ class BuiltinRemediationAdapter(RemediationAdapter):
     def _get_supported_controls(self) -> set[str]:
         """Get set of control IDs that can be remediated."""
         try:
-            from darnit_baseline.remediation.registry import get_remediation_registry
-            registry = get_remediation_registry()
-            return set(registry.keys())
+            from darnit_baseline.remediation.orchestrator import REMEDIATION_CATEGORIES
+            controls: set[str] = set()
+            for info in REMEDIATION_CATEGORIES.values():
+                controls.update(info["controls"])
+            return controls
         except ImportError:
             return set()
 
@@ -484,6 +486,8 @@ class BuiltinRemediationAdapter(RemediationAdapter):
     ) -> RemediationResult:
         """Apply remediation for a specific control.
 
+        Delegates to the TOML-based remediation orchestrator.
+
         Args:
             control_id: Control identifier
             owner: GitHub owner/org
@@ -496,10 +500,16 @@ class BuiltinRemediationAdapter(RemediationAdapter):
             RemediationResult describing the outcome
         """
         try:
-            from darnit_baseline.remediation.registry import get_remediation_registry
-            registry = get_remediation_registry()
+            from darnit_baseline.remediation.orchestrator import (
+                _apply_remediation,
+                _get_control_to_category_map,
+            )
 
-            if control_id not in registry:
+            # Find which category this control belongs to
+            control_map = _get_control_to_category_map()
+            category = control_map.get(control_id)
+
+            if not category:
                 return RemediationResult(
                     control_id=control_id,
                     success=False,
@@ -507,46 +517,27 @@ class BuiltinRemediationAdapter(RemediationAdapter):
                     source="builtin",
                 )
 
-            remediation_func = registry[control_id]
-
-            # Call remediation function
-            # Most remediation functions expect: local_path, owner, repo, dry_run
-            result = remediation_func(
+            # Delegate to the TOML-based orchestrator
+            result = _apply_remediation(
+                category=category,
                 local_path=local_path,
                 owner=owner,
                 repo=repo,
                 dry_run=dry_run,
             )
 
-            # Convert to RemediationResult if needed
-            if isinstance(result, RemediationResult):
-                return result
-            elif isinstance(result, dict):
-                return RemediationResult(
-                    control_id=control_id,
-                    success=result.get("success", False),
-                    message=result.get("message", ""),
-                    changes_made=result.get("changes_made", []),
-                    requires_manual_action=result.get("requires_manual_action", False),
-                    manual_steps=result.get("manual_steps", []),
-                    source="builtin",
-                )
-            else:
-                return RemediationResult(
-                    control_id=control_id,
-                    success=True,
-                    message=str(result) if result else "Remediation completed",
-                    source="builtin",
-                )
+            status = result.get("status", "error")
+            success = status in ("applied", "would_apply", "manual")
+            message = result.get("result") or result.get("message", "")
 
-        except ImportError as e:
-            logger.error(f"Could not import remediation registry: {e}")
             return RemediationResult(
                 control_id=control_id,
-                success=False,
-                message=f"Remediation not available: {e}",
+                success=success,
+                message=str(message),
+                requires_manual_action=(status == "manual"),
                 source="builtin",
             )
+
         except Exception as e:
             logger.error(f"Error running remediation for {control_id}: {e}")
             return RemediationResult(

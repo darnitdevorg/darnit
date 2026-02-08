@@ -239,7 +239,9 @@ def create_security_policy(
     Returns:
         Success message with created file path
     """
-    from darnit_baseline.remediation.actions import create_security_policy as _create
+    from darnit.config import load_effective_config_by_name
+    from darnit.config.framework_schema import FrameworkConfig
+    from darnit.remediation.executor import RemediationExecutor
 
     repo_path = Path(local_path).resolve()
 
@@ -251,13 +253,32 @@ def create_security_policy(
     repo = repo or detected_repo
 
     try:
-        result = _create(
+        # Load framework config to get SECURITY.md remediation definition
+        config = load_effective_config_by_name("openssf-baseline", repo_path)
+        framework = FrameworkConfig(**config)
+
+        # Use the TOML-defined remediation for OSPS-VM-02.01 (security policy)
+        control = framework.controls.get("OSPS-VM-02.01")
+        if not control or not control.remediation:
+            return "❌ No remediation config found for OSPS-VM-02.01"
+
+        executor = RemediationExecutor(
             local_path=str(repo_path),
             owner=owner,
             repo=repo,
-            template=template,
+            templates=framework.templates or {},
         )
-        return result
+
+        result = executor.execute(
+            control_id="OSPS-VM-02.01",
+            config=control.remediation,
+            dry_run=False,
+        )
+
+        if result.success:
+            return f"✅ Created SECURITY.md at {repo_path}/SECURITY.md"
+        else:
+            return f"❌ Error creating SECURITY.md: {result.message}"
     except Exception as e:
         return f"❌ Error creating SECURITY.md: {e}"
 
@@ -719,7 +740,6 @@ def remediate_audit_findings(
 
     Available categories:
     - branch_protection: Enable branch protection
-    - status_checks: Configure required status checks
     - security_policy: Create SECURITY.md
     - codeowners: Create CODEOWNERS
     - governance: Create GOVERNANCE.md

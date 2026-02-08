@@ -322,6 +322,151 @@ content = """# Threat Model — $REPO
 - [OpenSSF Baseline](https://baseline.openssf.org)
 """
 
+[templates.codeowners_template]
+description = "CODEOWNERS file defining code ownership"
+content = """# CODEOWNERS - Defines code ownership for review requirements
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Global ownership - all files require review from these owners
+* ${context.maintainers}
+"""
+
+[templates.governance_template]
+description = "GOVERNANCE.md describing project governance model"
+content = """# Governance
+
+## Overview
+
+This document describes the governance model for $REPO.
+
+## Roles
+
+### Maintainers
+
+Maintainers are responsible for the overall direction and health of the project.
+
+**Current Maintainers:**
+${context.maintainers}
+
+### Contributors
+
+Anyone who contributes code, documentation, or other improvements to the project.
+
+## Decision Making
+
+- **Minor changes**: Can be merged by any maintainer after review
+- **Major changes**: Require discussion and consensus among maintainers
+- **Breaking changes**: Require announcement and community feedback period
+
+## Becoming a Maintainer
+
+Contributors who have made significant contributions may be invited to become
+maintainers. Criteria include:
+
+- Sustained contributions over time
+- Quality of contributions
+- Constructive participation in discussions
+- Alignment with project goals
+
+## Code of Conduct
+
+All participants are expected to follow our Code of Conduct.
+
+## Changes to Governance
+
+Significant changes to governance require consensus among maintainers and should
+be discussed openly before implementation.
+"""
+
+[templates.maintainers_template]
+description = "MAINTAINERS.md listing project maintainers"
+content = """# Maintainers
+
+This document lists the maintainers for $REPO.
+
+## Current Maintainers
+
+${context.maintainers}
+
+## Maintainer Responsibilities
+
+Maintainers are responsible for:
+
+- Reviewing and merging pull requests
+- Triaging issues and feature requests
+- Ensuring code quality and security standards
+- Making release decisions
+- Guiding the project's technical direction
+
+## Becoming a Maintainer
+
+New maintainers are nominated by existing maintainers based on:
+
+- Sustained, high-quality contributions
+- Deep understanding of the codebase
+- Demonstrated commitment to the project
+- Constructive collaboration with the community
+
+## Emeritus Maintainers
+
+Former maintainers who have stepped back from active maintenance:
+
+- (none yet)
+"""
+
+[templates.support_template]
+description = "SUPPORT.md describing how to get help"
+content = """# Support
+
+## Getting Help
+
+Thanks for using $REPO! Here are some ways to get help:
+
+### Documentation
+
+- Check the [README](README.md) for basic usage
+- Review any documentation in the `/docs` folder
+
+### Issues
+
+If you've found a bug or have a feature request:
+1. Search [existing issues](https://github.com/$OWNER/$REPO/issues) first
+2. If not found, [open a new issue](https://github.com/$OWNER/$REPO/issues/new)
+
+### Security Issues
+
+**Please do not report security vulnerabilities through public issues.**
+
+See our [Security Policy](SECURITY.md) for responsible disclosure instructions.
+
+## Response Times
+
+This is an open source project. Response times may vary based on
+maintainer availability. We appreciate your patience!
+
+## Contributing
+
+Want to help improve $REPO? See our [Contributing Guide](CONTRIBUTING.md).
+"""
+
+[templates.vex_policy_template]
+description = "VEX policy section for SECURITY.md"
+content = """
+## Vulnerability Exploitability (VEX)
+
+When vulnerabilities are reported in our dependencies that do not affect this project,
+we will provide VEX (Vulnerability Exploitability eXchange) statements explaining why
+the vulnerability is not exploitable in our context.
+
+VEX statements will be published as:
+- GitHub Security Advisories with "not affected" status
+- VEX documents in this repository (when applicable)
+
+For more information about VEX, see:
+- [OpenVEX Specification](https://openvex.dev/)
+- [CISA VEX Guide](https://www.cisa.gov/resources-tools/resources/vulnerability-exploitability-exchange-vex-overview)
+"""
+
 [templates.gitignore_secrets]
 description = "Gitignore patterns for common secret files"
 content = """# Secrets and credentials
@@ -589,7 +734,6 @@ steps = [
 ]
 
 [controls."OSPS-AC-03.01".remediation]
-handler = "enable_branch_protection"  # Legacy handler for fallback
 safe = true
 requires_api = true
 dry_run_supported = true
@@ -1017,7 +1161,6 @@ files = ["README.md", "CONTRIBUTING.md"]
 bug_reporting = "(report|submit).*(bug|issue)"
 
 [controls."OSPS-DO-02.01".remediation]
-handler = "create_bug_report_template"  # Legacy handler for fallback
 safe = true
 dry_run_supported = true
 
@@ -1114,7 +1257,6 @@ steps = [
 ]
 
 [controls."OSPS-GV-03.01".remediation]
-handler = "create_contributing"  # Legacy handler for fallback
 safe = true
 dry_run_supported = true
 
@@ -1485,7 +1627,6 @@ steps = [
 ]
 
 [controls."OSPS-VM-02.01".remediation]
-handler = "create_security_policy"  # Legacy handler for fallback
 safe = true
 dry_run_supported = true
 
@@ -1567,8 +1708,13 @@ steps = [
 ]
 
 [controls."OSPS-GV-01.01".remediation]
-handler = "create_governance_doc"
 safe = true
+dry_run_supported = true
+
+[controls."OSPS-GV-01.01".remediation.file_create]
+path = "GOVERNANCE.md"
+template = "governance_template"
+overwrite = false
 
 # Context requirements - orchestrator checks these before running remediation
 [[controls."OSPS-GV-01.01".remediation.requires_context]]
@@ -1597,6 +1743,22 @@ steps = [
     "Confirm responsibilities for each role are documented",
 ]
 
+[controls."OSPS-GV-01.02".remediation]
+safe = true
+dry_run_supported = true
+
+[controls."OSPS-GV-01.02".remediation.file_create]
+path = "MAINTAINERS.md"
+template = "maintainers_template"
+overwrite = false
+
+[[controls."OSPS-GV-01.02".remediation.requires_context]]
+key = "maintainers"
+required = true
+confidence_threshold = 0.9
+prompt_if_auto_detected = true
+warning = "GitHub collaborators are not necessarily project maintainers. Please confirm the actual project maintainers."
+
 [controls."OSPS-GV-03.02"]
 name = "ContributionRequirements"
 description = "Contribution requirements are documented"
@@ -1615,6 +1777,15 @@ steps = [
     "Verify pull request process is documented",
     "Confirm code review and testing requirements are specified",
 ]
+
+[controls."OSPS-GV-03.02".remediation]
+safe = true
+dry_run_supported = true
+
+[controls."OSPS-GV-03.02".remediation.file_create]
+path = "CONTRIBUTING.md"
+template = "contributing_standard"
+overwrite = false
 
 # =============================================================================
 # Level 2 Controls - Quality Assurance (QA)
@@ -2014,9 +2185,18 @@ steps = [
 ]
 
 [controls."OSPS-QA-07.01".remediation]
-handler = "enable_branch_protection"
-config = { required_approvals = 1 }
-requires_api = true
+safe = false
+dry_run_supported = false
+
+[controls."OSPS-QA-07.01".remediation.manual]
+steps = [
+    "Go to https://github.com/${owner}/${repo}/settings/branches",
+    "Click 'Add branch protection rule' (or edit existing rule for main/master)",
+    "Enable 'Require a pull request before merging'",
+    "Set 'Required number of approvals before merging' to at least 1",
+    "Click 'Save changes'",
+]
+docs_url = "https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/managing-a-branch-protection-rule"
 
 [controls."OSPS-QA-06.02"]
 name = "DocumentedTesting"
@@ -2103,14 +2283,18 @@ steps = [
 
 # Remediation: Add VEX policy section to SECURITY.md
 [controls."OSPS-VM-04.02".remediation]
-handler = "ensure_vex_policy"
-requires_api = false
-help = """
-This control requires documenting your POLICY for handling VEX (Vulnerability
-Exploitability eXchange) statements - it does NOT require creating vex.json files.
+safe = true
+dry_run_supported = false
 
-Run: ensure_vex_policy() to add a VEX policy section to your SECURITY.md
-"""
+[controls."OSPS-VM-04.02".remediation.manual]
+steps = [
+    "Open your SECURITY.md file (create one first if it doesn't exist)",
+    "Add a 'Vulnerability Exploitability (VEX)' section",
+    "Document your policy for handling VEX statements for dependencies that don't affect your project",
+    "Include references to OpenVEX (https://openvex.dev/) and CISA VEX Guide",
+    "If starting from scratch, run remediation for OSPS-VM-02.01 first to create SECURITY.md with VEX included",
+]
+docs_url = "https://www.cisa.gov/resources-tools/resources/vulnerability-exploitability-exchange-vex-overview"
 
 [controls."OSPS-VM-05.01"]
 name = "SCARemediationPolicy"
@@ -2199,7 +2383,6 @@ steps = [
 ]
 
 [controls."OSPS-VM-05.03".remediation]
-handler = "create_dependabot_config"  # Legacy handler for fallback
 safe = true
 dry_run_supported = true
 
@@ -2304,8 +2487,13 @@ steps = [
 ]
 
 [controls."OSPS-DO-03.01".remediation]
-handler = "create_support_doc"
 safe = true
+dry_run_supported = true
+
+[controls."OSPS-DO-03.01".remediation.file_create]
+path = "SUPPORT.md"
+template = "support_template"
+overwrite = false
 
 [controls."OSPS-DO-03.02"]
 name = "VerifyReleaseAuthor"
@@ -2384,8 +2572,13 @@ steps = [
 ]
 
 [controls."OSPS-GV-04.01".remediation]
-handler = "create_codeowners"
 safe = true
+dry_run_supported = true
+
+[controls."OSPS-GV-04.01".remediation.file_create]
+path = "CODEOWNERS"
+template = "codeowners_template"
+overwrite = false
 
 # Context requirements - orchestrator checks these before running remediation
 [[controls."OSPS-GV-04.01".remediation.requires_context]]

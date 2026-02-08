@@ -65,18 +65,15 @@ class TestToolsSignatures:
         assert 'repo_path' not in impl_params, "Implementation should not have 'repo_path' parameter"
 
     def test_create_security_policy_signature(self) -> None:
-        """create_security_policy wrapper should pass valid parameters."""
-        from darnit_baseline.remediation.actions import create_security_policy as impl
+        """create_security_policy wrapper should have valid parameters."""
+        from darnit_baseline.tools import create_security_policy
 
-        impl_params = self._get_param_names(impl)
+        wrapper_params = self._get_param_names(create_security_policy)
 
-        # Check expected parameters exist
+        # Check expected parameters exist on the wrapper
         expected = {'owner', 'repo', 'local_path', 'template'}
         for param in expected:
-            assert param in impl_params, f"Parameter '{param}' not in implementation"
-
-        # Verify 'repo_path' is NOT a parameter
-        assert 'repo_path' not in impl_params, "Implementation should not have 'repo_path' parameter"
+            assert param in wrapper_params, f"Parameter '{param}' not in wrapper"
 
     def test_enable_branch_protection_signature(self) -> None:
         """enable_branch_protection wrapper should pass valid parameters."""
