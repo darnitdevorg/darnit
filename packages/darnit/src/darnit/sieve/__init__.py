@@ -17,6 +17,17 @@ Usage:
         result = orchestrator.verify(spec, context)
 """
 
+from .handler_registry import (
+    HandlerContext,
+    HandlerFn,
+    HandlerPhase,
+    HandlerResult,
+    HandlerResultStatus,
+    SieveHandlerInfo,
+    SieveHandlerRegistry,
+    get_sieve_handler_registry,
+    reset_sieve_handler_registry,
+)
 from .models import (
     CheckContext,
     ControlSpec,
@@ -54,4 +65,14 @@ __all__ = [
     # Registry
     "ControlRegistry",
     "get_control_registry",
+    # Handler Registry (confidence gradient pipeline)
+    "HandlerPhase",
+    "HandlerResultStatus",
+    "HandlerResult",
+    "HandlerContext",
+    "HandlerFn",
+    "SieveHandlerInfo",
+    "SieveHandlerRegistry",
+    "get_sieve_handler_registry",
+    "reset_sieve_handler_registry",
 ]

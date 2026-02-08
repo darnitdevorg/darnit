@@ -111,6 +111,8 @@ class RemediationExecutor:
         repo: str | None = None,
         default_branch: str = "main",
         templates: dict[str, TemplateConfig] | None = None,
+        context_values: dict[str, Any] | None = None,
+        project_values: dict[str, Any] | None = None,
     ):
         """Initialize the executor.
 
@@ -120,10 +122,14 @@ class RemediationExecutor:
             repo: Repository name (auto-detected if not provided)
             default_branch: Default branch name
             templates: Template definitions from framework config
+            context_values: Confirmed context values for ${context.*} substitution
+            project_values: Flattened .project/project.yaml for ${project.*} substitution
         """
         self.local_path = os.path.abspath(local_path)
         self.templates = templates or {}
         self.default_branch = default_branch
+        self._context_values = context_values or {}
+        self._project_values = project_values or {}
 
         # Auto-detect owner/repo if not provided
         if not owner or not repo:
@@ -136,9 +142,13 @@ class RemediationExecutor:
         self.repo = repo
 
     def _get_substitutions(self, control_id: str) -> dict[str, str]:
-        """Get variable substitutions for templates and commands."""
+        """Get variable substitutions for templates and commands.
+
+        Includes standard $VAR substitutions and ${context.*} / ${project.*}
+        references resolved from confirmed context and project config.
+        """
         now = datetime.now()
-        return {
+        subs = {
             "$OWNER": self.owner or "",
             "$REPO": self.repo or "",
             "$BRANCH": self.default_branch,
@@ -148,13 +158,50 @@ class RemediationExecutor:
             "$CONTROL": control_id,
         }
 
+        # Add ${context.*} from confirmed context values
+        if self._context_values:
+            for key, value in self._context_values.items():
+                if isinstance(value, str):
+                    subs[f"${{context.{key}}}"] = value
+                elif isinstance(value, list):
+                    subs[f"${{context.{key}}}"] = ", ".join(str(v) for v in value)
+                elif value is not None:
+                    subs[f"${{context.{key}}}"] = str(value)
+
+        # Add ${project.*} from .project/project.yaml
+        if self._project_values:
+            for key, value in self._project_values.items():
+                if isinstance(value, str):
+                    subs[f"${{project.{key}}}"] = value
+                elif value is not None:
+                    subs[f"${{project.{key}}}"] = str(value)
+
+        return subs
+
     def _substitute(self, text: str, control_id: str) -> str:
-        """Substitute variables in text."""
+        """Substitute variables in text.
+
+        Handles both $VAR and ${...} patterns.
+        Unresolved ${...} references are replaced with empty string.
+        """
+        import re
+
         substitutions = self._get_substitutions(control_id)
         result = text
+
+        # First: resolve ${...} patterns (more specific, match first)
         for var, value in substitutions.items():
-            if value:
+            if var.startswith("${") and value:
                 result = result.replace(var, value)
+
+        # Replace any remaining unresolved ${...} with empty string
+        result = re.sub(r"\$\{[^}]+\}", "", result)
+
+        # Then: resolve standard $VAR patterns
+        for var, value in substitutions.items():
+            if not var.startswith("${") and value:
+                result = result.replace(var, value)
+
         return result
 
     def _substitute_command(self, command: list[str], control_id: str) -> list[str]:
@@ -266,7 +313,11 @@ class RemediationExecutor:
         Returns:
             RemediationResult with execution outcome
         """
-        # Determine which remediation type to use
+        # Try handler-based dispatch first (new format)
+        if hasattr(config, "has_handler_invocations") and config.has_handler_invocations():
+            return self._execute_handler_invocations(control_id, config, dry_run)
+
+        # Determine which remediation type to use (legacy)
         result = None
         if config.file_create:
             result = self._execute_file_create(control_id, config.file_create, dry_run)
@@ -331,6 +382,92 @@ class RemediationExecutor:
             )
 
         return result
+
+    def _execute_handler_invocations(
+        self,
+        control_id: str,
+        config: RemediationConfig,
+        dry_run: bool,
+    ) -> RemediationResult:
+        """Execute handler-based remediation invocations.
+
+        Dispatches handler invocations through the sieve handler registry.
+        """
+        from darnit.sieve.handler_registry import (
+            HandlerContext,
+            HandlerResultStatus,
+            get_sieve_handler_registry,
+        )
+
+        registry = get_sieve_handler_registry()
+        handler_ctx = HandlerContext(
+            local_path=self.local_path,
+            owner=self.owner or "",
+            repo=self.repo or "",
+            default_branch=self.default_branch,
+            control_id=control_id,
+            project_context=dict(self._project_values),
+        )
+
+        results: list[dict[str, Any]] = []
+        all_success = True
+
+        for phase_name, invocations in config.get_handler_invocations():
+            for invocation in invocations:
+                handler_info = registry.get(invocation.handler)
+                if not handler_info:
+                    results.append({
+                        "handler": invocation.handler,
+                        "status": "error",
+                        "message": f"Handler '{invocation.handler}' not found",
+                    })
+                    all_success = False
+                    continue
+
+                handler_config = dict(invocation.model_extra or {})
+                handler_config["handler"] = invocation.handler
+
+                if dry_run:
+                    results.append({
+                        "handler": invocation.handler,
+                        "phase": phase_name,
+                        "status": "dry_run",
+                        "message": f"Would execute handler: {invocation.handler}",
+                        "config": handler_config,
+                    })
+                    continue
+
+                try:
+                    handler_result = handler_info.fn(handler_config, handler_ctx)
+                    results.append({
+                        "handler": invocation.handler,
+                        "phase": phase_name,
+                        "status": handler_result.status.value,
+                        "message": handler_result.message,
+                    })
+                    if handler_result.status != HandlerResultStatus.PASS:
+                        all_success = False
+                except Exception as e:
+                    results.append({
+                        "handler": invocation.handler,
+                        "phase": phase_name,
+                        "status": "error",
+                        "message": str(e),
+                    })
+                    all_success = False
+
+        return RemediationResult(
+            success=all_success,
+            message=(
+                f"Executed {len(results)} remediation handler(s)"
+                if not dry_run
+                else f"Would execute {len(results)} remediation handler(s)"
+            ),
+            control_id=control_id,
+            remediation_type="handler_pipeline",
+            dry_run=dry_run,
+            details={"handlers": results},
+        )
 
     def _execute_file_create(
         self,

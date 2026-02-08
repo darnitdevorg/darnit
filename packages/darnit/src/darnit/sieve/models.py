@@ -128,6 +128,8 @@ class SieveResult:
             result["confidence"] = self.confidence
         if self.verification_steps:
             result["verification_steps"] = self.verification_steps
+        if self.evidence:
+            result["evidence"] = self.evidence
         return result
 
 

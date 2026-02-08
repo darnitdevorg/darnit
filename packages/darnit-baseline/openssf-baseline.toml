@@ -405,6 +405,9 @@ affects = ["OSPS-BR-02.01", "OSPS-BR-03.01", "OSPS-BR-04.01"]
 store_as = "build.has_releases"
 auto_detect = true
 required = false
+detect = [
+    { handler = "exec", command = ["gh", "release", "list", "--repo", "$OWNER/$REPO", "--limit", "1"], pass_exit_codes = [0], value_if_pass = true, value_if_fail = false },
+]
 
 [context.is_library]
 type = "boolean"
@@ -436,6 +439,40 @@ affects = ["OSPS-QA-03.01", "OSPS-QA-04.01"]
 store_as = "ci.provider"
 auto_detect = true
 required = false
+detect = [
+    { handler = "file_exists", files = [".github/workflows"], value_if_pass = "github" },
+    { handler = "file_exists", files = [".gitlab-ci.yml"], value_if_pass = "gitlab" },
+    { handler = "file_exists", files = ["Jenkinsfile"], value_if_pass = "jenkins" },
+    { handler = "file_exists", files = [".circleci/config.yml"], value_if_pass = "circleci" },
+    { handler = "file_exists", files = ["azure-pipelines.yml"], value_if_pass = "azure" },
+    { handler = "file_exists", files = [".travis.yml"], value_if_pass = "travis" },
+]
+
+# =============================================================================
+# Shared Handlers (cached across controls within a single audit run)
+# =============================================================================
+
+[shared_handlers.branch_protection_api]
+handler = "exec"
+command = ["gh", "api", "/repos/$OWNER/$REPO/branches/$BRANCH/protection"]
+pass_exit_codes = [0]
+fail_exit_codes = [1]
+output_format = "json"
+timeout = 30
+
+[shared_handlers.repo_info_api]
+handler = "exec"
+command = ["gh", "api", "/repos/$OWNER/$REPO"]
+pass_exit_codes = [0]
+output_format = "json"
+timeout = 30
+
+[shared_handlers.release_list_api]
+handler = "exec"
+command = ["gh", "release", "list", "--repo", "$OWNER/$REPO", "--json", "tagName,isLatest,publishedAt", "--limit", "5"]
+pass_exit_codes = [0]
+output_format = "json"
+timeout = 30
 
 # =============================================================================
 # Level 1 Controls - Access Control (AC)
@@ -605,6 +642,7 @@ docs_url = "https://docs.github.com/en/repositories/configuring-branches-and-mer
 name = "SecureWorkflowInputs"
 description = "Workflows handle untrusted inputs safely"
 tags = { level = 1, domain = "BR", security_severity = 8.5, build = true, security = true, ci-cd = true }
+when = { ci_provider = "github" }
 help_md = """Sanitize all CI/CD input parameters to prevent injection attacks.
 
 **Remediation:**
@@ -655,6 +693,7 @@ context_hints = ["ci.provider"]
 name = "SecureBranchNames"
 description = "Branch names are handled safely in workflows"
 tags = { level = 1, domain = "BR", build = true, security = true }
+when = { ci_provider = "github" }
 
 # Pattern: Check workflows don't use raw branch names unsafely
 [controls."OSPS-BR-01.02".passes.pattern]
@@ -760,6 +799,7 @@ overwrite = false
 name = "UniqueVersionIdentifiers"
 description = "Assign unique version identifiers to each official release"
 tags = { level = 2, domain = "BR", build = true, releases = true }
+when = { has_releases = true }
 
 # ExecPass: Check GitHub releases have unique version tags
 [controls."OSPS-BR-02.01".passes.exec]
@@ -792,6 +832,7 @@ context_hints = ["build.has_releases"]
 name = "ReleaseChangelog"
 description = "Releases include log of functional and security modifications"
 tags = { level = 2, domain = "BR", build = true, releases = true, documentation = true }
+when = { has_releases = true }
 help_md = """This control can be satisfied in two ways:
 
 1. **GitHub Releases with notes** (preferred for projects using GitHub releases):
@@ -879,6 +920,7 @@ steps = [
 name = "SignReleases"
 description = "Sign releases or provide signed manifest containing hashes"
 tags = { level = 2, domain = "BR", build = true, releases = true, security = true }
+when = { has_releases = true }
 
 # Pattern: Check workflows or docs for signing mentions
 [controls."OSPS-BR-06.01".passes.pattern]
@@ -1189,11 +1231,8 @@ steps = [
 name = "LicenseInReleases"
 description = "License file included in releases"
 tags = { level = 1, domain = "LE", legal = true, license = true }
-
-# TODO: Improve this check to recognize that if OSPS-LE-03.01 passes (LICENSE exists
-# in repo), this control is effectively satisfied because GitHub's auto-generated
-# source archives always include repo files. Could add a deterministic pass that
-# checks for LICENSE file existence as a fallback before manual verification.
+when = { has_releases = true }
+inferred_from = "OSPS-LE-03.01"  # If LICENSE exists in repo, GitHub auto-includes it in source archives
 
 # Check that release assets include license file
 [controls."OSPS-LE-03.02".passes.exec]
@@ -1465,6 +1504,7 @@ create_dirs = false
 name = "ExplicitWorkflowPermissions"
 description = "Workflows define explicit permissions"
 tags = { level = 2, domain = "AC", security_severity = 6.5, access-control = true, ci-cd = true }
+when = { ci_provider = "github" }
 
 [controls."OSPS-AC-04.01".passes.pattern]
 files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
@@ -1584,6 +1624,7 @@ steps = [
 name = "RequiredStatusChecks"
 description = "Branch protection requires status checks"
 tags = { level = 2, domain = "QA", quality = true, ci-cd = true }
+depends_on = ["OSPS-AC-03.01"]  # Requires branch protection to be enabled
 
 # ExecPass: Use gh CLI to check required status checks
 [controls."OSPS-QA-03.01".passes.exec]
@@ -1657,6 +1698,7 @@ context_hints = ["ci.provider"]
 name = "DisclosurePolicy"
 description = "Security policy includes disclosure process"
 tags = { level = 2, domain = "VM", security = true, vulnerability-management = true }
+depends_on = ["OSPS-VM-02.01"]  # Needs SECURITY.md to exist first
 
 [controls."OSPS-VM-01.01".locator]
 project_path = "security.policy"
@@ -1779,6 +1821,8 @@ docs_url = "https://docs.github.com/en/code-security/security-advisories/working
 name = "ScopedPermissions"
 description = "Workflow permissions are appropriately scoped"
 tags = { level = 3, domain = "AC", security_severity = 7.0, access-control = true, ci-cd = true, least-privilege = true }
+when = { ci_provider = "github" }
+depends_on = ["OSPS-AC-04.01"]  # Scoped permissions builds on explicit permissions
 
 [controls."OSPS-AC-04.02".passes.pattern]
 files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
@@ -1881,6 +1925,7 @@ docs_url = "https://docs.github.com/en/actions/security-guides/using-secrets-in-
 name = "SoftwareBillOfMaterials"
 description = "Deliver compiled assets with Software Bill of Materials (SBOM)"
 tags = { level = 3, domain = "QA", quality = true, releases = true, supply-chain = true }
+when = { has_compiled_assets = true }
 
 [controls."OSPS-QA-02.02".passes.pattern]
 files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
@@ -2419,6 +2464,7 @@ steps = [
 name = "SecurityAssessment"
 description = "Perform security assessment before major releases"
 tags = { level = 2, domain = "SA", security = true, releases = true }
+when = { has_releases = true }
 
 [controls."OSPS-SA-03.01".passes.manual]
 steps = [

@@ -335,29 +335,103 @@ class ExecPassConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class HandlerInvocation(BaseModel):
+    """A single handler call within a pipeline phase.
+
+    Names a registered handler and provides handler-specific configuration
+    via pass-through fields. The framework schema doesn't need to know about
+    every handler's parameters — extra fields are passed to the handler at
+    execution time.
+
+    Example TOML:
+        ```toml
+        deterministic = [
+            { handler = "file_exists", files = ["README.md", "README.rst"] },
+            { handler = "exec", command = ["gh", "api", "..."], expr = "..." },
+        ]
+        ```
+    """
+    # Handler name (registered in the sieve handler registry)
+    handler: str
+
+    # Reference to a shared handler definition (from [shared_handlers] section)
+    shared: str | None = None
+
+    # Convenience: populate files from locator.discover at load time
+    use_locator: bool = False
+
+    # All other fields pass through to the handler
+    model_config = ConfigDict(extra="allow")
+
+
 class PassesConfig(BaseModel):
-    """Configuration for all verification passes of a control."""
-    deterministic: DeterministicPassConfig | None = None
-    exec: ExecPassConfig | None = None  # External command execution
-    pattern: PatternPassConfig | None = None
-    llm: LLMPassConfig | None = None
-    manual: ManualPassConfig | None = None
+    """Configuration for all verification passes of a control.
+
+    Supports two formats:
+    1. Handler-based (new): Each phase is a list of HandlerInvocation
+    2. Typed pass configs (legacy): Named fields per pass type (auto-converted)
+
+    The confidence gradient: deterministic → pattern → llm → manual
+    """
+    # New handler-based format: each phase is a list of handler invocations
+    deterministic: list[HandlerInvocation] | DeterministicPassConfig | None = None
+    pattern: list[HandlerInvocation] | PatternPassConfig | None = None
+    llm: list[HandlerInvocation] | LLMPassConfig | None = None
+    manual: list[HandlerInvocation] | ManualPassConfig | None = None
+
+    # Legacy exec field (treated as deterministic phase)
+    exec: ExecPassConfig | None = None
 
     model_config = ConfigDict(extra="allow")
 
+    @model_validator(mode="after")
+    def normalize_to_legacy_passes(self) -> "PassesConfig":
+        """Ensure legacy typed configs are preserved for backward compatibility.
+
+        The get_ordered_passes() method handles both formats, so we don't
+        need to convert here. This validator just ensures consistency.
+        """
+        return self
+
+    def get_handler_invocations(self) -> list[tuple[str, list[HandlerInvocation]]]:
+        """Return handler invocations grouped by phase in execution order.
+
+        Handles both new (list[HandlerInvocation]) and legacy (typed config) formats.
+        Legacy configs are returned as-is — the orchestrator knows how to dispatch both.
+        """
+        phases: list[tuple[str, list[HandlerInvocation]]] = []
+        for phase_name in ("deterministic", "pattern", "llm", "manual"):
+            value = getattr(self, phase_name, None)
+            if isinstance(value, list) and value:
+                phases.append((phase_name, value))
+        return phases
+
     def get_ordered_passes(self) -> list[tuple]:
-        """Return passes in execution order: deterministic -> exec -> pattern -> llm -> manual."""
+        """Return passes in execution order: deterministic -> exec -> pattern -> llm -> manual.
+
+        Supports both legacy typed configs and new handler invocation lists.
+        Legacy format: returns (PassPhase, typed_config) tuples.
+        """
         passes = []
-        if self.deterministic:
-            passes.append((PassPhase.DETERMINISTIC, self.deterministic))
+        det = self.deterministic
+        if det is not None:
+            if isinstance(det, DeterministicPassConfig):
+                passes.append((PassPhase.DETERMINISTIC, det))
+            # Handler invocation lists are handled by get_handler_invocations()
         if self.exec:
             passes.append((PassPhase.DETERMINISTIC, self.exec))  # exec is deterministic
-        if self.pattern:
-            passes.append((PassPhase.PATTERN, self.pattern))
-        if self.llm:
-            passes.append((PassPhase.LLM, self.llm))
-        if self.manual:
-            passes.append((PassPhase.MANUAL, self.manual))
+        pat = self.pattern
+        if pat is not None:
+            if isinstance(pat, PatternPassConfig):
+                passes.append((PassPhase.PATTERN, pat))
+        llm_val = self.llm
+        if llm_val is not None:
+            if isinstance(llm_val, LLMPassConfig):
+                passes.append((PassPhase.LLM, llm_val))
+        man = self.manual
+        if man is not None:
+            if isinstance(man, ManualPassConfig):
+                passes.append((PassPhase.MANUAL, man))
         return passes
 
 
@@ -538,19 +612,28 @@ class CheckConfig(BaseModel):
 class RemediationConfig(BaseModel):
     """Configuration for how a control is remediated.
 
-    Supports multiple remediation strategies that can be mixed:
-    - handler: Python function reference (legacy)
-    - file_create: Create a file from template
-    - exec: Execute external command
-    - api_call: Make GitHub API call
-    - manual: Structured guidance for non-automatable controls
+    Supports two formats:
+    1. Handler-based (new): Phased lists of HandlerInvocation, following the
+       same confidence gradient as verification (deterministic → pattern → llm → manual)
+    2. Typed remediation configs (legacy): Named fields per type (file_create, exec, etc.)
+
+    Both formats can coexist. The handler-based format is preferred for new controls.
 
     Context Requirements:
     The requires_context field defines what context must be confirmed before
     this remediation can run. The orchestrator checks these requirements and
     prompts the user if needed.
 
-    Example:
+    Example (handler-based):
+        ```toml
+        [controls."OSPS-VM-01.01".remediation]
+        deterministic = [
+            { handler = "file_create", path = "SECURITY.md", template = "security_policy" },
+            { handler = "project_update", updates = { "security.policy.path" = "SECURITY.md" } },
+        ]
+        ```
+
+    Example (legacy):
         ```toml
         [controls."OSPS-GV-04.01".remediation]
         handler = "create_codeowners"
@@ -563,11 +646,16 @@ class RemediationConfig(BaseModel):
         warning = "GitHub collaborators are not necessarily project maintainers"
         ```
     """
+    # New handler-based format: phased lists of handler invocations
+    deterministic: list[HandlerInvocation] | None = None
+    pattern: list[HandlerInvocation] | None = None
+    llm: list[HandlerInvocation] | None = None
+
     # Legacy Python handler reference
     adapter: str = "builtin"
     handler: str | None = None  # e.g., "create_security_policy"
 
-    # Declarative remediation types
+    # Declarative remediation types (legacy)
     file_create: Optional["FileCreateRemediationConfig"] = None
     exec: Optional["ExecRemediationConfig"] = None
     api_call: Optional["ApiCallRemediationConfig"] = None
@@ -587,6 +675,34 @@ class RemediationConfig(BaseModel):
     requires_context: list["ContextRequirement"] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="allow")
+
+    def get_handler_invocations(self) -> list[tuple[str, list[HandlerInvocation]]]:
+        """Return handler invocations grouped by phase in execution order.
+
+        Only returns new-format handler invocations. Legacy typed configs
+        are accessed via the typed fields directly.
+        """
+        phases: list[tuple[str, list[HandlerInvocation]]] = []
+        for phase_name in ("deterministic", "pattern", "llm"):
+            value = getattr(self, phase_name, None)
+            if isinstance(value, list) and value:
+                phases.append((phase_name, value))
+        return phases
+
+    def has_handler_invocations(self) -> bool:
+        """Check if this config uses the new handler-based format."""
+        return bool(self.deterministic or self.pattern or self.llm)
+
+    def has_legacy_config(self) -> bool:
+        """Check if this config uses any legacy typed remediation fields."""
+        return bool(
+            self.handler
+            or self.file_create
+            or self.exec
+            or self.api_call
+            or self.manual
+            or self.project_update
+        )
 
 
 class FileCreateRemediationConfig(BaseModel):
@@ -744,6 +860,42 @@ class ManualRemediationConfig(BaseModel):
 
 
 # =============================================================================
+# Shared Handler Configuration
+# =============================================================================
+
+
+class SharedHandlerConfig(BaseModel):
+    """Configuration for a shared handler that can be referenced by multiple controls.
+
+    Shared handlers allow expensive operations (e.g., GitHub API calls) to be
+    defined once and reused across controls. When a control references a shared
+    handler via ``HandlerInvocation.shared``, the shared handler's config is
+    merged with the per-control overrides (control takes precedence).
+
+    Results are cached per audit run — the handler executes once, and all
+    controls referencing the same shared handler get the cached result.
+
+    Example:
+        ```toml
+        [shared_handlers.branch_protection]
+        handler = "exec"
+        command = ["gh", "api", "/repos/$OWNER/$REPO/branches/$BRANCH/protection"]
+        output_format = "json"
+
+        [controls."OSPS-AC-03.01".passes]
+        deterministic = [
+            { shared = "branch_protection", expr = "json.required_pull_request_reviews != null" },
+        ]
+        ```
+    """
+    # Handler name (registered in the sieve handler registry)
+    handler: str
+
+    # All other fields pass through to the handler
+    model_config = ConfigDict(extra="allow")
+
+
+# =============================================================================
 # Post-Check Context Update
 # =============================================================================
 
@@ -854,6 +1006,18 @@ class ControlConfig(BaseModel):
     domain: str | None = None  # Domain code (e.g., "AC", "VM") - None if not applicable
     security_severity: float | None = None  # 0.0-10.0 CVSS-like - None if not applicable
 
+    # Conditional applicability — control is N/A when condition is false
+    # Keys are context keys, values are the expected values
+    # Example: when = { has_releases = true }  →  skip if project has no releases
+    # Missing context keys → control runs normally (conservative)
+    when: dict[str, Any] | None = None
+
+    # Control dependencies
+    # depends_on: ordering only — this control runs after listed controls
+    # inferred_from: if referenced control PASSES, this control auto-PASSes
+    depends_on: list[str] | None = None
+    inferred_from: str | None = None
+
     # Evidence location configuration
     # Defines where to find the artifact that satisfies this control
     locator: LocatorConfig | None = None
@@ -960,6 +1124,16 @@ class ContextDefinitionConfig(BaseModel):
     # If True, sieve results (git history, manifests, API) are shown for user confirmation
     # If False, only ask user directly without showing guesses
     allow_sieve_hints: bool = False
+
+    # Handler-based auto-detection pipeline
+    # Each entry is a handler invocation processed through the confidence gradient:
+    # deterministic handlers first, then pattern, then llm, then manual/confirm
+    # Example:
+    #   detect = [
+    #       { handler = "exec", command = ["gh", "api", "/repos/$OWNER/$REPO/collaborators"], phase = "deterministic" },
+    #       { handler = "regex", file = "MAINTAINERS.md", pattern = "@(\\w+)", phase = "pattern" },
+    #   ]
+    detect: list[HandlerInvocation] | None = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -1344,6 +1518,9 @@ class FrameworkConfig(BaseModel):
 
     # Template definitions for remediation
     templates: dict[str, TemplateConfig] = Field(default_factory=dict)
+
+    # Shared handler definitions (cached per audit run)
+    shared_handlers: dict[str, SharedHandlerConfig] = Field(default_factory=dict)
 
     # Control definitions
     controls: dict[str, ControlConfig] = Field(default_factory=dict)

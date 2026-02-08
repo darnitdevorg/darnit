@@ -649,7 +649,13 @@ def format_results_markdown(
                 lines.append("")
             for r in status_results:
                 control_id = r.get('id', '')
-                lines.append(f"- **{control_id}** (L{r.get('level', 1)}): {r.get('details', 'No details')}")
+                details = r.get('details', 'No details')
+
+                # Task 8.2: Annotate inferred PASSes with source control
+                if status == "PASS" and "Inferred from" in details:
+                    lines.append(f"- **{control_id}** (L{r.get('level', 1)}): {details} *(inferred)*")
+                else:
+                    lines.append(f"- **{control_id}** (L{r.get('level', 1)}): {details}")
 
                 # Include help_md for failed controls to explain remediation options
                 if status == "FAIL":
@@ -664,6 +670,17 @@ def format_results_markdown(
                         if len(help_lines) > 10:
                             lines.append("  > *(truncated)*")
                         lines.append("")
+
+                # Task 8.1: Show unmet when conditions for N/A controls
+                if status == "N/A":
+                    sieve_evidence = r.get("evidence") if isinstance(r.get("evidence"), dict) else None
+                    when_clause = sieve_evidence.get("when") if sieve_evidence else None
+                    if when_clause and isinstance(when_clause, dict):
+                        conditions = ", ".join(
+                            f"`{k}={v}`" for k, v in when_clause.items()
+                        )
+                        lines.append(f"  - Requires: {conditions}")
+
             lines.append("")
 
     # Add remediation section if there are failures

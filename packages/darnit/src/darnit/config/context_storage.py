@@ -348,6 +348,53 @@ def get_context_definitions(local_path: str) -> dict[str, ContextDefinition]:
         return {}
 
 
+def get_context_definitions_with_detect(
+    local_path: str,
+) -> dict[str, tuple[ContextDefinition, list | None]]:
+    """Get context definitions with their handler-based detect pipelines.
+
+    Returns both the ContextDefinition and the raw detect pipeline
+    (list of HandlerInvocation) from the TOML framework config.
+
+    Args:
+        local_path: Path to the repository
+
+    Returns:
+        Dict of context_key -> (ContextDefinition, detect_pipeline_or_None)
+    """
+    from darnit.config.context_schema import ContextDefinition, ContextType
+    from darnit.config.merger import load_effective_config_auto
+
+    try:
+        effective_config = load_effective_config_auto(local_path)
+        framework = effective_config._framework_config
+        if framework is None:
+            return {}
+
+        result: dict[str, tuple[ContextDefinition, list | None]] = {}
+
+        for key, defn in framework.context.definitions.items():
+            definition = ContextDefinition(
+                type=ContextType(defn.type),
+                prompt=defn.prompt,
+                hint=defn.hint,
+                examples=defn.examples,
+                values=defn.values,
+                affects=defn.affects,
+                store_as=defn.store_as,
+                auto_detect=defn.auto_detect,
+                auto_detect_method=defn.auto_detect_method,
+                required=defn.required,
+            )
+            detect_pipeline = defn.detect if hasattr(defn, "detect") else None
+            result[key] = (definition, detect_pipeline)
+
+        return result
+    except Exception as e:
+        logger.warning(f"Could not load context definitions with detect: {e}")
+        return {}
+
+
 def get_pending_context(
     local_path: str,
     control_ids: list[str] | None = None,
@@ -361,6 +408,11 @@ def get_pending_context(
     For context keys with auto_detect=true, attempts to auto-detect values
     and includes them in the response for user confirmation.
 
+    Detection priority:
+    1. Handler-based detect pipeline (if defined in TOML [context.key].detect)
+    2. Context sieve (hardcoded Python detectors)
+    3. No detection (prompt user directly)
+
     Args:
         local_path: Path to the repository
         control_ids: Optional list of control IDs to check (default: all applicable)
@@ -371,10 +423,14 @@ def get_pending_context(
     Returns:
         List of ContextPromptRequest sorted by priority (highest first)
     """
-    # Get context definitions from framework
-    definitions = get_context_definitions(local_path)
-    if not definitions:
-        return []
+    # Get context definitions with detect pipelines from framework
+    definitions_with_detect = get_context_definitions_with_detect(local_path)
+    if not definitions_with_detect:
+        # Fallback to definitions without detect info
+        definitions = get_context_definitions(local_path)
+        if not definitions:
+            return []
+        definitions_with_detect = {k: (v, None) for k, v in definitions.items()}
 
     # Get current context values
     current_context = load_context(local_path)
@@ -397,7 +453,7 @@ def get_pending_context(
 
     pending: list[ContextPromptRequest] = []
 
-    for key, definition in definitions.items():
+    for key, (definition, detect_pipeline) in definitions_with_detect.items():
         # Skip if already confirmed (check both definition key and store_as target)
         if key in confirmed_keys:
             continue
@@ -413,12 +469,15 @@ def get_pending_context(
         if not affected:
             continue
 
-        # Check if this context would be useful for the given level
-        # (We'd need control level info to filter properly)
-
-        # Get current value if auto-detected (via context sieve)
+        # Auto-detect value using handler pipeline or context sieve
         current_value = None
-        if definition.auto_detect:
+        if detect_pipeline:
+            # Primary: handler-based detection from TOML detect pipeline
+            current_value = _run_detect_pipeline(
+                key, detect_pipeline, local_path, owner, repo
+            )
+        if current_value is None and definition.auto_detect:
+            # Fallback: context sieve (hardcoded Python detectors)
             current_value = _try_sieve_detection(key, local_path, owner, repo)
 
         pending.append(ContextPromptRequest(
@@ -433,6 +492,102 @@ def get_pending_context(
     pending.sort(key=lambda x: x.priority, reverse=True)
 
     return pending
+
+
+def _run_detect_pipeline(
+    key: str,
+    detect_pipeline: list,
+    local_path: str,
+    owner: str | None,
+    repo: str | None,
+) -> ContextValue | None:
+    """Run handler-based context detection pipeline.
+
+    Processes the `detect` list from a TOML [context.key] definition through
+    the sieve handler registry, following the confidence gradient:
+    deterministic handlers first, then pattern, then llm, then manual/confirm.
+
+    Stops at the first handler that produces a usable result.
+
+    Args:
+        key: Context key being detected (e.g., "maintainers")
+        detect_pipeline: List of HandlerInvocation objects from TOML
+        local_path: Path to the repository
+        owner: GitHub owner (optional)
+        repo: GitHub repo name (optional)
+
+    Returns:
+        ContextValue with auto-detected value if found, None otherwise
+    """
+    try:
+        from darnit.sieve.handler_registry import (
+            HandlerContext,
+            HandlerResultStatus,
+            get_sieve_handler_registry,
+        )
+
+        registry = get_sieve_handler_registry()
+
+        # Build handler context for detection
+        handler_ctx = HandlerContext(
+            local_path=local_path,
+            owner=owner or "",
+            repo=repo or "",
+            default_branch="main",
+            control_id=f"context.{key}",
+            project_context={},
+            gathered_evidence={},
+            shared_cache={},
+            dependency_results={},
+        )
+
+        for invocation in detect_pipeline:
+            handler_info = registry.get(invocation.handler)
+            if not handler_info:
+                logger.debug(
+                    "Context detect: handler '%s' not found for key '%s'",
+                    invocation.handler,
+                    key,
+                )
+                continue
+
+            # Build handler config from invocation's extra fields
+            handler_config = dict(invocation.model_extra or {})
+            handler_config["handler"] = invocation.handler
+
+            try:
+                result = handler_info.fn(handler_config, handler_ctx)
+            except Exception as e:
+                logger.debug(
+                    "Context detect handler '%s' error for '%s': %s",
+                    invocation.handler,
+                    key,
+                    e,
+                )
+                continue
+
+            if result.status == HandlerResultStatus.PASS and result.evidence:
+                # Extract detected value from evidence
+                detected_value = result.evidence.get("value") or result.evidence.get(
+                    key
+                )
+                if detected_value is not None:
+                    return ContextValue.auto_detected(
+                        value=detected_value,
+                        method=f"detect_pipeline:{invocation.handler}",
+                        confidence=result.confidence,
+                    )
+
+            # INCONCLUSIVE or FAIL — try next handler in pipeline
+
+    except ImportError:
+        logger.debug(
+            "Sieve handler registry not available for context detection"
+        )
+    except Exception as e:
+        logger.warning(f"Context detect pipeline failed for '{key}': {e}")
+
+    return None
 
 
 def _try_sieve_detection(

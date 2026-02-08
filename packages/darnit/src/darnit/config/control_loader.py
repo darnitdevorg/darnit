@@ -37,13 +37,17 @@ from darnit.sieve.passes import (
 )
 
 from .framework_schema import (
+    ControlConfig,
     DeterministicPassConfig,
     ExecPassConfig,
     FrameworkConfig,
+    HandlerInvocation,
     LLMPassConfig,
     ManualPassConfig,
+    OnPassConfig,
     PassesConfig,
     PatternPassConfig,
+    SharedHandlerConfig,
 )
 from .merger import EffectiveConfig, EffectiveControl
 
@@ -321,12 +325,186 @@ def _convert_manual_pass(config: ManualPassConfig) -> ManualPass:
 
 
 # =============================================================================
+# Handler Invocation Resolution (load-time)
+# =============================================================================
+
+
+def _resolve_shared_handler(
+    invocation: HandlerInvocation,
+    shared_handlers: dict[str, SharedHandlerConfig],
+) -> HandlerInvocation:
+    """Resolve a shared handler reference by merging configs.
+
+    The shared handler provides base config. Per-control overrides take precedence.
+
+    Args:
+        invocation: Handler invocation that may reference a shared handler
+        shared_handlers: Top-level shared handler definitions
+
+    Returns:
+        Resolved HandlerInvocation with merged config
+    """
+    if not invocation.shared:
+        return invocation
+
+    shared = shared_handlers.get(invocation.shared)
+    if not shared:
+        logger.warning(
+            "Shared handler '%s' not found in [shared_handlers]",
+            invocation.shared,
+        )
+        return invocation
+
+    # Start with shared handler's extra fields
+    merged = dict(shared.model_extra or {})
+    # Per-control fields override shared ones
+    merged.update(invocation.model_extra or {})
+
+    # Handler name: invocation overrides if set, else use shared's
+    handler = invocation.handler if invocation.handler != invocation.shared else shared.handler
+
+    return HandlerInvocation(
+        handler=handler,
+        shared=invocation.shared,
+        use_locator=invocation.use_locator,
+        **merged,
+    )
+
+
+def _resolve_use_locator(
+    invocation: HandlerInvocation,
+    locator_discover: list[str] | None,
+    control_id: str,
+) -> HandlerInvocation:
+    """Resolve use_locator=true by copying locator.discover into files.
+
+    Args:
+        invocation: Handler invocation with use_locator=True
+        locator_discover: The discover list from LocatorConfig
+        control_id: For logging context
+
+    Returns:
+        HandlerInvocation with files populated from locator
+    """
+    if not invocation.use_locator:
+        return invocation
+
+    if not locator_discover:
+        logger.warning(
+            "Control %s: use_locator=true but locator.discover is empty",
+            control_id,
+        )
+        return invocation
+
+    # Copy discover list into handler's files parameter
+    extra = dict(invocation.model_extra or {})
+    if "files" not in extra:
+        extra["files"] = locator_discover
+
+    return HandlerInvocation(
+        handler=invocation.handler,
+        shared=invocation.shared,
+        use_locator=True,
+        **extra,
+    )
+
+
+def _resolve_handler_invocations(
+    invocations: list[HandlerInvocation],
+    shared_handlers: dict[str, SharedHandlerConfig],
+    locator_discover: list[str] | None,
+    control_id: str,
+) -> list[HandlerInvocation]:
+    """Resolve all handler invocations at load time.
+
+    Applies shared handler merging and use_locator resolution.
+    """
+    resolved = []
+    for inv in invocations:
+        inv = _resolve_shared_handler(inv, shared_handlers)
+        inv = _resolve_use_locator(inv, locator_discover, control_id)
+        resolved.append(inv)
+    return resolved
+
+
+def _auto_derive_on_pass(control_config: ControlConfig) -> OnPassConfig | None:
+    """Auto-derive on_pass when conditions are met.
+
+    Conditions:
+    - Control has locator.project_path
+    - Control has a deterministic file_exists handler (new format)
+    - Control has no explicit on_pass
+
+    Returns:
+        Generated OnPassConfig, or None if conditions aren't met
+    """
+    if control_config.on_pass:
+        return None  # Explicit on_pass takes precedence
+
+    locator = control_config.locator
+    if not locator or not locator.project_path:
+        return None
+
+    passes = control_config.passes
+    if not passes:
+        return None
+
+    # Check for file_exists handler in new format
+    det = passes.deterministic
+    if isinstance(det, list):
+        for inv in det:
+            if isinstance(inv, HandlerInvocation) and inv.handler == "file_exists":
+                return OnPassConfig(
+                    project_update={locator.project_path: "$EVIDENCE.relative_path"}
+                )
+
+    # Check for file_must_exist in legacy format
+    if isinstance(det, DeterministicPassConfig) and det.file_must_exist:
+        return OnPassConfig(
+            project_update={locator.project_path: "$EVIDENCE.relative_path"}
+        )
+
+    return None
+
+
+def _validate_control_references(
+    controls: dict[str, ControlConfig],
+) -> None:
+    """Validate depends_on and inferred_from references at load time.
+
+    Warns on references to unknown control IDs.
+    """
+    control_ids = set(controls.keys())
+
+    for control_id, config in controls.items():
+        if config.depends_on:
+            for dep_id in config.depends_on:
+                if dep_id not in control_ids:
+                    logger.warning(
+                        "Control %s: depends_on references unknown control '%s'",
+                        control_id,
+                        dep_id,
+                    )
+
+        if config.inferred_from:
+            if config.inferred_from not in control_ids:
+                logger.warning(
+                    "Control %s: inferred_from references unknown control '%s'",
+                    control_id,
+                    config.inferred_from,
+                )
+
+
+# =============================================================================
 # Control Converter
 # =============================================================================
 
 
 def _convert_passes_config(passes_config: PassesConfig | None) -> list[Any]:
     """Convert PassesConfig to list of executable pass objects.
+
+    Handles both legacy typed configs (converted to pass objects) and
+    new handler invocation lists (passed through as-is for orchestrator dispatch).
 
     Args:
         passes_config: Declarative passes configuration
@@ -340,20 +518,29 @@ def _convert_passes_config(passes_config: PassesConfig | None) -> list[Any]:
     passes = []
 
     # Order: deterministic -> exec -> pattern -> llm -> manual
-    if passes_config.deterministic:
-        passes.append(_convert_deterministic_pass(passes_config.deterministic))
+    det = passes_config.deterministic
+    if det is not None:
+        if isinstance(det, DeterministicPassConfig):
+            passes.append(_convert_deterministic_pass(det))
+        # Handler invocation lists are dispatched by the orchestrator directly
 
     if passes_config.exec:
         passes.append(_convert_exec_pass(passes_config.exec))
 
-    if passes_config.pattern:
-        passes.append(_convert_pattern_pass(passes_config.pattern))
+    pat = passes_config.pattern
+    if pat is not None:
+        if isinstance(pat, PatternPassConfig):
+            passes.append(_convert_pattern_pass(pat))
 
-    if passes_config.llm:
-        passes.append(_convert_llm_pass(passes_config.llm))
+    llm_val = passes_config.llm
+    if llm_val is not None:
+        if isinstance(llm_val, LLMPassConfig):
+            passes.append(_convert_llm_pass(llm_val))
 
-    if passes_config.manual:
-        passes.append(_convert_manual_pass(passes_config.manual))
+    man = passes_config.manual
+    if man is not None:
+        if isinstance(man, ManualPassConfig):
+            passes.append(_convert_manual_pass(man))
 
     return passes
 
@@ -417,23 +604,41 @@ def control_from_effective(
 def control_from_framework(
     control_id: str,
     control_config: Any,  # ControlConfig from framework_schema
+    shared_handlers: dict[str, SharedHandlerConfig] | None = None,
 ) -> ControlSpec:
     """Convert ControlConfig from framework to ControlSpec.
+
+    Performs load-time resolution of:
+    - Shared handler references (merged with per-control overrides)
+    - use_locator=true (copies locator.discover into handler files)
+    - Auto-derived on_pass (from locator.project_path + file_exists handler)
 
     Args:
         control_id: Control identifier
         control_config: Framework control configuration
+        shared_handlers: Top-level shared handler definitions for resolution
 
     Returns:
         Executable ControlSpec
     """
+    shared_handlers = shared_handlers or {}
+
+    # Resolve handler invocations at load time
+    locator_discover = None
+    if hasattr(control_config, "locator") and control_config.locator:
+        locator_discover = control_config.locator.discover or None
+
+    if control_config.passes:
+        _resolve_passes_invocations(
+            control_config.passes, shared_handlers, locator_discover, control_id
+        )
+
     passes = _convert_passes_config(control_config.passes) if control_config.passes else []
 
     # Build tags dict from config - tags is now Dict[str, Any]
     tags = dict(control_config.tags) if control_config.tags else {}
 
     # Extract level/domain/security_severity from tags if not present as top-level
-    # This supports the new flexible schema where everything can be in tags
     level = control_config.level
     if level is None and "level" in tags:
         level = tags["level"]
@@ -453,8 +658,34 @@ def control_from_framework(
     }
 
     # Carry on_pass config through metadata for the orchestrator
-    if hasattr(control_config, "on_pass") and control_config.on_pass:
-        metadata["on_pass"] = control_config.on_pass
+    # Auto-derive if conditions are met
+    on_pass = getattr(control_config, "on_pass", None)
+    if not on_pass:
+        on_pass = _auto_derive_on_pass(control_config)
+    if on_pass:
+        metadata["on_pass"] = on_pass
+
+    # Carry new control fields through metadata for the orchestrator
+    if hasattr(control_config, "when") and control_config.when:
+        metadata["when"] = control_config.when
+    if hasattr(control_config, "depends_on") and control_config.depends_on:
+        metadata["depends_on"] = control_config.depends_on
+    if hasattr(control_config, "inferred_from") and control_config.inferred_from:
+        metadata["inferred_from"] = control_config.inferred_from
+
+    # Carry handler invocations through metadata for orchestrator dispatch
+    if control_config.passes:
+        handler_invocations = control_config.passes.get_handler_invocations()
+        if handler_invocations:
+            metadata["handler_invocations"] = handler_invocations
+
+    # Carry remediation handler invocations if present
+    if hasattr(control_config, "remediation") and control_config.remediation:
+        rem = control_config.remediation
+        if hasattr(rem, "get_handler_invocations"):
+            rem_invocations = rem.get_handler_invocations()
+            if rem_invocations:
+                metadata["remediation_handler_invocations"] = rem_invocations
 
     return ControlSpec(
         control_id=control_id,
@@ -463,9 +694,28 @@ def control_from_framework(
         name=control_config.name,
         description=control_config.description,
         passes=passes,
-        tags=tags,  # Pass tags directly, ControlSpec.__post_init__ will add level/domain
+        tags=tags,
         metadata=metadata,
     )
+
+
+def _resolve_passes_invocations(
+    passes_config: PassesConfig,
+    shared_handlers: dict[str, SharedHandlerConfig],
+    locator_discover: list[str] | None,
+    control_id: str,
+) -> None:
+    """Resolve handler invocations in passes config in-place.
+
+    Mutates the passes_config to resolve shared and use_locator references.
+    """
+    for phase_name in ("deterministic", "pattern", "llm", "manual"):
+        value = getattr(passes_config, phase_name, None)
+        if isinstance(value, list) and value:
+            resolved = _resolve_handler_invocations(
+                value, shared_handlers, locator_discover, control_id
+            )
+            setattr(passes_config, phase_name, resolved)
 
 
 # =============================================================================
@@ -506,6 +756,8 @@ def load_controls_from_framework(config: FrameworkConfig) -> list[ControlSpec]:
     """Load ControlSpec objects directly from framework configuration.
 
     Use this when you want framework controls without user customization.
+    Performs load-time validation and resolution of shared handlers,
+    use_locator, on_pass auto-derivation, and reference validation.
 
     Args:
         config: Framework configuration
@@ -513,11 +765,17 @@ def load_controls_from_framework(config: FrameworkConfig) -> list[ControlSpec]:
     Returns:
         List of executable ControlSpec objects
     """
+    # Validate depends_on and inferred_from references
+    _validate_control_references(config.controls)
+
+    shared_handlers = config.shared_handlers or {}
     controls = []
 
     for control_id, control_config in config.controls.items():
         try:
-            control = control_from_framework(control_id, control_config)
+            control = control_from_framework(
+                control_id, control_config, shared_handlers=shared_handlers
+            )
             controls.append(control)
         except (TypeError, ValueError, KeyError) as e:
             logger.warning(f"Could not load control {control_id}: {e}")
