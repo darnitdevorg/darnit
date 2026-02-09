@@ -805,8 +805,8 @@ class TestTemplateVariables:
             context_values={"maintainers": ["@alice", "@bob"]},
         )
         subs = executor._get_substitutions("TEST-01")
-        # Lists are joined with ", " for template substitution
-        assert subs.get("${context.maintainers}") == "@alice, @bob"
+        # Lists are joined with spaces for CODEOWNERS compatibility
+        assert subs.get("${context.maintainers}") == "@alice @bob"
 
     @pytest.mark.unit
     def test_project_variable_resolution(self):

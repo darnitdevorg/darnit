@@ -76,12 +76,10 @@ def _register_toml_controls() -> int:
 
         registered = 0
         for control in controls:
-            # register_control returns False if already registered
-            if register_control(control):
+            # TOML is the primary source of truth — overwrite Python-defined controls
+            if register_control(control, overwrite=True):
                 registered += 1
                 logger.debug(f"Registered TOML control: {control.control_id}")
-            else:
-                logger.debug(f"Skipping {control.control_id}: already registered")
 
         _toml_controls_registered = True
         if registered > 0:

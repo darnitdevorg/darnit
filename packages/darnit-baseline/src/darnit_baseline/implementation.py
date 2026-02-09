@@ -83,11 +83,14 @@ class OSPSBaselineImplementation:
         return Path(__file__).parent.parent.parent / "openssf-baseline.toml"
 
     def register_controls(self) -> None:
-        """Register Python-defined controls with the sieve registry.
+        """No-op. Control definitions come exclusively from TOML.
 
-        This imports the control modules which register controls via decorators.
+        This method exists for ComplianceImplementation protocol compatibility.
+        All control definitions are loaded from openssf-baseline.toml by the
+        framework's TOML control loader. Plugins should use register_handlers()
+        to add custom sieve/remediation handlers.
         """
-        from .controls import level1, level2, level3  # noqa: F401
+        pass
 
     def register_handlers(self) -> None:
         """Register handlers with the handler registry.

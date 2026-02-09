@@ -37,13 +37,6 @@ from .models import (
     VerificationPhase,
 )
 from .orchestrator import SieveOrchestrator
-from .passes import (
-    DeterministicPass,
-    ExecPass,
-    LLMPass,
-    ManualPass,
-    PatternPass,
-)
 from .registry import ControlRegistry, get_control_registry
 
 __all__ = [
@@ -54,12 +47,6 @@ __all__ = [
     "ControlSpec",
     "CheckContext",
     "SieveResult",
-    # Passes
-    "DeterministicPass",
-    "ExecPass",
-    "PatternPass",
-    "LLMPass",
-    "ManualPass",
     # Orchestrator
     "SieveOrchestrator",
     # Registry

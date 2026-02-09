@@ -1,23 +1,5 @@
-"""Adapters for OpenSSF Baseline check and remediation execution.
+"""Adapters for OpenSSF Baseline.
 
-This module provides adapter implementations that bridge the declarative
-framework configuration with the existing Python check implementations.
-
-Adapters:
-    - BuiltinCheckAdapter: Wraps existing Python check functions
-    - BuiltinRemediationAdapter: Wraps existing remediation actions
+The legacy builtin adapter has been removed. All check and remediation
+execution is now handled by the sieve handler dispatch pipeline.
 """
-
-from .builtin import (
-    BuiltinCheckAdapter,
-    BuiltinRemediationAdapter,
-    get_builtin_check_adapter,
-    get_builtin_remediation_adapter,
-)
-
-__all__ = [
-    "BuiltinCheckAdapter",
-    "BuiltinRemediationAdapter",
-    "get_builtin_check_adapter",
-    "get_builtin_remediation_adapter",
-]

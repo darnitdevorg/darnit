@@ -271,7 +271,7 @@ class TestModuleImportSecurity:
     def test_base_prefixes_always_allowed(self):
         """Test that base darnit prefixes are always allowed."""
         assert _is_module_allowed("darnit.core.plugin")
-        assert _is_module_allowed("darnit_baseline.controls.level1")
+        assert _is_module_allowed("darnit_baseline.tools")
         assert _is_module_allowed("darnit_plugins.custom")
         assert _is_module_allowed("darnit_testchecks.fixtures")
 
@@ -299,9 +299,8 @@ class TestModuleImportSecurity:
         """Test that _resolve_check_function allows registered modules."""
         # This test requires darnit_baseline to be installed
         result = _resolve_check_function(
-            "darnit_baseline.controls.level2:_create_changelog_check"
+            "darnit_baseline.tools:audit_openssf_baseline"
         )
-        # Should be callable (the factory returns a check function)
         assert callable(result)
 
     def test_resolve_invalid_reference_format(self):
@@ -356,7 +355,7 @@ class TestHandlerRegistryResolution:
         """Test that module:function paths work when not in registry."""
         # This should fall back to module path resolution
         result = _resolve_check_function(
-            "darnit_baseline.controls.level2:_create_changelog_check"
+            "darnit_baseline.tools:audit_openssf_baseline"
         )
         assert callable(result)
 
