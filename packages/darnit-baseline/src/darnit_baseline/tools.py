@@ -458,9 +458,8 @@ def get_pending_context(
     organized by priority (number of controls affected). For context keys
     with auto-detection enabled, shows auto-detected values for user confirmation.
 
-    **IMPORTANT**: The output contains questions that MUST be presented to the
-    user exactly as written. Do NOT guess or infer answers. Wait for the user
-    to provide values before calling confirm_project_context().
+    Use this before running an audit to see what context information is missing
+    and would improve accuracy.
 
     Parameters:
     - `local_path`: Path to repository (default: ".")
@@ -470,7 +469,9 @@ def get_pending_context(
     - `repo`: GitHub repo name (auto-detected if not provided)
 
     Returns:
-        Markdown-formatted list of pending context with prompts, hints, and examples
+        JSON with structured questions. Each question specifies its input_type
+        (free_text, select, or confirm) and the exact question to present.
+        Follow the input_type exactly — do not add options to free_text questions.
     """
     from darnit.config.context_storage import get_pending_context as _get_pending
 
@@ -494,131 +495,126 @@ def get_pending_context(
         )
 
         if not pending:
-            return """✅ All context has been confirmed!
+            return json.dumps({
+                "status": "complete",
+                "message": "All context has been confirmed. No additional input needed.",
+                "questions": [],
+            }, indent=2)
 
-No additional context is needed to improve audit accuracy.
-"""
+        # Build structured JSON output — each question specifies exactly
+        # how to present it so the calling LLM doesn't improvise
+        questions = []
+        for req in pending:
+            questions.append(_build_context_question(req))
 
-        # Build markdown output
-        lines = [
-            "# Pending Context - User Input Required",
-            "",
-            "IMPORTANT INSTRUCTIONS FOR AI AGENTS:",
-            "You MUST present each question below to the user exactly as written.",
-            "You MUST wait for the user's answer before calling confirm_project_context().",
-            "You MUST NOT guess, infer, or pre-fill values from the repository owner,",
-            "git history, commit authors, or any other source.",
-            "If the user does not know, skip that item.",
-            "",
-            "---",
-            "",
-        ]
+        # Sort by priority (highest first)
+        questions.sort(key=lambda q: q["priority"], reverse=True)
 
-        # Group by priority
-        high_priority = [p for p in pending if p.priority >= 5]
-        medium_priority = [p for p in pending if 2 <= p.priority < 5]
-        low_priority = [p for p in pending if p.priority < 2]
-
-        if high_priority:
-            lines.append("## High Priority (affects 5+ controls)")
-            lines.append("")
-            for req in high_priority:
-                lines.extend(_format_context_request(req))
-            lines.append("")
-
-        if medium_priority:
-            lines.append("## Medium Priority (affects 2-4 controls)")
-            lines.append("")
-            for req in medium_priority:
-                lines.extend(_format_context_request(req))
-            lines.append("")
-
-        if low_priority:
-            lines.append("## Low Priority (affects 1 control)")
-            lines.append("")
-            for req in low_priority:
-                lines.extend(_format_context_request(req))
-            lines.append("")
-
-        lines.append("---")
-        lines.append("")
-        lines.append("**Tip:** Use `confirm_project_context()` to set these values.")
-
-        return "\n".join(lines)
+        return json.dumps({
+            "status": "pending",
+            "instructions": (
+                "Present each question to the user exactly as specified. "
+                "For questions with input_type 'free_text', ask the user to type their answer. "
+                "Do NOT suggest or pre-fill values. Do NOT infer answers from the repository "
+                "owner, git config, commit history, or your own knowledge. "
+                "For questions with input_type 'select', present ONLY the listed options. "
+                "For questions with input_type 'confirm', ask the user to confirm or correct "
+                "the auto-detected value."
+            ),
+            "questions": questions,
+            "after_all_answers": "Call confirm_project_context() with all answered values.",
+        }, indent=2)
 
     except Exception as e:
-        return f"❌ Error getting pending context: {e}"
+        return json.dumps({
+            "status": "error",
+            "message": f"Error getting pending context: {e}",
+        }, indent=2)
 
 
-def _format_context_request(req) -> list[str]:
-    """Format a single context request as markdown.
+def _build_context_question(req) -> dict:
+    """Build a structured question dict for a pending context request.
 
-    For keys with auto_detect=false (like maintainers), we NEVER show
-    guessed values or pre-filled commands. The LLM must ask the user.
+    Returns a JSON-serializable dict with explicit input_type so the calling
+    LLM knows exactly how to present it — no room for improvisation.
     """
-    lines = [
-        f"### {req.key}",
-    ]
-
     auto_detect_enabled = getattr(req.definition, "auto_detect", False)
 
-    # Show auto-detected value ONLY if auto_detect is enabled for this key
+    question: dict = {
+        "key": req.key,
+        "priority": req.priority,
+        "affects_controls": req.control_ids,
+    }
+
+    # Determine input type and build question accordingly
     if req.current_value is not None and auto_detect_enabled:
+        # Auto-detected value available — ask user to confirm or correct
         value = req.current_value.value
         method = req.current_value.detection_method or "auto"
         confidence = req.current_value.confidence
 
-        if isinstance(value, list):
-            value_str = ", ".join(str(v) for v in value)
-        else:
-            value_str = str(value)
-
-        lines.append(f"**Auto-detected:** `{value_str}` (via {method}, {int(confidence * 100)}% confidence)")
-        lines.append("*Please confirm or correct this value.*")
-        lines.append("")
-
-        # Pre-fill confirm command only for auto-detected values
-        if isinstance(value, list):
-            formatted_value = repr(value)
-            lines.append(f'*Confirm with:* `confirm_project_context({req.key}={formatted_value})`')
-        else:
-            lines.append(f'*Confirm with:* `confirm_project_context({req.key}="{value}")`')
-    else:
-        # No auto-detection — the LLM MUST ask the user
-        lines.append(f"**ASK THE USER:** {req.definition.prompt}")
-        lines.append("")
-        lines.append(
-            "YOU MUST present this question to the user and wait for their "
-            "answer. Do NOT guess, infer, or fill in values based on the "
-            "repository owner, git history, or any other source."
+        question["input_type"] = "confirm"
+        question["question"] = req.definition.prompt
+        question["detected_value"] = value
+        question["detection_method"] = method
+        question["confidence"] = int(confidence * 100)
+        question["instruction"] = (
+            "Show the detected value and ask the user to confirm or correct it."
         )
-        lines.append("")
-
-        if req.definition.hint:
-            lines.append(f"*Hint for user:* {req.definition.hint}")
-
-        if req.definition.examples:
-            examples_str = ", ".join(f"`{e}`" for e in req.definition.examples)
-            lines.append(f"*Examples:* {examples_str}")
-
-        if req.definition.values:
-            values_str = ", ".join(f"`{v}`" for v in req.definition.values)
-            lines.append(f"*Valid values:* {values_str}")
-
-        lines.append("")
-        # Show generic command template — no pre-filled values
-        if req.definition.type == "boolean":
-            lines.append(f'*After the user answers, set with:* `confirm_project_context({req.key}=<true or false>)`')
-        elif req.definition.type == "enum":
-            lines.append(f'*After the user answers, set with:* `confirm_project_context({req.key}="<user_answer>")`')
-        elif req.definition.type == "list_or_path":
-            lines.append(f'*After the user answers, set with:* `confirm_project_context({req.key}=<user_answer>)`')
+        if isinstance(value, list):
+            question["confirm_command"] = (
+                f"confirm_project_context({req.key}={repr(value)})"
+            )
         else:
-            lines.append(f'*After the user answers, set with:* `confirm_project_context({req.key}=<user_answer>)`')
+            question["confirm_command"] = (
+                f'confirm_project_context({req.key}="{value}")'
+            )
 
-    lines.append(f"*Affects controls:* {', '.join(req.control_ids)}")
-    lines.append("")
-    return lines
+    elif req.definition.type == "enum" and req.definition.values:
+        # Enum type — provide the exact options
+        question["input_type"] = "select"
+        question["question"] = req.definition.prompt
+        question["options"] = req.definition.values
+        question["instruction"] = (
+            "Present ONLY these options. Do NOT add other options."
+        )
+        if req.definition.hint:
+            question["hint"] = req.definition.hint
+        question["command_template"] = (
+            f'confirm_project_context({req.key}="<selected_value>")'
+        )
+
+    elif req.definition.type == "boolean":
+        # Boolean — yes/no only
+        question["input_type"] = "select"
+        question["question"] = req.definition.prompt
+        question["options"] = ["true", "false"]
+        question["instruction"] = "Ask yes or no. Do NOT add other options."
+        if req.definition.hint:
+            question["hint"] = req.definition.hint
+        question["command_template"] = (
+            f"confirm_project_context({req.key}=<true_or_false>)"
+        )
+
+    else:
+        # Free text — the user must type their answer
+        question["input_type"] = "free_text"
+        question["question"] = req.definition.prompt
+        question["instruction"] = (
+            "Ask the user to type their answer. "
+            "Do NOT suggest values. Do NOT pre-fill based on repository "
+            "owner, git config, or any other source. "
+            "Present a blank text input only."
+        )
+        if req.definition.hint:
+            question["hint"] = req.definition.hint
+        if req.definition.examples:
+            question["example_format"] = req.definition.examples
+        question["command_template"] = (
+            f"confirm_project_context({req.key}=<user_answer>)"
+        )
+
+    return question
 
 
 # =============================================================================

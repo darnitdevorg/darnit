@@ -2970,16 +2970,11 @@ confirm_project_context(
 handler = "get_pending_context"
 description = """Get context values that would improve audit accuracy.
 
-Returns information about context that hasn't been confirmed yet,
-organized by priority (number of controls affected). For context keys
-with auto-detection enabled, shows auto-detected values for user confirmation.
-
-Use this before running an audit to see what context information is missing
-and would improve accuracy.
-
-**IMPORTANT**: The output contains questions that MUST be presented to the
-user exactly as written. Do NOT guess or infer answers. Wait for the user
-to provide values before calling confirm_project_context().
+Returns structured JSON with questions to present to the user. Each question
+has an explicit input_type (free_text, select, or confirm) that specifies
+exactly how to present it. Follow the input_type — do not add options to
+free_text questions, and do not suggest values from the repository owner,
+git history, or any other source.
 """
 
 [mcp.tools.generate_threat_model]
