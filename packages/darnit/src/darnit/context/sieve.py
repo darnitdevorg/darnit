@@ -627,7 +627,11 @@ class ContextSieve:
         return "documented"  # Has governance doc but unclear model
 
     def _get_git_contributors(self, local_path: str, limit: int = 5) -> list[str]:
-        """Get top contributors from git history."""
+        """Get top contributors from git history.
+
+        Extracts GitHub usernames where possible (from noreply emails),
+        otherwise returns 'Name <email>' for identification.
+        """
         try:
             # Get top contributors by commit count
             result = subprocess.run(
@@ -643,16 +647,39 @@ class ContextSieve:
             if result.returncode != 0:
                 return []
 
+            bot_names = {"dependabot[bot]", "github-actions[bot]", "renovate[bot]"}
             contributors = []
-            for line in result.stdout.strip().split("\n")[:limit]:
+            for line in result.stdout.strip().split("\n")[:limit * 2]:
                 if not line.strip():
                     continue
                 # Format: "   123\tName <email>"
-                match = re.match(r"\s*\d+\s+([^<]+)", line)
-                if match:
-                    name = match.group(1).strip()
-                    if name and name not in ["dependabot[bot]", "github-actions[bot]"]:
-                        contributors.append(name)
+                match = re.match(r"\s*\d+\s+(.+?)\s*<(.+?)>", line)
+                if not match:
+                    continue
+                name = match.group(1).strip()
+                email = match.group(2).strip()
+
+                if name in bot_names or "[bot]" in name:
+                    continue
+
+                # Try to extract GitHub username from noreply email
+                # Format: 12345+username@users.noreply.github.com
+                # or:     username@users.noreply.github.com
+                noreply_match = re.match(
+                    r"(?:\d+\+)?([^@]+)@users\.noreply\.github\.com", email
+                )
+                if noreply_match:
+                    username = f"@{noreply_match.group(1)}"
+                    if username not in contributors:
+                        contributors.append(username)
+                else:
+                    # Return name + email so the LLM has real data
+                    entry = f"{name} <{email}>"
+                    if entry not in contributors:
+                        contributors.append(entry)
+
+                if len(contributors) >= limit:
+                    break
 
             return contributors
         except (subprocess.TimeoutExpired, subprocess.SubprocessError):

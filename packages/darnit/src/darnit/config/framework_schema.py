@@ -23,8 +23,9 @@ Example:
     domain = "AC"
     description = "Prevent direct commits to primary branch"
 
-    [controls."OSPS-AC-03.01".passes]
-    deterministic = { api_check = "check_branch_protection" }
+    [[controls."OSPS-AC-03.01".passes]]
+    handler = "exec"
+    command = ["gh", "api", "/repos/$OWNER/$REPO/branches/$BRANCH/protection"]
     ```
 
 # =============================================================================
@@ -144,7 +145,11 @@ class AdapterType(str, Enum):
 
 
 class PassPhase(str, Enum):
-    """Verification pass phases (maps to sieve VerificationPhase)."""
+    """Verification pass phases (maps to sieve VerificationPhase).
+
+    DEPRECATED: Phase buckets are being replaced by flat ordered handler lists.
+    Kept temporarily for backward compatibility during migration.
+    """
     DETERMINISTIC = "deterministic"
     PATTERN = "pattern"
     LLM = "llm"
@@ -223,117 +228,6 @@ AdapterConfig = (
 # =============================================================================
 
 
-class DeterministicPassConfig(BaseModel):
-    """Configuration for deterministic verification pass."""
-    file_must_exist: list[str] | None = None
-    file_must_not_exist: list[str] | None = None
-    api_check: str | None = None  # Function name or "module:function"
-    config_check: str | None = None  # Function name or "module:function"
-
-    # CEL expression for pass/fail evaluation (takes precedence over other fields)
-    # Example: 'size(files) > 0 && file_exists("SECURITY.md")'
-    expr: str | None = None
-
-    model_config = ConfigDict(extra="allow")
-
-
-class PatternPassConfig(BaseModel):
-    """Configuration for pattern matching verification pass."""
-    files: list[str] | None = None  # Files to search
-    patterns: dict[str, str] | None = None  # name -> regex pattern
-    pass_if_any_match: bool = Field(default=True, alias="pass_if_any")
-    fail_if_no_match: bool = False
-    custom_analyzer: str | None = None  # Function reference
-
-    # CEL expression for pass/fail evaluation (takes precedence over other fields)
-    # Context includes: files (list of matched paths), matches (list of match objects)
-    # Example: 'size(matches) > 0 && matches.exists(m, m.content.contains("vulnerability"))'
-    expr: str | None = None
-
-    model_config = ConfigDict(extra="allow", populate_by_name=True)
-
-
-class LLMPassConfig(BaseModel):
-    """Configuration for LLM-assisted verification pass."""
-    prompt: str | None = None  # Inline prompt template
-    prompt_file: str | None = None  # Path to prompt file
-    files_to_include: list[str] | None = None
-    hints: list[str] = Field(default_factory=list, alias="analysis_hints")
-    confidence_threshold: float = 0.8
-
-    model_config = ConfigDict(extra="allow", populate_by_name=True)
-
-
-class ManualPassConfig(BaseModel):
-    """Configuration for manual verification pass."""
-    steps: list[str] = Field(default_factory=list, alias="verification_steps")
-    docs_url: str | None = Field(default=None, alias="verification_docs_url")
-
-    model_config = ConfigDict(extra="allow", populate_by_name=True)
-
-
-class ExecPassConfig(BaseModel):
-    """Configuration for external command execution pass.
-
-    Executes an external command and evaluates the result. This enables
-    integration with external tools like trivy, scorecard, kusari, etc.
-
-    Security: Command arguments are passed as a list, never interpolated
-    into a shell string. Variables like $PATH are substituted as whole
-    list elements only.
-
-    Example:
-        ```toml
-        [controls."OSPS-VM-05.02".passes]
-        exec = {
-            command = ["kusari", "repo", "scan", "$PATH", "HEAD"],
-            pass_exit_codes = [0],
-            output_format = "json",
-        }
-        ```
-    """
-    # Command as list (secure - no shell interpolation)
-    # Supports $PATH, $OWNER, $REPO as whole-element substitution
-    command: list[str]
-
-    # Exit codes that indicate pass (default: [0])
-    pass_exit_codes: list[int] = Field(default_factory=lambda: [0])
-
-    # Exit codes that indicate fail (all others = inconclusive)
-    fail_exit_codes: list[int] | None = None
-
-    # Output format for parsing (json, sarif, text)
-    output_format: str = "text"
-
-    # JSONPath to extract pass/fail from JSON output
-    # DEPRECATED: Use expr instead for CEL-based evaluation
-    pass_if_json_path: str | None = None  # e.g., "$.status" == "pass"
-    pass_if_json_value: str | None = None
-
-    # Regex pattern to match in output for pass
-    # DEPRECATED: Use expr instead for CEL-based evaluation
-    pass_if_output_matches: str | None = None
-
-    # Regex pattern to match in output for fail
-    # DEPRECATED: Use expr instead for CEL-based evaluation
-    fail_if_output_matches: str | None = None
-
-    # CEL expression for pass/fail evaluation (takes precedence over other fields)
-    # Context includes: output.stdout, output.stderr, output.exit_code, output.json
-    # Example: 'output.exit_code == 0 && output.json.status == "pass"'
-    expr: str | None = None
-
-    # Timeout in seconds
-    timeout: int = 300
-
-    # Working directory (default: repo path)
-    cwd: str | None = None
-
-    # Environment variables to set
-    env: dict[str, str] = Field(default_factory=dict)
-
-    model_config = ConfigDict(extra="allow")
-
 
 class HandlerInvocation(BaseModel):
     """A single handler call within a pipeline phase.
@@ -345,10 +239,14 @@ class HandlerInvocation(BaseModel):
 
     Example TOML:
         ```toml
-        deterministic = [
-            { handler = "file_exists", files = ["README.md", "README.rst"] },
-            { handler = "exec", command = ["gh", "api", "..."], expr = "..." },
-        ]
+        [[controls."OSPS-XX-01".passes]]
+        handler = "file_exists"
+        files = ["README.md", "README.rst"]
+
+        [[controls."OSPS-XX-01".passes]]
+        handler = "exec"
+        command = ["gh", "api", "..."]
+        expr = "..."
         ```
     """
     # Handler name (registered in the sieve handler registry)
@@ -362,77 +260,6 @@ class HandlerInvocation(BaseModel):
 
     # All other fields pass through to the handler
     model_config = ConfigDict(extra="allow")
-
-
-class PassesConfig(BaseModel):
-    """Configuration for all verification passes of a control.
-
-    Supports two formats:
-    1. Handler-based (new): Each phase is a list of HandlerInvocation
-    2. Typed pass configs (legacy): Named fields per pass type (auto-converted)
-
-    The confidence gradient: deterministic → pattern → llm → manual
-    """
-    # New handler-based format: each phase is a list of handler invocations
-    deterministic: list[HandlerInvocation] | DeterministicPassConfig | None = None
-    pattern: list[HandlerInvocation] | PatternPassConfig | None = None
-    llm: list[HandlerInvocation] | LLMPassConfig | None = None
-    manual: list[HandlerInvocation] | ManualPassConfig | None = None
-
-    # Legacy exec field (treated as deterministic phase)
-    exec: ExecPassConfig | None = None
-
-    model_config = ConfigDict(extra="allow")
-
-    @model_validator(mode="after")
-    def normalize_to_legacy_passes(self) -> "PassesConfig":
-        """Ensure legacy typed configs are preserved for backward compatibility.
-
-        The get_ordered_passes() method handles both formats, so we don't
-        need to convert here. This validator just ensures consistency.
-        """
-        return self
-
-    def get_handler_invocations(self) -> list[tuple[str, list[HandlerInvocation]]]:
-        """Return handler invocations grouped by phase in execution order.
-
-        Handles both new (list[HandlerInvocation]) and legacy (typed config) formats.
-        Legacy configs are returned as-is — the orchestrator knows how to dispatch both.
-        """
-        phases: list[tuple[str, list[HandlerInvocation]]] = []
-        for phase_name in ("deterministic", "pattern", "llm", "manual"):
-            value = getattr(self, phase_name, None)
-            if isinstance(value, list) and value:
-                phases.append((phase_name, value))
-        return phases
-
-    def get_ordered_passes(self) -> list[tuple]:
-        """Return passes in execution order: deterministic -> exec -> pattern -> llm -> manual.
-
-        Supports both legacy typed configs and new handler invocation lists.
-        Legacy format: returns (PassPhase, typed_config) tuples.
-        """
-        passes = []
-        det = self.deterministic
-        if det is not None:
-            if isinstance(det, DeterministicPassConfig):
-                passes.append((PassPhase.DETERMINISTIC, det))
-            # Handler invocation lists are handled by get_handler_invocations()
-        if self.exec:
-            passes.append((PassPhase.DETERMINISTIC, self.exec))  # exec is deterministic
-        pat = self.pattern
-        if pat is not None:
-            if isinstance(pat, PatternPassConfig):
-                passes.append((PassPhase.PATTERN, pat))
-        llm_val = self.llm
-        if llm_val is not None:
-            if isinstance(llm_val, LLMPassConfig):
-                passes.append((PassPhase.LLM, llm_val))
-        man = self.manual
-        if man is not None:
-            if isinstance(man, ManualPassConfig):
-                passes.append((PassPhase.MANUAL, man))
-        return passes
 
 
 # =============================================================================
@@ -612,54 +439,26 @@ class CheckConfig(BaseModel):
 class RemediationConfig(BaseModel):
     """Configuration for how a control is remediated.
 
-    Supports two formats:
-    1. Handler-based (new): Phased lists of HandlerInvocation, following the
-       same confidence gradient as verification (deterministic → pattern → llm → manual)
-    2. Typed remediation configs (legacy): Named fields per type (file_create, exec, etc.)
+    Remediation handlers are a flat ordered list of HandlerInvocation entries.
+    The executor iterates the list in order.
 
-    Both formats can coexist. The handler-based format is preferred for new controls.
+    Metadata fields (requires_context, project_update) remain as separate fields.
 
-    Context Requirements:
-    The requires_context field defines what context must be confirmed before
-    this remediation can run. The orchestrator checks these requirements and
-    prompts the user if needed.
-
-    Example (handler-based):
+    Example:
         ```toml
         [controls."OSPS-VM-01.01".remediation]
-        deterministic = [
-            { handler = "file_create", path = "SECURITY.md", template = "security_policy" },
-            { handler = "project_update", updates = { "security.policy.path" = "SECURITY.md" } },
-        ]
-        ```
+        requires_context = [{ key = "maintainers", required = true }]
 
-    Example (legacy):
-        ```toml
-        [controls."OSPS-GV-04.01".remediation]
-        handler = "create_codeowners"
-
-        [[controls."OSPS-GV-04.01".remediation.requires_context]]
-        key = "maintainers"
-        required = true
-        confidence_threshold = 0.9
-        prompt_if_auto_detected = true
-        warning = "GitHub collaborators are not necessarily project maintainers"
+        [[controls."OSPS-VM-01.01".remediation.handlers]]
+        handler = "file_create"
+        path = "SECURITY.md"
+        template = "security_policy"
         ```
     """
-    # New handler-based format: phased lists of handler invocations
-    deterministic: list[HandlerInvocation] | None = None
-    pattern: list[HandlerInvocation] | None = None
-    llm: list[HandlerInvocation] | None = None
+    # Flat ordered list of remediation handler invocations
+    handlers: list[HandlerInvocation] = Field(default_factory=list)
 
-    # Legacy Python handler reference
-    adapter: str = "builtin"
-    handler: str | None = None  # e.g., "create_security_policy"
-
-    # Declarative remediation types (legacy)
-    file_create: Optional["FileCreateRemediationConfig"] = None
-    exec: Optional["ExecRemediationConfig"] = None
-    api_call: Optional["ApiCallRemediationConfig"] = None
-    manual: Optional["ManualRemediationConfig"] = None
+    # Post-remediation .project/ update (applied via on_pass, not a handler)
     project_update: Optional["ProjectUpdateRemediationConfig"] = None
 
     # Common settings
@@ -676,131 +475,6 @@ class RemediationConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    def get_handler_invocations(self) -> list[tuple[str, list[HandlerInvocation]]]:
-        """Return handler invocations grouped by phase in execution order.
-
-        Only returns new-format handler invocations. Legacy typed configs
-        are accessed via the typed fields directly.
-        """
-        phases: list[tuple[str, list[HandlerInvocation]]] = []
-        for phase_name in ("deterministic", "pattern", "llm"):
-            value = getattr(self, phase_name, None)
-            if isinstance(value, list) and value:
-                phases.append((phase_name, value))
-        return phases
-
-    def has_handler_invocations(self) -> bool:
-        """Check if this config uses the new handler-based format."""
-        return bool(self.deterministic or self.pattern or self.llm)
-
-    def has_legacy_config(self) -> bool:
-        """Check if this config uses any legacy typed remediation fields."""
-        return bool(
-            self.handler
-            or self.file_create
-            or self.exec
-            or self.api_call
-            or self.manual
-            or self.project_update
-        )
-
-
-class FileCreateRemediationConfig(BaseModel):
-    """Configuration for file creation remediation.
-
-    Creates a file from a template with variable substitution.
-
-    Example:
-        ```toml
-        [controls."OSPS-VM-01.01".remediation.file_create]
-        path = "SECURITY.md"
-        template = "security_policy_standard"
-        overwrite = false
-        ```
-    """
-    # Target file path (relative to repo root)
-    path: str
-
-    # Template to use (references templates section)
-    template: str | None = None
-
-    # Inline content (alternative to template)
-    content: str | None = None
-
-    # Whether to overwrite existing files
-    overwrite: bool = False
-
-    # Create parent directories if needed
-    create_dirs: bool = True
-
-    model_config = ConfigDict(extra="allow")
-
-
-class ExecRemediationConfig(BaseModel):
-    """Configuration for command execution remediation.
-
-    Executes an external command for remediation. Supports variable
-    substitution ($OWNER, $REPO, $BRANCH, $PATH).
-
-    Example:
-        ```toml
-        [controls."OSPS-AC-03.01".remediation.exec]
-        command = ["gh", "api", "-X", "PUT", "/repos/$OWNER/$REPO/branches/$BRANCH/protection"]
-        stdin_template = "branch_protection_payload"
-        success_exit_codes = [0]
-        ```
-    """
-    # Command as list (secure - no shell interpolation)
-    command: list[str]
-
-    # Template for stdin input (for API payloads)
-    stdin_template: str | None = None
-
-    # Inline stdin content
-    stdin: str | None = None
-
-    # Exit codes that indicate success
-    success_exit_codes: list[int] = Field(default_factory=lambda: [0])
-
-    # Timeout in seconds
-    timeout: int = 300
-
-    # Environment variables
-    env: dict[str, str] = Field(default_factory=dict)
-
-    model_config = ConfigDict(extra="allow")
-
-
-class ApiCallRemediationConfig(BaseModel):
-    """Configuration for GitHub API call remediation.
-
-    Makes a GitHub API call using gh cli. This is a convenience wrapper
-    around ExecRemediationConfig specifically for GitHub API operations.
-
-    Example:
-        ```toml
-        [controls."OSPS-AC-03.01".remediation.api_call]
-        method = "PUT"
-        endpoint = "/repos/$OWNER/$REPO/branches/$BRANCH/protection"
-        payload_template = "branch_protection"
-        ```
-    """
-    # HTTP method
-    method: str = "PUT"
-
-    # API endpoint (supports variable substitution)
-    endpoint: str
-
-    # JSON payload template name
-    payload_template: str | None = None
-
-    # Inline JSON payload
-    payload: dict[str, Any] | None = None
-
-    # JQ filter for response
-    jq_filter: str | None = None
-
-    model_config = ConfigDict(extra="allow")
 
 
 class ProjectUpdateRemediationConfig(BaseModel):
@@ -829,35 +503,6 @@ class ProjectUpdateRemediationConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
-class ManualRemediationConfig(BaseModel):
-    """Configuration for manual remediation guidance.
-
-    Provides structured human-readable steps for controls that cannot
-    be automated. The executor returns these as a successful "informational"
-    result rather than executing any action.
-
-    Example:
-        ```toml
-        [controls."OSPS-AC-01.01".remediation.manual]
-        steps = [
-            "Go to Organization Settings → Authentication security",
-            "Enable 'Require two-factor authentication'",
-        ]
-        docs_url = "https://docs.github.com/en/organizations/keeping-your-organization-secure/managing-two-factor-authentication-for-your-organization"
-        context_hints = ["org_admin_access"]
-        ```
-    """
-    # Ordered human-readable remediation steps
-    steps: list[str] = Field(default_factory=list)
-
-    # Link to relevant documentation
-    docs_url: str | None = None
-
-    # Context keys that would enable future automation of this control
-    context_hints: list[str] = Field(default_factory=list)
-
-    model_config = ConfigDict(extra="allow")
-
 
 # =============================================================================
 # Shared Handler Configuration
@@ -882,10 +527,9 @@ class SharedHandlerConfig(BaseModel):
         command = ["gh", "api", "/repos/$OWNER/$REPO/branches/$BRANCH/protection"]
         output_format = "json"
 
-        [controls."OSPS-AC-03.01".passes]
-        deterministic = [
-            { shared = "branch_protection", expr = "json.required_pull_request_reviews != null" },
-        ]
+        [[controls."OSPS-AC-03.01".passes]]
+        shared = "branch_protection"
+        expr = "json.required_pull_request_reviews != null"
         ```
     """
     # Handler name (registered in the sieve handler registry)
@@ -987,13 +631,18 @@ class ControlConfig(BaseModel):
         project_path = "ci.branch_protection"
         kind = "api"
 
-        [controls."OSPS-AC-03.01".passes]
-        deterministic = { api_check = "check_branch_protection" }
-        manual = { steps = ["Check branch protection settings"] }
+        [[controls."OSPS-AC-03.01".passes]]
+        handler = "exec"
+        command = ["gh", "api", "/repos/$OWNER/$REPO/branches/$BRANCH/protection"]
+        expr = "json.required_pull_request_reviews != null"
 
-        [controls."OSPS-AC-03.01".remediation]
-        handler = "enable_branch_protection"
-        requires_api = true
+        [[controls."OSPS-AC-03.01".passes]]
+        handler = "manual_steps"
+        steps = ["Check branch protection settings"]
+
+        [[controls."OSPS-AC-03.01".remediation.handlers]]
+        handler = "manual_steps"
+        steps = ["Enable branch protection for the default branch"]
         ```
     """
     # Required fields
@@ -1022,8 +671,25 @@ class ControlConfig(BaseModel):
     # Defines where to find the artifact that satisfies this control
     locator: LocatorConfig | None = None
 
-    # Verification passes
-    passes: PassesConfig | None = None
+    # Verification passes — flat ordered list of handler invocations
+    passes: list[HandlerInvocation] | None = None
+
+    @field_validator("passes", mode="before")
+    @classmethod
+    def validate_passes_format(cls, v: Any) -> list[HandlerInvocation] | None:
+        """Reject legacy phase-bucketed passes format with a helpful error."""
+        if v is None:
+            return None
+        if isinstance(v, dict):
+            legacy_keys = {"deterministic", "pattern", "llm", "manual", "exec"}
+            found = [k for k in legacy_keys if k in v]
+            if found:
+                raise ValueError(
+                    f"Legacy phase-bucketed passes format detected (keys: {found}). "
+                    f"Use a flat list of handler invocations instead: "
+                    f'passes = [{{ handler = "exec", command = [...] }}]'
+                )
+        return v
 
     # Check routing (which adapter verifies this control)
     check: CheckConfig | None = None
@@ -1575,9 +1241,6 @@ class FrameworkConfig(BaseModel):
 
     def get_remediation_adapter(self, control_id: str) -> str:
         """Get the adapter name for remediating a control."""
-        control = self.controls.get(control_id)
-        if control and control.remediation:
-            return control.remediation.adapter
         return self.defaults.remediation_adapter
 
 

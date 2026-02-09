@@ -119,8 +119,8 @@ class EffectiveControl:
     remediation_handler: str | None = None
     remediation_config: dict[str, Any] = field(default_factory=dict)
 
-    # Framework pass configuration (for sieve)
-    passes_config: dict[str, Any] | None = None
+    # Framework pass configuration (for sieve) — flat list of handler invocation dicts
+    passes_config: list[dict[str, Any]] | None = None
 
     # Flexible key-value tags for filtering and metadata
     tags: dict[str, Any] = field(default_factory=dict)
@@ -274,13 +274,11 @@ def merge_control(
 
         # Apply framework remediation config
         if framework_control.remediation:
-            effective.remediation_adapter = framework_control.remediation.adapter
-            effective.remediation_handler = framework_control.remediation.handler
             effective.remediation_config = dict(framework_control.remediation.config)
 
-        # Store passes config for sieve
+        # Store passes config for sieve (flat list of handler invocations)
         if framework_control.passes:
-            effective.passes_config = framework_control.passes.model_dump()
+            effective.passes_config = [p.model_dump() for p in framework_control.passes]
 
     else:
         # Custom control from user - name and description required, level/domain optional
@@ -314,24 +312,15 @@ def merge_control(
 
         # Remediation override
         if user_override.remediation:
-            effective.remediation_adapter = user_override.remediation.adapter
-            if user_override.remediation.handler:
-                effective.remediation_handler = user_override.remediation.handler
             if user_override.remediation.config:
                 effective.remediation_config = deep_merge(
                     effective.remediation_config,
                     user_override.remediation.config,
                 )
 
-        # Passes override (advanced)
+        # Passes override (advanced) — flat list of handler invocations
         if user_override.passes:
-            if effective.passes_config:
-                effective.passes_config = deep_merge(
-                    effective.passes_config,
-                    user_override.passes.model_dump(exclude_none=True),
-                )
-            else:
-                effective.passes_config = user_override.passes.model_dump()
+            effective.passes_config = [p.model_dump() for p in user_override.passes]
 
     return effective
 

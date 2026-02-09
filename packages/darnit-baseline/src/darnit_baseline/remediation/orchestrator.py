@@ -176,11 +176,15 @@ def _get_declarative_remediation(
     if not control or not control.remediation:
         return None, None
 
-    # Check if this has an executable declarative remediation type
-    # (manual steps are guidance, not executable — handled separately)
+    # Check if this has executable declarative remediation handlers
+    # (manual-only handlers are guidance — handled separately by _get_manual_remediation)
     remediation = control.remediation
-    if remediation.file_create or remediation.exec or remediation.api_call:
-        return remediation, framework.templates
+    if remediation.handlers:
+        has_executable = any(
+            h.handler != "manual" for h in remediation.handlers
+        )
+        if has_executable:
+            return remediation, framework.templates
 
     return None, None
 
@@ -203,13 +207,17 @@ def _get_manual_remediation(
     steps_by_control: list[tuple[str, list[str], str | None]] = []
     for control_id in control_ids:
         control = framework.controls.get(control_id)
-        if not control or not control.remediation or not control.remediation.manual:
+        if not control or not control.remediation or not control.remediation.handlers:
             continue
-        manual = control.remediation.manual
-        if manual.steps:
-            steps_by_control.append(
-                (control_id, manual.steps, getattr(manual, "docs_url", None))
-            )
+        # Find manual handler invocations in the handlers list
+        for handler in control.remediation.handlers:
+            if handler.handler == "manual":
+                extra = handler.model_extra or {}
+                steps = extra.get("steps", [])
+                docs_url = extra.get("docs_url")
+                if steps:
+                    steps_by_control.append((control_id, steps, docs_url))
+                    break  # Only use first manual handler per control
 
     if not steps_by_control:
         return None
@@ -521,17 +529,21 @@ def _apply_declarative_remediation(
 
             # Update .project/ config with reference to created file
             config_updated = False
-            if result.remediation_type == "file_create":
-                created_path = result.details.get("path")
-                if created_path:
-                    config_updated = update_config_after_file_create(
-                        local_path=local_path,
-                        control_id=control_id,
-                        created_file_path=created_path,
-                        control_reference_mapping=CONTROL_REFERENCE_MAPPING,
-                    )
-                    if config_updated:
-                        logger.info(f"Updated .project/ with reference: {created_path}")
+            # Find file_create handlers and get the created path
+            for handler_inv in remediation_config.handlers:
+                if handler_inv.handler == "file_create":
+                    extra = handler_inv.model_extra or {}
+                    created_path = extra.get("path")
+                    if created_path:
+                        config_updated = update_config_after_file_create(
+                            local_path=local_path,
+                            control_id=control_id,
+                            created_file_path=created_path,
+                            control_reference_mapping=CONTROL_REFERENCE_MAPPING,
+                        )
+                        if config_updated:
+                            logger.info(f"Updated .project/ with reference: {created_path}")
+                        break
 
             return {
                 "category": category,
@@ -728,14 +740,17 @@ def _format_preflight_prompt(
 
     md.append("---")
     md.append("")
+    md.append("🛑 **AI Agents:** You MUST ask the user for the missing values above.")
+    md.append("Do NOT guess or infer from repository owner, git history, or other sources.")
+    md.append("")
     if tool_args:
-        md.append("**Run this tool call to confirm auto-detected values, then re-run remediation:**")
+        md.append("**After the user provides values, run this to confirm, then re-run remediation:**")
         md.append("```python")
         args_str = ",\n    ".join(tool_args)
         md.append(f'confirm_project_context(\n    local_path="{local_path}",\n    {args_str}\n)')
         md.append("```")
     else:
-        md.append("**Confirm the missing context above, then re-run remediation:**")
+        md.append("**After the user provides values, confirm them, then re-run remediation:**")
         md.append("```python")
         md.append(f'confirm_project_context(local_path="{local_path}", ...)')
         md.append("```")

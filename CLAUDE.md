@@ -152,6 +152,30 @@ DETERMINISTIC → PATTERN → LLM → MANUAL
 
 Each control can define passes at each phase. The orchestrator stops at the first conclusive result.
 
+## Conservative-by-Default Principles
+
+This is a compliance auditing tool. Incorrect results are worse than incomplete results. Every design decision must follow these rules:
+
+### Never Assume Compliance
+
+- A control that has not been **explicitly verified as passing** is NOT compliant. Period.
+- "Needs Verification" / WARN means "we don't know" — treat it the same as FAIL for compliance calculations.
+- Never report a level as "Compliant" if any control at that level is unverified, errored, or pending.
+- It is always better to report a false negative (say something fails when it passes) than a false positive (say something passes when it doesn't).
+
+### Never Guess User-Specific Values
+
+- Do NOT auto-detect and auto-apply values like maintainers, security contacts, or governance models. These require explicit user confirmation.
+- The TOML `auto_detect = false` flag means the sieve MUST NOT run for that key. No exceptions.
+- When a tool returns "Context Confirmation Required," that is a hard stop — ask the user. Do not fill in values from git history, repo owner, or any heuristic source.
+- Sieve auto-detection is acceptable only for keys where `auto_detect = true` in the TOML definition.
+
+### Err on the Side of Caution
+
+- When in doubt about a control's status, return WARN (needs verification), not PASS.
+- When in doubt about a user's intent, ask. Do not proceed with assumptions.
+- When designing prompts that an LLM will see, assume the LLM will blindly execute any suggested command. Never put guessed values in executable code snippets.
+
 ## Development Guidelines
 
 ### Adding New Controls

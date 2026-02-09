@@ -27,18 +27,14 @@ logger = get_logger("sieve.orchestrator")
 
 class SieveOrchestrator:
     """
-    Orchestrates the 4-phase verification pipeline.
+    Orchestrates the verification pipeline via handler dispatch.
 
-    The sieve runs passes in order (DETERMINISTIC -> PATTERN -> LLM -> MANUAL),
-    stopping as soon as a pass returns a conclusive result (PASS or FAIL).
+    The sieve iterates a flat ordered list of handler invocations per control,
+    stopping as soon as a handler returns a conclusive result (PASS, FAIL, ERROR).
 
-    Supports two execution modes:
-    1. Legacy: Typed pass objects dispatched via execute() protocol
-    2. Handler-based: HandlerInvocation lists dispatched via handler registry
-
-    For LLM passes, the orchestrator can either:
+    For LLM handlers, the orchestrator can either:
     - Return a PENDING_LLM status with the consultation request (stop_on_llm=True)
-    - Continue to the MANUAL pass (stop_on_llm=False)
+    - Continue to the next handler (stop_on_llm=False)
     """
 
     def __init__(self, stop_on_llm: bool = True):
@@ -133,11 +129,11 @@ class SieveOrchestrator:
     ) -> SieveResult | None:
         """Dispatch handler invocations from metadata.
 
-        Iterates phases in order, for each phase iterates handler invocations,
-        stops at first conclusive result.
+        Iterates the flat handler invocation list in order, stops at the
+        first conclusive result (PASS, FAIL, ERROR).
 
-        Returns SieveResult if handler-based dispatch produced a conclusive result,
-        None otherwise (fall through to legacy pass execution).
+        Returns SieveResult if dispatch produced a result, None if no
+        handler invocations are configured.
         """
         handler_invocations = control_spec.metadata.get("handler_invocations")
         if not handler_invocations:
@@ -162,144 +158,148 @@ class SieveOrchestrator:
             },
         )
 
-        phase_map = {
-            "deterministic": VerificationPhase.DETERMINISTIC,
-            "pattern": VerificationPhase.PATTERN,
-            "llm": VerificationPhase.LLM,
-            "manual": VerificationPhase.MANUAL,
-        }
+        for invocation in handler_invocations:
+            handler_info = registry.get(invocation.handler)
+            if not handler_info:
+                logger.warning(
+                    "Control %s: handler '%s' not found in registry",
+                    control_spec.control_id,
+                    invocation.handler,
+                )
+                continue
 
-        for phase_name, invocations in handler_invocations:
-            phase = phase_map.get(phase_name, VerificationPhase.DETERMINISTIC)
+            # Use handler's registered phase for recording, or DETERMINISTIC as default
+            phase = getattr(handler_info, "phase", None)
+            if phase:
+                # Map HandlerPhase to VerificationPhase
+                phase_map = {
+                    "deterministic": VerificationPhase.DETERMINISTIC,
+                    "pattern": VerificationPhase.PATTERN,
+                    "llm": VerificationPhase.LLM,
+                    "manual": VerificationPhase.MANUAL,
+                }
+                phase = phase_map.get(phase.value, VerificationPhase.DETERMINISTIC)
+            else:
+                phase = VerificationPhase.DETERMINISTIC
 
-            for invocation in invocations:
-                handler_info = registry.get(invocation.handler)
-                if not handler_info:
-                    logger.warning(
-                        "Control %s: handler '%s' not found in registry",
-                        control_spec.control_id,
+            # Check shared cache
+            if invocation.shared and invocation.shared in self._shared_cache:
+                handler_result = self._shared_cache[invocation.shared]
+            else:
+                # Build handler config from invocation's extra fields
+                handler_config = dict(invocation.model_extra or {})
+                handler_config["handler"] = invocation.handler
+
+                start_time = time.time()
+                try:
+                    handler_result = handler_info.fn(handler_config, handler_ctx)
+                except Exception as e:
+                    logger.debug(
+                        "Handler %s error: %s: %s",
                         invocation.handler,
+                        type(e).__name__,
+                        e,
                     )
-                    continue
+                    handler_result = HandlerResult(
+                        status=HandlerResultStatus.ERROR,
+                        message=f"Handler error: {e}",
+                    )
+                duration_ms = int((time.time() - start_time) * 1000)
 
-                # Check shared cache
-                if invocation.shared and invocation.shared in self._shared_cache:
-                    handler_result = self._shared_cache[invocation.shared]
-                else:
-                    # Build handler config from invocation's extra fields
-                    handler_config = dict(invocation.model_extra or {})
-                    handler_config["handler"] = invocation.handler
+                # Cache shared handler result
+                if invocation.shared:
+                    self._shared_cache[invocation.shared] = handler_result
 
-                    start_time = time.time()
-                    try:
-                        handler_result = handler_info.fn(handler_config, handler_ctx)
-                    except Exception as e:
-                        logger.debug(
-                            "Handler %s error: %s: %s",
-                            invocation.handler,
-                            type(e).__name__,
-                            e,
-                        )
-                        handler_result = HandlerResult(
-                            status=HandlerResultStatus.ERROR,
-                            message=f"Handler error: {e}",
-                        )
-                    duration_ms = int((time.time() - start_time) * 1000)
-
-                    # Cache shared handler result
-                    if invocation.shared:
-                        self._shared_cache[invocation.shared] = handler_result
-
-                    # Record attempt
-                    pass_result = PassResult(
+                # Record attempt
+                pass_result = PassResult(
+                    phase=phase,
+                    outcome=_handler_status_to_outcome(handler_result.status),
+                    message=handler_result.message,
+                    evidence=handler_result.evidence,
+                    confidence=handler_result.confidence,
+                    details=handler_result.details,
+                )
+                pass_history.append(
+                    PassAttempt(
                         phase=phase,
-                        outcome=_handler_status_to_outcome(handler_result.status),
-                        message=handler_result.message,
-                        evidence=handler_result.evidence,
-                        confidence=handler_result.confidence,
-                        details=handler_result.details,
+                        checks_performed=[
+                            f"handler:{invocation.handler}"
+                        ],
+                        result=pass_result,
+                        duration_ms=duration_ms,
                     )
-                    pass_history.append(
-                        PassAttempt(
-                            phase=phase,
-                            checks_performed=[
-                                f"handler:{invocation.handler}"
-                            ],
-                            result=pass_result,
-                            duration_ms=duration_ms,
-                        )
-                    )
+                )
 
-                # Accumulate evidence
-                if handler_result.evidence:
-                    accumulated_evidence.update(handler_result.evidence)
-                    handler_ctx.gathered_evidence.update(handler_result.evidence)
-                    context.gathered_evidence.update(handler_result.evidence)
+            # Accumulate evidence
+            if handler_result.evidence:
+                accumulated_evidence.update(handler_result.evidence)
+                handler_ctx.gathered_evidence.update(handler_result.evidence)
+                context.gathered_evidence.update(handler_result.evidence)
 
-                # Check conclusiveness
-                if handler_result.status == HandlerResultStatus.PASS:
-                    sieve_result = SieveResult(
-                        control_id=control_spec.control_id,
-                        status="PASS",
-                        message=handler_result.message,
-                        level=control_spec.level,
-                        conclusive_phase=phase,
-                        pass_history=pass_history,
-                        confidence=handler_result.confidence,
-                        evidence=accumulated_evidence,
-                        source="sieve",
-                    )
-                    self._apply_on_pass(control_spec, context, accumulated_evidence)
-                    return sieve_result
+            # Check conclusiveness
+            if handler_result.status == HandlerResultStatus.PASS:
+                sieve_result = SieveResult(
+                    control_id=control_spec.control_id,
+                    status="PASS",
+                    message=handler_result.message,
+                    level=control_spec.level,
+                    conclusive_phase=phase,
+                    pass_history=pass_history,
+                    confidence=handler_result.confidence,
+                    evidence=accumulated_evidence,
+                    source="sieve",
+                )
+                self._apply_on_pass(control_spec, context, accumulated_evidence)
+                return sieve_result
 
-                elif handler_result.status == HandlerResultStatus.FAIL:
-                    return SieveResult(
-                        control_id=control_spec.control_id,
-                        status="FAIL",
-                        message=handler_result.message,
-                        level=control_spec.level,
-                        conclusive_phase=phase,
-                        pass_history=pass_history,
-                        evidence=accumulated_evidence,
-                        source="sieve",
-                    )
+            elif handler_result.status == HandlerResultStatus.FAIL:
+                return SieveResult(
+                    control_id=control_spec.control_id,
+                    status="FAIL",
+                    message=handler_result.message,
+                    level=control_spec.level,
+                    conclusive_phase=phase,
+                    pass_history=pass_history,
+                    evidence=accumulated_evidence,
+                    source="sieve",
+                )
 
-                elif handler_result.status == HandlerResultStatus.ERROR:
-                    return SieveResult(
-                        control_id=control_spec.control_id,
-                        status="ERROR",
-                        message=handler_result.message,
-                        level=control_spec.level,
-                        conclusive_phase=phase,
-                        pass_history=pass_history,
-                        evidence=accumulated_evidence,
-                        source="sieve",
-                    )
+            elif handler_result.status == HandlerResultStatus.ERROR:
+                return SieveResult(
+                    control_id=control_spec.control_id,
+                    status="ERROR",
+                    message=handler_result.message,
+                    level=control_spec.level,
+                    conclusive_phase=phase,
+                    pass_history=pass_history,
+                    evidence=accumulated_evidence,
+                    source="sieve",
+                )
 
-                # INCONCLUSIVE — check for LLM consultation
-                if (
-                    phase == VerificationPhase.LLM
-                    and self.stop_on_llm
-                    and handler_result.details
-                    and "consultation_request" in handler_result.details
-                ):
-                    return SieveResult(
-                        control_id=control_spec.control_id,
-                        status="PENDING_LLM",
-                        message="LLM consultation required",
-                        level=control_spec.level,
-                        conclusive_phase=phase,
-                        pass_history=pass_history,
-                        evidence={
-                            **accumulated_evidence,
-                            "llm_consultation": handler_result.details[
-                                "consultation_request"
-                            ],
-                        },
-                        source="sieve",
-                    )
+            # INCONCLUSIVE — check for LLM consultation
+            if (
+                phase == VerificationPhase.LLM
+                and self.stop_on_llm
+                and handler_result.details
+                and "consultation_request" in handler_result.details
+            ):
+                return SieveResult(
+                    control_id=control_spec.control_id,
+                    status="PENDING_LLM",
+                    message="LLM consultation required",
+                    level=control_spec.level,
+                    conclusive_phase=phase,
+                    pass_history=pass_history,
+                    evidence={
+                        **accumulated_evidence,
+                        "llm_consultation": handler_result.details[
+                            "consultation_request"
+                        ],
+                    },
+                    source="sieve",
+                )
 
-                # Continue to next handler
+            # Continue to next handler
 
         # All handler invocations inconclusive
         return SieveResult(
@@ -320,8 +320,8 @@ class SieveOrchestrator:
         Evaluation order:
         1. Check when clause → return N/A if condition is false
         2. Check inferred_from → auto-PASS if source control passed
-        3. Dispatch handler invocations (new format) if present
-        4. Execute legacy pass objects if present
+        3. Inject dependency results into context
+        4. Dispatch handler invocations (flat list) → WARN if none configured
 
         Args:
             control_spec: Control specification with pass definitions
@@ -354,147 +354,18 @@ class SieveOrchestrator:
             for dep_id, dep_result in self._dependency_results.items():
                 context.gathered_evidence[f"dependency.{dep_id}.status"] = dep_result.status
 
-        # Step 4: Try handler invocation dispatch (new format)
+        # Step 4: Dispatch handler invocations
         handler_result = self._dispatch_handler_invocations(control_spec, context)
         if handler_result:
             self._dependency_results[control_spec.control_id] = handler_result
             return handler_result
 
-        # Step 5: Execute legacy pass objects
-        pass_history: list[PassAttempt] = []
-        accumulated_evidence: dict[str, Any] = {}
-
-        for verification_pass in control_spec.passes:
-            # Execute pass
-            start_time = time.time()
-            try:
-                result = verification_pass.execute(context)
-            except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as e:
-                logger.debug(f"Pass execution error: {type(e).__name__}: {e}")
-                result = PassAttempt(
-                    phase=verification_pass.phase,
-                    checks_performed=[f"ERROR: {str(e)}"],
-                    result=None,
-                )
-                pass_history.append(
-                    PassAttempt(
-                        phase=verification_pass.phase,
-                        checks_performed=[verification_pass.describe()],
-                        result=result,
-                        duration_ms=int((time.time() - start_time) * 1000),
-                    )
-                )
-                continue
-
-            duration_ms = int((time.time() - start_time) * 1000)
-
-            # Record attempt
-            attempt = PassAttempt(
-                phase=verification_pass.phase,
-                checks_performed=[verification_pass.describe()],
-                result=result,
-                duration_ms=duration_ms,
-            )
-            pass_history.append(attempt)
-
-            # Accumulate evidence
-            if result.evidence:
-                accumulated_evidence.update(result.evidence)
-                context.gathered_evidence.update(result.evidence)
-
-            # Check if conclusive
-            if result.outcome == PassOutcome.PASS:
-                sieve_result = SieveResult(
-                    control_id=control_spec.control_id,
-                    status="PASS",
-                    message=result.message,
-                    level=control_spec.level,
-                    conclusive_phase=verification_pass.phase,
-                    pass_history=pass_history,
-                    confidence=result.confidence,
-                    evidence=accumulated_evidence,
-                    source="sieve",
-                )
-
-                # Apply on_pass context update if configured
-                self._apply_on_pass(
-                    control_spec, context, accumulated_evidence
-                )
-
-                self._dependency_results[control_spec.control_id] = sieve_result
-                return sieve_result
-
-            elif result.outcome == PassOutcome.FAIL:
-                sieve_result = SieveResult(
-                    control_id=control_spec.control_id,
-                    status="FAIL",
-                    message=result.message,
-                    level=control_spec.level,
-                    conclusive_phase=verification_pass.phase,
-                    pass_history=pass_history,
-                    evidence=accumulated_evidence,
-                    source="sieve",
-                )
-                self._dependency_results[control_spec.control_id] = sieve_result
-                return sieve_result
-
-            elif result.outcome == PassOutcome.ERROR:
-                sieve_result = SieveResult(
-                    control_id=control_spec.control_id,
-                    status="ERROR",
-                    message=result.message,
-                    level=control_spec.level,
-                    conclusive_phase=verification_pass.phase,
-                    pass_history=pass_history,
-                    evidence=accumulated_evidence,
-                    source="sieve",
-                )
-                self._dependency_results[control_spec.control_id] = sieve_result
-                return sieve_result
-
-            # INCONCLUSIVE - check for LLM consultation
-            if (
-                verification_pass.phase == VerificationPhase.LLM
-                and self.stop_on_llm
-                and result.details
-                and "consultation_request" in result.details
-            ):
-                # Return with pending LLM consultation
-                sieve_result = SieveResult(
-                    control_id=control_spec.control_id,
-                    status="PENDING_LLM",  # Special status
-                    message="LLM consultation required",
-                    level=control_spec.level,
-                    conclusive_phase=verification_pass.phase,
-                    pass_history=pass_history,
-                    evidence={
-                        **accumulated_evidence,
-                        "llm_consultation": result.details["consultation_request"],
-                    },
-                    source="sieve",
-                )
-                self._dependency_results[control_spec.control_id] = sieve_result
-                return sieve_result
-
-            # Continue to next pass
-
-        # All passes inconclusive - return WARN (manual verification needed)
-        last_pass = control_spec.passes[-1] if control_spec.passes else None
-        verification_steps = None
-        if last_pass and last_pass.phase == VerificationPhase.MANUAL:
-            last_result = pass_history[-1].result if pass_history else None
-            if last_result and last_result.details:
-                verification_steps = last_result.details.get("verification_steps")
-
+        # No handler invocations configured — return WARN
         sieve_result = SieveResult(
             control_id=control_spec.control_id,
             status="WARN",
-            message="Could not automatically verify - manual verification required",
+            message="No handler invocations configured for this control",
             level=control_spec.level,
-            conclusive_phase=VerificationPhase.MANUAL,
-            pass_history=pass_history,
-            evidence=accumulated_evidence,
-            verification_steps=verification_steps,
             source="sieve",
         )
         self._dependency_results[control_spec.control_id] = sieve_result

@@ -245,10 +245,16 @@ _sieve_handler_registry: SieveHandlerRegistry | None = None
 
 
 def get_sieve_handler_registry() -> SieveHandlerRegistry:
-    """Get the global sieve handler registry."""
+    """Get the global sieve handler registry.
+
+    Auto-registers builtin handlers on first creation.
+    """
     global _sieve_handler_registry
     if _sieve_handler_registry is None:
         _sieve_handler_registry = SieveHandlerRegistry()
+        # Auto-register builtin handlers
+        from darnit.sieve.builtin_handlers import register_builtin_handlers
+        register_builtin_handlers()
     return _sieve_handler_registry
 
 

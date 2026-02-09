@@ -1,11 +1,8 @@
 """Declarative remediation executor.
 
 This module executes remediations defined in the framework TOML files.
-It supports four remediation types:
-- FileCreate: Create files from templates
-- Exec: Execute external commands
-- ApiCall: Make GitHub API calls
-- Manual: Return structured guidance for non-automatable controls
+Remediations use a flat ordered list of handler invocations dispatched
+through the sieve handler registry.
 
 Example:
     ```python
@@ -25,15 +22,11 @@ Example:
 
 import json
 import os
-import subprocess
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
 from darnit.config.framework_schema import (
-    ApiCallRemediationConfig,
-    ExecRemediationConfig,
-    FileCreateRemediationConfig,
     ProjectUpdateRemediationConfig,
     RemediationConfig,
     TemplateConfig,
@@ -41,8 +34,6 @@ from darnit.config.framework_schema import (
 from darnit.core.logging import get_logger
 from darnit.remediation.helpers import (
     detect_repo_from_git,
-    ensure_directory,
-    write_file_safe,
 )
 
 logger = get_logger("remediation.executor")
@@ -89,10 +80,8 @@ class RemediationResult:
 class RemediationExecutor:
     """Executes declarative remediations from framework TOML configs.
 
-    This executor handles three types of remediations:
-    1. FileCreate: Create files from templates with variable substitution
-    2. Exec: Execute external commands
-    3. ApiCall: Make GitHub API calls using gh CLI
+    Dispatches handler invocations from RemediationConfig.handlers through
+    the sieve handler registry (file_create, exec, api_call, manual_steps, etc.).
 
     Variable substitution is supported in templates and commands:
     - $OWNER - Repository owner
@@ -302,8 +291,9 @@ class RemediationExecutor:
     ) -> RemediationResult:
         """Execute a remediation based on its configuration.
 
-        After a successful remediation action, also applies any project_update
-        to keep .project/project.yaml in sync with the actual project state.
+        Dispatches handler invocations from config.handlers in order.
+        After a successful remediation, applies any project_update
+        to keep .project/project.yaml in sync.
 
         Args:
             control_id: The control ID being remediated
@@ -313,55 +303,17 @@ class RemediationExecutor:
         Returns:
             RemediationResult with execution outcome
         """
-        # Try handler-based dispatch first (new format)
-        if hasattr(config, "has_handler_invocations") and config.has_handler_invocations():
-            return self._execute_handler_invocations(control_id, config, dry_run)
-
-        # Determine which remediation type to use (legacy)
-        result = None
-        if config.file_create:
-            result = self._execute_file_create(control_id, config.file_create, dry_run)
-        elif config.exec:
-            result = self._execute_exec(control_id, config.exec, dry_run)
-        elif config.api_call:
-            result = self._execute_api_call(control_id, config.api_call, dry_run)
-        elif config.manual:
-            details: dict[str, Any] = {"steps": config.manual.steps}
-            if config.manual.docs_url:
-                details["docs_url"] = config.manual.docs_url
-            if config.manual.context_hints:
-                details["context_hints"] = config.manual.context_hints
-            return RemediationResult(
-                success=True,
-                message="Manual remediation guidance",
-                control_id=control_id,
-                remediation_type="manual",
-                dry_run=dry_run,
-                details=details,
-            )
-        elif config.handler:
-            # Legacy handler reference - return info about it
+        if not config.handlers:
             return RemediationResult(
                 success=False,
-                message=f"Legacy handler '{config.handler}' requires Python execution",
-                control_id=control_id,
-                remediation_type="handler",
-                dry_run=dry_run,
-                details={
-                    "handler": config.handler,
-                    "adapter": config.adapter,
-                    "note": "Use the implementation package's remediation function",
-                },
-            )
-        else:
-            return RemediationResult(
-                success=False,
-                message="No remediation action configured",
+                message="No remediation handlers configured",
                 control_id=control_id,
                 remediation_type="none",
                 dry_run=dry_run,
                 details={},
             )
+
+        result = self._execute_handler_invocations(control_id, config, dry_run)
 
         # Apply project_update if the primary remediation succeeded
         if result.success and not dry_run and config.project_update:
@@ -391,7 +343,8 @@ class RemediationExecutor:
     ) -> RemediationResult:
         """Execute handler-based remediation invocations.
 
-        Dispatches handler invocations through the sieve handler registry.
+        Iterates config.handlers (flat list) and dispatches each through
+        the sieve handler registry.
         """
         from darnit.sieve.handler_registry import (
             HandlerContext,
@@ -412,49 +365,53 @@ class RemediationExecutor:
         results: list[dict[str, Any]] = []
         all_success = True
 
-        for phase_name, invocations in config.get_handler_invocations():
-            for invocation in invocations:
-                handler_info = registry.get(invocation.handler)
-                if not handler_info:
-                    results.append({
-                        "handler": invocation.handler,
-                        "status": "error",
-                        "message": f"Handler '{invocation.handler}' not found",
-                    })
+        for invocation in config.handlers:
+            handler_config = dict(invocation.model_extra or {})
+            handler_config["handler"] = invocation.handler
+
+            # Resolve template references to content
+            if "template" in handler_config and "content" not in handler_config:
+                template_name = handler_config["template"]
+                content = self._get_template_content(template_name)
+                if content:
+                    content = self._substitute(content, control_id)
+                    handler_config["content"] = content
+
+            if dry_run:
+                results.append({
+                    "handler": invocation.handler,
+                    "status": "dry_run",
+                    "message": f"Would execute handler: {invocation.handler}",
+                    "config": handler_config,
+                })
+                continue
+
+            handler_info = registry.get(invocation.handler)
+            if not handler_info:
+                results.append({
+                    "handler": invocation.handler,
+                    "status": "error",
+                    "message": f"Handler '{invocation.handler}' not found",
+                })
+                all_success = False
+                continue
+
+            try:
+                handler_result = handler_info.fn(handler_config, handler_ctx)
+                results.append({
+                    "handler": invocation.handler,
+                    "status": handler_result.status.value,
+                    "message": handler_result.message,
+                })
+                if handler_result.status != HandlerResultStatus.PASS:
                     all_success = False
-                    continue
-
-                handler_config = dict(invocation.model_extra or {})
-                handler_config["handler"] = invocation.handler
-
-                if dry_run:
-                    results.append({
-                        "handler": invocation.handler,
-                        "phase": phase_name,
-                        "status": "dry_run",
-                        "message": f"Would execute handler: {invocation.handler}",
-                        "config": handler_config,
-                    })
-                    continue
-
-                try:
-                    handler_result = handler_info.fn(handler_config, handler_ctx)
-                    results.append({
-                        "handler": invocation.handler,
-                        "phase": phase_name,
-                        "status": handler_result.status.value,
-                        "message": handler_result.message,
-                    })
-                    if handler_result.status != HandlerResultStatus.PASS:
-                        all_success = False
-                except Exception as e:
-                    results.append({
-                        "handler": invocation.handler,
-                        "phase": phase_name,
-                        "status": "error",
-                        "message": str(e),
-                    })
-                    all_success = False
+            except Exception as e:
+                results.append({
+                    "handler": invocation.handler,
+                    "status": "error",
+                    "message": str(e),
+                })
+                all_success = False
 
         return RemediationResult(
             success=all_success,
@@ -468,324 +425,6 @@ class RemediationExecutor:
             dry_run=dry_run,
             details={"handlers": results},
         )
-
-    def _execute_file_create(
-        self,
-        control_id: str,
-        config: FileCreateRemediationConfig,
-        dry_run: bool,
-    ) -> RemediationResult:
-        """Execute a file creation remediation."""
-        target_path = os.path.join(self.local_path, config.path)
-
-        # Get content from template or inline
-        content = None
-        template_name = None
-
-        if config.template:
-            template_name = config.template
-            content = self._get_template_content(config.template)
-            if not content:
-                return RemediationResult(
-                    success=False,
-                    message=f"Template '{config.template}' not found",
-                    control_id=control_id,
-                    remediation_type="file_create",
-                    dry_run=dry_run,
-                    details={"template": config.template, "path": config.path},
-                )
-        elif config.content:
-            content = config.content
-        else:
-            return RemediationResult(
-                success=False,
-                message="No content or template specified",
-                control_id=control_id,
-                remediation_type="file_create",
-                dry_run=dry_run,
-                details={"path": config.path},
-            )
-
-        # Apply variable substitution
-        content = self._substitute(content, control_id)
-
-        # Check if file exists
-        file_exists = os.path.exists(target_path)
-        if file_exists and not config.overwrite:
-            return RemediationResult(
-                success=True,
-                message=f"File already exists — control may already be satisfied: {config.path}",
-                control_id=control_id,
-                remediation_type="file_create_skipped",
-                dry_run=dry_run,
-                details={
-                    "path": config.path,
-                    "overwrite": config.overwrite,
-                    "note": "File exists; set overwrite=true to replace",
-                },
-            )
-
-        details = {
-            "path": config.path,
-            "template": template_name,
-            "overwrite": config.overwrite,
-            "content_preview": content[:200] + "..." if len(content) > 200 else content,
-        }
-
-        if dry_run:
-            return RemediationResult(
-                success=True,
-                message=f"Would create file: {config.path}",
-                control_id=control_id,
-                remediation_type="file_create",
-                dry_run=True,
-                details=details,
-            )
-
-        # Create parent directories if needed
-        if config.create_dirs:
-            parent_dir = os.path.dirname(target_path)
-            if parent_dir:
-                error = ensure_directory(parent_dir)
-                if error:
-                    return RemediationResult(
-                        success=False,
-                        message=error,
-                        control_id=control_id,
-                        remediation_type="file_create",
-                        dry_run=False,
-                        details=details,
-                    )
-
-        # Write the file
-        success, message = write_file_safe(target_path, content)
-        return RemediationResult(
-            success=success,
-            message=f"Created file: {config.path}" if success else message,
-            control_id=control_id,
-            remediation_type="file_create",
-            dry_run=False,
-            details=details,
-        )
-
-    def _execute_exec(
-        self,
-        control_id: str,
-        config: ExecRemediationConfig,
-        dry_run: bool,
-    ) -> RemediationResult:
-        """Execute a command remediation."""
-        # Substitute variables in command
-        command = self._substitute_command(config.command, control_id)
-
-        # Get stdin content if specified
-        stdin_content = None
-        if config.stdin_template:
-            stdin_content = self._get_template_content(config.stdin_template)
-            if stdin_content:
-                stdin_content = self._substitute(stdin_content, control_id)
-        elif config.stdin:
-            stdin_content = self._substitute(config.stdin, control_id)
-
-        details = {
-            "command": " ".join(command),
-            "timeout": config.timeout,
-            "success_exit_codes": config.success_exit_codes,
-        }
-        if stdin_content:
-            details["stdin_preview"] = (
-                stdin_content[:100] + "..."
-                if len(stdin_content) > 100
-                else stdin_content
-            )
-
-        if dry_run:
-            return RemediationResult(
-                success=True,
-                message=f"Would execute: {' '.join(command)}",
-                control_id=control_id,
-                remediation_type="exec",
-                dry_run=True,
-                details=details,
-            )
-
-        # Execute the command
-        try:
-            env = os.environ.copy()
-            env.update(config.env)
-
-            result = subprocess.run(
-                command,
-                input=stdin_content,
-                capture_output=True,
-                text=True,
-                timeout=config.timeout,
-                cwd=self.local_path,
-                env=env,
-            )
-
-            success = result.returncode in config.success_exit_codes
-            details["exit_code"] = result.returncode
-            details["stdout"] = result.stdout[:500] if result.stdout else ""
-            details["stderr"] = result.stderr[:500] if result.stderr else ""
-
-            return RemediationResult(
-                success=success,
-                message=(
-                    "Command succeeded"
-                    if success
-                    else f"Command failed with exit code {result.returncode}"
-                ),
-                control_id=control_id,
-                remediation_type="exec",
-                dry_run=False,
-                details=details,
-            )
-
-        except subprocess.TimeoutExpired:
-            return RemediationResult(
-                success=False,
-                message=f"Command timed out after {config.timeout}s",
-                control_id=control_id,
-                remediation_type="exec",
-                dry_run=False,
-                details=details,
-            )
-        except FileNotFoundError:
-            return RemediationResult(
-                success=False,
-                message=f"Command not found: {command[0]}",
-                control_id=control_id,
-                remediation_type="exec",
-                dry_run=False,
-                details=details,
-            )
-        except subprocess.SubprocessError as e:
-            return RemediationResult(
-                success=False,
-                message=f"Command error: {str(e)}",
-                control_id=control_id,
-                remediation_type="exec",
-                dry_run=False,
-                details=details,
-            )
-
-    def _execute_api_call(
-        self,
-        control_id: str,
-        config: ApiCallRemediationConfig,
-        dry_run: bool,
-    ) -> RemediationResult:
-        """Execute a GitHub API call remediation."""
-        # Substitute variables in endpoint
-        endpoint = self._substitute(config.endpoint, control_id)
-
-        # Get payload
-        payload = None
-        if config.payload_template:
-            payload_content = self._get_template_content(config.payload_template)
-            if payload_content:
-                payload_content = self._substitute(payload_content, control_id)
-                try:
-                    payload = json.loads(payload_content)
-                except json.JSONDecodeError as e:
-                    return RemediationResult(
-                        success=False,
-                        message=f"Invalid JSON in payload template: {e}",
-                        control_id=control_id,
-                        remediation_type="api_call",
-                        dry_run=dry_run,
-                        details={"template": config.payload_template},
-                    )
-        elif config.payload:
-            payload = config.payload
-
-        details = {
-            "method": config.method,
-            "endpoint": endpoint,
-        }
-        if payload:
-            details["payload"] = payload
-
-        if dry_run:
-            return RemediationResult(
-                success=True,
-                message=f"Would call GitHub API: {config.method} {endpoint}",
-                control_id=control_id,
-                remediation_type="api_call",
-                dry_run=True,
-                details=details,
-            )
-
-        # Build gh api command
-        command = ["gh", "api", "-X", config.method, endpoint]
-
-        if config.jq_filter:
-            command.extend(["--jq", config.jq_filter])
-
-        # Execute with payload via stdin
-        try:
-            result = subprocess.run(
-                command + (["--input", "-"] if payload else []),
-                input=json.dumps(payload) if payload else None,
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-
-            success = result.returncode == 0
-            details["exit_code"] = result.returncode
-
-            if result.stdout:
-                try:
-                    details["response"] = json.loads(result.stdout)
-                except json.JSONDecodeError:
-                    details["response"] = result.stdout[:500]
-
-            if result.stderr:
-                details["error"] = result.stderr[:500]
-
-            return RemediationResult(
-                success=success,
-                message=(
-                    "API call succeeded"
-                    if success
-                    else f"API call failed: {result.stderr[:100]}"
-                ),
-                control_id=control_id,
-                remediation_type="api_call",
-                dry_run=False,
-                details=details,
-            )
-
-        except FileNotFoundError:
-            return RemediationResult(
-                success=False,
-                message="gh CLI not found. Install from https://cli.github.com/",
-                control_id=control_id,
-                remediation_type="api_call",
-                dry_run=False,
-                details=details,
-            )
-        except subprocess.TimeoutExpired:
-            return RemediationResult(
-                success=False,
-                message="API call timed out",
-                control_id=control_id,
-                remediation_type="api_call",
-                dry_run=False,
-                details=details,
-            )
-        except subprocess.SubprocessError as e:
-            return RemediationResult(
-                success=False,
-                message=f"API call error: {str(e)}",
-                control_id=control_id,
-                remediation_type="api_call",
-                dry_run=False,
-                details=details,
-            )
-
 
 def apply_project_update(
     local_path: str,

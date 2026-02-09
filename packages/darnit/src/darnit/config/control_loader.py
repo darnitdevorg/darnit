@@ -28,25 +28,12 @@ from darnit.core.logging import get_logger
 from darnit.sieve.models import (
     ControlSpec,
 )
-from darnit.sieve.passes import (
-    DeterministicPass,
-    ExecPass,
-    LLMPass,
-    ManualPass,
-    PatternPass,
-)
 
 from .framework_schema import (
     ControlConfig,
-    DeterministicPassConfig,
-    ExecPassConfig,
     FrameworkConfig,
     HandlerInvocation,
-    LLMPassConfig,
-    ManualPassConfig,
     OnPassConfig,
-    PassesConfig,
-    PatternPassConfig,
     SharedHandlerConfig,
 )
 from .merger import EffectiveConfig, EffectiveControl
@@ -219,111 +206,6 @@ def _resolve_check_function(reference: str) -> Callable | None:
         return None
 
 
-def _convert_deterministic_pass(config: DeterministicPassConfig) -> DeterministicPass:
-    """Convert DeterministicPassConfig to DeterministicPass.
-
-    Args:
-        config: Declarative pass configuration
-
-    Returns:
-        Executable DeterministicPass
-    """
-    # Resolve function references for api_check and config_check
-    api_check = _resolve_check_function(config.api_check) if config.api_check else None
-    config_check = _resolve_check_function(config.config_check) if config.config_check else None
-
-    return DeterministicPass(
-        file_must_exist=config.file_must_exist,
-        file_must_not_exist=config.file_must_not_exist,
-        api_check=api_check,
-        config_check=config_check,
-    )
-
-
-def _convert_exec_pass(config: ExecPassConfig) -> ExecPass:
-    """Convert ExecPassConfig to ExecPass.
-
-    Args:
-        config: Declarative pass configuration
-
-    Returns:
-        Executable ExecPass
-    """
-    return ExecPass(
-        command=list(config.command),
-        pass_exit_codes=list(config.pass_exit_codes),
-        fail_exit_codes=list(config.fail_exit_codes) if config.fail_exit_codes else None,
-        output_format=config.output_format,
-        pass_if_output_matches=config.pass_if_output_matches,
-        fail_if_output_matches=config.fail_if_output_matches,
-        pass_if_json_path=config.pass_if_json_path,
-        pass_if_json_value=config.pass_if_json_value,
-        timeout=config.timeout,
-        cwd=config.cwd,
-        env=dict(config.env) if config.env else {},
-    )
-
-
-def _convert_pattern_pass(config: PatternPassConfig) -> PatternPass:
-    """Convert PatternPassConfig to PatternPass.
-
-    Args:
-        config: Declarative pass configuration
-
-    Returns:
-        Executable PatternPass
-    """
-    return PatternPass(
-        file_patterns=config.files,
-        content_patterns=dict(config.patterns) if config.patterns else None,
-        pass_if_any_match=config.pass_if_any_match,
-        fail_if_no_match=config.fail_if_no_match,
-        # Note: custom_analyzer requires function resolution
-    )
-
-
-def _convert_llm_pass(config: LLMPassConfig) -> LLMPass:
-    """Convert LLMPassConfig to LLMPass.
-
-    Args:
-        config: Declarative pass configuration
-
-    Returns:
-        Executable LLMPass
-    """
-    prompt = config.prompt or ""
-    if config.prompt_file:
-        # Load prompt from file if specified
-        try:
-            prompt_path = Path(config.prompt_file)
-            if prompt_path.exists():
-                prompt = prompt_path.read_text()
-        except OSError as e:
-            logger.warning(f"Could not load prompt file {config.prompt_file}: {e}")
-
-    return LLMPass(
-        prompt_template=prompt,
-        files_to_include=config.files_to_include,
-        analysis_hints=list(config.hints),
-        confidence_threshold=config.confidence_threshold,
-    )
-
-
-def _convert_manual_pass(config: ManualPassConfig) -> ManualPass:
-    """Convert ManualPassConfig to ManualPass.
-
-    Args:
-        config: Declarative pass configuration
-
-    Returns:
-        Executable ManualPass
-    """
-    return ManualPass(
-        verification_steps=list(config.steps),
-        verification_docs_url=config.docs_url,
-    )
-
-
 # =============================================================================
 # Handler Invocation Resolution (load-time)
 # =============================================================================
@@ -432,7 +314,7 @@ def _auto_derive_on_pass(control_config: ControlConfig) -> OnPassConfig | None:
 
     Conditions:
     - Control has locator.project_path
-    - Control has a deterministic file_exists handler (new format)
+    - Control has a file_exists handler in its passes list
     - Control has no explicit on_pass
 
     Returns:
@@ -449,20 +331,12 @@ def _auto_derive_on_pass(control_config: ControlConfig) -> OnPassConfig | None:
     if not passes:
         return None
 
-    # Check for file_exists handler in new format
-    det = passes.deterministic
-    if isinstance(det, list):
-        for inv in det:
-            if isinstance(inv, HandlerInvocation) and inv.handler == "file_exists":
-                return OnPassConfig(
-                    project_update={locator.project_path: "$EVIDENCE.relative_path"}
-                )
-
-    # Check for file_must_exist in legacy format
-    if isinstance(det, DeterministicPassConfig) and det.file_must_exist:
-        return OnPassConfig(
-            project_update={locator.project_path: "$EVIDENCE.relative_path"}
-        )
+    # Check for file_exists handler in flat list
+    for inv in passes:
+        if isinstance(inv, HandlerInvocation) and inv.handler == "file_exists":
+            return OnPassConfig(
+                project_update={locator.project_path: "$EVIDENCE.relative_path"}
+            )
 
     return None
 
@@ -500,51 +374,6 @@ def _validate_control_references(
 # =============================================================================
 
 
-def _convert_passes_config(passes_config: PassesConfig | None) -> list[Any]:
-    """Convert PassesConfig to list of executable pass objects.
-
-    Handles both legacy typed configs (converted to pass objects) and
-    new handler invocation lists (passed through as-is for orchestrator dispatch).
-
-    Args:
-        passes_config: Declarative passes configuration
-
-    Returns:
-        List of pass objects in execution order
-    """
-    if not passes_config:
-        return []
-
-    passes = []
-
-    # Order: deterministic -> exec -> pattern -> llm -> manual
-    det = passes_config.deterministic
-    if det is not None:
-        if isinstance(det, DeterministicPassConfig):
-            passes.append(_convert_deterministic_pass(det))
-        # Handler invocation lists are dispatched by the orchestrator directly
-
-    if passes_config.exec:
-        passes.append(_convert_exec_pass(passes_config.exec))
-
-    pat = passes_config.pattern
-    if pat is not None:
-        if isinstance(pat, PatternPassConfig):
-            passes.append(_convert_pattern_pass(pat))
-
-    llm_val = passes_config.llm
-    if llm_val is not None:
-        if isinstance(llm_val, LLMPassConfig):
-            passes.append(_convert_llm_pass(llm_val))
-
-    man = passes_config.manual
-    if man is not None:
-        if isinstance(man, ManualPassConfig):
-            passes.append(_convert_manual_pass(man))
-
-    return passes
-
-
 def control_from_effective(
     control_id: str,
     effective: EffectiveControl,
@@ -558,14 +387,9 @@ def control_from_effective(
     Returns:
         Executable ControlSpec
     """
-    # Convert passes_config back to PassesConfig if it's a dict
+    # Passes are now handled via handler dispatch in the orchestrator.
+    # The effective config's passes_config (if any) carries through metadata.
     passes = []
-    if effective.passes_config:
-        try:
-            passes_config = PassesConfig(**effective.passes_config)
-            passes = _convert_passes_config(passes_config)
-        except (TypeError, ValueError) as e:
-            logger.warning(f"Could not convert passes for {control_id}: {e}")
 
     # Build the tags dict - effective.tags already includes level/domain from merger
     tags = dict(effective.tags) if effective.tags else {}
@@ -584,6 +408,21 @@ def control_from_effective(
     if security_severity is None and "security_severity" in tags:
         security_severity = tags["security_severity"]
 
+    metadata: dict = {
+        "security_severity": security_severity,
+        "docs_url": effective.docs_url,
+        "check_adapter": effective.check_adapter,
+        "remediation_adapter": effective.remediation_adapter,
+    }
+
+    # Transfer handler invocations from effective passes_config to metadata
+    if effective.passes_config:
+        from darnit.config.framework_schema import HandlerInvocation
+        metadata["handler_invocations"] = [
+            HandlerInvocation(**p) if isinstance(p, dict) else p
+            for p in effective.passes_config
+        ]
+
     return ControlSpec(
         control_id=control_id,
         level=level,
@@ -592,12 +431,7 @@ def control_from_effective(
         description=effective.description,
         passes=passes,
         tags=tags,  # Pass tags directly, ControlSpec.__post_init__ will add level/domain
-        metadata={
-            "security_severity": security_severity,
-            "docs_url": effective.docs_url,
-            "check_adapter": effective.check_adapter,
-            "remediation_adapter": effective.remediation_adapter,
-        },
+        metadata=metadata,
     )
 
 
@@ -629,11 +463,12 @@ def control_from_framework(
         locator_discover = control_config.locator.discover or None
 
     if control_config.passes:
-        _resolve_passes_invocations(
+        control_config.passes = _resolve_handler_invocations(
             control_config.passes, shared_handlers, locator_discover, control_id
         )
 
-    passes = _convert_passes_config(control_config.passes) if control_config.passes else []
+    # Passes are dispatched via handler invocations in the orchestrator
+    passes = []
 
     # Build tags dict from config - tags is now Dict[str, Any]
     tags = dict(control_config.tags) if control_config.tags else {}
@@ -675,17 +510,13 @@ def control_from_framework(
 
     # Carry handler invocations through metadata for orchestrator dispatch
     if control_config.passes:
-        handler_invocations = control_config.passes.get_handler_invocations()
-        if handler_invocations:
-            metadata["handler_invocations"] = handler_invocations
+        metadata["handler_invocations"] = control_config.passes
 
     # Carry remediation handler invocations if present
     if hasattr(control_config, "remediation") and control_config.remediation:
         rem = control_config.remediation
-        if hasattr(rem, "get_handler_invocations"):
-            rem_invocations = rem.get_handler_invocations()
-            if rem_invocations:
-                metadata["remediation_handler_invocations"] = rem_invocations
+        if rem.handlers:
+            metadata["remediation_handler_invocations"] = rem.handlers
 
     return ControlSpec(
         control_id=control_id,
@@ -697,25 +528,6 @@ def control_from_framework(
         tags=tags,
         metadata=metadata,
     )
-
-
-def _resolve_passes_invocations(
-    passes_config: PassesConfig,
-    shared_handlers: dict[str, SharedHandlerConfig],
-    locator_discover: list[str] | None,
-    control_id: str,
-) -> None:
-    """Resolve handler invocations in passes config in-place.
-
-    Mutates the passes_config to resolve shared and use_locator references.
-    """
-    for phase_name in ("deterministic", "pattern", "llm", "manual"):
-        value = getattr(passes_config, phase_name, None)
-        if isinstance(value, list) and value:
-            resolved = _resolve_handler_invocations(
-                value, shared_handlers, locator_discover, control_id
-            )
-            setattr(passes_config, phase_name, resolved)
 
 
 # =============================================================================

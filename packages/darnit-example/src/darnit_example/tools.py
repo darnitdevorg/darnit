@@ -152,7 +152,7 @@ async def remediate_hygiene(
         Markdown-formatted remediation report.
     """
     from darnit.config.framework_schema import (
-        FileCreateRemediationConfig,
+        HandlerInvocation,
         RemediationConfig,
     )
     from darnit.remediation.executor import RemediationExecutor
@@ -190,11 +190,14 @@ async def remediate_hygiene(
     # [controls] section but whose templates ARE in TOML [templates].
     _python_remediations: dict[str, RemediationConfig] = {
         "PH-CI-01": RemediationConfig(
-            file_create=FileCreateRemediationConfig(
-                path=".github/workflows/ci.yml",
-                template="ci_github_actions",
-                create_dirs=True,
-            ),
+            handlers=[
+                HandlerInvocation(
+                    handler="file_create",
+                    path=".github/workflows/ci.yml",
+                    template="ci_github_actions",
+                    create_dirs=True,
+                ),
+            ],
         ),
         # PH-DOC-03 is fixed implicitly when PH-DOC-01 creates README.md
         # with the readme_standard template (which has description content).
@@ -208,7 +211,7 @@ async def remediate_hygiene(
         # Try TOML control config first, then Python-control fallback
         rem_cfg = None
         control_cfg = fw.controls.get(control_id)
-        if control_cfg and control_cfg.remediation and control_cfg.remediation.file_create:
+        if control_cfg and control_cfg.remediation and control_cfg.remediation.handlers:
             rem_cfg = control_cfg.remediation
         elif control_id in _python_remediations:
             rem_cfg = _python_remediations[control_id]

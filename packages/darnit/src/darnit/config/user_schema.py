@@ -43,7 +43,7 @@ from .framework_schema import (
     AdapterConfig,
     CheckConfig,
     ControlConfig,
-    PassesConfig,
+    HandlerInvocation,
     RemediationConfig,
 )
 
@@ -116,8 +116,8 @@ class ControlOverride(BaseModel):
     # Override remediation routing
     remediation: RemediationConfig | None = None
 
-    # Override verification passes (advanced)
-    passes: PassesConfig | None = None
+    # Override verification passes (advanced) — flat list of handler invocations
+    passes: list[HandlerInvocation] | None = None
 
     # Additional config passed to adapter
     config: dict[str, Any] = Field(default_factory=dict)

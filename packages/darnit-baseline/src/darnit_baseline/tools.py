@@ -396,18 +396,35 @@ def confirm_project_context(
     """
     Record user-confirmed project context in .project.yaml.
 
-    Some controls depend on context that can't be auto-detected.
+    **IMPORTANT**: This is the ONLY way to set project context. DO NOT directly edit
+    .project/ files - always use this tool instead.
 
-    Args:
-        local_path: Path to the repository
-        has_subprojects: Does this project have subprojects?
-        has_releases: Does this project make official releases?
-        is_library: Is this a library/framework consumed by other projects?
-        has_compiled_assets: Does this project release compiled binaries?
-        ci_provider: CI/CD system (github, gitlab, jenkins, circleci, azure, travis, none, other)
-        maintainers: Project maintainers - list of GitHub usernames or path to MAINTAINERS file
-        security_contact: Security contact for vulnerability reports (email, URL, or file reference)
-        governance_model: Governance model (bdfl, meritocracy, democracy, corporate, foundation, committee, other)
+    **Parameters:**
+    - `local_path`: Path to repository (default: ".")
+    - `maintainers`: Project maintainers - list ["@user1", "@user2"] OR file reference "CODEOWNERS"
+    - `security_contact`: Security contact email or file reference
+    - `governance_model`: One of: bdfl, meritocracy, democracy, corporate, foundation, committee, other
+    - `ci_provider`: One of: github, gitlab, jenkins, circleci, azure, travis, none, other
+    - `has_subprojects`: Boolean - does project have subprojects?
+    - `has_releases`: Boolean - does project make official releases?
+    - `is_library`: Boolean - is this a library consumed by other projects?
+    - `has_compiled_assets`: Boolean - does project release compiled binaries?
+
+    **Examples:**
+    ```
+    # Reference existing CODEOWNERS file (RECOMMENDED)
+    confirm_project_context(maintainers="CODEOWNERS")
+
+    # Explicit maintainer list
+    confirm_project_context(maintainers=["@alice", "@bob"])
+
+    # Multiple context values
+    confirm_project_context(
+        maintainers="CODEOWNERS",
+        security_contact="security@example.com",
+        ci_provider="github"
+    )
+    ```
 
     Returns:
         Confirmation of what was recorded
@@ -441,12 +458,16 @@ def get_pending_context(
     organized by priority (number of controls affected). For context keys
     with auto-detection enabled, shows auto-detected values for user confirmation.
 
-    Args:
-        local_path: Path to the repository
-        control_ids: Optional list of control IDs to check (default: all applicable)
-        level: Maximum level to consider (1, 2, or 3)
-        owner: GitHub owner (auto-detected from git if not provided)
-        repo: GitHub repo name (auto-detected from git if not provided)
+    **IMPORTANT**: The output contains questions that MUST be presented to the
+    user exactly as written. Do NOT guess or infer answers. Wait for the user
+    to provide values before calling confirm_project_context().
+
+    Parameters:
+    - `local_path`: Path to repository (default: ".")
+    - `control_ids`: Optional list of control IDs to check
+    - `level`: Maximum maturity level (1, 2, or 3)
+    - `owner`: GitHub owner (auto-detected if not provided)
+    - `repo`: GitHub repo name (auto-detected if not provided)
 
     Returns:
         Markdown-formatted list of pending context with prompts, hints, and examples
@@ -480,9 +501,16 @@ No additional context is needed to improve audit accuracy.
 
         # Build markdown output
         lines = [
-            "# 🤔 Pending Context",
+            "# Pending Context - User Input Required",
             "",
-            "The following information would help verify additional controls:",
+            "IMPORTANT INSTRUCTIONS FOR AI AGENTS:",
+            "You MUST present each question below to the user exactly as written.",
+            "You MUST wait for the user's answer before calling confirm_project_context().",
+            "You MUST NOT guess, infer, or pre-fill values from the repository owner,",
+            "git history, commit authors, or any other source.",
+            "If the user does not know, skip that item.",
+            "",
+            "---",
             "",
         ]
 
@@ -523,59 +551,72 @@ No additional context is needed to improve audit accuracy.
 
 
 def _format_context_request(req) -> list[str]:
-    """Format a single context request as markdown."""
+    """Format a single context request as markdown.
+
+    For keys with auto_detect=false (like maintainers), we NEVER show
+    guessed values or pre-filled commands. The LLM must ask the user.
+    """
     lines = [
         f"### {req.key}",
-        f"**Question:** {req.definition.prompt}",
     ]
 
-    # Show auto-detected value if available
-    if req.current_value is not None:
+    auto_detect_enabled = getattr(req.definition, "auto_detect", False)
+
+    # Show auto-detected value ONLY if auto_detect is enabled for this key
+    if req.current_value is not None and auto_detect_enabled:
         value = req.current_value.value
         method = req.current_value.detection_method or "auto"
         confidence = req.current_value.confidence
 
-        # Format the value for display
         if isinstance(value, list):
             value_str = ", ".join(str(v) for v in value)
         else:
             value_str = str(value)
 
-        lines.append(f"- **🔍 Auto-detected:** `{value_str}` (via {method}, {int(confidence * 100)}% confidence)")
-        lines.append("- *Please confirm or update this value below*")
+        lines.append(f"**Auto-detected:** `{value_str}` (via {method}, {int(confidence * 100)}% confidence)")
+        lines.append("*Please confirm or correct this value.*")
+        lines.append("")
 
-    if req.definition.hint:
-        lines.append(f"- *Hint:* {req.definition.hint}")
-
-    if req.definition.examples:
-        examples_str = ", ".join(f"`{e}`" for e in req.definition.examples)
-        lines.append(f"- *Examples:* {examples_str}")
-
-    if req.definition.values:
-        values_str = ", ".join(f"`{v}`" for v in req.definition.values)
-        lines.append(f"- *Valid values:* {values_str}")
-
-    lines.append(f"- *Affects:* {', '.join(req.control_ids)}")
-
-    # Add example usage based on type, pre-fill with auto-detected value if available
-    if req.current_value is not None:
-        value = req.current_value.value
+        # Pre-fill confirm command only for auto-detected values
         if isinstance(value, list):
-            # Format list for Python syntax
             formatted_value = repr(value)
-            lines.append(f'- *Confirm with:* `confirm_project_context({req.key}={formatted_value})`')
+            lines.append(f'*Confirm with:* `confirm_project_context({req.key}={formatted_value})`')
         else:
-            lines.append(f'- *Confirm with:* `confirm_project_context({req.key}="{value}")`')
-    elif req.definition.type == "boolean":
-        lines.append(f'- *Set with:* `confirm_project_context({req.key}=True)`')
-    elif req.definition.type == "enum":
-        example_value = req.definition.values[0] if req.definition.values else "value"
-        lines.append(f'- *Set with:* `confirm_project_context({req.key}="{example_value}")`')
-    elif req.definition.type == "list_or_path":
-        lines.append(f'- *Set with:* `confirm_project_context({req.key}=["@user1", "@user2"])` or `confirm_project_context({req.key}="MAINTAINERS.md")`')
+            lines.append(f'*Confirm with:* `confirm_project_context({req.key}="{value}")`')
     else:
-        lines.append(f'- *Set with:* `confirm_project_context({req.key}="value")`')
+        # No auto-detection — the LLM MUST ask the user
+        lines.append(f"**ASK THE USER:** {req.definition.prompt}")
+        lines.append("")
+        lines.append(
+            "YOU MUST present this question to the user and wait for their "
+            "answer. Do NOT guess, infer, or fill in values based on the "
+            "repository owner, git history, or any other source."
+        )
+        lines.append("")
 
+        if req.definition.hint:
+            lines.append(f"*Hint for user:* {req.definition.hint}")
+
+        if req.definition.examples:
+            examples_str = ", ".join(f"`{e}`" for e in req.definition.examples)
+            lines.append(f"*Examples:* {examples_str}")
+
+        if req.definition.values:
+            values_str = ", ".join(f"`{v}`" for v in req.definition.values)
+            lines.append(f"*Valid values:* {values_str}")
+
+        lines.append("")
+        # Show generic command template — no pre-filled values
+        if req.definition.type == "boolean":
+            lines.append(f'*After the user answers, set with:* `confirm_project_context({req.key}=<true or false>)`')
+        elif req.definition.type == "enum":
+            lines.append(f'*After the user answers, set with:* `confirm_project_context({req.key}="<user_answer>")`')
+        elif req.definition.type == "list_or_path":
+            lines.append(f'*After the user answers, set with:* `confirm_project_context({req.key}=<user_answer>)`')
+        else:
+            lines.append(f'*After the user answers, set with:* `confirm_project_context({req.key}=<user_answer>)`')
+
+    lines.append(f"*Affects controls:* {', '.join(req.control_ids)}")
     lines.append("")
     return lines
 

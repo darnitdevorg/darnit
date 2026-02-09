@@ -6,10 +6,9 @@ function works for nested dotted paths.
 """
 
 from darnit.config.framework_schema import (
-    FileCreateRemediationConfig,
+    HandlerInvocation,
     ProjectUpdateRemediationConfig,
     RemediationConfig,
-    TemplateConfig,
 )
 from darnit.remediation.executor import (
     RemediationExecutor,
@@ -70,53 +69,60 @@ class TestProjectUpdateRemediationConfig:
 class TestExecutorProjectUpdate:
     """Tests for RemediationExecutor project_update integration."""
 
-    def test_project_update_applied_after_file_create(self, tmp_path):
-        """project_update is applied after successful file_create."""
-        # Set up executor with a template
-        templates = {
-            "test_template": TemplateConfig(content="# Test file\n"),
-        }
-        executor = RemediationExecutor(
-            local_path=str(tmp_path),
-            owner="testowner",
-            repo="testrepo",
-            templates=templates,
+    def test_project_update_applied_after_handler(self, tmp_path):
+        """project_update is applied after successful handler execution."""
+        from darnit.sieve.handler_registry import (
+            HandlerResult,
+            HandlerResultStatus,
+            get_sieve_handler_registry,
         )
 
-        # Config with file_create AND project_update
-        config = RemediationConfig(
-            file_create=FileCreateRemediationConfig(
-                path="SECURITY.md",
-                template="test_template",
-            ),
-            project_update=ProjectUpdateRemediationConfig(
-                set={"security.policy.path": "SECURITY.md"},
-            ),
-        )
+        # Register a test handler that always succeeds
+        registry = get_sieve_handler_registry()
 
-        result = executor.execute("TEST-01", config, dry_run=False)
-        assert result.success
+        def _test_handler(config, ctx):
+            return HandlerResult(status=HandlerResultStatus.PASS, message="OK")
 
-        # project_update should be noted in details
-        assert "project_update" in result.details
+        registry.register("_test_pu_handler", "deterministic", _test_handler)
+
+        try:
+            executor = RemediationExecutor(
+                local_path=str(tmp_path),
+                owner="testowner",
+                repo="testrepo",
+            )
+
+            config = RemediationConfig(
+                handlers=[
+                    HandlerInvocation(handler="_test_pu_handler"),
+                ],
+                project_update=ProjectUpdateRemediationConfig(
+                    set={"security.policy.path": "SECURITY.md"},
+                ),
+            )
+
+            result = executor.execute("TEST-01", config, dry_run=False)
+            assert result.success
+            assert "project_update" in result.details
+        finally:
+            registry._handlers.pop("_test_pu_handler", None)
 
     def test_project_update_dry_run_preview(self, tmp_path):
         """Dry run shows project_update preview."""
-        templates = {
-            "test_template": TemplateConfig(content="# Test\n"),
-        }
         executor = RemediationExecutor(
             local_path=str(tmp_path),
             owner="testowner",
             repo="testrepo",
-            templates=templates,
         )
 
         config = RemediationConfig(
-            file_create=FileCreateRemediationConfig(
-                path="README.md",
-                template="test_template",
-            ),
+            handlers=[
+                HandlerInvocation(
+                    handler="file_create",
+                    path="README.md",
+                    template="test_template",
+                ),
+            ],
             project_update=ProjectUpdateRemediationConfig(
                 set={"documentation.readme.path": "README.md"},
             ),
@@ -135,12 +141,11 @@ class TestExecutorProjectUpdate:
             repo="testrepo",
         )
 
-        # Config with file_create that will fail (no template)
+        # Config with a handler that won't be found → failure
         config = RemediationConfig(
-            file_create=FileCreateRemediationConfig(
-                path="README.md",
-                template="nonexistent_template",
-            ),
+            handlers=[
+                HandlerInvocation(handler="_nonexistent_handler_xyz"),
+            ],
             project_update=ProjectUpdateRemediationConfig(
                 set={"documentation.readme.path": "README.md"},
             ),
@@ -151,22 +156,22 @@ class TestExecutorProjectUpdate:
         # project_update should NOT be in details
         assert "project_update" not in result.details
 
-    def test_project_update_without_primary_remediation(self, tmp_path):
-        """project_update alone (no file_create/exec/api_call) doesn't run."""
+    def test_project_update_without_handlers(self, tmp_path):
+        """project_update alone (no handlers) doesn't run."""
         executor = RemediationExecutor(
             local_path=str(tmp_path),
             owner="testowner",
             repo="testrepo",
         )
 
-        # Config with only project_update, no primary action
+        # Config with only project_update, no handlers
         config = RemediationConfig(
             project_update=ProjectUpdateRemediationConfig(
                 set={"key": "value"},
             ),
         )
 
-        # Should fall through to "no remediation action configured"
+        # Should fall through to "no remediation handlers configured"
         result = executor.execute("TEST-01", config, dry_run=False)
         assert not result.success
         assert result.remediation_type == "none"

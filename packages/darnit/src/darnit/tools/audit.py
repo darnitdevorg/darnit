@@ -477,6 +477,12 @@ def calculate_compliance(
 ) -> dict[int, bool]:
     """Calculate level compliance from check results.
 
+    A level is compliant only when every applicable control at that level
+    has explicitly PASSED.  Controls that are WARN (needs verification),
+    FAIL, ERROR, or PENDING_LLM are all treated as non-compliant because
+    we cannot confirm the control is satisfied.  Only N/A controls are
+    excluded from the calculation.
+
     Args:
         results: List of check results
         level: Maximum level to calculate
@@ -487,9 +493,12 @@ def calculate_compliance(
     compliance = {}
 
     for lvl in range(1, level + 1):
-        level_results = [r for r in results if r.get("level", 1) == lvl]
-        level_failures = [r for r in level_results if r.get("status") == "FAIL"]
-        compliance[lvl] = len(level_failures) == 0
+        level_results = [
+            r for r in results
+            if r.get("level", 1) == lvl and r.get("status") != "N/A"
+        ]
+        all_pass = all(r.get("status") == "PASS" for r in level_results)
+        compliance[lvl] = all_pass and len(level_results) > 0
 
     return compliance
 
@@ -620,8 +629,27 @@ def format_results_markdown(
     ]
 
     for lvl in range(1, level + 1):
-        status = "✅ Compliant" if compliance.get(lvl, False) else "❌ Not Compliant"
-        lines.append(f"- **Level {lvl}:** {status}")
+        if compliance.get(lvl, False):
+            lines.append(f"- **Level {lvl}:** ✅ Compliant")
+        else:
+            # Show breakdown of what's blocking compliance
+            lvl_results = [
+                r for r in results
+                if r.get("level", 1) == lvl and r.get("status") != "N/A"
+            ]
+            n_pass = sum(1 for r in lvl_results if r.get("status") == "PASS")
+            n_fail = sum(1 for r in lvl_results if r.get("status") == "FAIL")
+            n_warn = sum(1 for r in lvl_results if r.get("status") == "WARN")
+            n_other = len(lvl_results) - n_pass - n_fail - n_warn
+            parts = []
+            if n_fail:
+                parts.append(f"{n_fail} failed")
+            if n_warn:
+                parts.append(f"{n_warn} unverified")
+            if n_other:
+                parts.append(f"{n_other} error/pending")
+            detail = ", ".join(parts) if parts else "no controls passed"
+            lines.append(f"- **Level {lvl}:** ❌ Not Compliant ({detail})")
 
     lines.append("")
     lines.append("## Detailed Results")

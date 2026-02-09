@@ -82,7 +82,9 @@ def check_context_requirements(
         # Check 1: Is context missing entirely?
         if context_value is None:
             # NEW: Try context sieve auto-detection before giving up
-            detected_value = _try_sieve_detection(req.key, local_path, owner, repo)
+            detected_value = _try_sieve_detection(
+                req.key, local_path, owner, repo, framework=framework
+            )
 
             if detected_value is not None:
                 # Found via sieve - use it as a ContextValue for consistency
@@ -325,6 +327,7 @@ def _try_sieve_detection(
     local_path: str,
     owner: str | None,
     repo: str | None,
+    framework: FrameworkConfig | None = None,
 ) -> ContextValue | None:
     """Try to auto-detect context using the context sieve.
 
@@ -334,19 +337,31 @@ def _try_sieve_detection(
     2. Heuristic (git history, package.json authors)
     3. API (GitHub collaborators)
 
-    NOTE: The sieve results are used as HINTS for user confirmation, not
-    auto-applied values. The display of sieve hints is controlled by
-    `allow_sieve_hints` in the ContextDefinitionConfig TOML.
+    Respects the TOML ``auto_detect`` flag: when ``auto_detect = false``
+    for a context key, sieve detection is skipped entirely.  This prevents
+    AI agents from seeing auto-detected values and blindly confirming them.
 
     Args:
         key: Context key to detect (e.g., "maintainers")
         local_path: Path to the repository
         owner: GitHub owner (optional)
         repo: GitHub repo name (optional)
+        framework: Optional FrameworkConfig for checking auto_detect flag
 
     Returns:
         ContextValue with auto-detected value if found, None otherwise
     """
+    # Check TOML auto_detect flag — if explicitly disabled, skip sieve entirely.
+    # This prevents AI agents from seeing guessed values and confirming them.
+    if framework:
+        definition = framework.context.get_definition(key)
+        if definition and not definition.auto_detect:
+            logger.debug(
+                "Skipping auto-detection for '%s' — auto_detect=false in TOML",
+                key,
+            )
+            return None
+
     try:
         from darnit.context import get_context_sieve
 

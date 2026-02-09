@@ -3,7 +3,7 @@
 Covers tasks 10.1-10.11 from toml-schema-improvements:
 - 10.1: HandlerRegistry (registration, lookup, phase affinity, duplicates)
 - 10.2: HandlerInvocation schema (extra="allow", shared reference resolution)
-- 10.3: Backward compatibility (old-style PassesConfig/RemediationConfig)
+- 10.3: Legacy format rejection
 - 10.4: when clause evaluation
 - 10.5: Dependency resolution (topological sort, cycles)
 - 10.6: inferred_from (auto-PASS, normal exec, implicit depends_on)
@@ -253,72 +253,57 @@ class TestHandlerInvocationSchema:
 
 
 # =============================================================================
-# 10.3: Backward compatibility tests
+# 10.3: Legacy format rejection tests
 # =============================================================================
 
 
-class TestBackwardCompatibility:
-    """Tests for old-style config auto-conversion."""
+class TestLegacyFormatRejection:
+    """Tests that legacy phase-bucketed format is rejected."""
 
     @pytest.mark.unit
-    def test_passes_config_old_style_deterministic(self):
-        """Test old-style DeterministicPassConfig still works."""
-        from darnit.config.framework_schema import (
-            DeterministicPassConfig,
-            PassesConfig,
-        )
+    def test_passes_legacy_dict_rejected(self):
+        """Legacy phase-bucketed passes dict raises validation error."""
+        from darnit.config.framework_schema import ControlConfig
 
-        passes = PassesConfig(
-            deterministic=DeterministicPassConfig(file_must_exist=["README.md"])
-        )
-        assert isinstance(passes.deterministic, DeterministicPassConfig)
-
-    @pytest.mark.unit
-    def test_passes_config_new_handler_list(self):
-        """Test new-style handler invocation list works."""
-        from darnit.config.framework_schema import HandlerInvocation, PassesConfig
-
-        passes = PassesConfig(
-            deterministic=[
-                HandlerInvocation(handler="file_exists", files=["README.md"])
-            ]
-        )
-        assert isinstance(passes.deterministic, list)
-        assert passes.deterministic[0].handler == "file_exists"
-
-    @pytest.mark.unit
-    def test_remediation_config_old_style(self):
-        """Test old-style remediation config with typed fields."""
-        from darnit.config.framework_schema import (
-            FileCreateRemediationConfig,
-            RemediationConfig,
-        )
-
-        rem = RemediationConfig(
-            file_create=FileCreateRemediationConfig(
-                path="SECURITY.md", template="security"
+        with pytest.raises(Exception, match="Legacy phase-bucketed"):
+            ControlConfig(
+                name="Test",
+                level=1,
+                domain="AC",
+                description="Test",
+                passes={"deterministic": {"file_must_exist": ["README.md"]}},
             )
-        )
-        assert rem.has_legacy_config()
-        assert not rem.has_handler_invocations()
 
     @pytest.mark.unit
-    def test_remediation_config_new_handler_list(self):
-        """Test new-style handler-based remediation config."""
+    def test_passes_flat_list_accepted(self):
+        """New flat handler list is accepted."""
+        from darnit.config.framework_schema import ControlConfig, HandlerInvocation
+
+        control = ControlConfig(
+            name="Test",
+            level=1,
+            domain="AC",
+            description="Test",
+            passes=[
+                HandlerInvocation(handler="file_exists", files=["README.md"]),
+            ],
+        )
+        assert len(control.passes) == 1
+        assert control.passes[0].handler == "file_exists"
+
+    @pytest.mark.unit
+    def test_remediation_handlers_flat_list(self):
+        """Remediation uses flat handlers list."""
         from darnit.config.framework_schema import (
             HandlerInvocation,
             RemediationConfig,
         )
 
         rem = RemediationConfig(
-            deterministic=[HandlerInvocation(handler="file_create", path="SECURITY.md")]
+            handlers=[HandlerInvocation(handler="file_create", path="SECURITY.md")]
         )
-        assert rem.has_handler_invocations()
-        invocations = rem.get_handler_invocations()
-        assert len(invocations) == 1
-        phase_name, inv_list = invocations[0]
-        assert phase_name == "deterministic"
-        assert inv_list[0].handler == "file_create"
+        assert len(rem.handlers) == 1
+        assert rem.handlers[0].handler == "file_create"
 
 
 # =============================================================================
@@ -568,9 +553,7 @@ class TestSharedHandlerCache:
 
         orchestrator = SieveOrchestrator()
         invocations = [
-            ("deterministic", [
-                HandlerInvocation(handler="shared_check", shared="bp_check"),
-            ]),
+            HandlerInvocation(handler="shared_check", shared="bp_check"),
         ]
         control = _make_control("T-01", handler_invocations=invocations)
         context = _make_context()
@@ -603,12 +586,12 @@ class TestSharedHandlerCache:
         orchestrator = SieveOrchestrator()
 
         # First control
-        inv1 = [("deterministic", [HandlerInvocation(handler="shared_check", shared="bp_check")])]
+        inv1 = [HandlerInvocation(handler="shared_check", shared="bp_check")]
         control1 = _make_control("T-01", handler_invocations=inv1)
         orchestrator._dispatch_handler_invocations(control1, _make_context())
 
         # Second control — should use cache
-        inv2 = [("deterministic", [HandlerInvocation(handler="shared_check", shared="bp_check")])]
+        inv2 = [HandlerInvocation(handler="shared_check", shared="bp_check")]
         control2 = _make_control("T-02", handler_invocations=inv2)
         orchestrator._dispatch_handler_invocations(control2, _make_context())
 
@@ -633,7 +616,7 @@ class TestSharedHandlerCache:
         registry.register("h", "deterministic", counting_handler)
 
         orchestrator = SieveOrchestrator()
-        inv = [("deterministic", [HandlerInvocation(handler="h", shared="cache_key")])]
+        inv = [HandlerInvocation(handler="h", shared="cache_key")]
 
         # First run
         control1 = _make_control("T-01", handler_invocations=inv)
@@ -661,9 +644,9 @@ class TestSharedHandlerCache:
         )
 
         orchestrator = SieveOrchestrator()
-        inv = [("deterministic", [
+        inv = [
             HandlerInvocation(handler="failing_handler", shared="bad_api"),
-        ])]
+        ]
         control = _make_control("T-01", handler_invocations=inv)
         result = orchestrator._dispatch_handler_invocations(control, _make_context())
 
@@ -717,16 +700,13 @@ class TestUseLocatorAndOnPass:
             ControlConfig,
             HandlerInvocation,
             LocatorConfig,
-            PassesConfig,
         )
 
         control = ControlConfig(
             name="Test",
             description="test",
             level=1,
-            passes=PassesConfig(
-                deterministic=[HandlerInvocation(handler="file_exists")]
-            ),
+            passes=[HandlerInvocation(handler="file_exists")],
             locator=LocatorConfig(
                 project_path="security.policy.path",
                 discover=["SECURITY.md"],
@@ -745,16 +725,13 @@ class TestUseLocatorAndOnPass:
             HandlerInvocation,
             LocatorConfig,
             OnPassConfig,
-            PassesConfig,
         )
 
         control = ControlConfig(
             name="Test",
             description="test",
             level=1,
-            passes=PassesConfig(
-                deterministic=[HandlerInvocation(handler="file_exists")]
-            ),
+            passes=[HandlerInvocation(handler="file_exists")],
             locator=LocatorConfig(
                 project_path="security.policy.path",
                 discover=["SECURITY.md"],
@@ -937,17 +914,17 @@ class TestEndToEndIntegration:
 
         orchestrator = SieveOrchestrator()
 
-        # Control A: simple pass with shared handler
-        inv_a = [("deterministic", [
+        # Control A: simple pass with shared handler (flat list)
+        inv_a = [
             HandlerInvocation(handler="always_pass", shared="shared_check"),
-        ])]
+        ]
         ctrl_a = _make_control("A-01", handler_invocations=inv_a)
 
         # Control B: inferred from A (should auto-pass if A passes)
         ctrl_b = _make_control("B-01", inferred_from="A-01")
 
         # Control C: conditional (N/A if has_releases=false)
-        inv_c = [("deterministic", [HandlerInvocation(handler="always_pass")])]
+        inv_c = [HandlerInvocation(handler="always_pass")]
         ctrl_c = _make_control(
             "C-01",
             when={"has_releases": True},
@@ -955,7 +932,7 @@ class TestEndToEndIntegration:
         )
 
         # Control D: depends on A
-        inv_d = [("deterministic", [HandlerInvocation(handler="always_fail")])]
+        inv_d = [HandlerInvocation(handler="always_fail")]
         ctrl_d = _make_control("D-01", depends_on=["A-01"], handler_invocations=inv_d)
 
         # Run batch with project_context where has_releases=False (C is N/A)

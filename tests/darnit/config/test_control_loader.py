@@ -6,10 +6,6 @@ This module tests the TOML-based declarative control definition system.
 import pytest
 
 from darnit.config.control_loader import (
-    _convert_deterministic_pass,
-    _convert_exec_pass,
-    _convert_manual_pass,
-    _convert_pattern_pass,
     _get_allowed_module_prefixes,
     _is_module_allowed,
     _resolve_check_function,
@@ -20,196 +16,11 @@ from darnit.config.control_loader import (
 # Test imports
 from darnit.config.framework_schema import (
     ControlConfig,
-    DeterministicPassConfig,
-    ExecPassConfig,
     FrameworkConfig,
     FrameworkMetadata,
-    ManualPassConfig,
-    PassesConfig,
-    PatternPassConfig,
+    HandlerInvocation,
 )
 from darnit.sieve.models import ControlSpec
-from darnit.sieve.passes import (
-    DeterministicPass,
-    ExecPass,
-    ManualPass,
-    PatternPass,
-)
-
-
-class TestDeterministicPassConversion:
-    """Test conversion of DeterministicPassConfig to DeterministicPass."""
-
-    def test_file_must_exist(self):
-        """Test file_must_exist conversion."""
-        config = DeterministicPassConfig(
-            file_must_exist=["README.md", "LICENSE"],
-        )
-        result = _convert_deterministic_pass(config)
-
-        assert isinstance(result, DeterministicPass)
-        assert result.file_must_exist == ["README.md", "LICENSE"]
-
-    def test_file_must_not_exist(self):
-        """Test file_must_not_exist conversion."""
-        config = DeterministicPassConfig(
-            file_must_not_exist=[".env", "secrets.json"],
-        )
-        result = _convert_deterministic_pass(config)
-
-        assert isinstance(result, DeterministicPass)
-        assert result.file_must_not_exist == [".env", "secrets.json"]
-
-    def test_both_file_conditions(self):
-        """Test both file conditions together."""
-        config = DeterministicPassConfig(
-            file_must_exist=["README.md"],
-            file_must_not_exist=[".env"],
-        )
-        result = _convert_deterministic_pass(config)
-
-        assert result.file_must_exist == ["README.md"]
-        assert result.file_must_not_exist == [".env"]
-
-
-class TestExecPassConversion:
-    """Test conversion of ExecPassConfig to ExecPass."""
-
-    def test_basic_command(self):
-        """Test basic command conversion."""
-        config = ExecPassConfig(
-            command=["gh", "api", "/repos/owner/repo"],
-            pass_exit_codes=[0],
-            output_format="json",
-            timeout=30,
-        )
-        result = _convert_exec_pass(config)
-
-        assert isinstance(result, ExecPass)
-        assert result.command == ["gh", "api", "/repos/owner/repo"]
-        assert result.pass_exit_codes == [0]
-        assert result.output_format == "json"
-        assert result.timeout == 30
-
-    def test_json_path_matching(self):
-        """Test JSON path matching configuration."""
-        config = ExecPassConfig(
-            command=["gh", "api", "/orgs/testorg"],
-            pass_exit_codes=[0],
-            output_format="json",
-            pass_if_json_path="two_factor_requirement_enabled",
-            pass_if_json_value="true",
-        )
-        result = _convert_exec_pass(config)
-
-        assert result.pass_if_json_path == "two_factor_requirement_enabled"
-        assert result.pass_if_json_value == "true"
-
-    def test_output_matching(self):
-        """Test output pattern matching configuration."""
-        config = ExecPassConfig(
-            command=["cat", "README.md"],
-            pass_exit_codes=[0],
-            output_format="text",
-            pass_if_output_matches=r"MIT License",
-        )
-        result = _convert_exec_pass(config)
-
-        assert result.pass_if_output_matches == r"MIT License"
-
-    def test_fail_exit_codes(self):
-        """Test fail_exit_codes configuration."""
-        config = ExecPassConfig(
-            command=["gh", "api", "/some/endpoint"],
-            pass_exit_codes=[0],
-            fail_exit_codes=[1, 2],
-        )
-        result = _convert_exec_pass(config)
-
-        assert result.fail_exit_codes == [1, 2]
-
-    def test_environment_variables(self):
-        """Test environment variable configuration."""
-        config = ExecPassConfig(
-            command=["custom-checker"],
-            pass_exit_codes=[0],
-            env={"CUSTOM_VAR": "value", "ANOTHER_VAR": "another"},
-        )
-        result = _convert_exec_pass(config)
-
-        assert result.env == {"CUSTOM_VAR": "value", "ANOTHER_VAR": "another"}
-
-
-class TestPatternPassConversion:
-    """Test conversion of PatternPassConfig to PatternPass."""
-
-    def test_file_patterns(self):
-        """Test file pattern configuration."""
-        config = PatternPassConfig(
-            files=[".github/workflows/*.yml"],
-        )
-        result = _convert_pattern_pass(config)
-
-        assert isinstance(result, PatternPass)
-        assert result.file_patterns == [".github/workflows/*.yml"]
-
-    def test_content_patterns(self):
-        """Test content pattern matching."""
-        config = PatternPassConfig(
-            files=["SECURITY.md"],
-            patterns={
-                "email": r"[\w.-]+@[\w.-]+\.\w+",
-                "reporting": r"report.*vulnerabilit",
-            },
-            pass_if_any_match=True,
-        )
-        result = _convert_pattern_pass(config)
-
-        assert result.content_patterns == {
-            "email": r"[\w.-]+@[\w.-]+\.\w+",
-            "reporting": r"report.*vulnerabilit",
-        }
-        assert result.pass_if_any_match is True
-
-    def test_fail_if_no_match(self):
-        """Test fail_if_no_match configuration."""
-        config = PatternPassConfig(
-            files=["README.md"],
-            fail_if_no_match=True,
-        )
-        result = _convert_pattern_pass(config)
-
-        assert result.fail_if_no_match is True
-
-
-class TestManualPassConversion:
-    """Test conversion of ManualPassConfig to ManualPass."""
-
-    def test_verification_steps(self):
-        """Test verification steps conversion."""
-        config = ManualPassConfig(
-            steps=[
-                "Check repository settings",
-                "Verify branch protection is enabled",
-            ],
-        )
-        result = _convert_manual_pass(config)
-
-        assert isinstance(result, ManualPass)
-        assert result.verification_steps == [
-            "Check repository settings",
-            "Verify branch protection is enabled",
-        ]
-
-    def test_docs_url(self):
-        """Test docs_url configuration."""
-        config = ManualPassConfig(
-            steps=["Check settings"],
-            docs_url="https://docs.example.com/verify",
-        )
-        result = _convert_manual_pass(config)
-
-        assert result.verification_docs_url == "https://docs.example.com/verify"
 
 
 class TestControlFromFramework:
@@ -236,28 +47,33 @@ class TestControlFromFramework:
         assert result.domain == "AC"
         assert result.description == "A test control"
 
-    def test_control_with_passes(self):
-        """Test control with passes configuration."""
+    def test_control_with_handler_invocations(self):
+        """Test control with flat handler invocation list."""
         control_config = ControlConfig(
             name="FileCheck",
             level=1,
             domain="DO",
             description="Check files exist",
-            passes=PassesConfig(
-                deterministic=DeterministicPassConfig(
-                    file_must_exist=["README.md"],
+            passes=[
+                HandlerInvocation(
+                    handler="file_exists",
+                    path="README.md",
                 ),
-                manual=ManualPassConfig(
+                HandlerInvocation(
+                    handler="manual",
                     steps=["Verify README exists"],
                 ),
-            ),
+            ],
         )
 
         result = control_from_framework("TEST-02.01", control_config)
 
-        assert len(result.passes) == 2
-        assert isinstance(result.passes[0], DeterministicPass)
-        assert isinstance(result.passes[1], ManualPass)
+        # Handler invocations are stored in metadata, not as legacy pass objects
+        assert result.control_id == "TEST-02.01"
+        handler_invocations = result.metadata.get("handler_invocations", [])
+        assert len(handler_invocations) == 2
+        assert handler_invocations[0].handler == "file_exists"
+        assert handler_invocations[1].handler == "manual"
 
 
 class TestLoadControlsFromFramework:
@@ -322,6 +138,7 @@ class TestExecPassVariableSubstitution:
     def test_whole_element_substitution(self):
         """Test that ExecPass substitutes whole-element variables correctly."""
         from darnit.sieve.models import CheckContext
+        from darnit.sieve.passes import ExecPass
 
         # Whole-element variables (should be substituted)
         exec_pass = ExecPass(
@@ -345,6 +162,7 @@ class TestExecPassVariableSubstitution:
     def test_partial_substitution_allowed(self):
         """Test that partial matches ARE substituted (needed for API paths)."""
         from darnit.sieve.models import CheckContext
+        from darnit.sieve.passes import ExecPass
 
         exec_pass = ExecPass(
             command=["gh", "api", "/repos/$OWNER/$REPO"],  # Partial match in path
@@ -367,6 +185,7 @@ class TestExecPassVariableSubstitution:
     def test_path_substitution(self):
         """Test $PATH variable substitution."""
         from darnit.sieve.models import CheckContext
+        from darnit.sieve.passes import ExecPass
 
         exec_pass = ExecPass(
             command=["ls", "$PATH"],
@@ -431,6 +250,19 @@ class TestFrameworkSchemaValidation:
             security_severity=7.5,
         )
         assert control.security_severity == 7.5
+
+    def test_legacy_passes_format_rejected(self):
+        """Test that legacy phase-bucketed passes format is rejected."""
+        with pytest.raises(Exception, match="Legacy phase-bucketed"):
+            ControlConfig(
+                name="Test",
+                level=1,
+                domain="AC",
+                description="Test",
+                passes={
+                    "deterministic": {"file_must_exist": ["README.md"]},
+                },
+            )
 
 
 class TestModuleImportSecurity:
