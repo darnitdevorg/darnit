@@ -474,10 +474,14 @@ def register_builtin_handlers() -> None:
                        description="Run external command, evaluate exit code / CEL expr")
     registry.register("regex", phase="pattern", handler_fn=regex_handler,
                        description="Match regex patterns in file content")
+    registry.register("pattern", phase="pattern", handler_fn=regex_handler,
+                       description="Alias for regex handler (match regex patterns in file content)")
     registry.register("llm_eval", phase="llm", handler_fn=llm_eval_handler,
                        description="AI evaluation with confidence threshold")
     registry.register("manual_steps", phase="manual", handler_fn=manual_steps_handler,
                        description="Human verification checklist")
+    registry.register("manual", phase="manual", handler_fn=manual_steps_handler,
+                       description="Alias for manual_steps handler (human verification checklist)")
 
     # Remediation handlers
     registry.register("file_create", phase="deterministic", handler_fn=file_create_handler,
