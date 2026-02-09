@@ -412,3 +412,52 @@ class TestFlatListOrdering:
         assert result.status == "PASS"
         assert result.evidence.get("found_file") == "/path/to/SECURITY.md"
         assert result.evidence.get("checked_file") == "/path/to/SECURITY.md"
+
+
+# =============================================================================
+# Regression: use_locator must resolve through effective config path
+# =============================================================================
+
+
+class TestUseLocatorEffectivePath:
+    """Regression test: use_locator must be resolved when loading via effective config.
+
+    The effective config path (merger → control_from_effective) must resolve
+    use_locator=true before passing handler invocations to the orchestrator.
+    Without this, file_exists handlers get files=[] and return INCONCLUSIVE.
+    """
+
+    @pytest.mark.unit
+    def test_use_locator_controls_have_files_in_effective_config(self):
+        """All use_locator=true controls must have files populated after effective loading."""
+        from pathlib import Path
+
+        from darnit.config import load_controls_from_effective, load_effective_config_by_name
+
+        config = load_effective_config_by_name("openssf-baseline", Path("."))
+        controls = load_controls_from_effective(config)
+
+        # Known controls that use use_locator=true
+        use_locator_controls = {
+            "OSPS-BR-07.01", "OSPS-DO-01.01", "OSPS-DO-02.01", "OSPS-GV-03.01",
+            "OSPS-LE-01.01", "OSPS-LE-03.01", "OSPS-QA-02.01", "OSPS-VM-02.01",
+            "OSPS-GV-01.01", "OSPS-VM-05.03", "OSPS-DO-03.01", "OSPS-SA-03.02",
+        }
+
+        for ctrl in controls:
+            if ctrl.control_id not in use_locator_controls:
+                continue
+
+            invocations = ctrl.metadata.get("handler_invocations", [])
+            assert invocations, f"{ctrl.control_id}: no handler_invocations in metadata"
+
+            # Find file_exists handler
+            for inv in invocations:
+                inv_dict = inv if isinstance(inv, dict) else inv.model_dump()
+                if inv_dict.get("handler") == "file_exists":
+                    files = inv_dict.get("files")
+                    assert files and len(files) > 0, (
+                        f"{ctrl.control_id}: file_exists handler has no files - "
+                        f"use_locator not resolved! Got: {inv_dict}"
+                    )
+                    break

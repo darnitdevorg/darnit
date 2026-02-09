@@ -717,6 +717,48 @@ class TestUseLocatorAndOnPass:
         assert "security.policy.path" in on_pass.project_update
 
     @pytest.mark.unit
+    def test_use_locator_resolved_through_effective_config(self):
+        """use_locator must be resolved when loading via effective config path.
+
+        Regression test: the merger must resolve use_locator before dumping
+        passes to dicts, otherwise the handler gets files=[] and returns
+        INCONCLUSIVE instead of PASS/FAIL.
+        """
+        from darnit.config.framework_schema import (
+            ControlConfig,
+            FrameworkDefaults,
+            HandlerInvocation,
+            LocatorConfig,
+        )
+        from darnit.config.merger import merge_control
+
+        control = ControlConfig(
+            name="Test file check",
+            description="Check a file exists",
+            level=1,
+            passes=[
+                HandlerInvocation(handler="file_exists", use_locator=True),
+                HandlerInvocation(handler="manual", steps=["Verify manually"]),
+            ],
+            locator=LocatorConfig(
+                discover=["SECURITY.md", ".github/SECURITY.md"],
+                kind="file",
+            ),
+        )
+        defaults = FrameworkDefaults()
+
+        effective = merge_control("T-01", control, None, defaults)
+
+        # The passes_config should have files resolved from locator
+        assert effective.passes_config is not None
+        file_exists_pass = effective.passes_config[0]
+        assert file_exists_pass["handler"] == "file_exists"
+        assert file_exists_pass.get("files") == [
+            "SECURITY.md",
+            ".github/SECURITY.md",
+        ], f"use_locator not resolved! files={file_exists_pass.get('files')}"
+
+    @pytest.mark.unit
     def test_auto_derive_on_pass_skips_when_explicit(self):
         """Auto-derive skips when on_pass is already set."""
         from darnit.config.control_loader import _auto_derive_on_pass

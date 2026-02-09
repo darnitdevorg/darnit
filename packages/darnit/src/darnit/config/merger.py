@@ -277,8 +277,21 @@ def merge_control(
             effective.remediation_config = dict(framework_control.remediation.config)
 
         # Store passes config for sieve (flat list of handler invocations)
+        # Resolve use_locator before dumping so handlers get files lists
         if framework_control.passes:
-            effective.passes_config = [p.model_dump() for p in framework_control.passes]
+            from .control_loader import _resolve_handler_invocations
+
+            locator_discover = None
+            if framework_control.locator and framework_control.locator.discover:
+                locator_discover = framework_control.locator.discover
+
+            resolved = _resolve_handler_invocations(
+                framework_control.passes,
+                {},  # shared_handlers resolved separately
+                locator_discover,
+                control_id,
+            )
+            effective.passes_config = [p.model_dump() for p in resolved]
 
     else:
         # Custom control from user - name and description required, level/domain optional
