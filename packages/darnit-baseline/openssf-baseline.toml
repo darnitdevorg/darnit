@@ -940,7 +940,7 @@ kind = "file"
 
 [[controls."OSPS-BR-07.01".passes]]
 handler = "file_exists"
-files = [".gitignore"]
+use_locator = true
 
 [[controls."OSPS-BR-07.01".passes]]
 handler = "pattern"
@@ -1147,13 +1147,7 @@ kind = "file"
 
 [[controls."OSPS-DO-01.01".passes]]
 handler = "file_exists"
-files = [
-    "README.md",
-    "README.rst",
-    "README.txt",
-    "README",
-    "readme.md",
-]
+use_locator = true
 
 [[controls."OSPS-DO-01.01".passes]]
 handler = "manual"
@@ -1193,7 +1187,7 @@ look_for_urls = false
 
 [[controls."OSPS-DO-02.01".passes]]
 handler = "file_exists"
-files = [".github/ISSUE_TEMPLATE/bug_report.md", ".github/ISSUE_TEMPLATE/bug_report.yml", ".github/ISSUE_TEMPLATE.md"]
+use_locator = true
 
 [[controls."OSPS-DO-02.01".passes]]
 handler = "pattern"
@@ -1291,11 +1285,7 @@ look_for_urls = false
 
 [[controls."OSPS-GV-03.01".passes]]
 handler = "file_exists"
-files = [
-    "CONTRIBUTING.md",
-    ".github/CONTRIBUTING.md",
-    "docs/CONTRIBUTING.md",
-]
+use_locator = true
 
 [[controls."OSPS-GV-03.01".passes]]
 handler = "manual"
@@ -1333,12 +1323,7 @@ kind = "file"
 
 [[controls."OSPS-LE-01.01".passes]]
 handler = "file_exists"
-files = [
-    "LICENSE",
-    "LICENSE.md",
-    "LICENSE.txt",
-    "COPYING",
-]
+use_locator = true
 
 [[controls."OSPS-LE-01.01".passes]]
 handler = "manual"
@@ -1418,7 +1403,7 @@ kind = "file"
 
 [[controls."OSPS-LE-03.01".passes]]
 handler = "file_exists"
-files = ["LICENSE", "LICENSE.md", "COPYING"]
+use_locator = true
 
 [[controls."OSPS-LE-03.01".passes]]
 handler = "manual"
@@ -1538,16 +1523,7 @@ kind = "file"
 
 [[controls."OSPS-QA-02.01".passes]]
 handler = "file_exists"
-files = [
-    "package.json",
-    "requirements.txt",
-    "pyproject.toml",
-    "Cargo.toml",
-    "go.mod",
-    "pom.xml",
-    "build.gradle",
-    "Gemfile",
-]
+use_locator = true
 
 [[controls."OSPS-QA-02.01".passes]]
 handler = "manual"
@@ -1693,11 +1669,7 @@ look_for_urls = true
 
 [[controls."OSPS-VM-02.01".passes]]
 handler = "file_exists"
-files = [
-    "SECURITY.md",
-    ".github/SECURITY.md",
-    "docs/SECURITY.md",
-]
+use_locator = true
 
 [[controls."OSPS-VM-02.01".passes]]
 handler = "manual"
@@ -1779,12 +1751,7 @@ look_for_urls = false
 
 [[controls."OSPS-GV-01.01".passes]]
 handler = "file_exists"
-files = [
-    "GOVERNANCE.md",
-    "MAINTAINERS.md",
-    "CODEOWNERS",
-    ".github/CODEOWNERS",
-]
+use_locator = true
 
 [[controls."OSPS-GV-01.01".passes]]
 handler = "manual"
@@ -2511,12 +2478,7 @@ kind = "file"
 
 [[controls."OSPS-VM-05.03".passes]]
 handler = "file_exists"
-files = [
-    ".github/dependabot.yml",
-    ".github/dependabot.yaml",
-    "renovate.json",
-    ".renovaterc",
-]
+use_locator = true
 
 [[controls."OSPS-VM-05.03".passes]]
 handler = "manual"
@@ -2626,10 +2588,7 @@ look_for_urls = true
 
 [[controls."OSPS-DO-03.01".passes]]
 handler = "file_exists"
-files = [
-    "SUPPORT.md",
-    ".github/SUPPORT.md",
-]
+use_locator = true
 
 [[controls."OSPS-DO-03.01".passes]]
 handler = "manual"
@@ -2861,11 +2820,7 @@ look_for_urls = true
 
 [[controls."OSPS-SA-03.02".passes]]
 handler = "file_exists"
-files = [
-    "THREAT_MODEL.md",
-    "docs/threat-model.md",
-    "docs/security/threat-model.md",
-]
+use_locator = true
 
 [[controls."OSPS-SA-03.02".passes]]
 handler = "pattern"
