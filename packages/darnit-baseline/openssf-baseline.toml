@@ -502,7 +502,7 @@ hint = "Provide GitHub usernames (e.g., @user1, @user2) or path to MAINTAINERS.m
 examples = ["@user1, @user2", "MAINTAINERS.md"]
 affects = ["OSPS-GV-01.01", "OSPS-GV-01.02", "OSPS-GV-04.01"]
 store_as = "governance.maintainers"
-auto_detect = false  # Never auto-use values without confirmation
+auto_detect = true  # Auto-detect from git/GitHub, present for user confirmation
 auto_detect_method = "github_collaborators"  # Used for sieve hints when allow_sieve_hints=true
 required = false
 # Authoritative files to check - if found, suggest referencing the file instead of values
