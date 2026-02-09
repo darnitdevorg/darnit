@@ -383,6 +383,10 @@ class SieveOrchestrator:
         This is called after the calling LLM has analyzed the consultation request
         and provided a structured response.
 
+        TODO: This method still iterates control_spec.passes (the legacy field)
+        to find LLM/manual pass configs. Should be refactored to read from
+        handler_invocations metadata instead.
+
         Args:
             control_spec: The control being verified
             context: Original context

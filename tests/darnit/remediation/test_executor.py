@@ -84,6 +84,25 @@ class TestRemediationExecutor:
         assert "security@myorg.github.io" in result
         assert "myrepo issues" in result
 
+    def test_context_list_substitution_uses_spaces(self):
+        """Test that list context values are joined with spaces (not commas).
+
+        This is important for CODEOWNERS format which requires space-separated owners.
+        """
+        executor = RemediationExecutor(
+            local_path="/tmp/test",
+            owner="myorg",
+            repo="myrepo",
+        )
+        executor._context_values = {
+            "maintainers": ["@alice", "@bob", "@charlie"],
+        }
+
+        text = "* ${context.maintainers}"
+        result = executor._substitute(text, "TEST-01")
+
+        assert result == "* @alice @bob @charlie"
+
     def test_command_substitution(self):
         """Test variable substitution in commands."""
         executor = RemediationExecutor(

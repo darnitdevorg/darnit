@@ -168,14 +168,46 @@ def exec_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResu
         except (json.JSONDecodeError, ValueError):
             logger.debug("Failed to parse JSON output from command")
 
-    # CEL expression evaluation
+    # CEL expression evaluation — takes precedence over exit code when present
     expr = config.get("expr")
     if expr:
-        # Defer to CEL evaluator — for now, simple evaluation
-        # TODO: Wire into full CEL evaluator from passes.py
         evidence["expr"] = expr
+        try:
+            from .cel_evaluator import evaluate_cel
 
-    # Exit code evaluation
+            cel_context = {
+                "output": {
+                    "stdout": proc.stdout or "",
+                    "stderr": proc.stderr or "",
+                    "exit_code": proc.returncode,
+                    "json": evidence.get("json"),
+                },
+            }
+            cel_result = evaluate_cel(expr, cel_context)
+            if cel_result.success:
+                if cel_result.value:
+                    return HandlerResult(
+                        status=HandlerResultStatus.PASS,
+                        message="CEL expression passed",
+                        confidence=1.0,
+                        evidence=evidence,
+                    )
+                else:
+                    # CEL evaluated to false — return INCONCLUSIVE so the
+                    # next pass in the pipeline can try (e.g., file_exists)
+                    return HandlerResult(
+                        status=HandlerResultStatus.INCONCLUSIVE,
+                        message="CEL expression evaluated to false",
+                        evidence=evidence,
+                    )
+            else:
+                logger.debug(f"CEL evaluation failed: {cel_result.error}")
+                # Fall through to exit code evaluation
+        except Exception as e:
+            logger.debug(f"CEL evaluator unavailable: {e}")
+            # Fall through to exit code evaluation
+
+    # Exit code evaluation (fallback when no expr or CEL fails)
     if proc.returncode in pass_exit_codes:
         return HandlerResult(
             status=HandlerResultStatus.PASS,

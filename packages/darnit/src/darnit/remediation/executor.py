@@ -153,7 +153,7 @@ class RemediationExecutor:
                 if isinstance(value, str):
                     subs[f"${{context.{key}}}"] = value
                 elif isinstance(value, list):
-                    subs[f"${{context.{key}}}"] = ", ".join(str(v) for v in value)
+                    subs[f"${{context.{key}}}"] = " ".join(str(v) for v in value)
                 elif value is not None:
                     subs[f"${{context.{key}}}"] = str(value)
 
@@ -465,6 +465,16 @@ def apply_project_update(
     # Load or create project config
     config = load_project_config(local_path)
     if config is None:
+        project_dir = os.path.join(local_path, ".project")
+        if os.path.isdir(project_dir):
+            # .project/ exists but config failed validation — do NOT overwrite
+            # with a blank config as that would destroy existing extension data
+            # (context, ci settings, etc. in darnit.yaml)
+            logger.warning(
+                f"Skipping project_update for {control_id}: "
+                f".project/ exists but config failed validation"
+            )
+            return
         if not project_update.create_if_missing:
             logger.debug(
                 f"No .project/ found for {control_id} and create_if_missing=False"
@@ -485,11 +495,109 @@ def apply_project_update(
     )
 
 
+def _coerce_to_field_type(
+    obj: object, field_name: str, value: object
+) -> object:
+    """Coerce a value to match the expected Pydantic field type.
+
+    When setting a string value to a field that expects a Pydantic model
+    (e.g., PathRef), constructs the model with path=value. This handles
+    the common case where on_pass auto-derives set documentation.readme
+    to a string like "README.md", but the field expects PathRef(path=...).
+
+    Returns the coerced value, or the original value if coercion isn't needed.
+    """
+    import types
+
+    from pydantic import BaseModel
+
+    if not isinstance(obj, BaseModel) or not isinstance(value, str):
+        return value
+
+    field_info = type(obj).model_fields.get(field_name)
+    if not field_info or not field_info.annotation:
+        return value
+
+    annotation = field_info.annotation
+
+    # Find BaseModel type from annotation (handles X | None unions)
+    model_type = None
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        model_type = annotation
+    else:
+        args = getattr(annotation, "__args__", ())
+        if args and (
+            isinstance(annotation, types.UnionType)
+            or getattr(annotation, "__origin__", None) is not None
+        ):
+            for arg in args:
+                if isinstance(arg, type) and issubclass(arg, BaseModel):
+                    model_type = arg
+                    break
+
+    if model_type is None:
+        return value  # Field doesn't expect a BaseModel — use string as-is
+
+    # Try constructing the model with path=value (PathRef pattern)
+    try:
+        return model_type(path=value)
+    except Exception:
+        pass
+
+    return value
+
+
+def _create_field_default(obj: object, field_name: str) -> object:
+    """Create a default instance for a Pydantic model field.
+
+    When a Pydantic model field is None and we need to set a nested value,
+    this creates the correct type (e.g., SecurityConfig, PathRef) instead
+    of a raw dict, which would corrupt the config on serialization.
+
+    Returns:
+        An instance of the expected field type, or {} as fallback.
+    """
+    import types
+
+    from pydantic import BaseModel
+
+    if isinstance(obj, BaseModel):
+        field_info = type(obj).model_fields.get(field_name)
+        if field_info and field_info.annotation:
+            annotation = field_info.annotation
+
+            # Direct model type (e.g., SecurityConfig)
+            if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+                try:
+                    return annotation()
+                except Exception:
+                    pass
+
+            # Union type (X | Y or Optional[X]) — find a BaseModel subclass
+            args = getattr(annotation, "__args__", ())
+            if args and (
+                isinstance(annotation, types.UnionType)
+                or getattr(annotation, "__origin__", None) is not None
+            ):
+                for arg in args:
+                    if isinstance(arg, type) and issubclass(arg, BaseModel):
+                        try:
+                            return arg()
+                        except Exception:
+                            break
+    return {}
+
+
 def _set_nested_value(obj: object, dotted_path: str, value: object) -> None:
     """Set a nested attribute/dict value using a dotted path.
 
     Supports both attribute access (for Pydantic models) and dict access.
-    Creates intermediate dicts as needed.
+    Creates intermediate Pydantic models as needed, constructing them with
+    the correct field values to avoid schema corruption.
+
+    For example, setting "documentation.readme.path" = "README.md" on a
+    ProjectConfig creates DocumentationConfig(readme=PathRef(path="README.md"))
+    rather than raw dicts.
 
     Args:
         obj: Root object to update
@@ -499,7 +607,7 @@ def _set_nested_value(obj: object, dotted_path: str, value: object) -> None:
     parts = dotted_path.split(".")
     current = obj
 
-    for part in parts[:-1]:
+    for i, part in enumerate(parts[:-1]):
         if isinstance(current, dict):
             if part not in current:
                 current[part] = {}
@@ -507,8 +615,22 @@ def _set_nested_value(obj: object, dotted_path: str, value: object) -> None:
         elif hasattr(current, part):
             next_val = getattr(current, part)
             if next_val is None:
-                # Try to create the expected type
-                next_val = {}
+                # Create the expected Pydantic model type
+                default = _create_field_default(current, part)
+                if isinstance(default, dict):
+                    # Fallback dict — but check if the remaining path can be
+                    # constructed as a Pydantic model with the leaf value
+                    remaining = parts[i + 1:]
+                    model = _try_construct_nested(current, part, remaining, value)
+                    if model is not None:
+                        try:
+                            setattr(current, part, model)
+                        except (AttributeError, TypeError, ValueError):
+                            pass
+                        return  # Fully constructed, done
+                    next_val = default
+                else:
+                    next_val = default
                 try:
                     setattr(current, part, next_val)
                 except (AttributeError, TypeError, ValueError):
@@ -528,12 +650,72 @@ def _set_nested_value(obj: object, dotted_path: str, value: object) -> None:
     if isinstance(current, dict):
         current[final_key] = value
     else:
+        # If the field expects a Pydantic model (e.g., PathRef) and we have
+        # a plain string, try constructing the model with the value
+        coerced = _coerce_to_field_type(current, final_key, value)
         try:
-            setattr(current, final_key, value)
+            setattr(current, final_key, coerced)
         except (AttributeError, TypeError, ValueError) as e:
             logger.warning(
                 f"Could not set {dotted_path} = {value}: {e}"
             )
+
+
+def _try_construct_nested(
+    parent: object, field_name: str, remaining_parts: list[str], value: object
+) -> object | None:
+    """Try to construct a Pydantic model from a field with nested path values.
+
+    For example, if parent has field 'readme' of type PathRef and remaining
+    parts are ['path'] with value 'README.md', constructs PathRef(path='README.md').
+
+    Returns the constructed model, or None if construction isn't possible.
+    """
+    import types
+
+    from pydantic import BaseModel
+
+    if not isinstance(parent, BaseModel):
+        return None
+
+    field_info = type(parent).model_fields.get(field_name)
+    if not field_info or not field_info.annotation:
+        return None
+
+    annotation = field_info.annotation
+
+    # Find the concrete BaseModel type from the annotation
+    model_type = None
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        model_type = annotation
+    else:
+        args = getattr(annotation, "__args__", ())
+        if args and (
+            isinstance(annotation, types.UnionType)
+            or getattr(annotation, "__origin__", None) is not None
+        ):
+            for arg in args:
+                if isinstance(arg, type) and issubclass(arg, BaseModel):
+                    model_type = arg
+                    break
+
+    if model_type is None:
+        return None
+
+    # Build nested kwargs from remaining_parts
+    # e.g., remaining=['path'], value='README.md' → {'path': 'README.md'}
+    # e.g., remaining=['sub', 'key'], value='v' → {'sub': {'key': 'v'}}
+    kwargs: dict = {}
+    current_dict = kwargs
+    for part in remaining_parts[:-1]:
+        current_dict[part] = {}
+        current_dict = current_dict[part]
+    current_dict[remaining_parts[-1]] = value
+
+    try:
+        return model_type(**kwargs)
+    except Exception:
+        return None
 
 
 __all__ = [

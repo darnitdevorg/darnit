@@ -96,7 +96,7 @@ def _is_module_allowed(module_path: str) -> bool:
     """Check if a module path is in the allowed allowlist.
 
     Args:
-        module_path: Full module path (e.g., "darnit_baseline.controls.level2")
+        module_path: Full module path (e.g., "darnit_baseline.tools.audit")
 
     Returns:
         True if the module is allowed to be imported
@@ -117,7 +117,7 @@ def _resolve_check_function(reference: str) -> Callable | None:
     1. Short name lookup: Check the handler registry for registered handlers
        - e.g., "check_branch_protection" → registered handler function
     2. Module:function path: Load from allowlisted module path
-       - e.g., "darnit_baseline.controls.level2:_create_changelog_check"
+       - e.g., "darnit_baseline.tools:custom_check_function"
     3. Factory pattern: If the resolved function can be called with no args
        and returns a callable, use the returned callable
 

@@ -486,6 +486,356 @@ credentials.json
 .azure/credentials
 """
 
+# --- API Payload Templates ---
+
+[templates.mfa_enforcement_payload]
+description = "JSON payload for enabling org-level MFA requirement"
+content = """
+{
+  "two_factor_requirement_enabled": true
+}
+"""
+
+[templates.allow_forking_payload]
+description = "JSON payload for enabling repository forking"
+content = """
+{
+  "allow_forking": true
+}
+"""
+
+[templates.branch_deletion_protection_payload]
+description = "JSON payload for branch deletion protection"
+content = """
+{
+  "enforce_admins": true,
+  "required_pull_request_reviews": null,
+  "required_status_checks": null,
+  "restrictions": null,
+  "allow_deletions": false
+}
+"""
+
+[templates.repo_visibility_payload]
+description = "JSON payload for making a repository public"
+content = """
+{
+  "private": false
+}
+"""
+
+[templates.pr_review_payload]
+description = "JSON payload for requiring PR reviews before merging"
+content = """
+{
+  "enforce_admins": true,
+  "required_pull_request_reviews": {
+    "required_approving_review_count": 1,
+    "dismiss_stale_reviews": true,
+    "require_code_owner_reviews": false
+  },
+  "required_status_checks": null,
+  "restrictions": null,
+  "allow_force_pushes": false,
+  "allow_deletions": false
+}
+"""
+
+[templates.vulnerability_reporting_payload]
+description = "JSON payload for enabling private vulnerability reporting"
+content = """
+{}
+"""
+
+# --- CI Workflow Templates ---
+
+[templates.ci_test_workflow]
+description = "Basic CI test workflow for GitHub Actions"
+content = """name: CI Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # TODO: Replace with your project's test command
+      - name: Run tests
+        run: echo "Add your test command here"
+"""
+
+[templates.sbom_workflow]
+description = "SBOM generation workflow using syft (default) or configurable tool"
+content = """name: Generate SBOM
+
+on:
+  release:
+    types: [ published ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate SBOM with Syft
+        uses: anchore/sbom-action@v0
+        with:
+          artifact-name: sbom-${{ github.event.release.tag_name || 'snapshot' }}.spdx.json
+          output-file: sbom.spdx.json
+
+      - name: Upload SBOM as release asset
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: sbom.spdx.json
+"""
+
+[templates.sast_workflow]
+description = "SAST scanning workflow using CodeQL (default) or configurable tool"
+content = """name: SAST Scan
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly on Monday
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+"""
+
+[templates.sca_workflow]
+description = "SCA dependency scanning workflow for pull requests"
+content = """name: Dependency Review
+
+on:
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+"""
+
+[templates.release_signing_workflow]
+description = "Release signing workflow using GitHub artifact attestation"
+content = """name: Sign Release
+
+on:
+  release:
+    types: [ published ]
+
+permissions:
+  id-token: write
+  contents: read
+  attestations: write
+
+jobs:
+  attest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate artifact attestation
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: '.'
+"""
+
+# --- Policy Document Templates ---
+
+[templates.support_scope_template]
+description = "Support scope section with supported versions and duration"
+content = """# Support Scope
+
+## Supported Versions
+
+| Version | Status | End of Support |
+|---------|--------|----------------|
+| latest  | Active | N/A            |
+
+## Support Duration
+
+- **Active support**: Bug fixes and security patches for the latest release
+- **Security-only**: Critical security patches only for previous releases
+- **End of life**: No further updates
+
+## What Is Supported
+
+- Bug reports for supported versions
+- Security vulnerability reports (see [SECURITY.md](SECURITY.md))
+- Feature requests via GitHub Issues
+
+## What Is Not Supported
+
+- Custom deployments or forks
+- Versions that have reached end of life
+"""
+
+[templates.end_of_support_template]
+description = "End-of-support policy with notification and migration guidance"
+content = """# End of Support Policy
+
+## Notification Process
+
+When a version approaches end of support:
+1. A deprecation notice will be added to the README and release notes
+2. An issue will be created tracking the end-of-support timeline
+3. A minimum of **30 days notice** will be given before support ends
+
+## Migration Guidance
+
+When upgrading to a new supported version:
+- Review the CHANGELOG for breaking changes
+- Follow the migration guide (if provided in the release notes)
+- Test thoroughly in a non-production environment first
+
+## After End of Support
+
+- The version's code remains available but will not receive updates
+- Issues filed against unsupported versions may be closed
+- Users are encouraged to upgrade to a supported version
+"""
+
+[templates.dependency_management_template]
+description = "Dependency management policy, update cadence, and vulnerability response"
+content = """# Dependency Management
+
+## Policy
+
+$REPO manages dependencies with the following principles:
+- Dependencies are kept to a minimum
+- All dependencies must have compatible licenses
+- Dependencies are regularly updated
+
+## Update Cadence
+
+- **Security patches**: Applied as soon as possible (within 48 hours for critical)
+- **Minor updates**: Reviewed and applied monthly
+- **Major updates**: Evaluated for compatibility and applied quarterly
+
+## Vulnerability Response
+
+When a vulnerability is discovered in a dependency:
+1. Assess the impact on this project
+2. Apply the fix or upgrade within the timeframe based on severity:
+   - **Critical**: 48 hours
+   - **High**: 7 days
+   - **Medium**: 30 days
+   - **Low**: Next scheduled update
+3. If no fix is available, evaluate workarounds or alternative dependencies
+
+## Tools
+
+- Dependabot or Renovate for automated dependency updates
+- `gh api /repos/$OWNER/$REPO/dependabot/alerts` for vulnerability monitoring
+"""
+
+[templates.sca_policy_template]
+description = "SCA policy with scanning frequency, severity thresholds, and remediation timelines"
+content = """# Software Composition Analysis (SCA) Policy
+
+## Scanning Frequency
+
+- **Every pull request**: Automated dependency review before merge
+- **Daily**: Automated vulnerability scanning of all dependencies
+- **On release**: Full dependency audit before each release
+
+## Severity Thresholds
+
+| Severity | Action Required | Timeline |
+|----------|----------------|----------|
+| Critical | Block merge, immediate fix | 48 hours |
+| High     | Block merge, prioritize fix | 7 days |
+| Medium   | Warning, schedule fix | 30 days |
+| Low      | Informational, fix in next cycle | 90 days |
+
+## Remediation Process
+
+1. Automated alerts from dependency scanning tools
+2. Triage by maintainers to confirm applicability
+3. Apply patch, upgrade, or document as not affected (VEX)
+4. Verify fix does not introduce regressions
+
+## Exceptions
+
+Exceptions to the remediation timelines require:
+- Documented justification
+- Approval from a project maintainer
+- A tracking issue with a planned resolution date
+"""
+
+[templates.sast_policy_template]
+description = "SAST policy with scanning triggers, severity handling, and exception process"
+content = """# Static Application Security Testing (SAST) Policy
+
+## Scanning Triggers
+
+- **Every push to main**: Full SAST scan
+- **Every pull request**: Incremental SAST scan
+- **Weekly schedule**: Comprehensive scan with updated rules
+
+## Severity Handling
+
+| Severity | Action | Timeline |
+|----------|--------|----------|
+| Critical/High | Block merge until resolved | Before merge |
+| Medium | Must be resolved or documented | 30 days |
+| Low | Informational, resolve when convenient | 90 days |
+
+## Supported Tools
+
+This project uses automated SAST scanning in CI/CD. Results are reported
+as GitHub code scanning alerts.
+
+## Exception Process
+
+To request an exception for a SAST finding:
+1. Create an issue documenting the finding and why it is not applicable
+2. Get approval from a project maintainer
+3. Add a suppression comment in the code with a reference to the issue
+4. Review exceptions quarterly to ensure they are still valid
+"""
+
 # =============================================================================
 # Context Definitions (Interactive Context Collection)
 # =============================================================================
@@ -662,6 +1012,12 @@ requires_api = true
 dry_run_supported = false
 
 [[controls."OSPS-AC-01.01".remediation.handlers]]
+handler = "api_call"
+method = "PUT"
+endpoint = "/orgs/$OWNER"
+payload_template = "mfa_enforcement_payload"
+
+[[controls."OSPS-AC-01.01".remediation.handlers]]
 handler = "manual"
 steps = [
     "Go to Organization Settings → Authentication security",
@@ -698,6 +1054,12 @@ steps = [
 safe = true
 requires_api = true
 dry_run_supported = false
+
+[[controls."OSPS-AC-02.01".remediation.handlers]]
+handler = "api_call"
+method = "PATCH"
+endpoint = "/repos/$OWNER/$REPO"
+payload_template = "allow_forking_payload"
 
 [[controls."OSPS-AC-02.01".remediation.handlers]]
 handler = "manual"
@@ -777,9 +1139,15 @@ steps = [
 ]
 
 [controls."OSPS-AC-03.02".remediation]
-safe = true
+safe = false
 requires_api = true
 dry_run_supported = false
+
+[[controls."OSPS-AC-03.02".remediation.handlers]]
+handler = "api_call"
+method = "PUT"
+endpoint = "/repos/$OWNER/$REPO/branches/$BRANCH/protection"
+payload_template = "branch_deletion_protection_payload"
 
 [[controls."OSPS-AC-03.02".remediation.handlers]]
 handler = "manual"
@@ -1024,11 +1392,19 @@ project_path = "documentation.changelog"
 discover = ["CHANGELOG.md", "CHANGES.md", "HISTORY.md", "NEWS.md"]
 kind = "file"
 
-# Check order: config_check (GitHub releases API) runs first; file_must_exist is fallback
+# Pass 1: Check GitHub releases for release notes
 [[controls."OSPS-BR-04.01".passes]]
-handler = "check_function"
-function = "darnit_baseline.controls.level2:_create_changelog_check"
-file_must_exist = ["CHANGELOG.md", "CHANGES.md", "HISTORY.md", "NEWS.md"]
+handler = "exec"
+command = ["gh", "api", "/repos/$OWNER/$REPO/releases?per_page=5"]
+pass_exit_codes = [0]
+output_format = "json"
+expr = 'size(output.json) > 0 && has(output.json[0].body) && output.json[0].body != ""'
+timeout = 30
+
+# Pass 2: Fallback — check for CHANGELOG.md or equivalent
+[[controls."OSPS-BR-04.01".passes]]
+handler = "file_exists"
+use_locator = true
 
 [[controls."OSPS-BR-04.01".passes]]
 handler = "manual"
@@ -1117,8 +1493,15 @@ steps = [
 ]
 
 [controls."OSPS-BR-06.01".remediation]
-safe = false
-dry_run_supported = false
+safe = true
+dry_run_supported = true
+
+[[controls."OSPS-BR-06.01".remediation.handlers]]
+handler = "file_create"
+path = ".github/workflows/release-signing.yml"
+template = "release_signing_workflow"
+overwrite = false
+create_dirs = true
 
 [[controls."OSPS-BR-06.01".remediation.handlers]]
 handler = "manual"
@@ -1242,6 +1625,26 @@ steps = [
     "Confirm dependency tracking/update process is described",
 ]
 
+[controls."OSPS-DO-06.01".remediation]
+safe = true
+dry_run_supported = true
+
+[[controls."OSPS-DO-06.01".remediation.handlers]]
+handler = "file_create"
+path = "docs/DEPENDENCIES.md"
+template = "dependency_management_template"
+overwrite = false
+create_dirs = true
+
+[[controls."OSPS-DO-06.01".remediation.handlers]]
+handler = "manual"
+steps = [
+    "Create docs/DEPENDENCIES.md documenting the dependency management process",
+    "Include dependency selection criteria and approved sources",
+    "Document update cadence and vulnerability response timelines",
+    "Describe tools used for dependency management (Dependabot, Renovate, etc.)",
+]
+
 # =============================================================================
 # Level 1 Controls - Governance (GV)
 # =============================================================================
@@ -1359,7 +1762,7 @@ pass_exit_codes = [0]
 fail_exit_codes = [1]
 output_format = "text"
 # Match common OSI-approved licenses (case-insensitive handled by spdx_id)
-expr = 'output.stdout.matches("^(MIT|Apache-2\\\\.0|GPL-[23]\\\\.0|LGPL-[23]\\\\.[01]|BSD-[23]-Clause|MPL-2\\\\.0|ISC|Unlicense|0BSD|AGPL-3\\\\.0|EPL-[12]\\\\.0|CC0-1\\\\.0)\\n?$")'
+expr = 'output.stdout.matches("^(MIT|Apache-2\\.0|GPL-[23]\\.0|LGPL-[23]\\.[01]|BSD-[23]-Clause|MPL-2\\.0|ISC|Unlicense|0BSD|AGPL-3\\.0|EPL-[12]\\.0|CC0-1\\.0)\\n?$")'
 timeout = 30
 
 [[controls."OSPS-LE-02.01".passes]]
@@ -1466,7 +1869,14 @@ steps = [
 
 [controls."OSPS-QA-01.01".remediation]
 safe = false
+requires_api = true
 dry_run_supported = false
+
+[[controls."OSPS-QA-01.01".remediation.handlers]]
+handler = "api_call"
+method = "PATCH"
+endpoint = "/repos/$OWNER/$REPO"
+payload_template = "repo_visibility_payload"
 
 [[controls."OSPS-QA-01.01".remediation.handlers]]
 handler = "manual"
@@ -1877,8 +2287,7 @@ steps = [
 ]
 
 [controls."OSPS-QA-03.01".remediation]
-safe = true
-requires_api = false
+safe = false
 dry_run_supported = false
 
 [[controls."OSPS-QA-03.01".remediation.handlers]]
@@ -1914,8 +2323,15 @@ steps = [
 ]
 
 [controls."OSPS-QA-06.01".remediation]
-safe = false
-dry_run_supported = false
+safe = true
+dry_run_supported = true
+
+[[controls."OSPS-QA-06.01".remediation.handlers]]
+handler = "file_create"
+path = ".github/workflows/ci.yml"
+template = "ci_test_workflow"
+overwrite = false
+create_dirs = true
 
 [[controls."OSPS-QA-06.01".remediation.handlers]]
 handler = "manual"
@@ -1993,6 +2409,16 @@ search_for = "private reporting, security email, PGP key, confidential"
 check_files = ["README.md"]
 look_for_urls = false
 
+# ExecPass: Check if GitHub private vulnerability reporting is enabled
+[[controls."OSPS-VM-03.01".passes]]
+handler = "exec"
+command = ["gh", "api", "/repos/$OWNER/$REPO/private-vulnerability-reporting"]
+pass_exit_codes = [0]
+fail_exit_codes = [1]
+output_format = "json"
+expr = 'has(output.json.enabled) && output.json.enabled == true'
+timeout = 30
+
 # PatternPass: Check for private contact methods in SECURITY.md
 [[controls."OSPS-VM-03.01".passes]]
 handler = "pattern"
@@ -2010,8 +2436,15 @@ steps = [
 ]
 
 [controls."OSPS-VM-03.01".remediation]
-safe = false
+safe = true
+requires_api = true
 dry_run_supported = false
+
+[[controls."OSPS-VM-03.01".remediation.handlers]]
+handler = "api_call"
+method = "PUT"
+endpoint = "/repos/$OWNER/$REPO/private-vulnerability-reporting"
+payload_template = "vulnerability_reporting_payload"
 
 [[controls."OSPS-VM-03.01".remediation.handlers]]
 handler = "manual"
@@ -2199,8 +2632,15 @@ steps = [
 ]
 
 [controls."OSPS-QA-02.02".remediation]
-safe = false
-dry_run_supported = false
+safe = true
+dry_run_supported = true
+
+[[controls."OSPS-QA-02.02".remediation.handlers]]
+handler = "file_create"
+path = ".github/workflows/sbom.yml"
+template = "sbom_workflow"
+overwrite = false
+create_dirs = true
 
 [[controls."OSPS-QA-02.02".remediation.handlers]]
 handler = "manual"
@@ -2279,7 +2719,14 @@ steps = [
 
 [controls."OSPS-QA-07.01".remediation]
 safe = false
+requires_api = true
 dry_run_supported = false
+
+[[controls."OSPS-QA-07.01".remediation.handlers]]
+handler = "api_call"
+method = "PUT"
+endpoint = "/repos/$OWNER/$REPO/branches/$BRANCH/protection"
+payload_template = "pr_review_payload"
 
 [[controls."OSPS-QA-07.01".remediation.handlers]]
 handler = "manual"
@@ -2386,7 +2833,14 @@ steps = [
 # Remediation: Add VEX policy section to SECURITY.md
 [controls."OSPS-VM-04.02".remediation]
 safe = true
-dry_run_supported = false
+dry_run_supported = true
+
+[[controls."OSPS-VM-04.02".remediation.handlers]]
+handler = "file_create"
+path = "docs/VEX-POLICY.md"
+template = "vex_policy_template"
+overwrite = false
+create_dirs = true
 
 [[controls."OSPS-VM-04.02".remediation.handlers]]
 handler = "manual"
@@ -2420,8 +2874,15 @@ steps = [
 ]
 
 [controls."OSPS-VM-05.01".remediation]
-safe = false
-dry_run_supported = false
+safe = true
+dry_run_supported = true
+
+[[controls."OSPS-VM-05.01".remediation.handlers]]
+handler = "file_create"
+path = "docs/SCA-POLICY.md"
+template = "sca_policy_template"
+overwrite = false
+create_dirs = true
 
 [[controls."OSPS-VM-05.01".remediation.handlers]]
 handler = "manual"
@@ -2453,8 +2914,15 @@ steps = [
 ]
 
 [controls."OSPS-VM-05.02".remediation]
-safe = false
-dry_run_supported = false
+safe = true
+dry_run_supported = true
+
+[[controls."OSPS-VM-05.02".remediation.handlers]]
+handler = "file_create"
+path = ".github/workflows/sca.yml"
+template = "sca_workflow"
+overwrite = false
+create_dirs = true
 
 [[controls."OSPS-VM-05.02".remediation.handlers]]
 handler = "manual"
@@ -2521,8 +2989,15 @@ steps = [
 ]
 
 [controls."OSPS-VM-06.01".remediation]
-safe = false
-dry_run_supported = false
+safe = true
+dry_run_supported = true
+
+[[controls."OSPS-VM-06.01".remediation.handlers]]
+handler = "file_create"
+path = "docs/SAST-POLICY.md"
+template = "sast_policy_template"
+overwrite = false
+create_dirs = true
 
 [[controls."OSPS-VM-06.01".remediation.handlers]]
 handler = "manual"
@@ -2554,8 +3029,15 @@ steps = [
 ]
 
 [controls."OSPS-VM-06.02".remediation]
-safe = false
-dry_run_supported = false
+safe = true
+dry_run_supported = true
+
+[[controls."OSPS-VM-06.02".remediation.handlers]]
+handler = "file_create"
+path = ".github/workflows/sast.yml"
+template = "sast_workflow"
+overwrite = false
+create_dirs = true
 
 [[controls."OSPS-VM-06.02".remediation.handlers]]
 handler = "manual"
@@ -2648,6 +3130,25 @@ steps = [
     "Confirm scope of support (security fixes, bug fixes, features) is defined",
 ]
 
+[controls."OSPS-DO-04.01".remediation]
+safe = true
+dry_run_supported = true
+
+[[controls."OSPS-DO-04.01".remediation.handlers]]
+handler = "file_create"
+path = "SUPPORT.md"
+template = "support_scope_template"
+overwrite = false
+
+[[controls."OSPS-DO-04.01".remediation.handlers]]
+handler = "manual"
+steps = [
+    "Add a 'Support Scope' section to SUPPORT.md (or create the file)",
+    "Document which versions are currently supported",
+    "Specify support duration and maintenance windows",
+    "Define scope: security fixes, bug fixes, feature requests",
+]
+
 [controls."OSPS-DO-05.01"]
 name = "EndOfSupportPolicy"
 description = "End-of-support policy documented"
@@ -2668,6 +3169,25 @@ steps = [
     "Confirm deprecation and sunset procedures are documented",
 ]
 
+[controls."OSPS-DO-05.01".remediation]
+safe = true
+dry_run_supported = true
+
+[[controls."OSPS-DO-05.01".remediation.handlers]]
+handler = "file_create"
+path = "SUPPORT.md"
+template = "end_of_support_template"
+overwrite = false
+
+[[controls."OSPS-DO-05.01".remediation.handlers]]
+handler = "manual"
+steps = [
+    "Add an 'End of Support Policy' section to SUPPORT.md (or create the file)",
+    "Document the notification process for approaching end-of-support",
+    "Include migration guidance for upgrading to supported versions",
+    "Describe what happens after support ends",
+]
+
 # =============================================================================
 # Level 3 Controls - Governance (GV)
 # =============================================================================
@@ -2677,6 +3197,12 @@ name = "CollaboratorReviewPolicy"
 description = "Collaborator review policy documented"
 tags = { level = 3, domain = "GV", governance = true, code-review = true }
 
+# FileExistsPass: CODEOWNERS file indicates a review policy is in place
+[[controls."OSPS-GV-04.01".passes]]
+handler = "file_exists"
+files = ["CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS"]
+
+# PatternPass: Check governance docs for review policy language
 [[controls."OSPS-GV-04.01".passes]]
 handler = "pattern"
 files = ["GOVERNANCE.md", "CONTRIBUTING.md"]

@@ -577,11 +577,14 @@ def _apply_declarative_remediation(
 
 
 
-def _determine_remediations_for_failures(failures: list[dict[str, Any]]) -> list[str]:
-    """Determine which remediation categories apply to the given failures.
+def _determine_remediable_categories(non_passing: list[dict[str, Any]]) -> list[str]:
+    """Determine which remediation categories have non-passing controls.
+
+    Categories are included if ANY of their controls are FAIL or WARN.
+    Categories where ALL controls are PASS are excluded.
 
     Args:
-        failures: List of failed check results
+        non_passing: List of non-passing check results (FAIL, WARN, ERROR)
 
     Returns:
         Sorted list of applicable remediation category names
@@ -589,8 +592,8 @@ def _determine_remediations_for_failures(failures: list[dict[str, Any]]) -> list
     control_map = _get_control_to_category_map()
     categories = set()
 
-    for failure in failures:
-        control_id = failure.get("id", "")
+    for result in non_passing:
+        control_id = result.get("id", "")
         if control_id in control_map:
             categories.add(control_map[control_id])
 
@@ -807,21 +810,25 @@ def remediate_audit_findings(
         repo = repo or detected_repo
 
     # Determine categories to apply
-    if not categories:
-        # Run audit to find failures and determine applicable remediations
+    if not categories or categories == ["all"]:
+        # Run audit first to skip categories where ALL controls already pass
         audit_result, error = _run_baseline_checks(
             owner=owner, repo=repo, local_path=local_path
         )
         if error:
             return f"❌ Error running audit: {error}"
 
-        failures = [r for r in audit_result.all_results if r.get("status") == "FAIL"]
-        categories = _determine_remediations_for_failures(failures)
+        non_passing = [r for r in audit_result.all_results if r.get("status") != "PASS"]
+        remediable = _determine_remediable_categories(non_passing)
+
+        if not remediable:
+            return "✅ No remediations needed - all controls with available auto-fixes are passing."
 
         if not categories:
-            return "✅ No remediations needed - no failures with available auto-fixes."
-    elif categories == ["all"]:
-        categories = list(REMEDIATION_CATEGORIES.keys())
+            categories = remediable
+        else:
+            # categories == ["all"]: only remediate categories with non-passing controls
+            categories = remediable
 
     # Pre-flight check: Verify all context requirements BEFORE starting remediation
     # This ensures we prompt for all missing context upfront, not one-by-one
@@ -975,6 +982,6 @@ def remediate_audit_findings(
 __all__ = [
     "remediate_audit_findings",
     "_apply_remediation",
-    "_determine_remediations_for_failures",
+    "_determine_remediable_categories",
     "_run_baseline_checks",
 ]

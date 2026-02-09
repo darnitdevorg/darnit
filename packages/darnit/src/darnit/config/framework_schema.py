@@ -164,7 +164,7 @@ class PassPhase(str, Enum):
 class PythonAdapterConfig(BaseModel):
     """Configuration for Python module-based adapters."""
     type: AdapterType = AdapterType.PYTHON
-    module: str  # e.g., "darnit_baseline.adapters.builtin"
+    module: str  # e.g., "darnit_baseline.tools"
     class_name: str | None = Field(default=None, alias="class")
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
@@ -1158,7 +1158,7 @@ class FrameworkConfig(BaseModel):
 
         [adapters.builtin]
         type = "python"
-        module = "darnit_baseline.adapters.builtin"
+        module = "darnit_baseline.tools"
 
         [templates.security_policy]
         content = '''

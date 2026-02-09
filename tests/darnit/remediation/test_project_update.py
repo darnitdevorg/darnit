@@ -213,3 +213,40 @@ class TestApplyProjectUpdate:
         apply_project_update(str(tmp_path), config, "TEST-01")
         # Should not create .project/
         assert not (tmp_path / ".project").exists()
+
+    def test_does_not_overwrite_existing_config_on_validation_failure(
+        self, tmp_path, monkeypatch
+    ):
+        """When .project/ exists but load fails, do NOT overwrite with blank config.
+
+        This tests the bug where apply_project_update would create a blank
+        ProjectConfig(name="unknown") when load_project_config returned None,
+        destroying existing extension data (context, ci settings, etc.).
+        """
+        # Create .project/ with existing darnit.yaml containing context
+        project_dir = tmp_path / ".project"
+        project_dir.mkdir()
+        (project_dir / "project.yaml").write_text(
+            "name: test\nschema_version: '1.0'\n"
+        )
+        darnit_yaml = project_dir / "darnit.yaml"
+        darnit_yaml.write_text(
+            "context:\n  maintainers:\n  - '@alice'\n  - '@bob'\n"
+        )
+        original_content = darnit_yaml.read_text()
+
+        # Monkeypatch load_project_config to return None (simulating validation failure)
+        monkeypatch.setattr(
+            "darnit.config.loader.load_project_config",
+            lambda _: None,
+        )
+
+        config = ProjectUpdateRemediationConfig(
+            set={"security.policy.path": "SECURITY.md"},
+            create_if_missing=True,
+        )
+
+        apply_project_update(str(tmp_path), config, "TEST-01")
+
+        # darnit.yaml should NOT be overwritten — context must be preserved
+        assert darnit_yaml.read_text() == original_content
