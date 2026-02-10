@@ -727,7 +727,412 @@ that passes are in the correct phase order (DETERMINISTIC → PATTERN → LLM �
 
 ---
 
-## 5. Python Controls
+## 5. Custom Sieve Handlers
+
+When the built-in pass types (`file_exists`, `exec`, `regex`, `manual`) aren't enough,
+you can write **custom sieve handlers** — Python functions that plug into the
+confidence gradient pipeline for checking or remediation.
+
+> **Authoritative API**: See
+> `packages/darnit/src/darnit/sieve/handler_registry.py` for the full registry,
+> context, and result types.
+
+> **Two registries — don't confuse them!**
+>
+> | Registry | Layer | Purpose | Access |
+> |----------|-------|---------|--------|
+> | `SieveHandlerRegistry` | 1 & 2 | Checking + remediation handlers in the sieve pipeline | `get_sieve_handler_registry()` from `darnit.sieve.handler_registry` |
+> | `HandlerRegistry` | 3 | MCP tool handlers exposed to the LLM | `get_handler_registry()` from `darnit.core.handlers` |
+>
+> This section covers `SieveHandlerRegistry` (Layer 1 & 2). For MCP tool handlers,
+> see Section 8.
+
+### Handler function signature
+
+Every sieve handler is a plain function with this signature:
+
+```python
+from typing import Any
+from darnit.sieve.handler_registry import HandlerContext, HandlerResult, HandlerResultStatus
+
+def my_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResult:
+    """Check something and return a result."""
+    # Your logic here
+    return HandlerResult(
+        status=HandlerResultStatus.PASS,
+        message="Check passed",
+        confidence=1.0,
+        evidence={"key": "value"},
+    )
+```
+
+- **`config`** — a dict containing all pass-through fields from the TOML `[[passes]]`
+  entry. The framework strips `handler`, `shared`, and `phase` before calling your
+  function; everything else arrives as-is.
+- **`context`** — an immutable dataclass provided by the framework with everything
+  your handler needs to do its work.
+
+### HandlerContext fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `local_path` | `str` | Absolute path to the repository being audited. Always populated. |
+| `owner` | `str` | Repository owner (GitHub org or user). Empty string if unknown. |
+| `repo` | `str` | Repository name. Empty string if unknown. |
+| `default_branch` | `str` | Default branch name (e.g., `"main"`). Defaults to `"main"`. |
+| `control_id` | `str` | ID of the control being verified (e.g., `"OSPS-AC-01.01"`). Empty for context gathering. |
+| `project_context` | `dict[str, Any]` | Flattened values from `.project/project.yaml` and `.project/darnit.yaml`. |
+| `gathered_evidence` | `dict[str, Any]` | Evidence accumulated from earlier handlers in this control's pipeline. See [Evidence propagation](#evidence-propagation). |
+| `shared_cache` | `dict[str, HandlerResult]` | Cache of shared handler results, keyed by the shared handler name. Shared handlers run once and cache their result for all controls that reference them. |
+| `dependency_results` | `dict[str, Any]` | Results from dependency controls (keyed by control ID), available when control dependencies are declared in TOML. |
+
+### HandlerResult construction
+
+Return a `HandlerResult` with the appropriate status:
+
+| Status | Meaning | When to use | Confidence |
+|--------|---------|-------------|------------|
+| `PASS` | Control satisfied | Your handler positively verified compliance | `1.0` for deterministic, `0.0–1.0` for heuristic |
+| `FAIL` | Control NOT satisfied | Your handler positively verified non-compliance | `1.0` for deterministic, `0.0–1.0` for heuristic |
+| `INCONCLUSIVE` | Cannot determine | Your handler can't tell — let the next handler in the pipeline try | `None` |
+| `ERROR` | Handler malfunction | Your handler itself broke (not the control) — e.g., command not found, file unreadable | `None` |
+
+```python
+# PASS example — deterministic check found what it needed
+HandlerResult(
+    status=HandlerResultStatus.PASS,
+    message="License header found in 42/42 source files",
+    confidence=1.0,
+    evidence={"files_checked": 42, "files_passing": 42},
+)
+
+# FAIL example — deterministic check found a violation
+HandlerResult(
+    status=HandlerResultStatus.FAIL,
+    message="License header missing in 3 source files",
+    confidence=1.0,
+    evidence={"files_checked": 42, "files_failing": 3, "failing_files": ["a.py", "b.py", "c.py"]},
+)
+
+# INCONCLUSIVE — can't determine, let the next handler try
+HandlerResult(
+    status=HandlerResultStatus.INCONCLUSIVE,
+    message="No source files found to check",
+    evidence={"files_checked": 0},
+)
+
+# ERROR — the handler itself failed
+HandlerResult(
+    status=HandlerResultStatus.ERROR,
+    message="Failed to read source directory: Permission denied",
+    evidence={"error": "PermissionError: /src/"},
+)
+```
+
+The `evidence` dict is free-form — put whatever is useful for debugging and for
+downstream handlers. The `details` dict is for metadata that doesn't belong in evidence
+(e.g., `consultation_request` for LLM handlers).
+
+### Registering a handler
+
+Register your handler with the `SieveHandlerRegistry` using a short name and phase
+affinity:
+
+```python
+from darnit.sieve.handler_registry import get_sieve_handler_registry
+
+registry = get_sieve_handler_registry()
+registry.register(
+    "license_header",              # Short name used in TOML
+    phase="deterministic",         # Phase affinity (deterministic, pattern, llm, manual)
+    handler_fn=license_header_handler,
+    description="Check source files for license headers",
+)
+```
+
+**Phase affinity** is advisory — the framework logs a warning if a handler is used in
+a different phase than its registered affinity, but still executes it. Choose the
+phase that best matches your handler's confidence level:
+
+| Phase | Confidence | Typical handlers |
+|-------|-----------|-----------------|
+| `deterministic` | High (1.0) | File checks, API calls, config lookups |
+| `pattern` | Medium (0.7–0.9) | Regex matching, heuristic analysis |
+| `llm` | Variable (0.5–0.9) | AI-assisted evaluation |
+| `manual` | N/A | Human verification steps |
+
+### Registering from a plugin
+
+When registering handlers from within an implementation, set plugin context so the
+framework knows which plugin owns each handler:
+
+```python
+from darnit.sieve.handler_registry import get_sieve_handler_registry
+
+def register_sieve_handlers(self):
+    registry = get_sieve_handler_registry()
+    registry.set_plugin_context(self.name)
+
+    registry.register("license_header", "deterministic", license_header_handler,
+                       description="Check source files for license headers")
+    registry.register("scorecard", "deterministic", scorecard_handler,
+                       description="Run OpenSSF Scorecard checks")
+
+    registry.set_plugin_context(None)  # Always clear when done
+```
+
+Plugin handlers **override** core built-in handlers of the same name. If you register
+a handler named `"exec"`, your handler replaces the built-in `exec` handler for the
+duration of the audit. The framework logs a debug message about the override.
+
+### Wiring into TOML
+
+Reference your registered handler from a control's `[[passes]]` block. All fields
+besides `handler`, `shared`, and `phase` are passed through to your handler's `config`
+dict:
+
+```toml
+[controls."MS-LIC-01"]
+name = "LicenseHeaders"
+description = "Source files must contain license headers"
+tags = { level = 1, domain = "LE" }
+
+[[controls."MS-LIC-01".passes]]
+phase = "deterministic"
+handler = "license_header"           # Matches the registered name
+file_extensions = [".py", ".js"]     # → config["file_extensions"]
+header_pattern = "Copyright.*2024"   # → config["header_pattern"]
+min_files = 1                        # → config["min_files"]
+
+[[controls."MS-LIC-01".passes]]
+phase = "manual"
+handler = "manual"
+steps = ["Review source files for license headers"]
+```
+
+### Evidence propagation
+
+When a handler returns `evidence` in its `HandlerResult`, those key-value pairs are
+merged into `HandlerContext.gathered_evidence` for subsequent handlers in the same
+control's pipeline. This enables multi-pass pipelines:
+
+```toml
+# Pass 1: Find the file
+[[controls."MS-SEC-01".passes]]
+phase = "deterministic"
+handler = "file_exists"
+files = ["SECURITY.md", ".github/SECURITY.md"]
+
+# Pass 2: Check the file's content (uses evidence from pass 1)
+[[controls."MS-SEC-01".passes]]
+phase = "pattern"
+handler = "security_content_checker"
+file = "$FOUND_FILE"                 # Reads from gathered_evidence["found_file"]
+required_sections = ["Reporting", "Contact"]
+```
+
+In pass 2, the handler can access the found file path via:
+
+```python
+def security_content_checker(config, context):
+    file_path = config.get("file", "")
+    if file_path == "$FOUND_FILE":
+        file_path = context.gathered_evidence.get("found_file", "")
+    # ... check the file content
+```
+
+### Remediation handlers
+
+Remediation handlers use the same signature and result type as checking handlers, with
+two key differences:
+
+1. **All handlers execute**: In a remediation phase, every handler runs even if a
+   prior handler succeeded. (Checking stops on first conclusive result.)
+2. **PASS means "remediation succeeded"**: Return PASS when your handler successfully
+   applied the fix, FAIL if the fix could not be applied.
+
+```python
+def create_license_file(config: dict[str, Any], context: HandlerContext) -> HandlerResult:
+    """Create a LICENSE file from a template."""
+    path = os.path.join(context.local_path, config.get("path", "LICENSE"))
+
+    if config.get("dry_run"):
+        return HandlerResult(
+            status=HandlerResultStatus.PASS,
+            message=f"Would create {config.get('path', 'LICENSE')}",
+            evidence={"path": config.get("path", "LICENSE"), "action": "dry_run"},
+        )
+
+    content = config.get("content", "MIT License\n")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(content)
+
+    return HandlerResult(
+        status=HandlerResultStatus.PASS,
+        message=f"Created {config.get('path', 'LICENSE')}",
+        confidence=1.0,
+        evidence={"path": config.get("path", "LICENSE"), "action": "created"},
+    )
+```
+
+**Dry-run convention**: Check `config.get("dry_run")` and return a descriptive PASS
+without performing the action. The framework passes `dry_run=True` when the user
+requests a preview.
+
+**project_update integration**: When a control's TOML defines `on_pass.project_update`,
+the framework automatically updates `.project/project.yaml` after the control passes
+during audit. For remediation, define `[controls."X".remediation.project_update]` to
+update the config after a successful fix. See Section 3 for TOML syntax.
+
+### Complete example: license_header handler
+
+Here's a complete custom handler from Python function to TOML usage:
+
+**1. The handler function** (`src/darnit_mystandard/handlers/license_check.py`):
+
+```python
+"""Custom sieve handler: check source files for license headers."""
+
+import os
+import re
+from typing import Any
+
+from darnit.sieve.handler_registry import (
+    HandlerContext,
+    HandlerResult,
+    HandlerResultStatus,
+)
+
+
+def license_header_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResult:
+    """Check that source files contain a license header.
+
+    Config fields:
+        file_extensions: list[str] - Extensions to check (e.g., [".py", ".js"])
+        header_pattern: str - Regex pattern for the license header
+        min_files: int - Minimum files that must have headers (default: 1)
+    """
+    extensions = config.get("file_extensions", [".py"])
+    pattern = config.get("header_pattern", r"Copyright")
+    min_files = config.get("min_files", 1)
+
+    source_files = []
+    for root, _dirs, files in os.walk(context.local_path):
+        # Skip hidden directories and common non-source dirs
+        if any(part.startswith(".") for part in root.split(os.sep)):
+            continue
+        for f in files:
+            if any(f.endswith(ext) for ext in extensions):
+                source_files.append(os.path.join(root, f))
+
+    if not source_files:
+        return HandlerResult(
+            status=HandlerResultStatus.INCONCLUSIVE,
+            message=f"No source files found with extensions {extensions}",
+            evidence={"extensions": extensions, "files_found": 0},
+        )
+
+    passing = []
+    failing = []
+    for filepath in source_files:
+        try:
+            with open(filepath, encoding="utf-8", errors="ignore") as fh:
+                # Only check first 20 lines for license header
+                head = "".join(fh.readline() for _ in range(20))
+            if re.search(pattern, head):
+                passing.append(filepath)
+            else:
+                failing.append(filepath)
+        except OSError:
+            failing.append(filepath)
+
+    evidence = {
+        "files_checked": len(source_files),
+        "files_passing": len(passing),
+        "files_failing": len(failing),
+        "failing_files": [os.path.relpath(f, context.local_path) for f in failing[:10]],
+    }
+
+    if len(passing) >= min_files and not failing:
+        return HandlerResult(
+            status=HandlerResultStatus.PASS,
+            message=f"License header found in {len(passing)}/{len(source_files)} files",
+            confidence=1.0,
+            evidence=evidence,
+        )
+    elif failing:
+        return HandlerResult(
+            status=HandlerResultStatus.FAIL,
+            message=f"License header missing in {len(failing)}/{len(source_files)} files",
+            confidence=1.0,
+            evidence=evidence,
+        )
+    else:
+        return HandlerResult(
+            status=HandlerResultStatus.INCONCLUSIVE,
+            message=f"Only {len(passing)} files have headers (need {min_files})",
+            evidence=evidence,
+        )
+```
+
+**2. Registration** (in your implementation's initialization):
+
+```python
+from darnit.sieve.handler_registry import get_sieve_handler_registry
+from .handlers.license_check import license_header_handler
+
+registry = get_sieve_handler_registry()
+registry.set_plugin_context("mystandard")
+registry.register("license_header", "deterministic", license_header_handler,
+                   description="Check source files for license headers")
+registry.set_plugin_context(None)
+```
+
+**3. TOML wiring** (in `mystandard.toml`):
+
+```toml
+[controls."MS-LE-01"]
+name = "LicenseHeaders"
+description = "All source files must contain a license header"
+tags = { level = 2, domain = "LE" }
+
+[[controls."MS-LE-01".passes]]
+phase = "deterministic"
+handler = "license_header"
+file_extensions = [".py", ".js", ".ts"]
+header_pattern = 'Copyright\s+\d{4}'
+min_files = 1
+
+[[controls."MS-LE-01".passes]]
+phase = "manual"
+handler = "manual"
+steps = ["Review source files for license headers", "Verify header matches project license"]
+```
+
+**4. Expected audit output**:
+
+Pass case:
+```
+MS-LE-01  PASS  License header found in 15/15 files  (deterministic, confidence=1.0)
+```
+
+Fail case:
+```
+MS-LE-01  FAIL  License header missing in 3/15 files  (deterministic, confidence=1.0)
+```
+
+> **Reference**: See `packages/darnit/src/darnit/sieve/builtin_handlers.py` for the
+> framework's built-in handler implementations (`file_exists`, `exec`, `regex`, etc.).
+
+---
+
+## 6. Python Controls (Legacy)
+
+> **Superseded**: The pattern in this section is superseded by TOML + custom sieve
+> handlers (Section 5). Use this only if you need backward compatibility with
+> pre-TOML implementations. New implementations should define controls in TOML and
+> add custom handlers as described in Section 5.
 
 When TOML declarations aren't expressive enough — for example, when you need to call
 APIs, run complex logic, or combine multiple data sources — define controls in Python.
@@ -847,7 +1252,7 @@ because the import is only for its side effects.
 
 ---
 
-## 6. Remediation
+## 7. Remediation
 
 Remediation maps audit failures to automated fix actions. The registry tells the
 framework which function to call when a control fails.
@@ -948,7 +1353,7 @@ def create_security_policy(owner: str, repo: str, local_path: str, **kwargs) -> 
 
 ---
 
-## 7. MCP Tools
+## 8. MCP Tools
 
 MCP tools are functions exposed to AI assistants (Claude, etc.) via the Model Context
 Protocol. There are two ways to provide them: built-in tools (TOML-only) and custom
@@ -1063,7 +1468,7 @@ this restriction entirely.
 
 ---
 
-## 8. Testing
+## 9. Testing
 
 ### Protocol compliance tests
 
@@ -1204,7 +1609,7 @@ tests/
 
 ---
 
-## 9. Common Pitfalls
+## 10. Common Pitfalls
 
 ### Factory functions vs direct functions
 
@@ -1296,7 +1701,7 @@ unexpected results since the orchestrator assumes the order.
 
 ---
 
-## 10. Quick Reference
+## 11. Quick Reference
 
 ### ComplianceImplementation protocol
 
@@ -1321,23 +1726,29 @@ Optional:    register_handlers()
 ### Key imports
 
 ```python
+# Sieve handler authoring (Section 5)
+from darnit.sieve.handler_registry import (
+    HandlerContext, HandlerResult, HandlerResultStatus,
+    get_sieve_handler_registry,
+)
+
 # Models
 from darnit.sieve.models import (
     CheckContext, ControlSpec, PassOutcome, PassResult, VerificationPhase,
 )
 
-# Pass types
+# Pass types (legacy, Section 6)
 from darnit.sieve.passes import (
     DeterministicPass, PatternPass, LLMPass, ManualPass, ExecPass,
 )
 
-# Registration
+# Control registration (legacy, Section 6)
 from darnit.sieve.registry import register_control
 
 # Protocol (for isinstance checks)
 from darnit.core.plugin import ComplianceImplementation, ControlSpec as PluginControlSpec
 
-# Handler registration
+# MCP tool handler registration (Section 8)
 from darnit.core.handlers import get_handler_registry
 ```
 
@@ -1350,7 +1761,9 @@ from darnit.core.handlers import get_handler_registry
 | Sieve models | `packages/darnit/src/darnit/sieve/models.py` |
 | Pass implementations | `packages/darnit/src/darnit/sieve/passes.py` |
 | Control registry | `packages/darnit/src/darnit/sieve/registry.py` |
-| Handler system | `packages/darnit/src/darnit/core/handlers.py` |
+| Sieve handler registry | `packages/darnit/src/darnit/sieve/handler_registry.py` |
+| Built-in sieve handlers | `packages/darnit/src/darnit/sieve/builtin_handlers.py` |
+| MCP tool handler registry | `packages/darnit/src/darnit/core/handlers.py` |
 | Reference implementation | `packages/darnit-baseline/src/darnit_baseline/implementation.py` |
 | Reference controls | `packages/darnit-baseline/src/darnit_baseline/controls/level1.py` |
 | Reference TOML | `packages/darnit-baseline/openssf-baseline.toml` |
