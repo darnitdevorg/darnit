@@ -1,159 +1,350 @@
-# OpenSSF Baseline MCP Server Architecture
+# Darnit Architecture
 
 > **For LLMs**: This document provides essential context for understanding and modifying this codebase. Read this first before making changes.
 
-## Overview
+## 1. What is Darnit?
 
-This is an MCP (Model Context Protocol) server that audits GitHub repositories against the [OpenSSF Baseline](https://baseline.openssf.org/) security standard (OSPS v2025.10.10). It provides:
+Darnit is a plugin-based compliance auditing framework. It exposes compliance checks as MCP (Model Context Protocol) tools that AI assistants can call. The framework is generic; compliance standards are provided by implementation plugins.
 
-- **62 automated security checks** across 3 maturity levels
-- **Auto-remediation** capabilities for common issues
-- **In-toto attestations** with optional Sigstore signing
-- **STRIDE threat modeling** generation
-- **Project configuration** management
+**OpenSSF Baseline** (`darnit-baseline`) is the reference implementation, checking 62 controls from the [OpenSSF Baseline](https://baseline.openssf.org/) security standard (OSPS v2025.10.10).
 
-## Technology Stack
+### Technology Stack
 
 | Component | Technology |
 |-----------|------------|
 | Language | Python 3.11+ |
 | MCP Framework | `mcp[cli]` with FastMCP |
-| Package Manager | `uv` |
+| Package Manager | `uv` (monorepo workspace) |
+| CLI | `darnit serve` / `darnit audit` |
 | GitHub Integration | `gh` CLI |
+| Expression Engine | CEL (Common Expression Language) |
 | Signing | Sigstore (sigstore-python) |
 | Attestations | in-toto format |
 
-## Package Structure
+### Conservative-by-Default Philosophy
+
+This is a compliance auditing tool. Incorrect results are worse than incomplete results:
+
+- **Never assume compliance.** A control that hasn't been explicitly verified as passing is NOT compliant. WARN means "we don't know" and is treated the same as FAIL for compliance calculations.
+- **Never guess user-specific values.** Maintainers, security contacts, governance models require explicit user confirmation. When `auto_detect = false` in TOML, the sieve must not run for that key.
+- **Err on the side of caution.** When in doubt, return WARN (needs verification), not PASS.
+
+### How a Typical Session Works
+
+Here's the end-to-end flow that an AI assistant (or human) goes through when auditing a project:
+
+```
+ 1. LOAD                     2. AUDIT                      3. GATHER CONTEXT
+ ───────────────────         ───────────────────────        ───────────────────────
+ Load controls from          Run each control through       For controls that WARN:
+ framework TOML              the sieve pipeline:
+                                                            a) User points to where
+ Load existing project         DETERMINISTIC                   things actually live
+ context from .project/        │ file exists? API call?        (e.g., "my security
+                               ▼                               docs are at
+ Merge user overrides          PATTERN                         docs/security.txt,
+ from .baseline.toml           │ regex match? heuristics?      not SECURITY.md")
+                               ▼
+                               LLM                          b) Framework needs user
+                               │ ask calling AI to judge       to confirm values it
+                               ▼                               can't safely guess
+                               MANUAL                          (e.g., "who are the
+                               │ human verification steps      maintainers?")
+
+                             Each phase can use built-in
+                             handlers OR custom Python
+                             plugin handlers
+
+                             Controls get PASS, FAIL,       Context is stored in
+                             or WARN (inconclusive)         .project/project.yaml
+
+
+ 4. RE-AUDIT (optional)      5. REMEDIATE                  6. COMMIT
+ ───────────────────────     ───────────────────────        ───────────────────────
+ Re-run with new context     For controls still failing:    Branch, commit, and PR
+ → some WARNs become                                       the changes
+ PASS or FAIL now that       Apply TOML-declared fixes
+ we know where files are     using gathered context or
+ and have confirmed values   sensible defaults as input:
+
+                               • file_create (from template)
+                               • exec (run commands)
+                               • api_call (GitHub API)
+                               • project_update (.project/)
+                               • custom plugin handlers
+```
+
+**Why context gathering matters**: Many controls can't be fully automated. The sieve might find that *something* exists but not *where*, or it might need human judgment about project-specific facts. For example:
+
+- **Custom checks**: Each sieve phase uses built-in handlers (`file_exists`, `exec`, `pattern`, `manual`) by default, but any phase can be replaced with a custom Python handler registered by a plugin — e.g., running OpenSSF Scorecard, querying a vulnerability database, or checking internal policy systems.
+- **Locator misses**: The control checks `SECURITY.md` and `.github/SECURITY.md`, but your project keeps security docs at `docs/security.txt`. The user tells the framework where to look, and that location is stored so future audits find it automatically.
+- **Value confirmation**: The framework can auto-detect potential maintainers from git history or GitHub collaborators, but it won't *assume* those are correct — it presents candidates and asks the user to confirm. This is the conservative-by-default philosophy in action.
+- **Remediation prerequisites**: Some fixes need context before they can run. Creating a `CODEOWNERS` file requires knowing who the maintainers are. The framework checks for this upfront and prompts for missing values before attempting the fix.
+- **Custom remediation**: The built-in remediation types (`file_create`, `exec`, `api_call`) cover common cases, but implementations can register custom Python handlers for anything more complex — e.g., modifying CI configs, updating dependency manifests, or calling third-party libraries.
+
+Context is currently stored in `.project/project.yaml` (a dotfile directory in the repo root). The storage layer is designed to be pluggable in the future — the framework reads/writes context through an abstraction (`context/dot_project.py`, `context/dot_project_mapper.py`) rather than touching YAML directly, so alternative backends (database, API, etc.) could be swapped in.
+
+---
+
+## 2. Package Structure
 
 ```
 baseline-mcp/
-├── main.py                    # MCP tools and entry point
-├── pyproject.toml             # Package configuration
-├── example.project.toml       # Example project configuration
-├── baseline_mcp/              # Modular package
-│   ├── __init__.py            # Public API exports
-│   ├── server.py              # MCP server instance
-│   ├── core/                  # Core abstractions
-│   │   ├── __init__.py
-│   │   ├── models.py          # CheckStatus, CheckResult, AuditResult
-│   │   ├── adapters.py        # CheckAdapter, RemediationAdapter ABCs
-│   │   └── utils.py           # gh_api, file_exists, read_file, etc.
-│   ├── config/                # Project configuration
-│   │   ├── __init__.py
-│   │   ├── models.py          # ProjectConfig, ProjectType, constants
-│   │   ├── loader.py          # load/save project config
-│   │   ├── discovery.py       # Auto-discover files, CI, project name
-│   │   └── validation.py      # Validate references (local, URL, repo)
-│   ├── checks/                # Legacy checks (being replaced by sieve)
-│   │   ├── __init__.py        # Public exports for all checks
-│   │   ├── constants.py       # OSI_LICENSES, BINARY_EXTENSIONS, patterns
-│   │   ├── helpers.py         # Check-specific utilities
-│   │   ├── level1.py          # Level 1 checks (24 controls)
-│   │   ├── level2.py          # Level 2 checks (18 controls)
-│   │   └── level3.py          # Level 3 checks (20 controls)
-│   ├── sieve/                 # Progressive verification system ✅ NEW
-│   │   ├── __init__.py        # Public exports
-│   │   ├── models.py          # VerificationPhase, PassOutcome, SieveResult
-│   │   ├── passes.py          # DeterministicPass, PatternPass, LLMPass, ManualPass
-│   │   ├── orchestrator.py    # SieveOrchestrator - runs passes in order
-│   │   ├── registry.py        # ControlRegistry, register_control()
-│   │   ├── llm_protocol.py    # LLM consultation protocol
-│   │   ├── project_context.py # User-confirmed project facts from project.toml
-│   │   ├── controls_level1.py # Level 1 sieve control definitions (24)
-│   │   ├── controls_level2.py # Level 2 sieve control definitions (18)
-│   │   └── controls_level3.py # Level 3 sieve control definitions (20)
-│   ├── remediation/           # Auto-fix capabilities
-│   │   ├── __init__.py        # Public API
-│   │   ├── registry.py        # REMEDIATION_REGISTRY, control mappings
-│   │   └── helpers.py         # Common remediation utilities
-│   ├── threat_model/          # STRIDE threat modeling
-│   │   ├── __init__.py        # Public exports
-│   │   ├── models.py          # StrideCategory, RiskLevel, Threat, etc.
-│   │   ├── patterns.py        # FRAMEWORK_PATTERNS, INJECTION_PATTERNS, etc.
-│   │   ├── discovery.py       # Asset discovery functions
-│   │   ├── stride.py          # STRIDE analysis engine
-│   │   └── generators.py      # Markdown, SARIF, JSON output
-│   ├── attestation/           # In-toto attestations
-│   │   ├── __init__.py        # Public exports
-│   │   ├── git.py             # Git commit/ref helpers
-│   │   ├── predicate.py       # Attestation predicate building
-│   │   ├── signing.py         # Sigstore signing (multi-version support)
-│   │   └── generator.py       # Attestation generation
-│   ├── tools/                 # MCP tool implementations
-│   │   ├── __init__.py        # Public exports
-│   │   ├── server.py          # MCP server factory
-│   │   ├── helpers.py         # Common tool helpers
-│   │   └── audit.py           # Audit tool implementations
-│   └── formatters/            # Output formatters
-│       ├── __init__.py        # Public exports
-│       ├── rules_catalog.py   # OSPS rules metadata (62 controls)
-│       └── sarif.py           # SARIF 2.1.0 generator
-└── docs/                      # Additional documentation
-    ├── DECISION_FLOWS.md      # Remediation decision trees
-    ├── ATTESTATION_SPEC.md    # Attestation format specification
-    └── SARIF_DESIGN.md        # SARIF output design document
+├── packages/
+│   ├── darnit/                      # Core framework (MUST NOT import implementations)
+│   │   ├── pyproject.toml           # CLI entry point: darnit = "darnit.cli:main"
+│   │   └── src/darnit/
+│   │       ├── cli.py               # darnit serve | audit | plan | validate | init | list
+│   │       ├── core/                # Plugin protocol, discovery, handler registry, logging
+│   │       ├── sieve/               # 4-phase verification pipeline
+│   │       ├── config/              # TOML loading, merging, schema validation
+│   │       ├── context/             # .project/ context: sieve, confidence, dot_project
+│   │       ├── remediation/         # RemediationExecutor, helpers, GitHub API
+│   │       ├── filtering/           # Tag-based control filtering
+│   │       ├── server/              # MCP server factory, tool registration
+│   │       │   └── tools/           # Built-in MCP tools (audit, remediate, list, git, context)
+│   │       ├── tools/               # Audit orchestration, helpers
+│   │       └── formatters/          # Output formatting (markdown, SARIF)
+│   │
+│   ├── darnit-baseline/             # OpenSSF Baseline implementation
+│   │   ├── openssf-baseline.toml    # 62 control definitions (source of truth)
+│   │   └── src/darnit_baseline/
+│   │       ├── implementation.py    # ComplianceImplementation class
+│   │       ├── tools.py             # Custom MCP tool handlers
+│   │       ├── controls/            # (mostly empty — controls moved to TOML)
+│   │       ├── remediation/         # Remediation orchestrator + legacy helpers
+│   │       ├── rules/               # SARIF rule catalog
+│   │       ├── attestation/         # In-toto + Sigstore signing
+│   │       ├── threat_model/        # STRIDE analysis engine
+│   │       └── formatters/          # SARIF output generation
+│   │
+│   ├── darnit-example/              # Example implementation (docs reference)
+│   ├── darnit-plugins/              # Plugin utilities
+│   └── darnit-testchecks/           # Test implementation (for testing)
+│
+├── docs/
+│   ├── WORKFLOW.md                  # Mermaid diagrams (audit, remediation, context, startup)
+│   ├── IMPLEMENTATION_GUIDE.md      # Plugin authoring guide (the how-to companion to this doc)
+│   └── generated/
+│       ├── SCHEMA_REFERENCE.md      # TOML schema reference (auto-generated)
+│       └── USAGE_GUIDE.md           # Usage guide (auto-generated)
+│
+├── openspec/specs/
+│   └── framework-design/spec.md     # Authoritative framework specification
+│
+├── tests/
+│   ├── darnit/                      # Framework unit tests
+│   ├── darnit_baseline/             # Implementation tests
+│   └── integration/                 # End-to-end tests
+│
+├── scripts/
+│   ├── validate_sync.py             # Spec-implementation sync checker
+│   └── generate_docs.py             # Regenerate docs/generated/
+│
+├── CLAUDE.md                        # Development guidelines and rules
+└── pyproject.toml                   # Workspace root (uv workspace)
 ```
 
-## Architecture Evolution
+### Separation Rule
 
-The codebase has two check systems:
+**The framework (`darnit`) MUST NOT import implementation packages.** All communication goes through the `ComplianceImplementation` protocol. Implementations *may* import from the framework.
 
-| System | Status | Location | Description |
-|--------|--------|----------|-------------|
-| **Legacy checks** | Stable | `baseline_mcp/checks/` | Simple functions returning results |
-| **Sieve system** | Active development | `baseline_mcp/sieve/` | 4-phase progressive verification |
-
-The sieve system is the future architecture, providing:
-- Multi-phase verification (fast checks first, expensive checks last)
-- LLM consultation protocol for ambiguous cases
-- Project context awareness (user-confirmed facts)
-- CI provider abstraction (not just GitHub Actions)
-
-## Key Data Structures
-
-### CheckResult
 ```python
-@dataclass
-class CheckResult:
-    control_id: str      # e.g., "OSPS-AC-01.01"
-    status: CheckStatus  # PASS, FAIL, WARN, NA, ERROR
-    message: str         # Human-readable description
-    level: int = 1       # OSPS maturity level (1, 2, or 3)
-    details: Optional[Dict[str, Any]] = None
-    evidence: Optional[str] = None
-    source: str = "builtin"
+# WRONG — creates hard dependency
+from darnit_baseline.controls import level1
+
+# CORRECT — use plugin discovery
+from darnit.core.discovery import get_default_implementation
+impl = get_default_implementation()
+controls = impl.get_all_controls()
 ```
 
-### AuditResult
-```python
-@dataclass
-class AuditResult:
-    owner: str
-    repo: str
-    local_path: str
-    level: int                    # Max level checked
-    default_branch: str
-    all_results: List[Dict]       # All check results
-    summary: Dict[str, int]       # {PASS: n, FAIL: n, WARN: n, ...}
-    level_compliance: Dict[int, bool]  # {1: True, 2: False, 3: False}
-    timestamp: str
-    git_commit: Optional[str]
-    git_ref: Optional[str]
+---
+
+## 3. Three-Layer Architecture
+
+Darnit operates at three distinct layers. Each has built-in primitives and plugin extensibility:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Layer 3: MCP Tools (what the AI assistant calls)       │
+│                                                         │
+│  Built-in: audit, remediate, list_controls              │
+│  Plugin:   any Python function registered as a handler  │
+│                                                         │
+│  TOML:  [mcp.tools.audit]                               │
+│         builtin = "audit"                               │
+├─────────────────────────────────────────────────────────┤
+│  Layer 2: Remediation (how to fix a failing control)    │
+│                                                         │
+│  Built-in: file_create, exec, api_call, project_update  │
+│  Plugin:   handler = "my_module:my_func"                │
+│                                                         │
+│  TOML:  [controls."X".remediation.file_create]          │
+│         path = "SECURITY.md"                            │
+│         template = "security_policy"                    │
+├─────────────────────────────────────────────────────────┤
+│  Layer 1: Checking (how to verify a control)            │
+│                                                         │
+│  Built-in: file_must_exist, exec, pattern, manual       │
+│  Plugin:   handler = "my_module:my_func"                │
+│                                                         │
+│  TOML:  [controls."X".passes.deterministic]             │
+│         file_must_exist = ["README.md"]                 │
+└─────────────────────────────────────────────────────────┘
 ```
 
-### ProjectConfig
-```python
-@dataclass
-class ProjectConfig:
-    project_name: str
-    project_type: ProjectType     # LIBRARY, APPLICATION, FRAMEWORK, etc.
-    controls: Dict[str, ControlStatus]
-    file_locations: Dict[str, str]
-    exclusions: List[str]
-    custom_checks: Dict[str, Any]
+**Layer 1 (Checking)** answers: "Does this control pass?" Using built-in sieve pass types (file existence, command execution, regex patterns, manual steps) or custom Python handler functions.
+
+**Layer 2 (Remediation)** answers: "How do I fix it?" Using built-in actions (create file from template, run command, call API, update project config) or custom Python functions.
+
+**Layer 3 (MCP Tools)** answers: "What can the AI assistant do?" Using built-in tools (audit all controls, remediate failures, list controls) or custom Python tool handlers.
+
+For simple frameworks, all three layers can be TOML-only — no Python required.
+
+---
+
+## 4. The Sieve Pipeline
+
+The sieve is a 4-phase verification waterfall. Each control defines one or more "passes" that execute in order. The orchestrator stops at the first conclusive result.
+
+**Ordering is controlled by declaration order in TOML.** The `[[controls."X".passes]]` array is a flat ordered list — the orchestrator iterates it top-to-bottom, running each handler in sequence. The framework warns if phases are out of the recommended order (DETERMINISTIC → PATTERN → LLM → MANUAL), but it's advisory; the TOML author has full control over execution order. A control can have multiple passes in the same phase, skip phases entirely, or use only custom plugin handlers.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                   CONTROL VERIFICATION                  │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  Phase 1: DETERMINISTIC                                 │
+│  ├─ file_must_exist, exec + CEL, api_check              │
+│  └─ High confidence (1.0)                               │
+│                     │                                   │
+│            PASS/FAIL? ──────► DONE                      │
+│                     │ INCONCLUSIVE                      │
+│                     ▼                                   │
+│  Phase 2: PATTERN                                       │
+│  ├─ Regex content matching, heuristic analysis          │
+│  └─ Medium confidence (0.7–0.9)                         │
+│                     │                                   │
+│            PASS/FAIL? ──────► DONE                      │
+│                     │ INCONCLUSIVE                      │
+│                     ▼                                   │
+│  Phase 3: LLM                                           │
+│  ├─ Consultation request for calling AI to analyze      │
+│  └─ Variable confidence (0.5–0.9)                       │
+│                     │                                   │
+│            PASS/FAIL? ──────► DONE                      │
+│                     │ INCONCLUSIVE                      │
+│                     ▼                                   │
+│  Phase 4: MANUAL                                        │
+│  └─ Returns WARN with human verification steps          │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
 ```
 
-## OSPS Control Structure
+### Key Data Types
+
+All defined in `packages/darnit/src/darnit/sieve/models.py`:
+
+| Type | Purpose |
+|------|---------|
+| `VerificationPhase` | Enum: `DETERMINISTIC`, `PATTERN`, `LLM`, `MANUAL` |
+| `PassOutcome` | Enum: `PASS`, `FAIL`, `INCONCLUSIVE`, `ERROR` |
+| `CheckContext` | Runtime context for each pass (owner, repo, local_path, project_context, gathered_evidence) |
+| `PassResult` | What every pass returns (phase, outcome, message, evidence, confidence) |
+| `PassAttempt` | Record of what a pass attempted, for transparency |
+| `SieveResult` | Complete result: status (PASS/FAIL/WARN/NA/ERROR/PENDING_LLM), conclusive_phase, pass_history |
+| `ControlSpec` | Control definition: control_id, level, domain, name, description, passes[], tags, metadata |
+| `LLMConsultationRequest` | Structured request for Phase 3 LLM analysis |
+| `LLMConsultationResponse` | Parsed LLM response with confidence and reasoning |
+
+### Evidence Accumulation
+
+Each pass can return `evidence` (a dict) in its `PassResult`. This evidence is merged into `CheckContext.gathered_evidence` for subsequent passes, enabling multi-pass pipelines where later phases build on earlier discoveries.
+
+### LLM Consultation Protocol
+
+Phase 3 returns a `PENDING_LLM` status with a `LLMConsultationRequest` in the details. The calling AI assistant analyzes the evidence and returns a structured `LLMConsultationResponse`. The sieve never calls an LLM directly — it delegates to whoever invoked the audit.
+
+---
+
+## 5. TOML-First Control Definitions
+
+Controls are defined declaratively in TOML. The framework TOML file (`openssf-baseline.toml` for the Baseline implementation) is the source of truth for control metadata, passes, and remediation.
+
+### Real Example: OSPS-VM-02.01
+
+```toml
+[controls."OSPS-VM-02.01"]
+name = "HasSecurityPolicy"
+description = "Repository has a security policy"
+tags = { level = 1, domain = "VM", security_severity = 7.0, security = true }
+
+[controls."OSPS-VM-02.01".locator]
+project_path = "security.policy"
+discover = ["SECURITY.md", ".github/SECURITY.md", "docs/SECURITY.md"]
+kind = "file"
+
+[[controls."OSPS-VM-02.01".passes]]
+handler = "file_exists"
+use_locator = true
+
+[[controls."OSPS-VM-02.01".passes]]
+handler = "manual"
+steps = [
+    "Look for SECURITY.md in repository root or .github/ directory",
+    "Verify it contains vulnerability reporting instructions",
+    "Check for security contact or email address",
+]
+
+[controls."OSPS-VM-02.01".remediation]
+safe = true
+dry_run_supported = true
+
+[[controls."OSPS-VM-02.01".remediation.handlers]]
+handler = "file_create"
+path = "SECURITY.md"
+template = "security_policy_standard"
+overwrite = false
+```
+
+### Built-in Pass Types
+
+| TOML Handler | Phase | Purpose |
+|-------------|-------|---------|
+| `file_exists` | Deterministic | Check if any listed file exists |
+| `exec` | Deterministic | Run external command, evaluate with CEL expression |
+| `pattern` / `regex` | Pattern | Regex match in file contents |
+| `manual` | Manual | Human verification steps (always INCONCLUSIVE → WARN) |
+
+Custom handlers can be registered by plugins and referenced by short name in TOML.
+
+### CEL Expressions
+
+The `exec` pass type supports CEL (Common Expression Language) for evaluating command output:
+
+```toml
+[[controls."OSPS-AC-01.01".passes]]
+handler = "exec"
+command = ["gh", "api", "/orgs/$OWNER"]
+output_format = "json"
+expr = 'output.json.two_factor_requirement_enabled == true'
+```
+
+Available variables: `output.stdout`, `output.stderr`, `output.exit_code`, `output.json`, plus `project.*` from context.
+
+### Remediation in TOML
+
+Controls can define declarative remediation:
+
+- **`file_create`** — Create a file from a template (`template = "security_policy_standard"`)
+- **`exec`** — Run a command
+- **`api_call`** — Call the GitHub API via `gh api`
+- **`project_update`** — Update `.project/project.yaml` after successful fix
+
+Templates are defined in `[templates.*]` sections and support `$OWNER`, `$REPO`, and `${context.*}` variable substitution.
+
+### OSPS Control Categories
 
 Controls follow the pattern `OSPS-{DOMAIN}-{NUMBER}.{SUBNUMBER}`:
 
@@ -171,612 +362,183 @@ Controls follow the pattern `OSPS-{DOMAIN}-{NUMBER}.{SUBNUMBER}`:
 
 **Total: 62 controls** (OSPS v2025.10.10)
 
-## MCP Tools
+---
 
-### Primary Tool
-- `audit_openssf_baseline(owner, repo, local_path)` - Run full compliance audit
+## 6. Plugin Protocol
 
-### Remediation Tools
-- `create_security_policy(owner, repo, local_path)` - Create SECURITY.md
-- `create_contributing_guide(owner, repo, local_path)` - Create CONTRIBUTING.md
-- `create_codeowners(owner, repo, local_path)` - Create CODEOWNERS
-- `create_governance_doc(owner, repo, local_path)` - Create GOVERNANCE.md
-- `create_dependabot_config(owner, repo, local_path)` - Create dependabot.yml
-- `create_support_doc(owner, repo, local_path)` - Create SUPPORT.md
-- `create_bug_report_template(owner, repo, local_path)` - Create bug report template
-- `enable_branch_protection(owner, repo, branch)` - Configure branch protection
-- `configure_status_checks(owner, repo, branch)` - Configure required status checks
-- `configure_dco_enforcement(owner, repo, local_path)` - Configure DCO sign-off
-- `remediate_audit_findings(local_path, categories)` - Apply multiple remediations
+### ComplianceImplementation
 
-### Configuration Tools
-- `get_project_config(local_path)` - Get current project configuration
-- `sync_project_config(local_path, fix)` - Sync/fix configuration
-
-### Analysis Tools
-- `generate_threat_model(owner, repo, local_path)` - Generate STRIDE threat model
-- `generate_attestation(owner, repo, local_path, sign)` - Generate in-toto attestation
-
-### Combined Workflow
-- `audit_and_attest(owner, repo, local_path, sign)` - Audit + attestation in one call
-
-## Data Flow
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         MCP Client (Claude)                          │
-└─────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                      audit_openssf_baseline()                        │
-│                         (main MCP tool)                              │
-└─────────────────────────────────────────────────────────────────────┘
-                                    │
-                    ┌───────────────┼───────────────┐
-                    ▼               ▼               ▼
-            ┌───────────┐   ┌───────────┐   ┌───────────┐
-            │  Level 1  │   │  Level 2  │   │  Level 3  │
-            │  Checks   │   │  Checks   │   │  Checks   │
-            └───────────┘   └───────────┘   └───────────┘
-                    │               │               │
-                    ▼               ▼               ▼
-            ┌─────────────────────────────────────────────┐
-            │              Check Functions                 │
-            │  • GitHub API calls (gh_api)                │
-            │  • Local file analysis (file_exists, etc)   │
-            │  • Pattern matching (regex)                  │
-            └─────────────────────────────────────────────┘
-                                    │
-                                    ▼
-            ┌─────────────────────────────────────────────┐
-            │              AuditResult                     │
-            │  • all_results: List[CheckResult]           │
-            │  • summary: {PASS, FAIL, WARN, NA, ERROR}   │
-            │  • level_compliance: {1: bool, 2: bool...}  │
-            └─────────────────────────────────────────────┘
-                                    │
-                    ┌───────────────┴───────────────┐
-                    ▼                               ▼
-            ┌───────────────┐               ┌───────────────┐
-            │  Remediation  │               │  Attestation  │
-            │  (optional)   │               │  (optional)   │
-            └───────────────┘               └───────────────┘
-```
-
-## Key Design Decisions
-
-### 1. Hybrid Check Approach
-Checks use both GitHub API and local file analysis:
-- **GitHub API**: Branch protection, releases, org settings
-- **Local files**: Workflow analysis, dependency files, documentation content
-
-### 2. Graceful Degradation
-All checks handle failures gracefully:
-- API failures → WARN or ERROR status with helpful message
-- Missing files → appropriate N/A or FAIL based on requirement
-- Permission issues → clear error messages
-
-### 3. Evidence-Based Results
-Each check provides:
-- Clear status (PASS/FAIL/WARN/NA/ERROR)
-- Human-readable message explaining the result
-- Optional evidence for verification
-
-### 4. Incremental Migration
-The codebase is being migrated from monolithic `main.py` to modular `baseline_mcp/` package:
-- Modules can be imported independently
-- `main.py` maintains backward compatibility
-- Tests can target individual modules
-
-## Sieve System (Progressive Verification)
-
-The sieve system implements a 4-phase progressive verification architecture that runs cheap/fast checks first and only proceeds to expensive checks when needed.
-
-### Verification Phases
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    OSPS CONTROL CHECK                            │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  Phase 1: DETERMINISTIC                                          │
-│  ├─ File existence checks                                        │
-│  ├─ GitHub API boolean lookups                                   │
-│  └─ Config file parsing                                          │
-│                     │                                            │
-│            PASS/FAIL? ──────► DONE                               │
-│                     │ INCONCLUSIVE                               │
-│                     ▼                                            │
-│  Phase 2: PATTERN                                                │
-│  ├─ Regex content matching                                       │
-│  ├─ Heuristic analysis                                           │
-│  └─ Multi-file pattern detection                                 │
-│                     │                                            │
-│            PASS/FAIL? ──────► DONE                               │
-│                     │ INCONCLUSIVE                               │
-│                     ▼                                            │
-│  Phase 3: LLM                                                    │
-│  ├─ Consultation request generated                               │
-│  ├─ Calling LLM analyzes content                                 │
-│  └─ Structured response with confidence                          │
-│                     │                                            │
-│            PASS/FAIL? ──────► DONE                               │
-│                     │ INCONCLUSIVE                               │
-│                     ▼                                            │
-│  Phase 4: MANUAL                                                 │
-│  └─ Returns WARN with verification steps                         │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Key Components
-
-| Component | File | Purpose |
-|-----------|------|---------|
-| **ControlSpec** | `models.py` | Control definition with pass sequence |
-| **PassResult** | `models.py` | Result from a single verification pass |
-| **SieveResult** | `models.py` | Final result with full pass history |
-| **DeterministicPass** | `passes.py` | File/API checks |
-| **PatternPass** | `passes.py` | Regex content matching |
-| **LLMPass** | `passes.py` | LLM consultation protocol |
-| **ManualPass** | `passes.py` | Human verification steps |
-| **SieveOrchestrator** | `orchestrator.py` | Runs passes, stops on conclusion |
-| **ControlRegistry** | `registry.py` | Global control registration |
-
-### Control Definition Example
+Implementations register via Python entry points and satisfy a structural protocol:
 
 ```python
-register_control(ControlSpec(
-    control_id="OSPS-VM-02.01",
-    level=1,
-    domain="VM",
-    name="SecurityContacts",
-    description="Security contacts documented in SECURITY.md",
-    passes=[
-        # Phase 1: Does SECURITY.md exist?
-        DeterministicPass(
-            file_must_exist=["SECURITY.md", ".github/SECURITY.md"]
-        ),
-        # Phase 2: Does it contain contact info?
-        PatternPass(
-            file_patterns=["SECURITY.md"],
-            content_patterns={
-                "contact": r"(email|security.*contact|report.*vulnerabilit)",
-            },
-        ),
-        # Phase 3: LLM analysis for ambiguous cases
-        LLMPass(
-            prompt_template="Analyze if this SECURITY.md provides adequate contact info...",
-            files_to_include=["SECURITY.md"],
-        ),
-        # Phase 4: Manual fallback
-        ManualPass(
-            verification_steps=[
-                "Open SECURITY.md and verify contact method exists",
-                "Confirm contact is actively monitored",
-            ]
-        ),
-    ],
-))
+@runtime_checkable
+class ComplianceImplementation(Protocol):
+    @property
+    def name(self) -> str: ...                              # "openssf-baseline"
+    @property
+    def display_name(self) -> str: ...                      # "OpenSSF Baseline"
+    @property
+    def version(self) -> str: ...                           # "0.1.0"
+    @property
+    def spec_version(self) -> str: ...                      # "OSPS v2025.10.10"
+
+    def get_all_controls(self) -> list[ControlSpec]: ...
+    def get_controls_by_level(self, level: int) -> list[ControlSpec]: ...
+    def get_rules_catalog(self) -> dict[str, Any]: ...
+    def get_remediation_registry(self) -> dict[str, Any]: ...
+    def get_framework_config_path(self) -> Path | None: ...
+    def register_controls(self) -> None: ...
+    # Optional: register_handlers() — checked via hasattr()
 ```
 
-### Project Context System
+### Entry Point Registration
 
-The project context system allows users to confirm facts about their project that affect how controls are evaluated. This is stored in `project.toml`.
-
-**Configuration (`project.toml`):**
 ```toml
-[project.context]
-# Does this project have subprojects?
-has_subprojects = false
-
-# What CI/CD system does this project use?
-ci_provider = "gitlab"  # github, gitlab, jenkins, circleci, azure, travis, none, other
-
-# Path to CI config (for non-GitHub CI)
-ci_config_path = ".gitlab-ci.yml"
+# In pyproject.toml of the implementation package:
+[project.entry-points."darnit.implementations"]
+openssf-baseline = "darnit_baseline:register"
 ```
 
-**Context Keys:**
+The `register()` function returns an instance of the implementation class. The framework discovers implementations via `importlib.metadata.entry_points(group="darnit.implementations")`.
 
-| Key | Affects Controls | Description |
-|-----|-----------------|-------------|
-| `has_subprojects` | QA-04.01, QA-04.02 | Whether project has related repos |
-| `has_releases` | BR-02.01, BR-04.01, BR-06.01, DO-01.01, DO-03.01 | Whether project makes releases |
-| `is_library` | SA-02.01 | Whether project is a library/framework |
-| `has_compiled_assets` | QA-02.02 | Whether releases include binaries |
-| `ci_provider` | BR-01.*, AC-04.*, QA-06.01, VM-05.*, VM-06.02 | CI/CD system in use |
-| `ci_config_path` | Same as ci_provider | Path to CI config file |
+### Handler Registration
 
-**CI Provider Handling:**
+Implementations can register custom MCP tool handlers and custom sieve handlers:
 
-When GitHub Actions workflows aren't found, checks now:
-1. Look for other CI config files (`.gitlab-ci.yml`, `Jenkinsfile`, etc.)
-2. Check `project.toml` for user-confirmed `ci_provider`
-3. If `ci_provider = "none"`, mark CI checks as N/A
-4. If `ci_provider = "other"`, return INCONCLUSIVE with manual verification steps
+| Registry | Layer | Purpose | Access |
+|----------|-------|---------|--------|
+| `SieveHandlerRegistry` | 1 & 2 | Checking + remediation handlers | `get_sieve_handler_registry()` from `darnit.sieve.handler_registry` |
+| `HandlerRegistry` | 3 | MCP tool handlers | `get_handler_registry()` from `darnit.core.handlers` |
 
-```python
-# Example from _create_sast_check()
-if is_context_confirmed(ctx.local_path, "ci_provider"):
-    ci_provider = get_context_value(ctx.local_path, "ci_provider")
-    if ci_provider == "none":
-        return PassResult(outcome=PassOutcome.INCONCLUSIVE,
-            message="No CI/CD configured - SAST check not applicable")
-    elif ci_provider != "github":
-        return PassResult(outcome=PassOutcome.INCONCLUSIVE,
-            message=f"Using {ci_provider} CI - manually verify SAST is configured")
-```
-
-### Future: External Data Sources
-
-The architecture is designed to eventually support multiple data sources:
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      OSPS CONTROL                                │
-├─────────────────────────────────────────────────────────────────┤
-│   ┌─────────────┐  ┌─────────────┐  ┌─────────────┐             │
-│   │  Scorecard  │  │   Built-in  │  │    Trivy    │   ...       │
-│   │   Source    │  │   Source    │  │   Source    │             │
-│   └──────┬──────┘  └──────┬──────┘  └──────┬──────┘             │
-│          │                │                │                     │
-│          ▼                ▼                ▼                     │
-│   ┌─────────────────────────────────────────────────────────┐   │
-│   │              Evidence Aggregator / Resolver              │   │
-│   └─────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-This would allow integrating results from:
-- **OpenSSF Scorecard**: Branch-Protection → OSPS-AC-03.01
-- **Trivy/Grype**: Vulnerability scanning → OSPS-VM-05.*
-- **Semgrep/CodeQL**: SAST results → OSPS-VM-06.02
-
-## Remediation System
-
-The remediation system automatically fixes common compliance gaps based on audit failures.
-
-### Context Sieve (Progressive Detection)
-
-Before applying remediations that require context (like maintainers for CODEOWNERS), the system uses a **Context Sieve** for progressive auto-detection:
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    CONTEXT SIEVE PIPELINE                        │
-├─────────────────────────────────────────────────────────────────┤
-│  Phase 1: DETERMINISTIC (conf: 0.9)                              │
-│  └─ MAINTAINERS.md, CODEOWNERS, SECURITY.md                      │
-│                     │                                            │
-│  Phase 2: HEURISTIC (conf: 0.7)                                  │
-│  └─ package.json authors, git history, README                    │
-│                     │                                            │
-│  Phase 3: API (conf: 0.6)                                        │
-│  └─ GitHub collaborators with admin/maintain access              │
-│                     │                                            │
-│  Phase 4: COMBINE                                                │
-│  └─ Aggregate signals, calculate agreement, return best value    │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-| Source | Weight | Example |
-|--------|--------|---------|
-| `USER_CONFIRMED` | 1.0 | User ran `confirm_project_context()` |
-| `EXPLICIT_FILE` | 0.9 | Found in MAINTAINERS.md |
-| `PROJECT_MANIFEST` | 0.8 | Found in package.json author |
-| `GITHUB_API` | 0.7 | GitHub collaborators API |
-| `GIT_HISTORY` | 0.6 | Top git contributors |
-| `PATTERN_MATCH` | 0.5 | README author mention |
-
-**Key Components** (in `packages/darnit/src/darnit/context/`):
-- `confidence.py` - Signal weighting and confidence calculation
-- `sieve.py` - Progressive detection pipeline
-
-See [CONTEXT_SIEVE_DESIGN.md](docs/design/CONTEXT_SIEVE_DESIGN.md) for full design.
-
-### Registry Structure
-```python
-REMEDIATION_REGISTRY = {
-    "branch_protection": {
-        "description": "Enable branch protection rules",
-        "controls": ["OSPS-AC-03.01", "OSPS-AC-03.02", "OSPS-QA-07.01"],
-        "function": "enable_branch_protection",
-        "safe": True,           # Safe to auto-apply
-        "requires_api": True,   # Needs GitHub API access
-    },
-    # ... 10 categories total
-}
-```
-
-### Available Categories
-| Category | Controls | Function | API Required |
-|----------|----------|----------|--------------|
-| `branch_protection` | AC-03.01, AC-03.02, QA-07.01 | `enable_branch_protection` | Yes |
-| `status_checks` | QA-03.01 | `configure_status_checks` | Yes |
-| `security_policy` | VM-01.01, VM-02.01, VM-03.01 | `create_security_policy` | No |
-| `codeowners` | GV-01.01, GV-01.02, GV-04.01 | `create_codeowners` | No |
-| `governance` | GV-01.01, GV-01.02 | `create_governance_doc` | No |
-| `contributing` | GV-03.01, GV-03.02 | `create_contributing_guide` | No |
-| `dco_enforcement` | LE-01.01 | `configure_dco_enforcement` | No |
-| `bug_report_template` | DO-02.01 | `create_bug_report_template` | No |
-| `dependabot` | VM-05.01, VM-05.02, VM-05.03 | `create_dependabot_config` | No |
-| `support_doc` | DO-03.01 | `create_support_doc` | No |
-
-### Usage Pattern
-```python
-from baseline_mcp.remediation import (
-    get_categories_for_failures,
-    REMEDIATION_REGISTRY,
-)
-
-# After running audit, find applicable fixes
-failures = [r for r in results if r["status"] == "FAIL"]
-categories = get_categories_for_failures(failures)
-# Returns: ["branch_protection", "security_policy", ...]
-```
-
-## Threat Model System
-
-The threat model system provides automated security analysis using the STRIDE methodology.
-
-### Key Components
-
-| Component | Purpose |
-|-----------|---------|
-| `models.py` | Data classes: StrideCategory, RiskLevel, Threat, AssetInventory |
-| `patterns.py` | Detection patterns for frameworks, auth, injection, secrets |
-| `discovery.py` | Asset discovery: entry points, auth, data stores, secrets |
-| `stride.py` | STRIDE analysis engine with risk scoring |
-| `generators.py` | Output in Markdown, SARIF, and JSON formats |
-
-### STRIDE Categories
-
-| Category | Description |
-|----------|-------------|
-| Spoofing | Identity verification threats |
-| Tampering | Data integrity threats |
-| Repudiation | Audit and accountability threats |
-| Information Disclosure | Confidentiality threats |
-| Denial of Service | Availability threats |
-| Elevation of Privilege | Authorization threats |
-
-### Usage Pattern
-```python
-from baseline_mcp.threat_model import (
-    discover_all_assets,
-    discover_injection_sinks,
-    analyze_stride_threats,
-    identify_control_gaps,
-    generate_markdown_threat_model,
-)
-
-# Discover assets
-assets = discover_all_assets("/path/to/repo")
-
-# Find injection vulnerabilities
-injection_sinks = discover_injection_sinks("/path/to/repo")
-
-# Analyze threats
-threats = analyze_stride_threats(assets, injection_sinks)
-control_gaps = identify_control_gaps(assets, threats)
-
-# Generate report
-report = generate_markdown_threat_model(
-    "/path/to/repo",
-    assets,
-    threats,
-    control_gaps,
-    assets.frameworks_detected
-)
-```
-
-## Attestation System
-
-The attestation system generates cryptographically signed proofs of compliance using in-toto format and Sigstore keyless signing.
-
-### Key Components
-
-| Component | Purpose |
-|-----------|---------|
-| `git.py` | Extract git commit SHA and ref (branch/tag) for attestation subjects |
-| `predicate.py` | Build OpenSSF Baseline assessment predicate with results summary |
-| `signing.py` | Sigstore keyless signing with multi-version API support (1.x, 2.x, 3.x) |
-| `generator.py` | Generate complete attestations from audit results |
-
-### Sigstore API Versions
-
-The signing module automatically detects and uses the appropriate Sigstore API:
-
-| Version | API Pattern | Detection |
-|---------|-------------|-----------|
-| 3.x | `ClientTrustConfig` + `SigningContext.from_trust_config()` | Primary |
-| 2.x | `Signer.production()` + `sign_dsse()` | Fallback 1 |
-| 1.x | `SigningContext.production()` + `signer.sign()` | Fallback 2 |
-
-### Usage Pattern
-```python
-from baseline_mcp.attestation import (
-    build_assessment_predicate,
-    sign_attestation,
-    generate_attestation_from_results,
-    is_attestation_available,
-    BASELINE_PREDICATE_TYPE,
-)
-
-# Check if signing is available
-if is_attestation_available():
-    # Build predicate from audit results
-    predicate = build_assessment_predicate(
-        owner="owner",
-        repo="repo",
-        commit="abc123def",
-        ref="main",
-        level=3,
-        results=audit_results,
-        project_config=config,
-        adapters_used=["builtin"]
-    )
-
-    # Sign with Sigstore
-    bundle = sign_attestation(
-        predicate=predicate,
-        predicate_type=BASELINE_PREDICATE_TYPE,
-        subject_name="git+https://github.com/owner/repo",
-        commit="abc123def"
-    )
-```
-
-### Signing Behavior
-
-- **CI/CD (GitHub Actions, GitLab CI)**: Uses ambient OIDC credentials automatically
-- **Local development**: Opens browser for OIDC authentication (GitHub, Google, Microsoft)
-- **Required permission**: `id-token: write` in GitHub Actions
-
-## Tools System
-
-The tools module provides the implementation layer for MCP tools, separating business logic from MCP registration.
-
-### Key Components
-
-| Component | Purpose |
-|-----------|---------|
-| `server.py` | MCP server factory and registration helpers |
-| `helpers.py` | Common utilities for validation, formatting, file operations |
-| `audit.py` | Audit implementations: prepare, run checks, format results |
-
-### Server Factory Pattern
-```python
-from baseline_mcp.tools import create_server, SERVER_NAME
-
-# Create a configured MCP server
-mcp = create_server()
-
-# Or with custom name
-mcp = create_server("Custom Server Name")
-```
-
-### Tool Helper Usage
-```python
-from baseline_mcp.tools import (
-    validate_and_resolve_repo,
-    format_error,
-    format_success,
-    write_file_safely,
-)
-
-# Validate inputs
-owner, repo, path, error = validate_and_resolve_repo(
-    owner=None,  # Auto-detect
-    repo=None,   # Auto-detect
-    local_path="/path/to/repo"
-)
-if error:
-    return format_error(error)
-
-# Write files safely
-success, message = write_file_safely(
-    filepath="/path/to/file.md",
-    content="# Content",
-    overwrite=False
-)
-```
-
-### Audit Tools Usage
-```python
-from baseline_mcp.tools import (
-    prepare_audit,
-    run_checks,
-    calculate_compliance,
-    summarize_results,
-    format_results_markdown,
-)
-
-# Prepare audit
-owner, repo, path, branch, error = prepare_audit(None, None, "/path/to/repo")
-if error:
-    return error
-
-# Run checks
-results = run_checks(owner, repo, path, branch, level=3)
-
-# Calculate compliance
-compliance = calculate_compliance(results, level=3)
-summary = summarize_results(results)
-
-# Format output
-report = format_results_markdown(owner, repo, results, summary, compliance, level=3)
-```
-
-## Common Patterns
-
-### Adding a New Check
-```python
-# In baseline_mcp/checks/level{N}.py
-
-def check_level{N}_{domain}(owner: str, repo: str, local_path: str) -> List[Dict]:
-    """Check Level {N} {Domain} requirements."""
-    results = []
-
-    # Use helpers
-    content = read_file(local_path, "SOME_FILE.md")
-    api_data = gh_api_safe(f"/repos/{owner}/{repo}/...")
-
-    # Create results
-    if condition:
-        results.append(result("OSPS-XX-YY.ZZ", "PASS", "Description", level=N))
-    else:
-        results.append(result("OSPS-XX-YY.ZZ", "FAIL", "Description", level=N))
-
-    return results
-```
-
-### Adding a New Remediation
-```python
-# In main.py (will move to baseline_mcp/remediation/)
-
-@mcp.tool()
-def remediate_something(owner: str, repo: str, local_path: str) -> str:
-    """Remediate something for OSPS compliance."""
-    # Validate inputs
-    resolved_path, error = _validate_local_path(local_path, owner, repo)
-    if error:
-        return f"Error: {error}"
-
-    # Perform remediation
-    # ...
-
-    return "Success message"
-```
-
-## Testing
-
-```bash
-# Run syntax check
-uv run python -c "import main; print('OK')"
-
-# Test specific module imports
-uv run python -c "from baseline_mcp.checks import run_level1_checks; print('OK')"
-
-# Run MCP server
-uv run mcp run main.py
-```
-
-## Environment Requirements
-
-- Python 3.11+
-- `gh` CLI authenticated (`gh auth login`)
-- `uv` package manager
-- For signing: Sigstore OIDC authentication
-
-## Related Documentation
-
-- [OpenSSF Baseline Specification](https://baseline.openssf.org/)
-- [OSPS Controls Reference](https://github.com/ossf/security-baseline)
-- [MCP Protocol](https://modelcontextprotocol.io/)
-- [In-toto Attestation Format](https://in-toto.io/)
-- [Sigstore](https://sigstore.dev/)
+Both registries use `set_plugin_context(name)` / `set_plugin_context(None)` to track handler ownership.
 
 ---
 
-*Last updated: 2025-12-05 | Sieve system with 62 controls, project context, CI provider abstraction*
+## 7. Configuration System
+
+Three configuration layers, merged at runtime:
+
+```
+┌──────────────────────────────────────────────────────┐
+│  Layer 1: Framework TOML (e.g., openssf-baseline.toml)│
+│  Defines: controls, passes, templates, context prompts│
+│  Owner: implementation author                         │
+├──────────────────────────────────────────────────────┤
+│  Layer 2: .baseline.toml (user overrides)             │
+│  Defines: disabled controls, severity overrides,      │
+│           custom tags, plugin trust settings           │
+│  Owner: project maintainer                            │
+├──────────────────────────────────────────────────────┤
+│  Layer 3: .project/project.yaml (project context)     │
+│  Defines: maintainers, CI provider, governance model, │
+│           security contacts, release info              │
+│  Owner: populated by user confirmation + sieve passes │
+└──────────────────────────────────────────────────────┘
+```
+
+At audit time, the framework merges Layer 1 + Layer 2 into an "effective config", then injects Layer 3 into each `CheckContext.project_context`.
+
+### Context Collection
+
+The framework TOML defines `[context.*]` sections that describe what project-specific information improves audit accuracy. Each context key has a type, prompt, hint, and list of affected controls. The `get_pending_context()` MCP tool returns unanswered prompts; the `confirm_project_context()` tool saves answers to `.project/project.yaml`.
+
+Context values with `auto_detect = true` can be discovered by sieve passes (e.g., detecting CI provider from `.github/workflows/` existence). Values with `auto_detect = false` require explicit user confirmation.
+
+---
+
+## 8. Data Flow
+
+High-level flow for a single audit:
+
+```
+AI Assistant
+    │
+    ▼
+audit_openssf_baseline(level=1)
+    │
+    ├─► Load framework TOML + .baseline.toml → EffectiveConfig
+    ├─► Load .project/project.yaml → project_context
+    ├─► Convert controls → ControlSpec + Pass objects
+    ├─► Filter by level (and optionally by tags)
+    │
+    ├─► For each control:
+    │       Create CheckContext (owner, repo, local_path, project_context)
+    │       SieveOrchestrator.verify() → run passes in phase order
+    │       Collect SieveResult
+    │       If PASS → apply on_pass project_update
+    │
+    ├─► Calculate summary (PASS/FAIL/WARN counts)
+    ├─► Format as markdown report
+    │
+    ▼
+Return to AI
+```
+
+For detailed mermaid diagrams of audit internals, remediation flow, context lifecycle, and server startup, see [docs/WORKFLOW.md](docs/WORKFLOW.md).
+
+---
+
+## 9. Key Source Files
+
+### Core Framework (`packages/darnit/src/darnit/`)
+
+| Subsystem | File | Purpose |
+|-----------|------|---------|
+| **Entry** | `cli.py` | CLI: `darnit serve`, `darnit audit`, `darnit plan`, `darnit validate` |
+| **Core** | `core/plugin.py` | `ComplianceImplementation` protocol definition |
+| | `core/discovery.py` | Plugin discovery via entry points |
+| | `core/handlers.py` | MCP tool handler registry (Layer 3) |
+| **Sieve** | `sieve/models.py` | `CheckContext`, `PassResult`, `SieveResult`, `ControlSpec` |
+| | `sieve/orchestrator.py` | Runs passes in phase order, stops on conclusion |
+| | `sieve/passes.py` | Legacy pass classes (not actively used — handlers in `builtin_handlers.py` replaced them) |
+| | `sieve/registry.py` | Global `ControlRegistry` for registered controls |
+| | `sieve/handler_registry.py` | `SieveHandlerRegistry` (Layer 1 & 2 custom handlers) |
+| | `sieve/builtin_handlers.py` | Built-in handlers: `file_exists`, `exec`, `regex`, `manual` |
+| | `sieve/cel_evaluator.py` | CEL expression evaluation for exec passes |
+| | `sieve/llm_protocol.py` | LLM consultation request/response protocol |
+| **Config** | `config/loader.py` | Load and parse TOML framework configs |
+| | `config/framework_schema.py` | Schema for framework TOML validation |
+| | `config/control_loader.py` | Convert TOML controls → `ControlSpec` objects |
+| | `config/merger.py` | Merge framework + user configs → effective config |
+| **Context** | `context/dot_project.py` | Load/save `.project/project.yaml` |
+| | `context/dot_project_mapper.py` | Map TOML context keys to project YAML paths |
+| | `context/sieve.py` | Context sieve (progressive auto-detection) |
+| | `context/confidence.py` | Signal weighting and confidence scoring |
+| **Remediation** | `remediation/executor.py` | `RemediationExecutor` — runs TOML-declared fixes |
+| | `remediation/helpers.py` | Common remediation utilities |
+| **Server** | `server/factory.py` | MCP server assembly from TOML + plugins |
+| | `server/tools/builtin_audit.py` | Built-in `audit` MCP tool |
+| | `server/tools/builtin_remediate.py` | Built-in `remediate` MCP tool |
+| | `server/tools/builtin_list.py` | Built-in `list_controls` MCP tool |
+| | `server/tools/project_context.py` | `get_pending_context`, `confirm_project_context` tools |
+
+### OpenSSF Baseline (`packages/darnit-baseline/`)
+
+| File | Purpose |
+|------|---------|
+| `openssf-baseline.toml` | All 62 control definitions, templates, context prompts |
+| `src/darnit_baseline/implementation.py` | `OpenSSFBaselineImplementation` class |
+| `src/darnit_baseline/tools.py` | Custom MCP tool handlers (threat model, attestation, etc.) |
+| `src/darnit_baseline/remediation/orchestrator.py` | Legacy remediation orchestration |
+| `src/darnit_baseline/rules/catalog.py` | SARIF rule metadata (fallback for unmigrated controls) |
+| `src/darnit_baseline/attestation/` | In-toto attestation generation + Sigstore signing |
+| `src/darnit_baseline/threat_model/` | STRIDE threat analysis engine |
+
+---
+
+## 10. Related Documentation
+
+| Document | What it covers |
+|----------|---------------|
+| [docs/WORKFLOW.md](docs/WORKFLOW.md) | Mermaid diagrams: audit internals, remediation flow, context lifecycle, server startup |
+| [docs/IMPLEMENTATION_GUIDE.md](docs/IMPLEMENTATION_GUIDE.md) | Step-by-step guide to building a darnit plugin (package setup, TOML config, sieve handlers, testing) |
+| [docs/generated/SCHEMA_REFERENCE.md](docs/generated/SCHEMA_REFERENCE.md) | Auto-generated TOML schema reference |
+| [docs/generated/USAGE_GUIDE.md](docs/generated/USAGE_GUIDE.md) | Auto-generated usage guide |
+| [openspec/specs/framework-design/spec.md](openspec/specs/framework-design/spec.md) | Authoritative framework specification |
+| [CLAUDE.md](CLAUDE.md) | Development guidelines, separation rules, testing commands |
+| [OpenSSF Baseline Specification](https://baseline.openssf.org/) | The compliance standard that `darnit-baseline` implements |
+| [MCP Protocol](https://modelcontextprotocol.io/) | Model Context Protocol specification |
+
+---
+
+*Last updated: 2026-02-10 | Darnit framework with TOML-first plugin architecture, 62 OpenSSF Baseline controls*
