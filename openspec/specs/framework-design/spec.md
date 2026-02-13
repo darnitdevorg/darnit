@@ -1,8 +1,8 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha
+> **Version**: 1.0.0-alpha.7
 > **Status**: Authoritative
-> **Last Updated**: 2026-02-04
+> **Last Updated**: 2026-02-13
 
 This specification defines the authoritative design of the Darnit framework, including the sieve orchestrator, TOML schema, built-in pass types, remediation actions, and plugin protocol.
 
@@ -119,14 +119,33 @@ docs_url = "https://baseline.openssf.org/..."
 # Flexible tags for filtering
 tags = { "branch-protection" = true, "code-review" = true }
 
-# Verification passes
-[controls."OSPS-AC-03.01".passes]
-# See Section 3: Built-in Pass Types
+# Verification passes (ordered array — see Section 3)
+[[controls."OSPS-AC-03.01".passes]]
+handler = "exec"
+command = ["gh", "api", "/repos/$OWNER/$REPO/branches/$BRANCH/protection"]
+pass_exit_codes = [0]
+output_format = "json"
+expr = 'output.json.required_pull_request_reviews != null'
+
+[[controls."OSPS-AC-03.01".passes]]
+handler = "manual"
+steps = ["Verify branch protection in repository settings"]
 
 # Remediation configuration
 [controls."OSPS-AC-03.01".remediation]
 # See Section 4: Built-in Remediation Actions
 ```
+
+#### Scenario: Passes defined as ordered array
+- **WHEN** a control defines verification passes
+- **THEN** they MUST be declared as a TOML array of tables using `[[controls."ID".passes]]`
+- **AND** each entry MUST have a `handler` field naming the handler to dispatch to
+- **AND** the orchestrator MUST execute passes in declaration order
+
+#### Scenario: Handler field required on each pass
+- **WHEN** a pass entry is defined in the `[[passes]]` array
+- **THEN** it MUST include a `handler` field with a string value
+- **AND** the value MUST match a registered handler name (built-in or plugin-provided)
 
 ### 2.3 Schema Requirements
 
@@ -149,74 +168,76 @@ tags = { "branch-protection" = true, "code-review" = true }
 
 ## 3. Built-in Pass Types
 
-The sieve orchestrator executes passes in order, stopping at the first conclusive result.
+The sieve orchestrator executes passes in declaration order, dispatching each to its named handler. Execution stops at the first conclusive result.
+
+#### Scenario: Pass execution follows declaration order
+- **WHEN** a control has multiple `[[passes]]` entries
+- **THEN** the orchestrator MUST execute them in the order they appear in the TOML file
+- **AND** the orchestrator MUST stop at the first conclusive result (PASS, FAIL, or ERROR)
+- **AND** INCONCLUSIVE results MUST cause the orchestrator to continue to the next pass
 
 ### 3.1 Pass Execution Order
 
 ```
-DETERMINISTIC → EXEC → PATTERN → LLM → MANUAL
-     ↓            ↓        ↓       ↓       ↓
-  Exact checks  External  Regex  AI eval  Human
-  (high conf)   commands  match           review
+Passes execute in TOML declaration order. Typical ordering:
+  file_must_exist / exec  →  regex  →  llm_eval  →  manual
+       ↓                      ↓          ↓            ↓
+  Exact checks            Heuristics   AI eval    Human review
+  (high conf)             (med conf)              (fallback)
 ```
 
-### 3.2 DeterministicPass
+The framework does not enforce a particular phase ordering. Controls MAY declare passes in any order. The convention above reflects decreasing confidence and increasing cost.
 
-**Phase**: DETERMINISTIC
-**Purpose**: High-confidence checks with binary outcomes
+#### Scenario: Declaration order respected regardless of handler type
+- **WHEN** a control declares passes in non-conventional order (e.g., `manual` before `exec`)
+- **THEN** the orchestrator MUST still execute them in declaration order
+- **AND** the handler type MUST NOT affect execution order
 
-<!-- llm:explain max_words=150 -->
-The deterministic pass handles checks that can be resolved with certainty: file existence, API boolean values, and configuration lookups. These require no interpretation.
-<!-- /llm:explain -->
+### 3.2 file_must_exist Handler
+
+**Purpose**: High-confidence file existence checks with binary outcomes
 
 **TOML Schema**:
 ```toml
-[controls."EXAMPLE".passes.deterministic]
-file_must_exist = ["SECURITY.md", ".github/SECURITY.md"]
-file_must_not_exist = [".env", "credentials.json"]
-api_check = "darnit_baseline.checks:check_branch_protection"
-config_check = "darnit_baseline.checks:check_project_config"
+[[controls."EXAMPLE".passes]]
+handler = "file_must_exist"
+files = ["SECURITY.md", ".github/SECURITY.md"]
 ```
 
 **Fields**:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `file_must_exist` | `list[str]` | Paths/globs where ANY match passes |
-| `file_must_not_exist` | `list[str]` | Paths/globs where ANY match fails |
-| `api_check` | `str` | Python function reference `module:function` |
-| `config_check` | `str` | Python function reference `module:function` |
+| `handler` | `str` | MUST be `"file_must_exist"` |
+| `files` | `list[str]` | Paths/globs where ANY match passes |
 
 **Behavior**:
-1. If `api_check` is defined and returns PASS/FAIL → return result
-2. If `config_check` is defined and returns PASS/FAIL → return result
-3. If `file_must_exist` matches → PASS
-4. If `file_must_exist` defined but no match → FAIL
-5. If `file_must_not_exist` matches → FAIL
-6. Otherwise → INCONCLUSIVE (continue to next pass)
+1. If any file in `files` matches → PASS
+2. If no file matches → FAIL
 
-<!-- llm:example control_type=security -->
+#### Scenario: File found
+- **WHEN** a `file_must_exist` handler is invoked
+- **AND** at least one path in `files` matches an existing file
+- **THEN** the handler MUST return PASS
 
-### 3.3 ExecPass
+#### Scenario: No file found
+- **WHEN** a `file_must_exist` handler is invoked
+- **AND** no path in `files` matches an existing file
+- **THEN** the handler MUST return FAIL
 
-**Phase**: DETERMINISTIC
+### 3.3 exec Handler
+
 **Purpose**: Execute external commands for verification
-
-<!-- llm:explain max_words=150 -->
-The exec pass runs external tools like trivy, scorecard, or kusari, evaluating results based on exit codes or output patterns. This enables integration with the security tooling ecosystem.
-<!-- /llm:explain -->
 
 **TOML Schema**:
 ```toml
-[controls."EXAMPLE".passes.exec]
+[[controls."EXAMPLE".passes]]
+handler = "exec"
 command = ["kusari", "repo", "scan", "$PATH", "HEAD"]
 pass_exit_codes = [0]
 fail_exit_codes = [1]
 output_format = "json"
-pass_if_output_matches = "No issues found"
-fail_if_output_matches = "Flagged Issues Detected"
-pass_if_json_path = "$.status"
-pass_if_json_value = "pass"
+expr = 'output.json.status == "pass" && size(output.json.issues) == 0'
 timeout = 300
 env = { "TOOL_VERBOSE" = "true" }
 ```
@@ -225,7 +246,8 @@ env = { "TOOL_VERBOSE" = "true" }
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `command` | `list[str]` | Command and arguments (supports `$PATH`, `$OWNER`, `$REPO`, `$BRANCH`) |
+| `handler` | `str` | MUST be `"exec"` |
+| `command` | `list[str]` | Command and arguments (supports `$PATH`, `$OWNER`, `$REPO`, `$BRANCH`, `$CONTROL`) |
 | `pass_exit_codes` | `list[int]` | Exit codes that indicate PASS (default: `[0]`) |
 | `fail_exit_codes` | `list[int]` | Exit codes that indicate FAIL |
 | `output_format` | `str` | Output format: `text`, `json`, `sarif` |
@@ -240,20 +262,26 @@ env = { "TOOL_VERBOSE" = "true" }
 **Security**:
 - Commands are executed as a list (no shell interpolation)
 - Variable substitution only replaces whole tokens or substrings safely
-- Only whitelisted module prefixes can be imported
 
-### 3.4 PatternPass
+#### Scenario: CEL expression evaluated
+- **WHEN** an `exec` handler has an `expr` field
+- **THEN** the CEL expression MUST be evaluated after command execution
+- **AND** `expr` returning `true` MUST result in PASS
+- **AND** `expr` returning `false` MUST result in INCONCLUSIVE (not FAIL)
+- **AND** CEL evaluation errors MUST fall through to exit code evaluation
 
-**Phase**: PATTERN
+#### Scenario: Exit code evaluation
+- **WHEN** an `exec` handler does not have an `expr` field or CEL evaluation is inconclusive
+- **THEN** the handler MUST evaluate the exit code against `pass_exit_codes` and `fail_exit_codes`
+
+### 3.4 regex Handler
+
 **Purpose**: Regex-based content analysis
-
-<!-- llm:explain max_words=150 -->
-The pattern pass searches file contents for regex patterns, useful for detecting policy presence, configuration values, or code patterns without full semantic understanding.
-<!-- /llm:explain -->
 
 **TOML Schema**:
 ```toml
-[controls."EXAMPLE".passes.pattern]
+[[controls."EXAMPLE".passes]]
+handler = "regex"
 files = ["SECURITY.md", "README.md", "docs/*.md"]
 patterns = {
     "has_email" = "[\\w.-]+@[\\w.-]+",
@@ -267,23 +295,30 @@ fail_if_no_match = false
 
 | Field | Type | Description |
 |-------|------|-------------|
+| `handler` | `str` | MUST be `"regex"` |
 | `files` | `list[str]` | File patterns to search |
 | `patterns` | `dict[str, str]` | Named patterns (name → regex) |
 | `pass_if_any` | `bool` | PASS if any pattern matches (default: true) |
 | `fail_if_no_match` | `bool` | FAIL instead of INCONCLUSIVE on no match |
 
-### 3.5 LLMPass
+#### Scenario: Pattern match found
+- **WHEN** a `regex` handler is invoked with `pass_if_any = true`
+- **AND** at least one pattern matches in any file
+- **THEN** the handler MUST return PASS
 
-**Phase**: LLM
+#### Scenario: No match with fail_if_no_match
+- **WHEN** a `regex` handler is invoked with `fail_if_no_match = true`
+- **AND** no patterns match in any file
+- **THEN** the handler MUST return FAIL
+
+### 3.5 llm_eval Handler
+
 **Purpose**: AI-assisted verification for ambiguous cases
-
-<!-- llm:explain max_words=150 -->
-The LLM pass delegates to an AI model for semantic understanding: evaluating policy quality, assessing documentation completeness, or interpreting context-dependent requirements.
-<!-- /llm:explain -->
 
 **TOML Schema**:
 ```toml
-[controls."EXAMPLE".passes.llm]
+[[controls."EXAMPLE".passes]]
+handler = "llm_eval"
 prompt = """
 Evaluate whether the SECURITY.md file adequately explains:
 1. How to report vulnerabilities
@@ -300,24 +335,31 @@ confidence_threshold = 0.8
 
 | Field | Type | Description |
 |-------|------|-------------|
+| `handler` | `str` | MUST be `"llm_eval"` |
 | `prompt` | `str` | Inline prompt template |
 | `prompt_file` | `str` | Path to prompt file (alternative to inline) |
 | `files_to_include` | `list[str]` | Files to include in LLM context |
 | `analysis_hints` | `list[str]` | Hints to guide analysis |
 | `confidence_threshold` | `float` | Minimum confidence for conclusive result (default: 0.8) |
 
-### 3.6 ManualPass
+#### Scenario: LLM confidence above threshold
+- **WHEN** an `llm_eval` handler receives an LLM response
+- **AND** the confidence score meets or exceeds `confidence_threshold`
+- **THEN** the handler MUST return the LLM's pass/fail determination
 
-**Phase**: MANUAL
+#### Scenario: LLM confidence below threshold
+- **WHEN** an `llm_eval` handler receives an LLM response
+- **AND** the confidence score is below `confidence_threshold`
+- **THEN** the handler MUST return INCONCLUSIVE
+
+### 3.6 manual Handler
+
 **Purpose**: Fallback for human verification
-
-<!-- llm:explain max_words=100 -->
-The manual pass always returns INCONCLUSIVE (resulting in WARN status), providing verification steps for human reviewers. This is the safety net when automated verification cannot determine compliance.
-<!-- /llm:explain -->
 
 **TOML Schema**:
 ```toml
-[controls."EXAMPLE".passes.manual]
+[[controls."EXAMPLE".passes]]
+handler = "manual"
 steps = [
     "Review contributor vetting process",
     "Verify maintainer identity verification",
@@ -330,22 +372,32 @@ docs_url = "https://baseline.openssf.org/..."
 
 | Field | Type | Description |
 |-------|------|-------------|
+| `handler` | `str` | MUST be `"manual"` |
 | `steps` | `list[str]` | Verification steps for human reviewer |
 | `docs_url` | `str` | Link to verification documentation |
 
+**Behavior**: The manual handler always returns INCONCLUSIVE (resulting in WARN status), providing verification steps for human reviewers.
+
+#### Scenario: Manual handler always inconclusive
+- **WHEN** a `manual` handler is invoked
+- **THEN** it MUST return INCONCLUSIVE
+- **AND** the verification steps MUST be included in the result details
+
 ### 3.7 CEL Expressions
 
-Pass types support Common Expression Language (CEL) for flexible result evaluation.
+Handler types that support CEL expressions use Common Expression Language for flexible result evaluation.
 
 **Purpose**: Replace multiple `pass_if_*` fields with a single declarative expression.
 
 **TOML Schema**:
 ```toml
-[controls."EXAMPLE".passes.deterministic]
-exec = { command = "gh api /orgs/{org}/settings" }
+[[controls."EXAMPLE".passes]]
+handler = "exec"
+command = ["gh", "api", "/orgs/{org}/settings"]
 expr = 'response.two_factor_requirement_enabled == true'
 
-[controls."EXAMPLE2".passes.exec]
+[[controls."EXAMPLE2".passes]]
+handler = "exec"
 command = ["kusari", "scan"]
 output_format = "json"
 expr = 'output.json.status == "pass" && size(output.json.issues) == 0'
@@ -353,8 +405,8 @@ expr = 'output.json.status == "pass" && size(output.json.issues) == 0'
 
 **Context Variables**:
 
-| Variable | Pass Type | Description |
-|----------|-----------|-------------|
+| Variable | Handler | Description |
+|----------|---------|-------------|
 | `output.stdout` | exec | Command stdout |
 | `output.stderr` | exec | Command stderr |
 | `output.exit_code` | exec | Command exit code |
@@ -362,8 +414,8 @@ expr = 'output.json.status == "pass" && size(output.json.issues) == 0'
 | `response.status_code` | api_check | HTTP status code |
 | `response.body` | api_check | Response body |
 | `response.headers` | api_check | Response headers |
-| `files` | pattern | List of matched file paths |
-| `matches` | pattern | Dict of pattern name → match results |
+| `files` | regex | List of matched file paths |
+| `matches` | regex | Dict of pattern name → match results |
 | `project.*` | all | Values from `.project/` context |
 
 **Custom Functions**:
@@ -378,6 +430,10 @@ expr = 'output.json.status == "pass" && size(output.json.issues) == 0'
 - Expression must return `true` for PASS, `false` for FAIL
 - Expressions are sandboxed with 1s timeout
 - CEL is non-Turing complete, preventing infinite loops
+
+#### Scenario: CEL expression precedence
+- **WHEN** both `expr` and legacy fields (e.g., `pass_if_json_path`) are defined
+- **THEN** the `expr` field MUST take precedence
 
 ---
 
@@ -505,11 +561,12 @@ calling `gh repo view`, etc.).
 
 ### 5.1 Execution Model
 
-The orchestrator runs passes sequentially, stopping at first conclusive result:
+The orchestrator dispatches handler invocations sequentially, stopping at first conclusive result:
 
 ```python
-for pass in control.passes:
-    result = pass.execute(context)
+for invocation in control.metadata["handler_invocations"]:
+    handler = registry.get(invocation.handler)
+    result = handler(invocation.config, context)
 
     if result.outcome == PASS:
         return SieveResult(status="PASS", ...)
@@ -517,11 +574,22 @@ for pass in control.passes:
         return SieveResult(status="FAIL", ...)
     elif result.outcome == ERROR:
         return SieveResult(status="ERROR", ...)
-    # INCONCLUSIVE → continue to next pass
+    # INCONCLUSIVE → continue to next handler
 
-# All passes inconclusive
+# All handlers inconclusive
 return SieveResult(status="WARN", verification_steps=manual_steps)
 ```
+
+#### Scenario: Handler dispatch replaces pass execution
+- **WHEN** the orchestrator evaluates a control
+- **THEN** it MUST iterate `metadata["handler_invocations"]` (not a `passes` field on the control object)
+- **AND** each invocation MUST be dispatched to its registered handler via the `SieveHandlerRegistry`
+
+#### Scenario: LLM config read from handler invocations
+- **WHEN** `verify_with_llm_response` processes an LLM evaluation
+- **THEN** it MUST read `confidence_threshold` from the `llm_eval` handler invocation config
+- **AND** it MUST read `verification_steps` from the `manual` handler invocation config
+- **AND** it MUST default `confidence_threshold` to `0.8` when not specified
 
 ### 5.2 Result Statuses
 
@@ -600,13 +668,40 @@ class MyImplementation:
         return Path(__file__).parent / "my-framework.toml"
 
     def register_controls(self) -> None:
-        # Register Python-defined controls with sieve
-        ...
+        # No-op. Control definitions MUST come from TOML.
+        # This method exists for protocol compatibility only.
+        pass
 
     def register_handlers(self) -> None:
-        # Register MCP tool handlers with registry
+        # Register custom sieve/remediation handlers
         ...
 ```
+
+The `register_controls()` method SHALL be a no-op. Implementations MUST NOT use this method to register `ControlSpec` objects with `passes` fields populated. All control definitions MUST originate from TOML configuration files and be loaded via the framework's TOML control loader. The only supported extension point for custom checking logic is `register_handlers()`, which registers named handler functions callable from TOML pass definitions.
+
+#### Scenario: Implementation calls register_controls
+- **WHEN** the audit pipeline calls `impl.register_controls()`
+- **THEN** no `ControlSpec` objects SHALL be registered in the global registry
+- **AND** no side-effect imports of control definition modules SHALL occur
+
+#### Scenario: Plugin extends checking with custom handler
+- **WHEN** a plugin needs custom checking logic beyond built-in pass types
+- **THEN** it SHALL register a named handler via `register_handlers()`
+- **AND** the TOML control definition SHALL reference the handler by name in its `passes` configuration
+
+### 6.3.1 No Hardcoded Control IDs in Framework
+
+The `packages/darnit/src/darnit/` source tree SHALL NOT contain hardcoded control definitions registered at module import time. The framework's `sieve/registry.py` module SHALL only provide the `ControlRegistry` class and `register_control()` function — it SHALL NOT call `register_control()` at module scope with hardcoded `ControlSpec` instances.
+
+#### Scenario: Framework registry module is imported
+- **WHEN** `darnit.sieve.registry` is imported
+- **THEN** zero `register_control()` calls SHALL execute as module-level side effects
+- **AND** the global registry SHALL contain zero controls until TOML loading occurs
+
+#### Scenario: Searching framework source for control IDs
+- **WHEN** the `packages/darnit/src/darnit/` source tree is searched for patterns like `OSPS-AC-03.01`
+- **THEN** no hardcoded OSPS control ID patterns SHALL exist in executable code
+- **AND** no `ControlSpec(control_id=...)` constructor calls SHALL exist outside of test files
 
 ### 6.4 Handler Registration
 
@@ -812,9 +907,16 @@ Enable branch protection to require pull requests.
 """
 docs_url = "https://baseline.openssf.org/..."
 
-[controls."OSPS-AC-03.01".passes]
-deterministic = { api_check = "darnit_baseline.checks:check_branch_protection" }
-manual = { steps = ["Verify branch protection in repository settings"] }
+[[controls."OSPS-AC-03.01".passes]]
+handler = "exec"
+command = ["gh", "api", "/repos/$OWNER/$REPO/branches/$BRANCH/protection"]
+pass_exit_codes = [0]
+output_format = "json"
+expr = 'output.json.required_pull_request_reviews != null'
+
+[[controls."OSPS-AC-03.01".passes]]
+handler = "manual"
+steps = ["Verify branch protection in repository settings"]
 
 [controls."OSPS-AC-03.01".remediation]
 requires_api = true
@@ -940,10 +1042,66 @@ The framework SHALL provide a handler registry where handlers are registered by 
 
 A handler used in a phase different from its registered affinity SHALL trigger a warning but still execute.
 
+## Appendix C: Removed Requirements
+
+The following requirements have been superseded by the handler dispatch architecture.
+
+### Removed: VerificationPassProtocol
+**Reason**: Replaced by handler dispatch architecture. Pass classes that implemented this protocol (`DeterministicPass`, `PatternPass`, `LLMPass`, `ManualPass`, `ExecPass`) are superseded by handler functions registered in `SieveHandlerRegistry`.
+**Migration**: Define verification logic as handler functions matching `Callable[[dict, HandlerContext], HandlerResult]` and register via `SieveHandlerRegistry.register()`. Reference handlers by name in TOML `[[passes]]` entries.
+
+#### Scenario: Protocol no longer used
+- **WHEN** a plugin needs to define custom verification logic
+- **THEN** it MUST register a handler function via `SieveHandlerRegistry`
+- **AND** it MUST NOT implement `VerificationPassProtocol`
+
+### Removed: ControlSpec.passes field
+**Reason**: The `passes` field stored instantiated pass class objects. All pass configuration is now stored as `HandlerInvocation` objects in `ControlSpec.metadata["handler_invocations"]`, loaded from TOML.
+**Migration**: Access pass configuration via `control_spec.metadata["handler_invocations"]` instead of `control_spec.passes`.
+
+#### Scenario: Field removed from ControlSpec
+- **WHEN** code accesses a `ControlSpec` object
+- **THEN** it MUST NOT reference a `.passes` attribute
+- **AND** it MUST use `metadata["handler_invocations"]` for pass configuration
+
+### Removed: ControlSpec.__post_init__ phase-order validation
+**Reason**: The `__post_init__` method validated that pass objects followed the recommended phase ordering (DETERMINISTIC → PATTERN → LLM → MANUAL). With handler dispatch, execution order is determined by TOML declaration order, and no phase-order enforcement is needed.
+**Migration**: Rely on TOML declaration order for pass execution sequence. No validation replacement needed.
+
+#### Scenario: Phase ordering not enforced
+- **WHEN** a control defines passes in any order
+- **THEN** the framework MUST NOT emit warnings about phase ordering
+- **AND** passes MUST execute in declaration order regardless of handler type
+
+### Removed: DeterministicPass api_check and config_check callable fields
+**Reason**: The `api_check` and `config_check` fields referenced Python callables (`"module:function"` strings) for deterministic verification. This pattern is replaced by custom sieve handlers registered in `SieveHandlerRegistry`.
+**Migration**: Convert `api_check`/`config_check` callables to handler functions and register them via `SieveHandlerRegistry.register()`. Reference by handler name in TOML.
+
+#### Scenario: Python callable references removed from TOML schema
+- **WHEN** a control needs Python-based verification logic
+- **THEN** it MUST use a custom handler referenced by name (e.g., `handler = "my_custom_check"`)
+- **AND** it MUST NOT use `api_check` or `config_check` fields with `"module:function"` references
+
+### Removed: Legacy pass class instantiation
+**Reason**: The classes `DeterministicPass`, `PatternPass`, `LLMPass`, `ManualPass`, and `ExecPass` in `sieve/passes.py` are removed. All verification logic is implemented as handler functions in `builtin_handlers.py`.
+**Migration**: Replace `DeterministicPass(config_check=...)` with a custom sieve handler. Replace `ManualPass(verification_steps=[...])` with a TOML `[[passes]]` entry using `handler = "manual"`. See `IMPLEMENTATION_GUIDE.md` Section 5 for the handler authoring pattern.
+
+#### Scenario: Pass classes unavailable for import
+- **WHEN** plugin code attempts to import pass classes from `darnit.sieve.passes`
+- **THEN** the import MUST raise `ImportError`
+- **AND** the migration path MUST be documented in `IMPLEMENTATION_GUIDE.md`
+
+### Removed: Legacy pass re-exports from sieve package
+**Reason**: The `darnit.sieve` package previously re-exported pass class constructors (`DeterministicPass`, `PatternPass`, `LLMPass`, `ManualPass`) for convenience. These re-exports have been removed from `sieve/__init__.py`. The pass dataclass definitions in `sieve/passes.py` remain available via direct import.
+**Migration**: Import directly from `darnit.sieve.passes` if needed (e.g., `from darnit.sieve.passes import DeterministicPass`). However, new code SHOULD NOT construct pass instances directly — define passes in TOML instead.
+
+---
+
 ## Version History
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.7 | 2026-02-13 | Migrated to handler dispatch architecture: pass classes replaced by named handlers, passes use TOML array-of-tables syntax, register_controls() becomes no-op, removed legacy pass classes (Appendix C) |
 | 1.0.0-alpha.5 | 2026-02-08 | Added locator integration (Section 11), handler registry (Section 12) |
 | 1.0.0-alpha.4 | 2026-02-07 | Added framework purity requirements (Section 10.4), report parameterization |
 | 1.0.0-alpha.3 | 2026-02-06 | Added audit pipeline requirements (Section 10) |
