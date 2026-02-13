@@ -229,5 +229,89 @@ class TestNoRemediationConfig:
         assert result.remediation_type == "none"
 
 
+class TestHandlerInconclusiveHandling:
+    """Test that INCONCLUSIVE from manual handlers does not cause failure."""
+
+    def test_file_create_pass_plus_manual_inconclusive_succeeds(self):
+        """Remediation with file_create (PASS) + manual (INCONCLUSIVE) returns success=True."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            executor = RemediationExecutor(
+                local_path=tmpdir,
+                owner="testorg",
+                repo="testrepo",
+            )
+
+            config = RemediationConfig(
+                handlers=[
+                    HandlerInvocation(
+                        handler="file_create",
+                        path="TEST.md",
+                        content="# Test file",
+                    ),
+                    HandlerInvocation(
+                        handler="manual",
+                        steps=["Review the created file"],
+                    ),
+                ],
+            )
+
+            result = executor.execute("TEST-01", config, dry_run=False)
+
+            assert result.success
+            assert result.remediation_type == "handler_pipeline"
+            handlers = result.details.get("handlers", [])
+            assert len(handlers) == 2
+            assert handlers[0]["status"] == "pass"
+            assert handlers[1]["status"] == "inconclusive"
+
+    def test_handler_returning_fail_causes_failure(self):
+        """Remediation with a handler returning FAIL returns success=False."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            executor = RemediationExecutor(
+                local_path=tmpdir,
+                owner="testorg",
+                repo="testrepo",
+            )
+
+            # file_create with no content and no template → ERROR
+            config = RemediationConfig(
+                handlers=[
+                    HandlerInvocation(
+                        handler="file_create",
+                        path="TEST.md",
+                    ),
+                ],
+            )
+
+            result = executor.execute("TEST-01", config, dry_run=False)
+
+            assert not result.success
+
+    def test_only_manual_handlers_succeeds(self):
+        """Remediation with only manual handlers (INCONCLUSIVE) returns success=True."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            executor = RemediationExecutor(
+                local_path=tmpdir,
+                owner="testorg",
+                repo="testrepo",
+            )
+
+            config = RemediationConfig(
+                handlers=[
+                    HandlerInvocation(
+                        handler="manual",
+                        steps=["Step 1: Do something", "Step 2: Verify"],
+                    ),
+                ],
+            )
+
+            result = executor.execute("TEST-01", config, dry_run=False)
+
+            assert result.success
+            handlers = result.details.get("handlers", [])
+            assert len(handlers) == 1
+            assert handlers[0]["status"] == "inconclusive"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

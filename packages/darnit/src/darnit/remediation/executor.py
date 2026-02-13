@@ -403,7 +403,7 @@ class RemediationExecutor:
                     "status": handler_result.status.value,
                     "message": handler_result.message,
                 })
-                if handler_result.status != HandlerResultStatus.PASS:
+                if handler_result.status in (HandlerResultStatus.FAIL, HandlerResultStatus.ERROR):
                     all_success = False
             except Exception as e:
                 results.append({

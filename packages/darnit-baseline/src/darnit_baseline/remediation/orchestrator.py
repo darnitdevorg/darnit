@@ -317,13 +317,14 @@ def _apply_remediation(
     local_path: str,
     owner: str | None = None,
     repo: str | None = None,
-    dry_run: bool = True
+    dry_run: bool = True,
+    non_passing_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     """Apply a single remediation category.
 
     This function first checks if controls are applicable (via .project.yaml),
-    then attempts to use declarative remediation from TOML,
-    and finally falls back to legacy Python functions.
+    filters to only non-passing controls, then attempts to use declarative
+    remediation from TOML.
 
     Args:
         category: Remediation category name
@@ -331,6 +332,9 @@ def _apply_remediation(
         owner: GitHub owner/organization
         repo: Repository name
         dry_run: If True, only show what would be done
+        non_passing_ids: Set of control IDs that did not pass the audit.
+            Only these controls will be considered for remediation.
+            If None, all applicable controls are considered (legacy behavior).
 
     Returns:
         Dict with category, status, and result details
@@ -408,6 +412,18 @@ def _apply_remediation(
             "skipped_controls": skipped_controls,
             "message": "All controls marked as N/A in .project.yaml",
         }
+
+    # Filter to only non-passing controls (skip controls that already pass the audit)
+    if non_passing_ids is not None:
+        applicable_controls = [c for c in applicable_controls if c in non_passing_ids]
+        if not applicable_controls:
+            return {
+                "category": category,
+                "status": "already_passing",
+                "description": info["description"],
+                "controls": controls,
+                "message": "All controls in this category already pass the audit",
+            }
 
     # Try executable declarative remediation first (only for applicable controls)
     for control_id in applicable_controls:
@@ -809,26 +825,33 @@ def remediate_audit_findings(
         owner = owner or detected_owner
         repo = repo or detected_repo
 
+    # Run audit to determine which controls are non-passing.
+    # This is needed for control-level filtering (skip controls that already pass).
+    non_passing_ids: set[str] | None = None
+    audit_result, error = _run_baseline_checks(
+        owner=owner, repo=repo, local_path=local_path
+    )
+
+    if not error and audit_result:
+        non_passing = [r for r in audit_result.all_results if r.get("status") != "PASS"]
+        non_passing_ids = {r.get("id", "") for r in non_passing}
+
     # Determine categories to apply
     if not categories or categories == ["all"]:
-        # Run audit first to skip categories where ALL controls already pass
-        audit_result, error = _run_baseline_checks(
-            owner=owner, repo=repo, local_path=local_path
-        )
+        # Audit is required when auto-determining categories
         if error:
             return f"❌ Error running audit: {error}"
 
-        non_passing = [r for r in audit_result.all_results if r.get("status") != "PASS"]
         remediable = _determine_remediable_categories(non_passing)
 
         if not remediable:
             return "✅ No remediations needed - all controls with available auto-fixes are passing."
 
-        if not categories:
-            categories = remediable
-        else:
-            # categories == ["all"]: only remediate categories with non-passing controls
-            categories = remediable
+        categories = remediable
+    elif error:
+        # Audit failed but user specified explicit categories — proceed without
+        # control-level filtering (non_passing_ids stays None = legacy behavior)
+        logger.warning(f"Audit failed ({error}), proceeding without control-level filtering")
 
     # Pre-flight check: Verify all context requirements BEFORE starting remediation
     # This ensures we prompt for all missing context upfront, not one-by-one
@@ -851,7 +874,8 @@ def remediate_audit_findings(
             local_path=local_path,
             owner=owner,
             repo=repo,
-            dry_run=dry_run
+            dry_run=dry_run,
+            non_passing_ids=non_passing_ids,
         )
         results.append(result)
 
