@@ -72,11 +72,12 @@ Darnit is a pluggable security and compliance auditing framework that:
 
 ### 5.1 Execution Model
 
-The orchestrator runs passes sequentially, stopping at first conclusive result:
+The orchestrator dispatches handler invocations sequentially, stopping at first conclusive result:
 
 ```python
-for pass in control.passes:
-    result = pass.execute(context)
+for invocation in control.metadata["handler_invocations"]:
+    handler = registry.get(invocation.handler)
+    result = handler(invocation.config, context)
 
     if result.outcome == PASS:
         return SieveResult(status="PASS", ...)
@@ -84,7 +85,7 @@ for pass in control.passes:
         return SieveResult(status="FAIL", ...)
     elif result.outcome == ERROR:
         return SieveResult(status="ERROR", ...)
-    # INCONCLUSIVE → continue to next pass
+    # INCONCLUSIVE → continue to next handler
 
 ### 5.2 Result Statuses
 
@@ -161,13 +162,20 @@ class MyImplementation:
         return Path(__file__).parent / "my-framework.toml"
 
     def register_controls(self) -> None:
-        # Register Python-defined controls with sieve
-        ...
+        # No-op. Control definitions MUST come from TOML.
+        # This method exists for protocol compatibility only.
+        pass
 
     def register_handlers(self) -> None:
-        # Register MCP tool handlers with registry
+        # Register custom sieve/remediation handlers
         ...
 ```
+
+The `register_controls()` method SHALL be a no-op. Implementations MUST NOT use this method to register `ControlSpec` objects with `passes` fields populated. All control definitions MUST originate from TOML configuration files and be loaded via the framework's TOML control loader. The only supported extension point for custom checking logic is `register_handlers()`, which registers named handler functions callable from TOML pass definitions.
+
+### 6.3.1 No Hardcoded Control IDs in Framework
+
+The `packages/darnit/src/darnit/` source tree SHALL NOT contain hardcoded control definitions registered at module import time. The framework's `sieve/registry.py` module SHALL only provide the `ControlRegistry` class and `register_control()` function — it SHALL NOT call `register_control()` at module scope with hardcoded `ControlSpec` instances.
 
 ### 6.4 Handler Registration
 
