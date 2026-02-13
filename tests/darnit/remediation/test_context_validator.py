@@ -272,6 +272,159 @@ class TestFormatContextPrompt:
         assert "@user1, @user2" in prompt
 
 
+    def test_prompt_with_hint_file_shows_parsed_values_and_placeholder(self, temp_repo):
+        """When a hint file exists, prompt should show parsed values but use placeholder command."""
+        # Create a CODEOWNERS file
+        codeowners_path = Path(temp_repo) / "CODEOWNERS"
+        codeowners_path.write_text("* @alice @bob\ndocs/ @charlie\n")
+
+        definition = ContextDefinitionConfig(
+            type="list_or_path",
+            prompt="Who are the project maintainers?",
+            hint_sources=["CODEOWNERS", ".github/CODEOWNERS"],
+            allow_sieve_hints=True,
+        )
+        requirement = ContextRequirement(
+            key="maintainers",
+            required=True,
+            confidence_threshold=0.9,
+            prompt_if_auto_detected=True,
+        )
+
+        prompt = format_context_prompt(
+            context_key="maintainers",
+            definition=definition,
+            requirement=requirement,
+            current_value=None,
+            local_path=temp_repo,
+        )
+
+        # Should show the parsed values from the file
+        assert "@alice" in prompt
+        assert "@bob" in prompt
+        assert "@charlie" in prompt
+        # Should use a placeholder in the command, NOT the filename or actual values
+        assert 'confirm_project_context(maintainers=<user-confirmed values>)' in prompt
+        # Should NOT suggest passing the filename
+        assert 'maintainers="CODEOWNERS"' not in prompt
+
+    def test_prompt_with_sieve_hints_uses_placeholder_command(self):
+        """When sieve hints exist, prompt should show detected values but use placeholder command."""
+        definition = ContextDefinitionConfig(
+            type="list_or_path",
+            prompt="Who are the project maintainers?",
+            allow_sieve_hints=True,
+        )
+        requirement = ContextRequirement(
+            key="maintainers",
+            required=True,
+            confidence_threshold=0.9,
+            prompt_if_auto_detected=True,
+        )
+        current_value = ContextValue(
+            value=["@detected1", "@detected2"],
+            source=ContextSource.AUTO_DETECTED,
+            confidence=0.7,
+        )
+
+        prompt = format_context_prompt(
+            context_key="maintainers",
+            definition=definition,
+            requirement=requirement,
+            current_value=current_value,
+        )
+
+        # Should show the detected values as hints
+        assert "@detected1" in prompt
+        assert "@detected2" in prompt
+        # Should use a placeholder in the command, NOT the actual detected values
+        assert 'confirm_project_context(maintainers=<user-confirmed values>)' in prompt
+        # Should NOT have executable command with actual values
+        assert "['@detected1', '@detected2']" not in prompt
+
+
+class TestStaleValueDetection:
+    """Tests for stale file reference detection in check_context_requirements."""
+
+    @patch("darnit.remediation.context_validator.get_context_value")
+    def test_stale_codeowners_string_treated_as_missing(self, mock_get_context, temp_repo):
+        """Stored 'CODEOWNERS' string should be treated as missing context."""
+        # Simulate a previous run that stored the filename instead of values
+        mock_get_context.return_value = ContextValue(
+            value="CODEOWNERS",
+            source=ContextSource.USER_CONFIRMED,
+            confidence=1.0,
+        )
+
+        requirement = ContextRequirement(
+            key="maintainers",
+            required=True,
+            confidence_threshold=0.9,
+            prompt_if_auto_detected=True,
+        )
+
+        result = check_context_requirements(
+            requirements=[requirement],
+            local_path=temp_repo,
+            framework=None,
+        )
+
+        # Should be not ready — the stale value should be rejected
+        assert result.ready is False
+        assert "maintainers" in result.missing_context
+
+    @patch("darnit.remediation.context_validator.get_context_value")
+    def test_github_codeowners_path_treated_as_stale(self, mock_get_context, temp_repo):
+        """Stored '.github/CODEOWNERS' path should also be treated as stale."""
+        mock_get_context.return_value = ContextValue(
+            value=".github/CODEOWNERS",
+            source=ContextSource.USER_CONFIRMED,
+            confidence=1.0,
+        )
+
+        requirement = ContextRequirement(
+            key="maintainers",
+            required=True,
+            confidence_threshold=0.9,
+            prompt_if_auto_detected=True,
+        )
+
+        result = check_context_requirements(
+            requirements=[requirement],
+            local_path=temp_repo,
+            framework=None,
+        )
+
+        assert result.ready is False
+        assert "maintainers" in result.missing_context
+
+    @patch("darnit.remediation.context_validator.get_context_value")
+    def test_actual_list_value_not_treated_as_stale(self, mock_get_context, temp_repo):
+        """Actual maintainer list should not be treated as stale."""
+        mock_get_context.return_value = ContextValue(
+            value=["@alice", "@bob"],
+            source=ContextSource.USER_CONFIRMED,
+            confidence=1.0,
+        )
+
+        requirement = ContextRequirement(
+            key="maintainers",
+            required=True,
+            confidence_threshold=0.9,
+            prompt_if_auto_detected=True,
+        )
+
+        result = check_context_requirements(
+            requirements=[requirement],
+            local_path=temp_repo,
+            framework=None,
+        )
+
+        # List value should pass through fine
+        assert result.ready is True
+        assert result.missing_context == []
+
+
 class TestGetContextRequirementsForCategory:
     """Tests for get_context_requirements_for_category function."""
 

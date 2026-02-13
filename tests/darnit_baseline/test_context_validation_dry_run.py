@@ -324,7 +324,7 @@ class TestFileReferenceRecommendation:
     def test_prompt_recommends_file_reference_when_codeowners_exists(
         self, temp_repo_with_codeowners
     ):
-        """When CODEOWNERS exists, prompt should recommend referencing it."""
+        """When CODEOWNERS exists, prompt should show parsed values and placeholder command."""
         from darnit_baseline.remediation.orchestrator import remediate_audit_findings
 
         result = remediate_audit_findings(
@@ -333,11 +333,13 @@ class TestFileReferenceRecommendation:
             dry_run=True,
         )
 
-        # Should reference the existing file as authoritative source
+        # Should mention the CODEOWNERS file as authoritative source
         assert "CODEOWNERS" in result
-        assert 'maintainers="CODEOWNERS"' in result
-        # Should indicate it's an authoritative source
         assert "authoritative" in result.lower()
+        # Should use placeholder command, NOT the filename
+        assert 'maintainers=<user-confirmed values>' in result
+        # Should NOT suggest passing the filename directly
+        assert 'maintainers="CODEOWNERS"' not in result
 
     @pytest.mark.unit
     def test_file_reference_stored_as_string_not_list(self, temp_repo_with_codeowners):

@@ -18,6 +18,7 @@ Example workflow:
 """
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from darnit.config.context_schema import ContextSource, ContextValue
@@ -78,6 +79,25 @@ def check_context_requirements(
 
     for req in requirements:
         context_value = get_context_value(local_path, req.key)
+
+        # Check 0: Detect stale file references stored as values.
+        # If a previous run stored a filename like "CODEOWNERS" instead of
+        # the actual parsed values, treat it as missing so we re-detect.
+        if context_value is not None and isinstance(context_value.value, str):
+            definition = _get_context_definition(req.key, framework)
+            hint_sources = definition.hint_sources if definition else []
+            stale_names = set(hint_sources)
+            stale_names.update({
+                "CODEOWNERS", ".github/CODEOWNERS",
+                "MAINTAINERS", "MAINTAINERS.md",
+            })
+            if context_value.value in stale_names:
+                logger.info(
+                    "Stale file reference '%s' stored for '%s', treating as missing",
+                    context_value.value,
+                    req.key,
+                )
+                context_value = None
 
         # Check 1: Is context missing entirely?
         if context_value is None:
@@ -164,8 +184,6 @@ def format_context_prompt(
     Returns:
         Formatted prompt string for the user
     """
-    from pathlib import Path
-
     lines = []
 
     # Header
@@ -199,14 +217,25 @@ def format_context_prompt(
     # 3. If no hints at all → ask user directly
 
     if existing_hint_files:
-        # Case 1: Authoritative file exists - suggest referencing it
+        # Case 1: Authoritative file exists - parse and show values as suggestions
         lines.append("📁 **Found authoritative source(s):**")
         for f in existing_hint_files:
             lines.append(f"   - `{f}`")
         lines.append("")
-        lines.append("**Use this command to reference the file:**")
+
+        # Parse the file to extract actual values for user review
+        parsed_values = _parse_hint_file(repo_path / existing_hint_files[0])
+        if parsed_values:
+            lines.append("**Values found in file (review and confirm with user):**")
+            for val in parsed_values[:10]:
+                lines.append(f"   - `{val}`")
+            if len(parsed_values) > 10:
+                lines.append(f"   - ... and {len(parsed_values) - 10} more")
+            lines.append("")
+
+        lines.append("**⚠️ Ask the user to confirm or correct these values, then use:**")
         lines.append("```")
-        lines.append(f'confirm_project_context({context_key}="{existing_hint_files[0]}")')
+        lines.append(f"confirm_project_context({context_key}=<user-confirmed values>)")
         lines.append("```")
         lines.append("")
     elif allow_sieve_hints and current_value is not None and isinstance(current_value, ContextValue):
@@ -222,12 +251,9 @@ def format_context_prompt(
         else:
             lines.append(f"   {current_value.value}")
         lines.append("")
-        lines.append("**Confirm or correct:**")
+        lines.append("**⚠️ Ask the user to confirm or correct these values, then use:**")
         lines.append("```")
-        if isinstance(current_value.value, list):
-            lines.append(f'confirm_project_context({context_key}={current_value.value})')
-        else:
-            lines.append(f'confirm_project_context({context_key}="{current_value.value}")')
+        lines.append(f"confirm_project_context({context_key}=<user-confirmed values>)")
         lines.append("```")
         lines.append("")
     else:
@@ -263,6 +289,28 @@ def format_context_prompt(
         lines.append("```")
 
     return "\n".join(lines)
+
+
+def _parse_hint_file(file_path: Path) -> list[str] | None:
+    """Parse a hint source file to extract values.
+
+    Uses the appropriate parser based on filename (CODEOWNERS → codeowners parser,
+    .md → markdown list parser, etc.).
+
+    Args:
+        file_path: Path to the hint file
+
+    Returns:
+        List of extracted values, or None if nothing found
+    """
+    from darnit.context.collection import parse_codeowners, parse_markdown_list
+
+    name = file_path.name.upper()
+    if name in ("CODEOWNERS", "MAINTAINERS"):
+        result = parse_codeowners(file_path)
+    else:
+        result = parse_markdown_list(file_path)
+    return result or None
 
 
 def _get_context_definition(
