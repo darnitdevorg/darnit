@@ -1,110 +1,83 @@
-"""Tests for Python-defined controls in darnit-example."""
+"""Tests for custom sieve handlers in darnit-example."""
 
 import pytest
 
-from darnit.sieve.models import PassOutcome
+from darnit.sieve.handler_registry import HandlerContext, HandlerResultStatus
+from darnit_example.handlers import (
+    ci_config_handler,
+    readme_description_handler,
+    readme_quality_handler,
+)
+
+
+def _make_handler_context(tmp_path, files=None):
+    """Create a HandlerContext pointing at a temp directory with optional files."""
+    if files:
+        for name, content in files.items():
+            filepath = tmp_path / name
+            filepath.parent.mkdir(parents=True, exist_ok=True)
+            filepath.write_text(content, encoding="utf-8")
+    return HandlerContext(local_path=str(tmp_path))
 
 
 class TestReadmeHasDescription:
-    """Tests for PH-DOC-03: ReadmeHasDescription."""
+    """Tests for PH-DOC-03: ReadmeHasDescription handler."""
 
     @pytest.mark.unit
-    def test_pass_with_description(self, make_context):
+    def test_pass_with_description(self, tmp_path):
         """README with substantive content should pass."""
-        ctx = make_context({
+        ctx = _make_handler_context(tmp_path, {
             "README.md": "# My Project\n\nThis project provides a tool for managing compliance checks across open source repositories.\n"
         })
-        # Import the module to register controls, then get the check
-        from darnit.sieve.registry import get_control_registry
-        from darnit_example.controls import level1  # noqa: F401
-
-        registry = get_control_registry()
-        spec = registry.get("PH-DOC-03")
-        assert spec is not None
-
-        # Execute the deterministic pass (first pass)
-        result = spec.passes[0].execute(ctx)
-        assert result.outcome == PassOutcome.PASS
+        result = readme_description_handler({}, ctx)
+        assert result.status == HandlerResultStatus.PASS
 
     @pytest.mark.unit
-    def test_fail_with_title_only(self, make_context):
+    def test_fail_with_title_only(self, tmp_path):
         """README with only a title should fail."""
-        ctx = make_context({"README.md": "# My Project\n"})
-        from darnit.sieve.registry import get_control_registry
-        from darnit_example.controls import level1  # noqa: F401
-
-        registry = get_control_registry()
-        spec = registry.get("PH-DOC-03")
-        result = spec.passes[0].execute(ctx)
-        assert result.outcome == PassOutcome.FAIL
+        ctx = _make_handler_context(tmp_path, {"README.md": "# My Project\n"})
+        result = readme_description_handler({}, ctx)
+        assert result.status == HandlerResultStatus.FAIL
 
     @pytest.mark.unit
-    def test_fail_with_no_readme(self, make_context):
+    def test_fail_with_no_readme(self, tmp_path):
         """No README at all should fail."""
-        ctx = make_context()
-        from darnit.sieve.registry import get_control_registry
-        from darnit_example.controls import level1  # noqa: F401
-
-        registry = get_control_registry()
-        spec = registry.get("PH-DOC-03")
-        result = spec.passes[0].execute(ctx)
-        assert result.outcome == PassOutcome.FAIL
+        ctx = _make_handler_context(tmp_path)
+        result = readme_description_handler({}, ctx)
+        assert result.status == HandlerResultStatus.FAIL
 
     @pytest.mark.unit
-    def test_pattern_pass_with_good_structure(self, make_context):
-        """README with multiple sections should pass pattern check."""
-        ctx = make_context({
+    def test_pattern_pass_with_good_structure(self, tmp_path):
+        """README with multiple sections should pass quality check."""
+        ctx = _make_handler_context(tmp_path, {
             "README.md": "# Project\n\nDescription here.\n\n## Installation\n\npip install it\n\n## Usage\n\nUse it.\n"
         })
-        from darnit.sieve.registry import get_control_registry
-        from darnit_example.controls import level1  # noqa: F401
-
-        registry = get_control_registry()
-        spec = registry.get("PH-DOC-03")
-        # Pattern pass is the second pass
-        result = spec.passes[1].execute(ctx)
-        assert result.outcome == PassOutcome.PASS
+        result = readme_quality_handler({}, ctx)
+        assert result.status == HandlerResultStatus.PASS
 
 
 class TestCIConfigExists:
-    """Tests for PH-CI-01: CIConfigExists."""
+    """Tests for PH-CI-01: CIConfigExists handler."""
 
     @pytest.mark.unit
-    def test_pass_with_github_actions(self, make_context):
+    def test_pass_with_github_actions(self, tmp_path):
         """GitHub Actions workflow should be detected."""
-        ctx = make_context({
+        ctx = _make_handler_context(tmp_path, {
             ".github/workflows/ci.yml": "name: CI\non: push\n"
         })
-        from darnit.sieve.registry import get_control_registry
-        from darnit_example.controls import level1  # noqa: F401
-
-        registry = get_control_registry()
-        spec = registry.get("PH-CI-01")
-        assert spec is not None
-
-        result = spec.passes[0].execute(ctx)
-        assert result.outcome == PassOutcome.PASS
+        result = ci_config_handler({}, ctx)
+        assert result.status == HandlerResultStatus.PASS
 
     @pytest.mark.unit
-    def test_pass_with_gitlab_ci(self, make_context):
+    def test_pass_with_gitlab_ci(self, tmp_path):
         """GitLab CI config should be detected."""
-        ctx = make_context({".gitlab-ci.yml": "stages:\n  - test\n"})
-        from darnit.sieve.registry import get_control_registry
-        from darnit_example.controls import level1  # noqa: F401
-
-        registry = get_control_registry()
-        spec = registry.get("PH-CI-01")
-        result = spec.passes[0].execute(ctx)
-        assert result.outcome == PassOutcome.PASS
+        ctx = _make_handler_context(tmp_path, {".gitlab-ci.yml": "stages:\n  - test\n"})
+        result = ci_config_handler({}, ctx)
+        assert result.status == HandlerResultStatus.PASS
 
     @pytest.mark.unit
-    def test_fail_with_no_ci(self, make_context):
+    def test_fail_with_no_ci(self, tmp_path):
         """No CI config should fail."""
-        ctx = make_context()
-        from darnit.sieve.registry import get_control_registry
-        from darnit_example.controls import level1  # noqa: F401
-
-        registry = get_control_registry()
-        spec = registry.get("PH-CI-01")
-        result = spec.passes[0].execute(ctx)
-        assert result.outcome == PassOutcome.FAIL
+        ctx = _make_handler_context(tmp_path)
+        result = ci_config_handler({}, ctx)
+        assert result.status == HandlerResultStatus.FAIL

@@ -490,7 +490,6 @@ For detailed mermaid diagrams of audit internals, remediation flow, context life
 | | `core/handlers.py` | MCP tool handler registry (Layer 3) |
 | **Sieve** | `sieve/models.py` | `CheckContext`, `PassResult`, `SieveResult`, `ControlSpec` |
 | | `sieve/orchestrator.py` | Runs passes in phase order, stops on conclusion |
-| | `sieve/passes.py` | Legacy pass classes (not actively used — handlers in `builtin_handlers.py` replaced them) |
 | | `sieve/registry.py` | Global `ControlRegistry` for registered controls |
 | | `sieve/handler_registry.py` | `SieveHandlerRegistry` (Layer 1 & 2 custom handlers) |
 | | `sieve/builtin_handlers.py` | Built-in handlers: `file_exists`, `exec`, `regex`, `manual` |

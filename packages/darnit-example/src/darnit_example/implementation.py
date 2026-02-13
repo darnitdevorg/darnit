@@ -123,8 +123,40 @@ class ExampleHygieneImplementation:
         return Path(__file__).parent.parent.parent / "example-hygiene.toml"
 
     def register_controls(self) -> None:
-        """Register Python-defined controls with the sieve registry."""
-        from .controls import level1  # noqa: F401
+        """Register Python-defined controls with the sieve registry.
+
+        No-op: all controls are now defined in TOML with handler references.
+        """
+
+    def register_sieve_handlers(self) -> None:
+        """Register custom sieve handlers for verification passes."""
+        from darnit.sieve.handler_registry import get_sieve_handler_registry
+
+        from . import handlers
+
+        registry = get_sieve_handler_registry()
+        registry.set_plugin_context(self.name)
+
+        registry.register(
+            "readme_description",
+            phase="deterministic",
+            handler_fn=handlers.readme_description_handler,
+            description="Check README has substantive content",
+        )
+        registry.register(
+            "readme_quality",
+            phase="pattern",
+            handler_fn=handlers.readme_quality_handler,
+            description="Heuristic check for common README sections",
+        )
+        registry.register(
+            "ci_config",
+            phase="deterministic",
+            handler_fn=handlers.ci_config_handler,
+            description="Glob-based search for CI/CD configuration files",
+        )
+
+        registry.set_plugin_context(None)
 
     def register_handlers(self) -> None:
         """Register handlers with the handler registry."""

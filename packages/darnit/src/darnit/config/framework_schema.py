@@ -40,10 +40,10 @@ Example:
 # -----------------------------------------------------------------------------
 #
 # 1. Policy Language Support for Check Output Evaluation
-#    - Add `policy` field to ExecPassConfig for CEL/Rego expressions
+#    - Add `policy` field for CEL/Rego expressions on exec handler output
 #    - Support complex boolean conditions: `score >= 7.0 && checks.*.pass`
 #    - Candidates: CEL (Google), Rego (OPA), CUE, JSONPath extensions
-#    - See: passes.py _extract_json_path() for implementation location
+#    - See: builtin_handlers.py exec_handler() for implementation location
 #
 # 2. External Template Files
 #    - Primary: Resolve file paths relative to framework TOML location

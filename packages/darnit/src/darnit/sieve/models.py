@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Optional, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from darnit.config.framework_schema import LocatorConfig
@@ -133,21 +133,6 @@ class SieveResult:
         return result
 
 
-@runtime_checkable
-class VerificationPassProtocol(Protocol):
-    """Protocol that all verification passes must implement."""
-
-    phase: VerificationPhase
-
-    def execute(self, context: CheckContext) -> PassResult:
-        """Execute this verification pass."""
-        ...
-
-    def describe(self) -> str:
-        """Human-readable description of what this pass checks."""
-        ...
-
-
 @dataclass
 class ControlSpec:
     """Complete specification for a control with sieve verification.
@@ -165,41 +150,14 @@ class ControlSpec:
     domain: str | None  # Domain code (e.g., "AC", "VM") - None if not applicable
     name: str
     description: str
-    passes: list[Any]  # List of pass implementations (VerificationPassProtocol)
     tags: dict[str, Any] = field(default_factory=dict)  # Additional tags for filtering
     metadata: dict[str, Any] = field(default_factory=dict)
     # Locator configuration for this control (from TOML)
     locator_config: Optional["LocatorConfig"] = None
 
     def __post_init__(self):
-        """Copy level/domain to tags and validate passes order."""
-        # Copy level and domain to tags for uniform filtering
+        """Copy level/domain to tags for uniform filtering."""
         if self.level is not None:
             self.tags["level"] = self.level
         if self.domain is not None:
             self.tags["domain"] = self.domain
-
-        # Validate that passes are ordered correctly
-        if not self.passes:
-            return
-
-        # Recommended order: DETERMINISTIC -> PATTERN -> LLM -> MANUAL
-        phase_order = {
-            VerificationPhase.DETERMINISTIC: 0,
-            VerificationPhase.PATTERN: 1,
-            VerificationPhase.LLM: 2,
-            VerificationPhase.MANUAL: 3,
-        }
-
-        prev_order = -1
-        for p in self.passes:
-            current_order = phase_order.get(p.phase, 99)
-            if current_order < prev_order:
-                import warnings
-
-                warnings.warn(
-                    f"Control {self.control_id}: passes are not in recommended order "
-                    f"(DETERMINISTIC -> PATTERN -> LLM -> MANUAL)", stacklevel=2
-                )
-                break
-            prev_order = current_order

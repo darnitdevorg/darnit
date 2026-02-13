@@ -1,8 +1,7 @@
 """Built-in sieve handlers for the confidence gradient pipeline.
 
-These handlers wrap the existing pass logic (DeterministicPass, ExecPass, PatternPass,
-LLMPass, ManualPass) into the handler callable interface so they can be dispatched
-from TOML HandlerInvocation configs.
+These handlers implement the core verification logic dispatched
+from TOML HandlerInvocation configs via the SieveHandlerRegistry.
 
 Built-in verification handlers:
     - file_exists: Check file existence from a list of paths

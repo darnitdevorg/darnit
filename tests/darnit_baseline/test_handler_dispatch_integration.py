@@ -56,7 +56,6 @@ def _make_control(control_id, handler_invocations=None, level=1):
         description=f"Test control {control_id}",
         level=level,
         domain="TEST",
-        passes=[],
         metadata=metadata,
     )
 

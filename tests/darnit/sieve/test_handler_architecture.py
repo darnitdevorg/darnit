@@ -63,7 +63,6 @@ def _make_handler(status, message="ok", evidence=None, confidence=1.0):
 def _make_control(
     control_id,
     level=1,
-    passes=None,
     when=None,
     depends_on=None,
     inferred_from=None,
@@ -85,7 +84,6 @@ def _make_control(
         description=f"Test control {control_id}",
         level=level,
         domain="TEST",
-        passes=passes or [],
         metadata=metadata,
     )
 

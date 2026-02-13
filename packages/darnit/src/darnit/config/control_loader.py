@@ -387,10 +387,6 @@ def control_from_effective(
     Returns:
         Executable ControlSpec
     """
-    # Passes are now handled via handler dispatch in the orchestrator.
-    # The effective config's passes_config (if any) carries through metadata.
-    passes = []
-
     # Build the tags dict - effective.tags already includes level/domain from merger
     tags = dict(effective.tags) if effective.tags else {}
 
@@ -429,7 +425,6 @@ def control_from_effective(
         domain=domain,
         name=effective.name,
         description=effective.description,
-        passes=passes,
         tags=tags,  # Pass tags directly, ControlSpec.__post_init__ will add level/domain
         metadata=metadata,
     )
@@ -466,9 +461,6 @@ def control_from_framework(
         control_config.passes = _resolve_handler_invocations(
             control_config.passes, shared_handlers, locator_discover, control_id
         )
-
-    # Passes are dispatched via handler invocations in the orchestrator
-    passes = []
 
     # Build tags dict from config - tags is now Dict[str, Any]
     tags = dict(control_config.tags) if control_config.tags else {}
@@ -524,7 +516,6 @@ def control_from_framework(
         domain=domain,
         name=control_config.name,
         description=control_config.description,
-        passes=passes,
         tags=tags,
         metadata=metadata,
     )

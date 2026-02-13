@@ -169,7 +169,7 @@ required = false
 # Level 1 Controls — Basic Project Setup (6 controls)
 # =============================================================================
 
-# --- PH-DOC-01: ReadmeExists (TOML-defined) ---
+# --- PH-DOC-01: ReadmeExists ---
 [controls."PH-DOC-01"]
 name = "ReadmeExists"
 description = "Project has a README file"
@@ -181,15 +181,12 @@ help_md = """Every project should have a README explaining what it does.
 2. Include project name, description, and basic usage
 """
 
-[controls."PH-DOC-01".passes]
-deterministic = { file_must_exist = [
-    "README.md",
-    "README",
-    "README.rst",
-    "README.txt",
-]}
+[[controls."PH-DOC-01".passes]]
+handler = "file_must_exist"
+files = ["README.md", "README", "README.rst", "README.txt"]
 
-[controls."PH-DOC-01".passes.manual]
+[[controls."PH-DOC-01".passes]]
+handler = "manual"
 steps = [
     "Check that a README file exists in the project root",
     "Verify it contains meaningful content (not just a title)",
@@ -211,7 +208,7 @@ overwrite = false
 [controls."PH-DOC-01".remediation.project_update]
 set = { "documentation.readme.path" = "README.md" }
 
-# --- PH-DOC-02: LicenseExists (TOML-defined) ---
+# --- PH-DOC-02: LicenseExists ---
 [controls."PH-DOC-02"]
 name = "LicenseExists"
 description = "Project has a LICENSE file"
@@ -223,16 +220,12 @@ help_md = """A LICENSE file clarifies how others can use the project.
 2. Create a LICENSE file in the project root
 """
 
-[controls."PH-DOC-02".passes]
-deterministic = { file_must_exist = [
-    "LICENSE",
-    "LICENSE.md",
-    "LICENSE.txt",
-    "LICENCE",
-    "LICENCE.md",
-]}
+[[controls."PH-DOC-02".passes]]
+handler = "file_must_exist"
+files = ["LICENSE", "LICENSE.md", "LICENSE.txt", "LICENCE", "LICENCE.md"]
 
-[controls."PH-DOC-02".passes.manual]
+[[controls."PH-DOC-02".passes]]
+handler = "manual"
 steps = [
     "Check that a LICENSE file exists in the project root",
     "Verify it contains a recognized open source license",
@@ -250,11 +243,34 @@ overwrite = false
 [controls."PH-DOC-02".remediation.project_update]
 set = { "legal.license.path" = "LICENSE" }
 
-# --- PH-DOC-03: ReadmeHasDescription ---
-# This control is Python-defined in controls/level1.py
-# (demonstrates multi-phase sieve with custom analyzer)
+# --- PH-DOC-03: ReadmeHasDescription (custom sieve handlers) ---
+[controls."PH-DOC-03"]
+name = "ReadmeHasDescription"
+description = "README contains a project description"
+tags = { level = 1, domain = "DOC", documentation = true }
+help_md = """The README should contain a meaningful description of the project,
+not just a title.
 
-# --- PH-SEC-01: SecurityPolicyExists (TOML-defined, multi-phase) ---
+**Remediation:**
+1. Open the README file
+2. Add a paragraph describing the project purpose and usage
+"""
+
+[[controls."PH-DOC-03".passes]]
+handler = "readme_description"
+
+[[controls."PH-DOC-03".passes]]
+handler = "readme_quality"
+
+[[controls."PH-DOC-03".passes]]
+handler = "manual"
+steps = [
+    "Open the README file",
+    "Verify it contains a meaningful project description",
+    "Check that it explains what the project does and how to use it",
+]
+
+# --- PH-SEC-01: SecurityPolicyExists (multi-phase) ---
 [controls."PH-SEC-01"]
 name = "SecurityPolicyExists"
 description = "Project has a security policy for vulnerability reporting"
@@ -267,21 +283,18 @@ help_md = """A SECURITY.md tells users how to report vulnerabilities.
 3. Specify a response timeline
 """
 
-[controls."PH-SEC-01".passes]
-deterministic = { file_must_exist = [
-    "SECURITY.md",
-    ".github/SECURITY.md",
-    "docs/SECURITY.md",
-]}
+[[controls."PH-SEC-01".passes]]
+handler = "file_must_exist"
+files = ["SECURITY.md", ".github/SECURITY.md", "docs/SECURITY.md"]
 
-# Pattern pass: also check if README mentions security reporting
-[controls."PH-SEC-01".passes.pattern]
-file_patterns = ["README.md", "README.rst", "README"]
+[[controls."PH-SEC-01".passes]]
+handler = "regex"
+files = ["README.md", "README.rst", "README"]
+patterns = { security_section = "(?i)(security|vulnerability|report.*vulnerabilit)" }
+pass_if_any = true
 
-[controls."PH-SEC-01".passes.pattern.content_patterns]
-security_section = "(?i)(security|vulnerability|report.*vulnerabilit)"
-
-[controls."PH-SEC-01".passes.manual]
+[[controls."PH-SEC-01".passes]]
+handler = "manual"
 steps = [
     "Look for SECURITY.md in the repository root or .github/ directory",
     "Verify it contains vulnerability reporting instructions",
@@ -303,7 +316,7 @@ overwrite = false
 [controls."PH-SEC-01".remediation.project_update]
 set = { "security.policy.path" = "SECURITY.md" }
 
-# --- PH-CFG-01: GitignoreExists (TOML-defined) ---
+# --- PH-CFG-01: GitignoreExists ---
 [controls."PH-CFG-01"]
 name = "GitignoreExists"
 description = "Project has a .gitignore file"
@@ -315,8 +328,9 @@ help_md = """A .gitignore prevents committing build artifacts and secrets.
 2. Add patterns for your language/framework
 """
 
-[controls."PH-CFG-01".passes]
-deterministic = { file_must_exist = [".gitignore"] }
+[[controls."PH-CFG-01".passes]]
+handler = "file_must_exist"
+files = [".gitignore"]
 
 [controls."PH-CFG-01".remediation]
 handler = "create_gitignore"
@@ -328,7 +342,7 @@ path = ".gitignore"
 template = "gitignore_standard"
 overwrite = false
 
-# --- PH-CFG-02: EditorConfigExists (TOML-defined) ---
+# --- PH-CFG-02: EditorConfigExists ---
 [controls."PH-CFG-02"]
 name = "EditorConfigExists"
 description = "Project has an .editorconfig file"
@@ -340,8 +354,9 @@ help_md = """An .editorconfig ensures consistent formatting across editors.
 2. Define indent style, charset, and line endings
 """
 
-[controls."PH-CFG-02".passes]
-deterministic = { file_must_exist = [".editorconfig"] }
+[[controls."PH-CFG-02".passes]]
+handler = "file_must_exist"
+files = [".editorconfig"]
 
 [controls."PH-CFG-02".remediation]
 safe = true
@@ -356,7 +371,7 @@ overwrite = false
 # Level 2 Controls — Quality Practices (2 controls)
 # =============================================================================
 
-# --- PH-QA-01: ContributingGuideExists (TOML-defined) ---
+# --- PH-QA-01: ContributingGuideExists ---
 [controls."PH-QA-01"]
 name = "ContributingGuideExists"
 description = "Project has a CONTRIBUTING guide"
@@ -368,13 +383,9 @@ help_md = """A CONTRIBUTING guide helps new contributors get started.
 2. Include setup instructions, coding standards, and PR process
 """
 
-[controls."PH-QA-01".passes]
-deterministic = { file_must_exist = [
-    "CONTRIBUTING.md",
-    "CONTRIBUTING",
-    "CONTRIBUTING.rst",
-    ".github/CONTRIBUTING.md",
-]}
+[[controls."PH-QA-01".passes]]
+handler = "file_must_exist"
+files = ["CONTRIBUTING.md", "CONTRIBUTING", "CONTRIBUTING.rst", ".github/CONTRIBUTING.md"]
 
 [controls."PH-QA-01".remediation]
 safe = true
@@ -388,9 +399,36 @@ overwrite = false
 [controls."PH-QA-01".remediation.project_update]
 set = { "governance.contributing.path" = "CONTRIBUTING.md" }
 
-# --- PH-CI-01: CIConfigExists ---
-# This control is Python-defined in controls/level1.py
-# (demonstrates glob pattern checking in Python)
+# --- PH-CI-01: CIConfigExists (custom sieve handler) ---
+[controls."PH-CI-01"]
+name = "CIConfigExists"
+description = "Project has CI/CD configuration"
+tags = { level = 2, domain = "CI", quality = true }
+help_md = """A CI/CD pipeline ensures code quality through automated testing.
+
+**Remediation:**
+1. Create a CI workflow for your platform (GitHub Actions, GitLab CI, etc.)
+2. Configure it to run tests on pull requests
+"""
+
+[[controls."PH-CI-01".passes]]
+handler = "ci_config"
+
+[[controls."PH-CI-01".passes]]
+handler = "manual"
+steps = [
+    "Check for CI/CD configuration (GitHub Actions, GitLab CI, etc.)",
+    "Verify the CI pipeline runs tests on pull requests",
+]
+
+[controls."PH-CI-01".remediation]
+safe = true
+dry_run_supported = true
+
+[controls."PH-CI-01".remediation.file_create]
+path = ".github/workflows/ci.yml"
+template = "ci_github_actions"
+overwrite = false
 
 # =============================================================================
 # MCP Server Configuration

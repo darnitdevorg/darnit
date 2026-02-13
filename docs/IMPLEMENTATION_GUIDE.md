@@ -439,15 +439,15 @@ steps = [
 
 ### Built-in pass types
 
-The framework supports these pass types in TOML, each mapped to a pass class in
-`packages/darnit/src/darnit/sieve/passes.py`:
+The framework provides these built-in handler names for use in TOML `[[passes]]`
+entries, implemented in `packages/darnit/src/darnit/sieve/builtin_handlers.py`:
 
-| TOML Pass | Class | Purpose |
-|-----------|-------|---------|
-| `deterministic` | `DeterministicPass` | File existence, CEL expressions |
-| `pattern` | `PatternPass` | Regex matching in file contents |
-| `exec` | `ExecPass` | Run external commands |
-| `manual` | `ManualPass` | Human verification steps |
+| Handler Name | Purpose |
+|-------------|---------|
+| `file_exists` / `file_must_exist` | File existence checks |
+| `exec` | Run external commands, evaluate with CEL |
+| `regex` / `pattern` | Regex matching in file contents |
+| `manual` / `manual_steps` | Human verification steps |
 
 #### file_must_exist
 
@@ -1127,128 +1127,92 @@ MS-LE-01  FAIL  License header missing in 3/15 files  (deterministic, confidence
 
 ---
 
-## 6. Python Controls (Legacy)
+## 6. Custom Sieve Handlers
 
-> **Superseded**: The pattern in this section is superseded by TOML + custom sieve
-> handlers (Section 5). Use this only if you need backward compatibility with
-> pre-TOML implementations. New implementations should define controls in TOML and
-> add custom handlers as described in Section 5.
+When the built-in TOML handler types (`file_exists`, `exec`, `regex`, `manual`)
+aren't expressive enough — for example, when you need custom API calls, complex
+multi-step logic, or content analysis — write a custom sieve handler in Python
+and reference it from TOML.
 
-When TOML declarations aren't expressive enough — for example, when you need to call
-APIs, run complex logic, or combine multiple data sources — define controls in Python.
+### Writing a custom handler
 
-### The registration pattern
+A sieve handler is a function with signature
+`(config: dict, context: HandlerContext) -> HandlerResult`:
 
 ```python
-# src/darnit_mystandard/controls/level1.py
-from darnit.sieve.models import (
-    CheckContext,
-    ControlSpec,
-    PassOutcome,
-    PassResult,
-    VerificationPhase,
+# src/darnit_mystandard/handlers.py
+from darnit.sieve.handler_registry import (
+    HandlerContext,
+    HandlerResult,
+    HandlerResultStatus,
 )
-from darnit.sieve.passes import DeterministicPass, ManualPass
-from darnit.sieve.registry import register_control
-```
 
-### Factory functions (important pattern)
 
-Python controls that need runtime logic use **factory functions** that return
-closures. This is a critical pattern — use it whenever a pass needs to execute
-custom logic:
+def api_check_handler(config: dict, context: HandlerContext) -> HandlerResult:
+    """Check repository visibility via GitHub API."""
+    import json
+    import subprocess
 
-```python
-def _create_api_check() -> Callable[[CheckContext], PassResult]:
-    """Create an API check for control MS-AC-01."""
+    result = subprocess.run(
+        ["gh", "api", f"/repos/{context.owner}/{context.repo}"],
+        capture_output=True, text=True, timeout=30,
+    )
 
-    def check(ctx: CheckContext) -> PassResult:
-        # Your custom logic here
-        import subprocess, json
-        result = subprocess.run(
-            ["gh", "api", f"/repos/{ctx.owner}/{ctx.repo}"],
-            capture_output=True, text=True, timeout=30,
+    if result.returncode != 0:
+        return HandlerResult(
+            status=HandlerResultStatus.INCONCLUSIVE,
+            message="Could not reach API",
         )
 
-        if result.returncode != 0:
-            return PassResult(
-                phase=VerificationPhase.DETERMINISTIC,
-                outcome=PassOutcome.INCONCLUSIVE,
-                message="Could not reach API",
-            )
-
-        data = json.loads(result.stdout)
-        if data.get("private") is False:
-            return PassResult(
-                phase=VerificationPhase.DETERMINISTIC,
-                outcome=PassOutcome.PASS,
-                message="Repository is public",
-                evidence={"private": False},
-            )
-        else:
-            return PassResult(
-                phase=VerificationPhase.DETERMINISTIC,
-                outcome=PassOutcome.FAIL,
-                message="Repository is private",
-                evidence={"private": True},
-            )
-
-    return check
+    data = json.loads(result.stdout)
+    if data.get("private") is False:
+        return HandlerResult(
+            status=HandlerResultStatus.PASS,
+            message="Repository is public",
+            confidence=1.0,
+            evidence={"private": False},
+        )
+    return HandlerResult(
+        status=HandlerResultStatus.FAIL,
+        message="Repository is private",
+        evidence={"private": True},
+    )
 ```
 
-**Why factory functions?** The `DeterministicPass.config_check` field expects a
-`Callable[[CheckContext], PassResult]`. The factory function creates a closure that
-captures any setup state and returns a function with the right signature. Without
-the factory, you'd pass the function itself — but that prevents per-registration
-customization and makes testing harder.
+### Registering the handler
 
-### Registering the control
-
-Call `register_control()` at module level. When `register_controls()` imports this
-module, the registration happens automatically:
+Register handlers in your implementation's `register_sieve_handlers()` method:
 
 ```python
-register_control(ControlSpec(
-    control_id="MS-AC-01",
-    level=1,
-    domain="AC",
-    name="PublicRepository",
-    description="Repository must be publicly accessible",
-    passes=[
-        DeterministicPass(config_check=_create_api_check()),
-        ManualPass(
-            verification_steps=[
-                "Check repository visibility in Settings",
-                "Verify repository is not private",
-            ],
-        ),
-    ],
-))
+def register_sieve_handlers(self) -> None:
+    from darnit.sieve.handler_registry import get_sieve_handler_registry
+    from . import handlers
+
+    registry = get_sieve_handler_registry()
+    registry.set_plugin_context(self.name)
+    registry.register("api_check", "deterministic", handlers.api_check_handler,
+                       "Check repository via API")
+    registry.set_plugin_context(None)
 ```
 
-### Combining TOML and Python passes
+### Referencing from TOML
 
-A single control can have some passes defined in TOML and others in Python. The
-TOML-defined passes are loaded by the framework's config system, while Python
-passes are registered via `register_control()`. When both exist for the same
-control ID, the Python registration takes precedence (the registry skips
-duplicates by default).
+Once registered, reference the handler by short name in your framework TOML:
 
-### How register_controls() triggers it all
+```toml
+[[controls."MS-AC-01".passes]]
+handler = "api_check"
 
-In your implementation class:
-
-```python
-def register_controls(self) -> None:
-    from .controls import level1  # noqa: F401
+[[controls."MS-AC-01".passes]]
+handler = "manual"
+steps = [
+    "Check repository visibility in Settings",
+    "Verify repository is not private",
+]
 ```
 
-The `import level1` executes the module, which runs the `register_control()` calls
-at module level. The `# noqa: F401` suppresses the "imported but unused" warning
-because the import is only for its side effects.
-
-> **Reference**: See `packages/darnit-baseline/src/darnit_baseline/controls/level1.py`
-> for 24 real Python controls including API checks, file analysis, and pattern matching.
+> **Reference**: See `packages/darnit-example/src/darnit_example/handlers.py` for
+> real custom handler examples (readme analysis, CI config detection).
 
 ---
 
@@ -1527,23 +1491,27 @@ def test_readme_exists_pass(tmp_path):
     """README check passes when README.md exists."""
     (tmp_path / "README.md").write_text("# My Project")
 
-    from darnit.sieve.passes import DeterministicPass
-    check = DeterministicPass(file_must_exist=["README.md"])
-    result = check.execute(_make_context(tmp_path))
+    from darnit.sieve.handler_registry import HandlerContext, HandlerResultStatus
+    from darnit_mystandard.handlers import readme_check_handler
 
-    assert result.outcome == PassOutcome.PASS
+    ctx = HandlerContext(local_path=str(tmp_path))
+    result = readme_check_handler({}, ctx)
+
+    assert result.status == HandlerResultStatus.PASS
 
 
 def test_readme_exists_fail(tmp_path):
     """README check fails when no README exists."""
-    from darnit.sieve.passes import DeterministicPass
-    check = DeterministicPass(file_must_exist=["README.md", "README.rst"])
-    result = check.execute(_make_context(tmp_path))
+    from darnit.sieve.handler_registry import HandlerContext, HandlerResultStatus
+    from darnit_mystandard.handlers import readme_check_handler
 
-    assert result.outcome == PassOutcome.FAIL
+    ctx = HandlerContext(local_path=str(tmp_path))
+    result = readme_check_handler({}, ctx)
+
+    assert result.status == HandlerResultStatus.FAIL
 ```
 
-### Testing API-based controls
+### Testing API-based handlers
 
 Mock the subprocess calls to avoid hitting real APIs:
 
@@ -1553,19 +1521,20 @@ import json
 
 
 def test_api_check_pass(tmp_path):
-    """API check passes when API returns expected data."""
+    """API handler passes when API returns expected data."""
     mock_response = json.dumps({"private": False})
 
     with patch("subprocess.run") as mock_run:
         mock_run.return_value.returncode = 0
         mock_run.return_value.stdout = mock_response
 
-        # Call your check function
-        from darnit_mystandard.controls.level1 import _create_api_check
-        check = _create_api_check()
-        result = check(_make_context(tmp_path))
+        from darnit.sieve.handler_registry import HandlerContext, HandlerResultStatus
+        from darnit_mystandard.handlers import api_check_handler
 
-        assert result.outcome == PassOutcome.PASS
+        ctx = HandlerContext(local_path=str(tmp_path))
+        result = api_check_handler({}, ctx)
+
+        assert result.status == HandlerResultStatus.PASS
 ```
 
 ### Integration tests
@@ -1611,32 +1580,28 @@ tests/
 
 ## 10. Common Pitfalls
 
-### Factory functions vs direct functions
+### Handler function signature
 
-**Problem**: Passing a function directly to `DeterministicPass(config_check=...)` that
-doesn't match the expected signature `Callable[[CheckContext], PassResult]`.
+**Problem**: Writing a handler that doesn't match the expected signature
+`(config: dict, context: HandlerContext) -> HandlerResult`.
 
 ```python
-# WRONG: This passes the result of calling the function, not the function itself
-DeterministicPass(config_check=my_check(ctx))
-
-# WRONG: Direct function with wrong signature
-def my_check(owner, repo):  # Wrong signature!
+# WRONG: Missing config parameter
+def my_handler(context):
     ...
-DeterministicPass(config_check=my_check)
 
-# CORRECT: Factory returns a closure with the right signature
-def _create_my_check() -> Callable[[CheckContext], PassResult]:
-    def check(ctx: CheckContext) -> PassResult:
-        ...
-    return check
+# WRONG: Returning a plain dict instead of HandlerResult
+def my_handler(config, context):
+    return {"status": "pass"}
 
-DeterministicPass(config_check=_create_my_check())
+# CORRECT: Full signature with HandlerResult return type
+def my_handler(config: dict, context: HandlerContext) -> HandlerResult:
+    return HandlerResult(
+        status=HandlerResultStatus.PASS,
+        message="Check passed",
+        confidence=1.0,
+    )
 ```
-
-Note that `DeterministicPass` also supports `api_check` with signature
-`Callable[[str, str], PassResult]` (owner, repo). Use `config_check` for the
-`CheckContext`-based signature, which gives you access to more context.
 
 ### Module allowlist for dynamic loading
 
@@ -1713,20 +1678,21 @@ Methods:     get_all_controls(), get_controls_by_level(level),
 Optional:    register_handlers()
 ```
 
-### Pass type cheat sheet
+### Handler type cheat sheet
 
-| Need | TOML Pass | Python Class |
-|------|-----------|-------------|
-| File exists? | `[passes.deterministic]` + `file_must_exist` | `DeterministicPass(file_must_exist=[...])` |
-| API/CLI check? | `[passes.exec]` + `command` + `expr` | `DeterministicPass(config_check=...)` or `ExecPass(command=[...])` |
-| Regex in file? | `[passes.pattern]` + `file_patterns` + `content_patterns` | `PatternPass(file_patterns=[...], content_patterns={...})` |
-| AI analysis? | N/A (Python only) | `LLMPass(prompt_template="...", files_to_include=[...])` |
-| Human steps? | `[passes.manual]` + `steps` | `ManualPass(verification_steps=[...])` |
+| Need | TOML Handler | Notes |
+|------|-------------|-------|
+| File exists? | `handler = "file_exists"` + `files = [...]` | Also accepts `file_must_exist` alias |
+| CLI/API check? | `handler = "exec"` + `command = [...]` + `expr = "..."` | CEL expression on output |
+| Regex in file? | `handler = "pattern"` + `file_patterns = [...]` | Also accepts `regex` alias |
+| AI analysis? | `handler = "llm_eval"` + `confidence_threshold = 0.8` | Requires LLM consultation |
+| Human steps? | `handler = "manual"` + `steps = [...]` | Also accepts `manual_steps` alias |
+| Custom logic? | `handler = "my_handler"` | Register via `SieveHandlerRegistry` (Section 6) |
 
 ### Key imports
 
 ```python
-# Sieve handler authoring (Section 5)
+# Sieve handler authoring (Section 5-6)
 from darnit.sieve.handler_registry import (
     HandlerContext, HandlerResult, HandlerResultStatus,
     get_sieve_handler_registry,
@@ -1737,12 +1703,7 @@ from darnit.sieve.models import (
     CheckContext, ControlSpec, PassOutcome, PassResult, VerificationPhase,
 )
 
-# Pass types (legacy, Section 6)
-from darnit.sieve.passes import (
-    DeterministicPass, PatternPass, LLMPass, ManualPass, ExecPass,
-)
-
-# Control registration (legacy, Section 6)
+# Control registration
 from darnit.sieve.registry import register_control
 
 # Protocol (for isinstance checks)
@@ -1759,17 +1720,15 @@ from darnit.core.handlers import get_handler_registry
 | Protocol definition | `packages/darnit/src/darnit/core/plugin.py` |
 | Plugin discovery | `packages/darnit/src/darnit/core/discovery.py` |
 | Sieve models | `packages/darnit/src/darnit/sieve/models.py` |
-| Pass implementations | `packages/darnit/src/darnit/sieve/passes.py` |
 | Control registry | `packages/darnit/src/darnit/sieve/registry.py` |
 | Sieve handler registry | `packages/darnit/src/darnit/sieve/handler_registry.py` |
 | Built-in sieve handlers | `packages/darnit/src/darnit/sieve/builtin_handlers.py` |
 | MCP tool handler registry | `packages/darnit/src/darnit/core/handlers.py` |
 | Reference implementation | `packages/darnit-baseline/src/darnit_baseline/implementation.py` |
-| Reference controls | `packages/darnit-baseline/src/darnit_baseline/controls/level1.py` |
 | Reference TOML | `packages/darnit-baseline/openssf-baseline.toml` |
 | Reference remediation | `packages/darnit-baseline/src/darnit_baseline/remediation/registry.py` |
 | Example implementation | `packages/darnit-example/src/darnit_example/implementation.py` |
 | Example TOML config | `packages/darnit-example/example-hygiene.toml` |
-| Example Python controls | `packages/darnit-example/src/darnit_example/controls/level1.py` |
+| Example custom handlers | `packages/darnit-example/src/darnit_example/handlers.py` |
 | Example tests | `tests/darnit_example/` |
 | Framework spec | `openspec/specs/framework-design/spec.md` |

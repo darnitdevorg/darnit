@@ -383,9 +383,7 @@ class SieveOrchestrator:
         This is called after the calling LLM has analyzed the consultation request
         and provided a structured response.
 
-        TODO: This method still iterates control_spec.passes (the legacy field)
-        to find LLM/manual pass configs. Should be refactored to read from
-        handler_invocations metadata instead.
+        Reads LLM/manual configuration from handler_invocations metadata.
 
         Args:
             control_spec: The control being verified
@@ -395,16 +393,16 @@ class SieveOrchestrator:
         Returns:
             SieveResult with final status
         """
-        # Find LLM pass configuration
-        llm_pass = None
-        for p in control_spec.passes:
-            if p.phase == VerificationPhase.LLM:
-                llm_pass = p
+        # Find confidence_threshold from llm_eval handler invocation
+        confidence_threshold = 0.8
+        handler_invocations = control_spec.metadata.get("handler_invocations", [])
+        for inv in handler_invocations:
+            if inv.handler == "llm_eval":
+                extra = inv.model_extra or {}
+                confidence_threshold = extra.get(
+                    "confidence_threshold", 0.8
+                )
                 break
-
-        confidence_threshold = (
-            getattr(llm_pass, "confidence_threshold", 0.8) if llm_pass else 0.8
-        )
 
         # Determine outcome based on confidence
         if llm_response.status in (PassOutcome.PASS, PassOutcome.FAIL):
@@ -426,16 +424,15 @@ class SieveOrchestrator:
                 )
 
         # Low confidence or inconclusive - fall through to manual
-        # Find manual pass for verification steps
-        manual_pass = None
-        for p in control_spec.passes:
-            if p.phase == VerificationPhase.MANUAL:
-                manual_pass = p
-                break
-
+        # Find verification_steps from manual handler invocation
         verification_steps = None
-        if manual_pass:
-            verification_steps = getattr(manual_pass, "verification_steps", None)
+        for inv in handler_invocations:
+            if inv.handler == "manual":
+                extra = inv.model_extra or {}
+                steps = extra.get("steps")
+                if steps:
+                    verification_steps = steps
+                break
 
         return SieveResult(
             control_id=control_spec.control_id,

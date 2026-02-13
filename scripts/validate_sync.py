@@ -147,52 +147,52 @@ def validate_spec_exists() -> ValidationResult:
 
 
 def validate_pass_types_sync() -> ValidationResult:
-    """Validate that pass types in code match spec.
+    """Validate that built-in handler names in spec match handler registrations.
 
     Returns:
         ValidationResult with pass/fail status
     """
-    # Read spec to get documented pass types
+    # Read spec to get documented handler names
     if not SPEC_PATH.exists():
         return ValidationResult(
             passed=False,
-            message="Cannot validate pass types: spec not found",
+            message="Cannot validate handler names: spec not found",
         )
 
     spec_content = SPEC_PATH.read_text()
 
-    # Expected pass types from spec
-    spec_pass_types = set()
-    for pass_type in ["DeterministicPass", "ExecPass", "PatternPass", "LLMPass", "ManualPass"]:
-        if pass_type in spec_content:
-            spec_pass_types.add(pass_type)
+    # Expected built-in handler names from spec (registered handler names only)
+    spec_handler_names = set()
+    for handler_name in ["file_exists", "exec", "regex", "pattern", "llm_eval", "manual", "manual_steps"]:
+        if handler_name in spec_content:
+            spec_handler_names.add(handler_name)
 
-    # Check that code has these pass types
-    passes_file = PROJECT_ROOT / "packages" / "darnit" / "src" / "darnit" / "sieve" / "passes.py"
-    if not passes_file.exists():
+    # Check that builtin_handlers.py registers these handlers
+    handlers_file = PROJECT_ROOT / "packages" / "darnit" / "src" / "darnit" / "sieve" / "builtin_handlers.py"
+    if not handlers_file.exists():
         return ValidationResult(
             passed=False,
-            message="passes.py not found",
-            details=str(passes_file),
+            message="builtin_handlers.py not found",
+            details=str(handlers_file),
         )
 
-    code_content = passes_file.read_text()
+    code_content = handlers_file.read_text()
 
     missing_in_code = []
-    for pass_type in spec_pass_types:
-        if f"class {pass_type}" not in code_content:
-            missing_in_code.append(pass_type)
+    for handler_name in spec_handler_names:
+        if handler_name not in code_content:
+            missing_in_code.append(handler_name)
 
     if missing_in_code:
         return ValidationResult(
             passed=False,
-            message="Pass types in spec not found in code",
+            message="Handler names in spec not found in code",
             details="\n".join(f"  - {t}" for t in missing_in_code),
         )
 
     return ValidationResult(
         passed=True,
-        message=f"Pass types in sync ({len(spec_pass_types)} types)",
+        message=f"Handler names in sync ({len(spec_handler_names)} handlers)",
     )
 
 
