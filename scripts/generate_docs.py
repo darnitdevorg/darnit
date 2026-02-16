@@ -141,6 +141,14 @@ def parse_spec(spec_path: Path) -> tuple[dict[str, Any], str]:
                     metadata[key.strip()] = value.strip()
             content = content[end_idx + 3 :].strip()
 
+    # Also parse blockquote metadata (> **Key**: Value) used in spec files
+    blockquote_pattern = r"^>\s*\*\*(\w[\w\s]*)\*\*:\s*(.+)$"
+    for match in re.finditer(blockquote_pattern, content, re.MULTILINE):
+        key = match.group(1).strip()
+        value = match.group(2).strip()
+        if key not in metadata:  # Don't override front matter
+            metadata[key] = value
+
     return metadata, content
 
 

@@ -255,7 +255,6 @@ All defined in `packages/darnit/src/darnit/sieve/models.py`:
 | `PassAttempt` | Record of what a pass attempted, for transparency |
 | `SieveResult` | Complete result: status (PASS/FAIL/WARN/NA/ERROR/PENDING_LLM), conclusive_phase, pass_history |
 | `ControlSpec` | Control definition: control_id, level, domain, name, description, passes[], tags, metadata |
-| `LLMConsultationRequest` | Structured request for Phase 3 LLM analysis |
 | `LLMConsultationResponse` | Parsed LLM response with confidence and reasoning |
 
 ### Evidence Accumulation
@@ -264,7 +263,7 @@ Each pass can return `evidence` (a dict) in its `PassResult`. This evidence is m
 
 ### LLM Consultation Protocol
 
-Phase 3 returns a `PENDING_LLM` status with a `LLMConsultationRequest` in the details. The calling AI assistant analyzes the evidence and returns a structured `LLMConsultationResponse`. The sieve never calls an LLM directly — it delegates to whoever invoked the audit.
+Phase 3 returns a `PENDING_LLM` status with consultation details. The calling AI assistant analyzes the evidence and returns a structured `LLMConsultationResponse`. The sieve never calls an LLM directly — it delegates to whoever invoked the audit.
 
 ---
 

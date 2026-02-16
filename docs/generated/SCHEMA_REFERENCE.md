@@ -1,7 +1,7 @@
 # Darnit TOML Schema Reference
 
 > Generated from framework specification
-> Spec Version: Unknown
+> Spec Version: 1.0.0-alpha.8
 
 This document provides a complete reference for the TOML configuration schema
 used to define controls, passes, and remediations.

@@ -1,7 +1,7 @@
 # Darnit Framework Usage Guide
 
 > Generated from framework specification
-> Spec Version: Unknown
+> Spec Version: 1.0.0-alpha.8
 
 This guide explains how to use the Darnit framework for compliance auditing.
 

@@ -287,7 +287,7 @@ generate_attestation(
 - In-toto attestation format
 - Sigstore signing (OIDC-based)
 - Cryptographic proof of compliance status
-- Saved to `.darnit/attestations/`
+- Output to stdout or returned via MCP tool response
 
 ---
 

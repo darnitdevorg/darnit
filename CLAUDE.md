@@ -20,10 +20,12 @@ packages/
 │
 ├── darnit-baseline/         # OpenSSF Baseline implementation
 │   └── src/darnit_baseline/
-│       ├── controls/        # Python-defined control checks
-│       ├── checks/          # Legacy check functions
-│       ├── remediation/     # Auto-fix actions
-│       └── rules/           # SARIF rule catalog
+│       ├── attestation/     # In-toto attestation support
+│       ├── config/          # Project context configuration
+│       ├── formatters/      # Output formatting (Markdown, JSON, SARIF)
+│       ├── remediation/     # Remediation orchestration
+│       ├── rules/           # SARIF rule definitions (from TOML)
+│       └── threat_model/    # Threat model generation
 │
 └── darnit-testchecks/       # Test implementation (for testing)
 ```
@@ -68,11 +70,10 @@ impl.version                     # str: Implementation version
 impl.spec_version                # str: Spec version implemented
 impl.get_all_controls()          # List[ControlSpec]: All controls
 impl.get_controls_by_level(n)    # List[ControlSpec]: Controls at level n
-impl.get_check_functions()       # Dict: Legacy check functions
 impl.get_rules_catalog()         # Dict: SARIF rule definitions
 impl.get_remediation_registry()  # Dict: Auto-fix mappings
 impl.get_framework_config_path() # Path | None: TOML config location
-impl.register_controls()         # None: Register Python controls
+impl.register_controls()         # None: Register TOML controls
 ```
 
 ## Plugin System
@@ -120,7 +121,7 @@ class MyFrameworkImplementation:
         return Path(__file__).parent / "my-framework.toml"
 
     def register_controls(self) -> None:
-        from .controls import checks  # noqa: F401
+        pass  # Controls are defined in TOML; no Python registration needed
 ```
 
 2. Add the registration function:
@@ -141,13 +142,13 @@ my-framework = "my_framework:register"
 
 ## Sieve Pattern
 
-The verification pipeline follows a 4-phase pattern:
+The verification pipeline follows a 4-phase pattern using built-in handlers:
 
 ```
-DETERMINISTIC → PATTERN → LLM → MANUAL
-     ↓              ↓        ↓       ↓
-  Exact checks   Heuristics  AI    Human
-  (high conf)    (med conf)  eval  review
+file_must_exist → exec/regex → llm_eval → manual
+       ↓              ↓           ↓         ↓
+  File presence   Commands &   AI-based   Human
+  checks          patterns     eval       review
 ```
 
 Each control can define passes at each phase. The orchestrator stops at the first conclusive result.
@@ -180,9 +181,9 @@ This is a compliance auditing tool. Incorrect results are worse than incomplete 
 
 ### Adding New Controls
 
-1. Define the control in the framework TOML file
-2. Optionally add Python pass definitions in `controls/level*.py`
-3. Register using the `@register_control` decorator
+1. Define the control in `openssf-baseline.toml` with passes and metadata
+2. Optionally add plugin Python handlers for complex logic
+3. Run `uv run python scripts/validate_sync.py --verbose` to verify sync
 
 ### Testing
 
@@ -246,13 +247,11 @@ uv run python scripts/generate_docs.py
 git diff docs/generated/
 ```
 
-### Legacy Code Migration
+### TOML-First Architecture
 
-The `rules/catalog.py` is deprecated. SARIF metadata now reads from TOML:
-- Primary source: `openssf-baseline.toml` control definitions
-- Fallback: `rules/catalog.py` (for unmigrated controls)
-
-When adding new controls, define all metadata in TOML.
+All controls are defined in `openssf-baseline.toml`. The `rules/catalog.py` file
+is a deprecated fallback that remains for backward compatibility but is not
+actively used. All new controls must be defined entirely in TOML.
 
 ## TOML Schema Features
 

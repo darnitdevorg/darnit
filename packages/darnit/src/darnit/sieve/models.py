@@ -74,19 +74,6 @@ class PassAttempt:
 
 
 @dataclass
-class LLMConsultationRequest:
-    """Request for LLM analysis when Pass 3 needs help."""
-
-    control_id: str
-    control_name: str
-    control_description: str
-    prompt: str
-    context: dict[str, Any]
-    analysis_hints: list[str]
-    expected_response: str  # JSON schema or format description
-
-
-@dataclass
 class LLMConsultationResponse:
     """Parsed response from LLM consultation."""
 

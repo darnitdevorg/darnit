@@ -1,7 +1,7 @@
 # Darnit Framework Architecture
 
 > Generated from framework specification
-> Spec Version: Unknown
+> Spec Version: 1.0.0-alpha.8
 
 This document describes the architecture of the Darnit framework, including
 the sieve orchestrator, plugin system, and TOML configuration schema.

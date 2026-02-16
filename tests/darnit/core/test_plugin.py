@@ -90,9 +90,6 @@ class MockImplementation:
     def get_controls_by_level(self, level: int) -> list[ControlSpec]:
         return [c for c in self.get_all_controls() if c.level == level]
 
-    def get_check_functions(self) -> dict[str, Any]:
-        return {"level1": lambda: [], "level2": lambda: []}
-
     def get_rules_catalog(self) -> dict[str, Any]:
         return {"MOCK-01": {"name": "Mock Control 1"}}
 
@@ -144,15 +141,6 @@ class TestComplianceImplementation:
         assert level1[0].control_id == "MOCK-01"
         assert len(level2) == 1
         assert level2[0].control_id == "MOCK-02"
-
-    @pytest.mark.unit
-    def test_get_check_functions(self):
-        """Test get_check_functions method."""
-        impl = MockImplementation()
-        funcs = impl.get_check_functions()
-        assert "level1" in funcs
-        assert "level2" in funcs
-        assert callable(funcs["level1"])
 
     @pytest.mark.unit
     def test_get_rules_catalog(self):

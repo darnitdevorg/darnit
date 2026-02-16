@@ -238,45 +238,6 @@ DEFAULT_FILE_LOCATIONS: dict[str, list[str]] = {
 }
 
 
-def get_config_path(config: ProjectConfig, section: str, field: str) -> str | None:
-    """Get a path from config, checking both standard and extension sections.
-
-    This is a convenience wrapper around config.get_path() that handles
-    the section/field resolution for OSPS controls.
-
-    Args:
-        config: ProjectConfig instance
-        section: Section name (e.g., "security", "governance")
-        field: Field name (e.g., "policy", "maintainers")
-
-    Returns:
-        Path string or None if not found
-    """
-    return config.get_path(section, field)
-
-
-def resolve_control_path(config: ProjectConfig, control_id: str) -> str | None:
-    """Resolve the file path for a control from the config.
-
-    Args:
-        config: ProjectConfig instance
-        control_id: OSPS control ID (e.g., "OSPS-DO-02.01")
-
-    Returns:
-        Path string or None if not found
-    """
-    ref_path = CONTROL_REFERENCE_MAPPING.get(control_id)
-    if not ref_path:
-        return None
-
-    parts = ref_path.split(".", 1)
-    if len(parts) != 2:
-        return None
-
-    section, field = parts
-    return config.get_path(section, field)
-
-
 __all__ = [
     # Re-exports from darnit
     "ProjectType",
@@ -291,7 +252,4 @@ __all__ = [
     "PROJECT_TYPE_EXCLUSIONS",
     "CONTROL_REFERENCE_MAPPING",
     "DEFAULT_FILE_LOCATIONS",
-    # Helpers
-    "get_config_path",
-    "resolve_control_path",
 ]

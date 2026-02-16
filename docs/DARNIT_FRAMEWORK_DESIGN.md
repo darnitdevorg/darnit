@@ -1403,31 +1403,18 @@ project.toml does NOT change when an audit runs.
 
 Audit results are **ephemeral** and belong in separate output:
 
-```
-project-root/
-├── project.toml              # Configuration (user-managed, stable)
-│
-├── .darnit/                  # Darnit working directory
-│   ├── cache/                # Cached data for performance
-│   │   └── last-audit.json   # Most recent audit for quick lookup
-│   │
-│   ├── reports/              # Historical audit reports
-│   │   ├── audit-2025-12-01T10-30-00.json
-│   │   ├── audit-2025-12-01T10-30-00.sarif
-│   │   └── audit-2025-12-01T10-30-00.md
-│   │
-│   └── attestations/         # Signed compliance proofs
-│       └── baseline-2025-12-01.intoto.jsonl
-│
-└── (or output to stdout/return value for MCP tools)
-```
+- **Audit cache**: Stored in `$TMPDIR/darnit/<repo-hash>/` (not in the repo)
+- **Attestations**: Output to stdout or returned via MCP tool response
+- **Reports**: Returned directly from MCP tools or written to stdout
+
+No `.darnit/` directory is created in the repository.
 
 ### 6.4 LLM/AI Guidelines
 
 **When an AI agent uses Darnit tools, it MUST:**
 
 1. **Never write audit results to project.toml**
-   - Results go to `.darnit/reports/`, stdout, or are returned from MCP tools
+   - Results go to stdout or are returned from MCP tools
    - The AI should present results to the user, not persist them to config
 
 2. **Only modify project.toml for configuration changes**
@@ -1533,7 +1520,7 @@ Tools MUST check this version and handle unknown versions gracefully.
 # project.toml - Darnit Security Configuration
 #
 # IMPORTANT: This file contains CONFIGURATION only.
-# Audit results belong in .darnit/reports/ or tool output.
+# Audit results belong in tool output (stdout or MCP response).
 #
 # This file is the canonical source of truth for:
 # - Project metadata
