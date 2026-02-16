@@ -127,15 +127,6 @@ def _get_rule_from_catalog(control_id: str) -> dict[str, Any] | None:
         return None
 
 
-def _get_domain_info_from_catalog(domain: str) -> dict[str, Any]:
-    """Get domain info from legacy catalog (fallback)."""
-    try:
-        from darnit_baseline.rules.catalog import DOMAIN_INFO
-        return DOMAIN_INFO.get(domain, {})
-    except ImportError:
-        return {}
-
-
 def get_rule(control_id: str) -> dict[str, Any] | None:
     """Get rule metadata for a control ID.
 
@@ -186,13 +177,6 @@ STATUS_TO_LEVEL = {
     "WARN": "warning",
     "PASS": "note",
     "N/A": "none",
-}
-
-# Level to base severity mapping (0.1-10.0 scale)
-LEVEL_BASE_SEVERITY = {
-    1: 8.0,  # Level 1: Critical security hygiene
-    2: 5.5,  # Level 2: Enhanced security
-    3: 3.5,  # Level 3: Advanced security
 }
 
 

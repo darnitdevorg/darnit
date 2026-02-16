@@ -1368,65 +1368,8 @@ def get_rule(control_id: str) -> dict[str, Any] | None:
     return OSPS_RULES.get(control_id)
 
 
-def get_all_rules() -> dict[str, dict[str, Any]]:
-    """Get all rule definitions.
-
-    Returns:
-        Complete rules catalog
-    """
-    return OSPS_RULES
-
-
-def get_rules_by_level(level: int) -> dict[str, dict[str, Any]]:
-    """Get rules filtered by maturity level.
-
-    Args:
-        level: Maturity level (1, 2, or 3)
-
-    Returns:
-        Rules for the specified level
-    """
-    return {
-        control_id: rule
-        for control_id, rule in OSPS_RULES.items()
-        if rule["level"] == level
-    }
-
-
-def get_rules_by_domain(domain: str) -> dict[str, dict[str, Any]]:
-    """Get rules filtered by domain.
-
-    Args:
-        domain: Domain code (AC, BR, DO, GV, LE, QA, SA, VM)
-
-    Returns:
-        Rules for the specified domain
-    """
-    return {
-        control_id: rule
-        for control_id, rule in OSPS_RULES.items()
-        if rule["domain"] == domain
-    }
-
-
-def get_domain_info(domain: str) -> dict[str, Any] | None:
-    """Get domain information.
-
-    Args:
-        domain: Domain code (AC, BR, DO, GV, LE, QA, SA, VM)
-
-    Returns:
-        Domain info dictionary or None
-    """
-    return DOMAIN_INFO.get(domain)
-
-
 __all__ = [
     "OSPS_RULES",
     "DOMAIN_INFO",
     "get_rule",
-    "get_all_rules",
-    "get_rules_by_level",
-    "get_rules_by_domain",
-    "get_domain_info",
 ]
