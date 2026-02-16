@@ -1,8 +1,8 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.7
+> **Version**: 1.0.0-alpha.8
 > **Status**: Authoritative
-> **Last Updated**: 2026-02-13
+> **Last Updated**: 2026-02-16
 
 This specification defines the authoritative design of the Darnit framework, including the sieve orchestrator, TOML schema, built-in pass types, remediation actions, and plugin protocol.
 
@@ -989,7 +989,46 @@ All audit entry points that produce markdown output SHALL use `format_results_ma
 - **THEN** it SHALL accept optional `report_title` and `remediation_map` parameters
 - **AND** SHALL NOT contain hardcoded implementation-specific control IDs or branding
 
-### 10.4 Framework Contains No Implementation-Specific Code
+### 10.4 Audit Result Cache
+
+The canonical `run_sieve_audit()` function SHALL write audit results to a cache file after completing the sieve pipeline. The `builtin_remediate` tool and `remediate_audit_findings()` function SHALL check for cached results before running their own audit, using the cache to skip redundant audit passes.
+
+Cache files are stored in the system temp directory (`$TMPDIR/darnit/<repo-hash>/audit-cache.json`), keyed by a hash of the repository's absolute path. This avoids writing any files into the repository itself.
+
+#### Requirement: Canonical audit writes to cache
+- **WHEN** `run_sieve_audit()` completes successfully
+- **THEN** it SHALL call `write_audit_cache()` with the `results`, `summary`, `level`, and `framework` name
+- **AND** subsequent calls to `read_audit_cache()` from the same repository SHALL return the cached results (assuming no commit change)
+- **AND** audit failure (exception before completing) SHALL NOT write to the cache
+
+#### Requirement: Only FAIL controls are remediated
+- **WHEN** remediation tools consume audit results (cached or fresh)
+- **THEN** they SHALL extract only controls with `status == "FAIL"`
+- **AND** controls with `status == "WARN"` SHALL NOT be remediated (WARN means automated verification was inconclusive, not that the control is non-compliant)
+- **AND** controls with `status == "PASS"` SHALL NOT be remediated
+
+#### Requirement: Builtin remediate consumes cached audit results
+- **WHEN** `builtin_remediate()` is called and `read_audit_cache()` returns valid cached results
+- **THEN** it SHALL extract failed control IDs from the cached results (entries with `status == "FAIL"`)
+- **AND** it SHALL NOT run `SieveOrchestrator.verify()` on any controls
+- **WHEN** `read_audit_cache()` returns `None` (cache miss)
+- **THEN** it SHALL run the sieve audit as it does today (existing behavior)
+
+#### Requirement: Post-remediation cache invalidation
+- **WHEN** `builtin_remediate()` completes with `dry_run=False` and at least one remediation was applied
+- **THEN** it SHALL call `invalidate_audit_cache(local_path)`
+- **WHEN** `builtin_remediate()` completes with `dry_run=True`
+- **THEN** it SHALL NOT call `invalidate_audit_cache()`
+
+#### Requirement: Remediate audit findings consumes cached results
+- **WHEN** `remediate_audit_findings()` is called and valid cached results exist
+- **THEN** it SHALL use the cached results to determine failed control IDs
+- **AND** it SHALL NOT call `_run_baseline_checks()` redundantly
+- **AND** it SHALL iterate all remediation categories, letting per-control filtering exclude categories where no controls failed
+- **WHEN** `remediate_audit_findings()` applies changes with `dry_run=False`
+- **THEN** it SHALL call `invalidate_audit_cache(local_path)`
+
+### 10.5 Framework Contains No Implementation-Specific Code
 
 The darnit framework package SHALL NOT contain code, modules, or string literals specific to any particular compliance implementation.
 
@@ -1101,9 +1140,10 @@ The following requirements have been superseded by the handler dispatch architec
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.8 | 2026-02-16 | Added audit result cache (Section 10.4): audit writes cache, remediate reads cache, post-remediation invalidation |
 | 1.0.0-alpha.7 | 2026-02-13 | Migrated to handler dispatch architecture: pass classes replaced by named handlers, passes use TOML array-of-tables syntax, register_controls() becomes no-op, removed legacy pass classes (Appendix C) |
 | 1.0.0-alpha.5 | 2026-02-08 | Added locator integration (Section 11), handler registry (Section 12) |
-| 1.0.0-alpha.4 | 2026-02-07 | Added framework purity requirements (Section 10.4), report parameterization |
+| 1.0.0-alpha.4 | 2026-02-07 | Added framework purity requirements (Section 10.5), report parameterization |
 | 1.0.0-alpha.3 | 2026-02-06 | Added audit pipeline requirements (Section 10) |
 | 1.0.0-alpha.2 | 2026-02-05 | Added CEL expressions, handler registration, Sigstore verification |
 | 1.0.0-alpha | 2026-02-04 | Initial authoritative specification |

@@ -105,15 +105,6 @@ REMEDIATION_CATEGORIES: dict[str, dict[str, Any]] = {
 }
 
 
-def _get_control_to_category_map() -> dict[str, str]:
-    """Build reverse mapping from control ID to remediation category."""
-    mapping: dict[str, str] = {}
-    for category, info in REMEDIATION_CATEGORIES.items():
-        for control_id in info["controls"]:
-            mapping[control_id] = category
-    return mapping
-
-
 # =============================================================================
 # Framework Loading
 # =============================================================================
@@ -593,27 +584,7 @@ def _apply_declarative_remediation(
 
 
 
-def _determine_remediable_categories(non_passing: list[dict[str, Any]]) -> list[str]:
-    """Determine which remediation categories have non-passing controls.
 
-    Categories are included if ANY of their controls are FAIL or WARN.
-    Categories where ALL controls are PASS are excluded.
-
-    Args:
-        non_passing: List of non-passing check results (FAIL, WARN, ERROR)
-
-    Returns:
-        Sorted list of applicable remediation category names
-    """
-    control_map = _get_control_to_category_map()
-    categories = set()
-
-    for result in non_passing:
-        control_id = result.get("id", "")
-        if control_id in control_map:
-            categories.add(control_map[control_id])
-
-    return sorted(categories)
 
 
 def _preflight_context_check(
@@ -825,32 +796,51 @@ def remediate_audit_findings(
         owner = owner or detected_owner
         repo = repo or detected_repo
 
-    # Run audit to determine which controls are non-passing.
-    # This is needed for control-level filtering (skip controls that already pass).
-    non_passing_ids: set[str] | None = None
-    audit_result, error = _run_baseline_checks(
-        owner=owner, repo=repo, local_path=local_path
-    )
+    # Determine which controls failed the audit.
+    # Only FAIL controls are remediated — WARN means "can't verify automatically"
+    # and the existing content may be correct.  PASS is obviously skipped.
+    # First, try the audit cache — avoids re-running the full audit when results
+    # are fresh (e.g. the user just ran audit → remediate in sequence).
+    failed_ids: set[str] | None = None
+    error: str | None = None
 
-    if not error and audit_result:
-        non_passing = [r for r in audit_result.all_results if r.get("status") != "PASS"]
-        non_passing_ids = {r.get("id", "") for r in non_passing}
+    try:
+        from darnit.core.audit_cache import read_audit_cache
+
+        cache = read_audit_cache(local_path)
+    except Exception:
+        cache = None
+
+    if cache is not None:
+        # Cache hit — extract failed IDs without re-running the audit
+        logger.info("Using cached audit results (skipping redundant audit)")
+        failed_ids = {
+            r.get("id", "") for r in cache["results"] if r.get("status") == "FAIL"
+        }
+    else:
+        # Cache miss — fall back to running the audit
+        logger.info("No cached audit results, running audit")
+        audit_result, error = _run_baseline_checks(
+            owner=owner, repo=repo, local_path=local_path
+        )
+
+        if not error and audit_result:
+            failed_ids = {
+                r.get("id", "") for r in audit_result.all_results if r.get("status") == "FAIL"
+            }
 
     # Determine categories to apply
     if not categories or categories == ["all"]:
-        # Audit is required when auto-determining categories
         if error:
             return f"❌ Error running audit: {error}"
 
-        remediable = _determine_remediable_categories(non_passing)
-
-        if not remediable:
+        if not failed_ids:
             return "✅ No remediations needed - all controls with available auto-fixes are passing."
 
-        categories = remediable
+        categories = sorted(REMEDIATION_CATEGORIES.keys())
     elif error:
         # Audit failed but user specified explicit categories — proceed without
-        # control-level filtering (non_passing_ids stays None = legacy behavior)
+        # control-level filtering (failed_ids stays None = legacy behavior)
         logger.warning(f"Audit failed ({error}), proceeding without control-level filtering")
 
     # Pre-flight check: Verify all context requirements BEFORE starting remediation
@@ -875,9 +865,20 @@ def remediate_audit_findings(
             owner=owner,
             repo=repo,
             dry_run=dry_run,
-            non_passing_ids=non_passing_ids,
+            non_passing_ids=failed_ids,
         )
         results.append(result)
+
+    # Invalidate cache after applying changes (not dry-run)
+    if not dry_run:
+        applied_any = any(r.get("status") == "applied" for r in results)
+        if applied_any:
+            try:
+                from darnit.core.audit_cache import invalidate_audit_cache
+
+                invalidate_audit_cache(local_path)
+            except Exception as exc:
+                logger.warning(f"Failed to invalidate audit cache: {exc}")
 
     # Build output
     md = []
@@ -1006,6 +1007,5 @@ def remediate_audit_findings(
 __all__ = [
     "remediate_audit_findings",
     "_apply_remediation",
-    "_determine_remediable_categories",
     "_run_baseline_checks",
 ]

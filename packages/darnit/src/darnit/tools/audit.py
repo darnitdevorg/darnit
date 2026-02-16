@@ -466,6 +466,21 @@ def run_sieve_audit(
         all_results.append(sieve_result.to_legacy_dict())
 
     summary = summarize_results(all_results)
+
+    # Write results to cache so remediate can skip re-running the audit.
+    # Failures here must never break the audit pipeline.
+    try:
+        from darnit.core.audit_cache import write_audit_cache
+        from darnit.core.discovery import get_default_implementation as _get_impl
+
+        fw_name = ""
+        _impl = _get_impl()
+        if _impl:
+            fw_name = _impl.name
+        write_audit_cache(local_path, all_results, summary, level, fw_name)
+    except Exception as exc:
+        logger.warning("Failed to write audit cache (non-fatal): %s", exc)
+
     return all_results, summary
 
 

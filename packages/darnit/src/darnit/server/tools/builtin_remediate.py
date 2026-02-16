@@ -111,28 +111,39 @@ async def builtin_remediate(
     if not all_controls:
         return "No controls found."
 
-    # Run audit to find failures
+    # Determine which controls failed — use cached audit results if available
+    from darnit.core.audit_cache import invalidate_audit_cache, read_audit_cache
     from darnit.core.utils import detect_owner_repo
 
     owner, repo = detect_owner_repo(str(repo_path))
-    orchestrator = SieveOrchestrator()
     failed_ids: set[str] = set()
 
-    for control in all_controls:
-        context = CheckContext(
-            owner=owner,
-            repo=repo,
-            local_path=str(repo_path),
-            default_branch="main",
-            control_id=control.control_id,
-            control_metadata={
-                "name": control.name,
-                "description": control.description,
-            },
-        )
-        result = orchestrator.verify(control, context)
-        if result.status == "FAIL":
-            failed_ids.add(control.control_id)
+    cache = read_audit_cache(str(repo_path))
+    if cache is not None:
+        # Cache hit — extract failed IDs without re-running the audit
+        logger.info("Using cached audit results (skipping redundant audit)")
+        failed_ids = {
+            r["id"] for r in cache["results"] if r.get("status") == "FAIL"
+        }
+    else:
+        # Cache miss — run inline audit (existing behavior)
+        logger.info("No cached audit results, running audit")
+        orchestrator = SieveOrchestrator()
+        for control in all_controls:
+            context = CheckContext(
+                owner=owner,
+                repo=repo,
+                local_path=str(repo_path),
+                default_branch="main",
+                control_id=control.control_id,
+                control_metadata={
+                    "name": control.name,
+                    "description": control.description,
+                },
+            )
+            result = orchestrator.verify(control, context)
+            if result.status == "FAIL":
+                failed_ids.add(control.control_id)
 
     if not failed_ids:
         return "All controls pass — nothing to remediate."
@@ -174,6 +185,13 @@ async def builtin_remediate(
             _apply_project_update(
                 str(repo_path), rem_cfg.project_update, control_id
             )
+
+    # Invalidate cache after applying changes (not dry-run)
+    if not dry_run and remediation_results:
+        try:
+            invalidate_audit_cache(str(repo_path))
+        except Exception as exc:
+            logger.warning("Failed to invalidate audit cache: %s", exc)
 
     return _format_remediation_report(
         framework_name=_framework_name,
