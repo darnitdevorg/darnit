@@ -78,10 +78,20 @@ class DotProjectMapper:
             context["project.schema_version"] = config.schema_version
         if config.type:
             context["project.type"] = config.type
+        if config.slug:
+            context["project.slug"] = config.slug
+        if config.project_lead:
+            context["project.project_lead"] = config.project_lead
+        if config.cncf_slack_channel:
+            context["project.cncf_slack_channel"] = config.cncf_slack_channel
         if config.website:
             context["project.website"] = config.website
         if config.repositories:
             context["project.repositories"] = config.repositories
+        if config.adopters:
+            context["project.adopters_path"] = config.adopters.path
+        if config.package_managers:
+            context["project.package_managers"] = config.package_managers
 
         # Maintainers (high priority for remediation)
         if config.maintainers:
@@ -102,6 +112,13 @@ class DotProjectMapper:
         # Documentation section
         if config.documentation:
             self._map_documentation(config.documentation, context)
+
+        # Landscape section
+        if config.landscape:
+            if config.landscape.category:
+                context["project.landscape.category"] = config.landscape.category
+            if config.landscape.subcategory:
+                context["project.landscape.subcategory"] = config.landscape.subcategory
 
         # Extensions
         if config.extensions:
@@ -125,6 +142,8 @@ class DotProjectMapper:
             context["project.security.policy_path"] = security.policy.path
         if security.threat_model:
             context["project.security.threat_model_path"] = security.threat_model.path
+        if security.contact:
+            context["project.security.contact"] = security.contact
 
         # Include any extra fields
         for key, value in security._extra.items():
@@ -132,12 +151,53 @@ class DotProjectMapper:
 
     def _map_governance(self, governance: Any, context: dict[str, Any]) -> None:
         """Map governance section to context variables."""
+        # Original fields
         if governance.contributing:
             context["project.governance.contributing_path"] = governance.contributing.path
         if governance.codeowners:
             context["project.governance.codeowners_path"] = governance.codeowners.path
         if governance.governance_doc:
             context["project.governance.governance_doc_path"] = governance.governance_doc.path
+
+        # New PathRef fields
+        pathref_fields = [
+            "gitvote_config",
+            "vendor_neutrality_statement",
+            "decision_making_process",
+            "roles_and_teams",
+            "code_of_conduct",
+            "sub_project_list",
+            "sub_project_docs",
+            "contributor_ladder",
+            "change_process",
+            "comms_channels",
+            "community_calendar",
+            "contributor_guide",
+        ]
+        for field_name in pathref_fields:
+            ref = getattr(governance, field_name, None)
+            if ref:
+                context[f"project.governance.{field_name}_path"] = ref.path
+
+        # Maintainer lifecycle nested struct
+        if governance.maintainer_lifecycle:
+            ml = governance.maintainer_lifecycle
+            if ml.onboarding_doc:
+                context["project.governance.maintainer_lifecycle.onboarding_doc_path"] = (
+                    ml.onboarding_doc.path
+                )
+            if ml.progression_ladder:
+                context["project.governance.maintainer_lifecycle.progression_ladder_path"] = (
+                    ml.progression_ladder.path
+                )
+            if ml.offboarding_policy:
+                context["project.governance.maintainer_lifecycle.offboarding_policy_path"] = (
+                    ml.offboarding_policy.path
+                )
+            if ml.mentoring_program:
+                context["project.governance.maintainer_lifecycle.mentoring_program"] = (
+                    ml.mentoring_program
+                )
 
         # Include any extra fields
         for key, value in governance._extra.items():
@@ -147,6 +207,16 @@ class DotProjectMapper:
         """Map legal section to context variables."""
         if legal.license:
             context["project.legal.license_path"] = legal.license.path
+
+        # Identity type nested struct
+        if legal.identity_type:
+            it = legal.identity_type
+            context["project.legal.identity_type.has_dco"] = it.has_dco
+            context["project.legal.identity_type.has_cla"] = it.has_cla
+            if it.dco_url:
+                context["project.legal.identity_type.dco_url_path"] = it.dco_url.path
+            if it.cla_url:
+                context["project.legal.identity_type.cla_url_path"] = it.cla_url.path
 
         # Include any extra fields
         for key, value in legal._extra.items():

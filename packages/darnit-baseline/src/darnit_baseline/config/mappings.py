@@ -71,7 +71,7 @@ CONTROL_REFERENCE_MAPPING: dict[str, str] = {
 
     # Governance (extension fields - to be upstreamed)
     "OSPS-GV-01.01": "governance.maintainers",    # MAINTAINERS.md (extension)
-    "OSPS-GV-01.02": "governance.code_of_conduct", # CODE_OF_CONDUCT.md (extension)
+    "OSPS-GV-01.02": "governance.code_of_conduct", # CODE_OF_CONDUCT.md (standard)
 
     # Legal (standard .project fields)
     "OSPS-LI-01.01": "legal.license",             # LICENSE

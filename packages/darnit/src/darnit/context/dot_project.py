@@ -4,7 +4,7 @@ This module implements reading and writing of .project/project.yaml files
 following the CNCF .project/ specification.
 
 Specification: https://github.com/cncf/automation/tree/main/utilities/dot-project
-Targeted Spec Version: 1.0.0 (based on types.go as of 2024-01)
+Targeted Spec Version: 1.1.0 (based on types.go as of 2026-02)
 
 The reader is tolerant of unknown fields for forward compatibility with
 spec evolution. Required fields are validated per the CNCF types.go struct.
@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 # Targeted .project/ spec version
 # Based on cncf/automation types.go
 # Update this when we verify compatibility with newer spec versions
-DOT_PROJECT_SPEC_VERSION = "1.0.0"
+DOT_PROJECT_SPEC_VERSION = "1.1.0"
 DOT_PROJECT_SPEC_URL = "https://github.com/cncf/automation/tree/main/utilities/dot-project"
 
 
@@ -48,11 +48,49 @@ class FileReference:
 
 
 @dataclass
+class MaintainerLifecycle:
+    """Maintainer lifecycle configuration."""
+
+    onboarding_doc: FileReference | None = None
+    progression_ladder: FileReference | None = None
+    offboarding_policy: FileReference | None = None
+    mentoring_program: list[str] = field(default_factory=list)
+
+    # Allow unknown fields for forward compatibility
+    _extra: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class IdentityType:
+    """Identity/contributor agreement type configuration."""
+
+    has_dco: bool = False
+    has_cla: bool = False
+    dco_url: FileReference | None = None
+    cla_url: FileReference | None = None
+
+    # Allow unknown fields for forward compatibility
+    _extra: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class LandscapeConfig:
+    """CNCF Landscape placement configuration."""
+
+    category: str = ""
+    subcategory: str = ""
+
+    # Allow unknown fields for forward compatibility
+    _extra: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class SecurityConfig:
     """Security section of .project/project.yaml."""
 
     policy: FileReference | None = None
     threat_model: FileReference | None = None
+    contact: str | None = None
 
     # Allow unknown fields for forward compatibility
     _extra: dict[str, Any] = field(default_factory=dict)
@@ -65,6 +103,19 @@ class GovernanceConfig:
     contributing: FileReference | None = None
     codeowners: FileReference | None = None
     governance_doc: FileReference | None = None
+    gitvote_config: FileReference | None = None
+    vendor_neutrality_statement: FileReference | None = None
+    decision_making_process: FileReference | None = None
+    roles_and_teams: FileReference | None = None
+    code_of_conduct: FileReference | None = None
+    sub_project_list: FileReference | None = None
+    sub_project_docs: FileReference | None = None
+    contributor_ladder: FileReference | None = None
+    change_process: FileReference | None = None
+    comms_channels: FileReference | None = None
+    community_calendar: FileReference | None = None
+    contributor_guide: FileReference | None = None
+    maintainer_lifecycle: MaintainerLifecycle | None = None
 
     # Allow unknown fields for forward compatibility
     _extra: dict[str, Any] = field(default_factory=dict)
@@ -75,6 +126,7 @@ class LegalConfig:
     """Legal section of .project/project.yaml."""
 
     license: FileReference | None = None
+    identity_type: IdentityType | None = None
 
     # Allow unknown fields for forward compatibility
     _extra: dict[str, Any] = field(default_factory=dict)
@@ -142,8 +194,14 @@ class ProjectConfig:
     description: str = ""
     schema_version: str = ""
     type: str = ""
+    slug: str = ""
+    project_lead: str = ""
+    cncf_slack_channel: str = ""
     website: str = ""
     artwork: str = ""
+
+    # Optional file reference fields
+    adopters: FileReference | None = None
 
     # Optional list fields
     mailing_lists: list[str] = field(default_factory=list)
@@ -152,12 +210,14 @@ class ProjectConfig:
 
     # Optional map fields
     social: dict[str, str] = field(default_factory=dict)
+    package_managers: dict[str, str] = field(default_factory=dict)
 
     # Optional structured sections
     security: SecurityConfig | None = None
     governance: GovernanceConfig | None = None
     legal: LegalConfig | None = None
     documentation: DocumentationConfig | None = None
+    landscape: LandscapeConfig | None = None
 
     # Extensions (PR #131)
     extensions: dict[str, ExtensionConfig] = field(default_factory=dict)
@@ -321,17 +381,23 @@ class DotProjectReader:
             "description",
             "schema_version",
             "type",
+            "slug",
+            "project_lead",
+            "cncf_slack_channel",
             "website",
             "artwork",
             "repositories",
             "mailing_lists",
             "social",
+            "package_managers",
             "maturity_log",
             "audits",
             "security",
             "governance",
             "legal",
             "documentation",
+            "landscape",
+            "adopters",
             "extensions",
         }
 
@@ -340,11 +406,19 @@ class DotProjectReader:
         config.description = data.get("description", "")
         config.schema_version = data.get("schema_version", "")
         config.type = data.get("type", "")
+        config.slug = data.get("slug", "")
+        config.project_lead = data.get("project_lead", "")
+        config.cncf_slack_channel = data.get("cncf_slack_channel", "")
         config.website = data.get("website", "")
         config.artwork = data.get("artwork", "")
         config.repositories = data.get("repositories", [])
         config.mailing_lists = data.get("mailing_lists", [])
         config.social = data.get("social", {})
+        config.package_managers = data.get("package_managers", {})
+
+        # Parse adopters file reference
+        if "adopters" in data:
+            config.adopters = self._parse_file_reference(data["adopters"])
 
         # Parse maturity log
         if "maturity_log" in data:
@@ -368,6 +442,9 @@ class DotProjectReader:
 
         if "documentation" in data:
             config.documentation = self._parse_documentation(data["documentation"])
+
+        if "landscape" in data:
+            config.landscape = self._parse_landscape(data["landscape"])
 
         # Parse extensions
         if "extensions" in data:
@@ -393,10 +470,11 @@ class DotProjectReader:
 
     def _parse_security(self, data: dict[str, Any]) -> SecurityConfig:
         """Parse security section."""
-        known = {"policy", "threat_model"}
+        known = {"policy", "threat_model", "contact"}
         config = SecurityConfig(
             policy=self._parse_file_reference(data.get("policy")),
             threat_model=self._parse_file_reference(data.get("threat_model")),
+            contact=data.get("contact"),
         )
         for key, value in data.items():
             if key not in known:
@@ -405,12 +483,52 @@ class DotProjectReader:
 
     def _parse_governance(self, data: dict[str, Any]) -> GovernanceConfig:
         """Parse governance section."""
-        known = {"contributing", "codeowners", "governance_doc"}
+        known = {
+            "contributing",
+            "codeowners",
+            "governance_doc",
+            "gitvote_config",
+            "vendor_neutrality_statement",
+            "decision_making_process",
+            "roles_and_teams",
+            "code_of_conduct",
+            "sub_project_list",
+            "sub_project_docs",
+            "contributor_ladder",
+            "change_process",
+            "comms_channels",
+            "community_calendar",
+            "contributor_guide",
+            "maintainer_lifecycle",
+        }
         config = GovernanceConfig(
             contributing=self._parse_file_reference(data.get("contributing")),
             codeowners=self._parse_file_reference(data.get("codeowners")),
             governance_doc=self._parse_file_reference(data.get("governance_doc")),
+            gitvote_config=self._parse_file_reference(data.get("gitvote_config")),
+            vendor_neutrality_statement=self._parse_file_reference(
+                data.get("vendor_neutrality_statement")
+            ),
+            decision_making_process=self._parse_file_reference(
+                data.get("decision_making_process")
+            ),
+            roles_and_teams=self._parse_file_reference(data.get("roles_and_teams")),
+            code_of_conduct=self._parse_file_reference(data.get("code_of_conduct")),
+            sub_project_list=self._parse_file_reference(data.get("sub_project_list")),
+            sub_project_docs=self._parse_file_reference(data.get("sub_project_docs")),
+            contributor_ladder=self._parse_file_reference(data.get("contributor_ladder")),
+            change_process=self._parse_file_reference(data.get("change_process")),
+            comms_channels=self._parse_file_reference(data.get("comms_channels")),
+            community_calendar=self._parse_file_reference(data.get("community_calendar")),
+            contributor_guide=self._parse_file_reference(data.get("contributor_guide")),
         )
+
+        # Parse nested maintainer_lifecycle
+        if "maintainer_lifecycle" in data and isinstance(data["maintainer_lifecycle"], dict):
+            config.maintainer_lifecycle = self._parse_maintainer_lifecycle(
+                data["maintainer_lifecycle"]
+            )
+
         for key, value in data.items():
             if key not in known:
                 config._extra[key] = value
@@ -418,10 +536,15 @@ class DotProjectReader:
 
     def _parse_legal(self, data: dict[str, Any]) -> LegalConfig:
         """Parse legal section."""
-        known = {"license"}
+        known = {"license", "identity_type"}
         config = LegalConfig(
             license=self._parse_file_reference(data.get("license")),
         )
+
+        # Parse nested identity_type
+        if "identity_type" in data and isinstance(data["identity_type"], dict):
+            config.identity_type = self._parse_identity_type(data["identity_type"])
+
         for key, value in data.items():
             if key not in known:
                 config._extra[key] = value
@@ -464,6 +587,46 @@ class DotProjectReader:
             if key not in known:
                 entry._extra[key] = value
         return entry
+
+    def _parse_maintainer_lifecycle(self, data: dict[str, Any]) -> MaintainerLifecycle:
+        """Parse maintainer lifecycle nested struct."""
+        known = {"onboarding_doc", "progression_ladder", "offboarding_policy", "mentoring_program"}
+        lifecycle = MaintainerLifecycle(
+            onboarding_doc=self._parse_file_reference(data.get("onboarding_doc")),
+            progression_ladder=self._parse_file_reference(data.get("progression_ladder")),
+            offboarding_policy=self._parse_file_reference(data.get("offboarding_policy")),
+            mentoring_program=data.get("mentoring_program", []),
+        )
+        for key, value in data.items():
+            if key not in known:
+                lifecycle._extra[key] = value
+        return lifecycle
+
+    def _parse_identity_type(self, data: dict[str, Any]) -> IdentityType:
+        """Parse identity type nested struct."""
+        known = {"has_dco", "has_cla", "dco_url", "cla_url"}
+        identity = IdentityType(
+            has_dco=bool(data.get("has_dco", False)),
+            has_cla=bool(data.get("has_cla", False)),
+            dco_url=self._parse_file_reference(data.get("dco_url")),
+            cla_url=self._parse_file_reference(data.get("cla_url")),
+        )
+        for key, value in data.items():
+            if key not in known:
+                identity._extra[key] = value
+        return identity
+
+    def _parse_landscape(self, data: dict[str, Any]) -> LandscapeConfig:
+        """Parse landscape nested struct."""
+        known = {"category", "subcategory"}
+        landscape = LandscapeConfig(
+            category=data.get("category", ""),
+            subcategory=data.get("subcategory", ""),
+        )
+        for key, value in data.items():
+            if key not in known:
+                landscape._extra[key] = value
+        return landscape
 
     def _parse_audit(self, data: dict[str, Any]) -> Audit:
         """Parse an audit entry."""

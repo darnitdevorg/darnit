@@ -123,7 +123,10 @@ class TestUpstreamSpecSync:
         from darnit.context.dot_project import (
             DocumentationConfig,
             GovernanceConfig,
+            IdentityType,
+            LandscapeConfig,
             LegalConfig,
+            MaintainerLifecycle,
             ProjectConfig,
             SecurityConfig,
         )
@@ -134,23 +137,30 @@ class TestUpstreamSpecSync:
         assert hasattr(config, 'description')
         assert hasattr(config, 'schema_version')
         assert hasattr(config, 'type')
+        assert hasattr(config, 'slug')
+        assert hasattr(config, 'project_lead')
+        assert hasattr(config, 'cncf_slack_channel')
         assert hasattr(config, 'website')
         assert hasattr(config, 'artwork')
+        assert hasattr(config, 'adopters')
         assert hasattr(config, 'repositories')
         assert hasattr(config, 'mailing_lists')
         assert hasattr(config, 'social')
+        assert hasattr(config, 'package_managers')
         assert hasattr(config, 'maturity_log')
         assert hasattr(config, 'audits')
         assert hasattr(config, 'security')
         assert hasattr(config, 'governance')
         assert hasattr(config, 'legal')
         assert hasattr(config, 'documentation')
+        assert hasattr(config, 'landscape')
         assert hasattr(config, 'extensions')
 
         # Security section fields
         security = SecurityConfig()
         assert hasattr(security, 'policy')
         assert hasattr(security, 'threat_model')
+        assert hasattr(security, 'contact')
         assert hasattr(security, '_extra')  # Forward compatibility
 
         # Governance section fields
@@ -158,12 +168,42 @@ class TestUpstreamSpecSync:
         assert hasattr(governance, 'contributing')
         assert hasattr(governance, 'codeowners')
         assert hasattr(governance, 'governance_doc')
+        assert hasattr(governance, 'gitvote_config')
+        assert hasattr(governance, 'vendor_neutrality_statement')
+        assert hasattr(governance, 'decision_making_process')
+        assert hasattr(governance, 'roles_and_teams')
+        assert hasattr(governance, 'code_of_conduct')
+        assert hasattr(governance, 'sub_project_list')
+        assert hasattr(governance, 'sub_project_docs')
+        assert hasattr(governance, 'contributor_ladder')
+        assert hasattr(governance, 'change_process')
+        assert hasattr(governance, 'comms_channels')
+        assert hasattr(governance, 'community_calendar')
+        assert hasattr(governance, 'contributor_guide')
+        assert hasattr(governance, 'maintainer_lifecycle')
         assert hasattr(governance, '_extra')
+
+        # Maintainer lifecycle fields
+        ml = MaintainerLifecycle()
+        assert hasattr(ml, 'onboarding_doc')
+        assert hasattr(ml, 'progression_ladder')
+        assert hasattr(ml, 'offboarding_policy')
+        assert hasattr(ml, 'mentoring_program')
+        assert hasattr(ml, '_extra')
 
         # Legal section fields
         legal = LegalConfig()
         assert hasattr(legal, 'license')
+        assert hasattr(legal, 'identity_type')
         assert hasattr(legal, '_extra')
+
+        # Identity type fields
+        identity = IdentityType()
+        assert hasattr(identity, 'has_dco')
+        assert hasattr(identity, 'has_cla')
+        assert hasattr(identity, 'dco_url')
+        assert hasattr(identity, 'cla_url')
+        assert hasattr(identity, '_extra')
 
         # Documentation section fields
         docs = DocumentationConfig()
@@ -172,3 +212,9 @@ class TestUpstreamSpecSync:
         assert hasattr(docs, 'architecture')
         assert hasattr(docs, 'api')
         assert hasattr(docs, '_extra')
+
+        # Landscape fields
+        landscape = LandscapeConfig()
+        assert hasattr(landscape, 'category')
+        assert hasattr(landscape, 'subcategory')
+        assert hasattr(landscape, '_extra')

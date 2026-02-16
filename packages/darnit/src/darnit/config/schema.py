@@ -172,6 +172,34 @@ class Audit(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class MaintainerLifecycleConfig(BaseModel):
+    """Maintainer lifecycle configuration (CNCF standard)."""
+    onboarding_doc: PathRef | None = None
+    progression_ladder: PathRef | None = None
+    offboarding_policy: PathRef | None = None
+    mentoring_program: list[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="allow")
+
+
+class IdentityTypeConfig(BaseModel):
+    """Identity/contributor agreement type (CNCF standard)."""
+    has_dco: bool = False
+    has_cla: bool = False
+    dco_url: PathRef | None = None
+    cla_url: PathRef | None = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class LandscapeConfig(BaseModel):
+    """CNCF Landscape placement configuration."""
+    category: str = ""
+    subcategory: str = ""
+
+    model_config = ConfigDict(extra="allow")
+
+
 class SecurityConfig(BaseModel):
     """Security documentation references (CNCF standard)."""
     policy: PathRef | None = None
@@ -187,6 +215,18 @@ class GovernanceConfig(BaseModel):
     codeowners: PathRef | None = None
     governance_doc: PathRef | None = None
     gitvote_config: PathRef | None = None
+    vendor_neutrality_statement: PathRef | None = None
+    decision_making_process: PathRef | None = None
+    roles_and_teams: PathRef | None = None
+    code_of_conduct: PathRef | None = None
+    sub_project_list: PathRef | None = None
+    sub_project_docs: PathRef | None = None
+    contributor_ladder: PathRef | None = None
+    change_process: PathRef | None = None
+    comms_channels: PathRef | None = None
+    community_calendar: PathRef | None = None
+    contributor_guide: PathRef | None = None
+    maintainer_lifecycle: MaintainerLifecycleConfig | None = None
 
     model_config = ConfigDict(extra="allow")  # Allow extension fields
 
@@ -194,6 +234,7 @@ class GovernanceConfig(BaseModel):
 class LegalConfig(BaseModel):
     """Legal documentation references (CNCF standard)."""
     license: PathRef | None = None
+    identity_type: IdentityTypeConfig | None = None
 
     model_config = ConfigDict(extra="allow")  # Allow extension fields
 
@@ -388,18 +429,24 @@ class ProjectConfig(BaseModel):
     type: str = "software"
 
     # CNCF-specific metadata
+    slug: str = ""
+    project_lead: str = ""
+    cncf_slack_channel: str = ""
     maturity_log: list[MaturityEntry] = Field(default_factory=list)
     repositories: list[str] = Field(default_factory=list)
     website: str | None = None
     artwork: str | None = None
+    adopters: PathRef | None = None
     social: dict[str, str] = Field(default_factory=dict)
     mailing_lists: list[str] = Field(default_factory=list)
+    package_managers: dict[str, str] = Field(default_factory=dict)
 
     # Documentation sections (CNCF standard)
     security: SecurityConfig | None = None
     governance: GovernanceConfig | None = None
     legal: LegalConfig | None = None
     documentation: DocumentationConfig | None = None
+    landscape: LandscapeConfig | None = None
     audits: list[Audit] = Field(default_factory=list)
 
     # OpenSSF Baseline extension

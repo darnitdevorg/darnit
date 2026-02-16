@@ -516,6 +516,379 @@ security:
         assert config.security.policy.path == "SECURITY.md"
 
 
+class TestDotProjectNewFields:
+    """Test parsing of new fields added in spec 1.1.0."""
+
+    @pytest.mark.unit
+    def test_read_parses_security_contact(self, temp_dir: Path):
+        """Reader correctly parses security.contact as a string."""
+        from darnit.context.dot_project import DotProjectReader
+
+        project_dir = temp_dir / ".project"
+        project_dir.mkdir()
+        (project_dir / "project.yaml").write_text("""
+name: my-project
+repositories:
+  - https://github.com/org/repo
+security:
+  policy:
+    path: SECURITY.md
+  contact: security@example.com
+""")
+
+        reader = DotProjectReader(temp_dir)
+        config = reader.read()
+
+        assert config.security is not None
+        assert config.security.contact == "security@example.com"
+        assert config.security.policy.path == "SECURITY.md"
+
+    @pytest.mark.unit
+    def test_read_parses_new_governance_pathref_fields(self, temp_dir: Path):
+        """Reader correctly parses all new governance PathRef fields."""
+        from darnit.context.dot_project import DotProjectReader
+
+        project_dir = temp_dir / ".project"
+        project_dir.mkdir()
+        (project_dir / "project.yaml").write_text("""
+name: my-project
+repositories:
+  - https://github.com/org/repo
+governance:
+  contributing:
+    path: CONTRIBUTING.md
+  gitvote_config:
+    path: .gitvote.yml
+  vendor_neutrality_statement:
+    path: VENDOR_NEUTRALITY.md
+  decision_making_process:
+    path: DECISION_MAKING.md
+  roles_and_teams:
+    path: ROLES.md
+  code_of_conduct:
+    path: CODE_OF_CONDUCT.md
+  sub_project_list:
+    path: SUB_PROJECTS.md
+  sub_project_docs:
+    path: docs/sub-projects/
+  contributor_ladder:
+    path: CONTRIBUTOR_LADDER.md
+  change_process:
+    path: CHANGE_PROCESS.md
+  comms_channels:
+    path: COMMS.md
+  community_calendar:
+    path: CALENDAR.md
+  contributor_guide:
+    path: CONTRIBUTOR_GUIDE.md
+""")
+
+        reader = DotProjectReader(temp_dir)
+        config = reader.read()
+
+        assert config.governance is not None
+        assert config.governance.contributing.path == "CONTRIBUTING.md"
+        assert config.governance.gitvote_config.path == ".gitvote.yml"
+        assert config.governance.vendor_neutrality_statement.path == "VENDOR_NEUTRALITY.md"
+        assert config.governance.decision_making_process.path == "DECISION_MAKING.md"
+        assert config.governance.roles_and_teams.path == "ROLES.md"
+        assert config.governance.code_of_conduct.path == "CODE_OF_CONDUCT.md"
+        assert config.governance.sub_project_list.path == "SUB_PROJECTS.md"
+        assert config.governance.sub_project_docs.path == "docs/sub-projects/"
+        assert config.governance.contributor_ladder.path == "CONTRIBUTOR_LADDER.md"
+        assert config.governance.change_process.path == "CHANGE_PROCESS.md"
+        assert config.governance.comms_channels.path == "COMMS.md"
+        assert config.governance.community_calendar.path == "CALENDAR.md"
+        assert config.governance.contributor_guide.path == "CONTRIBUTOR_GUIDE.md"
+
+    @pytest.mark.unit
+    def test_read_parses_maintainer_lifecycle(self, temp_dir: Path):
+        """Reader correctly parses governance.maintainer_lifecycle nested struct."""
+        from darnit.context.dot_project import DotProjectReader
+
+        project_dir = temp_dir / ".project"
+        project_dir.mkdir()
+        (project_dir / "project.yaml").write_text("""
+name: my-project
+repositories:
+  - https://github.com/org/repo
+governance:
+  maintainer_lifecycle:
+    onboarding_doc:
+      path: ONBOARDING.md
+    progression_ladder:
+      path: PROGRESSION.md
+    offboarding_policy:
+      path: OFFBOARDING.md
+    mentoring_program:
+      - mentoring-2024
+      - buddy-system
+""")
+
+        reader = DotProjectReader(temp_dir)
+        config = reader.read()
+
+        assert config.governance is not None
+        ml = config.governance.maintainer_lifecycle
+        assert ml is not None
+        assert ml.onboarding_doc.path == "ONBOARDING.md"
+        assert ml.progression_ladder.path == "PROGRESSION.md"
+        assert ml.offboarding_policy.path == "OFFBOARDING.md"
+        assert ml.mentoring_program == ["mentoring-2024", "buddy-system"]
+
+    @pytest.mark.unit
+    def test_read_parses_identity_type(self, temp_dir: Path):
+        """Reader correctly parses legal.identity_type nested struct."""
+        from darnit.context.dot_project import DotProjectReader
+
+        project_dir = temp_dir / ".project"
+        project_dir.mkdir()
+        (project_dir / "project.yaml").write_text("""
+name: my-project
+repositories:
+  - https://github.com/org/repo
+legal:
+  license:
+    path: LICENSE
+  identity_type:
+    has_dco: true
+    has_cla: false
+    dco_url:
+      path: DCO
+""")
+
+        reader = DotProjectReader(temp_dir)
+        config = reader.read()
+
+        assert config.legal is not None
+        it = config.legal.identity_type
+        assert it is not None
+        assert it.has_dco is True
+        assert it.has_cla is False
+        assert it.dco_url.path == "DCO"
+        assert it.cla_url is None
+
+    @pytest.mark.unit
+    def test_read_parses_new_top_level_fields(self, temp_dir: Path):
+        """Reader correctly parses new top-level fields."""
+        from darnit.context.dot_project import DotProjectReader
+
+        project_dir = temp_dir / ".project"
+        project_dir.mkdir()
+        (project_dir / "project.yaml").write_text("""
+name: my-project
+repositories:
+  - https://github.com/org/repo
+slug: my-proj
+project_lead: "@alice"
+cncf_slack_channel: "#my-project"
+adopters:
+  path: ADOPTERS.md
+package_managers:
+  npm: my-project
+  pypi: my-project
+landscape:
+  category: "App Definition and Development"
+  subcategory: "Database"
+""")
+
+        reader = DotProjectReader(temp_dir)
+        config = reader.read()
+
+        assert config.slug == "my-proj"
+        assert config.project_lead == "@alice"
+        assert config.cncf_slack_channel == "#my-project"
+        assert config.adopters is not None
+        assert config.adopters.path == "ADOPTERS.md"
+        assert config.package_managers == {"npm": "my-project", "pypi": "my-project"}
+        assert config.landscape is not None
+        assert config.landscape.category == "App Definition and Development"
+        assert config.landscape.subcategory == "Database"
+
+    @pytest.mark.unit
+    def test_unknown_fields_in_new_nested_types(self, temp_dir: Path):
+        """Unknown fields in new nested types go to _extra."""
+        from darnit.context.dot_project import DotProjectReader
+
+        project_dir = temp_dir / ".project"
+        project_dir.mkdir()
+        (project_dir / "project.yaml").write_text("""
+name: my-project
+repositories:
+  - https://github.com/org/repo
+governance:
+  maintainer_lifecycle:
+    onboarding_doc:
+      path: ONBOARDING.md
+    future_field: some_value
+legal:
+  identity_type:
+    has_dco: true
+    future_legal_field: test
+landscape:
+  category: Networking
+  future_landscape_field: data
+""")
+
+        reader = DotProjectReader(temp_dir)
+        config = reader.read()
+
+        # maintainer_lifecycle extra
+        ml = config.governance.maintainer_lifecycle
+        assert "future_field" in ml._extra
+        assert ml._extra["future_field"] == "some_value"
+
+        # identity_type extra
+        it = config.legal.identity_type
+        assert "future_legal_field" in it._extra
+        assert it._extra["future_legal_field"] == "test"
+
+        # landscape extra
+        assert "future_landscape_field" in config.landscape._extra
+        assert config.landscape._extra["future_landscape_field"] == "data"
+
+
+class TestDotProjectNewFieldsMapper:
+    """Test mapper context variable output for new fields."""
+
+    @pytest.mark.unit
+    def test_mapper_maps_security_contact(self, temp_dir: Path):
+        """Mapper correctly maps security.contact."""
+        from darnit.context.dot_project_mapper import DotProjectMapper
+
+        project_dir = temp_dir / ".project"
+        project_dir.mkdir()
+        (project_dir / "project.yaml").write_text("""
+name: my-project
+repositories:
+  - https://github.com/org/repo
+security:
+  contact: security@example.com
+""")
+
+        mapper = DotProjectMapper(temp_dir)
+        context = mapper.get_context()
+
+        assert context.get("project.security.contact") == "security@example.com"
+
+    @pytest.mark.unit
+    def test_mapper_maps_new_governance_fields(self, temp_dir: Path):
+        """Mapper correctly maps new governance PathRef fields."""
+        from darnit.context.dot_project_mapper import DotProjectMapper
+
+        project_dir = temp_dir / ".project"
+        project_dir.mkdir()
+        (project_dir / "project.yaml").write_text("""
+name: my-project
+repositories:
+  - https://github.com/org/repo
+governance:
+  code_of_conduct:
+    path: CODE_OF_CONDUCT.md
+  contributor_ladder:
+    path: CONTRIBUTOR_LADDER.md
+  comms_channels:
+    path: COMMS.md
+""")
+
+        mapper = DotProjectMapper(temp_dir)
+        context = mapper.get_context()
+
+        assert context.get("project.governance.code_of_conduct_path") == "CODE_OF_CONDUCT.md"
+        assert context.get("project.governance.contributor_ladder_path") == "CONTRIBUTOR_LADDER.md"
+        assert context.get("project.governance.comms_channels_path") == "COMMS.md"
+
+    @pytest.mark.unit
+    def test_mapper_maps_maintainer_lifecycle(self, temp_dir: Path):
+        """Mapper correctly maps governance.maintainer_lifecycle nested fields."""
+        from darnit.context.dot_project_mapper import DotProjectMapper
+
+        project_dir = temp_dir / ".project"
+        project_dir.mkdir()
+        (project_dir / "project.yaml").write_text("""
+name: my-project
+repositories:
+  - https://github.com/org/repo
+governance:
+  maintainer_lifecycle:
+    onboarding_doc:
+      path: ONBOARDING.md
+    mentoring_program:
+      - buddy-system
+""")
+
+        mapper = DotProjectMapper(temp_dir)
+        context = mapper.get_context()
+
+        assert (
+            context.get("project.governance.maintainer_lifecycle.onboarding_doc_path")
+            == "ONBOARDING.md"
+        )
+        assert context.get("project.governance.maintainer_lifecycle.mentoring_program") == [
+            "buddy-system"
+        ]
+
+    @pytest.mark.unit
+    def test_mapper_maps_identity_type(self, temp_dir: Path):
+        """Mapper correctly maps legal.identity_type nested fields."""
+        from darnit.context.dot_project_mapper import DotProjectMapper
+
+        project_dir = temp_dir / ".project"
+        project_dir.mkdir()
+        (project_dir / "project.yaml").write_text("""
+name: my-project
+repositories:
+  - https://github.com/org/repo
+legal:
+  identity_type:
+    has_dco: true
+    has_cla: false
+    dco_url:
+      path: DCO
+""")
+
+        mapper = DotProjectMapper(temp_dir)
+        context = mapper.get_context()
+
+        assert context.get("project.legal.identity_type.has_dco") is True
+        assert context.get("project.legal.identity_type.has_cla") is False
+        assert context.get("project.legal.identity_type.dco_url_path") == "DCO"
+
+    @pytest.mark.unit
+    def test_mapper_maps_new_top_level_fields(self, temp_dir: Path):
+        """Mapper correctly maps new top-level fields."""
+        from darnit.context.dot_project_mapper import DotProjectMapper
+
+        project_dir = temp_dir / ".project"
+        project_dir.mkdir()
+        (project_dir / "project.yaml").write_text("""
+name: my-project
+repositories:
+  - https://github.com/org/repo
+slug: my-proj
+project_lead: "@alice"
+cncf_slack_channel: "#my-project"
+adopters:
+  path: ADOPTERS.md
+package_managers:
+  npm: my-project
+landscape:
+  category: Networking
+  subcategory: "Service Mesh"
+""")
+
+        mapper = DotProjectMapper(temp_dir)
+        context = mapper.get_context()
+
+        assert context.get("project.slug") == "my-proj"
+        assert context.get("project.project_lead") == "@alice"
+        assert context.get("project.cncf_slack_channel") == "#my-project"
+        assert context.get("project.adopters_path") == "ADOPTERS.md"
+        assert context.get("project.package_managers") == {"npm": "my-project"}
+        assert context.get("project.landscape.category") == "Networking"
+        assert context.get("project.landscape.subcategory") == "Service Mesh"
+
+
 class TestDotProjectConfigValidation:
     """Test ProjectConfig validation."""
 
