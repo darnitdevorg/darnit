@@ -301,6 +301,13 @@ class ProjectContext(BaseModel):
     has_compiled_assets: bool | None = None
     ci_provider: str | None = None
 
+    # Auto-detectable context (factual, safe to infer from filesystem)
+    platform: str | None = None
+    """Hosting platform - github, gitlab, bitbucket, or None."""
+
+    primary_language: str | None = None
+    """Primary programming language - python, go, rust, javascript, etc."""
+
     # New context keys for governance and security
     maintainers: list[str] | str | None = None
     """Project maintainers - list of GitHub usernames or path to MAINTAINERS file."""

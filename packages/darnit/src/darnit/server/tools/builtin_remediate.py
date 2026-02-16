@@ -111,6 +111,27 @@ async def builtin_remediate(
     if not all_controls:
         return "No controls found."
 
+    # Build project_context for when-clause evaluation (same as audit pipeline)
+    project_context: dict[str, Any] = {}
+    try:
+        from darnit.context.auto_detect import collect_auto_context
+
+        project_context = collect_auto_context(str(repo_path))
+    except Exception as e:
+        logger.debug("Auto-detect context failed (non-fatal): %s", e)
+
+    try:
+        from darnit.config.context_storage import (
+            flatten_user_context,
+            load_context,
+        )
+
+        user_context = load_context(str(repo_path))
+        if user_context:
+            project_context.update(flatten_user_context(user_context))
+    except Exception as e:
+        logger.debug("User context load failed (non-fatal): %s", e)
+
     # Determine which controls failed — use cached audit results if available
     from darnit.core.audit_cache import invalidate_audit_cache, read_audit_cache
     from darnit.core.utils import detect_owner_repo
@@ -140,6 +161,7 @@ async def builtin_remediate(
                     "name": control.name,
                     "description": control.description,
                 },
+                project_context=dict(project_context),
             )
             result = orchestrator.verify(control, context)
             if result.status == "FAIL":
@@ -165,6 +187,15 @@ async def builtin_remediate(
         if not control_cfg or not control_cfg.remediation:
             skipped.append((control_id, "no remediation defined"))
             continue
+
+        # Skip remediation if when clause doesn't match the environment
+        when_clause = getattr(control_cfg, "when", None)
+        if when_clause:
+            from darnit.sieve.orchestrator import evaluate_when_clause
+
+            if not evaluate_when_clause(when_clause, project_context):
+                skipped.append((control_id, f"N/A (when: {when_clause})"))
+                continue
 
         rem_cfg = control_cfg.remediation
 

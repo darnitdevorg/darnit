@@ -95,6 +95,15 @@ def load_context(local_path: str) -> ContextByCategory:
         if ci_context:
             context_by_category["ci"] = ci_context
 
+        # Platform category (auto-detected or user-confirmed)
+        platform_context: dict[str, ContextValue] = {}
+        if ctx.platform is not None:
+            platform_context["platform"] = ContextValue.user_confirmed(ctx.platform)
+        if ctx.primary_language is not None:
+            platform_context["primary_language"] = ContextValue.user_confirmed(ctx.primary_language)
+        if platform_context:
+            context_by_category["platform"] = platform_context
+
         # Governance category
         governance_context: dict[str, ContextValue] = {}
         if ctx.maintainers is not None:
@@ -112,6 +121,32 @@ def load_context(local_path: str) -> ContextByCategory:
             context_by_category["security"] = security_context
 
     return context_by_category
+
+
+def flatten_user_context(context_by_category: ContextByCategory) -> dict[str, Any]:
+    """Flatten categorized context into bare keys for ``when`` clause evaluation.
+
+    The ``when`` clause system uses bare keys like ``ci_provider``, ``has_releases``,
+    ``platform``, etc.  But :func:`load_context` returns categories like
+    ``{"ci": {"provider": ContextValue(...)}, "build": {"has_releases": ...}}``.
+
+    This helper resolves the mismatch by mapping ``category.key`` → bare key:
+    - ``ci.provider`` → ``ci_provider``
+    - Everything else keeps its stored key as-is (already bare)
+
+    Returns:
+        Flat dict mapping bare key → raw value.
+    """
+    flat: dict[str, Any] = {}
+    # Mapping of (category, stored_key) → bare key used in when clauses
+    remap = {
+        ("ci", "provider"): "ci_provider",
+    }
+    for category_name, category_values in context_by_category.items():
+        for stored_key, ctx_value in category_values.items():
+            bare_key = remap.get((category_name, stored_key), stored_key)
+            flat[bare_key] = ctx_value.value
+    return flat
 
 
 def get_context_value(
@@ -243,6 +278,9 @@ def save_context_value(
         "has_compiled_assets": "has_compiled_assets",
         "ci_provider": "ci_provider",
         "provider": "ci_provider",  # Alias for ci context
+        # Auto-detectable context
+        "platform": "platform",
+        "primary_language": "primary_language",
         # New governance and security context keys
         "maintainers": "maintainers",
         "security_contact": "security_contact",

@@ -25,6 +25,48 @@ from .models import (
 logger = get_logger("sieve.orchestrator")
 
 
+def evaluate_when_clause(when: dict[str, Any], context: dict[str, Any]) -> bool:
+    """Evaluate a ``when`` clause against a context dict.
+
+    Missing context keys → True (conservative: run the control).
+    Mismatched value → False (skip the control).
+
+    This is the single implementation used by both the audit pipeline
+    and the remediation pipeline.
+
+    Currently supports simple key-value equality with AND semantics.
+
+    .. todo::
+        Explore CEL expression support for ``when`` clauses to enable
+        OR conditions (``platform == "github" || platform == "gitlab"``),
+        negation (``platform != "bitbucket"``), and complex logic.
+        The schema would need to accept ``dict | str`` and route string
+        values through ``cel_evaluator.evaluate_cel()``.
+
+    Args:
+        when: Dict of key → expected_value from the TOML ``when`` field.
+        context: Flat dict of context values (e.g. from ``collect_auto_context``
+                 merged with user-confirmed context).
+
+    Returns:
+        True if the control should run, False if it should be skipped (N/A).
+    """
+    for key, expected in when.items():
+        actual = context.get(key)
+        if actual is None:
+            # Missing context key → run normally (conservative)
+            logger.debug(
+                "when key '%s' missing from context, running normally", key,
+            )
+            continue
+        if actual != expected:
+            logger.debug(
+                "when condition failed (%s=%r, expected %r)", key, actual, expected,
+            )
+            return False
+    return True
+
+
 class SieveOrchestrator:
     """
     Orchestrates the verification pipeline via handler dispatch.
@@ -64,38 +106,15 @@ class SieveOrchestrator:
         """Evaluate when clause for conditional applicability.
 
         Returns True if the control should run, False if N/A.
-        Missing context keys → control runs normally (conservative).
+        Delegates to the module-level :func:`evaluate_when_clause`.
         """
         when = control_spec.metadata.get("when")
         if not when:
             return True
 
-        for key, expected in when.items():
-            # Check project_context first, then control_metadata
-            actual = context.project_context.get(key)
-            if actual is None:
-                actual = context.control_metadata.get(key)
-
-            if actual is None:
-                # Missing context key → run normally (conservative)
-                logger.debug(
-                    "Control %s: when key '%s' missing from context, running normally",
-                    control_spec.control_id,
-                    key,
-                )
-                continue
-
-            if actual != expected:
-                logger.debug(
-                    "Control %s: when condition failed (%s=%r, expected %r)",
-                    control_spec.control_id,
-                    key,
-                    actual,
-                    expected,
-                )
-                return False
-
-        return True
+        # Merge project_context and control_metadata for lookup
+        merged = {**context.control_metadata, **context.project_context}
+        return evaluate_when_clause(when, merged)
 
     def _check_inferred_from(
         self, control_spec: ControlSpec

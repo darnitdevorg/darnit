@@ -977,6 +977,7 @@ timeout = 30
 name = "RequireMFA"
 description = "Require multi-factor authentication for organization members"
 tags = { level = 1, domain = "AC", security_severity = 9.0, access-control = true, authentication = true }
+when = { platform = "github" }
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-AC-01.01"
 help_md = """Enable MFA for all organization members with elevated permissions.
 
@@ -1032,6 +1033,7 @@ context_hints = ["org_admin_access"]
 name = "AllowForking"
 description = "Allow repository forking for public collaboration"
 tags = { level = 1, domain = "AC", access-control = true, collaboration = true }
+when = { platform = "github" }
 
 # ExecPass: Check if forking is allowed via GitHub API
 [[controls."OSPS-AC-02.01".passes]]
@@ -1073,6 +1075,7 @@ docs_url = "https://docs.github.com/en/repositories/managing-your-repositorys-se
 name = "PreventDirectCommits"
 description = "Prevent direct commits to primary branch"
 tags = { level = 1, domain = "AC", security_severity = 8.0, access-control = true, branch-protection = true }
+when = { platform = "github" }
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-AC-03.01"
 help_md = """Enable branch protection to require pull requests.
 
@@ -1119,6 +1122,7 @@ payload_template = "branch_protection_payload"
 name = "PreventBranchDeletion"
 description = "Prevent deletion of primary branch"
 tags = { level = 1, domain = "AC", access-control = true, branch-protection = true }
+when = { platform = "github" }
 
 # ExecPass: Check if branch deletion is prevented via branch protection
 [[controls."OSPS-AC-03.02".passes]]
@@ -1257,6 +1261,7 @@ context_hints = ["ci.provider"]
 name = "SecureRepositoryURL"
 description = "Repository URL uses HTTPS"
 tags = { level = 1, domain = "BR", build = true, security = true }
+when = { platform = "github" }
 
 # ExecPass: Verify repository URL uses HTTPS
 [[controls."OSPS-BR-03.01".passes]]
@@ -1336,7 +1341,7 @@ overwrite = false
 name = "UniqueVersionIdentifiers"
 description = "Assign unique version identifiers to each official release"
 tags = { level = 2, domain = "BR", build = true, releases = true }
-when = { has_releases = true }
+when = { has_releases = true, platform = "github" }
 
 # ExecPass: Check GitHub releases have unique version tags
 [[controls."OSPS-BR-02.01".passes]]
@@ -1372,7 +1377,7 @@ context_hints = ["build.has_releases"]
 name = "ReleaseChangelog"
 description = "Releases include log of functional and security modifications"
 tags = { level = 2, domain = "BR", build = true, releases = true, documentation = true }
-when = { has_releases = true }
+when = { has_releases = true, platform = "github" }
 help_md = """This control can be satisfied in two ways:
 
 1. **GitHub Releases with notes** (preferred for projects using GitHub releases):
@@ -1653,6 +1658,7 @@ steps = [
 name = "PublicDiscussion"
 description = "Enable public discussion mechanisms"
 tags = { level = 1, domain = "GV", governance = true, community = true }
+when = { platform = "github" }
 
 # ExecPass: Check if Issues or Discussions are enabled
 [[controls."OSPS-GV-02.01".passes]]
@@ -1753,6 +1759,7 @@ set = { "legal.license.path" = "LICENSE" }
 name = "OSIApprovedLicense"
 description = "License is OSI-approved"
 tags = { level = 1, domain = "LE", legal = true, license = true }
+when = { platform = "github" }
 
 # ExecPass: Check if license is OSI-approved via GitHub's license detection
 [[controls."OSPS-LE-02.01".passes]]
@@ -1777,6 +1784,7 @@ steps = [
 name = "ReleaseLicense"
 description = "Releases include license information"
 tags = { level = 1, domain = "LE", legal = true, license = true }
+when = { platform = "github" }
 
 # Check that releases have license info (via release notes or included files)
 [[controls."OSPS-LE-02.02".passes]]
@@ -1820,7 +1828,7 @@ steps = [
 name = "LicenseInReleases"
 description = "License file included in releases"
 tags = { level = 1, domain = "LE", legal = true, license = true }
-when = { has_releases = true }
+when = { has_releases = true, platform = "github" }
 inferred_from = "OSPS-LE-03.01"  # If LICENSE exists in repo, GitHub auto-includes it in source archives
 
 # Check that release assets include license file
@@ -1848,6 +1856,7 @@ steps = [
 name = "PublicRepository"
 description = "Repository is publicly accessible"
 tags = { level = 1, domain = "QA", quality = true, transparency = true }
+when = { platform = "github" }
 
 # ExecPass: Use gh CLI to check repository visibility
 [[controls."OSPS-QA-01.01".passes]]
@@ -1891,6 +1900,7 @@ docs_url = "https://docs.github.com/en/repositories/managing-your-repositorys-se
 name = "PublicCommitHistory"
 description = "Commit history is publicly visible"
 tags = { level = 1, domain = "QA", quality = true, transparency = true }
+when = { platform = "github" }
 
 # ExecPass: Check that commit history is accessible
 [[controls."OSPS-QA-01.02".passes]]
@@ -1959,11 +1969,7 @@ steps = [
 name = "DocumentSubprojects"
 description = "Subprojects are documented"
 tags = { level = 1, domain = "QA", quality = true, documentation = true }
-
-# Context-dependent: Only applies to projects with subprojects
-[controls."OSPS-QA-04.01".context]
-requires = "has_subprojects"
-not_applicable_if_false = true
+when = { has_subprojects = true }
 
 # Pattern: Look for subproject/module documentation
 [[controls."OSPS-QA-04.01".passes]]
@@ -2266,6 +2272,7 @@ overwrite = false
 name = "RequiredStatusChecks"
 description = "Branch protection requires status checks"
 tags = { level = 2, domain = "QA", quality = true, ci-cd = true }
+when = { platform = "github" }
 depends_on = ["OSPS-AC-03.01"]  # Requires branch protection to be enabled
 
 # ExecPass: Use gh CLI to check required status checks
@@ -2398,6 +2405,7 @@ docs_url = "https://docs.github.com/en/code-security/security-advisories/guidanc
 name = "PrivateReporting"
 description = "Private vulnerability reporting is enabled"
 tags = { level = 2, domain = "VM", security = true, vulnerability-management = true }
+when = { platform = "github" }
 
 [controls."OSPS-VM-03.01".locator]
 project_path = "security.policy"
@@ -2460,6 +2468,7 @@ docs_url = "https://docs.github.com/en/code-security/security-advisories/working
 name = "SecurityAdvisories"
 description = "Repository supports security advisories"
 tags = { level = 2, domain = "VM", security = true, vulnerability-management = true }
+when = { platform = "github" }
 
 # ExecPass: Check if security advisories are supported (requires Issues enabled)
 [[controls."OSPS-VM-04.01".passes]]
@@ -2542,6 +2551,7 @@ context_hints = ["ci.provider"]
 name = "ClearAssetAssociation"
 description = "Clearly associate all release assets with release identifiers"
 tags = { level = 3, domain = "BR", build = true, releases = true }
+when = { platform = "github" }
 
 # ExecPass: Check that releases have assets associated with tags
 [[controls."OSPS-BR-02.02".passes]]
@@ -2657,11 +2667,7 @@ context_hints = ["has_compiled_assets", "has_releases"]
 name = "SubprojectSecurity"
 description = "Subprojects enforce security as strict as primary codebase"
 tags = { level = 3, domain = "QA", quality = true, security = true }
-
-# Context-dependent: Only applies to projects with subprojects
-[controls."OSPS-QA-04.02".context]
-requires = "has_subprojects"
-not_applicable_if_false = true
+when = { has_subprojects = true }
 
 # Pattern: Check for consistent security configuration across subprojects
 [[controls."OSPS-QA-04.02".passes]]
@@ -2698,6 +2704,7 @@ context_hints = ["has_subprojects"]
 name = "RequiredApprovals"
 description = "Pull requests require approval before merge"
 tags = { level = 3, domain = "QA", quality = true, code-review = true }
+when = { platform = "github" }
 
 # ExecPass: Check if branch protection requires approvals
 [[controls."OSPS-QA-07.01".passes]]

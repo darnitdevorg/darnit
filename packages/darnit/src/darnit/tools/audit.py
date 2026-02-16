@@ -418,6 +418,33 @@ def run_sieve_audit(
     orchestrator = SieveOrchestrator(stop_on_llm=stop_on_llm)
     all_results = []
 
+    # Build project_context once for all controls.
+    # Auto-detected values (platform, ci_provider, language) are overridden
+    # by user-confirmed values from .project.yaml.
+    project_context: dict[str, Any] = {}
+    try:
+        from darnit.context.auto_detect import collect_auto_context
+
+        project_context = collect_auto_context(local_path)
+    except Exception as e:
+        logger.debug("Auto-detect context failed (non-fatal): %s", e)
+
+    try:
+        from darnit.config.context_storage import (
+            flatten_user_context,
+            load_context,
+        )
+
+        user_context = load_context(local_path)
+        if user_context:
+            # User-confirmed values override auto-detected ones
+            project_context.update(flatten_user_context(user_context))
+    except Exception as e:
+        logger.debug("User context load failed (non-fatal): %s", e)
+
+    if project_context:
+        logger.info("Project context for when-clause evaluation: %s", project_context)
+
     # Create UnifiedLocator for .project/-aware file resolution
     locator = None
     try:
@@ -457,6 +484,7 @@ def run_sieve_audit(
             },
             locator=locator,
             locator_config=spec.locator_config,
+            project_context=dict(project_context),
         )
 
         # Run sieve verification
