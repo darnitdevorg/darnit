@@ -49,6 +49,7 @@ class RemediationResult:
     remediation_type: str  # "file_create", "exec", "api_call", "handler"
     dry_run: bool
     details: dict[str, Any]
+    needs_review: bool = False  # True when safe=false — changes may alter behavior
 
     def to_markdown(self) -> str:
         """Format result as markdown."""

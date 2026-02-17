@@ -205,6 +205,8 @@ async def builtin_remediate(
             continue
 
         result = executor.execute(control_id, rem_cfg, dry_run=dry_run)
+        if not rem_cfg.safe:
+            result.needs_review = True
         remediation_results.append(result)
 
         # Apply project_update if the remediation succeeded and has one
@@ -273,7 +275,8 @@ def _format_remediation_report(
         lines.append(f"## {verb} ({len(succeeded)})")
         lines.append("")
         for r in succeeded:
-            lines.append(f"- **{r.control_id}**: {r.message}")
+            review_tag = " **⚠️ REVIEW REQUIRED**" if r.needs_review else ""
+            lines.append(f"- **{r.control_id}**: {r.message}{review_tag}")
         lines.append("")
 
     if errored:
@@ -289,6 +292,24 @@ def _format_remediation_report(
         for cid, reason in skipped:
             lines.append(f"- **{cid}**: {reason}")
         lines.append("")
+
+    # Surface review warnings for unsafe remediations
+    review_results = [r for r in results if r.needs_review and r.success]
+    if review_results:
+        lines.append("## ⚠️ Changes Requiring Review")
+        lines.append("")
+        lines.append(
+            "The following remediations may modify application behavior "
+            "(e.g., rewriting workflow expressions, changing CI/CD configuration). "
+            "**Review the changes before committing.**"
+        )
+        lines.append("")
+        for r in review_results:
+            lines.append(f"- **{r.control_id}**: {r.message}")
+        lines.append("")
+        if not dry_run:
+            lines.append("Use `git diff` to inspect all modifications.")
+            lines.append("")
 
     if not dry_run and succeeded:
         lines.append("Run the audit tool to verify the fixes.")
