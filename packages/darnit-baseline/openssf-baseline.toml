@@ -1190,6 +1190,15 @@ run: |
 ```
 """
 
+# Primary: Run zizmor static analysis for template injection
+[[controls."OSPS-BR-01.01".passes]]
+handler = "exec"
+command = ["zizmor", "--format", "json", "--offline", "$PATH"]
+output_format = "json"
+expr = '!output.json.exists(f, f.ident == "template-injection")'
+timeout = 60
+
+# Fallback: regex scan for common injection patterns (if zizmor not installed)
 [[controls."OSPS-BR-01.01".passes]]
 handler = "pattern"
 files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]

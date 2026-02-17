@@ -20,6 +20,16 @@ pip install darnit-baseline
 
 This will automatically install `darnit` as a dependency.
 
+## External Tool Dependencies
+
+Some controls use external tools for deeper analysis. These are **optional** — controls gracefully fall back to built-in pattern matching when a tool is unavailable.
+
+| Tool | Controls | Purpose | Install |
+|------|----------|---------|---------|
+| [zizmor](https://docs.zizmor.sh/) | OSPS-BR-01.01 | GitHub Actions static analysis (template injection detection) | `cargo install zizmor` or `brew install zizmor` |
+| [gh](https://cli.github.com/) | BR-02.*, LE-02.*, LE-03.02, QA-01.02 | GitHub API queries (releases, commits) | `brew install gh` |
+| [jq](https://jqlang.github.io/jq/) | — | JSON processing (used internally by some exec passes) | `brew install jq` |
+
 ## Usage
 
 The implementation registers automatically via Python entry points:
