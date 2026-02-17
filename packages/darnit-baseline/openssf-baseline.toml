@@ -1216,9 +1216,17 @@ steps = [
 ]
 
 [controls."OSPS-BR-01.01".remediation]
-safe = false
+safe = true
 dry_run_supported = false
 
+# Primary: zizmor auto-fix moves ${{ }} expressions into env: variables
+[[controls."OSPS-BR-01.01".remediation.handlers]]
+handler = "exec"
+command = ["zizmor", "--fix", "--offline", "$PATH"]
+pass_exit_codes = [0, 11, 12, 13, 14]
+timeout = 60
+
+# Fallback: manual remediation steps
 [[controls."OSPS-BR-01.01".remediation.handlers]]
 handler = "manual"
 steps = [
