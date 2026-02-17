@@ -199,13 +199,9 @@ async def builtin_remediate(
 
         rem_cfg = control_cfg.remediation
 
-        # Only apply declarative remediations (file_create, exec, api_call)
-        has_declarative = rem_cfg.file_create or rem_cfg.exec or rem_cfg.api_call
-        if not has_declarative:
-            if rem_cfg.handler:
-                skipped.append((control_id, f"handler-only remediation: {rem_cfg.handler}"))
-            else:
-                skipped.append((control_id, "no declarative remediation"))
+        # Skip controls with no remediation handlers defined
+        if not rem_cfg.handlers:
+            skipped.append((control_id, "no remediation handlers defined"))
             continue
 
         result = executor.execute(control_id, rem_cfg, dry_run=dry_run)
