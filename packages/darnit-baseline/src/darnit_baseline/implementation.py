@@ -68,9 +68,38 @@ class OSPSBaselineImplementation:
         return OSPS_RULES
 
     def get_remediation_registry(self) -> dict[str, Any]:
-        """Get the remediation category registry for auto-fixes."""
-        from .remediation.orchestrator import REMEDIATION_CATEGORIES
-        return REMEDIATION_CATEGORIES
+        """Get remediation metadata derived from TOML.
+
+        Returns a dict mapping control IDs to their remediation metadata
+        (safe, requires_api, handler types).  This replaces the former
+        hardcoded REMEDIATION_CATEGORIES dict.
+        """
+        registry: dict[str, Any] = {}
+        try:
+            import tomllib
+
+            toml_path = self.get_framework_config_path()
+            if not toml_path or not toml_path.exists():
+                return registry
+
+            with open(toml_path, "rb") as f:
+                data = tomllib.load(f)
+
+            from darnit.config.framework_schema import FrameworkConfig
+
+            fw = FrameworkConfig(**data)
+            for cid, control in fw.controls.items():
+                if control.remediation and control.remediation.handlers:
+                    handler_types = [h.handler for h in control.remediation.handlers]
+                    registry[cid] = {
+                        "description": control.description or cid,
+                        "safe": control.remediation.safe,
+                        "requires_api": control.remediation.requires_api,
+                        "handler_types": handler_types,
+                    }
+        except Exception:
+            pass  # Best-effort
+        return registry
 
     def get_framework_config_path(self) -> Path | None:
         """Get path to the OpenSSF Baseline framework TOML file.

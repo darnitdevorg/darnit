@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from darnit.config.loader import clear_config_cache
-from darnit_baseline.remediation.orchestrator import _apply_remediation
+from darnit_baseline.remediation.orchestrator import _apply_control_remediation
 
 
 @pytest.fixture(autouse=True)
@@ -67,42 +67,29 @@ version: "1.0"
 class TestProjectConfigIntegration:
     """Test that remediation respects .project/ control overrides."""
 
-    def test_skip_remediation_for_na_controls(self, tmp_path):
-        """Test that remediation is skipped when all controls are marked N/A."""
-        # Create .project/ config with all security_policy controls as N/A
-        # security_policy now covers: VM-01.01, VM-02.01, VM-03.01, VM-04.02
+    def test_skip_remediation_for_na_control(self, tmp_path):
+        """Test that remediation is skipped when a control is marked N/A."""
         _create_project_config(
             tmp_path,
             control_overrides={
-                "OSPS-VM-01.01": {"status": "n/a", "reason": "Security policy exists in parent organization"},
                 "OSPS-VM-02.01": {"status": "n/a", "reason": "Security policy exists in parent organization"},
-                "OSPS-VM-03.01": {"status": "n/a", "reason": "Security policy exists in parent organization"},
-                "OSPS-VM-04.02": {"status": "n/a", "reason": "VEX policy managed externally"},
             }
         )
 
-        # Try to apply security_policy remediation
-        result = _apply_remediation(
-            category="security_policy",
+        result = _apply_control_remediation(
+            control_id="OSPS-VM-02.01",
             local_path=str(tmp_path),
             owner="test-owner",
             repo="test-repo",
             dry_run=True,
         )
 
-        # Should be skipped since all controls are N/A
         assert result["status"] == "skipped"
-        assert result["category"] == "security_policy"
-        assert "skipped_controls" in result
-        assert len(result["skipped_controls"]) == 4
+        assert result["control_id"] == "OSPS-VM-02.01"
 
-        # Verify the reason is included for each skipped control
-        reasons = [s["reason"] for s in result["skipped_controls"]]
-        assert all(len(r) > 0 for r in reasons)  # All should have a reason
-
-    def test_partial_na_controls(self, tmp_path):
-        """Test that remediation runs when only some controls are N/A."""
-        # Create .project/ config with only some controls marked N/A
+    def test_remediation_proceeds_for_applicable_control(self, tmp_path):
+        """Test that remediation proceeds when a different control is N/A."""
+        # Mark VM-01.01 as N/A but VM-02.01 is still applicable
         _create_project_config(
             tmp_path,
             control_overrides={
@@ -110,44 +97,32 @@ class TestProjectConfigIntegration:
             }
         )
 
-        # Try to apply security_policy remediation
-        result = _apply_remediation(
-            category="security_policy",
+        result = _apply_control_remediation(
+            control_id="OSPS-VM-02.01",
             local_path=str(tmp_path),
             owner="test-owner",
             repo="test-repo",
             dry_run=True,
         )
 
-        # Should proceed with remediation (would_apply)
         assert result["status"] == "would_apply"
-        assert result["category"] == "security_policy"
-
-        # Should include info about the skipped control
-        if "skipped_controls" in result:
-            assert len(result["skipped_controls"]) == 1
-            assert result["skipped_controls"][0]["id"] == "OSPS-VM-01.01"
+        assert result["control_id"] == "OSPS-VM-02.01"
 
     def test_remediation_proceeds_without_project_config(self, tmp_path):
         """Test that remediation proceeds normally without .project/ config."""
-        # No .project/ directory
-
-        result = _apply_remediation(
-            category="security_policy",
+        result = _apply_control_remediation(
+            control_id="OSPS-VM-02.01",
             local_path=str(tmp_path),
             owner="test-owner",
             repo="test-repo",
             dry_run=True,
         )
 
-        # Should proceed with remediation
         assert result["status"] == "would_apply"
-        assert result["category"] == "security_policy"
-        assert "skipped_controls" not in result or len(result.get("skipped_controls", [])) == 0
+        assert result["control_id"] == "OSPS-VM-02.01"
 
     def test_remediation_with_enabled_override(self, tmp_path):
         """Test that enabled status doesn't skip remediation."""
-        # Create .project/ config with enabled status
         _create_project_config(
             tmp_path,
             control_overrides={
@@ -155,17 +130,16 @@ class TestProjectConfigIntegration:
             }
         )
 
-        result = _apply_remediation(
-            category="security_policy",
+        result = _apply_control_remediation(
+            control_id="OSPS-VM-02.01",
             local_path=str(tmp_path),
             owner="test-owner",
             repo="test-repo",
             dry_run=True,
         )
 
-        # Should proceed with remediation
         assert result["status"] == "would_apply"
-        assert result["category"] == "security_policy"
+        assert result["control_id"] == "OSPS-VM-02.01"
 
 
 class TestDeclarativeRemediationWithProjectConfig:
@@ -173,24 +147,21 @@ class TestDeclarativeRemediationWithProjectConfig:
 
     def test_declarative_remediation_respects_na(self, tmp_path):
         """Test that declarative TOML remediation respects N/A status."""
-        # Create .project/ config marking contributing controls as N/A
         _create_project_config(
             tmp_path,
             control_overrides={
                 "OSPS-GV-03.01": {"status": "n/a", "reason": "Contributing guide maintained externally"},
-                "OSPS-GV-03.02": {"status": "n/a", "reason": "Contributing guide maintained externally"},
             }
         )
 
-        result = _apply_remediation(
-            category="contributing",
+        result = _apply_control_remediation(
+            control_id="OSPS-GV-03.01",
             local_path=str(tmp_path),
             owner="test-owner",
             repo="test-repo",
             dry_run=True,
         )
 
-        # Should be skipped
         assert result["status"] == "skipped"
         assert "Contributing guide maintained externally" in str(result)
 
@@ -200,22 +171,17 @@ class TestConfigUpdateAfterRemediation:
 
     def test_config_updated_after_file_create(self, tmp_path):
         """Test that .project/ is updated after creating a file."""
-        # Create minimal .project/ config
         _create_project_config(tmp_path)
 
-        # Run remediation (not dry_run)
-        result = _apply_remediation(
-            category="security_policy",
+        result = _apply_control_remediation(
+            control_id="OSPS-VM-02.01",
             local_path=str(tmp_path),
             owner="test-owner",
             repo="test-repo",
-            dry_run=False,  # Actually apply
+            dry_run=False,
         )
 
-        # Should succeed
         assert result["status"] == "applied"
-
-        # Should indicate config was updated
         assert result.get("config_updated") is True
 
         # Verify .project/ was updated with the reference
@@ -230,19 +196,16 @@ class TestConfigUpdateAfterRemediation:
 
     def test_config_not_updated_on_dry_run(self, tmp_path):
         """Test that .project/ is NOT updated on dry run."""
-        # Create minimal .project/ config
         _create_project_config(tmp_path)
 
-        # Run remediation (dry_run)
-        result = _apply_remediation(
-            category="security_policy",
+        result = _apply_control_remediation(
+            control_id="OSPS-VM-02.01",
             local_path=str(tmp_path),
             owner="test-owner",
             repo="test-repo",
-            dry_run=True,  # Dry run only
+            dry_run=True,
         )
 
-        # Should show would_apply
         assert result["status"] == "would_apply"
 
         # .project/ should NOT be updated
@@ -251,28 +214,22 @@ class TestConfigUpdateAfterRemediation:
 
         config = load_project_config(str(tmp_path))
         assert config is not None
-        # security.policy should still be None (not set)
         if config.security:
             assert config.security.policy is None
 
     def test_config_created_if_missing(self, tmp_path):
         """Test that .project/ is created if it doesn't exist."""
-        # No .project/ directory
-
-        # Run remediation
-        result = _apply_remediation(
-            category="security_policy",
+        result = _apply_control_remediation(
+            control_id="OSPS-VM-02.01",
             local_path=str(tmp_path),
             owner="test-owner",
             repo="test-repo",
             dry_run=False,
         )
 
-        # Should succeed
         assert result["status"] == "applied"
         assert result.get("config_updated") is True
 
-        # .project/ should now exist with reference
         assert (tmp_path / ".project" / "project.yaml").exists()
 
         clear_config_cache()

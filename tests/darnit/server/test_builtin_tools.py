@@ -16,7 +16,6 @@ class TestBuiltinToolsRegistry:
     def test_builtin_tools_available(self):
         """All expected built-in tools are registered."""
         assert "audit" in BUILTIN_TOOLS
-        assert "remediate" in BUILTIN_TOOLS
         assert "list_controls" in BUILTIN_TOOLS
 
     def test_builtin_tools_callable(self):

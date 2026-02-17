@@ -39,7 +39,7 @@ class TestOrchestratorCacheHit:
         """With a cache hit, _run_baseline_checks should NOT be called."""
         run_checks_mock = MagicMock()
         apply_mock = MagicMock(
-            return_value={"status": "would_apply", "category": "support_doc"},
+            return_value={"status": "would_apply", "control_id": "OSPS-DO-02.01"},
         )
 
         with (
@@ -64,7 +64,7 @@ class TestOrchestratorCacheHit:
                 return_value=(True, {}),
             ),
             patch(
-                "darnit_baseline.remediation.orchestrator._apply_remediation",
+                "darnit_baseline.remediation.orchestrator._apply_control_remediation",
                 apply_mock,
             ),
         ):
@@ -78,10 +78,10 @@ class TestOrchestratorCacheHit:
             # _run_baseline_checks should NOT have been called
             run_checks_mock.assert_not_called()
 
-    def test_cache_hit_passes_only_fail_ids(self, tmp_path, cached_results):
-        """Cache hit should pass only FAIL IDs (not WARN) to _apply_remediation."""
+    def test_cache_hit_only_remediates_fail_controls(self, tmp_path, cached_results):
+        """Cache hit should only call _apply_control_remediation for FAIL IDs."""
         apply_mock = MagicMock(
-            return_value={"status": "would_apply", "category": "test"},
+            return_value={"status": "would_apply", "control_id": "test"},
         )
 
         with (
@@ -102,7 +102,7 @@ class TestOrchestratorCacheHit:
                 return_value=(True, {}),
             ),
             patch(
-                "darnit_baseline.remediation.orchestrator._apply_remediation",
+                "darnit_baseline.remediation.orchestrator._apply_control_remediation",
                 apply_mock,
             ),
         ):
@@ -113,16 +113,20 @@ class TestOrchestratorCacheHit:
                 dry_run=True,
             )
 
-            # Every call to _apply_remediation should receive only FAIL IDs
-            for call in apply_mock.call_args_list:
-                passed_ids = call.kwargs.get("non_passing_ids") or call[1].get(
-                    "non_passing_ids"
-                )
-                assert passed_ids == {"OSPS-DO-02.01", "OSPS-DO-03.01"}, (
-                    f"Expected only FAIL IDs, got {passed_ids}"
-                )
-                # WARN control should NOT be included
-                assert "OSPS-VM-01.01" not in passed_ids
+            # Only FAIL controls should have been remediated
+            remediated_ids = {
+                call.kwargs.get("control_id") or call[1].get("control_id")
+                for call in apply_mock.call_args_list
+            }
+            # PASS control should NOT be included
+            assert "OSPS-AC-01.01" not in remediated_ids
+            # WARN control should NOT be included
+            assert "OSPS-VM-01.01" not in remediated_ids
+            # FAIL controls with remediation handlers should be included
+            # (only if they have TOML remediation defined)
+            for cid in remediated_ids:
+                assert cid in {"OSPS-DO-02.01", "OSPS-DO-03.01"}, \
+                    f"Unexpected control remediated: {cid}"
 
 
 class TestOrchestratorCacheMiss:
@@ -157,8 +161,8 @@ class TestOrchestratorCacheMiss:
                 return_value=(True, {}),
             ),
             patch(
-                "darnit_baseline.remediation.orchestrator._apply_remediation",
-                return_value={"status": "would_apply", "category": "support_doc"},
+                "darnit_baseline.remediation.orchestrator._apply_control_remediation",
+                return_value={"status": "would_apply", "control_id": "OSPS-DO-02.01"},
             ),
         ):
             from darnit_baseline.remediation.orchestrator import remediate_audit_findings
@@ -180,7 +184,7 @@ class TestOrchestratorCacheMiss:
         ]
 
         apply_mock = MagicMock(
-            return_value={"status": "would_apply", "category": "test"},
+            return_value={"status": "would_apply", "control_id": "test"},
         )
 
         with (
@@ -205,7 +209,7 @@ class TestOrchestratorCacheMiss:
                 return_value=(True, {}),
             ),
             patch(
-                "darnit_baseline.remediation.orchestrator._apply_remediation",
+                "darnit_baseline.remediation.orchestrator._apply_control_remediation",
                 apply_mock,
             ),
         ):
@@ -216,12 +220,12 @@ class TestOrchestratorCacheMiss:
                 dry_run=True,
             )
 
-            for call in apply_mock.call_args_list:
-                passed_ids = call.kwargs.get("non_passing_ids") or call[1].get(
-                    "non_passing_ids"
-                )
-                assert passed_ids == {"OSPS-DO-02.01"}
-                assert "OSPS-VM-01.01" not in passed_ids
+            remediated_ids = {
+                call.kwargs.get("control_id") or call[1].get("control_id")
+                for call in apply_mock.call_args_list
+            }
+            assert "OSPS-VM-01.01" not in remediated_ids
+            assert "OSPS-AC-01.01" not in remediated_ids
 
 
 class TestOrchestratorCacheInvalidation:
@@ -253,8 +257,8 @@ class TestOrchestratorCacheInvalidation:
                 return_value=(True, {}),
             ),
             patch(
-                "darnit_baseline.remediation.orchestrator._apply_remediation",
-                return_value={"status": "applied", "category": "support_doc"},
+                "darnit_baseline.remediation.orchestrator._apply_control_remediation",
+                return_value={"status": "applied", "control_id": "OSPS-DO-02.01"},
             ),
         ):
             from darnit_baseline.remediation.orchestrator import remediate_audit_findings
@@ -292,8 +296,8 @@ class TestOrchestratorCacheInvalidation:
                 return_value=(True, {}),
             ),
             patch(
-                "darnit_baseline.remediation.orchestrator._apply_remediation",
-                return_value={"status": "would_apply", "category": "support_doc"},
+                "darnit_baseline.remediation.orchestrator._apply_control_remediation",
+                return_value={"status": "would_apply", "control_id": "OSPS-DO-02.01"},
             ),
         ):
             from darnit_baseline.remediation.orchestrator import remediate_audit_findings

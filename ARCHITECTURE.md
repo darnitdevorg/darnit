@@ -506,7 +506,6 @@ For detailed mermaid diagrams of audit internals, remediation flow, context life
 | | `remediation/helpers.py` | Common remediation utilities |
 | **Server** | `server/factory.py` | MCP server assembly from TOML + plugins |
 | | `server/tools/builtin_audit.py` | Built-in `audit` MCP tool |
-| | `server/tools/builtin_remediate.py` | Built-in `remediate` MCP tool |
 | | `server/tools/builtin_list.py` | Built-in `list_controls` MCP tool |
 | | `server/tools/project_context.py` | `get_pending_context`, `confirm_project_context` tools |
 

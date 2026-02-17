@@ -12,7 +12,7 @@ The bug this prevents:
 These tests explicitly verify that:
 1. dry_run=True still returns "needs_confirmation" when context is missing
 2. dry_run=False still returns "needs_confirmation" when context is missing
-3. All categories that require context (codeowners, maintainers, governance) prompt correctly
+3. All controls that require context (codeowners, governance) prompt correctly
 4. After confirmation, both dry_run modes proceed correctly
 """
 
@@ -43,32 +43,31 @@ class TestContextValidationInDryRunMode:
     """
 
     @pytest.mark.unit
-    def test_maintainers_needs_confirmation_in_dry_run_true(self, temp_repo):
-        """dry_run=True MUST still return needs_confirmation for maintainers."""
-        from darnit_baseline.remediation.orchestrator import _apply_remediation
+    def test_governance_needs_confirmation_in_dry_run_true(self, temp_repo):
+        """dry_run=True MUST still return needs_confirmation for GV-01.01."""
+        from darnit_baseline.remediation.orchestrator import _apply_control_remediation
 
-        result = _apply_remediation(
-            category="governance",
+        result = _apply_control_remediation(
+            control_id="OSPS-GV-01.01",
             local_path=temp_repo,
             owner="test-owner",
             repo="test-repo",
-            dry_run=True,  # This is the default in tools.py
+            dry_run=True,
         )
 
-        # CRITICAL: Must return needs_confirmation, NOT skip the check
         assert result["status"] == "needs_confirmation", \
             f"dry_run=True bypassed context validation! Got status: {result['status']}"
-        assert result["category"] == "governance"
+        assert result["control_id"] == "OSPS-GV-01.01"
         assert "maintainers" in result.get("missing_context", [])
         assert "confirm_project_context" in result.get("result", "")
 
     @pytest.mark.unit
     def test_codeowners_needs_confirmation_in_dry_run_true(self, temp_repo):
-        """dry_run=True MUST still return needs_confirmation for codeowners."""
-        from darnit_baseline.remediation.orchestrator import _apply_remediation
+        """dry_run=True MUST still return needs_confirmation for GV-04.01."""
+        from darnit_baseline.remediation.orchestrator import _apply_control_remediation
 
-        result = _apply_remediation(
-            category="codeowners",
+        result = _apply_control_remediation(
+            control_id="OSPS-GV-04.01",
             local_path=temp_repo,
             owner="test-owner",
             repo="test-repo",
@@ -77,25 +76,7 @@ class TestContextValidationInDryRunMode:
 
         assert result["status"] == "needs_confirmation", \
             f"dry_run=True bypassed context validation! Got status: {result['status']}"
-        assert result["category"] == "codeowners"
-        assert "maintainers" in result.get("missing_context", [])
-
-    @pytest.mark.unit
-    def test_governance_needs_confirmation_in_dry_run_true(self, temp_repo):
-        """dry_run=True MUST still return needs_confirmation for governance."""
-        from darnit_baseline.remediation.orchestrator import _apply_remediation
-
-        result = _apply_remediation(
-            category="governance",
-            local_path=temp_repo,
-            owner="test-owner",
-            repo="test-repo",
-            dry_run=True,
-        )
-
-        assert result["status"] == "needs_confirmation", \
-            f"dry_run=True bypassed context validation! Got status: {result['status']}"
-        assert result["category"] == "governance"
+        assert result["control_id"] == "OSPS-GV-04.01"
         assert "maintainers" in result.get("missing_context", [])
 
 
@@ -103,12 +84,12 @@ class TestContextValidationInDryRunFalse:
     """Verify context validation also happens when dry_run=False."""
 
     @pytest.mark.unit
-    def test_maintainers_needs_confirmation_in_dry_run_false(self, temp_repo):
-        """dry_run=False must return needs_confirmation for maintainers."""
-        from darnit_baseline.remediation.orchestrator import _apply_remediation
+    def test_governance_needs_confirmation_in_dry_run_false(self, temp_repo):
+        """dry_run=False must return needs_confirmation for GV-01.01."""
+        from darnit_baseline.remediation.orchestrator import _apply_control_remediation
 
-        result = _apply_remediation(
-            category="governance",
+        result = _apply_control_remediation(
+            control_id="OSPS-GV-01.01",
             local_path=temp_repo,
             owner="test-owner",
             repo="test-repo",
@@ -116,16 +97,16 @@ class TestContextValidationInDryRunFalse:
         )
 
         assert result["status"] == "needs_confirmation"
-        assert result["category"] == "governance"
+        assert result["control_id"] == "OSPS-GV-01.01"
         assert "maintainers" in result.get("missing_context", [])
 
     @pytest.mark.unit
     def test_codeowners_needs_confirmation_in_dry_run_false(self, temp_repo):
-        """dry_run=False must return needs_confirmation for codeowners."""
-        from darnit_baseline.remediation.orchestrator import _apply_remediation
+        """dry_run=False must return needs_confirmation for GV-04.01."""
+        from darnit_baseline.remediation.orchestrator import _apply_control_remediation
 
-        result = _apply_remediation(
-            category="codeowners",
+        result = _apply_control_remediation(
+            control_id="OSPS-GV-04.01",
             local_path=temp_repo,
             owner="test-owner",
             repo="test-repo",
@@ -133,108 +114,74 @@ class TestContextValidationInDryRunFalse:
         )
 
         assert result["status"] == "needs_confirmation"
-        assert result["category"] == "codeowners"
-
-    @pytest.mark.unit
-    def test_governance_needs_confirmation_in_dry_run_false(self, temp_repo):
-        """dry_run=False must return needs_confirmation for governance."""
-        from darnit_baseline.remediation.orchestrator import _apply_remediation
-
-        result = _apply_remediation(
-            category="governance",
-            local_path=temp_repo,
-            owner="test-owner",
-            repo="test-repo",
-            dry_run=False,
-        )
-
-        assert result["status"] == "needs_confirmation"
-        assert result["category"] == "governance"
+        assert result["control_id"] == "OSPS-GV-04.01"
 
 
 class TestContextValidationAfterConfirmation:
     """Verify remediation proceeds after context is confirmed."""
 
     @pytest.mark.unit
-    def test_maintainers_proceeds_after_confirmation_dry_run_true(self, temp_repo):
+    def test_governance_proceeds_after_confirmation_dry_run_true(self, temp_repo):
         """After confirmation, dry_run=True should show preview (not needs_confirmation)."""
         from darnit.server.tools.project_context import confirm_project_context_impl
-        from darnit_baseline.remediation.orchestrator import _apply_remediation
+        from darnit_baseline.remediation.orchestrator import _apply_control_remediation
 
-        # First confirm maintainers
         confirm_project_context_impl(
             local_path=temp_repo,
             maintainers=["@alice", "@bob"],
         )
 
-        # Now try remediation
-        result = _apply_remediation(
-            category="governance",
+        result = _apply_control_remediation(
+            control_id="OSPS-GV-01.01",
             local_path=temp_repo,
             owner="test-owner",
             repo="test-repo",
             dry_run=True,
         )
 
-        # Should NOT be needs_confirmation anymore
         assert result["status"] != "needs_confirmation", \
             f"Still prompting after confirmation! Status: {result['status']}"
-        # Should be skipped (if file exists) or show preview
         assert result["status"] in ["skipped", "applied", "dry_run", "preview", "would_apply"]
 
     @pytest.mark.unit
-    def test_maintainers_proceeds_after_confirmation_dry_run_false(self, temp_repo):
+    def test_governance_proceeds_after_confirmation_dry_run_false(self, temp_repo):
         """After confirmation, dry_run=False should create the file."""
         from darnit.server.tools.project_context import confirm_project_context_impl
-        from darnit_baseline.remediation.orchestrator import _apply_remediation
+        from darnit_baseline.remediation.orchestrator import _apply_control_remediation
 
-        # First confirm maintainers
         confirm_project_context_impl(
             local_path=temp_repo,
             maintainers=["@alice", "@bob"],
         )
 
-        # Now try remediation
-        result = _apply_remediation(
-            category="governance",
+        result = _apply_control_remediation(
+            control_id="OSPS-GV-01.01",
             local_path=temp_repo,
             owner="test-owner",
             repo="test-repo",
             dry_run=False,
         )
 
-        # Should NOT be needs_confirmation anymore
         assert result["status"] != "needs_confirmation"
-        # File should be created (governance category creates GOVERNANCE.md)
         assert (Path(temp_repo) / "GOVERNANCE.md").exists()
 
 
-class TestAllContextRequiringCategories:
-    """Verify ALL categories that require context are properly tested."""
+class TestAllContextRequiringControls:
+    """Verify ALL controls that require context are properly tested."""
 
-    CONTEXT_REQUIRING_CATEGORIES = ["codeowners", "governance"]
-
-    @pytest.mark.unit
-    def test_categories_exist_in_registry(self):
-        """Verify expected categories exist in REMEDIATION_CATEGORIES."""
-        from darnit_baseline.remediation.orchestrator import REMEDIATION_CATEGORIES
-
-        for category in self.CONTEXT_REQUIRING_CATEGORIES:
-            assert category in REMEDIATION_CATEGORIES, f"Missing category: {category}"
-            info = REMEDIATION_CATEGORIES[category]
-            assert "controls" in info, \
-                f"Category {category} missing controls in registry"
-            assert len(info["controls"]) > 0, \
-                f"Category {category} has empty controls"
+    CONTEXT_REQUIRING_CONTROLS = [
+        "OSPS-GV-01.01",  # governance (requires maintainers)
+        "OSPS-GV-04.01",  # codeowners (requires maintainers)
+    ]
 
     @pytest.mark.unit
-    @pytest.mark.parametrize("category", CONTEXT_REQUIRING_CATEGORIES)
-    def test_each_category_prompts_in_dry_run_true(self, temp_repo, category):
-        """Parametrized test: each category must prompt in dry_run=True mode."""
-        from darnit_baseline.remediation.orchestrator import _apply_remediation
+    @pytest.mark.parametrize("control_id", CONTEXT_REQUIRING_CONTROLS)
+    def test_each_control_prompts_in_dry_run_true(self, temp_repo, control_id):
+        """Parametrized test: each control must prompt in dry_run=True mode."""
+        from darnit_baseline.remediation.orchestrator import _apply_control_remediation
 
-        result = _apply_remediation(
-            category=category,
+        result = _apply_control_remediation(
+            control_id=control_id,
             local_path=temp_repo,
             owner="test-owner",
             repo="test-repo",
@@ -242,16 +189,16 @@ class TestAllContextRequiringCategories:
         )
 
         assert result["status"] == "needs_confirmation", \
-            f"Category {category} with dry_run=True returned {result['status']} instead of needs_confirmation"
+            f"Control {control_id} with dry_run=True returned {result['status']} instead of needs_confirmation"
 
     @pytest.mark.unit
-    @pytest.mark.parametrize("category", CONTEXT_REQUIRING_CATEGORIES)
-    def test_each_category_prompts_in_dry_run_false(self, temp_repo, category):
-        """Parametrized test: each category must prompt in dry_run=False mode."""
-        from darnit_baseline.remediation.orchestrator import _apply_remediation
+    @pytest.mark.parametrize("control_id", CONTEXT_REQUIRING_CONTROLS)
+    def test_each_control_prompts_in_dry_run_false(self, temp_repo, control_id):
+        """Parametrized test: each control must prompt in dry_run=False mode."""
+        from darnit_baseline.remediation.orchestrator import _apply_control_remediation
 
-        result = _apply_remediation(
-            category=category,
+        result = _apply_control_remediation(
+            control_id=control_id,
             local_path=temp_repo,
             owner="test-owner",
             repo="test-repo",
@@ -259,7 +206,7 @@ class TestAllContextRequiringCategories:
         )
 
         assert result["status"] == "needs_confirmation", \
-            f"Category {category} with dry_run=False returned {result['status']} instead of needs_confirmation"
+            f"Control {control_id} with dry_run=False returned {result['status']} instead of needs_confirmation"
 
 
 class TestToolsDefaultBehavior:
@@ -270,16 +217,13 @@ class TestToolsDefaultBehavior:
         """remediate_audit_findings with default dry_run=True must show prompts."""
         from darnit_baseline.tools import remediate_audit_findings
 
-        # This is what gets called via MCP - default is dry_run=True
         result = remediate_audit_findings(
             local_path=temp_repo,
             owner="test-owner",
             repo="test-repo",
-            categories=["codeowners"],
-            # dry_run defaults to True
+            categories=["governance"],
         )
 
-        # Result should mention confirmation is needed
         assert "confirm" in result.lower() or "needs_confirmation" in result.lower(), \
             f"Tool with default dry_run didn't prompt for confirmation: {result[:200]}"
 
@@ -296,17 +240,12 @@ class TestToolsDefaultBehavior:
             dry_run=False,
         )
 
-        # Result should mention confirmation is needed
         assert "confirm" in result.lower() or "needs_confirmation" in result.lower(), \
             f"Tool with dry_run=False didn't prompt for confirmation: {result[:200]}"
 
 
 class TestFileReferenceRecommendation:
-    """CRITICAL: Verify that file references are recommended when governance files exist.
-
-    This prevents data duplication - instead of storing maintainer lists in .project/,
-    we should reference existing files like CODEOWNERS.
-    """
+    """CRITICAL: Verify that file references are recommended when governance files exist."""
 
     @pytest.fixture
     def temp_repo_with_codeowners(self):
@@ -333,12 +272,9 @@ class TestFileReferenceRecommendation:
             dry_run=True,
         )
 
-        # Should mention the CODEOWNERS file as authoritative source
         assert "CODEOWNERS" in result
         assert "authoritative" in result.lower()
-        # Should use placeholder command, NOT the filename
         assert 'maintainers=<user-confirmed values>' in result
-        # Should NOT suggest passing the filename directly
         assert 'maintainers="CODEOWNERS"' not in result
 
     @pytest.mark.unit
@@ -347,19 +283,16 @@ class TestFileReferenceRecommendation:
         from darnit.config.loader import load_project_config
         from darnit_baseline.tools import confirm_project_context
 
-        # Confirm maintainers by referencing CODEOWNERS
         confirm_project_context(
             local_path=temp_repo_with_codeowners,
             maintainers="CODEOWNERS",
         )
 
-        # Load the config and check what's stored
         config = load_project_config(temp_repo_with_codeowners)
         assert config is not None
         assert config.x_openssf_baseline is not None
         assert config.x_openssf_baseline.context is not None
 
-        # Should be stored as string (file reference), not list
         maintainers = config.x_openssf_baseline.context.maintainers
         assert isinstance(maintainers, str), \
             f"maintainers should be string (file ref), got {type(maintainers)}: {maintainers}"
@@ -367,27 +300,20 @@ class TestFileReferenceRecommendation:
 
 
 class TestPreflightContextCheck:
-    """CRITICAL: Verify pre-flight check blocks remediation until context is confirmed.
-
-    This prevents the AI from bypassing the prompt flow by ensuring ALL context
-    requirements are checked BEFORE any remediation starts.
-    """
+    """CRITICAL: Verify pre-flight check blocks remediation until context is confirmed."""
 
     @pytest.mark.unit
-    def test_preflight_blocks_multiple_categories(self, temp_repo):
-        """Pre-flight should aggregate context needs across multiple categories."""
+    def test_preflight_blocks_governance_domain(self, temp_repo):
+        """Pre-flight should aggregate context needs across governance controls."""
         from darnit_baseline.remediation.orchestrator import remediate_audit_findings
 
-        # Request multiple categories that need maintainers
         result = remediate_audit_findings(
             local_path=temp_repo,
-            categories=["codeowners", "governance"],
+            categories=["governance"],
             dry_run=True,
         )
 
-        # Should return early with context prompt (not "Would Apply")
         assert "BLOCKED: Remediation Cannot Proceed" in result
-        # Should NOT have "Would Apply" section - remediation blocked
         assert "Would Apply (0 remediations)" not in result or "Would Apply (0" in result
 
     @pytest.mark.unit
@@ -396,30 +322,23 @@ class TestPreflightContextCheck:
         from darnit.server.tools.project_context import confirm_project_context_impl
         from darnit_baseline.remediation.orchestrator import remediate_audit_findings
 
-        # First, confirm maintainers
         confirm_project_context_impl(
             local_path=temp_repo,
             maintainers=["@testuser"],
         )
 
-        # Now request remediation
         result = remediate_audit_findings(
             local_path=temp_repo,
-            categories=["codeowners"],
+            categories=["governance"],
             dry_run=True,
         )
 
-        # Should now show "Would Apply" (not "BLOCKED: Remediation Cannot Proceed")
         assert "Would Apply" in result
         assert "BLOCKED: Remediation Cannot Proceed" not in result
 
 
 class TestExplicitWarningAgainstDirectEdits:
-    """CRITICAL: Verify prompts include explicit warnings against direct file editing.
-
-    This prevents AI agents from bypassing the proper tool flow by directly
-    editing .project/ files instead of using confirm_project_context().
-    """
+    """CRITICAL: Verify prompts include explicit warnings against direct file editing."""
 
     @pytest.mark.unit
     def test_preflight_prompt_warns_against_direct_edits(self, temp_repo):
@@ -428,11 +347,10 @@ class TestExplicitWarningAgainstDirectEdits:
 
         result = remediate_audit_findings(
             local_path=temp_repo,
-            categories=["codeowners"],
+            categories=["governance"],
             dry_run=True,
         )
 
-        # CRITICAL: Must contain explicit warning
         assert "DO NOT" in result, \
             f"Pre-flight prompt missing 'DO NOT' warning: {result[:500]}"
         assert ".project/" in result or "project" in result.lower(), \
@@ -443,22 +361,50 @@ class TestExplicitWarningAgainstDirectEdits:
     @pytest.mark.unit
     def test_context_prompt_warns_against_direct_edits(self, temp_repo):
         """Individual context prompts MUST include warning about not editing files directly."""
-        from darnit_baseline.remediation.orchestrator import _apply_remediation
+        from darnit_baseline.remediation.orchestrator import _apply_control_remediation
 
-        result = _apply_remediation(
-            category="governance",
+        result = _apply_control_remediation(
+            control_id="OSPS-GV-01.01",
             local_path=temp_repo,
             owner="test-owner",
             repo="test-repo",
             dry_run=True,
         )
 
-        # Should be needs_confirmation with the prompt
         assert result["status"] == "needs_confirmation"
         prompt_text = result.get("result", "")
 
-        # CRITICAL: Must contain explicit warning
         assert "DO NOT" in prompt_text, \
             f"Context prompt missing 'DO NOT' warning: {prompt_text[:500]}"
         assert "confirm_project_context" in prompt_text, \
             f"Context prompt should mention the tool to use: {prompt_text[:500]}"
+
+
+class TestTomlRemediationReachability:
+    """Verify all controls with TOML remediation are reachable by the orchestrator."""
+
+    @pytest.mark.unit
+    def test_all_toml_remediation_controls_reachable(self):
+        """Every control with remediation.handlers in TOML must be reachable."""
+        from darnit_baseline.remediation.orchestrator import (
+            _get_declarative_remediation,
+            _get_framework_config,
+            _get_manual_remediation,
+        )
+
+        framework = _get_framework_config()
+        assert framework is not None
+
+        unreachable = []
+        for control_id, control in framework.controls.items():
+            if not control.remediation or not control.remediation.handlers:
+                continue
+
+            rem_config, _ = _get_declarative_remediation(control_id)
+            manual = _get_manual_remediation([control_id])
+
+            if rem_config is None and manual is None:
+                unreachable.append(control_id)
+
+        assert len(unreachable) == 0, \
+            f"Controls with TOML remediation but unreachable by orchestrator: {unreachable}"

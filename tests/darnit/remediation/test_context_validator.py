@@ -469,11 +469,11 @@ class TestOrchestratorContextIntegration:
     @pytest.mark.integration
     def test_orchestrator_checks_requirements_before_remediation(self, temp_repo):
         """Orchestrator should call validator before running function."""
-        from darnit_baseline.remediation.orchestrator import _apply_remediation
+        from darnit_baseline.remediation.orchestrator import _apply_control_remediation
 
-        # Run codeowners remediation without confirmation
-        result = _apply_remediation(
-            category="codeowners",
+        # Run codeowners control remediation without confirmation
+        result = _apply_control_remediation(
+            control_id="OSPS-GV-04.01",
             local_path=temp_repo,
             owner="test-owner",
             repo="test-repo",
@@ -488,10 +488,10 @@ class TestOrchestratorContextIntegration:
     @pytest.mark.integration
     def test_orchestrator_returns_needs_confirmation_status(self, temp_repo):
         """Status should be 'needs_confirmation' when context missing."""
-        from darnit_baseline.remediation.orchestrator import _apply_remediation
+        from darnit_baseline.remediation.orchestrator import _apply_control_remediation
 
-        result = _apply_remediation(
-            category="governance",
+        result = _apply_control_remediation(
+            control_id="OSPS-GV-01.01",
             local_path=temp_repo,
             owner="test-owner",
             repo="test-repo",
@@ -505,7 +505,7 @@ class TestOrchestratorContextIntegration:
     def test_orchestrator_proceeds_when_context_confirmed(self, temp_repo):
         """Remediation should run when all context is confirmed."""
         from darnit.server.tools.project_context import confirm_project_context_impl
-        from darnit_baseline.remediation.orchestrator import _apply_remediation
+        from darnit_baseline.remediation.orchestrator import _apply_control_remediation
 
         # First confirm maintainers
         confirm_result = confirm_project_context_impl(
@@ -515,18 +515,15 @@ class TestOrchestratorContextIntegration:
         assert "maintainers" in confirm_result
 
         # Now run remediation - should proceed
-        result = _apply_remediation(
-            category="codeowners",
+        result = _apply_control_remediation(
+            control_id="OSPS-GV-04.01",
             local_path=temp_repo,
             owner="test-owner",
             repo="test-repo",
             dry_run=False,
         )
 
-        # Should either be applied or still use legacy function logic
-        # (depends on whether orchestrator pre-check is primary or fallback)
         assert result["status"] in ["applied", "needs_confirmation"]
 
-        # If applied, file should exist
         if result["status"] == "applied":
             assert (Path(temp_repo) / "CODEOWNERS").exists()

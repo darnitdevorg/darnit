@@ -775,22 +775,18 @@ def remediate_audit_findings(
     """
     Apply automated remediations for failed audit controls.
 
-    Available categories:
-    - branch_protection: Enable branch protection
-    - security_policy: Create SECURITY.md
-    - codeowners: Create CODEOWNERS
-    - governance: Create GOVERNANCE.md
-    - contributing: Create CONTRIBUTING.md
-    - dco_enforcement: Configure DCO
-    - bug_report_template: Create bug report template
-    - dependabot: Configure Dependabot
-    - support_doc: Create SUPPORT.md
+    By default remediates ALL failed controls that have TOML-defined
+    remediation.  Use ``categories`` to filter to a subset by domain.
+
+    Domain-based category filters:
+    - access_control, build_release, documentation, governance, legal,
+      quality, security_architecture, vulnerability_management
 
     Args:
         local_path: ABSOLUTE path to repo
         owner: GitHub org/user (auto-detected if not provided)
         repo: Repository name (auto-detected if not provided)
-        categories: List of remediation categories, or ["all"] for all
+        categories: Optional filter — list of category names, or ["all"]
         dry_run: If True (default), show what would be changed without applying
 
     Returns:

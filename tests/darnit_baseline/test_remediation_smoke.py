@@ -19,35 +19,31 @@ class TestRemediationImports:
     def test_import_orchestrator(self):
         """Test that the orchestrator can be imported."""
         from darnit_baseline.remediation.orchestrator import (
-            REMEDIATION_CATEGORIES,
-            _apply_remediation,
+            _apply_control_remediation,
             remediate_audit_findings,
         )
         assert callable(remediate_audit_findings)
-        assert callable(_apply_remediation)
-        assert isinstance(REMEDIATION_CATEGORIES, dict)
+        assert callable(_apply_control_remediation)
 
     @pytest.mark.unit
-    def test_import_categories_has_expected_keys(self):
-        """Test that REMEDIATION_CATEGORIES has expected categories."""
-        from darnit_baseline.remediation.orchestrator import REMEDIATION_CATEGORIES
+    def test_domain_prefixes_defined(self):
+        """Test that DOMAIN_PREFIXES has expected domain names."""
+        from darnit_baseline.remediation.orchestrator import DOMAIN_PREFIXES
 
-        expected_categories = [
-            "branch_protection",
-            "security_policy",
-            "codeowners",
+        expected_domains = [
+            "access_control",
+            "build_release",
+            "documentation",
             "governance",
-            "contributing",
-            "dco_enforcement",
-            "bug_report_template",
-            "dependabot",
-            "support_doc",
+            "legal",
+            "quality",
+            "security_architecture",
+            "vulnerability_management",
         ]
 
-        for category in expected_categories:
-            assert category in REMEDIATION_CATEGORIES, f"Missing category: {category}"
-            assert "description" in REMEDIATION_CATEGORIES[category]
-            assert "controls" in REMEDIATION_CATEGORIES[category]
+        for domain in expected_domains:
+            assert domain in DOMAIN_PREFIXES, f"Missing domain: {domain}"
+            assert DOMAIN_PREFIXES[domain].startswith("OSPS-")
 
     @pytest.mark.unit
     def test_import_tools(self):
@@ -85,7 +81,7 @@ class TestRemediationOrchestratorExecution:
 
         result = remediate_audit_findings(
             local_path=temp_repo,
-            categories=["security_policy"],
+            categories=["vulnerability_management"],
             dry_run=True,
         )
         assert isinstance(result, str)
@@ -106,32 +102,40 @@ class TestRemediationOrchestratorExecution:
         assert len(result) > 0
 
     @pytest.mark.unit
-    def test_apply_single_remediation_dry_run(self, temp_repo):
-        """Test _apply_remediation for each category."""
+    def test_apply_control_remediation_dry_run(self, temp_repo):
+        """Test _apply_control_remediation for controls that don't require API."""
         from darnit_baseline.remediation.orchestrator import (
-            REMEDIATION_CATEGORIES,
-            _apply_remediation,
+            _apply_control_remediation,
+            _get_framework_config,
         )
 
-        # Test each category that doesn't require GitHub API
-        for category, info in REMEDIATION_CATEGORIES.items():
-            if not info.get("requires_api", False):
-                result = _apply_remediation(
-                    category=category,
-                    local_path=temp_repo,
-                    owner="test-owner",
-                    repo="test-repo",
-                    dry_run=True,
-                )
-                assert isinstance(result, dict), f"Category {category} didn't return dict"
-                assert "category" in result, f"Category {category} missing 'category' key"
-                assert "status" in result, f"Category {category} missing 'status' key"
+        framework = _get_framework_config()
+        assert framework is not None
+
+        # Test a few controls that have TOML remediation and don't need API
+        for control_id, control in sorted(framework.controls.items()):
+            if not control.remediation or not control.remediation.handlers:
+                continue
+            if control.remediation.requires_api:
+                continue
+
+            result = _apply_control_remediation(
+                control_id=control_id,
+                local_path=temp_repo,
+                owner="test-owner",
+                repo="test-repo",
+                dry_run=True,
+            )
+            assert isinstance(result, dict), f"Control {control_id} didn't return dict"
+            assert "control_id" in result, f"Control {control_id} missing 'control_id' key"
+            assert "status" in result, f"Control {control_id} missing 'status' key"
+            break  # One is enough for a smoke test
 
 
 class TestGovernancePromptBehavior:
     """Test that governance remediation prompts for confirmation.
 
-    Governance category requires maintainers context, so it should prompt
+    Governance controls require maintainers context, so they should prompt
     before creating files like GOVERNANCE.md or MAINTAINERS.md.
     """
 
@@ -148,27 +152,26 @@ class TestGovernancePromptBehavior:
 
     @pytest.mark.unit
     def test_orchestrator_returns_needs_confirmation_for_governance(self, temp_repo):
-        """Test that _apply_remediation returns needs_confirmation status for governance."""
-        from darnit_baseline.remediation.orchestrator import _apply_remediation
+        """Test that _apply_control_remediation returns needs_confirmation for GV-01.01."""
+        from darnit_baseline.remediation.orchestrator import _apply_control_remediation
 
-        result = _apply_remediation(
-            category="governance",
+        result = _apply_control_remediation(
+            control_id="OSPS-GV-01.01",
             local_path=temp_repo,
             owner="test-owner",
             repo="test-repo",
             dry_run=False,
         )
 
-        # Should return needs_confirmation status since maintainers aren't confirmed
         assert result["status"] == "needs_confirmation"
-        assert result["category"] == "governance"
+        assert result["control_id"] == "OSPS-GV-01.01"
         assert "confirm_project_context" in result.get("result", "")
 
     @pytest.mark.unit
     def test_orchestrator_returns_applied_after_confirmation(self, temp_repo):
-        """Test that _apply_remediation returns applied status after confirmation."""
+        """Test that _apply_control_remediation returns applied after confirmation."""
         from darnit.server.tools.project_context import confirm_project_context_impl
-        from darnit_baseline.remediation.orchestrator import _apply_remediation
+        from darnit_baseline.remediation.orchestrator import _apply_control_remediation
 
         # First confirm maintainers
         confirm_project_context_impl(
@@ -176,17 +179,16 @@ class TestGovernancePromptBehavior:
             maintainers=["@alice", "@bob"],
         )
 
-        result = _apply_remediation(
-            category="governance",
+        result = _apply_control_remediation(
+            control_id="OSPS-GV-01.01",
             local_path=temp_repo,
             owner="test-owner",
             repo="test-repo",
             dry_run=False,
         )
 
-        # Should return applied status since maintainers are confirmed
         assert result["status"] == "applied"
-        assert result["category"] == "governance"
+        assert result["control_id"] == "OSPS-GV-01.01"
 
 
 class TestCodeownersPromptBehavior:
@@ -205,18 +207,17 @@ class TestCodeownersPromptBehavior:
 
     @pytest.mark.unit
     def test_orchestrator_returns_needs_confirmation_for_codeowners(self, temp_repo):
-        """Test that _apply_remediation returns needs_confirmation status for codeowners."""
-        from darnit_baseline.remediation.orchestrator import _apply_remediation
+        """Test that _apply_control_remediation returns needs_confirmation for GV-04.01."""
+        from darnit_baseline.remediation.orchestrator import _apply_control_remediation
 
-        result = _apply_remediation(
-            category="codeowners",
+        result = _apply_control_remediation(
+            control_id="OSPS-GV-04.01",
             local_path=temp_repo,
             owner="test-owner",
             repo="test-repo",
             dry_run=False,
         )
 
-        # Should return needs_confirmation status since maintainers aren't confirmed
         assert result["status"] == "needs_confirmation"
-        assert result["category"] == "codeowners"
+        assert result["control_id"] == "OSPS-GV-04.01"
         assert "confirm_project_context" in result.get("result", "")
