@@ -447,6 +447,21 @@ maintainer availability. We appreciate your patience!
 ## Contributing
 
 Want to help improve $REPO? See our [Contributing Guide](CONTRIBUTING.md).
+
+## Support Scope
+
+| Version | Status | Support Duration |
+|---------|--------|------------------|
+| latest  | Active | Current release  |
+
+Support includes bug fixes and security patches for supported versions.
+
+## End of Support
+
+When a version reaches end of life (EOL):
+- A deprecation notice will be added to release notes
+- A minimum of 30 days notice will be given before support ends
+- Users are encouraged to upgrade to a supported version
 """
 
 [templates.vex_policy_template]
@@ -836,6 +851,93 @@ To request an exception for a SAST finding:
 4. Review exceptions quarterly to ensure they are still valid
 """
 
+[templates.security_assessment_template]
+description = "Security assessment process documentation"
+content = """# Security Assessment Process
+
+## Pre-Release Security Review
+
+Before each major release, the following security assessment steps are performed:
+
+### Security Audit Checklist
+
+- [ ] Review all dependencies for known vulnerabilities
+- [ ] Run static analysis security testing (SAST) tools
+- [ ] Check for hardcoded credentials or secrets
+- [ ] Review access control and authentication changes
+- [ ] Verify input validation on new endpoints or user inputs
+
+### Security Review Process
+
+1. A security review issue is created for each major release
+2. At least one maintainer reviews security-relevant changes
+3. All critical and high severity findings must be resolved before release
+4. Security review sign-off is documented in the release notes
+"""
+
+[templates.architecture_template]
+description = "Architecture documentation template"
+content = """# Architecture
+
+## System Design
+
+This document describes the architecture and design of $REPO.
+
+### Components
+
+<!-- List the major components of the system -->
+
+| Component | Description |
+|-----------|-------------|
+| TBD       | Description |
+
+### Actors
+
+<!-- Describe who/what interacts with the system -->
+
+- **Users**: End users who interact with the system
+- **Administrators**: Users with elevated privileges
+- **External Systems**: Third-party integrations
+
+### Data Flow
+
+<!-- Describe how data flows through the system -->
+
+1. User input → Validation → Processing → Storage → Response
+"""
+
+[templates.release_verification_template]
+description = "Release author verification instructions"
+content = """# Verifying Releases
+
+## Release Signature Verification
+
+All releases are signed to verify author identity and integrity.
+
+### Verify with GitHub
+
+GitHub releases show a "Verified" badge when the release was created
+by an authorized repository collaborator.
+
+### Verify with Git Tags
+
+Signed tags can be verified using:
+
+```bash
+git tag -v <tag-name>
+```
+
+### Verify with Sigstore (if applicable)
+
+If releases are signed with Sigstore:
+
+```bash
+cosign verify-blob --bundle <release>.bundle <release-artifact>
+```
+
+For more information about Sigstore, see: https://www.sigstore.dev/
+"""
+
 # =============================================================================
 # Context Definitions (Interactive Context Collection)
 # =============================================================================
@@ -1203,6 +1305,7 @@ timeout = 60
 handler = "pattern"
 files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
 pass_if_any = false
+expr = '!(output.any_match)'
 
 [controls."OSPS-BR-01.01".passes.pattern.patterns]
 injection_risk = "\\$\\{\\{\\s*github\\.(event\\.issue|event\\.pull_request|head_ref)"
@@ -2072,7 +2175,7 @@ tags = { level = 1, domain = "QA", quality = true, security = true }
 [[controls."OSPS-QA-05.01".passes]]
 handler = "pattern"
 exclude_files = ["**/*.exe", "**/*.dll", "**/*.so", "**/*.dylib", "**/*.bin"]
-mode = "exclude_must_not_exist"
+expr = 'output.files_found == 0'
 
 [[controls."OSPS-QA-05.01".passes]]
 handler = "manual"
@@ -2104,7 +2207,7 @@ tags = { level = 1, domain = "QA", quality = true, security = true }
 [[controls."OSPS-QA-05.02".passes]]
 handler = "pattern"
 exclude_files = ["**/*.jar", "**/*.war", "**/*.pyc", "**/*.class", "**/*.o"]
-mode = "exclude_must_not_exist"
+expr = 'output.files_found == 0'
 
 [[controls."OSPS-QA-05.02".passes]]
 handler = "manual"
@@ -2902,7 +3005,7 @@ tags = { level = 3, domain = "VM", security = true, vulnerability-management = t
 # PatternPass: Check for VEX policy section in SECURITY.md (preferred method)
 [[controls."OSPS-VM-04.02".passes]]
 handler = "pattern"
-files = ["SECURITY.md", ".github/SECURITY.md"]
+files = ["SECURITY.md", ".github/SECURITY.md", "docs/VEX-POLICY.md"]
 
 [controls."OSPS-VM-04.02".passes.pattern.patterns]
 vex_policy = "(vex|vulnerability.exploitability|exploitability.exchange)"
@@ -2945,7 +3048,7 @@ tags = { level = 3, domain = "VM", security = true, dependencies = true }
 
 [[controls."OSPS-VM-05.01".passes]]
 handler = "pattern"
-files = ["SECURITY.md", "docs/security.md"]
+files = ["SECURITY.md", "docs/security.md", "docs/SCA-POLICY.md"]
 
 [controls."OSPS-VM-05.01".passes.pattern.patterns]
 sca_policy = "(dependency|SCA|software composition|remediat)"
@@ -3067,7 +3170,7 @@ tags = { level = 3, domain = "VM", security = true, code-analysis = true }
 
 [[controls."OSPS-VM-06.01".passes]]
 handler = "pattern"
-files = ["SECURITY.md"]
+files = ["SECURITY.md", "docs/SAST-POLICY.md"]
 
 [controls."OSPS-VM-06.01".passes.pattern.patterns]
 sast_policy = "(SAST|static analysis|code scan|remediat)"
@@ -3196,7 +3299,7 @@ tags = { level = 3, domain = "DO", documentation = true, releases = true, securi
 
 [[controls."OSPS-DO-03.02".passes]]
 handler = "pattern"
-files = ["SECURITY.md", "README.md", "docs/releases.md", "CONTRIBUTING.md"]
+files = ["SECURITY.md", "README.md", "docs/releases.md", "CONTRIBUTING.md", "docs/RELEASE-VERIFICATION.md"]
 
 [controls."OSPS-DO-03.02".passes.pattern.patterns]
 verify_author = "(verify|verif|signature|sign|GPG|Sigstore).*(author|release|identity)"
@@ -3208,6 +3311,17 @@ steps = [
     "Check for GPG/Sigstore signature verification instructions",
     "Confirm public keys or keyserver references are provided",
 ]
+
+[controls."OSPS-DO-03.02".remediation]
+safe = true
+dry_run_supported = true
+
+[[controls."OSPS-DO-03.02".remediation.handlers]]
+handler = "file_create"
+path = "docs/RELEASE-VERIFICATION.md"
+template = "release_verification_template"
+overwrite = false
+create_dirs = true
 
 [controls."OSPS-DO-04.01"]
 name = "SupportScopeStatement"
@@ -3370,6 +3484,16 @@ steps = [
     "Confirm documentation helps users understand how the system works",
 ]
 
+[controls."OSPS-SA-01.01".remediation]
+safe = true
+dry_run_supported = true
+
+[[controls."OSPS-SA-01.01".remediation.handlers]]
+handler = "file_create"
+path = "ARCHITECTURE.md"
+template = "architecture_template"
+overwrite = false
+
 [controls."OSPS-SA-02.01"]
 name = "APIDocumentation"
 description = "API/interface documentation available"
@@ -3419,10 +3543,21 @@ steps = [
 
 [[controls."OSPS-SA-03.01".passes]]
 handler = "pattern"
-files = ["SECURITY.md", "docs/security.md", "CONTRIBUTING.md"]
+files = ["SECURITY.md", "docs/security.md", "CONTRIBUTING.md", "docs/SECURITY-ASSESSMENT.md"]
 
 [controls."OSPS-SA-03.01".passes.pattern.patterns]
 security_assessment = "(security.*(assessment|review|audit)|pre-release.*security)"
+
+[controls."OSPS-SA-03.01".remediation]
+safe = true
+dry_run_supported = true
+
+[[controls."OSPS-SA-03.01".remediation.handlers]]
+handler = "file_create"
+path = "docs/SECURITY-ASSESSMENT.md"
+template = "security_assessment_template"
+overwrite = false
+create_dirs = true
 
 # =============================================================================
 # Level 3 Controls - Security Assessment (SA)
