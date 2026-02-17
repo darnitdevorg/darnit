@@ -232,100 +232,270 @@ def exec_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResu
 def regex_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResult:
     """Match regex patterns in file content.
 
-    Config fields:
-        file: str - File path to check (supports $FOUND_FILE from evidence)
-        pattern: str - Regex pattern to match
-        min_matches: int - Minimum number of matches required (default: 1)
+    Supports two config formats:
+
+    **Legacy (singular)**::
+
+        file: str - Single file path (supports $FOUND_FILE from evidence)
+        pattern: str - Single regex pattern
+
+    **TOML multi-file/multi-pattern**::
+
+        files: list[str] - File paths/globs to search
+        pattern: dict - With nested ``patterns`` dict of named regexes
+        pass_if_any: bool - True = PASS if ANY file×pattern matches (default: true)
+
+    **Exclude mode** (for negative checks like binary detection)::
+
+        exclude_files: list[str] - Globs that must NOT match any files
+        mode: "exclude_must_not_exist" - PASS if no files match the globs
+
+    Common fields:
+        min_matches: int - Minimum matches per pattern per file (default: 1)
         must_not_match: bool - Invert: fail if pattern matches (default: false)
     """
-    file_path = config.get("file", "")
-    pattern = config.get("pattern", "")
-    min_matches = config.get("min_matches", 1)
-    must_not_match = config.get("must_not_match", False)
+    # --- Exclude mode: PASS if no files match the globs ---
+    mode = config.get("mode", "")
+    exclude_files = config.get("exclude_files", [])
+    if mode == "exclude_must_not_exist" and exclude_files:
+        return _regex_exclude_mode(exclude_files, context)
 
-    if not file_path or not pattern:
+    # --- Resolve file list ---
+    file_paths = _resolve_regex_files(config, context)
+    if file_paths is None:
+        # Error result already determined
+        return _regex_no_files_result(config, context)
+
+    # --- Resolve patterns ---
+    patterns = _resolve_regex_patterns(config)
+    if not patterns:
         return HandlerResult(
             status=HandlerResultStatus.INCONCLUSIVE,
-            message="Missing file or pattern for regex handler",
+            message="Missing pattern for regex handler",
         )
 
-    # Resolve $FOUND_FILE from evidence
+    # --- Match patterns across files ---
+    min_matches = config.get("min_matches", 1)
+    must_not_match = config.get("must_not_match", False)
+    pass_if_any = config.get("pass_if_any", True)
+
+    return _regex_match_files(
+        file_paths, patterns, min_matches, must_not_match, pass_if_any,
+    )
+
+
+def _regex_exclude_mode(
+    exclude_globs: list[str], context: HandlerContext,
+) -> HandlerResult:
+    """Handle exclude_must_not_exist mode: PASS if no files match globs."""
+    import glob as globmod
+
+    found: list[str] = []
+    for pattern in exclude_globs:
+        matches = globmod.glob(
+            os.path.join(context.local_path, pattern), recursive=True,
+        )
+        found.extend(matches)
+
+    if not found:
+        return HandlerResult(
+            status=HandlerResultStatus.PASS,
+            message="No excluded files found",
+            confidence=1.0,
+            evidence={"exclude_globs": exclude_globs, "found_count": 0},
+        )
+
+    rel_paths = [os.path.relpath(f, context.local_path) for f in found[:10]]
+    return HandlerResult(
+        status=HandlerResultStatus.FAIL,
+        message=f"Found {len(found)} excluded file(s): {', '.join(rel_paths[:5])}",
+        confidence=1.0,
+        evidence={
+            "exclude_globs": exclude_globs,
+            "found_count": len(found),
+            "found_files": rel_paths,
+        },
+    )
+
+
+def _resolve_regex_files(
+    config: dict[str, Any], context: HandlerContext,
+) -> list[str] | None:
+    """Resolve the list of absolute file paths to search.
+
+    Returns a list of absolute paths, or None if no files could be resolved.
+    """
+    import glob as globmod
+
+    # Multi-file format: files = ["README.md", "*.yml"]
+    files_list = config.get("files", [])
+    if files_list:
+        resolved: list[str] = []
+        for file_pattern in files_list:
+            if "*" in file_pattern or "?" in file_pattern:
+                matches = globmod.glob(
+                    os.path.join(context.local_path, file_pattern),
+                    recursive=True,
+                )
+                resolved.extend(m for m in matches if os.path.isfile(m))
+            else:
+                full = os.path.join(context.local_path, file_pattern)
+                if os.path.isfile(full):
+                    resolved.append(full)
+        return resolved if resolved else None
+
+    # Legacy singular format: file = "README.md" or file = "$FOUND_FILE"
+    file_path = config.get("file", "")
+    if not file_path:
+        return None
+
     if file_path == "$FOUND_FILE":
         file_path = context.gathered_evidence.get("found_file", "")
         if not file_path:
-            return HandlerResult(
-                status=HandlerResultStatus.INCONCLUSIVE,
-                message="$FOUND_FILE referenced but no file found in evidence",
-            )
+            return None
 
-    # Resolve relative to local_path
     if not os.path.isabs(file_path):
         file_path = os.path.join(context.local_path, file_path)
 
-    if not os.path.isfile(file_path):
+    if os.path.isfile(file_path):
+        return [file_path]
+    return None
+
+
+def _regex_no_files_result(
+    config: dict[str, Any], context: HandlerContext,
+) -> HandlerResult:
+    """Return the appropriate result when no files could be resolved."""
+    file_path = config.get("file", "")
+    if file_path == "$FOUND_FILE" and not context.gathered_evidence.get("found_file"):
         return HandlerResult(
             status=HandlerResultStatus.INCONCLUSIVE,
-            message=f"File not found: {file_path}",
-            evidence={"file": file_path},
+            message="$FOUND_FILE referenced but no file found in evidence",
         )
 
-    try:
-        with open(file_path, encoding="utf-8", errors="ignore") as f:
-            content = f.read()
-    except OSError as e:
+    files_list = config.get("files", [])
+    if files_list:
         return HandlerResult(
-            status=HandlerResultStatus.ERROR,
-            message=f"Failed to read file: {e}",
-            evidence={"file": file_path, "error": str(e)},
+            status=HandlerResultStatus.INCONCLUSIVE,
+            message=f"No files found matching: {files_list}",
+            evidence={"files_checked": files_list},
         )
 
-    matches = re.findall(pattern, content, re.MULTILINE | re.IGNORECASE)
-    match_count = len(matches)
+    return HandlerResult(
+        status=HandlerResultStatus.INCONCLUSIVE,
+        message="Missing file or pattern for regex handler",
+    )
+
+
+def _resolve_regex_patterns(config: dict[str, Any]) -> dict[str, str]:
+    """Resolve patterns from config into a name→regex dict.
+
+    Supports:
+    - pattern: str → {"pattern": str}
+    - pattern: {patterns: {name: regex, ...}} → {name: regex, ...}
+    """
+    raw = config.get("pattern", "")
+
+    if isinstance(raw, str) and raw:
+        return {"pattern": raw}
+
+    if isinstance(raw, dict):
+        nested = raw.get("patterns", {})
+        if isinstance(nested, dict) and nested:
+            return dict(nested)
+
+    return {}
+
+
+def _regex_match_files(
+    file_paths: list[str],
+    patterns: dict[str, str],
+    min_matches: int,
+    must_not_match: bool,
+    pass_if_any: bool,
+) -> HandlerResult:
+    """Match patterns across files and return a result."""
+    all_results: list[dict[str, Any]] = []
+    any_match = False
+
+    for fpath in file_paths:
+        try:
+            with open(fpath, encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+        except OSError:
+            continue
+
+        for pname, pregex in patterns.items():
+            matches = re.findall(pregex, content, re.MULTILINE | re.IGNORECASE)
+            match_count = len(matches)
+            matched = match_count >= min_matches
+
+            all_results.append({
+                "file": fpath,
+                "pattern_name": pname,
+                "pattern": pregex,
+                "match_count": match_count,
+                "matched": matched,
+                "matches_preview": matches[:3],
+            })
+
+            if matched:
+                any_match = True
 
     evidence: dict[str, Any] = {
-        "file": file_path,
-        "pattern": pattern,
-        "match_count": match_count,
-        "matches_preview": matches[:5],
+        "files_checked": len(file_paths),
+        "patterns_checked": list(patterns.keys()),
+        "results": all_results[:20],
+        "any_match": any_match,
     }
 
     if must_not_match:
-        if match_count == 0:
+        if not any_match:
             return HandlerResult(
                 status=HandlerResultStatus.PASS,
-                message=f"Pattern not found (as expected): {pattern}",
+                message="Pattern not found in any file (as expected)",
                 confidence=0.8,
                 evidence=evidence,
             )
-        else:
-            return HandlerResult(
-                status=HandlerResultStatus.FAIL,
-                message=f"Pattern found {match_count} times (should not match): {pattern}",
-                confidence=0.8,
-                evidence=evidence,
-            )
-
-    if match_count >= min_matches:
+        matched_files = [r["file"] for r in all_results if r["matched"]]
         return HandlerResult(
-            status=HandlerResultStatus.PASS,
-            message=f"Pattern matched {match_count} times (need {min_matches}): {pattern}",
+            status=HandlerResultStatus.FAIL,
+            message=f"Pattern found in {len(matched_files)} file(s) (should not match)",
             confidence=0.8,
             evidence=evidence,
         )
-    elif match_count > 0:
+
+    if pass_if_any:
+        if any_match:
+            return HandlerResult(
+                status=HandlerResultStatus.PASS,
+                message=f"Pattern matched in {sum(1 for r in all_results if r['matched'])} result(s)",
+                confidence=0.8,
+                evidence=evidence,
+            )
         return HandlerResult(
             status=HandlerResultStatus.FAIL,
-            message=f"Pattern matched {match_count} times (need {min_matches}): {pattern}",
+            message="Pattern not found in any file",
             confidence=0.7,
             evidence=evidence,
         )
-    else:
+
+    # pass_if_any=False: ALL pattern×file combos must match
+    all_matched = all(r["matched"] for r in all_results) if all_results else False
+    if all_matched:
         return HandlerResult(
-            status=HandlerResultStatus.FAIL,
-            message=f"Pattern not found: {pattern}",
-            confidence=0.7,
+            status=HandlerResultStatus.PASS,
+            message=f"All {len(all_results)} pattern checks matched",
+            confidence=0.8,
             evidence=evidence,
         )
+    failed = [r for r in all_results if not r["matched"]]
+    return HandlerResult(
+        status=HandlerResultStatus.FAIL,
+        message=f"{len(failed)} of {len(all_results)} pattern checks failed",
+        confidence=0.7,
+        evidence=evidence,
+    )
 
 
 def llm_eval_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResult:

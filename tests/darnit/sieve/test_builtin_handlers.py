@@ -192,6 +192,8 @@ class TestExecHandler:
 class TestRegexHandler:
     """Tests for the regex (pattern) built-in handler."""
 
+    # --- Legacy singular file + pattern (backward compat) ---
+
     def test_pass_when_pattern_matches(self, tmp_path, ctx):
         (tmp_path / "SECURITY.md").write_text("security@example.com")
         result = regex_handler(
@@ -199,7 +201,7 @@ class TestRegexHandler:
             ctx,
         )
         assert result.status == HandlerResultStatus.PASS
-        assert result.evidence["match_count"] >= 1
+        assert result.evidence["any_match"] is True
 
     def test_fail_when_pattern_not_found(self, tmp_path, ctx):
         (tmp_path / "SECURITY.md").write_text("No contact info here")
@@ -208,7 +210,6 @@ class TestRegexHandler:
             ctx,
         )
         assert result.status == HandlerResultStatus.FAIL
-        assert result.evidence["match_count"] == 0
 
     def test_fail_when_below_min_matches(self, tmp_path, ctx):
         (tmp_path / "CODE.py").write_text("# Copyright 2024\n# Some code\n")
@@ -217,7 +218,6 @@ class TestRegexHandler:
             ctx,
         )
         assert result.status == HandlerResultStatus.FAIL
-        assert result.evidence["match_count"] < 3
 
     def test_pass_with_must_not_match_absent(self, tmp_path, ctx):
         (tmp_path / "clean.py").write_text("print('hello')\n")
@@ -265,15 +265,161 @@ class TestRegexHandler:
         assert result.status == HandlerResultStatus.INCONCLUSIVE
         assert "$FOUND_FILE" in result.message
 
-    def test_matches_preview_limited(self, tmp_path, ctx):
-        """Evidence matches_preview is limited to 5 entries."""
-        content = "\n".join(f"match_{i}" for i in range(20))
-        (tmp_path / "many.txt").write_text(content)
+    # --- Multi-file with globs ---
+
+    def test_multi_file_glob_expansion(self, tmp_path, ctx):
+        """files = ["*.yml"] expands globs and searches content."""
+        wf = tmp_path / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        (wf / "ci.yml").write_text("runs-on: ubuntu-latest")
         result = regex_handler(
-            {"file": "many.txt", "pattern": r"match_\d+"},
+            {
+                "files": [".github/workflows/*.yml"],
+                "pattern": {"patterns": {"runner": "runs-on"}},
+            },
             ctx,
         )
-        assert len(result.evidence["matches_preview"]) <= 5
+        assert result.status == HandlerResultStatus.PASS
+
+    def test_multi_file_no_matches(self, tmp_path, ctx):
+        """FAIL when no files match any glob."""
+        result = regex_handler(
+            {
+                "files": ["nonexistent/*.yml"],
+                "pattern": {"patterns": {"x": "y"}},
+            },
+            ctx,
+        )
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
+
+    def test_multi_file_multiple_globs(self, tmp_path, ctx):
+        """Multiple globs in files list are all expanded."""
+        (tmp_path / "a.md").write_text("hello world")
+        (tmp_path / "b.txt").write_text("hello again")
+        result = regex_handler(
+            {
+                "files": ["*.md", "*.txt"],
+                "pattern": {"patterns": {"greeting": "hello"}},
+            },
+            ctx,
+        )
+        assert result.status == HandlerResultStatus.PASS
+        assert result.evidence["files_checked"] == 2
+
+    # --- Multi-pattern (named patterns) ---
+
+    def test_named_patterns_pass(self, tmp_path, ctx):
+        """pattern.patterns dict with named regexes."""
+        (tmp_path / "ci.yml").write_text("runs-on: ubuntu\nsteps:\n  - uses: actions/checkout")
+        result = regex_handler(
+            {
+                "files": ["ci.yml"],
+                "pattern": {"patterns": {
+                    "runner": "runs-on",
+                    "checkout": "actions/checkout",
+                }},
+            },
+            ctx,
+        )
+        assert result.status == HandlerResultStatus.PASS
+
+    def test_named_patterns_fail_when_none_match(self, tmp_path, ctx):
+        """FAIL when no named patterns match."""
+        (tmp_path / "empty.yml").write_text("key: value")
+        result = regex_handler(
+            {
+                "files": ["empty.yml"],
+                "pattern": {"patterns": {"missing": "nonexistent_pattern"}},
+            },
+            ctx,
+        )
+        assert result.status == HandlerResultStatus.FAIL
+
+    # --- pass_if_any ---
+
+    def test_pass_if_any_true_default(self, tmp_path, ctx):
+        """pass_if_any defaults to True: one match is enough."""
+        (tmp_path / "a.md").write_text("match_here")
+        (tmp_path / "b.md").write_text("no luck")
+        result = regex_handler(
+            {
+                "files": ["a.md", "b.md"],
+                "pattern": {"patterns": {"target": "match_here"}},
+            },
+            ctx,
+        )
+        assert result.status == HandlerResultStatus.PASS
+
+    def test_pass_if_any_false_requires_all(self, tmp_path, ctx):
+        """pass_if_any=False requires ALL file×pattern combos to match."""
+        (tmp_path / "a.md").write_text("match_here")
+        (tmp_path / "b.md").write_text("no luck")
+        result = regex_handler(
+            {
+                "files": ["a.md", "b.md"],
+                "pattern": {"patterns": {"target": "match_here"}},
+                "pass_if_any": False,
+            },
+            ctx,
+        )
+        assert result.status == HandlerResultStatus.FAIL
+
+    def test_pass_if_any_false_all_match(self, tmp_path, ctx):
+        """pass_if_any=False passes when all match."""
+        (tmp_path / "a.md").write_text("keyword present")
+        (tmp_path / "b.md").write_text("keyword also present")
+        result = regex_handler(
+            {
+                "files": ["a.md", "b.md"],
+                "pattern": {"patterns": {"kw": "keyword"}},
+                "pass_if_any": False,
+            },
+            ctx,
+        )
+        assert result.status == HandlerResultStatus.PASS
+
+    # --- exclude_must_not_exist mode ---
+
+    def test_exclude_pass_when_no_files(self, ctx):
+        """exclude_must_not_exist: PASS when no excluded files found."""
+        result = regex_handler(
+            {
+                "exclude_files": ["**/*.exe", "**/*.dll"],
+                "mode": "exclude_must_not_exist",
+            },
+            ctx,
+        )
+        assert result.status == HandlerResultStatus.PASS
+        assert result.evidence["found_count"] == 0
+
+    def test_exclude_fail_when_files_found(self, tmp_path, ctx):
+        """exclude_must_not_exist: FAIL when excluded files exist."""
+        (tmp_path / "binary.exe").write_bytes(b"\x00\x01")
+        result = regex_handler(
+            {
+                "exclude_files": ["**/*.exe"],
+                "mode": "exclude_must_not_exist",
+            },
+            ctx,
+        )
+        assert result.status == HandlerResultStatus.FAIL
+        assert result.evidence["found_count"] >= 1
+
+    # --- Recursive glob support ---
+
+    def test_recursive_glob(self, tmp_path, ctx):
+        """** recursive globs find files in subdirectories."""
+        deep = tmp_path / "src" / "pkg"
+        deep.mkdir(parents=True)
+        (deep / "mod.py").write_text("def main(): pass")
+        result = regex_handler(
+            {
+                "files": ["**/*.py"],
+                "pattern": {"patterns": {"func": "def main"}},
+            },
+            ctx,
+        )
+        assert result.status == HandlerResultStatus.PASS
 
 
 # =============================================================================

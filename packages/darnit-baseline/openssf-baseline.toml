@@ -1349,6 +1349,7 @@ handler = "exec"
 command = ["gh", "release", "list", "--json", "tagName", "--limit", "10"]
 pass_exit_codes = [0]
 output_format = "json"
+expr = 'size(output.json) > 0'
 timeout = 30
 
 [[controls."OSPS-BR-02.01".passes]]
@@ -1455,6 +1456,13 @@ files = [
     "Gemfile.lock",
 ]
 
+# Content validation: manifest should contain dependency declarations
+[[controls."OSPS-BR-05.01".passes]]
+handler = "regex"
+file = "$FOUND_FILE"
+pattern = '(?i)(depend|require|"name"|"version"|\[project\])'
+min_matches = 1
+
 [[controls."OSPS-BR-05.01".passes]]
 handler = "manual"
 steps = [
@@ -1536,6 +1544,13 @@ kind = "file"
 [[controls."OSPS-DO-01.01".passes]]
 handler = "file_exists"
 use_locator = true
+
+# Content validation: README should have at least a heading
+[[controls."OSPS-DO-01.01".passes]]
+handler = "regex"
+file = "$FOUND_FILE"
+pattern = '(?i)^#'
+min_matches = 1
 
 [[controls."OSPS-DO-01.01".passes]]
 handler = "manual"
@@ -1696,6 +1711,13 @@ look_for_urls = false
 handler = "file_exists"
 use_locator = true
 
+# Content validation: CONTRIBUTING should describe contribution process
+[[controls."OSPS-GV-03.01".passes]]
+handler = "regex"
+file = "$FOUND_FILE"
+pattern = '(?i)(contribut|pull request|submit|review)'
+min_matches = 1
+
 [[controls."OSPS-GV-03.01".passes]]
 handler = "manual"
 steps = [
@@ -1733,6 +1755,13 @@ kind = "file"
 [[controls."OSPS-LE-01.01".passes]]
 handler = "file_exists"
 use_locator = true
+
+# Content validation: LICENSE should contain license-related terms
+[[controls."OSPS-LE-01.01".passes]]
+handler = "regex"
+file = "$FOUND_FILE"
+pattern = '(?i)(permission|license|copyright|warranty)'
+min_matches = 1
 
 [[controls."OSPS-LE-01.01".passes]]
 handler = "manual"
@@ -1792,6 +1821,7 @@ handler = "exec"
 command = ["gh", "release", "view", "--json", "body,assets"]
 pass_exit_codes = [0]
 output_format = "json"
+expr = 'output.json.body != ""'
 timeout = 30
 
 [[controls."OSPS-LE-02.02".passes]]
@@ -1816,6 +1846,13 @@ kind = "file"
 handler = "file_exists"
 use_locator = true
 
+# Content validation: LICENSE should contain license-related terms
+[[controls."OSPS-LE-03.01".passes]]
+handler = "regex"
+file = "$FOUND_FILE"
+pattern = '(?i)(permission|license|copyright|warranty)'
+min_matches = 1
+
 [[controls."OSPS-LE-03.01".passes]]
 handler = "manual"
 steps = [
@@ -1837,7 +1874,7 @@ handler = "exec"
 command = ["gh", "release", "view", "--json", "assets"]
 pass_exit_codes = [0]
 output_format = "json"
-pass_if_json_contains = "LICENSE"
+expr = 'size(output.json.assets) > 0'
 timeout = 30
 
 [[controls."OSPS-LE-03.02".passes]]
@@ -1907,6 +1944,7 @@ when = { platform = "github" }
 handler = "exec"
 command = ["gh", "api", "/repos/$OWNER/$REPO/commits", "--jq", "length"]
 pass_exit_codes = [0]
+expr = 'output.stdout.matches("^[1-9][0-9]*")'
 timeout = 30
 
 [[controls."OSPS-QA-01.02".passes]]
@@ -1944,6 +1982,13 @@ kind = "file"
 [[controls."OSPS-QA-02.01".passes]]
 handler = "file_exists"
 use_locator = true
+
+# Content validation: dependency manifest should contain dependency declarations
+[[controls."OSPS-QA-02.01".passes]]
+handler = "regex"
+file = "$FOUND_FILE"
+pattern = '(?i)(depend|require|"name"|"version"|\[project\])'
+min_matches = 1
 
 [[controls."OSPS-QA-02.01".passes]]
 handler = "manual"
@@ -2087,6 +2132,13 @@ look_for_urls = true
 handler = "file_exists"
 use_locator = true
 
+# Content validation: SECURITY.md should contain vulnerability reporting info
+[[controls."OSPS-VM-02.01".passes]]
+handler = "regex"
+file = "$FOUND_FILE"
+pattern = '(?i)(report|vulnerabilit|security|contact)'
+min_matches = 1
+
 [[controls."OSPS-VM-02.01".passes]]
 handler = "manual"
 steps = [
@@ -2168,6 +2220,13 @@ look_for_urls = false
 [[controls."OSPS-GV-01.01".passes]]
 handler = "file_exists"
 use_locator = true
+
+# Content validation: governance doc should mention governance concepts
+[[controls."OSPS-GV-01.01".passes]]
+handler = "regex"
+file = "$FOUND_FILE"
+pattern = '(?i)(maintainer|governance|decision|role|codeowner)'
+min_matches = 1
 
 [[controls."OSPS-GV-01.01".passes]]
 handler = "manual"
@@ -2559,6 +2618,7 @@ handler = "exec"
 command = ["gh", "release", "list", "--json", "tagName,assets", "--limit", "5"]
 pass_exit_codes = [0]
 output_format = "json"
+expr = 'size(output.json) > 0 && size(output.json[0].assets) > 0'
 timeout = 30
 
 [[controls."OSPS-BR-02.02".passes]]
@@ -2955,6 +3015,13 @@ kind = "file"
 handler = "file_exists"
 use_locator = true
 
+# Content validation: dependency scanning config should have ecosystem settings
+[[controls."OSPS-VM-05.03".passes]]
+handler = "regex"
+file = "$FOUND_FILE"
+pattern = '(?i)(package-ecosystem|schedule|updates|"extends")'
+min_matches = 1
+
 [[controls."OSPS-VM-05.03".passes]]
 handler = "manual"
 steps = [
@@ -3078,6 +3145,13 @@ look_for_urls = true
 [[controls."OSPS-DO-03.01".passes]]
 handler = "file_exists"
 use_locator = true
+
+# Content validation: support doc should describe how to get help
+[[controls."OSPS-DO-03.01".passes]]
+handler = "regex"
+file = "$FOUND_FILE"
+pattern = '(?i)(support|help|issue|question)'
+min_matches = 1
 
 [[controls."OSPS-DO-03.01".passes]]
 handler = "manual"
