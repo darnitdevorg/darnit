@@ -20,8 +20,10 @@ from darnit.sieve.builtin_handlers import (
 )
 from darnit.sieve.handler_registry import (
     HandlerContext,
+    HandlerResult,
     HandlerResultStatus,
 )
+from darnit.sieve.orchestrator import _apply_cel_expr
 
 # =============================================================================
 # Fixtures
@@ -151,26 +153,24 @@ class TestExecHandler:
         assert result.evidence["json"] == {"key": "value"}
 
     def test_cel_expression_pass(self, ctx):
-        result = exec_handler(
-            {
-                "command": ["echo", '{"enabled": true}'],
-                "output_format": "json",
-                "expr": "output.json.enabled == true",
-            },
-            ctx,
-        )
+        config = {
+            "command": ["echo", '{"enabled": true}'],
+            "output_format": "json",
+            "expr": "output.json.enabled == true",
+        }
+        handler_result = exec_handler(config, ctx)
+        result = _apply_cel_expr(config, handler_result)
         assert result.status == HandlerResultStatus.PASS
         assert "CEL" in result.message
 
     def test_cel_expression_false_returns_inconclusive(self, ctx):
-        result = exec_handler(
-            {
-                "command": ["echo", '{"enabled": false}'],
-                "output_format": "json",
-                "expr": "output.json.enabled == true",
-            },
-            ctx,
-        )
+        config = {
+            "command": ["echo", '{"enabled": false}'],
+            "output_format": "json",
+            "expr": "output.json.enabled == true",
+        }
+        handler_result = exec_handler(config, ctx)
+        result = _apply_cel_expr(config, handler_result)
         assert result.status == HandlerResultStatus.INCONCLUSIVE
         assert "false" in result.message.lower()
 
@@ -219,21 +219,29 @@ class TestRegexHandler:
         )
         assert result.status == HandlerResultStatus.FAIL
 
-    def test_pass_with_must_not_match_absent(self, tmp_path, ctx):
+    def test_cel_not_any_match_pass_when_absent(self, tmp_path, ctx):
+        """expr = '!(output.any_match)' → PASS when pattern not found."""
         (tmp_path / "clean.py").write_text("print('hello')\n")
-        result = regex_handler(
-            {"file": "clean.py", "pattern": r"TODO|FIXME|HACK", "must_not_match": True},
-            ctx,
-        )
+        config = {"file": "clean.py", "pattern": r"TODO|FIXME|HACK", "expr": "!(output.any_match)"}
+        handler_result = regex_handler(config, ctx)
+        result = _apply_cel_expr(config, handler_result)
         assert result.status == HandlerResultStatus.PASS
 
-    def test_fail_with_must_not_match_present(self, tmp_path, ctx):
+    def test_cel_not_any_match_inconclusive_when_present(self, tmp_path, ctx):
+        """expr = '!(output.any_match)' → INCONCLUSIVE when pattern found (handler PASS overridden)."""
         (tmp_path / "messy.py").write_text("# TODO: fix this\nprint('hello')\n")
-        result = regex_handler(
-            {"file": "messy.py", "pattern": r"TODO|FIXME|HACK", "must_not_match": True},
-            ctx,
-        )
-        assert result.status == HandlerResultStatus.FAIL
+        config = {"file": "messy.py", "pattern": r"TODO|FIXME|HACK", "expr": "!(output.any_match)"}
+        handler_result = regex_handler(config, ctx)
+        result = _apply_cel_expr(config, handler_result)
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
+
+    def test_cel_any_match_pass_when_found(self, tmp_path, ctx):
+        """expr = 'output.any_match' → PASS when pattern matches."""
+        (tmp_path / "code.py").write_text("# TODO: fix this\n")
+        config = {"file": "code.py", "pattern": r"TODO", "expr": "output.any_match"}
+        handler_result = regex_handler(config, ctx)
+        result = _apply_cel_expr(config, handler_result)
+        assert result.status == HandlerResultStatus.PASS
 
     def test_inconclusive_when_file_not_found(self, ctx):
         result = regex_handler(
@@ -378,32 +386,30 @@ class TestRegexHandler:
         )
         assert result.status == HandlerResultStatus.PASS
 
-    # --- exclude_must_not_exist mode ---
+    # --- exclude_files with CEL expr ---
 
     def test_exclude_pass_when_no_files(self, ctx):
-        """exclude_must_not_exist: PASS when no excluded files found."""
-        result = regex_handler(
-            {
-                "exclude_files": ["**/*.exe", "**/*.dll"],
-                "mode": "exclude_must_not_exist",
-            },
-            ctx,
-        )
+        """exclude_files + expr: PASS when no excluded files found."""
+        config = {
+            "exclude_files": ["**/*.exe", "**/*.dll"],
+            "expr": "output.files_found == 0",
+        }
+        handler_result = regex_handler(config, ctx)
+        result = _apply_cel_expr(config, handler_result)
         assert result.status == HandlerResultStatus.PASS
-        assert result.evidence["found_count"] == 0
+        assert result.evidence["files_found"] == 0
 
-    def test_exclude_fail_when_files_found(self, tmp_path, ctx):
-        """exclude_must_not_exist: FAIL when excluded files exist."""
+    def test_exclude_inconclusive_when_files_found(self, tmp_path, ctx):
+        """exclude_files + expr: INCONCLUSIVE when excluded files exist."""
         (tmp_path / "binary.exe").write_bytes(b"\x00\x01")
-        result = regex_handler(
-            {
-                "exclude_files": ["**/*.exe"],
-                "mode": "exclude_must_not_exist",
-            },
-            ctx,
-        )
-        assert result.status == HandlerResultStatus.FAIL
-        assert result.evidence["found_count"] >= 1
+        config = {
+            "exclude_files": ["**/*.exe"],
+            "expr": "output.files_found == 0",
+        }
+        handler_result = regex_handler(config, ctx)
+        result = _apply_cel_expr(config, handler_result)
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
+        assert handler_result.evidence["files_found"] >= 1
 
     # --- Recursive glob support ---
 
@@ -420,6 +426,76 @@ class TestRegexHandler:
             ctx,
         )
         assert result.status == HandlerResultStatus.PASS
+
+
+# =============================================================================
+# _apply_cel_expr (universal post-handler CEL evaluation)
+# =============================================================================
+
+
+class TestApplyCelExpr:
+    """Tests for the orchestrator-level CEL expression evaluation."""
+
+    def test_no_expr_returns_original(self):
+        """No expr in config → handler result unchanged."""
+        original = HandlerResult(
+            status=HandlerResultStatus.PASS,
+            message="Handler passed",
+            evidence={"any_match": True},
+        )
+        result = _apply_cel_expr({"handler": "pattern"}, original)
+        assert result is original
+
+    def test_cel_error_falls_through(self):
+        """CEL syntax error → fall through to handler's own verdict."""
+        original = HandlerResult(
+            status=HandlerResultStatus.PASS,
+            message="Handler passed",
+            evidence={"any_match": True},
+        )
+        result = _apply_cel_expr({"expr": "invalid!!syntax"}, original)
+        assert result.status == HandlerResultStatus.PASS
+        assert result is original
+
+    def test_skipped_on_error_status(self):
+        """Handler ERROR → expr is not evaluated."""
+        original = HandlerResult(
+            status=HandlerResultStatus.ERROR,
+            message="Command not found",
+            evidence={},
+        )
+        result = _apply_cel_expr({"expr": "true"}, original)
+        assert result is original
+
+    def test_skipped_on_inconclusive_status(self):
+        """Handler INCONCLUSIVE → expr is not evaluated."""
+        original = HandlerResult(
+            status=HandlerResultStatus.INCONCLUSIVE,
+            message="No files found",
+            evidence={},
+        )
+        result = _apply_cel_expr({"expr": "true"}, original)
+        assert result is original
+
+    def test_cel_true_overrides_fail_to_pass(self):
+        """CEL true + handler FAIL → result is PASS."""
+        original = HandlerResult(
+            status=HandlerResultStatus.FAIL,
+            message="Pattern not found",
+            evidence={"any_match": False, "files_checked": 1},
+        )
+        result = _apply_cel_expr({"expr": "!(output.any_match)"}, original)
+        assert result.status == HandlerResultStatus.PASS
+
+    def test_cel_false_overrides_pass_to_inconclusive(self):
+        """CEL false + handler PASS → result is INCONCLUSIVE."""
+        original = HandlerResult(
+            status=HandlerResultStatus.PASS,
+            message="Pattern matched",
+            evidence={"any_match": True, "files_checked": 1},
+        )
+        result = _apply_cel_expr({"expr": "!(output.any_match)"}, original)
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
 
 
 # =============================================================================

@@ -93,10 +93,15 @@ def exec_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResu
         pass_exit_codes: list[int] - Exit codes that indicate pass (default: [0])
         fail_exit_codes: list[int] | None - Exit codes that indicate fail
         output_format: str - How to parse output ("text", "json")
-        expr: str | None - CEL expression for evaluation
         timeout: int - Timeout in seconds (default: 300)
         env: dict[str, str] - Extra environment variables
         cwd: str | None - Working directory
+
+    Evidence shape (available in orchestrator ``expr`` as ``output.*``):
+        exit_code: int
+        stdout: str (truncated to 2000 chars)
+        stderr: str (truncated to 500 chars)
+        json: parsed JSON if output is valid JSON, else None
     """
     command = config.get("command", [])
     if not command:
@@ -167,46 +172,7 @@ def exec_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResu
         except (json.JSONDecodeError, ValueError):
             logger.debug("Failed to parse JSON output from command")
 
-    # CEL expression evaluation — takes precedence over exit code when present
-    expr = config.get("expr")
-    if expr:
-        evidence["expr"] = expr
-        try:
-            from .cel_evaluator import evaluate_cel
-
-            cel_context = {
-                "output": {
-                    "stdout": proc.stdout or "",
-                    "stderr": proc.stderr or "",
-                    "exit_code": proc.returncode,
-                    "json": evidence.get("json"),
-                },
-            }
-            cel_result = evaluate_cel(expr, cel_context)
-            if cel_result.success:
-                if cel_result.value:
-                    return HandlerResult(
-                        status=HandlerResultStatus.PASS,
-                        message="CEL expression passed",
-                        confidence=1.0,
-                        evidence=evidence,
-                    )
-                else:
-                    # CEL evaluated to false — return INCONCLUSIVE so the
-                    # next pass in the pipeline can try (e.g., file_exists)
-                    return HandlerResult(
-                        status=HandlerResultStatus.INCONCLUSIVE,
-                        message="CEL expression evaluated to false",
-                        evidence=evidence,
-                    )
-            else:
-                logger.debug(f"CEL evaluation failed: {cel_result.error}")
-                # Fall through to exit code evaluation
-        except Exception as e:
-            logger.debug(f"CEL evaluator unavailable: {e}")
-            # Fall through to exit code evaluation
-
-    # Exit code evaluation (fallback when no expr or CEL fails)
+    # Exit code evaluation
     if proc.returncode in pass_exit_codes:
         return HandlerResult(
             status=HandlerResultStatus.PASS,
@@ -245,20 +211,25 @@ def regex_handler(config: dict[str, Any], context: HandlerContext) -> HandlerRes
         pattern: dict - With nested ``patterns`` dict of named regexes
         pass_if_any: bool - True = PASS if ANY file×pattern matches (default: true)
 
-    **Exclude mode** (for negative checks like binary detection)::
+    **Exclude mode** (returns evidence for CEL evaluation)::
 
-        exclude_files: list[str] - Globs that must NOT match any files
-        mode: "exclude_must_not_exist" - PASS if no files match the globs
+        exclude_files: list[str] - Globs to check for presence
 
     Common fields:
         min_matches: int - Minimum matches per pattern per file (default: 1)
-        must_not_match: bool - Invert: fail if pattern matches (default: false)
+
+    Evidence shape (available in orchestrator ``expr`` as ``output.*``):
+        any_match: bool - True if any pattern matched in any file
+        files_checked: int - Number of files examined
+        results: list[dict] - Per-file match details
+        patterns_checked: list[str] - Pattern names checked
+        files_found: int - (exclude mode) number of files matching globs
+        found_files: list[str] - (exclude mode) matched file paths
     """
-    # --- Exclude mode: PASS if no files match the globs ---
-    mode = config.get("mode", "")
+    # --- Exclude mode: glob files and return evidence (CEL does pass/fail) ---
     exclude_files = config.get("exclude_files", [])
-    if mode == "exclude_must_not_exist" and exclude_files:
-        return _regex_exclude_mode(exclude_files, context)
+    if exclude_files:
+        return _regex_exclude_evidence(exclude_files, context)
 
     # --- Resolve file list ---
     file_paths = _resolve_regex_files(config, context)
@@ -276,18 +247,17 @@ def regex_handler(config: dict[str, Any], context: HandlerContext) -> HandlerRes
 
     # --- Match patterns across files ---
     min_matches = config.get("min_matches", 1)
-    must_not_match = config.get("must_not_match", False)
     pass_if_any = config.get("pass_if_any", True)
 
     return _regex_match_files(
-        file_paths, patterns, min_matches, must_not_match, pass_if_any,
+        file_paths, patterns, min_matches, pass_if_any,
     )
 
 
-def _regex_exclude_mode(
+def _regex_exclude_evidence(
     exclude_globs: list[str], context: HandlerContext,
 ) -> HandlerResult:
-    """Handle exclude_must_not_exist mode: PASS if no files match globs."""
+    """Glob for excluded files and return evidence. CEL ``expr`` decides pass/fail."""
     import glob as globmod
 
     found: list[str] = []
@@ -297,24 +267,27 @@ def _regex_exclude_mode(
         )
         found.extend(matches)
 
+    rel_paths = [os.path.relpath(f, context.local_path) for f in found[:10]]
+    evidence = {
+        "exclude_globs": exclude_globs,
+        "files_found": len(found),
+        "found_files": rel_paths,
+    }
+    # Return PASS with evidence — if an expr is present the orchestrator
+    # will override based on the CEL result (e.g. 'output.files_found == 0').
+    # When no expr is present, finding zero files is the common success case.
     if not found:
         return HandlerResult(
             status=HandlerResultStatus.PASS,
             message="No excluded files found",
             confidence=1.0,
-            evidence={"exclude_globs": exclude_globs, "found_count": 0},
+            evidence=evidence,
         )
-
-    rel_paths = [os.path.relpath(f, context.local_path) for f in found[:10]]
     return HandlerResult(
         status=HandlerResultStatus.FAIL,
         message=f"Found {len(found)} excluded file(s): {', '.join(rel_paths[:5])}",
         confidence=1.0,
-        evidence={
-            "exclude_globs": exclude_globs,
-            "found_count": len(found),
-            "found_files": rel_paths,
-        },
+        evidence=evidence,
     )
 
 
@@ -411,7 +384,6 @@ def _regex_match_files(
     file_paths: list[str],
     patterns: dict[str, str],
     min_matches: int,
-    must_not_match: bool,
     pass_if_any: bool,
 ) -> HandlerResult:
     """Match patterns across files and return a result."""
@@ -448,22 +420,6 @@ def _regex_match_files(
         "results": all_results[:20],
         "any_match": any_match,
     }
-
-    if must_not_match:
-        if not any_match:
-            return HandlerResult(
-                status=HandlerResultStatus.PASS,
-                message="Pattern not found in any file (as expected)",
-                confidence=0.8,
-                evidence=evidence,
-            )
-        matched_files = [r["file"] for r in all_results if r["matched"]]
-        return HandlerResult(
-            status=HandlerResultStatus.FAIL,
-            message=f"Pattern found in {len(matched_files)} file(s) (should not match)",
-            confidence=0.8,
-            evidence=evidence,
-        )
 
     if pass_if_any:
         if any_match:

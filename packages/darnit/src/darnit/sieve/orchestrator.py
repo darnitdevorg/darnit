@@ -25,6 +25,61 @@ from .models import (
 logger = get_logger("sieve.orchestrator")
 
 
+def _apply_cel_expr(
+    handler_config: dict[str, Any],
+    handler_result: "HandlerResult",
+) -> "HandlerResult":
+    """Evaluate a CEL ``expr`` against handler evidence, overriding the verdict.
+
+    Only runs when ``handler_config`` contains ``expr`` and the handler returned
+    PASS or FAIL.  Returns the original result unchanged if no ``expr`` is
+    present, the handler returned ERROR/INCONCLUSIVE, or CEL evaluation fails.
+
+    CEL true  → PASS
+    CEL false → INCONCLUSIVE (pipeline continues)
+    CEL error → fall through to handler's own verdict
+    """
+    expr = handler_config.get("expr")
+    if not expr:
+        return handler_result
+
+    # Only override conclusive verdicts — ERROR and INCONCLUSIVE pass through
+    if handler_result.status not in (
+        HandlerResultStatus.PASS,
+        HandlerResultStatus.FAIL,
+    ):
+        return handler_result
+
+    try:
+        from .cel_evaluator import evaluate_cel
+
+        cel_context = {"output": handler_result.evidence or {}}
+        cel_result = evaluate_cel(expr, cel_context)
+
+        if cel_result.success:
+            evidence = dict(handler_result.evidence or {})
+            evidence["expr"] = expr
+            if cel_result.value:
+                return HandlerResult(
+                    status=HandlerResultStatus.PASS,
+                    message="CEL expression passed",
+                    confidence=1.0,
+                    evidence=evidence,
+                )
+            else:
+                return HandlerResult(
+                    status=HandlerResultStatus.INCONCLUSIVE,
+                    message="CEL expression evaluated to false",
+                    evidence=evidence,
+                )
+        else:
+            logger.debug("CEL evaluation failed: %s", cel_result.error)
+            return handler_result
+    except Exception as e:
+        logger.debug("CEL evaluator unavailable: %s", e)
+        return handler_result
+
+
 def evaluate_when_clause(when: dict[str, Any], context: dict[str, Any]) -> bool:
     """Evaluate a ``when`` clause against a context dict.
 
@@ -223,6 +278,10 @@ class SieveOrchestrator:
                         status=HandlerResultStatus.ERROR,
                         message=f"Handler error: {e}",
                     )
+
+                # Post-handler CEL expression evaluation
+                handler_result = _apply_cel_expr(handler_config, handler_result)
+
                 duration_ms = int((time.time() - start_time) * 1000)
 
                 # Cache shared handler result
