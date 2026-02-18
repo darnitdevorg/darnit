@@ -383,6 +383,15 @@ All TOML configs MUST validate against the framework schema:
 - Field types correct
 - Pass configurations valid
 
+#### Requirement: Remediation consumes cached audit results
+
+- **WHEN** `remediate_audit_findings()` is called and `read_audit_cache()` returns valid cached results
+- **THEN** it SHALL extract failed control IDs from the cached results (entries with `status == "FAIL"`)
+- **AND** it SHALL NOT run a redundant audit
+- **WHEN** `read_audit_cache()` returns `None` (cache miss)
+- **THEN** it SHALL run the sieve audit as normal (existing behavior)
+- **AND** it SHALL iterate all remediation categories, letting per-control filtering exclude categories where no controls failed
+
 ### Removed: VerificationPassProtocol
 
 **Reason**: Replaced by handler dispatch architecture. Pass classes that implemented this protocol (`DeterministicPass`, `PatternPass`, `LLMPass`, `ManualPass`, `ExecPass`) are superseded by handler functions registered in `SieveHandlerRegistry`.
