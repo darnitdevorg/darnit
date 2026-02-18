@@ -579,6 +579,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       # TODO: Replace with your project's test command
       - name: Run tests
@@ -602,6 +604,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Generate SBOM with Syft
         uses: anchore/sbom-action@v0
@@ -637,6 +641,8 @@ jobs:
       actions: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
@@ -664,6 +670,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Dependency Review
         uses: actions/dependency-review-action@v4
@@ -689,6 +697,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v2
@@ -1293,9 +1303,12 @@ run: |
 """
 
 # Primary: Run zizmor static analysis for template injection
+# Exit codes: 0=clean, 10=info, 11=low, 12=medium, 13=high, 14=mixed severity
+# All are valid — CEL expr evaluates JSON findings, not exit code
 [[controls."OSPS-BR-01.01".passes]]
 handler = "exec"
 command = ["zizmor", "--format", "json", "--offline", "$PATH"]
+pass_exit_codes = [0, 10, 11, 12, 13, 14]
 output_format = "json"
 expr = '!output.json.exists(f, f.ident == "template-injection")'
 timeout = 60
