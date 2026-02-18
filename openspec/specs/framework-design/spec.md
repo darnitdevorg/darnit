@@ -991,7 +991,7 @@ All audit entry points that produce markdown output SHALL use `format_results_ma
 
 ### 10.4 Audit Result Cache
 
-The canonical `run_sieve_audit()` function SHALL write audit results to a cache file after completing the sieve pipeline. The `builtin_remediate` tool and `remediate_audit_findings()` function SHALL check for cached results before running their own audit, using the cache to skip redundant audit passes.
+The canonical `run_sieve_audit()` function SHALL write audit results to a cache file after completing the sieve pipeline. The `remediate_audit_findings()` function SHALL check for cached results before running its own audit, using the cache to skip redundant audit passes.
 
 Cache files are stored in the system temp directory (`$TMPDIR/darnit/<repo-hash>/audit-cache.json`), keyed by a hash of the repository's absolute path. This avoids writing any files into the repository itself.
 
@@ -1007,26 +1007,19 @@ Cache files are stored in the system temp directory (`$TMPDIR/darnit/<repo-hash>
 - **AND** controls with `status == "WARN"` SHALL NOT be remediated (WARN means automated verification was inconclusive, not that the control is non-compliant)
 - **AND** controls with `status == "PASS"` SHALL NOT be remediated
 
-#### Requirement: Builtin remediate consumes cached audit results
-- **WHEN** `builtin_remediate()` is called and `read_audit_cache()` returns valid cached results
+#### Requirement: Remediation consumes cached audit results
+- **WHEN** `remediate_audit_findings()` is called and `read_audit_cache()` returns valid cached results
 - **THEN** it SHALL extract failed control IDs from the cached results (entries with `status == "FAIL"`)
-- **AND** it SHALL NOT run `SieveOrchestrator.verify()` on any controls
+- **AND** it SHALL NOT run a redundant audit
 - **WHEN** `read_audit_cache()` returns `None` (cache miss)
-- **THEN** it SHALL run the sieve audit as it does today (existing behavior)
+- **THEN** it SHALL run the sieve audit as normal (existing behavior)
+- **AND** it SHALL iterate all remediation categories, letting per-control filtering exclude categories where no controls failed
 
 #### Requirement: Post-remediation cache invalidation
-- **WHEN** `builtin_remediate()` completes with `dry_run=False` and at least one remediation was applied
+- **WHEN** `remediate_audit_findings()` completes with `dry_run=False` and at least one remediation was applied
 - **THEN** it SHALL call `invalidate_audit_cache(local_path)`
-- **WHEN** `builtin_remediate()` completes with `dry_run=True`
+- **WHEN** `remediate_audit_findings()` completes with `dry_run=True`
 - **THEN** it SHALL NOT call `invalidate_audit_cache()`
-
-#### Requirement: Remediate audit findings consumes cached results
-- **WHEN** `remediate_audit_findings()` is called and valid cached results exist
-- **THEN** it SHALL use the cached results to determine failed control IDs
-- **AND** it SHALL NOT call `_run_baseline_checks()` redundantly
-- **AND** it SHALL iterate all remediation categories, letting per-control filtering exclude categories where no controls failed
-- **WHEN** `remediate_audit_findings()` applies changes with `dry_run=False`
-- **THEN** it SHALL call `invalidate_audit_cache(local_path)`
 
 ### 10.5 Framework Contains No Implementation-Specific Code
 
