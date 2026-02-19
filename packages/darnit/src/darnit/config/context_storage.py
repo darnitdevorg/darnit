@@ -101,6 +101,8 @@ def load_context(local_path: str) -> ContextByCategory:
             platform_context["platform"] = ContextValue.user_confirmed(ctx.platform)
         if ctx.primary_language is not None:
             platform_context["primary_language"] = ContextValue.user_confirmed(ctx.primary_language)
+        if ctx.languages is not None:
+            platform_context["languages"] = ContextValue.user_confirmed(ctx.languages)
         if platform_context:
             context_by_category["platform"] = platform_context
 

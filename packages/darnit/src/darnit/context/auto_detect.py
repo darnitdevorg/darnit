@@ -118,6 +118,48 @@ def detect_primary_language(local_path: str) -> str | None:
     return detected
 
 
+# Shared manifest-to-language mapping used by both detection functions
+_MANIFEST_CHECKS: list[tuple[str, str]] = [
+    ("go.mod", "go"),
+    ("Cargo.toml", "rust"),
+    ("pyproject.toml", "python"),
+    ("setup.py", "python"),
+    ("setup.cfg", "python"),
+    ("pom.xml", "java"),
+    ("build.gradle", "java"),
+    ("build.gradle.kts", "java"),
+    ("package.json", "javascript"),  # May be refined to typescript
+]
+
+
+def detect_languages(local_path: str) -> list[str]:
+    """Detect all programming languages present in the repository.
+
+    Unlike ``detect_primary_language()`` which stops at the first match,
+    this scans all manifest files and returns every detected language.
+    Deduplicates results (e.g., pyproject.toml and setup.py both → "python").
+
+    Returns:
+        List of language strings, e.g. ``["go", "typescript"]``. Empty if none found.
+    """
+    seen: set[str] = set()
+    languages: list[str] = []
+
+    for filename, language in _MANIFEST_CHECKS:
+        if os.path.isfile(os.path.join(local_path, filename)):
+            # TypeScript refinement
+            if language == "javascript" and os.path.isfile(
+                os.path.join(local_path, "tsconfig.json")
+            ):
+                language = "typescript"
+
+            if language not in seen:
+                seen.add(language)
+                languages.append(language)
+
+    return languages
+
+
 def collect_auto_context(local_path: str) -> dict[str, Any]:
     """Collect all auto-detectable context. Returns flat dict with bare keys.
 
@@ -137,6 +179,10 @@ def collect_auto_context(local_path: str) -> dict[str, Any]:
     primary_language = detect_primary_language(local_path)
     if primary_language:
         context["primary_language"] = primary_language
+
+    languages = detect_languages(local_path)
+    # Always include languages (even empty list) so when clauses can evaluate
+    context["languages"] = languages
 
     if context:
         logger.debug("Auto-detected context: %s", context)

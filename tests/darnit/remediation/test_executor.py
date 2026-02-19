@@ -313,5 +313,232 @@ class TestHandlerInconclusiveHandling:
             assert handlers[0]["status"] == "inconclusive"
 
 
+class TestExecutorWhenClause:
+    """Test when clause filtering in remediation executor."""
+
+    def test_strategy_all_runs_all_matching(self):
+        """strategy='all' runs all handlers whose when clause matches."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            executor = RemediationExecutor(
+                local_path=tmpdir,
+                owner="testorg",
+                repo="testrepo",
+                context_values={"primary_language": "python"},
+            )
+
+            config = RemediationConfig(
+                strategy="all",
+                handlers=[
+                    HandlerInvocation(
+                        handler="file_create",
+                        path="A.md",
+                        content="# A",
+                        when={"primary_language": "python"},
+                    ),
+                    HandlerInvocation(
+                        handler="file_create",
+                        path="B.md",
+                        content="# B",
+                        when={"primary_language": "python"},
+                    ),
+                ],
+            )
+
+            result = executor.execute("TEST-01", config, dry_run=True)
+            assert result.success
+            assert len(result.details["handlers"]) == 2
+
+    def test_strategy_all_skips_unmatched(self):
+        """strategy='all' skips handlers whose when clause does not match."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            executor = RemediationExecutor(
+                local_path=tmpdir,
+                owner="testorg",
+                repo="testrepo",
+                context_values={"primary_language": "python"},
+            )
+
+            config = RemediationConfig(
+                strategy="all",
+                handlers=[
+                    HandlerInvocation(
+                        handler="file_create",
+                        path="A.md",
+                        content="# A",
+                        when={"primary_language": "python"},
+                    ),
+                    HandlerInvocation(
+                        handler="file_create",
+                        path="B.md",
+                        content="# B",
+                        when={"primary_language": "go"},
+                    ),
+                ],
+            )
+
+            result = executor.execute("TEST-01", config, dry_run=True)
+            assert result.success
+            # Only the python handler matches
+            assert len(result.details["handlers"]) == 1
+
+    def test_strategy_first_match_stops_after_first(self):
+        """strategy='first_match' stops after the first matching handler."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            executor = RemediationExecutor(
+                local_path=tmpdir,
+                owner="testorg",
+                repo="testrepo",
+                context_values={"primary_language": "go"},
+            )
+
+            config = RemediationConfig(
+                strategy="first_match",
+                handlers=[
+                    HandlerInvocation(
+                        handler="file_create",
+                        path="A.md",
+                        content="# A",
+                        when={"primary_language": "go"},
+                    ),
+                    HandlerInvocation(
+                        handler="file_create",
+                        path="B.md",
+                        content="# B",
+                        when={"primary_language": "go"},
+                    ),
+                ],
+            )
+
+            result = executor.execute("TEST-01", config, dry_run=True)
+            assert result.success
+            # Only first matching handler executes
+            assert len(result.details["handlers"]) == 1
+            assert result.details["handlers"][0]["handler"] == "file_create"
+
+    def test_strategy_first_match_skips_to_matching(self):
+        """strategy='first_match' skips non-matching handlers, runs first match."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            executor = RemediationExecutor(
+                local_path=tmpdir,
+                owner="testorg",
+                repo="testrepo",
+                context_values={"primary_language": "python"},
+            )
+
+            config = RemediationConfig(
+                strategy="first_match",
+                handlers=[
+                    HandlerInvocation(
+                        handler="file_create",
+                        path="go.md",
+                        content="# Go",
+                        when={"primary_language": "go"},
+                    ),
+                    HandlerInvocation(
+                        handler="file_create",
+                        path="python.md",
+                        content="# Python",
+                        when={"primary_language": "python"},
+                    ),
+                    HandlerInvocation(
+                        handler="file_create",
+                        path="fallback.md",
+                        content="# Fallback",
+                    ),
+                ],
+            )
+
+            result = executor.execute("TEST-01", config, dry_run=True)
+            assert result.success
+            assert len(result.details["handlers"]) == 1
+
+    def test_strategy_first_match_no_match_returns_error(self):
+        """strategy='first_match' with no matching handler returns failure."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            executor = RemediationExecutor(
+                local_path=tmpdir,
+                owner="testorg",
+                repo="testrepo",
+                context_values={"primary_language": "rust"},
+            )
+
+            config = RemediationConfig(
+                strategy="first_match",
+                handlers=[
+                    HandlerInvocation(
+                        handler="file_create",
+                        path="go.md",
+                        content="# Go",
+                        when={"primary_language": "go"},
+                    ),
+                    HandlerInvocation(
+                        handler="file_create",
+                        path="python.md",
+                        content="# Python",
+                        when={"primary_language": "python"},
+                    ),
+                ],
+            )
+
+            result = executor.execute("TEST-01", config, dry_run=True)
+            assert not result.success
+            assert "No applicable remediation" in result.message
+
+    def test_when_with_languages_list_context(self):
+        """when clause matches list-valued context (e.g., languages)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            executor = RemediationExecutor(
+                local_path=tmpdir,
+                owner="testorg",
+                repo="testrepo",
+                context_values={"languages": ["go", "typescript"]},
+            )
+
+            config = RemediationConfig(
+                strategy="first_match",
+                handlers=[
+                    HandlerInvocation(
+                        handler="file_create",
+                        path="go.md",
+                        content="# Go",
+                        when={"languages": "go"},
+                    ),
+                ],
+            )
+
+            result = executor.execute("TEST-01", config, dry_run=True)
+            assert result.success
+
+
+class TestWhenFieldNotInHandlerConfig:
+    """Test that 'when' is a Pydantic explicit field, not model_extra."""
+
+    def test_when_not_in_model_extra(self):
+        """when field should not leak into handler config dict (model_extra)."""
+        inv = HandlerInvocation(
+            handler="file_create",
+            when={"primary_language": "go"},
+            path="test.md",
+            content="# Test",
+        )
+        config = dict(inv.model_extra or {})
+        assert "when" not in config
+        # when should be accessible as a field
+        assert inv.when == {"primary_language": "go"}
+        # model_extra should contain the handler-specific config
+        assert config.get("path") == "test.md"
+        assert config.get("content") == "# Test"
+
+    def test_strategy_not_in_model_extra(self):
+        """strategy field should not leak into model_extra."""
+        config = RemediationConfig(
+            strategy="first_match",
+            handlers=[
+                HandlerInvocation(handler="manual", steps=["Check"]),
+            ],
+        )
+        assert config.strategy == "first_match"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

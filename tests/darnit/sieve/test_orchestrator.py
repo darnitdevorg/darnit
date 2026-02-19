@@ -10,13 +10,17 @@ from darnit.sieve.models import (
 from darnit.sieve.orchestrator import SieveOrchestrator
 
 
-def _make_context() -> CheckContext:
+def _make_context(
+    local_path: str = "/tmp/test",
+    project_context: dict | None = None,
+) -> CheckContext:
     return CheckContext(
         owner="test-org",
         repo="test-repo",
-        local_path="/tmp/test",
+        local_path=local_path,
         default_branch="main",
         control_id="TEST-01",
+        project_context=project_context or {},
     )
 
 
@@ -184,3 +188,157 @@ class TestVerifyWithLlmResponse:
 
         result = orchestrator.verify_with_llm_response(spec, _make_context(), response)
         assert result.status == "FAIL"
+
+
+class TestHandlerWhenClause:
+    """Test handler-level when clause in dispatch_handler_invocations."""
+
+    def test_handler_skipped_when_condition_false(self, tmp_path):
+        """Handler with when={primary_language: 'go'} is skipped when context is 'python'."""
+        (tmp_path / "README.md").write_text("# Test")
+        orchestrator = SieveOrchestrator(stop_on_llm=True)
+
+        spec = ControlSpec(
+            control_id="TEST-01",
+            level=1,
+            domain="TEST",
+            name="TestControl",
+            description="Test",
+            metadata={
+                "handler_invocations": [
+                    HandlerInvocation(
+                        handler="file_exists",
+                        files=["README.md"],
+                        when={"primary_language": "go"},
+                    ),
+                ],
+            },
+        )
+
+        ctx = _make_context(
+            local_path=str(tmp_path),
+            project_context={"primary_language": "python"},
+        )
+        result = orchestrator.verify(spec, ctx)
+        # Handler skipped → no conclusive result → WARN
+        assert result.status == "WARN"
+
+    def test_handler_runs_when_condition_true(self, tmp_path):
+        """Handler with when={primary_language: 'go'} runs when context matches."""
+        (tmp_path / "README.md").write_text("# Test")
+        orchestrator = SieveOrchestrator(stop_on_llm=True)
+
+        spec = ControlSpec(
+            control_id="TEST-01",
+            level=1,
+            domain="TEST",
+            name="TestControl",
+            description="Test",
+            metadata={
+                "handler_invocations": [
+                    HandlerInvocation(
+                        handler="file_exists",
+                        files=["README.md"],
+                        when={"primary_language": "go"},
+                    ),
+                ],
+            },
+        )
+
+        ctx = _make_context(
+            local_path=str(tmp_path),
+            project_context={"primary_language": "go"},
+        )
+        result = orchestrator.verify(spec, ctx)
+        assert result.status == "PASS"
+
+    def test_handler_runs_unconditionally_when_no_when(self, tmp_path):
+        """Handler without when clause runs regardless of context."""
+        (tmp_path / "README.md").write_text("# Test")
+        orchestrator = SieveOrchestrator(stop_on_llm=True)
+
+        spec = ControlSpec(
+            control_id="TEST-01",
+            level=1,
+            domain="TEST",
+            name="TestControl",
+            description="Test",
+            metadata={
+                "handler_invocations": [
+                    HandlerInvocation(
+                        handler="file_exists",
+                        files=["README.md"],
+                    ),
+                ],
+            },
+        )
+
+        ctx = _make_context(
+            local_path=str(tmp_path),
+            project_context={"primary_language": "python"},
+        )
+        result = orchestrator.verify(spec, ctx)
+        assert result.status == "PASS"
+
+    def test_handler_when_with_list_context(self, tmp_path):
+        """Handler with when={languages: 'go'} matches list context containing 'go'."""
+        (tmp_path / "README.md").write_text("# Test")
+        orchestrator = SieveOrchestrator(stop_on_llm=True)
+
+        spec = ControlSpec(
+            control_id="TEST-01",
+            level=1,
+            domain="TEST",
+            name="TestControl",
+            description="Test",
+            metadata={
+                "handler_invocations": [
+                    HandlerInvocation(
+                        handler="file_exists",
+                        files=["README.md"],
+                        when={"languages": "go"},
+                    ),
+                ],
+            },
+        )
+
+        ctx = _make_context(
+            local_path=str(tmp_path),
+            project_context={"languages": ["go", "typescript"]},
+        )
+        result = orchestrator.verify(spec, ctx)
+        assert result.status == "PASS"
+
+    def test_first_handler_skipped_second_runs(self, tmp_path):
+        """First handler skipped by when, second runs unconditionally."""
+        (tmp_path / "README.md").write_text("# Test")
+        orchestrator = SieveOrchestrator(stop_on_llm=True)
+
+        spec = ControlSpec(
+            control_id="TEST-01",
+            level=1,
+            domain="TEST",
+            name="TestControl",
+            description="Test",
+            metadata={
+                "handler_invocations": [
+                    HandlerInvocation(
+                        handler="file_exists",
+                        files=["NONEXISTENT.md"],
+                        when={"primary_language": "go"},
+                    ),
+                    HandlerInvocation(
+                        handler="file_exists",
+                        files=["README.md"],
+                    ),
+                ],
+            },
+        )
+
+        ctx = _make_context(
+            local_path=str(tmp_path),
+            project_context={"primary_language": "python"},
+        )
+        result = orchestrator.verify(spec, ctx)
+        # First handler skipped (go != python), second runs and finds README.md
+        assert result.status == "PASS"

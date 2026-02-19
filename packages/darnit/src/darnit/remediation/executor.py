@@ -31,6 +31,7 @@ from darnit.config.framework_schema import (
     RemediationConfig,
     TemplateConfig,
 )
+from darnit.config.when_evaluator import evaluate_when
 from darnit.core.logging import get_logger
 from darnit.remediation.helpers import (
     detect_repo_from_git,
@@ -345,7 +346,8 @@ class RemediationExecutor:
         """Execute handler-based remediation invocations.
 
         Iterates config.handlers (flat list) and dispatches each through
-        the sieve handler registry.
+        the sieve handler registry. Respects ``when`` clauses on individual
+        handlers and the ``strategy`` field on RemediationConfig.
         """
         from darnit.sieve.handler_registry import (
             HandlerContext,
@@ -363,10 +365,29 @@ class RemediationExecutor:
             project_context=dict(self._project_values),
         )
 
+        # Assemble flat context for when-clause evaluation
+        when_context: dict[str, Any] = dict(self._project_values)
+        when_context.update(self._context_values)
+
         results: list[dict[str, Any]] = []
         all_success = True
+        first_match = config.strategy == "first_match"
+        matched_any = False
 
         for invocation in config.handlers:
+            # Evaluate when clause — skip handler if condition not met
+            if invocation.when and not evaluate_when(
+                invocation.when, when_context
+            ):
+                logger.debug(
+                    "Control %s: remediation handler '%s' skipped "
+                    "(when clause not met: %s)",
+                    control_id,
+                    invocation.handler,
+                    invocation.when,
+                )
+                continue
+
             handler_config = dict(invocation.model_extra or {})
             handler_config["handler"] = invocation.handler
 
@@ -385,6 +406,9 @@ class RemediationExecutor:
                     "message": f"Would execute handler: {invocation.handler}",
                     "config": handler_config,
                 })
+                matched_any = True
+                if first_match:
+                    break
                 continue
 
             handler_info = registry.get(invocation.handler)
@@ -395,6 +419,9 @@ class RemediationExecutor:
                     "message": f"Handler '{invocation.handler}' not found",
                 })
                 all_success = False
+                matched_any = True
+                if first_match:
+                    break
                 continue
 
             try:
@@ -413,6 +440,31 @@ class RemediationExecutor:
                     "message": str(e),
                 })
                 all_success = False
+
+            matched_any = True
+            if first_match:
+                break
+
+        # Handle first_match with no matching handlers
+        if first_match and not matched_any:
+            unmatched = [
+                str(inv.when)
+                for inv in config.handlers
+                if inv.when
+            ]
+            return RemediationResult(
+                success=False,
+                message=(
+                    "No applicable remediation handler matched the project context. "
+                    f"Unmatched conditions: {', '.join(unmatched)}"
+                    if unmatched
+                    else "No remediation handlers configured"
+                ),
+                control_id=control_id,
+                remediation_type="handler_pipeline",
+                dry_run=dry_run,
+                details={"handlers": results, "strategy": "first_match"},
+            )
 
         return RemediationResult(
             success=all_success,

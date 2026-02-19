@@ -127,7 +127,7 @@ Example:
 """
 
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -257,6 +257,11 @@ class HandlerInvocation(BaseModel):
 
     # Convenience: populate files from locator.discover at load time
     use_locator: bool = False
+
+    # Conditional dispatch — handler is skipped when condition evaluates to false
+    # Keys are context keys, values are expected values (same semantics as control-level when)
+    # Consumed by orchestrator/executor before dispatch; NOT passed to the handler
+    when: dict[str, Any] | None = None
 
     # All other fields pass through to the handler
     model_config = ConfigDict(extra="allow")
@@ -457,6 +462,11 @@ class RemediationConfig(BaseModel):
     """
     # Flat ordered list of remediation handler invocations
     handlers: list[HandlerInvocation] = Field(default_factory=list)
+
+    # Handler selection strategy:
+    # - "all" (default): run all handlers whose `when` matches (existing behavior)
+    # - "first_match": stop after the first handler whose `when` matches
+    strategy: Literal["all", "first_match"] = "all"
 
     # Post-remediation .project/ update (applied via on_pass, not a handler)
     project_update: Optional["ProjectUpdateRemediationConfig"] = None

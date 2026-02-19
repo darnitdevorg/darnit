@@ -3,6 +3,7 @@
 import time
 from typing import Any
 
+from darnit.config.when_evaluator import evaluate_when
 from darnit.core.logging import get_logger
 
 from .handler_registry import (
@@ -232,7 +233,21 @@ class SieveOrchestrator:
             },
         )
 
+        # Assemble flat context for when-clause evaluation
+        when_context = dict(handler_ctx.project_context)
+
         for invocation in handler_invocations:
+            # Evaluate when clause — skip handler if condition not met
+            if invocation.when and not evaluate_when(
+                invocation.when, when_context
+            ):
+                logger.debug(
+                    "Control %s: handler '%s' skipped (when clause not met)",
+                    control_spec.control_id,
+                    invocation.handler,
+                )
+                continue
+
             handler_info = registry.get(invocation.handler)
             if not handler_info:
                 logger.warning(

@@ -6,6 +6,7 @@ from darnit.context.auto_detect import (
     _extract_hostname,
     collect_auto_context,
     detect_ci_provider,
+    detect_languages,
     detect_platform,
     detect_primary_language,
 )
@@ -127,6 +128,43 @@ class TestDetectPrimaryLanguage:
         assert detect_primary_language(str(tmp_path)) is None
 
 
+class TestDetectLanguages:
+    def test_single_language(self, tmp_path):
+        (tmp_path / "go.mod").write_text("module example.com")
+        assert detect_languages(str(tmp_path)) == ["go"]
+
+    def test_multi_language(self, tmp_path):
+        (tmp_path / "go.mod").write_text("module example.com")
+        (tmp_path / "package.json").write_text("{}")
+        assert detect_languages(str(tmp_path)) == ["go", "javascript"]
+
+    def test_typescript_refinement(self, tmp_path):
+        (tmp_path / "package.json").write_text("{}")
+        (tmp_path / "tsconfig.json").write_text("{}")
+        assert detect_languages(str(tmp_path)) == ["typescript"]
+
+    def test_multi_language_with_typescript(self, tmp_path):
+        (tmp_path / "go.mod").write_text("module example.com")
+        (tmp_path / "package.json").write_text("{}")
+        (tmp_path / "tsconfig.json").write_text("{}")
+        assert detect_languages(str(tmp_path)) == ["go", "typescript"]
+
+    def test_no_manifests(self, tmp_path):
+        assert detect_languages(str(tmp_path)) == []
+
+    def test_deduplication_python(self, tmp_path):
+        """Multiple Python manifests should produce a single 'python' entry."""
+        (tmp_path / "pyproject.toml").write_text("[project]")
+        (tmp_path / "setup.py").write_text("from setuptools import setup")
+        assert detect_languages(str(tmp_path)) == ["python"]
+
+    def test_deduplication_java(self, tmp_path):
+        """Multiple Java manifests should produce a single 'java' entry."""
+        (tmp_path / "pom.xml").write_text("<project/>")
+        (tmp_path / "build.gradle").write_text("plugins {}")
+        assert detect_languages(str(tmp_path)) == ["java"]
+
+
 class TestCollectAutoContext:
     def test_collects_all(self, tmp_path):
         # Set up git + GitHub remote + Python + GitHub Actions
@@ -142,10 +180,12 @@ class TestCollectAutoContext:
         assert result["platform"] == "github"
         assert result["ci_provider"] == "github"
         assert result["primary_language"] == "python"
+        assert result["languages"] == ["python"]
 
-    def test_empty_for_bare_dir(self, tmp_path):
+    def test_languages_always_included(self, tmp_path):
+        """languages key is always present, even as empty list."""
         result = collect_auto_context(str(tmp_path))
-        assert result == {}
+        assert result["languages"] == []
 
     def test_omits_undetectable(self, tmp_path):
         """Keys with None detection are omitted from the result."""
@@ -154,6 +194,7 @@ class TestCollectAutoContext:
         # No language files, no CI files
 
         result = collect_auto_context(str(tmp_path))
-        assert result == {"platform": "github"}
+        assert result["platform"] == "github"
+        assert result["languages"] == []
         assert "ci_provider" not in result
         assert "primary_language" not in result

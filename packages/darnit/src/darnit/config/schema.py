@@ -308,6 +308,9 @@ class ProjectContext(BaseModel):
     primary_language: str | None = None
     """Primary programming language - python, go, rust, javascript, etc."""
 
+    languages: list[str] | None = None
+    """All detected programming languages in the repository."""
+
     # New context keys for governance and security
     maintainers: list[str] | str | None = None
     """Project maintainers - list of GitHub usernames or path to MAINTAINERS file."""
