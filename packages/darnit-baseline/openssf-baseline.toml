@@ -574,11 +574,14 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
 
@@ -603,19 +606,19 @@ jobs:
   sbom:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
 
       - name: Generate SBOM with Syft
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@28d71544de8eaf1b958d335707167c5f783590ad # v0
         with:
           artifact-name: sbom-${{ github.event.release.tag_name || 'snapshot' }}.spdx.json
           output-file: sbom.spdx.json
 
       - name: Upload SBOM as release asset
         if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2
         with:
           files: sbom.spdx.json
 """
@@ -632,6 +635,8 @@ on:
   schedule:
     - cron: '0 6 * * 1'  # Weekly on Monday
 
+permissions: {}
+
 jobs:
   analyze:
     runs-on: ubuntu-latest
@@ -640,18 +645,18 @@ jobs:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@f5c2471be782132e47a6e6f9c725e56730d6e9a3 # v3
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
+        uses: github/codeql-action/autobuild@f5c2471be782132e47a6e6f9c725e56730d6e9a3 # v3
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@f5c2471be782132e47a6e6f9c725e56730d6e9a3 # v3
 """
 
 [templates.sca_workflow]
@@ -669,12 +674,12 @@ jobs:
   dependency-review:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
 
       - name: Dependency Review
-        uses: actions/dependency-review-action@v4
+        uses: actions/dependency-review-action@3c4e3dcb1aa7874d2c16be7d79418e9b7efd6261 # v4
         with:
           fail-on-severity: high
 """
@@ -696,12 +701,12 @@ jobs:
   attest:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
 
       - name: Generate artifact attestation
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-path: '.'
 """
@@ -946,6 +951,91 @@ cosign verify-blob --bundle <release>.bundle <release-artifact>
 ```
 
 For more information about Sigstore, see: https://www.sigstore.dev/
+"""
+
+# --- Secrets & Testing Policy Templates ---
+
+[templates.secrets_management_policy]
+description = "Secrets management policy section for SECURITY.md"
+content = """# Secrets Management Policy
+
+## Credential Handling
+
+- **No secrets in source**: Secrets, API keys, tokens, and credentials MUST NOT be
+  committed to version control, even temporarily.
+- **Environment-based injection**: All secrets are injected at runtime via environment
+  variables or mounted secret volumes.
+
+## CI/CD Secrets
+
+- GitHub Actions secrets or an external vault service (e.g., HashiCorp Vault) are used
+  for all CI/CD credentials.
+- Secrets are scoped to the minimum required environment (repository, environment, or
+  organization level).
+
+## Rotation & Revocation
+
+- **Rotation schedule**: Long-lived credentials are rotated at least every 90 days.
+- **Incident response**: Compromised credentials are revoked immediately and rotated
+  before re-use.
+- **Short-lived tokens**: Prefer OIDC tokens and short-lived credentials over long-lived
+  secrets wherever supported.
+
+## Review
+
+This policy is reviewed annually or when a security incident involving credentials occurs.
+"""
+
+[templates.testing_instructions]
+description = "Testing instructions section for README or CONTRIBUTING"
+content = """# Testing
+
+## Running Tests
+
+```bash
+# Run the full test suite
+# TODO: Replace with your project's test command
+make test
+```
+
+## Test Requirements
+
+- All pull requests must include tests for new functionality
+- Bug fixes should include a regression test
+- Tests must pass in CI before a pull request can be merged
+
+## Writing Tests
+
+- Place tests alongside the code they test, or in a dedicated `tests/` directory
+- Follow existing test patterns and naming conventions
+- Aim for meaningful coverage of critical paths and edge cases
+"""
+
+[templates.test_requirements_contributing]
+description = "Test requirements section for CONTRIBUTING.md"
+content = """# Test Requirements for Contributions
+
+## Before Submitting a Pull Request
+
+All contributions must include appropriate tests:
+
+1. **New features**: Include unit tests covering the main functionality and edge cases
+2. **Bug fixes**: Include a regression test that reproduces the bug and verifies the fix
+3. **Refactoring**: Ensure existing tests still pass; add tests if coverage gaps are found
+
+## Running Tests Locally
+
+```bash
+# Run the full test suite before submitting
+# TODO: Replace with your project's test command
+make test
+```
+
+## CI Checks
+
+- All pull requests are automatically tested in CI
+- Tests must pass before a pull request can be merged
+- Maintainers may request additional test coverage during review
 """
 
 # =============================================================================
@@ -1360,14 +1450,12 @@ description = "Branch names are handled safely in workflows"
 tags = { level = 1, domain = "BR", build = true, security = true }
 when = { ci_provider = "github" }
 
-# Pattern: Check workflows don't use raw branch names unsafely
+# Exec: grep for unsafe ${{ github.head_ref }} — exit code 1 (no matches) = PASS
 [[controls."OSPS-BR-01.02".passes]]
-handler = "pattern"
-files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
-
-[controls."OSPS-BR-01.02".passes.pattern.patterns]
-# Look for safe patterns - quoting or using github.ref_name
-safe_ref_usage = "(\\$\\{\\{ github\\.ref_name \\}\\}|\\$\\{\\{ github\\.head_ref \\}\\})"
+handler = "exec"
+command = ["grep", "-rln", "github.head_ref", ".github/workflows/"]
+pass_exit_codes = [1]
+timeout = 10
 
 [[controls."OSPS-BR-01.02".passes]]
 handler = "manual"
@@ -1381,11 +1469,19 @@ steps = [
 safe = false
 dry_run_supported = false
 
+# Primary: zizmor auto-fix moves ${{ github.head_ref }} into env: variables
+[[controls."OSPS-BR-01.02".remediation.handlers]]
+handler = "exec"
+command = ["zizmor", "--fix=all", "--offline", "$PATH"]
+pass_exit_codes = [0, 11, 12, 13, 14]
+timeout = 60
+
+# Fallback: manual remediation steps
 [[controls."OSPS-BR-01.02".remediation.handlers]]
 handler = "manual"
 steps = [
-    "Review CI/CD workflows for direct use of branch names in shell commands",
-    "Ensure branch name references are quoted: \"$GITHUB_REF_NAME\" not $GITHUB_REF_NAME",
+    "Review CI/CD workflows for direct use of ${{ github.head_ref }} in run: blocks",
+    "Replace direct interpolation with environment variables: env: HEAD_REF: ${{ github.head_ref }}",
     "Consider using actions/checkout with ref parameter instead of manual branch handling",
 ]
 docs_url = "https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions"
@@ -2306,6 +2402,7 @@ when = { ci_provider = "github" }
 [[controls."OSPS-AC-04.01".passes]]
 handler = "pattern"
 files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+pass_if_any = false
 
 [controls."OSPS-AC-04.01".passes.pattern.patterns]
 permissions = "^permissions:"
@@ -2709,10 +2806,10 @@ depends_on = ["OSPS-AC-04.01"]  # Scoped permissions builds on explicit permissi
 [[controls."OSPS-AC-04.02".passes]]
 handler = "pattern"
 files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+pass_if_any = false
 
 [controls."OSPS-AC-04.02".passes.pattern.patterns]
-scoped = "(contents:|issues:|pull-requests:|packages:)"
-read_only = "read(-only)?"
+scoped_permission = '^\s+(contents|issues|pull-requests|packages|actions|security-events|id-token|attestations|deployments|statuses|checks):\s*(read|write|none)'
 
 [[controls."OSPS-AC-04.02".passes]]
 handler = "manual"
@@ -2783,7 +2880,7 @@ tags = { level = 3, domain = "BR", build = true, secrets = true, security = true
 
 [[controls."OSPS-BR-07.02".passes]]
 handler = "pattern"
-files = ["SECURITY.md", "docs/security.md", "CONTRIBUTING.md"]
+files = ["SECURITY.md", "docs/security.md", "docs/SECRETS-POLICY.md", "CONTRIBUTING.md"]
 
 [controls."OSPS-BR-07.02".passes.pattern.patterns]
 secrets_policy = "(secret|credential|token|key).*(management|policy|handling|rotation)"
@@ -2797,13 +2894,20 @@ steps = [
 ]
 
 [controls."OSPS-BR-07.02".remediation]
-safe = false
-dry_run_supported = false
+safe = true
+dry_run_supported = true
+
+[[controls."OSPS-BR-07.02".remediation.handlers]]
+handler = "file_create"
+path = "docs/SECRETS-POLICY.md"
+template = "secrets_management_policy"
+overwrite = false
+create_dirs = true
 
 [[controls."OSPS-BR-07.02".remediation.handlers]]
 handler = "manual"
 steps = [
-    "Document your secrets management policy (e.g., in SECURITY.md or a dedicated doc)",
+    "Review the generated docs/SECRETS-POLICY.md and customize for your project",
     "Define credential rotation schedules and procedures",
     "Use GitHub Actions secrets or a vault service for CI/CD credentials",
     "Never store secrets in code or configuration files committed to version control",
@@ -2947,7 +3051,7 @@ tags = { level = 3, domain = "QA", quality = true, testing = true, documentation
 
 [[controls."OSPS-QA-06.02".passes]]
 handler = "pattern"
-files = ["README.md", "CONTRIBUTING.md", "docs/testing.md"]
+files = ["README.md", "CONTRIBUTING.md", "docs/testing.md", "docs/TESTING.md"]
 
 [controls."OSPS-QA-06.02".passes.pattern.patterns]
 test_docs = "(run.*test|test.*instruction|how to test)"
@@ -2961,15 +3065,21 @@ steps = [
 ]
 
 [controls."OSPS-QA-06.02".remediation]
-safe = false
-dry_run_supported = false
+safe = true
+dry_run_supported = true
+
+[[controls."OSPS-QA-06.02".remediation.handlers]]
+handler = "file_create"
+path = "docs/TESTING.md"
+template = "testing_instructions"
+overwrite = false
+create_dirs = true
 
 [[controls."OSPS-QA-06.02".remediation.handlers]]
 handler = "manual"
 steps = [
-    "Add a 'Testing' section to README.md or CONTRIBUTING.md",
-    "Document how to install test dependencies and run the test suite",
-    "Include examples of running specific test subsets if applicable",
+    "Review the generated docs/TESTING.md and customize for your project",
+    "Replace placeholder test commands with your actual test commands",
     "Document any environment setup required (databases, env vars, fixtures)",
 ]
 
@@ -2980,7 +3090,7 @@ tags = { level = 3, domain = "QA", quality = true, testing = true, contributing 
 
 [[controls."OSPS-QA-06.03".passes]]
 handler = "pattern"
-files = ["CONTRIBUTING.md"]
+files = ["CONTRIBUTING.md", "docs/TEST-REQUIREMENTS.md"]
 
 [controls."OSPS-QA-06.03".passes.pattern.patterns]
 test_req = "(test.*required|must.*test|include.*test)"
@@ -2994,16 +3104,22 @@ steps = [
 ]
 
 [controls."OSPS-QA-06.03".remediation]
-safe = false
-dry_run_supported = false
+safe = true
+dry_run_supported = true
+
+[[controls."OSPS-QA-06.03".remediation.handlers]]
+handler = "file_create"
+path = "docs/TEST-REQUIREMENTS.md"
+template = "test_requirements_contributing"
+overwrite = false
+create_dirs = true
 
 [[controls."OSPS-QA-06.03".remediation.handlers]]
 handler = "manual"
 steps = [
-    "Add test requirements to CONTRIBUTING.md (create the file if it doesn't exist)",
-    "State that all PRs must include tests for new functionality",
-    "Describe minimum test coverage expectations",
-    "Explain how to run the test suite before submitting a PR",
+    "Review the generated docs/TEST-REQUIREMENTS.md and customize for your project",
+    "Replace placeholder test commands with your actual test commands",
+    "State minimum test coverage expectations for your project",
 ]
 
 # =============================================================================

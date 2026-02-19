@@ -73,10 +73,10 @@ def _apply_cel_expr(
                     evidence=evidence,
                 )
         else:
-            logger.debug("CEL evaluation failed: %s", cel_result.error)
+            logger.warning("CEL evaluation failed for expr=%r: %s", expr, cel_result.error)
             return handler_result
     except Exception as e:
-        logger.debug("CEL evaluator unavailable: %s", e)
+        logger.warning("CEL evaluator unavailable for expr=%r: %s: %s", expr, type(e).__name__, e)
         return handler_result
 
 
