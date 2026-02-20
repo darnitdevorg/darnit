@@ -33,7 +33,7 @@ Example:
 # =============================================================================
 #
 # This schema is versioned at 0.1.0-alpha. The following enhancements are
-# planned for future versions. See docs/declarative-configuration.md for details.
+# planned for future versions. See docs/IMPLEMENTATION_GUIDE.md for details.
 #
 # -----------------------------------------------------------------------------
 # HIGH PRIORITY
@@ -142,18 +142,6 @@ class AdapterType(str, Enum):
     COMMAND = "command"    # External CLI tool
     SCRIPT = "script"      # Shell script
     HTTP = "http"          # REST API endpoint
-
-
-class PassPhase(str, Enum):
-    """Verification pass phases (maps to sieve VerificationPhase).
-
-    DEPRECATED: Phase buckets are being replaced by flat ordered handler lists.
-    Kept temporarily for backward compatibility during migration.
-    """
-    DETERMINISTIC = "deterministic"
-    PATTERN = "pattern"
-    LLM = "llm"
-    MANUAL = "manual"
 
 
 # =============================================================================

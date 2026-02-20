@@ -44,7 +44,6 @@ class CheckAdapter(ABC):
     #    - cached_results: Dict[str, CheckResult]  # Already-computed results
     #
     # See: darnit/core/models.py for ExecutionContext definition
-    # See: docs/declarative-configuration.md for design discussion
     """
 
     @abstractmethod

@@ -71,8 +71,7 @@ class OSPSBaselineImplementation:
         """Get remediation metadata derived from TOML.
 
         Returns a dict mapping control IDs to their remediation metadata
-        (safe, requires_api, handler types).  This replaces the former
-        hardcoded REMEDIATION_CATEGORIES dict.
+        (safe, requires_api, handler types).
         """
         registry: dict[str, Any] = {}
         try:

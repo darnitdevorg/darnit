@@ -411,14 +411,14 @@ The handler can then be referenced in TOML by short name:
 
 ```toml
 [controls."MY-01.01".passes.deterministic]
-config_check = "my_custom_check"  # Short name from registry
+handler = "my_custom_check"  # Short name from registry
 ```
 
 Or by full module path (must match allowlist):
 
 ```toml
 [controls."MY-01.01".passes.deterministic]
-config_check = "darnit_baseline.controls.level1:_create_mfa_check"
+handler = "darnit_baseline.controls.level1:_create_mfa_check"
 ```
 
 ### Security Recommendations

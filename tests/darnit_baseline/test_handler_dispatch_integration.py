@@ -168,13 +168,11 @@ class TestTomlControlsLoadAsHandlerFormat:
                     # Verify handler name is resolvable
                     registry = get_sieve_handler_registry()
                     handler_name = inv.handler
-                    # Skip check_function (Python plugin handler — not in builtin registry)
-                    if handler_name != "check_function":
-                        info = registry.get(handler_name)
-                        assert info is not None, (
-                            f"Control {spec.control_id}: handler '{handler_name}' "
-                            f"not found in registry"
-                        )
+                    info = registry.get(handler_name)
+                    assert info is not None, (
+                        f"Control {spec.control_id}: handler '{handler_name}' "
+                        f"not found in registry"
+                    )
             else:
                 controls_without_handlers += 1
 
