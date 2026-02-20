@@ -57,7 +57,7 @@ class TestGetNextStepsSection:
         self, mock_get_pending
     ):
         """3.1: Pending context + failures → context as step 1, remediation as step 2.
-        Verify confirm_project_context() appears. Verify 'Help Improve This Audit' absent.
+        Verify get_pending_context() directive appears. Verify 'Help Improve This Audit' absent.
         """
         pending = [
             _make_pending("ci_provider", "CI provider?", auto_value="github"),
@@ -72,8 +72,8 @@ class TestGetNextStepsSection:
         assert "Step 1: Confirm project context" in output
         # Step 2 is remediation
         assert "Step 2: Remediate failures" in output
-        # confirm_project_context call is present
-        assert "confirm_project_context(" in output
+        # Directs to get_pending_context (not direct confirm_project_context dump)
+        assert "get_pending_context(" in output
         # Legacy section is gone
         assert "Help Improve This Audit" not in output
 
@@ -105,10 +105,10 @@ class TestGetNextStepsSection:
         assert result == []
 
     @patch("darnit.config.context_storage.get_pending_context")
-    def test_reaudit_directive_appears_after_context_collection(
+    def test_context_step_directs_to_get_pending_context(
         self, mock_get_pending
     ):
-        """3.5: Re-audit directive appears after context collection step."""
+        """3.5: Context collection step directs to get_pending_context wizard."""
         pending = [
             _make_pending("maintainers", "Who maintains?", auto_value=["@alice"]),
         ]
@@ -118,8 +118,8 @@ class TestGetNextStepsSection:
         result = _get_next_steps_section("/repo", summary)
         output = "\n".join(result)
 
-        assert "audit_openssf_baseline" in output
-        assert "re-run the audit" in output.lower()
+        assert "get_pending_context(" in output
+        assert "one at a time" in output.lower()
 
     @patch("darnit.config.context_storage.get_pending_context")
     def test_warnings_only_produces_manual_review_step(self, mock_get_pending):

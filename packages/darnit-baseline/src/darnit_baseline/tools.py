@@ -444,22 +444,43 @@ def confirm_project_context(
     )
 
 
+_LLM_DIRECTIVE = """
+---
+IMPORTANT — YOU MUST FOLLOW THESE RULES:
+1. Use the AskUserQuestion tool to present this question interactively.
+   The "ask_user" object in each question maps directly to AskUserQuestion parameters:
+   pass "question", "header", "options", and "multiSelect" as-is.
+2. Do NOT batch multiple questions. Ask this ONE question, wait for the answer, then call get_pending_context again.
+3. Do NOT paraphrase or reword the question text.
+4. After the user answers, call confirm_project_context() with the value, then call get_pending_context() for the next question.
+5. Map user selections to confirm_project_context values:
+   - "Yes" / "No" for booleans → pass true / false (not strings)
+   - Selected option label for enums → pass the label as a string
+   - "Other" selections → pass the user's typed value
+6. Do NOT guess, suggest, or pre-fill answers from the repository owner, git history, or your own knowledge.
+---"""
+
+
 def get_pending_context(
     local_path: str = ".",
     control_ids: list[str] | None = None,
     level: int = 3,
     owner: str | None = None,
     repo: str | None = None,
+    limit: int = 1,
+    _tool_config: dict | None = None,
 ) -> str:
-    """
-    Get context values that would improve audit accuracy.
+    """Get context values that would improve audit accuracy.
 
-    Returns information about context that hasn't been confirmed yet,
-    organized by priority (number of controls affected). For context keys
-    with auto-detection enabled, shows auto-detected values for user confirmation.
+    **IMPORTANT**: This is a sequential form processor. It returns ONE question at a time
+    by default. You MUST follow this workflow:
 
-    Use this before running an audit to see what context information is missing
-    and would improve accuracy.
+    1. Call get_pending_context() — it returns a single question.
+    2. Present the question to the user using the EXACT "question" text from the response.
+       Do NOT paraphrase, batch, or use markdown formatting (no checkboxes, no tables).
+    3. After the user answers, call confirm_project_context() with the value.
+    4. Call get_pending_context() again for the next question.
+    5. Repeat until status is "complete".
 
     Parameters:
     - `local_path`: Path to repository (default: ".")
@@ -467,11 +488,12 @@ def get_pending_context(
     - `level`: Maximum maturity level (1, 2, or 3)
     - `owner`: GitHub owner (auto-detected if not provided)
     - `repo`: GitHub repo name (auto-detected if not provided)
+    - `limit`: Max questions to return (default: 1). Use 0 for all.
 
     Returns:
-        JSON with structured questions. Each question specifies its input_type
-        (free_text, select, or confirm) and the exact question to present.
-        Follow the input_type exactly — do not add options to free_text questions.
+        JSON with structured question(s) and a progress indicator. Each question
+        specifies its input_type (free_text, select, or confirm) and the exact
+        question to present. Follow the input_type exactly.
     """
     from darnit.config.context_storage import get_pending_context as _get_pending
 
@@ -501,6 +523,15 @@ def get_pending_context(
                 "questions": [],
             }, indent=2)
 
+        total = len(pending)
+
+        # Read config from TOML if available
+        effective_limit = limit
+        append_directive = True
+        if _tool_config:
+            effective_limit = _tool_config.get("limit", limit)
+            append_directive = _tool_config.get("append_directive", True)
+
         # Build structured JSON output — each question specifies exactly
         # how to present it so the calling LLM doesn't improvise
         questions = []
@@ -510,20 +541,30 @@ def get_pending_context(
         # Sort by priority (highest first)
         questions.sort(key=lambda q: q["priority"], reverse=True)
 
-        return json.dumps({
+        # Apply pagination (limit=0 means return all)
+        if effective_limit > 0:
+            questions = questions[:effective_limit]
+
+        result = json.dumps({
             "status": "pending",
+            "progress": {
+                "current": total - len(pending) + 1,
+                "total": total,
+            },
             "instructions": (
-                "Present each question to the user exactly as specified. "
-                "For questions with input_type 'free_text', ask the user to type their answer. "
-                "Do NOT suggest or pre-fill values. Do NOT infer answers from the repository "
-                "owner, git config, commit history, or your own knowledge. "
-                "For questions with input_type 'select', present ONLY the listed options. "
-                "For questions with input_type 'confirm', ask the user to confirm or correct "
-                "the auto-detected value."
+                "Present the question to the user using the EXACT 'question' text. "
+                "Do NOT paraphrase, batch, or use markdown formatting. "
+                "After the user answers, call confirm_project_context() with the value, "
+                "then call get_pending_context() again for the next question."
             ),
             "questions": questions,
-            "after_all_answers": "Call confirm_project_context() with all answered values.",
+            "after_answer": "Call confirm_project_context() with the answer, then call get_pending_context() again.",
         }, indent=2)
+
+        if append_directive:
+            result += _LLM_DIRECTIVE
+
+        return result
 
     except Exception as e:
         return json.dumps({
@@ -545,6 +586,11 @@ def _build_context_question(req) -> dict:
         "priority": req.priority,
         "affects_controls": req.control_ids,
     }
+
+    # Include presentation hint if available
+    hint = req.definition.computed_presentation_hint
+    if hint is not None:
+        question["presentation_hint"] = hint
 
     # Determine input type and build question accordingly
     if req.current_value is not None and auto_detect_enabled:
@@ -614,7 +660,83 @@ def _build_context_question(req) -> dict:
             f"confirm_project_context({req.key}=<user_answer>)"
         )
 
+    # Add ask_user params for interactive presentation (AskUserQuestion)
+    ask_user = _build_ask_user_params(req.key, question, req.definition)
+    if ask_user is not None:
+        question["ask_user"] = ask_user
+
     return question
+
+
+def _build_ask_user_params(key: str, question_dict: dict, definition) -> dict | None:
+    """Build AskUserQuestion-compatible parameters for interactive presentation.
+
+    Returns a dict with question/header/options/multiSelect fields that map
+    directly to Claude Code's AskUserQuestion tool, or None if the question
+    type doesn't support interactive selection.
+    """
+    input_type = question_dict.get("input_type")
+    question_text = question_dict.get("question", "")
+
+    # Derive header: remove common prefixes, title case, max 12 chars
+    header = key.removeprefix("has_").removeprefix("is_").replace("_", " ").title()
+    if len(header) > 12:
+        header = header[:12]
+
+    if input_type == "select":
+        raw_options = question_dict.get("options", [])
+        if not raw_options:
+            return None
+
+        if getattr(definition, "type", None) == "boolean":
+            options = [
+                {"label": "Yes", "description": definition.hint or "Yes, this applies"},
+                {"label": "No", "description": "No, this does not apply"},
+            ]
+        else:
+            # Enum: show up to 4 values, "Other" is always available
+            display = getattr(definition, "allowed_values", None) or raw_options
+            options = [
+                {"label": str(v), "description": f"Select '{v}'"}
+                for v in display[:4]
+            ]
+
+        return {
+            "question": question_text,
+            "header": header,
+            "options": options,
+            "multiSelect": False,
+        }
+
+    elif input_type == "confirm":
+        detected = question_dict.get("detected_value")
+        method = question_dict.get("detection_method", "auto-detected")
+        return {
+            "question": question_text,
+            "header": header,
+            "options": [
+                {"label": "Yes", "description": f"Accept: {detected} ({method})"},
+                {"label": "No", "description": "Specify a different value"},
+            ],
+            "multiSelect": False,
+        }
+
+    elif input_type == "free_text":
+        # Use examples as options if available
+        examples = getattr(definition, "examples", None)
+        if examples and isinstance(examples, list) and len(examples) >= 2:
+            options = [
+                {"label": str(ex), "description": f"Use '{ex}'"}
+                for ex in examples[:4]
+            ]
+            return {
+                "question": question_text,
+                "header": header,
+                "options": options,
+                "multiSelect": False,
+            }
+
+    return None
 
 
 # =============================================================================

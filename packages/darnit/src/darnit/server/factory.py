@@ -18,6 +18,40 @@ from .registry import ToolRegistry
 logger = logging.getLogger(__name__)
 
 
+def _bind_tool_config(handler, config: dict):
+    """Wrap a tool handler to inject TOML config as _tool_config kwarg.
+
+    If the handler signature accepts _tool_config, it will receive the
+    TOML-defined parameters dict. Otherwise, the config is silently ignored.
+
+    Args:
+        handler: The original tool handler function
+        config: Dict of config values from [mcp.tools.<name>] TOML section
+
+    Returns:
+        Wrapped handler that injects _tool_config
+    """
+    import functools
+    import inspect
+
+    sig = inspect.signature(handler)
+    if "_tool_config" not in sig.parameters:
+        return handler
+
+    @functools.wraps(handler)
+    def wrapper(**kwargs):
+        kwargs["_tool_config"] = config
+        return handler(**kwargs)
+
+    # Remove _tool_config from the wrapper signature so FastMCP
+    # doesn't expose it as an MCP tool parameter
+    new_params = [
+        p for name, p in sig.parameters.items() if name != "_tool_config"
+    ]
+    wrapper.__signature__ = sig.replace(parameters=new_params)
+    return wrapper
+
+
 def _register_implementation_handlers(config: dict) -> None:
     """Register handlers from the implementation specified in config.
 
@@ -109,6 +143,9 @@ def create_server(config_path: str | Path) -> FastMCP:
     for name, spec in registry.tools.items():
         try:
             handler = registry.load_handler(spec, framework_name=framework_name)
+            # Inject TOML config into handler if parameters are defined
+            if spec.parameters:
+                handler = _bind_tool_config(handler, spec.parameters)
             server.add_tool(handler, name=name, description=spec.description)
             registered_count += 1
             logger.debug(f"Registered tool: {name}")
@@ -152,6 +189,9 @@ def create_server_from_dict(config: dict) -> FastMCP:
     for name, spec in registry.tools.items():
         try:
             handler = registry.load_handler(spec, framework_name=framework_name)
+            # Inject TOML config into handler if parameters are defined
+            if spec.parameters:
+                handler = _bind_tool_config(handler, spec.parameters)
             server.add_tool(handler, name=name, description=spec.description)
         except (ImportError, AttributeError, ValueError) as e:
             logger.warning(f"Failed to load tool '{name}': {e}")

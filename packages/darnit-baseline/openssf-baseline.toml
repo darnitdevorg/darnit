@@ -1082,6 +1082,7 @@ affects = ["OSPS-GV-01.01", "OSPS-GV-01.02"]
 store_as = "governance.model"
 auto_detect = false
 required = false
+presentation_hint = "[bdfl/meritocracy/democracy/corporate/foundation/committee/other]"
 
 [context.has_subprojects]
 type = "boolean"
@@ -1092,6 +1093,7 @@ affects = ["OSPS-GV-01.02"]
 store_as = "project.has_subprojects"
 auto_detect = false
 required = false
+presentation_hint = "[y/N]"
 
 [context.has_releases]
 type = "boolean"
@@ -1102,6 +1104,7 @@ affects = ["OSPS-BR-02.01", "OSPS-BR-03.01", "OSPS-BR-04.01"]
 store_as = "build.has_releases"
 auto_detect = true
 required = false
+presentation_hint = "[y/N]"
 detect = [
     { handler = "exec", command = ["gh", "release", "list", "--repo", "$OWNER/$REPO", "--limit", "1"], pass_exit_codes = [0], value_if_pass = true, value_if_fail = false },
 ]
@@ -1115,6 +1118,7 @@ affects = ["OSPS-DO-04.01", "OSPS-BR-01.01"]
 store_as = "project.is_library"
 auto_detect = false
 required = false
+presentation_hint = "[y/N]"
 
 [context.has_compiled_assets]
 type = "boolean"
@@ -1125,6 +1129,7 @@ affects = ["OSPS-BR-03.01", "OSPS-BR-04.01"]
 store_as = "build.has_compiled_assets"
 auto_detect = false
 required = false
+presentation_hint = "[y/N]"
 
 [context.ci_provider]
 type = "enum"
@@ -1136,6 +1141,7 @@ affects = ["OSPS-QA-03.01", "OSPS-QA-04.01"]
 store_as = "ci.provider"
 auto_detect = true
 required = false
+presentation_hint = "[github/gitlab/jenkins/circleci/azure/travis/none/other]"
 detect = [
     { handler = "file_exists", files = [".github/workflows"], value_if_pass = "github" },
     { handler = "file_exists", files = [".gitlab-ci.yml"], value_if_pass = "gitlab" },
@@ -3812,13 +3818,18 @@ confirm_project_context(
 
 [mcp.tools.get_pending_context]
 handler = "get_pending_context"
-description = """Get context values that would improve audit accuracy.
+limit = 1
+append_directive = true
+description = """Sequential context collection wizard. Returns ONE question at a time.
 
-Returns structured JSON with questions to present to the user. Each question
-has an explicit input_type (free_text, select, or confirm) that specifies
-exactly how to present it. Follow the input_type — do not add options to
-free_text questions, and do not suggest values from the repository owner,
-git history, or any other source.
+**IMPORTANT — You MUST follow this workflow:**
+1. Call this tool. It returns a single question.
+2. Present the question to the user using the EXACT "question" text from the response. Do NOT paraphrase.
+3. Do NOT use markdown checkboxes, tables, or bullet formatting. Present plain text only.
+4. After the user answers, call confirm_project_context() with their answer.
+5. Call this tool again for the next question. Repeat until status is "complete".
+
+Do NOT batch multiple questions. Do NOT pre-fill or suggest answers.
 """
 
 [mcp.tools.generate_threat_model]

@@ -901,11 +901,15 @@ def _get_next_steps_section(
 
     step = 1
 
-    # Step: Collect pending context
+    # Step: Collect pending context (show count only, direct to get_pending_context)
     if has_pending_context:
-        lines.extend(_format_context_collection_step(
-            step, pending_context, local_path or "."
-        ))
+        count = len(pending_context)
+        lp = local_path or "."
+        lines.append(f"**Step {step}: Confirm project context** ({count} items needed)")
+        lines.append("")
+        lines.append(f"Call `get_pending_context(local_path=\"{lp}\")` to start. "
+                      "It will walk you through each question one at a time.")
+        lines.append("")
         step += 1
 
     # Step: Remediate failures

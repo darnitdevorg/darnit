@@ -159,6 +159,21 @@ class ContextDefinition(BaseModel):
     auto_detect: bool = False
     auto_detect_method: str | None = None  # e.g., "github_collaborators"
     required: bool = False
+    presentation_hint: str | None = None  # e.g., "[y/N]", "[1-3]"
+    allowed_values: list[str] | None = None  # Display values (distinct from validation `values`)
+
+    @property
+    def computed_presentation_hint(self) -> str | None:
+        """Return the presentation hint, with smart defaults for boolean/enum types."""
+        if self.presentation_hint is not None:
+            return self.presentation_hint
+        if self.type == ContextType.BOOLEAN:
+            return "[y/N]"
+        if self.type == ContextType.ENUM:
+            vals = self.allowed_values or self.values
+            if vals:
+                return "[" + "/".join(vals) + "]"
+        return None
 
 
 class ContextPromptRequest(BaseModel):

@@ -88,11 +88,18 @@ class ToolRegistry:
             if not builtin and not handler:
                 continue
 
+            # Capture extra TOML keys as tool config (beyond reserved keys)
+            reserved_keys = {"handler", "description", "builtin", "parameters"}
+            extra_config = {k: v for k, v in spec.items() if k not in reserved_keys}
+            # Merge explicit [parameters] sub-table with top-level extras
+            parameters = spec.get("parameters", {})
+            parameters.update(extra_config)
+
             registry.tools[name] = ToolSpec(
                 name=name,
                 handler=handler,
                 description=spec.get("description", ""),
-                parameters=spec.get("parameters", {}),
+                parameters=parameters,
                 builtin=builtin,
             )
 

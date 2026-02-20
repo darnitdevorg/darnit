@@ -225,6 +225,99 @@ class TestContextDefinition:
         assert data["required"] is True
 
 
+class TestContextDefinitionPresentationHints:
+    """Tests for presentation hint fields on ContextDefinition."""
+
+    def test_presentation_hint_field_parses(self) -> None:
+        """Test that presentation_hint field parses from dict."""
+        defn = ContextDefinition(
+            type=ContextType.BOOLEAN,
+            prompt="Does this project make releases?",
+            affects=["OSPS-BR-02.01"],
+            presentation_hint="[y/N]",
+        )
+        assert defn.presentation_hint == "[y/N]"
+
+    def test_allowed_values_field_parses(self) -> None:
+        """Test that allowed_values field parses from dict."""
+        defn = ContextDefinition(
+            type=ContextType.ENUM,
+            prompt="CI provider?",
+            values=["github", "gitlab", "jenkins", "other"],
+            affects=["OSPS-QA-03.01"],
+            allowed_values=["github", "gitlab", "other"],
+        )
+        assert defn.allowed_values == ["github", "gitlab", "other"]
+
+    def test_computed_hint_boolean_default(self) -> None:
+        """Test computed hint defaults to [y/N] for boolean type."""
+        defn = ContextDefinition(
+            type=ContextType.BOOLEAN,
+            prompt="Has releases?",
+            affects=[],
+        )
+        assert defn.computed_presentation_hint == "[y/N]"
+
+    def test_computed_hint_boolean_explicit_override(self) -> None:
+        """Test explicit presentation_hint overrides boolean default."""
+        defn = ContextDefinition(
+            type=ContextType.BOOLEAN,
+            prompt="Has releases?",
+            affects=[],
+            presentation_hint="[Y/n]",
+        )
+        assert defn.computed_presentation_hint == "[Y/n]"
+
+    def test_computed_hint_enum_auto_generated(self) -> None:
+        """Test computed hint auto-generates from values for enum type."""
+        defn = ContextDefinition(
+            type=ContextType.ENUM,
+            prompt="CI provider?",
+            values=["github", "gitlab", "jenkins"],
+            affects=[],
+        )
+        assert defn.computed_presentation_hint == "[github/gitlab/jenkins]"
+
+    def test_computed_hint_enum_uses_allowed_values_over_values(self) -> None:
+        """Test allowed_values takes precedence over values for enum hint."""
+        defn = ContextDefinition(
+            type=ContextType.ENUM,
+            prompt="CI provider?",
+            values=["github", "gitlab", "jenkins", "circleci", "azure", "travis", "none", "other"],
+            allowed_values=["github", "gitlab", "other"],
+            affects=[],
+        )
+        assert defn.computed_presentation_hint == "[github/gitlab/other]"
+
+    def test_computed_hint_string_returns_none(self) -> None:
+        """Test computed hint returns None for string type without explicit hint."""
+        defn = ContextDefinition(
+            type=ContextType.STRING,
+            prompt="Security contact?",
+            affects=[],
+        )
+        assert defn.computed_presentation_hint is None
+
+    def test_computed_hint_list_returns_none(self) -> None:
+        """Test computed hint returns None for list type without explicit hint."""
+        defn = ContextDefinition(
+            type=ContextType.LIST,
+            prompt="Maintainers?",
+            affects=[],
+        )
+        assert defn.computed_presentation_hint is None
+
+    def test_fields_default_to_none(self) -> None:
+        """Test both fields default to None when not provided."""
+        defn = ContextDefinition(
+            type=ContextType.STRING,
+            prompt="Test?",
+            affects=[],
+        )
+        assert defn.presentation_hint is None
+        assert defn.allowed_values is None
+
+
 class TestContextPromptRequest:
     """Tests for ContextPromptRequest model."""
 
