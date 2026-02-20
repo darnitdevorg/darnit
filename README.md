@@ -28,7 +28,7 @@ This repository includes an MCP (Model Context Protocol) server for AI assistant
 
 This repository includes `darnit-baseline`, an implementation of the [OpenSSF Baseline](https://baseline.openssf.org/) (OSPS v2025.10.10). The Baseline defines best practices for open source projects across security, quality, and governance:
 
-- **61 Controls** across 3 maturity levels
+- **62 Controls** across 3 maturity levels
 - **8 Control Categories**: Access Control, Build & Release, Documentation, Governance, Legal, Quality, Security Architecture, Vulnerability Management
 - **Automated Remediation** for common compliance gaps
 

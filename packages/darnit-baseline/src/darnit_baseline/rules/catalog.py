@@ -10,6 +10,14 @@
 
     See: openspec/specs/framework-design/spec.md for the authoritative schema.
 
+# TODO(removal): Remove this module once all SARIF metadata fields are in TOML.
+# Steps:
+#   1. Ensure every control in openssf-baseline.toml has: help_md,
+#      security_severity, docs_url, and any other fields SARIF needs.
+#   2. Remove the _get_rule_from_catalog() fallback in formatters/sarif.py.
+#   3. Delete this file and the rules/ package if empty.
+#   4. Remove test_toml_and_catalog_controls_match() in test_integration_e2e.py.
+
 This module contains metadata for all 62 OSPS controls from the
 OpenSSF Baseline v2025.10.10 specification.
 

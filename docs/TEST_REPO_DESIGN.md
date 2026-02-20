@@ -65,7 +65,7 @@ baseline-test-repo/
 
 ---
 
-## What Will Fail (All 61 Controls)
+## What Will Fail (All 62 Controls)
 
 ### Level 1 Failures (24 controls)
 
@@ -283,7 +283,7 @@ npm install  # Creates package-lock.json
 #        OSPS-BR-06.01, OSPS-LE-02.02, OSPS-LE-03.02, OSPS-QA-02.02
 ```
 
-**After Phase 6: 61/61 controls (100%)**
+**After Phase 6: 62/62 controls (100%)**
 
 ---
 
@@ -392,10 +392,10 @@ build-backend = "hatchling.build"
 |-------|---------------|------------|
 | Initial | 0 | 0/61 |
 | Phase 1 (Files) | ~15 | ~15/61 |
-| Phase 2 (Docs) | ~10 | ~25/61 |
-| Phase 3 (CI) | ~10 | ~35/61 |
-| Phase 4 (GitHub) | ~10 | ~45/61 |
-| Phase 5 (Advanced) | ~10 | ~55/61 |
-| Phase 6 (Releases) | ~6 | 61/61 |
+| Phase 2 (Docs) | ~10 | ~25/62 |
+| Phase 3 (CI) | ~10 | ~35/62 |
+| Phase 4 (GitHub) | ~10 | ~45/62 |
+| Phase 5 (Advanced) | ~10 | ~55/62 |
+| Phase 6 (Releases) | ~6 | 62/62 |
 
 This gives you a clear path from 0% to 100% compliance with measurable progress at each step.

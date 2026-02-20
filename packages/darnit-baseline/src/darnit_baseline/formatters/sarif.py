@@ -58,7 +58,7 @@ def _get_control_from_toml(control_id: str) -> dict[str, Any] | None:
     if not control:
         return None
 
-    # Convert ControlConfig to dict compatible with old catalog format
+    # Build SARIF-compatible metadata dict from TOML control config
     # Extract level/domain/security_severity from tags if not top-level
     level = control.level
     if level is None and control.tags:
@@ -103,7 +103,7 @@ def _get_control_from_toml(control_id: str) -> dict[str, Any] | None:
         "help_md": control.help_md or "",
         "security_severity": security_severity or 5.0,
         "tags": tag_list,
-        "location_hint": "",  # TODO: Extract from locator if present
+        "location_hint": "",
         "default_level": default_level,
         "docs_url": control.docs_url or f"https://baseline.openssf.org/versions/2025-10-10#{control_id}",
     }
@@ -118,7 +118,8 @@ def _get_rule_from_catalog(control_id: str) -> dict[str, Any] | None:
     """Get rule from legacy catalog (fallback).
 
     DEPRECATED: This function will be removed once all metadata
-    is migrated to TOML.
+    is migrated to TOML. See TODO in rules/catalog.py for the
+    full removal plan.
     """
     try:
         from darnit_baseline.rules.catalog import get_rule

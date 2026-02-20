@@ -51,7 +51,7 @@ def audit_openssf_baseline(
     """
     Run a comprehensive OpenSSF Baseline audit on a repository.
 
-    This checks compliance with OSPS v2025.10.10 across 61 controls at 3 maturity levels.
+    This checks compliance with OSPS v2025.10.10 across 62 controls at 3 maturity levels.
 
     Args:
         owner: GitHub Org/User (auto-detected from git if not provided)
@@ -163,7 +163,7 @@ def list_available_checks() -> str:
     List all available OpenSSF Baseline checks organized by level.
 
     Returns:
-        Formatted list of all 61 OSPS controls across 3 levels
+        Formatted list of all 62 OSPS controls across 3 levels
     """
     from darnit_baseline.rules.catalog import OSPS_RULES
 

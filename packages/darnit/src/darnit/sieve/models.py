@@ -40,7 +40,7 @@ class CheckContext:
     # Accumulated data from previous passes
     gathered_evidence: dict[str, Any] = field(default_factory=dict)
 
-    # Locator integration (Phase 6)
+    # Locator integration
     # UnifiedLocator instance for .project/-aware file resolution
     locator: Optional["UnifiedLocator"] = None
     # LocatorConfig for this specific control (from TOML)

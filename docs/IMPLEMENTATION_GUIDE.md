@@ -76,7 +76,7 @@ plugin extensibility:
 │  Layer 1: Checking (how to verify a control)            │
 │                                                         │
 │  Built-in: file_must_exist, exec, pattern, manual       │
-│  Plugin:   config_check = "my_module:my_func"           │
+│  Plugin:   handler = "my_module:my_func"                │
 │                                                         │
 │  TOML:  [controls."X".passes.deterministic]             │
 │         file_must_exist = ["README.md"]                 │
@@ -358,8 +358,12 @@ class MyStandardImplementation:
         return Path(__file__).parent.parent.parent / "mystandard.toml"
 
     def register_controls(self) -> None:
-        """Import control modules to trigger @register_control calls."""
-        from .controls import level1  # noqa: F401
+        """TOML-first: controls are defined in the TOML config file.
+
+        No Python registration is needed. Override this only if you need
+        to register custom sieve handlers (see Section 5).
+        """
+        pass
 ```
 
 The `get_framework_config_path()` method deserves attention: it must return the
@@ -437,6 +441,46 @@ steps = [
 ]
 ```
 
+### Handler `when` clauses
+
+Controls can declare preconditions using a `when` clause. If the condition is not
+met, the control is **skipped** (not failed) during the audit. This is useful for
+controls that only apply to certain platforms, CI providers, or project types:
+
+```toml
+# Only check on GitHub-hosted repositories
+[controls."MS-AC-01"]
+name = "RequireMFA"
+description = "Require multi-factor authentication"
+when = { platform = "github" }
+
+# Only check if the project uses GitHub Actions
+[controls."MS-CI-01"]
+name = "SecureWorkflowInputs"
+description = "Workflows handle untrusted inputs safely"
+when = { ci_provider = "github" }
+
+# Only check if the project makes official releases
+[controls."MS-REL-01"]
+name = "SignReleases"
+description = "Sign releases or provide signed manifest"
+when = { has_releases = true }
+
+# Multiple conditions (all must be true)
+[controls."MS-REL-02"]
+name = "UniqueVersionIdentifiers"
+description = "Assign unique version identifiers to each release"
+when = { has_releases = true, platform = "github" }
+```
+
+The `when` keys are matched against project context values from `.project/project.yaml`.
+If a key is missing from the project context, the condition is treated as **not met**
+and the control is skipped. This avoids false failures for controls that are
+inapplicable to the project.
+
+> **Reference**: See `packages/darnit-baseline/openssf-baseline.toml` for real-world
+> `when` clauses used across 30+ controls.
+
 ### Built-in pass types
 
 The framework provides these built-in handler names for use in TOML `[[passes]]`
@@ -487,7 +531,7 @@ Search file contents with regex:
 [controls."MS-DOC-02".passes.pattern]
 file_patterns = ["SECURITY.md", ".github/SECURITY.md"]
 content_patterns = { security_contact = '([\w.-]+@[\w.-]+\.\w+|security\s*contact)' }
-pass_if_any_match = true
+expr = 'output.any_match'
 ```
 
 #### Manual verification
@@ -619,10 +663,40 @@ affects = ["MS-CI-01", "MS-CI-02"]
 store_as = "ci.provider"
 auto_detect = true
 required = false
+presentation_hint = "[github/gitlab/jenkins/circleci/azure/travis/none/other]"
 ```
 
 Context values are stored in `.project/project.yaml` and injected into checks
 via `CheckContext.project_context`.
+
+#### `presentation_hint` and `allowed_values`
+
+Context definitions support two additional fields for controlling how the LLM
+presents questions to users:
+
+- **`presentation_hint`** — A short string shown alongside the prompt to indicate
+  the expected format (e.g., `"[y/N]"` for booleans, `"[github/gitlab/other]"` for enums).
+  If not set, the framework auto-generates a hint from `allowed_values` or `values`.
+
+- **`allowed_values`** — An explicit list of display values, distinct from `values`
+  (which is used for validation). Useful when the display options differ from the
+  validation set.
+
+```toml
+[context.governance_model]
+type = "enum"
+prompt = "What governance model does this project use?"
+store_as = "governance.model"
+auto_detect = false
+presentation_hint = "[bdfl/meritocracy/democracy/corporate/foundation/committee/other]"
+
+[context.has_releases]
+type = "boolean"
+prompt = "Does this project make official releases?"
+store_as = "releases.enabled"
+auto_detect = true
+presentation_hint = "[y/N]"
+```
 
 > **Reference**: See `packages/darnit-baseline/openssf-baseline.toml` for a full
 > TOML configuration with 62 controls, templates, and context definitions.

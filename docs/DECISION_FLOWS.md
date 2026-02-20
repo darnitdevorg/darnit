@@ -156,9 +156,8 @@ The sieve system implements a 4-phase progressive verification pipeline. Each co
 │  │ DeterministicPass                                                      │  │
 │  │ ──────────────────                                                     │  │
 │  │ file_must_exist: ["SECURITY.md", ".github/SECURITY.md"]               │  │
-│  │ file_must_not_exist: [".env", "secrets.json"]                         │  │
-│  │ api_check: callable(owner, repo) → PassResult                         │  │
-│  │ config_check: callable(CheckContext) → PassResult                     │  │
+│  │ exec: { command = [...], expr = 'output.json.key == true' }           │  │
+│  │ handler: "my_module:my_func"  (custom plugin handler)                 │  │
 │  └───────────────────────────────────────────────────────────────────────┘  │
 │                                                                              │
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
@@ -166,8 +165,7 @@ The sieve system implements a 4-phase progressive verification pipeline. Each co
 │  │ ───────────                                                            │  │
 │  │ file_patterns: ["SECURITY.md", "README.md"]                           │  │
 │  │ content_patterns: {"contact": r"(email|security.*contact)"}           │  │
-│  │ pass_if_any_match: True   (vs all must match)                         │  │
-│  │ fail_if_no_match: False   (vs return INCONCLUSIVE)                    │  │
+│  │ expr: 'output.any_match'  (CEL expression for pass/fail)             │  │
 │  └───────────────────────────────────────────────────────────────────────┘  │
 │                                                                              │
 │  ┌───────────────────────────────────────────────────────────────────────┐  │

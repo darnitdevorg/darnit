@@ -111,7 +111,7 @@ description = "Invalid tool"
         """Test loading the actual openssf-baseline.toml file."""
         # Find the openssf-baseline.toml file
         baseline_path = (
-            Path(__file__).parent.parent.parent.parent.parent
+            Path(__file__).parent.parent.parent.parent
             / "packages"
             / "darnit-baseline"
             / "openssf-baseline.toml"

@@ -109,7 +109,11 @@ class TestControlDefinitionConsistency:
 
     @pytest.mark.unit
     def test_toml_and_catalog_controls_match(self):
-        """Verify controls in TOML match those in catalog.py."""
+        """Verify controls in TOML match those in catalog.py.
+
+        TODO(removal): Remove this test when rules/catalog.py is deleted.
+        See the removal plan in rules/catalog.py.
+        """
         import tomllib
 
         from darnit_baseline import get_framework_path
