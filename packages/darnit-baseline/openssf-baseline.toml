@@ -232,6 +232,82 @@ updates:
   #     prefix: "deps"
 """
 
+[templates.dependabot_python]
+description = "Dependabot configuration for Python projects"
+content = """version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "deps"
+"""
+
+[templates.dependabot_node]
+description = "Dependabot configuration for Node.js projects"
+content = """version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "deps"
+"""
+
+[templates.dependabot_rust]
+description = "Dependabot configuration for Rust projects"
+content = """version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "deps"
+"""
+
+[templates.dependabot_go]
+description = "Dependabot configuration for Go projects"
+content = """version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "deps"
+"""
+
 [templates.readme_basic]
 description = "Basic README.md template with substantive default content"
 content = """# $REPO
@@ -292,6 +368,233 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+"""
+
+[templates.license_apache]
+description = "Apache License 2.0 template"
+content = """
+                                 Apache License
+                           Version 2.0, January 2004
+                        http://www.apache.org/licenses/
+
+   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+
+   1. Definitions.
+
+      "License" shall mean the terms and conditions for use, reproduction,
+      and distribution as defined by Sections 1 through 9 of this document.
+
+      "Licensor" shall mean the copyright owner or entity authorized by
+      the copyright owner that is granting the License.
+
+      "Legal Entity" shall mean the union of the acting entity and all
+      other entities that control, are controlled by, or are under common
+      control with that entity. For the purposes of this definition,
+      "control" means (i) the power, direct or indirect, to cause the
+      direction or management of such entity, whether by contract or
+      otherwise, or (ii) ownership of fifty percent (50%) or more of the
+      outstanding shares, or (iii) beneficial ownership of such entity.
+
+      "You" (or "Your") shall mean an individual or Legal Entity
+      exercising permissions granted by this License.
+
+      "Source" form shall mean the preferred form for making modifications,
+      including but not limited to software source code, documentation
+      source, and configuration files.
+
+      "Object" form shall mean any form resulting from mechanical
+      transformation or translation of a Source form, including but
+      not limited to compiled object code, generated documentation,
+      and conversions to other media types.
+
+      "Work" shall mean the work of authorship, whether in Source or
+      Object form, made available under the License, as indicated by a
+      copyright notice that is included in or attached to the work
+      (an example is provided in the Appendix below).
+
+      "Derivative Works" shall mean any work, whether in Source or Object
+      form, that is based on (or derived from) the Work and for which the
+      editorial revisions, annotations, elaborations, or other modifications
+      represent, as a whole, an original work of authorship. For the purposes
+      of this License, Derivative Works shall not include works that remain
+      separable from, or merely link (or bind by name) to the interfaces of,
+      the Work and Derivative Works thereof.
+
+      "Contribution" shall mean any work of authorship, including
+      the original version of the Work and any modifications or additions
+      to that Work or Derivative Works thereof, that is intentionally
+      submitted to the Licensor for inclusion in the Work by the copyright owner
+      or by an individual or Legal Entity authorized to submit on behalf of
+      the copyright owner. For the purposes of this definition, "submitted"
+      means any form of electronic, verbal, or written communication sent
+      to the Licensor or its representatives, including but not limited to
+      communication on electronic mailing lists, source code control systems,
+      and issue tracking systems that are managed by, or on behalf of, the
+      Licensor for the purpose of discussing and improving the Work, but
+      excluding communication that is conspicuously marked or otherwise
+      designated in writing by the copyright owner as "Not a Contribution."
+
+      "Contributor" shall mean Licensor and any individual or Legal Entity
+      on behalf of whom a Contribution has been received by the Licensor and
+      subsequently incorporated within the Work.
+
+   2. Grant of Copyright License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      copyright license to reproduce, prepare Derivative Works of,
+      publicly display, publicly perform, sublicense, and distribute the
+      Work and such Derivative Works in Source or Object form.
+
+   3. Grant of Patent License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      (except as stated in this section) patent license to make, have made,
+      use, offer to sell, sell, import, and otherwise transfer the Work,
+      where such license applies only to those patent claims licensable
+      by such Contributor that are necessarily infringed by their
+      Contribution(s) alone or by combination of their Contribution(s)
+      with the Work to which such Contribution(s) was submitted. If You
+      institute patent litigation against any entity (including a
+      cross-claim or counterclaim in a lawsuit) alleging that the Work
+      or a Contribution incorporated within the Work constitutes direct
+      or contributory patent infringement, then any patent licenses
+      granted to You under this License for that Work shall terminate
+      as of the date such litigation is filed.
+
+   4. Redistribution. You may reproduce and distribute copies of the
+      Work or Derivative Works thereof in any medium, with or without
+      modifications, and in Source or Object form, provided that You
+      meet the following conditions:
+
+      (a) You must give any other recipients of the Work or
+          Derivative Works a copy of this License; and
+
+      (b) You must cause any modified files to carry prominent notices
+          stating that You changed the files; and
+
+      (c) You must retain, in the Source form of any Derivative Works
+          that You distribute, all copyright, patent, trademark, and
+          attribution notices from the Source form of the Work,
+          excluding those notices that do not pertain to any part of
+          the Derivative Works; and
+
+      (d) If the Work includes a "NOTICE" text file as part of its
+          distribution, then any Derivative Works that You distribute must
+          include a readable copy of the attribution notices contained
+          within such NOTICE file, excluding any notices that do not
+          pertain to any part of the Derivative Works, in at least one
+          of the following places: within a NOTICE text file distributed
+          as part of the Derivative Works; within the Source form or
+          documentation, if provided along with the Derivative Works; or,
+          within a display generated by the Derivative Works, if and
+          wherever such third-party notices normally appear. The contents
+          of the NOTICE file are for informational purposes only and
+          do not modify the License. You may add Your own attribution
+          notices within Derivative Works that You distribute, alongside
+          or as an addendum to the NOTICE text from the Work, provided
+          that such additional attribution notices cannot be construed
+          as modifying the License.
+
+      You may add Your own copyright statement to Your modifications and
+      may provide additional or different license terms and conditions
+      for use, reproduction, or distribution of Your modifications, or
+      for any such Derivative Works as a whole, provided Your use,
+      reproduction, and distribution of the Work otherwise complies with
+      the conditions stated in this License.
+
+   5. Submission of Contributions. Unless You explicitly state otherwise,
+      any Contribution intentionally submitted for inclusion in the Work
+      by You to the Licensor shall be under the terms and conditions of
+      this License, without any additional terms or conditions.
+      Notwithstanding the above, nothing herein shall supersede or modify
+      the terms of any separate license agreement you may have executed
+      with Licensor regarding such Contributions.
+
+   6. Trademarks. This License does not grant permission to use the trade
+      names, trademarks, service marks, or product names of the Licensor,
+      except as required for reasonable and customary use in describing the
+      origin of the Work and reproducing the content of the NOTICE file.
+
+   7. Disclaimer of Warranty. Unless required by applicable law or
+      agreed to in writing, Licensor provides the Work (and each
+      Contributor provides its Contributions) on an "AS IS" BASIS,
+      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+      implied, including, without limitation, any warranties or conditions
+      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
+      PARTICULAR PURPOSE. You are solely responsible for determining the
+      appropriateness of using or redistributing the Work and assume any
+      risks associated with Your exercise of permissions under this License.
+
+   8. Limitation of Liability. In no event and under no legal theory,
+      whether in tort (including negligence), contract, or otherwise,
+      unless required by applicable law (such as deliberate and grossly
+      negligent acts) or agreed to in writing, shall any Contributor be
+      liable to You for damages, including any direct, indirect, special,
+      incidental, or consequential damages of any character arising as a
+      result of this License or out of the use or inability to use the
+      Work (including but not limited to damages for loss of goodwill,
+      work stoppage, computer failure or malfunction, or any and all
+      other commercial damages or losses), even if such Contributor
+      has been advised of the possibility of such damages.
+
+   9. Accepting Warranty or Additional Liability. While redistributing
+      the Work or Derivative Works thereof, You may choose to offer,
+      and charge a fee for, acceptance of support, warranty, indemnity,
+      or other liability obligations and/or rights consistent with this
+      License. However, in accepting such obligations, You may act only
+      on Your own behalf and on Your sole responsibility, not on behalf
+      of any other Contributor, and only if You agree to indemnify,
+      defend, and hold each Contributor harmless for any liability
+      incurred by, or claims asserted against, such Contributor by reason
+      of your accepting any such warranty or additional liability.
+
+   END OF TERMS AND CONDITIONS
+
+   Copyright $YEAR $OWNER
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+"""
+
+[templates.license_bsd3]
+description = "BSD 3-Clause License template"
+content = """BSD 3-Clause License
+
+Copyright (c) $YEAR, $OWNER
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 
 [templates.threat_model_basic]
@@ -609,6 +912,149 @@ jobs:
       # TODO: Replace with your project's test command
       - name: Run tests
         run: echo "Add your test command here"
+"""
+
+[templates.ci_python_workflow]
+description = "Python CI workflow with pytest"
+content = """name: CI Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run tests
+        run: pytest tests/ -v
+"""
+
+[templates.ci_node_workflow]
+description = "Node.js CI workflow with npm test"
+content = """name: CI Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18, 20, 22]
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+"""
+
+[templates.ci_rust_workflow]
+description = "Rust CI workflow with cargo test"
+content = """name: CI Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@9399c7bb15d4c7d47b27263d024f0a4978346ba4 # v1
+
+      - name: Run tests
+        run: cargo test --all-features
+
+      - name: Run clippy
+        run: cargo clippy --all-features -- -D warnings
+"""
+
+[templates.ci_go_workflow]
+description = "Go CI workflow with go test"
+content = """name: CI Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run tests
+        run: go test -race -coverprofile=coverage.out ./...
+
+      - name: Run vet
+        run: go vet ./...
 """
 
 [templates.sbom_workflow]
@@ -1108,6 +1554,183 @@ make test
 - Aim for meaningful coverage of critical paths and edge cases
 """
 
+[templates.testing_python]
+description = "Testing instructions for Python projects"
+content = """# Testing
+
+## Prerequisites
+
+- Python 3.11 or later
+- Install development dependencies:
+
+```bash
+pip install -e ".[dev]"
+# or with uv:
+uv pip install -e ".[dev]"
+```
+
+## Running Tests
+
+```bash
+# Run the full test suite
+pytest tests/ -v
+
+# Run with coverage
+pytest tests/ --cov --cov-report=term-missing
+
+# Run a specific test file
+pytest tests/test_example.py -v
+
+# Run tests matching a pattern
+pytest tests/ -k "test_pattern" -v
+```
+
+## Test Requirements
+
+- All pull requests must include tests for new functionality
+- Bug fixes should include a regression test
+- Tests must pass in CI before a pull request can be merged
+
+## Writing Tests
+
+- Place tests in the `tests/` directory
+- Follow existing test patterns and naming conventions
+- Use pytest fixtures for shared test setup
+- Aim for meaningful coverage of critical paths and edge cases
+"""
+
+[templates.testing_node]
+description = "Testing instructions for Node.js projects"
+content = """# Testing
+
+## Prerequisites
+
+- Node.js 18 or later
+- Install dependencies:
+
+```bash
+npm ci
+```
+
+## Running Tests
+
+```bash
+# Run the full test suite
+npm test
+
+# Run with coverage
+npm run test:coverage
+
+# Run in watch mode during development
+npm run test:watch
+
+# Run a specific test file
+npx jest tests/example.test.js
+```
+
+## Test Requirements
+
+- All pull requests must include tests for new functionality
+- Bug fixes should include a regression test
+- Tests must pass in CI before a pull request can be merged
+
+## Writing Tests
+
+- Place tests alongside source files (`*.test.js` / `*.spec.js`) or in a `tests/` directory
+- Follow existing test patterns and naming conventions
+- Use describe/it blocks to organize test cases
+- Aim for meaningful coverage of critical paths and edge cases
+"""
+
+[templates.testing_rust]
+description = "Testing instructions for Rust projects"
+content = """# Testing
+
+## Prerequisites
+
+- Rust stable toolchain (install via [rustup](https://rustup.rs/))
+
+## Running Tests
+
+```bash
+# Run the full test suite
+cargo test
+
+# Run with all features enabled
+cargo test --all-features
+
+# Run a specific test
+cargo test test_name
+
+# Run tests with output shown
+cargo test -- --nocapture
+
+# Run only integration tests
+cargo test --test '*'
+
+# Run benchmarks (nightly)
+cargo bench
+```
+
+## Test Requirements
+
+- All pull requests must include tests for new functionality
+- Bug fixes should include a regression test
+- Tests must pass in CI before a pull request can be merged
+
+## Writing Tests
+
+- Place unit tests in the same file as the code using `#[cfg(test)]` modules
+- Place integration tests in the `tests/` directory
+- Use `#[test]` attribute for test functions
+- Aim for meaningful coverage of critical paths and edge cases
+"""
+
+[templates.testing_go]
+description = "Testing instructions for Go projects"
+content = """# Testing
+
+## Prerequisites
+
+- Go 1.21 or later
+
+## Running Tests
+
+```bash
+# Run the full test suite
+go test ./...
+
+# Run with verbose output
+go test -v ./...
+
+# Run with race detector
+go test -race ./...
+
+# Run with coverage
+go test -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out
+
+# Run a specific test
+go test -run TestName ./...
+
+# Run benchmarks
+go test -bench=. ./...
+```
+
+## Test Requirements
+
+- All pull requests must include tests for new functionality
+- Bug fixes should include a regression test
+- Tests must pass in CI before a pull request can be merged
+
+## Writing Tests
+
+- Place tests in `*_test.go` files alongside the source code
+- Follow Go testing conventions (`TestXxx`, `BenchmarkXxx`)
+- Use table-driven tests for parameterized testing
+- Aim for meaningful coverage of critical paths and edge cases
+"""
+
 [templates.test_requirements_contributing]
 description = "Test requirements section for CONTRIBUTING.md"
 content = """# Test Requirements for Contributions
@@ -1247,6 +1870,11 @@ detect = [
     { handler = "file_exists", files = ["azure-pipelines.yml"], value_if_pass = "azure" },
     { handler = "file_exists", files = [".travis.yml"], value_if_pass = "travis" },
 ]
+
+# NOTE: detected_ecosystem and license_type are auto-detected by
+# darnit.context.auto_detect (collect_auto_context) without prompting.
+# They do NOT need TOML [context.*] definitions because they never go
+# through get_pending_context / confirm_project_context.
 
 # =============================================================================
 # Shared Handlers (cached across controls within a single audit run)
@@ -2334,6 +2962,21 @@ steps = [
 [controls."OSPS-LE-01.01".remediation]
 safe = true
 dry_run_supported = true
+strategy = "first_match"
+
+[[controls."OSPS-LE-01.01".remediation.handlers]]
+handler = "file_create"
+path = "LICENSE"
+template = "license_apache"
+overwrite = false
+when = { license_type = "apache-2.0" }
+
+[[controls."OSPS-LE-01.01".remediation.handlers]]
+handler = "file_create"
+path = "LICENSE"
+template = "license_bsd3"
+overwrite = false
+when = { license_type = "bsd-3-clause" }
 
 [[controls."OSPS-LE-01.01".remediation.handlers]]
 handler = "file_create"
@@ -3175,24 +3818,47 @@ steps = [
 [controls."OSPS-QA-06.01".remediation]
 safe = true
 dry_run_supported = true
+strategy = "first_match"
 
+[[controls."OSPS-QA-06.01".remediation.handlers]]
+handler = "file_create"
+path = ".github/workflows/ci.yml"
+template = "ci_python_workflow"
+overwrite = false
+create_dirs = true
+when = { detected_ecosystem = "python" }
+
+[[controls."OSPS-QA-06.01".remediation.handlers]]
+handler = "file_create"
+path = ".github/workflows/ci.yml"
+template = "ci_node_workflow"
+overwrite = false
+create_dirs = true
+when = { detected_ecosystem = "node" }
+
+[[controls."OSPS-QA-06.01".remediation.handlers]]
+handler = "file_create"
+path = ".github/workflows/ci.yml"
+template = "ci_rust_workflow"
+overwrite = false
+create_dirs = true
+when = { detected_ecosystem = "rust" }
+
+[[controls."OSPS-QA-06.01".remediation.handlers]]
+handler = "file_create"
+path = ".github/workflows/ci.yml"
+template = "ci_go_workflow"
+overwrite = false
+create_dirs = true
+when = { detected_ecosystem = "go" }
+
+# Default fallback: generic CI workflow when ecosystem is unknown
 [[controls."OSPS-QA-06.01".remediation.handlers]]
 handler = "file_create"
 path = ".github/workflows/ci.yml"
 template = "ci_test_workflow"
 overwrite = false
 create_dirs = true
-
-[[controls."OSPS-QA-06.01".remediation.handlers]]
-handler = "manual"
-steps = [
-    "Create a CI workflow file at .github/workflows/test.yml",
-    "Add a test step appropriate for your language: 'npm test', 'pytest', 'go test ./...', 'cargo test', etc.",
-    "Configure triggers: 'on: [push, pull_request]' for the main branch",
-    "Verify the workflow passes by pushing a commit and checking the Actions tab",
-]
-docs_url = "https://docs.github.com/en/actions/automating-builds-and-tests"
-context_hints = ["ci.provider"]
 
 # =============================================================================
 # Level 2 Controls - Vulnerability Management (VM)
@@ -3720,21 +4386,47 @@ steps = [
 [controls."OSPS-QA-06.02".remediation]
 safe = true
 dry_run_supported = true
+strategy = "first_match"
 
+[[controls."OSPS-QA-06.02".remediation.handlers]]
+handler = "file_create"
+path = "docs/TESTING.md"
+template = "testing_python"
+overwrite = false
+create_dirs = true
+when = { detected_ecosystem = "python" }
+
+[[controls."OSPS-QA-06.02".remediation.handlers]]
+handler = "file_create"
+path = "docs/TESTING.md"
+template = "testing_node"
+overwrite = false
+create_dirs = true
+when = { detected_ecosystem = "node" }
+
+[[controls."OSPS-QA-06.02".remediation.handlers]]
+handler = "file_create"
+path = "docs/TESTING.md"
+template = "testing_rust"
+overwrite = false
+create_dirs = true
+when = { detected_ecosystem = "rust" }
+
+[[controls."OSPS-QA-06.02".remediation.handlers]]
+handler = "file_create"
+path = "docs/TESTING.md"
+template = "testing_go"
+overwrite = false
+create_dirs = true
+when = { detected_ecosystem = "go" }
+
+# Default fallback: generic testing instructions when ecosystem is unknown
 [[controls."OSPS-QA-06.02".remediation.handlers]]
 handler = "file_create"
 path = "docs/TESTING.md"
 template = "testing_instructions"
 overwrite = false
 create_dirs = true
-
-[[controls."OSPS-QA-06.02".remediation.handlers]]
-handler = "manual"
-steps = [
-    "Review the generated docs/TESTING.md and customize for your project",
-    "Replace placeholder test commands with your actual test commands",
-    "Document any environment setup required (databases, env vars, fixtures)",
-]
 
 [controls."OSPS-QA-06.03"]
 name = "TestRequirements"
@@ -3991,8 +4683,41 @@ steps = [
 [controls."OSPS-VM-05.03".remediation]
 safe = true
 dry_run_supported = true
+strategy = "first_match"
 
-# Declarative file creation remediation
+[[controls."OSPS-VM-05.03".remediation.handlers]]
+handler = "file_create"
+path = ".github/dependabot.yml"
+template = "dependabot_python"
+overwrite = false
+create_dirs = true
+when = { detected_ecosystem = "python" }
+
+[[controls."OSPS-VM-05.03".remediation.handlers]]
+handler = "file_create"
+path = ".github/dependabot.yml"
+template = "dependabot_node"
+overwrite = false
+create_dirs = true
+when = { detected_ecosystem = "node" }
+
+[[controls."OSPS-VM-05.03".remediation.handlers]]
+handler = "file_create"
+path = ".github/dependabot.yml"
+template = "dependabot_rust"
+overwrite = false
+create_dirs = true
+when = { detected_ecosystem = "rust" }
+
+[[controls."OSPS-VM-05.03".remediation.handlers]]
+handler = "file_create"
+path = ".github/dependabot.yml"
+template = "dependabot_go"
+overwrite = false
+create_dirs = true
+when = { detected_ecosystem = "go" }
+
+# Default fallback: github-actions only when ecosystem is unknown
 [[controls."OSPS-VM-05.03".remediation.handlers]]
 handler = "file_create"
 path = ".github/dependabot.yml"
@@ -4601,6 +5326,7 @@ handler = "file_create"
 path = "THREAT_MODEL.md"
 template = "threat_model_basic"
 overwrite = false
+llm_enhance = "Customize this threat model: run threat discovery to identify the project's actual entry points, data stores, authentication mechanisms, and sensitive data. Replace the generic STRIDE examples with threats specific to the discovered assets and architecture."
 
 [controls."OSPS-SA-03.02".remediation.project_update]
 set = { "security.threat_model.path" = "THREAT_MODEL.md" }

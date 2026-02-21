@@ -451,8 +451,17 @@ def _apply_declarative_remediation(
         Dict with control_id, status, and result details
     """
     try:
-        # Load confirmed context values for ${context.*} substitution
+        # Start with auto-detected context (platform, ci_provider,
+        # detected_ecosystem, license_type) so that ``when`` clauses on
+        # remediation handlers can match without explicit user confirmation.
         context_values: dict[str, Any] = {}
+        try:
+            from darnit.context.auto_detect import collect_auto_context
+            context_values = collect_auto_context(local_path)
+        except Exception:
+            pass  # Auto-detection is best-effort
+
+        # Confirmed context overrides auto-detected values
         try:
             from darnit.config.context_storage import load_context
             all_context = load_context(local_path)

@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+from pathlib import Path
 from typing import Any
 
 from darnit.core.logging import get_logger
@@ -85,7 +86,11 @@ def detect_ci_provider(local_path: str) -> str | None:
 
 
 def detect_primary_language(local_path: str) -> str | None:
-    """Detect primary language from manifest files.
+    """Detect primary language from manifest files at the repo root.
+
+    Only checks the root directory — nested manifests (e.g. in monorepo
+    service directories) are not scanned.  Check order favours more specific
+    indicators (go.mod, Cargo.toml) over common ones (package.json).
 
     Returns:
         "python", "go", "rust", "javascript", "typescript", "java", or None.
@@ -160,6 +165,56 @@ def detect_languages(local_path: str) -> list[str]:
     return languages
 
 
+def detect_license_type(local_path: str) -> str | None:
+    """Detect license type from LICENSE file content.
+
+    Reads the first 500 characters of the LICENSE file and pattern-matches
+    against known license headers.
+
+    Returns:
+        "apache-2.0", "mit", "bsd-3-clause", "gpl", or None if unknown.
+    """
+    license_path = Path(local_path) / "LICENSE"
+    if not license_path.is_file():
+        # Also check LICENSE.md, LICENSE.txt
+        for alt in ("LICENSE.md", "LICENSE.txt"):
+            alt_path = Path(local_path) / alt
+            if alt_path.is_file():
+                license_path = alt_path
+                break
+        else:
+            return None
+
+    try:
+        content = license_path.read_text(encoding="utf-8", errors="replace")[:500]
+    except OSError:
+        return None
+
+    content_lower = content.lower()
+    if "apache license" in content_lower:
+        return "apache-2.0"
+    if "mit license" in content_lower or "permission is hereby granted, free of charge" in content_lower:
+        return "mit"
+    if "bsd 3-clause" in content_lower or "bsd-3-clause" in content_lower:
+        return "bsd-3-clause"
+    if "gnu general public license" in content_lower:
+        return "gpl"
+
+    return None
+
+
+# Map primary_language to ecosystem names used in TOML when clauses
+_LANGUAGE_TO_ECOSYSTEM: dict[str, str] = {
+    "python": "python",
+    "javascript": "node",
+    "typescript": "node",
+    "go": "go",
+    "rust": "rust",
+    "java": "java",
+    "ruby": "ruby",
+}
+
+
 def collect_auto_context(local_path: str) -> dict[str, Any]:
     """Collect all auto-detectable context. Returns flat dict with bare keys.
 
@@ -179,10 +234,18 @@ def collect_auto_context(local_path: str) -> dict[str, Any]:
     primary_language = detect_primary_language(local_path)
     if primary_language:
         context["primary_language"] = primary_language
+        # Derive ecosystem from primary language
+        ecosystem = _LANGUAGE_TO_ECOSYSTEM.get(primary_language)
+        if ecosystem:
+            context["detected_ecosystem"] = ecosystem
 
     languages = detect_languages(local_path)
     # Always include languages (even empty list) so when clauses can evaluate
     context["languages"] = languages
+
+    license_type = detect_license_type(local_path)
+    if license_type:
+        context["license_type"] = license_type
 
     if context:
         logger.debug("Auto-detected context: %s", context)

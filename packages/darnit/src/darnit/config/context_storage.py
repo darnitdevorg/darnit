@@ -607,7 +607,15 @@ def _run_detect_pipeline(
                 continue
 
             if result.status == HandlerResultStatus.PASS and result.evidence:
-                # Extract detected value from evidence
+                # First check handler config for value_if_pass
+                value_if_pass = handler_config.get("value_if_pass")
+                if value_if_pass is not None:
+                    return ContextValue.auto_detected(
+                        value=value_if_pass,
+                        method=f"detect_pipeline:{invocation.handler}",
+                        confidence=result.confidence,
+                    )
+                # Fallback: extract value from evidence
                 detected_value = result.evidence.get("value") or result.evidence.get(
                     key
                 )

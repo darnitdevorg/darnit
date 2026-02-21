@@ -80,7 +80,7 @@ Controls gated by `platform = "github"` require the GitHub CLI (`gh`). Additiona
 
 | Control | Lvl | What It Checks | How | Auto-Remediation |
 |---------|-----|----------------|-----|------------------|
-| LE-01.01 | 1 | Repository has a license file | `file` LICENSE | Creates LICENSE (MIT) |
+| LE-01.01 | 1 | Repository has a license file | `file` LICENSE | Creates LICENSE (MIT, Apache-2.0, or BSD-3-Clause via `license_type` context) |
 | LE-02.01 | 1 | License is OSI-approved | `exec` gh api | — |
 | LE-02.02 | 1 | Releases include license info | `exec` gh release view | — |
 | LE-03.01 | 1 | License file present in repository root | `file` LICENSE | — |
@@ -99,8 +99,8 @@ Controls gated by `platform = "github"` require the GitHub CLI (`gh`). Additiona
 | QA-04.02 | 3 | Subprojects enforce equal security *(if has_subprojects)* | `pattern` security files | Manual |
 | QA-05.01 | 1 | No generated executables in repo | `pattern` absence check | Manual |
 | QA-05.02 | 1 | No unreviewable binary artifacts | `pattern` absence check | Manual |
-| QA-06.01 | 2 | CI includes automated tests | `pattern` workflows | Creates ci.yml |
-| QA-06.02 | 3 | Testing instructions documented | `pattern` README, docs | Manual |
+| QA-06.01 | 2 | CI includes automated tests | `pattern` workflows | Creates ci.yml (ecosystem-aware: Python/Node/Rust/Go) |
+| QA-06.02 | 3 | Testing instructions documented | `pattern` README, docs | Creates docs/TESTING.md (ecosystem-aware: Python/Node/Rust/Go) |
 | QA-06.03 | 3 | Test requirements for contributions | `pattern` CONTRIBUTING.md | Manual |
 | QA-07.01 | 3 | PRs require approval before merge | `exec` gh api | API: require PR reviews |
 
@@ -111,7 +111,7 @@ Controls gated by `platform = "github"` require the GitHub CLI (`gh`). Additiona
 | SA-01.01 | 2 | Design docs show actions and actors | `pattern` architecture docs | Creates ARCHITECTURE.md |
 | SA-02.01 | 2 | API/interface documentation available | `pattern` API docs, README | — |
 | SA-03.01 | 2 | Security assessment before releases *(if has_releases)* | `manual` / `pattern` | Creates SECURITY-ASSESSMENT.md |
-| SA-03.02 | 3 | Threat model documentation available | `file` THREAT_MODEL.md / `pattern` | Creates THREAT_MODEL.md |
+| SA-03.02 | 3 | Threat model documentation available | `file` THREAT_MODEL.md / `pattern` | Creates THREAT_MODEL.md (`llm_enhance`) |
 
 ### OSPS-VM — Vulnerability Management (10 controls)
 
@@ -124,7 +124,7 @@ Controls gated by `platform = "github"` require the GitHub CLI (`gh`). Additiona
 | VM-04.02 | 3 | VEX policy documented | `pattern` SECURITY.md, docs | Creates docs/VEX-POLICY.md |
 | VM-05.01 | 3 | SCA remediation policy documented | `pattern` docs | Creates docs/SCA-POLICY.md |
 | VM-05.02 | 3 | Pre-release SCA workflow configured | `pattern` workflows | Creates sca.yml |
-| VM-05.03 | 3 | Automated dependency scanning configured | `file` dependabot.yml, renovate.json | Creates dependabot.yml |
+| VM-05.03 | 3 | Automated dependency scanning configured | `file` dependabot.yml, renovate.json | Creates dependabot.yml (ecosystem-aware: Python/Node/Rust/Go) |
 | VM-06.01 | 3 | SAST remediation policy documented | `pattern` docs | Creates docs/SAST-POLICY.md |
 | VM-06.02 | 3 | Automated SAST in CI pipeline | `pattern` workflows | Creates sast.yml |
 
@@ -144,6 +144,8 @@ Set context via the `confirm_project_context` MCP tool or by editing `.project/p
 | `is_library` | boolean | No | DO-04.01, BR-01.01 | Audit hints for accuracy |
 | `has_compiled_assets` | boolean | No | QA-02.02 | When-clause: control only runs if `true` |
 | `ci_provider` | enum | Yes | BR-01.01, BR-01.02, AC-04.01, AC-04.02 | When-clause: controls only run if `"github"` |
+
+**Auto-detected without prompting:** `detected_ecosystem` (from manifest files: pyproject.toml → python, package.json → node, Cargo.toml → rust, go.mod → go) and `license_type` (from LICENSE file content: Apache-2.0, MIT, BSD-3-Clause) are detected automatically by `collect_auto_context()` and injected into both audit and remediation paths. They never appear in `get_pending_context` questions.
 
 ## Remediation Capabilities
 
@@ -170,20 +172,20 @@ Five templates have `llm_enhance` prompts (marked with \*) that request LLM-base
 | GV-01.01 | `GOVERNANCE.md` | Scaffold\* | Roles, decision making. `llm_enhance`. **Needs: maintainers** |
 | GV-01.02 | `MAINTAINERS.md` | Scaffold | Responsibilities, criteria. **Needs: maintainers** |
 | GV-04.01 | `CODEOWNERS` | Scaffold | Single global ownership rule. **Needs: maintainers** |
-| LE-01.01 | `LICENSE` | Production | Full MIT license text. `project_update`. Hardcoded to MIT |
+| LE-01.01 | `LICENSE` | Production | MIT (default), Apache-2.0, BSD-3-Clause — selected via `license_type` context. `project_update` |
 | BR-07.01 | `.gitignore` | Production | Covers .env, \*.pem, \*.key, cloud creds (AWS/GCP/Azure) |
 | DO-03.01 | `SUPPORT.md` | Production | Getting help, scope table, EOL policy with 30-day notice |
 | DO-04.01 | `SUPPORT.md` | Production | Support scope variant (no-op if DO-03.01 ran first) |
 | DO-05.01 | `SUPPORT.md` | Production | End-of-support variant (no-op if DO-03.01 ran first) |
 | SA-01.01 | `ARCHITECTURE.md` | Scaffold\* | Components/actors/data flow — all example data. `llm_enhance` |
 | SA-02.01 | `API.md` | Scaffold\* | Interface tables, usage examples — all placeholder. `llm_enhance` |
-| SA-03.02 | `THREAT_MODEL.md` | Production | Full STRIDE: 5 assets, 9 threats with mitigations. `project_update` |
+| SA-03.02 | `THREAT_MODEL.md` | Production\* | Full STRIDE: 5 assets, 9 threats with mitigations. `llm_enhance`, `project_update` |
 
 #### CI Workflows (`.github/workflows/`)
 
 | Control | File | Quality | Notes |
 |---------|------|:-------:|-------|
-| QA-06.01 | `ci.yml` | Starter | Test step is `echo` placeholder. Needs language/framework adaptation |
+| QA-06.01 | `ci.yml` | Production | Ecosystem-aware: Python (pytest), Node (npm test), Rust (cargo test), Go (go test). Auto-detected via `detected_ecosystem` context |
 | VM-05.02 | `sca.yml` | Production | Pinned `dependency-review-action`, `fail-on-severity: high` |
 | VM-06.02 | `sast.yml` | Production | Pinned CodeQL init/autobuild/analyze, weekly schedule |
 | QA-02.02 | `sbom.yml` | Production | Pinned syft SPDX generation + release asset upload |
@@ -193,7 +195,7 @@ Five templates have `llm_enhance` prompts (marked with \*) that request LLM-base
 
 | Control | File | Quality | Notes |
 |---------|------|:-------:|-------|
-| VM-05.03 | `.github/dependabot.yml` | Scaffold | GitHub Actions ecosystem by default; others commented out |
+| VM-05.03 | `.github/dependabot.yml` | Production | Ecosystem-aware: includes github-actions + detected ecosystem (pip/npm/cargo/gomod). Auto-detected via `detected_ecosystem` context |
 | DO-02.01 | `.github/ISSUE_TEMPLATE/bug_report.md` | Production | Standard template: reproduce, expected, actual, environment |
 
 #### Policy Documentation (`docs/`)
@@ -207,7 +209,7 @@ Five templates have `llm_enhance` prompts (marked with \*) that request LLM-base
 | VM-04.02 | `docs/VEX-POLICY.md` | Scaffold | VEX purpose, publication methods, OpenVEX/CISA links |
 | VM-05.01 | `docs/SCA-POLICY.md` | Production | Scanning frequency, 4-severity thresholds, exception process |
 | VM-06.01 | `docs/SAST-POLICY.md` | Production | 3 scanning triggers, severity handling, exception process |
-| QA-06.02 | `docs/TESTING.md` | Starter | `make test` is TODO placeholder. Correct structure |
+| QA-06.02 | `docs/TESTING.md` | Production | Ecosystem-aware: Python (pytest/coverage), Node (npm test/jest), Rust (cargo test), Go (go test/race). Auto-detected via `detected_ecosystem` context |
 | QA-06.03 | `docs/TEST-REQUIREMENTS.md` | Scaffold | Contribution test requirements; `make test` placeholder |
 
 ### API Calls (7 actions)
@@ -261,25 +263,27 @@ Verification-only controls that check conditions which already exist or can't be
 
 | Rating | Count | Description |
 |--------|:-----:|-------------|
-| Production-ready | 15 | Substantive content following best practices — minimal customization needed |
-| Good scaffold | 14 | Correct structure — needs project-specific content added |
-| Starter | 2 | Minimal placeholder — must be customized before use |
+| Production-ready | 19 | Substantive content following best practices — minimal customization needed |
+| Good scaffold | 12 | Correct structure — needs project-specific content added |
+| Starter | 0 | Minimal placeholder — must be customized before use |
 
-**5 templates with `llm_enhance` prompts**: README.md, SECURITY.md, GOVERNANCE.md, ARCHITECTURE.md, API.md — these request LLM-based customization using project context.
+**6 templates with `llm_enhance` prompts**: README.md, SECURITY.md, GOVERNANCE.md, ARCHITECTURE.md, API.md, THREAT_MODEL.md — these request LLM-based customization using project context.
 
 ### Known Limitations
 
 - Templates use `$OWNER`, `$REPO`, `$BRANCH` variables resolved from git remote — may be wrong for forks or non-standard remote names
 - `security@$OWNER.github.io` in SECURITY.md is a placeholder email — almost always needs customization
-- LICENSE is hardcoded to MIT — no license type selection
-- GitHub Actions workflows (`ci.yml` especially) are generic starters — need language/framework adaptation
+- LICENSE template auto-detects existing license type; defaults to MIT if no LICENSE file is present
+- CI workflows, dependabot, and testing docs auto-detect ecosystem from manifest files — falls back to generic starter if ecosystem is unrecognized
 - `release-signing.yml` uses `subject-path: '.'` which should be customized to actual release artifacts
 - `llm_enhance` prompts are captured in templates but the LLM integration path isn't fully wired in the remediation executor
 - Three SUPPORT.md controls (DO-03.01, DO-04.01, DO-05.01) each create the same file with different templates — only the first to run takes effect due to `overwrite = false`
 - API call remediations require `gh` CLI authentication with appropriate scopes (`repo`, `admin:org` for MFA enforcement)
 - `zizmor --fix=all` applies all fixes including potentially unsafe ones — review changes before committing
 - Manual-only controls have varying depth of guidance (some have 2 steps, some have 6)
-- `dependabot.yml` only enables `github-actions` ecosystem by default — other ecosystems (npm, pip, etc.) need manual addition
+- `dependabot.yml` auto-detects project ecosystem — falls back to `github-actions` only if ecosystem is unrecognized
+- Ecosystem detection maps primary language to ecosystem (python→python, javascript/typescript→node, go→go, rust→rust, java→java, ruby→ruby); unrecognized languages get no ecosystem
+- **Monorepo limitation:** Language and ecosystem auto-detection only checks manifest files at the repository root (e.g., `pyproject.toml`, `go.mod`, `package.json`). Nested service directories are not scanned. In a monorepo with multiple languages, only the root-level manifest is detected — check order favors Go and Rust over Python and JavaScript. Use `confirm_project_context(detected_ecosystem="...")` to override if the wrong ecosystem is selected
 
 ## External Tool Dependencies
 
