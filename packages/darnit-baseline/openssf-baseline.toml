@@ -4686,18 +4686,17 @@ confirm_project_context(
 
 [mcp.tools.get_pending_context]
 handler = "get_pending_context"
-limit = 1
+limit = 4
 append_directive = true
-description = """Sequential context collection wizard. Returns ONE question at a time.
+description = """Batch context collection wizard. Returns up to 4 questions at a time.
 
 **IMPORTANT — You MUST follow this workflow:**
-1. Call this tool. It returns a single question.
-2. Present the question to the user using the EXACT "question" text from the response. Do NOT paraphrase.
-3. Do NOT use markdown checkboxes, tables, or bullet formatting. Present plain text only.
-4. After the user answers, call confirm_project_context() with their answer.
-5. Call this tool again for the next question. Repeat until status is "complete".
+1. Call this tool. It returns up to 4 questions in "ask_user_batch".
+2. Pass "ask_user_batch.questions" directly to AskUserQuestion — do NOT paraphrase, reorder, or modify.
+3. After the user answers, use "answer_mapping" to call confirm_project_context() for EACH answer.
+4. Call this tool again for the next batch. Repeat until status is "complete".
 
-Do NOT batch multiple questions. Do NOT pre-fill or suggest answers.
+Do NOT pre-fill or suggest answers. Do NOT guess values from git history or repo metadata.
 """
 
 [mcp.tools.generate_threat_model]
@@ -4710,7 +4709,13 @@ description = "Generate an in-toto attestation for OpenSSF Baseline compliance"
 
 [mcp.tools.remediate_audit_findings]
 handler = "remediate_audit_findings"
-description = "Apply automated remediations for failed audit controls"
+description = """Apply automated remediations for failed audit controls.
+
+**IMPORTANT**: Before running remediation, ALWAYS call get_pending_context() first to gather any
+missing project context (maintainers, security contact, governance model, etc.). Some remediations
+require confirmed context to generate correct files (e.g., CODEOWNERS needs maintainers).
+Gather all context before remediating.
+"""
 
 [mcp.tools.create_remediation_branch]
 handler = "create_remediation_branch"

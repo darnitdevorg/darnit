@@ -1,7 +1,8 @@
-"""Tests for get_pending_context deterministic context collection.
+"""Tests for get_pending_context batch context collection.
 
 Tests the pagination, LLM directive footer, progress indicator,
-and presentation hint features added to enforce sequential CLI wizard behavior.
+presentation hint, ask_user_batch, answer_mapping, and TOML ordering
+features for batched AskUserQuestion-based context gathering.
 """
 
 import json
@@ -11,8 +12,10 @@ from darnit.config.context_schema import (
     ContextDefinition,
     ContextPromptRequest,
     ContextType,
+    ContextValue,
 )
 from darnit_baseline.tools import (
+    _CONTEXT_KEY_ORDER,
     _LLM_DIRECTIVE,
     _build_context_question,
     get_pending_context,
@@ -37,23 +40,39 @@ def _make_pending(count: int) -> list[ContextPromptRequest]:
     return items
 
 
+def _parse_json_from_result(result: str) -> dict:
+    """Strip directive footer and parse JSON from get_pending_context result."""
+    json_str = result.split("\n---")[0].rstrip()
+    return json.loads(json_str)
+
+
 class TestGetPendingContextPagination:
-    """Tests for single-item pagination behavior."""
+    """Tests for batch pagination behavior."""
 
     @patch("darnit_baseline.tools.Path")
     @patch("darnit.config.context_storage.get_pending_context")
-    def test_default_limit_returns_one_question(self, mock_get, mock_path) -> None:
-        """Default limit=1 returns exactly one question."""
+    def test_default_limit_returns_four_questions(self, mock_get, mock_path) -> None:
+        """Default limit=4 returns up to four questions."""
         mock_path.return_value.resolve.return_value = "/tmp/repo"
         mock_get.return_value = _make_pending(5)
 
         result = get_pending_context(local_path="/tmp/repo")
-        # Strip directive footer to parse JSON
-        json_str = result.split("\n---")[0].rstrip()
-        data = json.loads(json_str)
+        data = _parse_json_from_result(result)
 
         assert data["status"] == "pending"
-        assert len(data["questions"]) == 1
+        assert len(data["questions"]) == 4
+
+    @patch("darnit_baseline.tools.Path")
+    @patch("darnit.config.context_storage.get_pending_context")
+    def test_default_limit_returns_all_if_fewer_than_four(self, mock_get, mock_path) -> None:
+        """Default limit=4 returns all questions when fewer than 4 pending."""
+        mock_path.return_value.resolve.return_value = "/tmp/repo"
+        mock_get.return_value = _make_pending(2)
+
+        result = get_pending_context(local_path="/tmp/repo")
+        data = _parse_json_from_result(result)
+
+        assert len(data["questions"]) == 2
 
     @patch("darnit_baseline.tools.Path")
     @patch("darnit.config.context_storage.get_pending_context")
@@ -63,8 +82,7 @@ class TestGetPendingContextPagination:
         mock_get.return_value = _make_pending(5)
 
         result = get_pending_context(local_path="/tmp/repo", limit=0)
-        json_str = result.split("\n---")[0].rstrip()
-        data = json.loads(json_str)
+        data = _parse_json_from_result(result)
 
         assert data["status"] == "pending"
         assert len(data["questions"]) == 5
@@ -77,8 +95,7 @@ class TestGetPendingContextPagination:
         mock_get.return_value = _make_pending(5)
 
         result = get_pending_context(local_path="/tmp/repo", limit=3)
-        json_str = result.split("\n---")[0].rstrip()
-        data = json.loads(json_str)
+        data = _parse_json_from_result(result)
 
         assert len(data["questions"]) == 3
 
@@ -89,17 +106,16 @@ class TestGetPendingContextProgress:
     @patch("darnit_baseline.tools.Path")
     @patch("darnit.config.context_storage.get_pending_context")
     def test_progress_included(self, mock_get, mock_path) -> None:
-        """Response includes progress object with current and total."""
+        """Response includes progress object with answered and total."""
         mock_path.return_value.resolve.return_value = "/tmp/repo"
         mock_get.return_value = _make_pending(8)
 
         result = get_pending_context(local_path="/tmp/repo")
-        json_str = result.split("\n---")[0].rstrip()
-        data = json.loads(json_str)
+        data = _parse_json_from_result(result)
 
         assert "progress" in data
         assert data["progress"]["total"] == 8
-        assert data["progress"]["current"] == 1
+        assert data["progress"]["answered"] == 0
 
 
 class TestGetPendingContextDirective:
@@ -116,7 +132,7 @@ class TestGetPendingContextDirective:
 
         assert result.endswith(_LLM_DIRECTIVE)
         assert "IMPORTANT" in result
-        assert "Do NOT batch" in result
+        assert "ask_user_batch" in result
 
     @patch("darnit_baseline.tools.Path")
     @patch("darnit.config.context_storage.get_pending_context")
@@ -244,8 +260,6 @@ class TestAskUserParams:
 
     def test_confirm_question_has_ask_user_accept_reject(self) -> None:
         """Auto-detected confirm question includes ask_user with Accept/Reject."""
-        from darnit.config.context_schema import ContextValue
-
         defn = ContextDefinition(
             type=ContextType.STRING,
             prompt="What CI provider?",
@@ -324,3 +338,184 @@ class TestAskUserParams:
 
         assert "ask_user" in question
         assert len(question["ask_user"]["header"]) <= 12
+
+
+class TestAskUserBatch:
+    """Tests for ask_user_batch and answer_mapping in response."""
+
+    @patch("darnit_baseline.tools.Path")
+    @patch("darnit.config.context_storage.get_pending_context")
+    def test_batch_contains_all_ask_user_questions(self, mock_get, mock_path) -> None:
+        """ask_user_batch.questions aggregates per-question ask_user params."""
+        mock_path.return_value.resolve.return_value = "/tmp/repo"
+        mock_get.return_value = _make_pending(3)
+
+        result = get_pending_context(local_path="/tmp/repo")
+        data = _parse_json_from_result(result)
+
+        assert "ask_user_batch" in data
+        batch = data["ask_user_batch"]["questions"]
+        assert len(batch) == 3
+        # Each batch question has the AskUserQuestion structure
+        for q in batch:
+            assert "question" in q
+            assert "header" in q
+            assert "options" in q
+            assert "multiSelect" in q
+
+    @patch("darnit_baseline.tools.Path")
+    @patch("darnit.config.context_storage.get_pending_context")
+    def test_answer_mapping_matches_batch_indices(self, mock_get, mock_path) -> None:
+        """answer_mapping has correct question_index and context_key for each question."""
+        mock_path.return_value.resolve.return_value = "/tmp/repo"
+        mock_get.return_value = _make_pending(3)
+
+        result = get_pending_context(local_path="/tmp/repo")
+        data = _parse_json_from_result(result)
+
+        assert "answer_mapping" in data
+        mappings = data["answer_mapping"]
+        assert len(mappings) == 3
+        for i, m in enumerate(mappings):
+            assert m["question_index"] == i
+            assert "context_key" in m
+
+    @patch("darnit_baseline.tools.Path")
+    @patch("darnit.config.context_storage.get_pending_context")
+    def test_boolean_answer_mapping_has_value_map(self, mock_get, mock_path) -> None:
+        """Boolean questions include value_map for Yes→true, No→false."""
+        mock_path.return_value.resolve.return_value = "/tmp/repo"
+        # Single boolean question
+        defn = ContextDefinition(
+            type=ContextType.BOOLEAN,
+            prompt="Has releases?",
+            affects=["CTRL-01"],
+        )
+        mock_get.return_value = [ContextPromptRequest(
+            key="has_releases",
+            definition=defn,
+            control_ids=["CTRL-01"],
+            priority=1,
+        )]
+
+        result = get_pending_context(local_path="/tmp/repo")
+        data = _parse_json_from_result(result)
+
+        mapping = data["answer_mapping"][0]
+        assert mapping["value_map"] == {"Yes": True, "No": False}
+
+    @patch("darnit_baseline.tools.Path")
+    @patch("darnit.config.context_storage.get_pending_context")
+    def test_confirm_answer_mapping_has_detected_value(self, mock_get, mock_path) -> None:
+        """Confirm questions include value_map with detected value for Yes."""
+        mock_path.return_value.resolve.return_value = "/tmp/repo"
+        defn = ContextDefinition(
+            type=ContextType.STRING,
+            prompt="CI provider?",
+            auto_detect=True,
+            affects=["CTRL-01"],
+        )
+        mock_get.return_value = [ContextPromptRequest(
+            key="ci_provider",
+            definition=defn,
+            control_ids=["CTRL-01"],
+            priority=1,
+            current_value=ContextValue.auto_detected(value="github", method="detected"),
+        )]
+
+        result = get_pending_context(local_path="/tmp/repo")
+        data = _parse_json_from_result(result)
+
+        mapping = data["answer_mapping"][0]
+        assert mapping["value_map"]["Yes"] == "github"
+        assert mapping["value_map"]["No"] == "ASK_USER_FOR_VALUE"
+
+    @patch("darnit_baseline.tools.Path")
+    @patch("darnit.config.context_storage.get_pending_context")
+    def test_no_batch_when_no_ask_user(self, mock_get, mock_path) -> None:
+        """No ask_user_batch field when questions lack ask_user params."""
+        mock_path.return_value.resolve.return_value = "/tmp/repo"
+        # Free text without examples → no ask_user
+        defn = ContextDefinition(
+            type=ContextType.STRING,
+            prompt="Project name?",
+            affects=["CTRL-01"],
+        )
+        mock_get.return_value = [ContextPromptRequest(
+            key="project_name",
+            definition=defn,
+            control_ids=["CTRL-01"],
+            priority=1,
+        )]
+
+        result = get_pending_context(local_path="/tmp/repo")
+        data = _parse_json_from_result(result)
+
+        assert "ask_user_batch" not in data
+        assert "answer_mapping" not in data
+
+
+class TestTomlDefinitionOrder:
+    """Tests for TOML definition order sorting."""
+
+    @patch("darnit_baseline.tools.Path")
+    @patch("darnit.config.context_storage.get_pending_context")
+    def test_questions_sorted_by_toml_order(self, mock_get, mock_path) -> None:
+        """Questions are sorted by TOML definition order, not priority."""
+        mock_path.return_value.resolve.return_value = "/tmp/repo"
+
+        # Create questions with keys in reverse TOML order but high priority
+        items = []
+        for key in reversed(["has_subprojects", "maintainers", "ci_provider"]):
+            defn = ContextDefinition(
+                type=ContextType.BOOLEAN,
+                prompt=f"{key}?",
+                affects=["CTRL-01"],
+            )
+            items.append(ContextPromptRequest(
+                key=key,
+                definition=defn,
+                control_ids=["CTRL-01"],
+                priority=10,  # all same priority
+            ))
+        mock_get.return_value = items
+
+        result = get_pending_context(local_path="/tmp/repo", limit=0)
+        data = _parse_json_from_result(result)
+
+        keys = [q["key"] for q in data["questions"]]
+        # Should be in TOML order: maintainers, has_subprojects, ci_provider
+        assert keys == ["maintainers", "has_subprojects", "ci_provider"]
+
+    @patch("darnit_baseline.tools.Path")
+    @patch("darnit.config.context_storage.get_pending_context")
+    def test_unknown_keys_sort_to_end(self, mock_get, mock_path) -> None:
+        """Keys not in TOML order list sort after known keys."""
+        mock_path.return_value.resolve.return_value = "/tmp/repo"
+
+        items = []
+        for key in ["custom_key", "maintainers"]:
+            defn = ContextDefinition(
+                type=ContextType.BOOLEAN,
+                prompt=f"{key}?",
+                affects=["CTRL-01"],
+            )
+            items.append(ContextPromptRequest(
+                key=key,
+                definition=defn,
+                control_ids=["CTRL-01"],
+                priority=1,
+            ))
+        mock_get.return_value = items
+
+        result = get_pending_context(local_path="/tmp/repo", limit=0)
+        data = _parse_json_from_result(result)
+
+        keys = [q["key"] for q in data["questions"]]
+        assert keys == ["maintainers", "custom_key"]
+
+    def test_context_key_order_has_all_eight_keys(self) -> None:
+        """_CONTEXT_KEY_ORDER contains all 8 expected context keys."""
+        assert len(_CONTEXT_KEY_ORDER) == 8
+        assert _CONTEXT_KEY_ORDER[0] == "maintainers"
+        assert _CONTEXT_KEY_ORDER[-1] == "ci_provider"

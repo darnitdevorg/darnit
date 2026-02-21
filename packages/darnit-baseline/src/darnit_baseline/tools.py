@@ -445,20 +445,31 @@ def confirm_project_context(
     )
 
 
+# Fixed ordering matching TOML [context.*] definition order for stable UX.
+# This must match the order of sections in openssf-baseline.toml.
+_CONTEXT_KEY_ORDER = [
+    "maintainers",
+    "security_contact",
+    "governance_model",
+    "has_subprojects",
+    "has_releases",
+    "is_library",
+    "has_compiled_assets",
+    "ci_provider",
+]
+
 _LLM_DIRECTIVE = """
 ---
 IMPORTANT — YOU MUST FOLLOW THESE RULES:
-1. Use the AskUserQuestion tool to present this question interactively.
-   The "ask_user" object in each question maps directly to AskUserQuestion parameters:
-   pass "question", "header", "options", and "multiSelect" as-is.
-2. Do NOT batch multiple questions. Ask this ONE question, wait for the answer, then call get_pending_context again.
-3. Do NOT paraphrase or reword the question text.
-4. After the user answers, call confirm_project_context() with the value, then call get_pending_context() for the next question.
-5. Map user selections to confirm_project_context values:
+1. Use the AskUserQuestion tool with the EXACT contents of "ask_user_batch.questions".
+   Pass the array directly — do NOT paraphrase, reorder, or modify any question text or options.
+2. After the user answers, use "answer_mapping" to call confirm_project_context() for EACH answer.
+   Map user selections to confirm_project_context values:
    - "Yes" / "No" for booleans → pass true / false (not strings)
    - Selected option label for enums → pass the label as a string
    - "Other" selections → pass the user's typed value
-6. Do NOT guess, suggest, or pre-fill answers from the repository owner, git history, or your own knowledge.
+3. Then call get_pending_context() again for the next batch (if any remain).
+4. Do NOT guess, suggest, or pre-fill answers from the repository owner, git history, or your own knowledge.
 ---"""
 
 
@@ -468,19 +479,19 @@ def get_pending_context(
     level: int = 3,
     owner: str | None = None,
     repo: str | None = None,
-    limit: int = 1,
+    limit: int = 4,
     _tool_config: dict | None = None,
 ) -> str:
     """Get context values that would improve audit accuracy.
 
-    **IMPORTANT**: This is a sequential form processor. It returns ONE question at a time
-    by default. You MUST follow this workflow:
+    Returns up to `limit` questions per call as a batch. You MUST follow this workflow:
 
-    1. Call get_pending_context() — it returns a single question.
-    2. Present the question to the user using the EXACT "question" text from the response.
-       Do NOT paraphrase, batch, or use markdown formatting (no checkboxes, no tables).
-    3. After the user answers, call confirm_project_context() with the value.
-    4. Call get_pending_context() again for the next question.
+    1. Call get_pending_context() — it returns up to 4 questions with an "ask_user_batch" field.
+    2. Pass "ask_user_batch.questions" directly to the AskUserQuestion tool.
+       Do NOT paraphrase, reorder, or modify any question text or options.
+    3. After the user answers, use "answer_mapping" to call confirm_project_context()
+       for EACH answer.
+    4. Call get_pending_context() again for the next batch.
     5. Repeat until status is "complete".
 
     Parameters:
@@ -489,12 +500,11 @@ def get_pending_context(
     - `level`: Maximum maturity level (1, 2, or 3)
     - `owner`: GitHub owner (auto-detected if not provided)
     - `repo`: GitHub repo name (auto-detected if not provided)
-    - `limit`: Max questions to return (default: 1). Use 0 for all.
+    - `limit`: Max questions to return per batch (default: 4). Use 0 for all.
 
     Returns:
-        JSON with structured question(s) and a progress indicator. Each question
-        specifies its input_type (free_text, select, or confirm) and the exact
-        question to present. Follow the input_type exactly.
+        JSON with structured question(s), ask_user_batch for AskUserQuestion,
+        answer_mapping for confirm_project_context, and a progress indicator.
     """
     from darnit.config.context_storage import get_pending_context as _get_pending
 
@@ -539,28 +549,65 @@ def get_pending_context(
         for req in pending:
             questions.append(_build_context_question(req))
 
-        # Sort by priority (highest first)
-        questions.sort(key=lambda q: q["priority"], reverse=True)
+        # Sort by TOML definition order for stable UX across runs.
+        # Keys not in the fixed order list sort to the end.
+        def _toml_order(q: dict) -> int:
+            try:
+                return _CONTEXT_KEY_ORDER.index(q["key"])
+            except ValueError:
+                return len(_CONTEXT_KEY_ORDER)
+
+        questions.sort(key=_toml_order)
 
         # Apply pagination (limit=0 means return all)
         if effective_limit > 0:
             questions = questions[:effective_limit]
 
-        result = json.dumps({
+        # Build ask_user_batch: collect per-question ask_user params into
+        # a single array that maps directly to AskUserQuestion's questions param.
+        batch_questions = []
+        answer_mapping = []
+        for q in questions:
+            ask_user = q.get("ask_user")
+            if ask_user is not None:
+                batch_questions.append(ask_user)
+                mapping: dict = {
+                    "question_index": len(batch_questions) - 1,
+                    "context_key": q["key"],
+                }
+                # Build value_map for the LLM to translate selections
+                input_type = q.get("input_type")
+                if input_type == "select" and q.get("options") == ["true", "false"]:
+                    mapping["value_map"] = {"Yes": True, "No": False}
+                elif input_type == "confirm":
+                    mapping["value_map"] = {
+                        "Yes": q.get("detected_value"),
+                        "No": "ASK_USER_FOR_VALUE",
+                    }
+                answer_mapping.append(mapping)
+
+        # Determine answered count from total minus pending
+        answered = total - len(pending)
+
+        response: dict = {
             "status": "pending",
             "progress": {
-                "current": total - len(pending) + 1,
+                "answered": answered,
                 "total": total,
             },
             "instructions": (
-                "Present the question to the user using the EXACT 'question' text. "
-                "Do NOT paraphrase, batch, or use markdown formatting. "
-                "After the user answers, call confirm_project_context() with the value, "
-                "then call get_pending_context() again for the next question."
+                "Pass ask_user_batch.questions directly to AskUserQuestion. "
+                "Then use answer_mapping to call confirm_project_context() for each answer. "
+                "Then call get_pending_context() again for the next batch."
             ),
             "questions": questions,
-            "after_answer": "Call confirm_project_context() with the answer, then call get_pending_context() again.",
-        }, indent=2)
+        }
+
+        if batch_questions:
+            response["ask_user_batch"] = {"questions": batch_questions}
+            response["answer_mapping"] = answer_mapping
+
+        result = json.dumps(response, indent=2)
 
         if append_directive:
             result += _LLM_DIRECTIVE
