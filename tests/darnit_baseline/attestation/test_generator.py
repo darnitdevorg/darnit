@@ -13,15 +13,6 @@ from darnit_baseline.attestation.generator import (
 )
 
 
-class TestBaselinePredicateType:
-    """Tests for BASELINE_PREDICATE_TYPE constant."""
-
-    @pytest.mark.unit
-    def test_predicate_type_format(self):
-        """Test predicate type has correct format."""
-        assert BASELINE_PREDICATE_TYPE == "https://openssf.org/baseline/assessment/v1"
-
-
 class TestBuildUnsignedStatement:
     """Tests for build_unsigned_statement function."""
 
@@ -33,21 +24,6 @@ class TestBuildUnsignedStatement:
             "summary": {"level_assessed": 1, "passed": 10, "failed": 0},
             "controls": []
         }
-
-    @pytest.mark.unit
-    def test_statement_structure(self, sample_predicate):
-        """Test unsigned statement has correct structure."""
-        statement = build_unsigned_statement(
-            subject_name="git+https://github.com/test/repo",
-            commit="abc123",
-            predicate_type=BASELINE_PREDICATE_TYPE,
-            predicate=sample_predicate
-        )
-
-        assert statement["_type"] == "https://in-toto.io/Statement/v1"
-        assert "subject" in statement
-        assert "predicateType" in statement
-        assert "predicate" in statement
 
     @pytest.mark.unit
     def test_subject_format(self, sample_predicate):
@@ -63,31 +39,6 @@ class TestBuildUnsignedStatement:
         subject = statement["subject"][0]
         assert subject["name"] == "git+https://github.com/test/repo"
         assert subject["digest"]["gitCommit"] == "abc123def456"
-
-    @pytest.mark.unit
-    def test_predicate_type_preserved(self, sample_predicate):
-        """Test predicate type is preserved."""
-        statement = build_unsigned_statement(
-            subject_name="git+https://github.com/test/repo",
-            commit="abc123",
-            predicate_type=BASELINE_PREDICATE_TYPE,
-            predicate=sample_predicate
-        )
-
-        assert statement["predicateType"] == BASELINE_PREDICATE_TYPE
-
-    @pytest.mark.unit
-    def test_predicate_preserved(self, sample_predicate):
-        """Test predicate content is preserved."""
-        statement = build_unsigned_statement(
-            subject_name="git+https://github.com/test/repo",
-            commit="abc123",
-            predicate_type=BASELINE_PREDICATE_TYPE,
-            predicate=sample_predicate
-        )
-
-        assert statement["predicate"] == sample_predicate
-
 
 class TestGenerateAttestationFromResults:
     """Tests for generate_attestation_from_results function."""

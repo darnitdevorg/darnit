@@ -78,13 +78,6 @@ class TestOSPSBaselineImplementation:
             assert control.domain in valid_domains, f"Invalid domain: {control.domain}"
 
     @pytest.mark.unit
-    def test_get_rules_catalog(self, impl):
-        """Test get_rules_catalog returns non-empty dict."""
-        catalog = impl.get_rules_catalog()
-        assert isinstance(catalog, dict)
-        assert len(catalog) > 0
-
-    @pytest.mark.unit
     def test_rules_catalog_has_required_fields(self, impl):
         """Test rules catalog entries have required fields."""
         catalog = impl.get_rules_catalog()

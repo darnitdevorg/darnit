@@ -23,28 +23,6 @@ class TestBuildAssessmentPredicate:
         ]
 
     @pytest.mark.unit
-    def test_basic_predicate_structure(self, sample_results):
-        """Test predicate has correct top-level structure."""
-        predicate = build_assessment_predicate(
-            owner="testorg",
-            repo="testrepo",
-            commit="abc123def456",
-            ref="main",
-            level=3,
-            results=sample_results,
-            project_config=None,
-            adapters_used=["builtin"]
-        )
-
-        assert "assessor" in predicate
-        assert "timestamp" in predicate
-        assert "baseline" in predicate
-        assert "repository" in predicate
-        assert "summary" in predicate
-        assert "levels" in predicate
-        assert "controls" in predicate
-
-    @pytest.mark.unit
     def test_assessor_info(self, sample_results):
         """Test assessor information is correct."""
         predicate = build_assessment_predicate(

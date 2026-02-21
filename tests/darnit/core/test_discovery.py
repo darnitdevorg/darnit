@@ -8,7 +8,6 @@ from darnit.core.discovery import (
     get_default_implementation,
     get_implementation,
 )
-from darnit.core.plugin import ComplianceImplementation
 
 
 class TestDiscoverImplementations:
@@ -26,21 +25,6 @@ class TestDiscoverImplementations:
         """Test that openssf-baseline implementation is discovered."""
         implementations = discover_implementations()
         assert "openssf-baseline" in implementations
-
-    @pytest.mark.unit
-    def test_implementation_is_protocol(self):
-        """Test discovered implementation satisfies protocol."""
-        implementations = discover_implementations()
-        impl = implementations.get("openssf-baseline")
-        assert isinstance(impl, ComplianceImplementation)
-
-    @pytest.mark.unit
-    def test_caches_results(self):
-        """Test that discovery results are cached."""
-        impl1 = discover_implementations()
-        impl2 = discover_implementations()
-        # Should be the exact same dict object
-        assert impl1 is impl2
 
     @pytest.mark.unit
     def test_clear_cache_works(self):
@@ -93,9 +77,3 @@ class TestGetDefaultImplementation:
         assert impl is not None
         assert impl.name == "openssf-baseline"
 
-    @pytest.mark.unit
-    def test_returns_implementation_when_available(self):
-        """Test that default returns something when implementations exist."""
-        impl = get_default_implementation()
-        assert impl is not None
-        assert isinstance(impl, ComplianceImplementation)

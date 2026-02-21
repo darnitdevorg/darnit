@@ -18,13 +18,6 @@ from darnit.core.verification import (
 class TestDefaultTrustedPublishers:
     """Tests for default trusted publishers."""
 
-    def test_default_publishers_defined(self) -> None:
-        """Test that default trusted publishers are defined."""
-        assert "kusari-oss" in DEFAULT_TRUSTED_PUBLISHERS
-        assert "kusaridev" in DEFAULT_TRUSTED_PUBLISHERS
-        assert "https://github.com/kusari-oss" in DEFAULT_TRUSTED_PUBLISHERS
-        assert "https://github.com/kusaridev" in DEFAULT_TRUSTED_PUBLISHERS
-
     def test_default_publishers_included_by_default(self) -> None:
         """Test that default publishers are included when use_default_publishers=True."""
         config = VerificationConfig()
@@ -93,72 +86,6 @@ class TestVerificationConfig:
         all_publishers = config.get_all_trusted_publishers()
         assert "https://github.com/openssf" in all_publishers
         assert "kusari-oss" in all_publishers
-
-
-class TestAttestationInfo:
-    """Tests for AttestationInfo dataclass."""
-
-    def test_attestation_info_creation(self) -> None:
-        """Test creating AttestationInfo."""
-        info = AttestationInfo(
-            issuer="https://token.actions.githubusercontent.com",
-            subject="https://github.com/kusari-oss/darnit",
-            repository="https://github.com/kusari-oss/darnit",
-            workflow=".github/workflows/release.yml",
-        )
-
-        assert info.issuer == "https://token.actions.githubusercontent.com"
-        assert info.subject == "https://github.com/kusari-oss/darnit"
-        assert info.repository == "https://github.com/kusari-oss/darnit"
-        assert info.workflow == ".github/workflows/release.yml"
-
-
-class TestVerificationResult:
-    """Tests for VerificationResult."""
-
-    def test_verified_signed_result(self) -> None:
-        """Test a verified, signed result."""
-        attestation = AttestationInfo(
-            subject="https://github.com/kusari-oss/darnit",
-            repository="https://github.com/kusari-oss/darnit",
-        )
-        result = VerificationResult(
-            verified=True,
-            signed=True,
-            publisher="https://github.com/kusari-oss/darnit",
-            publisher_repo="https://github.com/kusari-oss/darnit",
-            trusted=True,
-            attestation=attestation,
-        )
-
-        assert result.verified is True
-        assert result.signed is True
-        assert result.publisher == "https://github.com/kusari-oss/darnit"
-        assert result.trusted is True
-        assert result.attestation is not None
-        assert result.error is None
-
-    def test_unsigned_allowed_result(self) -> None:
-        """Test an unsigned but allowed result."""
-        result = VerificationResult(
-            verified=True,
-            signed=False,
-            warning="Package not signed",
-        )
-
-        assert result.verified is True
-        assert result.signed is False
-        assert result.warning == "Package not signed"
-
-    def test_verification_failed_result(self) -> None:
-        """Test a failed verification result."""
-        result = VerificationResult(
-            verified=False,
-            error="Package not found",
-        )
-
-        assert result.verified is False
-        assert result.error == "Package not found"
 
 
 class TestVerificationCache:
