@@ -268,17 +268,17 @@ def validate_sarif_reads_from_toml() -> ValidationResult:
             details="Expected _load_framework_config function",
         )
 
-    # Check deprecation notice for catalog
-    if "deprecated" not in content.lower():
+    # Verify catalog imports have been removed
+    if "catalog" in content.lower():
         return ValidationResult(
             passed=False,
-            message="SARIF formatter should document catalog deprecation",
+            message="SARIF formatter should not reference catalog (removed)",
             is_warning=True,
         )
 
     return ValidationResult(
         passed=True,
-        message="SARIF formatter reads from TOML (catalog deprecated)",
+        message="SARIF formatter reads from TOML (no catalog references)",
     )
 
 

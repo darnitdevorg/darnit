@@ -165,18 +165,19 @@ def list_available_checks() -> str:
     Returns:
         Formatted list of all 62 OSPS controls across 3 levels
     """
-    from darnit_baseline.rules.catalog import OSPS_RULES
+    from darnit.config.merger import load_framework_by_name
 
-    checks = {"level1": [], "level2": [], "level3": []}
+    config = load_framework_by_name("openssf-baseline")
+    checks: dict[str, list] = {"level1": [], "level2": [], "level3": []}
 
-    for rule_id, rule in OSPS_RULES.items():
-        level = rule.get("level", 1)
+    for control_id, control in config.controls.items():
+        level = control.tags.get("level", 1) if control.tags else 1
         level_key = f"level{level}"
         if level_key in checks:
             checks[level_key].append({
-                "id": rule_id,
-                "name": rule.get("name", rule_id),
-                "description": rule.get("short", ""),
+                "id": control_id,
+                "name": control.name,
+                "description": control.description[:100] if control.description else "",
             })
 
     return json.dumps(checks, indent=2)

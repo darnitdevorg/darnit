@@ -705,6 +705,7 @@ class ControlConfig(BaseModel):
     help_md: str | None = None  # Inline markdown help
     help_file: str | None = None  # Path to help markdown file
     docs_url: str | None = None  # Link to external docs
+    location_hint: str | None = None  # File/directory hint for SARIF location mapping
 
     model_config = ConfigDict(extra="allow")
 

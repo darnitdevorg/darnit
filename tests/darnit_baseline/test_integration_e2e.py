@@ -105,34 +105,7 @@ class TestRemediationE2EFlow:
 
 
 class TestControlDefinitionConsistency:
-    """Test that control definitions are consistent across all sources."""
-
-    @pytest.mark.unit
-    def test_toml_and_catalog_controls_match(self):
-        """Verify controls in TOML match those in catalog.py.
-
-        TODO(removal): Remove this test when rules/catalog.py is deleted.
-        See the removal plan in rules/catalog.py.
-        """
-        import tomllib
-
-        from darnit_baseline import get_framework_path
-        from darnit_baseline.rules.catalog import OSPS_RULES
-
-        toml_path = get_framework_path()
-        with open(toml_path, "rb") as f:
-            toml_data = tomllib.load(f)
-
-        toml_controls = set(toml_data.get("controls", {}).keys())
-        catalog_controls = set(OSPS_RULES.keys())
-
-        in_catalog_not_toml = catalog_controls - toml_controls
-        in_toml_not_catalog = toml_controls - catalog_controls
-
-        print(f"\nControls in catalog but not TOML: {len(in_catalog_not_toml)}")
-        print(f"Controls in TOML but not catalog: {len(in_toml_not_catalog)}")
-
-        assert len(in_toml_not_catalog) == 0, f"TOML has controls not in catalog: {in_toml_not_catalog}"
+    """Test that control definitions are consistent."""
 
     @pytest.mark.unit
     def test_toml_remediation_coverage(self):

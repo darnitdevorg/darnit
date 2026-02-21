@@ -4,7 +4,6 @@ This module generates SARIF (Static Analysis Results Interchange Format)
 output compatible with GitHub Code Scanning and other SARIF tools.
 
 SARIF metadata is read from the framework TOML config (openssf-baseline.toml).
-The rules/catalog.py is deprecated and used only as a fallback.
 
 Specification: https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html
 """
@@ -103,36 +102,14 @@ def _get_control_from_toml(control_id: str) -> dict[str, Any] | None:
         "help_md": control.help_md or "",
         "security_severity": security_severity or 5.0,
         "tags": tag_list,
-        "location_hint": "",
+        "location_hint": getattr(control, 'location_hint', '') or "",
         "default_level": default_level,
         "docs_url": control.docs_url or f"https://baseline.openssf.org/versions/2025-10-10#{control_id}",
     }
 
 
-# =============================================================================
-# Legacy Catalog Fallback (Deprecated)
-# =============================================================================
-
-
-def _get_rule_from_catalog(control_id: str) -> dict[str, Any] | None:
-    """Get rule from legacy catalog (fallback).
-
-    DEPRECATED: This function will be removed once all metadata
-    is migrated to TOML. See TODO in rules/catalog.py for the
-    full removal plan.
-    """
-    try:
-        from darnit_baseline.rules.catalog import get_rule
-        return get_rule(control_id)
-    except ImportError:
-        return None
-
-
 def get_rule(control_id: str) -> dict[str, Any] | None:
-    """Get rule metadata for a control ID.
-
-    Primary source: TOML framework config
-    Fallback: Legacy rules/catalog.py
+    """Get rule metadata for a control ID from TOML framework config.
 
     Args:
         control_id: OSPS control ID
@@ -140,13 +117,7 @@ def get_rule(control_id: str) -> dict[str, Any] | None:
     Returns:
         Rule metadata dict or None
     """
-    # Try TOML first
-    rule = _get_control_from_toml(control_id)
-    if rule:
-        return rule
-
-    # Fallback to legacy catalog
-    return _get_rule_from_catalog(control_id)
+    return _get_control_from_toml(control_id)
 
 
 # Domain info - merged from both sources
@@ -283,12 +254,7 @@ def build_sarif_rules(
         if config:
             ids_to_include = list(config.controls.keys())
         else:
-            # Fallback to legacy catalog
-            try:
-                from darnit_baseline.rules.catalog import OSPS_RULES
-                ids_to_include = list(OSPS_RULES.keys())
-            except ImportError:
-                ids_to_include = []
+            ids_to_include = []
 
     for control_id in sorted(ids_to_include):
         rule_meta = get_rule(control_id)
@@ -418,7 +384,7 @@ def get_location_for_control(
     Returns:
         SARIF physicalLocation object
     """
-    # Get location hint from rules catalog
+    # Get location hint from TOML control metadata
     rule_meta = get_rule(control_id)
     location_hint = rule_meta.get("location_hint", "") if rule_meta else ""
 

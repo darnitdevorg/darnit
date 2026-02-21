@@ -44,28 +44,47 @@ class OSPSBaselineImplementation:
 
     def get_controls_by_level(self, level: int) -> list[ControlSpec]:
         """Get controls for a specific maturity level."""
-        from .rules.catalog import OSPS_RULES
+        from darnit.config.merger import load_framework_by_name
 
+        config = load_framework_by_name("openssf-baseline")
         controls = []
-        for rule_id, rule in OSPS_RULES.items():
-            if rule.get("level") == level:
+        for control_id, control in config.controls.items():
+            ctrl_level = control.level
+            if ctrl_level is None and control.tags:
+                ctrl_level = control.tags.get("level")
+            if ctrl_level == level:
+                domain = control.domain
+                if domain is None and control.tags:
+                    domain = control.tags.get("domain", "")
                 controls.append(ControlSpec(
-                    control_id=rule_id,
-                    name=rule.get("name", rule_id),
-                    description=rule.get("shortDescription", {}).get("text", ""),
+                    control_id=control_id,
+                    name=control.name,
+                    description=control.description or "",
                     level=level,
-                    domain=rule_id.split("-")[1] if "-" in rule_id else "UNKNOWN",
+                    domain=domain or (control_id.split("-")[1] if "-" in control_id else "UNKNOWN"),
                     metadata={
-                        "full": rule.get("fullDescription", {}).get("text", ""),
-                        "help_uri": rule.get("helpUri", ""),
+                        "full": control.description or "",
+                        "help_uri": control.docs_url or f"https://baseline.openssf.org/versions/2025-10-10#{control_id}",
                     }
                 ))
         return controls
 
     def get_rules_catalog(self) -> dict[str, Any]:
         """Get the rules catalog for SARIF output."""
-        from .rules.catalog import OSPS_RULES
-        return OSPS_RULES
+        from darnit.config.merger import load_framework_by_name
+
+        config = load_framework_by_name("openssf-baseline")
+        catalog: dict[str, Any] = {}
+        for control_id, control in config.controls.items():
+            level = control.level
+            if level is None and control.tags:
+                level = control.tags.get("level", 1)
+            catalog[control_id] = {
+                "name": control.name,
+                "shortDescription": {"text": control.description[:100] if control.description else control.name},
+                "level": level or 1,
+            }
+        return catalog
 
     def get_remediation_registry(self) -> dict[str, Any]:
         """Get remediation metadata derived from TOML.
