@@ -540,5 +540,143 @@ class TestWhenFieldNotInHandlerConfig:
         assert config.strategy == "first_match"
 
 
+class TestLlmEnhancePropagation:
+    """Test that llm_enhance metadata is propagated from handler config to results."""
+
+    def test_llm_enhance_propagated_on_success(self):
+        """llm_enhance should appear in result details when file_create succeeds."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            executor = RemediationExecutor(
+                local_path=tmpdir,
+                owner="testorg",
+                repo="testrepo",
+            )
+
+            config = RemediationConfig(
+                handlers=[
+                    HandlerInvocation(
+                        handler="file_create",
+                        path="README.md",
+                        content="# My Project\n\nA real description.",
+                        llm_enhance="Customize this README for the project.",
+                    ),
+                ],
+            )
+
+            result = executor.execute("TEST-01", config, dry_run=False)
+
+            assert result.success
+            handlers = result.details["handlers"]
+            assert len(handlers) == 1
+            assert "llm_enhance" in handlers[0]
+            assert handlers[0]["llm_enhance"]["prompt"] == "Customize this README for the project."
+            assert handlers[0]["llm_enhance"]["file_path"] == "README.md"
+
+    def test_llm_enhance_not_propagated_on_failure(self):
+        """llm_enhance should NOT appear when the handler fails."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            executor = RemediationExecutor(
+                local_path=tmpdir,
+                owner="testorg",
+                repo="testrepo",
+            )
+
+            # file_create with no content → ERROR, so llm_enhance should not propagate
+            config = RemediationConfig(
+                handlers=[
+                    HandlerInvocation(
+                        handler="file_create",
+                        path="README.md",
+                        llm_enhance="Customize this.",
+                    ),
+                ],
+            )
+
+            result = executor.execute("TEST-01", config, dry_run=False)
+
+            assert not result.success
+            handlers = result.details["handlers"]
+            assert "llm_enhance" not in handlers[0]
+
+    def test_llm_enhance_absent_when_not_configured(self):
+        """When no llm_enhance in config, result should not have it."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            executor = RemediationExecutor(
+                local_path=tmpdir,
+                owner="testorg",
+                repo="testrepo",
+            )
+
+            config = RemediationConfig(
+                handlers=[
+                    HandlerInvocation(
+                        handler="file_create",
+                        path="README.md",
+                        content="# My Project",
+                    ),
+                ],
+            )
+
+            result = executor.execute("TEST-01", config, dry_run=False)
+
+            assert result.success
+            handlers = result.details["handlers"]
+            assert "llm_enhance" not in handlers[0]
+
+    def test_llm_enhance_not_propagated_in_dry_run(self):
+        """In dry run mode, llm_enhance should not appear (handler not executed)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            executor = RemediationExecutor(
+                local_path=tmpdir,
+                owner="testorg",
+                repo="testrepo",
+            )
+
+            config = RemediationConfig(
+                handlers=[
+                    HandlerInvocation(
+                        handler="file_create",
+                        path="README.md",
+                        content="# My Project",
+                        llm_enhance="Customize this.",
+                    ),
+                ],
+            )
+
+            result = executor.execute("TEST-01", config, dry_run=True)
+
+            assert result.success
+            handlers = result.details["handlers"]
+            assert "llm_enhance" not in handlers[0]
+
+    def test_llm_enhance_in_markdown_output(self):
+        """to_markdown() should mention AI Enhancement when llm_enhance is present."""
+        result = RemediationResult(
+            success=True,
+            message="Executed 1 remediation handler(s)",
+            control_id="TEST-01",
+            remediation_type="handler_pipeline",
+            dry_run=False,
+            details={
+                "handlers": [
+                    {
+                        "handler": "file_create",
+                        "status": "pass",
+                        "message": "Created file: README.md",
+                        "llm_enhance": {
+                            "prompt": "Customize this README.",
+                            "file_path": "README.md",
+                        },
+                    }
+                ]
+            },
+        )
+
+        md = result.to_markdown()
+        assert "AI Enhancement Available" in md
+        assert "README.md" in md
+        assert "Customize this README." in md
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -472,6 +472,23 @@ def llm_eval_handler(config: dict[str, Any], context: HandlerContext) -> Handler
             message="No prompt specified for LLM evaluation",
         )
 
+    # Resolve files_to_include: read file contents for LLM context
+    files_to_include = config.get("files_to_include", [])
+    file_contents: dict[str, str] = {}
+    for f in files_to_include[:5]:
+        resolved = f
+        if f == "$FOUND_FILE":
+            resolved = context.gathered_evidence.get("found_file", "")
+        if not resolved:
+            continue
+        full = os.path.join(context.local_path, resolved) if not os.path.isabs(resolved) else resolved
+        try:
+            with open(full, encoding="utf-8", errors="ignore") as fh:
+                rel = os.path.relpath(full, context.local_path)
+                file_contents[rel] = fh.read()[:10000]
+        except OSError:
+            pass
+
     return HandlerResult(
         status=HandlerResultStatus.INCONCLUSIVE,
         message="LLM consultation requested",
@@ -482,6 +499,7 @@ def llm_eval_handler(config: dict[str, Any], context: HandlerContext) -> Handler
                 "confidence_threshold": config.get("confidence_threshold", 0.8),
                 "analysis_hints": config.get("analysis_hints", []),
                 "gathered_evidence": context.gathered_evidence,
+                "file_contents": file_contents,
             },
         },
     )

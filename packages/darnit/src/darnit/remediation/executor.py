@@ -67,6 +67,13 @@ class RemediationResult:
             lines.append("")
             for key, value in self.details.items():
                 if isinstance(value, list):
+                    # Check for llm_enhance in handler results
+                    for item in value:
+                        if isinstance(item, dict) and "llm_enhance" in item:
+                            enhance = item["llm_enhance"]
+                            lines.append("")
+                            lines.append(f"**AI Enhancement Available** for `{enhance.get('file_path', '')}`:")
+                            lines.append(f"> {enhance.get('prompt', '')}")
                     lines.append(f"**{key}:**")
                     for item in value:
                         lines.append(f"  - {item}")
@@ -431,6 +438,15 @@ class RemediationExecutor:
                     "status": handler_result.status.value,
                     "message": handler_result.message,
                 })
+                # Propagate llm_enhance metadata for AI-assisted file customization
+                if (
+                    handler_result.status == HandlerResultStatus.PASS
+                    and "llm_enhance" in handler_config
+                ):
+                    results[-1]["llm_enhance"] = {
+                        "prompt": handler_config["llm_enhance"],
+                        "file_path": handler_config.get("path", ""),
+                    }
                 if handler_result.status in (HandlerResultStatus.FAIL, HandlerResultStatus.ERROR):
                     all_success = False
             except Exception as e:

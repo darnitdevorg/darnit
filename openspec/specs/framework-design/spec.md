@@ -338,9 +338,11 @@ confidence_threshold = 0.8
 | `handler` | `str` | MUST be `"llm_eval"` |
 | `prompt` | `str` | Inline prompt template |
 | `prompt_file` | `str` | Path to prompt file (alternative to inline) |
-| `files_to_include` | `list[str]` | Files to include in LLM context |
+| `files_to_include` | `list[str]` | Files to include in LLM context. Supports `$FOUND_FILE` to reference the file discovered by a preceding `file_exists` handler. |
 | `analysis_hints` | `list[str]` | Hints to guide analysis |
 | `confidence_threshold` | `float` | Minimum confidence for conclusive result (default: 0.8) |
+
+**`files_to_include` resolution**: The handler MUST resolve `$FOUND_FILE` entries by looking up `found_file` in `context.gathered_evidence`. Each resolved file path MUST be read (up to 10KB per file, max 5 files) and included as `file_contents` in the `consultation_request`. File paths that are not absolute MUST be resolved relative to `context.local_path`. Files that cannot be read MUST be silently skipped.
 
 #### Scenario: LLM confidence above threshold
 - **WHEN** an `llm_eval` handler receives an LLM response
@@ -468,6 +470,13 @@ create_dirs = true
 | `content` | `str` | Inline content (alternative to template) |
 | `overwrite` | `bool` | Overwrite existing files (default: false) |
 | `create_dirs` | `bool` | Create parent directories (default: true) |
+| `llm_enhance` | `str` | Optional prompt for AI-assisted customization of the created file |
+
+#### Scenario: file_create with llm_enhance
+- **WHEN** a `file_create` handler succeeds
+- **AND** the handler config includes an `llm_enhance` field
+- **THEN** the remediation result MUST include the enhancement prompt and file path in the result details
+- **AND** the MCP layer MAY use this prompt to offer AI-assisted customization of the generated file
 
 ### 4.3 ExecRemediation
 

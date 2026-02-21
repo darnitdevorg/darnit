@@ -520,6 +520,79 @@ class TestLlmEvalHandler:
         result = llm_eval_handler({}, ctx)
         assert result.status == HandlerResultStatus.INCONCLUSIVE
 
+    def test_files_to_include_reads_file_contents(self, ctx, tmp_path):
+        """files_to_include should read file contents into consultation_request."""
+        readme = tmp_path / "README.md"
+        readme.write_text("# My Project\n\nThis is a test project.")
+
+        result = llm_eval_handler(
+            {"prompt": "Evaluate this", "files_to_include": ["README.md"]},
+            ctx,
+        )
+        consultation = result.details["consultation_request"]
+        assert "file_contents" in consultation
+        assert "README.md" in consultation["file_contents"]
+        assert "My Project" in consultation["file_contents"]["README.md"]
+
+    def test_files_to_include_resolves_found_file(self, ctx, tmp_path):
+        """$FOUND_FILE should resolve from gathered_evidence."""
+        security = tmp_path / "SECURITY.md"
+        security.write_text("# Security Policy\n\nReport vulnerabilities to security@example.com")
+        ctx.gathered_evidence["found_file"] = str(security)
+
+        result = llm_eval_handler(
+            {"prompt": "Evaluate security policy", "files_to_include": ["$FOUND_FILE"]},
+            ctx,
+        )
+        consultation = result.details["consultation_request"]
+        assert "file_contents" in consultation
+        assert len(consultation["file_contents"]) == 1
+        content = list(consultation["file_contents"].values())[0]
+        assert "security@example.com" in content
+
+    def test_files_to_include_skips_missing_files(self, ctx):
+        """Missing files should be silently skipped."""
+        result = llm_eval_handler(
+            {"prompt": "Evaluate", "files_to_include": ["DOES_NOT_EXIST.md"]},
+            ctx,
+        )
+        consultation = result.details["consultation_request"]
+        assert consultation["file_contents"] == {}
+
+    def test_files_to_include_truncates_large_files(self, ctx, tmp_path):
+        """Files over 10KB should be truncated."""
+        big_file = tmp_path / "big.txt"
+        big_file.write_text("x" * 20000)
+
+        result = llm_eval_handler(
+            {"prompt": "Evaluate", "files_to_include": ["big.txt"]},
+            ctx,
+        )
+        content = result.details["consultation_request"]["file_contents"]["big.txt"]
+        assert len(content) == 10000
+
+    def test_files_to_include_max_five_files(self, ctx, tmp_path):
+        """At most 5 files should be read."""
+        for i in range(8):
+            (tmp_path / f"file{i}.txt").write_text(f"content {i}")
+
+        result = llm_eval_handler(
+            {
+                "prompt": "Evaluate",
+                "files_to_include": [f"file{i}.txt" for i in range(8)],
+            },
+            ctx,
+        )
+        assert len(result.details["consultation_request"]["file_contents"]) == 5
+
+    def test_files_to_include_empty_by_default(self, ctx):
+        """When files_to_include is absent, file_contents should be empty."""
+        result = llm_eval_handler(
+            {"prompt": "Evaluate this"},
+            ctx,
+        )
+        assert result.details["consultation_request"]["file_contents"] == {}
+
 
 # =============================================================================
 # manual_steps_handler

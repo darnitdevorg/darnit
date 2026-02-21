@@ -233,26 +233,40 @@ updates:
 """
 
 [templates.readme_basic]
-description = "Basic README.md template"
+description = "Basic README.md template with substantive default content"
 content = """# $REPO
 
-<!-- TODO: Add project description -->
+A project maintained by $OWNER. This README provides an overview of the project, installation instructions, and usage examples.
 
 ## Installation
 
-<!-- TODO: Add installation instructions -->
+Clone the repository and install dependencies:
+
+```bash
+git clone https://github.com/$OWNER/$REPO.git
+cd $REPO
+```
+
+Refer to the project's package manager configuration for additional setup steps.
 
 ## Usage
 
-<!-- TODO: Add usage examples -->
+After installation, you can use $REPO as follows:
+
+```bash
+# Run the project
+# (Update this section with actual commands for your project)
+```
+
+See the [documentation](docs/) directory for detailed guides.
 
 ## Contributing
 
-<!-- TODO: Add contributing guidelines or link to CONTRIBUTING.md -->
+Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to submit changes, report issues, and set up a development environment.
 
 ## License
 
-<!-- TODO: Specify license -->
+This project is licensed under the terms specified in [LICENSE](LICENSE).
 """
 
 [templates.license_mit]
@@ -281,45 +295,52 @@ SOFTWARE.
 """
 
 [templates.threat_model_basic]
-description = "Basic STRIDE-based threat model template"
+description = "STRIDE-based threat model template with example threats"
 content = """# Threat Model — $REPO
 
 ## Overview
 
-<!-- TODO: Describe the system and its security boundaries -->
+This document identifies potential security threats to $REPO using the STRIDE methodology and documents mitigations for each threat category.
+
+**Scope**: This threat model covers the core application, its APIs, data storage, and interactions with external services.
 
 ## Assets
 
-<!-- TODO: List key assets (data, services, credentials, infrastructure) -->
+| Asset | Sensitivity | Description |
+|-------|------------|-------------|
+| User credentials | High | Authentication tokens, API keys, passwords |
+| Application data | Medium | Data processed and stored by the application |
+| Configuration | Medium | Application settings, environment variables |
+| Source code | Medium | Repository contents and build artifacts |
+| CI/CD pipeline | High | Build and deployment infrastructure |
 
 ## Threat Analysis (STRIDE)
 
-### Spoofing
-<!-- TODO: How could an attacker impersonate a legitimate user or component? -->
+| Category | Threat | Likelihood | Impact | Mitigation |
+|----------|--------|-----------|--------|------------|
+| **Spoofing** | Attacker impersonates a user via stolen credentials | Medium | High | Enforce MFA, use short-lived tokens, validate session integrity |
+| **Spoofing** | Forged commits appear to come from a maintainer | Low | High | Require signed commits, verify committer identity |
+| **Tampering** | Attacker modifies data in transit | Medium | High | Use TLS for all connections, validate data integrity |
+| **Tampering** | Malicious dependency injected via supply chain | Medium | Critical | Pin dependencies, use lockfiles, enable dependency scanning |
+| **Repudiation** | User denies performing a destructive action | Low | Medium | Maintain audit logs, require authenticated actions |
+| **Info Disclosure** | Secrets exposed in logs or error messages | Medium | High | Sanitize log output, use secret scanning, avoid verbose errors |
+| **Info Disclosure** | Sensitive data leaked via API response | Medium | High | Implement response filtering, minimize data exposure |
+| **Denial of Service** | Resource exhaustion via unbounded input | Medium | Medium | Implement rate limiting, validate input size, set timeouts |
+| **Elevation of Privilege** | User escalates to admin via insecure defaults | Low | Critical | Apply principle of least privilege, validate authorization on every request |
 
-### Tampering
-<!-- TODO: How could an attacker modify data or code? -->
+## Mitigations Summary
 
-### Repudiation
-<!-- TODO: How could an attacker deny their actions? -->
-
-### Information Disclosure
-<!-- TODO: How could sensitive information be exposed? -->
-
-### Denial of Service
-<!-- TODO: How could the system be made unavailable? -->
-
-### Elevation of Privilege
-<!-- TODO: How could an attacker gain unauthorized access? -->
-
-## Mitigations
-
-<!-- TODO: Document controls and mitigations for identified threats -->
+1. **Authentication**: Enforce MFA, use short-lived tokens, require signed commits
+2. **Data Protection**: TLS everywhere, sanitize logs, filter API responses
+3. **Supply Chain**: Pin dependencies, use lockfiles, enable automated scanning
+4. **Access Control**: Least privilege, validate authorization, audit access
+5. **Availability**: Rate limiting, input validation, resource quotas
 
 ## References
 
 - [STRIDE Threat Model](https://learn.microsoft.com/en-us/azure/security/develop/threat-modeling-tool-threats)
 - [OpenSSF Baseline](https://baseline.openssf.org)
+- [OWASP Threat Modeling](https://owasp.org/www-community/Threat_Modeling)
 """
 
 [templates.codeowners_template]
@@ -891,34 +912,110 @@ Before each major release, the following security assessment steps are performed
 """
 
 [templates.architecture_template]
-description = "Architecture documentation template"
+description = "Architecture documentation template with example structure"
 content = """# Architecture
 
-## System Design
+## Overview
 
-This document describes the architecture and design of $REPO.
+This document describes the architecture and design of $REPO, including its major components, the actors that interact with it, and how data flows through the system.
 
-### Components
+## Components
 
-<!-- List the major components of the system -->
+| Component | Responsibility | Key Files |
+|-----------|---------------|-----------|
+| Core Engine | Main processing logic and orchestration | `src/core/` |
+| Configuration | Loading and validating configuration | `src/config/` |
+| API Layer | External interface (CLI, HTTP, or library API) | `src/api/` |
+| Storage | Data persistence and retrieval | `src/storage/` |
 
-| Component | Description |
-|-----------|-------------|
-| TBD       | Description |
+Update this table to reflect the actual components in your project.
 
-### Actors
+## Actors
 
-<!-- Describe who/what interacts with the system -->
+| Actor | Description | Interactions |
+|-------|-------------|-------------|
+| End User | Primary user of the software | Sends requests via CLI/API, receives results |
+| Administrator | Manages configuration and deployment | Configures system, manages access |
+| CI/CD System | Automated build and deployment pipeline | Triggers builds, runs tests, deploys |
+| External Services | Third-party APIs or dependencies | Provides data or services consumed by the system |
 
-- **Users**: End users who interact with the system
-- **Administrators**: Users with elevated privileges
-- **External Systems**: Third-party integrations
+## Data Flow
 
-### Data Flow
+```
+End User → API Layer → Core Engine → Storage
+                ↓
+         Configuration
+                ↓
+         External Services
+```
 
-<!-- Describe how data flows through the system -->
+1. **Input**: User submits a request through the API layer (CLI, HTTP, or library call)
+2. **Validation**: The API layer validates input parameters and authentication
+3. **Processing**: The core engine processes the request using configured rules
+4. **Storage**: Results are persisted to the storage layer
+5. **Response**: Processed results are returned to the user
 
-1. User input → Validation → Processing → Storage → Response
+## Security Boundaries
+
+- **External boundary**: All user input is validated at the API layer
+- **Internal boundary**: Storage access is mediated through the core engine
+- **Trust boundary**: External service calls use authenticated connections
+"""
+
+[templates.api_documentation_template]
+description = "API/interface documentation template"
+content = """# API Documentation
+
+## Overview
+
+This document describes the public API and interfaces provided by $REPO.
+
+## Interfaces
+
+### Primary Interface
+
+| Method/Command | Description | Parameters |
+|---------------|-------------|------------|
+| `run` | Execute the main operation | `--input <path>`: Input file path |
+| `config` | Display current configuration | `--format <json or yaml>`: Output format |
+| `version` | Show version information | None |
+
+### Configuration
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `verbose` | `bool` | `false` | Enable verbose output |
+| `output` | `str` | `stdout` | Output destination |
+
+## Usage Examples
+
+### Basic Usage
+
+```bash
+# Example command (update with actual usage)
+$REPO run --input data.json
+```
+
+### Programmatic Usage
+
+```python
+# Example library usage (update with actual API)
+import $REPO
+
+result = $REPO.run(input="data.json")
+print(result)
+```
+
+## Error Handling
+
+| Error Code | Description | Resolution |
+|-----------|-------------|------------|
+| 1 | Invalid input | Check input format and path |
+| 2 | Configuration error | Verify configuration file |
+
+## Authentication
+
+If your project requires authentication, document the method here (API keys, OAuth, etc.).
 """
 
 [templates.release_verification_template]
@@ -1650,8 +1747,9 @@ handler = "pattern"
 files = [".gitignore"]
 
 [controls."OSPS-BR-07.01".passes.pattern.patterns]
-env_files = "\\.env"
-key_files = "\\*\\.key|\\*\\.pem"
+env_files = '\\.env'
+key_files = '\*\.key|\*\.pem'
+credential_files = '(?i)(credentials|secrets?)\.json|\.secret'
 
 [controls."OSPS-BR-07.01".remediation]
 safe = true
@@ -1918,12 +2016,32 @@ kind = "file"
 handler = "file_exists"
 use_locator = true
 
-# Content validation: README should have at least a heading
+# Content validation: README must have a heading followed by substantive content
 [[controls."OSPS-DO-01.01".passes]]
 handler = "regex"
 file = "$FOUND_FILE"
-pattern = '(?i)^#'
-min_matches = 1
+pass_if_any = true
+
+[controls."OSPS-DO-01.01".passes.pattern.patterns]
+heading_with_content = '(?si)^#\s+\S.*\n\n.{200,}'
+rst_heading_with_content = '(?si)^[=\-~]{3,}\n.+\n[=\-~]{3,}\n\n.{200,}'
+
+# AI evaluation: does the README explain the project meaningfully?
+[[controls."OSPS-DO-01.01".passes]]
+handler = "llm_eval"
+prompt = """Evaluate whether this README adequately documents the project:
+1. Does it explain what the project does?
+2. Does it include installation or setup instructions?
+3. Does it provide usage examples or getting-started guidance?
+A README with only TODO placeholders or a single heading MUST fail."""
+files_to_include = ["$FOUND_FILE"]
+confidence_threshold = 0.7
+analysis_hints = [
+    "Check for project description beyond just the name",
+    "Look for install/setup instructions",
+    "Look for usage examples or code snippets",
+    "TODO placeholders do not count as real content",
+]
 
 [[controls."OSPS-DO-01.01".passes]]
 handler = "manual"
@@ -1942,6 +2060,7 @@ handler = "file_create"
 path = "README.md"
 template = "readme_basic"
 overwrite = false
+llm_enhance = "Customize this README for the project: replace the placeholder description with a real explanation of what the project does, update install instructions for the actual package manager and language, and add real usage examples based on the project's source code."
 
 [controls."OSPS-DO-01.01".remediation.project_update]
 set = { "documentation.readme.path" = "README.md" }
@@ -1978,10 +2097,13 @@ use_locator = true
 
 [[controls."OSPS-DO-02.01".passes]]
 handler = "pattern"
-files = ["README.md", "CONTRIBUTING.md"]
+files = [".github/ISSUE_TEMPLATE/bug_report.md", ".github/ISSUE_TEMPLATE/bug_report.yml", ".github/ISSUE_TEMPLATE.md", "README.md", "CONTRIBUTING.md"]
+pass_if_any = true
 
 [controls."OSPS-DO-02.01".passes.pattern.patterns]
-bug_reporting = "(report|submit).*(bug|issue)"
+template_structure = '(?si)(describe.*bug|steps.*reproduce|expected.*behav|actual.*behav)'
+bug_reporting_link = '(?i)(report|submit|file).{0,30}(bug|issue|defect).{0,30}(http|github|tracker|template)'
+issue_template_yaml = '(?i)^name:\s+.*(bug|defect|issue)'
 
 [controls."OSPS-DO-02.01".remediation]
 safe = true
@@ -2126,12 +2248,16 @@ look_for_urls = false
 handler = "file_exists"
 use_locator = true
 
-# Content validation: CONTRIBUTING should describe contribution process
+# Content validation: CONTRIBUTING must describe steps and PR guidelines
 [[controls."OSPS-GV-03.01".passes]]
 handler = "regex"
 file = "$FOUND_FILE"
-pattern = '(?i)(contribut|pull request|submit|review)'
-min_matches = 1
+pass_if_any = true
+
+[controls."OSPS-GV-03.01".passes.pattern.patterns]
+steps_with_pr = '(?si)(step|1\.|fork|clone|branch).{20,}(pull request|PR|submit|merge)'
+pr_guidelines = '(?si)(pull request|PR).{0,60}(guideline|require|ensure|should|must)'
+how_to_contribute = '(?si)(how to contribute|getting started|development setup).{20,}'
 
 [[controls."OSPS-GV-03.01".passes]]
 handler = "manual"
@@ -2186,12 +2312,16 @@ kind = "file"
 handler = "file_exists"
 use_locator = true
 
-# Content validation: LICENSE should contain license-related terms
+# Content validation: LICENSE must contain copyright notice and license grant
 [[controls."OSPS-LE-01.01".passes]]
 handler = "regex"
 file = "$FOUND_FILE"
-pattern = '(?i)(permission|license|copyright|warranty)'
-min_matches = 1
+pass_if_any = true
+
+[controls."OSPS-LE-01.01".passes.pattern.patterns]
+copyright_and_grant = '(?si)copyright.{0,100}(permission|license|grant|redistribu|free)'
+spdx_identifier = '(?i)SPDX-License-Identifier:\s*\S+'
+known_license_header = '(?i)(MIT License|Apache License|GNU General Public|BSD \d-Clause|Mozilla Public|ISC License)'
 
 [[controls."OSPS-LE-01.01".passes]]
 handler = "manual"
@@ -2673,12 +2803,32 @@ look_for_urls = true
 handler = "file_exists"
 use_locator = true
 
-# Content validation: SECURITY.md should contain vulnerability reporting info
+# Content validation: SECURITY.md must describe a reporting process
 [[controls."OSPS-VM-02.01".passes]]
 handler = "regex"
 file = "$FOUND_FILE"
-pattern = '(?i)(report|vulnerabilit|security|contact)'
-min_matches = 1
+pass_if_any = true
+
+[controls."OSPS-VM-02.01".passes.pattern.patterns]
+reporting_process = '(?si)(how to report|reporting a vulnerability|report.*vulnerabilit).{20,}'
+contact_method = '(?i)(email|security@|advisories|security tab|report a vulnerability)'
+response_timeline = '(?i)(response|timeline|hours|days|business days|within \d+)'
+
+# AI evaluation: are the reporting instructions actionable?
+[[controls."OSPS-VM-02.01".passes]]
+handler = "llm_eval"
+prompt = """Evaluate whether this security policy provides actionable vulnerability reporting instructions:
+1. Is there a clear method to report vulnerabilities (email, advisory, form)?
+2. Does it describe what information to include in a report?
+3. Does it mention an expected response timeline?
+A policy with only TODO placeholders or just the word 'security' MUST fail."""
+files_to_include = ["$FOUND_FILE"]
+confidence_threshold = 0.7
+analysis_hints = [
+    "Look for a concrete contact method, not just 'contact us'",
+    "Check for a response timeline commitment",
+    "TODO placeholders indicate incomplete content",
+]
 
 [[controls."OSPS-VM-02.01".passes]]
 handler = "manual"
@@ -2699,6 +2849,7 @@ path = "SECURITY.md"
 template = "security_policy_standard"
 overwrite = false
 create_dirs = false
+llm_enhance = "Customize this security policy: replace the placeholder email with the project's actual security contact, update supported versions to match real release versions, and adjust the response timeline to match the team's capacity."
 
 # =============================================================================
 # Level 2 Controls - Access Control (AC)
@@ -2790,12 +2941,33 @@ look_for_urls = false
 handler = "file_exists"
 use_locator = true
 
-# Content validation: governance doc should mention governance concepts
+# Content validation: governance doc must identify people and decision processes
 [[controls."OSPS-GV-01.01".passes]]
 handler = "regex"
 file = "$FOUND_FILE"
-pattern = '(?i)(maintainer|governance|decision|role|codeowner)'
-min_matches = 1
+pass_if_any = true
+
+[controls."OSPS-GV-01.01".passes.pattern.patterns]
+named_maintainer = '(?i)(maintainer|owner|lead|steward).{0,60}(@\w+|\w+\s+\w+)'
+decision_process = '(?si)(decision|consensus|vote|approval|merge).{0,80}(process|policy|require|must|shall)'
+codeowners_syntax = '^\S+\s+@\S+'
+
+# AI evaluation: does the governance doc describe real governance?
+[[controls."OSPS-GV-01.01".passes]]
+handler = "llm_eval"
+prompt = """Evaluate whether this governance document describes real project governance:
+1. Does it identify specific people or teams with maintainer/leadership roles?
+2. Does it describe how decisions are made (merge policy, consensus, voting)?
+3. Is this substantive governance documentation, not just boilerplate?
+A file with only TODO placeholders or generic text without named roles MUST fail."""
+files_to_include = ["$FOUND_FILE"]
+confidence_threshold = 0.7
+analysis_hints = [
+    "Look for named maintainers or team references (@username, name)",
+    "Check for decision-making process description",
+    "CODEOWNERS with path-to-owner mappings counts as governance",
+    "TODO placeholders indicate incomplete content",
+]
 
 [[controls."OSPS-GV-01.01".passes]]
 handler = "manual"
@@ -2814,6 +2986,7 @@ handler = "file_create"
 path = "GOVERNANCE.md"
 template = "governance_template"
 overwrite = false
+llm_enhance = "Customize this governance document: replace placeholder maintainer names with actual project maintainers, describe the real decision-making process used by the project, and adjust roles to match the project's actual governance structure."
 
 # Context requirements - orchestrator checks these before running remediation
 [[controls."OSPS-GV-01.01".remediation.requires_context]]
@@ -4150,13 +4323,15 @@ help_md = """Document collaborator vetting process.
 handler = "file_exists"
 files = ["CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS"]
 
-# PatternPass: Check governance docs for review policy language
+# PatternPass: Check CODEOWNERS for path assignment syntax or governance docs for review policy
 [[controls."OSPS-GV-04.01".passes]]
 handler = "pattern"
-files = ["GOVERNANCE.md", "CONTRIBUTING.md"]
+files = ["CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS", "GOVERNANCE.md", "CONTRIBUTING.md"]
+pass_if_any = true
 
 [controls."OSPS-GV-04.01".passes.pattern.patterns]
-review_policy = "(review|collaborator|maintainer).*(policy|process|requirement)"
+codeowners_assignment = '^\S+\s+@\S+'
+review_policy = '(?si)(review|collaborator|maintainer).{0,60}(policy|process|requirement|must|shall)'
 
 [[controls."OSPS-GV-04.01".passes]]
 handler = "manual"
@@ -4220,7 +4395,26 @@ files = ["ARCHITECTURE.md", "docs/architecture.md", "docs/design.md", "DESIGN.md
 pass_if_any = true
 
 [controls."OSPS-SA-01.01".passes.pattern.patterns]
-design_docs = "(?mi)(architecture|design|component|actor|system.*diagram)"
+components_described = '(?si)(component|module|service|layer).{0,80}(description|responsible|handles|provides)'
+actors_described = '(?si)(actor|user|client|admin|system).{0,60}(interact|access|connect|send|receive)'
+data_flow = '(?si)(data flow|request|response|input|output).{0,60}(→|->|to|from|through)'
+
+# AI evaluation: does the design doc describe real architecture?
+[[controls."OSPS-SA-01.01".passes]]
+handler = "llm_eval"
+prompt = """Evaluate whether this design/architecture document describes real system architecture:
+1. Does it identify concrete components, modules, or services?
+2. Does it describe actors (users, systems) that interact with the software?
+3. Does it explain data flows or interactions between components?
+A document with only TBD/TODO placeholders or generic headings without content MUST fail."""
+files_to_include = ["$FOUND_FILE"]
+confidence_threshold = 0.7
+analysis_hints = [
+    "Look for named components with descriptions of what they do",
+    "Check for actors or users with described interactions",
+    "Data flow diagrams or textual descriptions both count",
+    "TBD/TODO placeholders indicate incomplete content",
+]
 
 [[controls."OSPS-SA-01.01".passes]]
 handler = "manual"
@@ -4239,6 +4433,7 @@ handler = "file_create"
 path = "ARCHITECTURE.md"
 template = "architecture_template"
 overwrite = false
+llm_enhance = "Customize this architecture document: analyze the project source code to identify real components, modules, and services; describe actual data flows based on the codebase; and identify real actors (users, admins, external systems) that interact with the software."
 
 [controls."OSPS-SA-02.01"]
 name = "APIDocumentation"
@@ -4267,14 +4462,32 @@ check_files = ["README.md"]
 look_for_urls = true
 
 # Check for API documentation in dedicated files OR README sections
-# The pattern pass looks for API/interface documentation headings
 [[controls."OSPS-SA-02.01".passes]]
 handler = "pattern"
 files = ["API.md", "docs/api.md", "README.md", "docs/README.md", "USAGE.md", "docs/getting-started.md", "openapi.yaml", "openapi.json", "swagger.yaml", "swagger.json"]
 pass_if_any = true
 
 [controls."OSPS-SA-02.01".passes.pattern.patterns]
-api_section = "(?mi)^#.*\\b(api|interface|usage|methods|functions|endpoints|cli|commands?)\\b"
+api_heading_with_content = '(?si)^#{1,3}.*\b(api|interface|usage|methods|functions|endpoints|cli|commands?)\b.*\n\n.{100,}'
+openapi_spec = '(?i)(openapi|swagger).*:\s*["\x27]?\d+\.\d+'
+endpoint_documentation = '(?si)(GET|POST|PUT|DELETE|PATCH)\s+/\S+.{20,}'
+
+# AI evaluation: does the API doc cover actual endpoints/interfaces?
+[[controls."OSPS-SA-02.01".passes]]
+handler = "llm_eval"
+prompt = """Evaluate whether this API/interface documentation describes real APIs or interfaces:
+1. Does it document specific endpoints, methods, functions, or CLI commands?
+2. Does it include parameter descriptions, request/response formats, or usage examples?
+3. Is this substantive documentation, not just a heading with no content?
+A document with only headings or TODO placeholders MUST fail."""
+files_to_include = ["$FOUND_FILE"]
+confidence_threshold = 0.7
+analysis_hints = [
+    "Look for documented endpoints, methods, or CLI commands",
+    "Check for parameter descriptions or usage examples",
+    "OpenAPI/Swagger specs count as valid API documentation",
+    "A heading saying 'API' with no content underneath does not count",
+]
 
 [[controls."OSPS-SA-02.01".passes]]
 handler = "manual"
@@ -4283,6 +4496,17 @@ steps = [
     "Verify interface documentation describes available methods/endpoints",
     "Confirm usage instructions explain how to interact with the project",
 ]
+
+[controls."OSPS-SA-02.01".remediation]
+safe = true
+dry_run_supported = true
+
+[[controls."OSPS-SA-02.01".remediation.handlers]]
+handler = "file_create"
+path = "API.md"
+template = "api_documentation_template"
+overwrite = false
+llm_enhance = "Customize this API documentation: analyze the project source code to identify real endpoints, CLI commands, or library interfaces; document actual parameters, return types, and usage examples based on the codebase."
 
 [controls."OSPS-SA-03.01"]
 name = "SecurityAssessment"
