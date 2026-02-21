@@ -260,9 +260,11 @@ actively used. All new controls must be defined entirely in TOML.
 Controls can use CEL (Common Expression Language) for pass logic:
 
 ```toml
-[controls."OSPS-AC-01.01".passes.deterministic]
-exec = { command = "gh api /orgs/{org}/settings" }
-expr = 'response.two_factor_requirement_enabled == true'
+[[controls."OSPS-AC-01.01".passes]]
+handler = "exec"
+command = ["gh", "api", "/orgs/{org}/settings"]
+output_format = "json"
+expr = 'output.json.two_factor_requirement_enabled == true'
 ```
 
 Available context variables:

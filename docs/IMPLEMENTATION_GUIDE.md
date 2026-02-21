@@ -67,7 +67,7 @@ plugin extensibility:
 │  Layer 2: Remediation (how to fix a failing control)    │
 │                                                         │
 │  Built-in: file_create, exec, api_call, project_update  │
-│  Plugin:   handler = "my_module:my_func"                │
+│  Plugin:   handler = "my_custom_fix"                    │
 │                                                         │
 │  TOML:  [controls."X".remediation.file_create]          │
 │         path = "SECURITY.md"                            │
@@ -75,11 +75,12 @@ plugin extensibility:
 ├─────────────────────────────────────────────────────────┤
 │  Layer 1: Checking (how to verify a control)            │
 │                                                         │
-│  Built-in: file_must_exist, exec, pattern, manual       │
-│  Plugin:   handler = "my_module:my_func"                │
+│  Built-in: file_exists, exec, pattern, manual           │
+│  Plugin:   handler = "my_custom_check"                  │
 │                                                         │
-│  TOML:  [controls."X".passes.deterministic]             │
-│         file_must_exist = ["README.md"]                 │
+│  TOML:  [[controls."X".passes]]                         │
+│         handler = "file_exists"                         │
+│         files = ["README.md"]                           │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -121,10 +122,12 @@ name = "HasReadme"
 description = "Project must have a README"
 tags = { level = 1, domain = "DOC" }
 
-[controls."MS-01".passes]
-deterministic = { file_must_exist = ["README.md", "README.rst"] }
+[[controls."MS-01".passes]]
+handler = "file_exists"
+files = ["README.md", "README.rst"]
 
-[controls."MS-01".passes.manual]
+[[controls."MS-01".passes]]
+handler = "manual"
 steps = ["Check for README in project root"]
 
 [controls."MS-01".remediation]
@@ -425,8 +428,9 @@ help_md = """Create a README.md file in the repository root.
 """
 
 # Deterministic pass: check if file exists
-[controls."MS-DOC-01".passes.deterministic]
-file_must_exist = [
+[[controls."MS-DOC-01".passes]]
+handler = "file_exists"
+files = [
     "README.md",
     "README.rst",
     "README.txt",
@@ -434,7 +438,8 @@ file_must_exist = [
 ]
 
 # Manual pass: fallback verification steps
-[controls."MS-DOC-01".passes.manual]
+[[controls."MS-DOC-01".passes]]
+handler = "manual"
 steps = [
     "Check repository root for README file",
     "Verify README contains project description",
@@ -498,8 +503,9 @@ entries, implemented in `packages/darnit/src/darnit/sieve/builtin_handlers.py`:
 The simplest check — pass if any listed file exists:
 
 ```toml
-[controls."MS-SEC-01".passes.deterministic]
-file_must_exist = [
+[[controls."MS-SEC-01".passes]]
+handler = "file_exists"
+files = [
     "SECURITY.md",
     ".github/SECURITY.md",
     "docs/SECURITY.md",
@@ -511,7 +517,8 @@ file_must_exist = [
 Run a CLI tool and evaluate the result with a CEL expression:
 
 ```toml
-[controls."MS-AC-01".passes.exec]
+[[controls."MS-AC-01".passes]]
+handler = "exec"
 command = ["gh", "api", "/orgs/$OWNER"]
 pass_exit_codes = [0]
 fail_exit_codes = [1]
@@ -528,7 +535,8 @@ Variable substitution in commands: `$PATH` (local repo path), `$OWNER`,
 Search file contents with regex:
 
 ```toml
-[controls."MS-DOC-02".passes.pattern]
+[[controls."MS-DOC-02".passes]]
+handler = "pattern"
 file_patterns = ["SECURITY.md", ".github/SECURITY.md"]
 content_patterns = { security_contact = '([\w.-]+@[\w.-]+\.\w+|security\s*contact)' }
 expr = 'output.any_match'
@@ -539,7 +547,8 @@ expr = 'output.any_match'
 Always returns INCONCLUSIVE with human-readable steps:
 
 ```toml
-[controls."MS-DOC-02".passes.manual]
+[[controls."MS-DOC-02".passes]]
+handler = "manual"
 steps = [
     "Open SECURITY.md",
     "Verify it contains a clear contact method",

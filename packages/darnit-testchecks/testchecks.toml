@@ -37,13 +37,14 @@ domain = "DOC"
 description = "Repository must have a README file"
 tags = ["documentation", "basic"]
 
-[controls."TEST-DOC-01".passes]
-deterministic = { file_must_exist = [
+[[controls."TEST-DOC-01".passes]]
+handler = "file_exists"
+files = [
     "README.md",
     "README.rst",
     "README.txt",
     "README",
-]}
+]
 
 [controls."TEST-DOC-01".remediation]
 handler = "create_readme"
@@ -56,14 +57,15 @@ domain = "DOC"
 description = "Repository should have a CHANGELOG file"
 tags = ["documentation", "releases"]
 
-[controls."TEST-DOC-02".passes]
-deterministic = { file_must_exist = [
+[[controls."TEST-DOC-02".passes]]
+handler = "file_exists"
+files = [
     "CHANGELOG.md",
     "CHANGELOG.txt",
     "CHANGELOG",
     "HISTORY.md",
     "CHANGES.md",
-]}
+]
 
 [controls."TEST-LIC-01"]
 name = "HasLicense"
@@ -72,13 +74,14 @@ domain = "LIC"
 description = "Repository must have a LICENSE file"
 tags = ["legal", "license"]
 
-[controls."TEST-LIC-01".passes]
-deterministic = { file_must_exist = [
+[[controls."TEST-LIC-01".passes]]
+handler = "file_exists"
+files = [
     "LICENSE",
     "LICENSE.md",
     "LICENSE.txt",
     "COPYING",
-]}
+]
 
 [controls."TEST-IGN-01"]
 name = "HasGitignore"
@@ -87,8 +90,9 @@ domain = "CFG"
 description = "Repository should have a .gitignore file"
 tags = ["configuration", "git"]
 
-[controls."TEST-IGN-01".passes]
-deterministic = { file_must_exist = [".gitignore"] }
+[[controls."TEST-IGN-01".passes]]
+handler = "file_exists"
+files = [".gitignore"]
 
 [controls."TEST-IGN-01".remediation]
 handler = "create_gitignore"
@@ -105,7 +109,8 @@ domain = "QA"
 description = "Code should not contain TODO comments (for testing - intentionally strict)"
 tags = ["quality", "code-review"]
 
-[controls."TEST-QA-01".passes.pattern]
+[[controls."TEST-QA-01".passes]]
+handler = "pattern"
 files = ["**/*.py", "**/*.js", "**/*.ts"]
 pass_if_any = false
 
@@ -119,7 +124,8 @@ domain = "QA"
 description = "Python code should not contain print() statements (use logging)"
 tags = ["quality", "python"]
 
-[controls."TEST-QA-02".passes.pattern]
+[[controls."TEST-QA-02".passes]]
+handler = "pattern"
 files = ["**/*.py"]
 pass_if_any = false
 
@@ -133,8 +139,9 @@ domain = "CFG"
 description = "Repository should have an .editorconfig file"
 tags = ["configuration", "editor"]
 
-[controls."TEST-CFG-01".passes]
-deterministic = { file_must_exist = [".editorconfig"] }
+[[controls."TEST-CFG-01".passes]]
+handler = "file_exists"
+files = [".editorconfig"]
 
 [controls."TEST-CFG-02"]
 name = "HasPreCommitConfig"
@@ -143,11 +150,12 @@ domain = "CFG"
 description = "Repository should have pre-commit configuration"
 tags = ["configuration", "hooks"]
 
-[controls."TEST-CFG-02".passes]
-deterministic = { file_must_exist = [
+[[controls."TEST-CFG-02".passes]]
+handler = "file_exists"
+files = [
     ".pre-commit-config.yaml",
     ".pre-commit-config.yml",
-]}
+]
 
 # =============================================================================
 # Level 3 Controls - Advanced
@@ -160,7 +168,8 @@ domain = "SEC"
 description = "Code should not contain hardcoded passwords"
 tags = ["security", "secrets"]
 
-[controls."TEST-SEC-01".passes.pattern]
+[[controls."TEST-SEC-01".passes]]
+handler = "pattern"
 files = ["**/*.py", "**/*.js", "**/*.ts", "**/*.yaml", "**/*.yml", "**/*.json"]
 pass_if_any = false
 
@@ -176,7 +185,8 @@ domain = "SEC"
 description = ".gitignore should exclude common secret files"
 tags = ["security", "secrets", "git"]
 
-[controls."TEST-SEC-02".passes.pattern]
+[[controls."TEST-SEC-02".passes]]
+handler = "pattern"
 files = [".gitignore"]
 
 [controls."TEST-SEC-02".passes.pattern.patterns]
@@ -191,8 +201,9 @@ domain = "CI"
 description = "Repository should have CI/CD configuration"
 tags = ["ci-cd", "automation"]
 
-[controls."TEST-CI-01".passes]
-deterministic = { file_must_exist = [
+[[controls."TEST-CI-01".passes]]
+handler = "file_exists"
+files = [
     ".github/workflows/*.yml",
     ".github/workflows/*.yaml",
     ".gitlab-ci.yml",
@@ -200,7 +211,7 @@ deterministic = { file_must_exist = [
     "Jenkinsfile",
     ".travis.yml",
     "azure-pipelines.yml",
-]}
+]
 
 [controls."TEST-CI-02"]
 name = "CIRunsTests"
@@ -209,7 +220,8 @@ domain = "CI"
 description = "CI configuration should run tests"
 tags = ["ci-cd", "testing"]
 
-[controls."TEST-CI-02".passes.pattern]
+[[controls."TEST-CI-02".passes]]
+handler = "pattern"
 files = [".github/workflows/*.yml", ".github/workflows/*.yaml", ".gitlab-ci.yml"]
 
 [controls."TEST-CI-02".passes.pattern.patterns]

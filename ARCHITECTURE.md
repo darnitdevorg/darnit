@@ -178,7 +178,7 @@ Darnit operates at three distinct layers. Each has built-in primitives and plugi
 │  Layer 2: Remediation (how to fix a failing control)    │
 │                                                         │
 │  Built-in: file_create, exec, api_call, project_update  │
-│  Plugin:   handler = "my_module:my_func"                │
+│  Plugin:   handler = "my_custom_fix"                    │
 │                                                         │
 │  TOML:  [controls."X".remediation.file_create]          │
 │         path = "SECURITY.md"                            │
@@ -186,11 +186,12 @@ Darnit operates at three distinct layers. Each has built-in primitives and plugi
 ├─────────────────────────────────────────────────────────┤
 │  Layer 1: Checking (how to verify a control)            │
 │                                                         │
-│  Built-in: file_must_exist, exec, pattern, manual       │
-│  Plugin:   handler = "my_module:my_func"                │
+│  Built-in: file_exists, exec, pattern, manual           │
+│  Plugin:   handler = "my_custom_check"                  │
 │                                                         │
-│  TOML:  [controls."X".passes.deterministic]             │
-│         file_must_exist = ["README.md"]                 │
+│  TOML:  [[controls."X".passes]]                         │
+│         handler = "file_exists"                         │
+│         files = ["README.md"]                           │
 └─────────────────────────────────────────────────────────┘
 ```
 

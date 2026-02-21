@@ -6,9 +6,9 @@
 # No Python code is required for simple checks and remediations.
 #
 # Features demonstrated:
-# - Deterministic file existence checks
-# - Pattern matching in files
-# - External command execution (ExecPass)
+# - File existence checks (file_exists handler)
+# - Pattern matching in files (pattern handler)
+# - External command execution (exec handler)
 # - File creation remediation from templates
 # - API call remediation
 # - Variable substitution ($OWNER, $REPO, $BRANCH, etc.)
@@ -113,9 +113,10 @@ description = "Project must have a README file"
 tags = { level = 1, domain = "DO", documentation = true, onboarding = true }
 docs_url = "https://example.com/docs/readme"
 
-# Check: File must exist (deterministic)
-[controls."EXAMPLE-DO-01".passes]
-deterministic = { file_must_exist = ["README.md", "README", "README.rst", "README.txt"] }
+# Check: File must exist
+[[controls."EXAMPLE-DO-01".passes]]
+handler = "file_exists"
+files = ["README.md", "README", "README.rst", "README.txt"]
 
 # Remediation: Create README.md from template
 [controls."EXAMPLE-DO-01".remediation]
@@ -135,8 +136,9 @@ name = "ChangelogExists"
 description = "Project must have a CHANGELOG file"
 tags = { level = 1, domain = "DO", documentation = true, versioning = true }
 
-[controls."EXAMPLE-DO-02".passes]
-deterministic = { file_must_exist = ["CHANGELOG.md", "CHANGELOG", "HISTORY.md", "NEWS.md"] }
+[[controls."EXAMPLE-DO-02".passes]]
+handler = "file_exists"
+files = ["CHANGELOG.md", "CHANGELOG", "HISTORY.md", "NEWS.md"]
 
 [controls."EXAMPLE-DO-02".remediation]
 safe = true
@@ -155,8 +157,9 @@ name = "LicenseExists"
 description = "Project must have a LICENSE file"
 tags = { level = 1, domain = "LE", security_severity = 3.0, legal = true, compliance = true }
 
-[controls."EXAMPLE-LE-01".passes]
-deterministic = { file_must_exist = ["LICENSE", "LICENSE.md", "LICENSE.txt", "COPYING"] }
+[[controls."EXAMPLE-LE-01".passes]]
+handler = "file_exists"
+files = ["LICENSE", "LICENSE.md", "LICENSE.txt", "COPYING"]
 
 # Note: No remediation - license choice requires human decision
 
@@ -169,18 +172,21 @@ description = "Repository must not contain hardcoded secrets"
 tags = { level = 1, domain = "SE", security_severity = 9.0, security = true, secrets = true }
 
 # Check: These files should NOT exist
-[controls."EXAMPLE-SE-01".passes]
-deterministic = { file_must_not_exist = [
+[[controls."EXAMPLE-SE-01".passes]]
+handler = "file_exists"
+files = [
     ".env",
     ".env.local",
     "secrets.json",
     "credentials.json",
     "*.pem",
     "*.key",
-]}
+]
+expr = 'output.files_found == 0'
 
 # Pattern check: Look for common secret patterns (these should NOT match)
-[controls."EXAMPLE-SE-01".passes.pattern]
+[[controls."EXAMPLE-SE-01".passes]]
+handler = "pattern"
 files = ["**/*.py", "**/*.js", "**/*.ts", "**/*.go", "**/*.java"]
 fail_if_no_match = false  # We WANT no matches
 
@@ -197,8 +203,9 @@ name = "CICDConfigured"
 description = "Project must have CI/CD configuration"
 tags = { level = 2, domain = "QA", ci-cd = true, automation = true, quality = true }
 
-[controls."EXAMPLE-QA-01".passes]
-deterministic = { file_must_exist = [
+[[controls."EXAMPLE-QA-01".passes]]
+handler = "file_exists"
+files = [
     ".github/workflows/*.yml",
     ".github/workflows/*.yaml",
     ".gitlab-ci.yml",
@@ -206,7 +213,7 @@ deterministic = { file_must_exist = [
     ".circleci/config.yml",
     ".travis.yml",
     "azure-pipelines.yml",
-]}
+]
 
 # -----------------------------------------------------------------------------
 # Control: Tests exist
@@ -216,8 +223,9 @@ name = "TestsExist"
 description = "Project must have test files"
 tags = { level = 2, domain = "QA", testing = true, quality = true }
 
-[controls."EXAMPLE-QA-02".passes]
-deterministic = { file_must_exist = [
+[[controls."EXAMPLE-QA-02".passes]]
+handler = "file_exists"
+files = [
     "tests/**/*.py",
     "test/**/*.py",
     "**/*_test.py",
@@ -226,7 +234,7 @@ deterministic = { file_must_exist = [
     "**/*.test.ts",
     "**/*.spec.js",
     "**/*.spec.ts",
-]}
+]
 
 # -----------------------------------------------------------------------------
 # Control: Code owners defined
@@ -236,8 +244,9 @@ name = "CodeOwnersExists"
 description = "Project must define code owners"
 tags = { level = 2, domain = "GV", governance = true, ownership = true }
 
-[controls."EXAMPLE-GV-01".passes]
-deterministic = { file_must_exist = ["CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS"] }
+[[controls."EXAMPLE-GV-01".passes]]
+handler = "file_exists"
+files = ["CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS"]
 
 [controls."EXAMPLE-GV-01".remediation]
 safe = true
@@ -257,14 +266,16 @@ description = "Primary branch must have protection rules"
 tags = { level = 2, domain = "AC", security_severity = 7.5, access-control = true, branch-protection = true }
 
 # Check: Use gh CLI to verify branch protection
-[controls."EXAMPLE-AC-01".passes.exec]
+[[controls."EXAMPLE-AC-01".passes]]
+handler = "exec"
 command = ["gh", "api", "/repos/$OWNER/$REPO/branches/$BRANCH/protection"]
 pass_exit_codes = [0]
 fail_exit_codes = [1]
 output_format = "json"
 timeout = 30
 
-[controls."EXAMPLE-AC-01".passes.manual]
+[[controls."EXAMPLE-AC-01".passes]]
+handler = "manual"
 steps = [
     "Navigate to Repository Settings → Branches",
     "Verify branch protection rule exists for the default branch",
@@ -296,14 +307,15 @@ name = "DependencyScanningEnabled"
 description = "Automated dependency scanning must be configured"
 tags = { level = 3, domain = "VM", security_severity = 6.0, security = true, dependencies = true, scanning = true }
 
-[controls."EXAMPLE-VM-01".passes]
-deterministic = { file_must_exist = [
+[[controls."EXAMPLE-VM-01".passes]]
+handler = "file_exists"
+files = [
     ".github/dependabot.yml",
     ".github/dependabot.yaml",
     "renovate.json",
     ".renovaterc",
     ".renovaterc.json",
-]}
+]
 
 # -----------------------------------------------------------------------------
 # Control: External tool check (using kusari as example)
@@ -314,14 +326,16 @@ description = "Project passes SBOM compliance checks"
 tags = { level = 3, domain = "VM", sbom = true, supply-chain = true, compliance = true }
 
 # Check: Run external tool (kusari) for SBOM validation
-[controls."EXAMPLE-VM-02".passes.exec]
+[[controls."EXAMPLE-VM-02".passes]]
+handler = "exec"
 command = ["kusari", "repo", "scan", "$PATH", "HEAD"]
 pass_exit_codes = [0]
 fail_exit_codes = [1, 2]
 output_format = "json"
 timeout = 120
 
-[controls."EXAMPLE-VM-02".passes.manual]
+[[controls."EXAMPLE-VM-02".passes]]
+handler = "manual"
 steps = [
     "Run: kusari repo scan . HEAD",
     "Verify all checks pass",

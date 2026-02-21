@@ -27,8 +27,9 @@ name = "ReadmeExists"
 description = "Project must have a README file"
 tags = { level = 1, domain = "DO", documentation = true }
 
-[controls."EXAMPLE-DO-01".passes]
-deterministic = { file_must_exist = ["README.md", "README.rst"] }
+[[controls."EXAMPLE-DO-01".passes]]
+handler = "file_exists"
+files = ["README.md", "README.rst"]
 
 [controls."EXAMPLE-DO-01".remediation.file_create]
 path = "README.md"

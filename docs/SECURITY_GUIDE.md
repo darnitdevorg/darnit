@@ -410,15 +410,8 @@ def my_custom_check(context):
 The handler can then be referenced in TOML by short name:
 
 ```toml
-[controls."MY-01.01".passes.deterministic]
+[[controls."MY-01.01".passes]]
 handler = "my_custom_check"  # Short name from registry
-```
-
-Or by full module path (must match allowlist):
-
-```toml
-[controls."MY-01.01".passes.deterministic]
-handler = "darnit_baseline.controls.level1:_create_mfa_check"
 ```
 
 ### Security Recommendations

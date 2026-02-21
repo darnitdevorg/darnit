@@ -22,7 +22,8 @@ Handler short names are registered by the implementation's `register_handlers()`
 
 ### Before (Multiple Fields)
 ```toml
-[controls."OSPS-XX-01.01".passes.exec]
+[[controls."OSPS-XX-01.01".passes]]
+handler = "exec"
 command = ["kusari", "scan"]
 output_format = "json"
 pass_if_json_path = "$.status"
@@ -31,7 +32,8 @@ pass_if_json_value = "pass"
 
 ### After (CEL Expression)
 ```toml
-[controls."OSPS-XX-01.01".passes.exec]
+[[controls."OSPS-XX-01.01".passes]]
+handler = "exec"
 command = ["kusari", "scan"]
 output_format = "json"
 expr = 'output.json.status == "pass"'
