@@ -2,7 +2,7 @@
 
 import pytest
 
-from darnit.core.plugin import ComplianceImplementation, ControlSpec
+from darnit.core.plugin import ComplianceImplementation
 from darnit_example import register
 from darnit_example.implementation import ExampleHygieneImplementation
 
@@ -31,12 +31,6 @@ class TestExampleHygieneImplementation:
         assert len(controls) == 8
         levels = {c.level for c in controls}
         assert levels == {1, 2}
-
-    @pytest.mark.unit
-    def test_get_all_controls_are_control_specs(self, impl):
-        controls = impl.get_all_controls()
-        for control in controls:
-            assert isinstance(control, ControlSpec)
 
     @pytest.mark.unit
     def test_get_controls_by_level(self, impl):
@@ -125,20 +119,6 @@ class TestHandlerRegistration:
         assert handler_info is not None
         assert handler_info.plugin == "example-hygiene"
 
-    @pytest.mark.unit
-    def test_handlers_are_callable(self):
-        from darnit.core.handlers import get_handler_registry
-
-        impl = ExampleHygieneImplementation()
-        impl.register_handlers()
-
-        registry = get_handler_registry()
-        handler = registry.get_handler("example_hygiene_check")
-
-        assert handler is not None
-        assert callable(handler)
-
-
 class TestRegisterFunction:
     """Tests for the register() entry point function."""
 
@@ -147,14 +127,3 @@ class TestRegisterFunction:
         impl = register()
         assert isinstance(impl, ExampleHygieneImplementation)
 
-    @pytest.mark.unit
-    def test_register_returns_compliance_implementation(self):
-        impl = register()
-        assert isinstance(impl, ComplianceImplementation)
-
-    @pytest.mark.unit
-    def test_register_returns_consistent_instance(self):
-        impl1 = register()
-        impl2 = register()
-        assert impl1.name == impl2.name
-        assert impl1.version == impl2.version

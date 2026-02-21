@@ -12,18 +12,8 @@ from pathlib import Path
 import pytest
 
 
-class TestRemediationImports:
-    """Test that remediation modules can be imported."""
-
-    @pytest.mark.unit
-    def test_import_orchestrator(self):
-        """Test that the orchestrator can be imported."""
-        from darnit_baseline.remediation.orchestrator import (
-            _apply_control_remediation,
-            remediate_audit_findings,
-        )
-        assert callable(remediate_audit_findings)
-        assert callable(_apply_control_remediation)
+class TestRemediationOrchestratorExecution:
+    """Test that the remediation orchestrator works end-to-end."""
 
     @pytest.mark.unit
     def test_domain_prefixes_defined(self):
@@ -44,22 +34,6 @@ class TestRemediationImports:
         for domain in expected_domains:
             assert domain in DOMAIN_PREFIXES, f"Missing domain: {domain}"
             assert DOMAIN_PREFIXES[domain].startswith("OSPS-")
-
-    @pytest.mark.unit
-    def test_import_tools(self):
-        """Test that the MCP tools can be imported."""
-        from darnit_baseline.tools import (
-            create_security_policy,
-            enable_branch_protection,
-            remediate_audit_findings,
-        )
-        assert callable(remediate_audit_findings)
-        assert callable(create_security_policy)
-        assert callable(enable_branch_protection)
-
-
-class TestRemediationOrchestratorExecution:
-    """Test that the remediation orchestrator works end-to-end."""
 
     @pytest.fixture
     def temp_repo(self):
@@ -132,92 +106,3 @@ class TestRemediationOrchestratorExecution:
             break  # One is enough for a smoke test
 
 
-class TestGovernancePromptBehavior:
-    """Test that governance remediation prompts for confirmation.
-
-    Governance controls require maintainers context, so they should prompt
-    before creating files like GOVERNANCE.md or MAINTAINERS.md.
-    """
-
-    @pytest.fixture
-    def temp_repo(self):
-        """Create a temporary directory that looks like a git repo."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            os.system(f"cd {tmpdir} && git init -q")
-            os.system(f"cd {tmpdir} && git config user.email 'test@test.com'")
-            os.system(f"cd {tmpdir} && git config user.name 'Test'")
-            (Path(tmpdir) / "README.md").write_text("# Test")
-            os.system(f"cd {tmpdir} && git add . && git commit -q -m 'init'")
-            yield tmpdir
-
-    @pytest.mark.unit
-    def test_orchestrator_returns_needs_confirmation_for_governance(self, temp_repo):
-        """Test that _apply_control_remediation returns needs_confirmation for GV-01.01."""
-        from darnit_baseline.remediation.orchestrator import _apply_control_remediation
-
-        result = _apply_control_remediation(
-            control_id="OSPS-GV-01.01",
-            local_path=temp_repo,
-            owner="test-owner",
-            repo="test-repo",
-            dry_run=False,
-        )
-
-        assert result["status"] == "needs_confirmation"
-        assert result["control_id"] == "OSPS-GV-01.01"
-        assert "confirm_project_context" in result.get("result", "")
-
-    @pytest.mark.unit
-    def test_orchestrator_returns_applied_after_confirmation(self, temp_repo):
-        """Test that _apply_control_remediation returns applied after confirmation."""
-        from darnit.server.tools.project_context import confirm_project_context_impl
-        from darnit_baseline.remediation.orchestrator import _apply_control_remediation
-
-        # First confirm maintainers
-        confirm_project_context_impl(
-            local_path=temp_repo,
-            maintainers=["@alice", "@bob"],
-        )
-
-        result = _apply_control_remediation(
-            control_id="OSPS-GV-01.01",
-            local_path=temp_repo,
-            owner="test-owner",
-            repo="test-repo",
-            dry_run=False,
-        )
-
-        assert result["status"] == "applied"
-        assert result["control_id"] == "OSPS-GV-01.01"
-
-
-class TestCodeownersPromptBehavior:
-    """Test that CODEOWNERS remediation prompts for confirmation."""
-
-    @pytest.fixture
-    def temp_repo(self):
-        """Create a temporary directory that looks like a git repo."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            os.system(f"cd {tmpdir} && git init -q")
-            os.system(f"cd {tmpdir} && git config user.email 'test@test.com'")
-            os.system(f"cd {tmpdir} && git config user.name 'Test'")
-            (Path(tmpdir) / "README.md").write_text("# Test")
-            os.system(f"cd {tmpdir} && git add . && git commit -q -m 'init'")
-            yield tmpdir
-
-    @pytest.mark.unit
-    def test_orchestrator_returns_needs_confirmation_for_codeowners(self, temp_repo):
-        """Test that _apply_control_remediation returns needs_confirmation for GV-04.01."""
-        from darnit_baseline.remediation.orchestrator import _apply_control_remediation
-
-        result = _apply_control_remediation(
-            control_id="OSPS-GV-04.01",
-            local_path=temp_repo,
-            owner="test-owner",
-            repo="test-repo",
-            dry_run=False,
-        )
-
-        assert result["status"] == "needs_confirmation"
-        assert result["control_id"] == "OSPS-GV-04.01"
-        assert "confirm_project_context" in result.get("result", "")

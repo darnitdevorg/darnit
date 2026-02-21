@@ -28,17 +28,6 @@ class TestDiscoverImplementations:
         assert "openssf-baseline" in implementations
 
     @pytest.mark.unit
-    def test_implementation_has_required_properties(self):
-        """Test discovered implementation has required properties."""
-        implementations = discover_implementations()
-        impl = implementations.get("openssf-baseline")
-        assert impl is not None
-        assert hasattr(impl, "name")
-        assert hasattr(impl, "display_name")
-        assert hasattr(impl, "version")
-        assert hasattr(impl, "spec_version")
-
-    @pytest.mark.unit
     def test_implementation_is_protocol(self):
         """Test discovered implementation satisfies protocol."""
         implementations = discover_implementations()

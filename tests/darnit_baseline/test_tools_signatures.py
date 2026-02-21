@@ -10,35 +10,6 @@ import inspect
 from collections.abc import Callable
 
 
-class TestToolsImports:
-    """Test that all tool functions can be imported without errors."""
-
-    def test_all_tools_importable(self) -> None:
-        """All tools in __all__ should be importable."""
-        from darnit_baseline import tools
-
-        for name in tools.__all__:
-            assert hasattr(tools, name), f"Tool '{name}' listed in __all__ but not found"
-            func = getattr(tools, name)
-            assert callable(func), f"Tool '{name}' is not callable"
-
-    def test_audit_tool_imports(self) -> None:
-        """Audit tool dependencies should be importable."""
-        from darnit_baseline.tools import audit_openssf_baseline
-        # Verify the function exists and is callable
-        assert callable(audit_openssf_baseline)
-
-    def test_threat_model_imports(self) -> None:
-        """Threat model tool should import all required functions."""
-        # These are the functions used inside generate_threat_model
-        # All imports should succeed - no assertion needed
-
-    def test_remediation_imports(self) -> None:
-        """Remediation tool dependencies should be importable."""
-        from darnit_baseline.remediation import remediate_audit_findings
-        assert callable(remediate_audit_findings)
-
-
 class TestToolsSignatures:
     """Test that tool wrapper functions pass valid parameters to underlying functions."""
 

@@ -3,47 +3,12 @@
 import pytest
 
 from darnit.sieve.models import (
-    CheckContext,
     PassAttempt,
     PassOutcome,
     PassResult,
     SieveResult,
     VerificationPhase,
 )
-
-
-class TestVerificationPhase:
-    """Tests for VerificationPhase enum."""
-
-    @pytest.mark.unit
-    def test_phase_values(self):
-        """Test all phase values are accessible."""
-        assert VerificationPhase.DETERMINISTIC.value == "deterministic"
-        assert VerificationPhase.PATTERN.value == "pattern"
-        assert VerificationPhase.LLM.value == "llm"
-        assert VerificationPhase.MANUAL.value == "manual"
-
-    @pytest.mark.unit
-    def test_phase_count(self):
-        """Test we have exactly 4 phases."""
-        assert len(VerificationPhase) == 4
-
-
-class TestPassOutcome:
-    """Tests for PassOutcome enum."""
-
-    @pytest.mark.unit
-    def test_outcome_values(self):
-        """Test all outcome values are accessible."""
-        assert PassOutcome.PASS.value == "pass"
-        assert PassOutcome.FAIL.value == "fail"
-        assert PassOutcome.INCONCLUSIVE.value == "inconclusive"
-        assert PassOutcome.ERROR.value == "error"
-
-    @pytest.mark.unit
-    def test_outcome_count(self):
-        """Test we have exactly 4 outcomes."""
-        assert len(PassOutcome) == 4
 
 
 class TestPassResult:
@@ -154,36 +119,3 @@ class TestSieveResult:
         )
         assert len(result.pass_history) == 1
         assert result.pass_history[0].duration_ms == 10
-
-
-class TestCheckContext:
-    """Tests for CheckContext dataclass."""
-
-    @pytest.mark.unit
-    def test_basic_context(self):
-        """Test creating a basic CheckContext."""
-        ctx = CheckContext(
-            owner="testorg",
-            repo="testrepo",
-            local_path="/path/to/repo",
-            default_branch="main",
-            control_id="OSPS-VM-02.01"
-        )
-        assert ctx.owner == "testorg"
-        assert ctx.repo == "testrepo"
-        assert ctx.default_branch == "main"
-        assert ctx.control_id == "OSPS-VM-02.01"
-        assert ctx.gathered_evidence == {}
-
-    @pytest.mark.unit
-    def test_context_with_evidence(self):
-        """Test CheckContext with pre-gathered evidence."""
-        ctx = CheckContext(
-            owner="testorg",
-            repo="testrepo",
-            local_path="/path/to/repo",
-            default_branch="main",
-            control_id="OSPS-AC-01.01",
-            gathered_evidence={"has_security_md": True}
-        )
-        assert ctx.gathered_evidence["has_security_md"] is True

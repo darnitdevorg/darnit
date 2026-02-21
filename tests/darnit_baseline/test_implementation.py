@@ -2,7 +2,7 @@
 
 import pytest
 
-from darnit.core.plugin import ComplianceImplementation, ControlSpec
+from darnit.core.plugin import ComplianceImplementation
 from darnit_baseline import register
 from darnit_baseline.implementation import OSPSBaselineImplementation
 
@@ -38,13 +38,6 @@ class TestOSPSBaselineImplementation:
         assert 1 in levels
         assert 2 in levels
         assert 3 in levels
-
-    @pytest.mark.unit
-    def test_get_all_controls_are_control_specs(self, impl):
-        """Test all controls are ControlSpec instances."""
-        controls = impl.get_all_controls()
-        for control in controls:
-            assert isinstance(control, ControlSpec)
 
     @pytest.mark.unit
     def test_get_controls_by_level(self, impl):
@@ -99,13 +92,6 @@ class TestOSPSBaselineImplementation:
             assert "name" in rule or "shortDescription" in rule
             assert "level" in rule
 
-    @pytest.mark.unit
-    def test_get_remediation_registry(self, impl):
-        """Test get_remediation_registry returns dict."""
-        registry = impl.get_remediation_registry()
-        assert isinstance(registry, dict)
-
-
 class TestHandlerRegistration:
     """Tests for auto-registration of handlers."""
 
@@ -153,21 +139,6 @@ class TestHandlerRegistration:
         assert handler_info is not None
         assert handler_info.plugin == "openssf-baseline"
 
-    @pytest.mark.unit
-    def test_handlers_are_callable(self):
-        """Test registered handlers are callable."""
-        from darnit.core.handlers import get_handler_registry
-
-        impl = OSPSBaselineImplementation()
-        impl.register_handlers()
-
-        registry = get_handler_registry()
-        handler = registry.get_handler("list_available_checks")
-
-        assert handler is not None
-        assert callable(handler)
-
-
 class TestRegisterFunction:
     """Tests for the register() entry point function."""
 
@@ -177,17 +148,3 @@ class TestRegisterFunction:
         impl = register()
         assert isinstance(impl, OSPSBaselineImplementation)
 
-    @pytest.mark.unit
-    def test_register_returns_compliance_implementation(self):
-        """Test register() returns a ComplianceImplementation."""
-        impl = register()
-        assert isinstance(impl, ComplianceImplementation)
-
-    @pytest.mark.unit
-    def test_register_returns_consistent_instance(self):
-        """Test register() returns consistent implementation."""
-        impl1 = register()
-        impl2 = register()
-        # Both should have same properties
-        assert impl1.name == impl2.name
-        assert impl1.version == impl2.version

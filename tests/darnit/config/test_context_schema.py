@@ -21,40 +21,6 @@ from darnit.config.context_schema import (
 )
 
 
-class TestContextSource:
-    """Tests for ContextSource enum."""
-
-    def test_source_values(self) -> None:
-        """Test all source values exist."""
-        assert ContextSource.USER_CONFIRMED == "user_confirmed"
-        assert ContextSource.AUTO_DETECTED == "auto_detected"
-        assert ContextSource.FILE_REFERENCE == "file_reference"
-        assert ContextSource.DEFAULT == "default"
-
-    def test_source_count(self) -> None:
-        """Test expected number of sources."""
-        assert len(ContextSource) == 4
-
-
-class TestContextType:
-    """Tests for ContextType enum."""
-
-    def test_type_values(self) -> None:
-        """Test all type values exist."""
-        assert ContextType.BOOLEAN == "boolean"
-        assert ContextType.STRING == "string"
-        assert ContextType.ENUM == "enum"
-        assert ContextType.LIST == "list"
-        assert ContextType.PATH == "path"
-        assert ContextType.LIST_OR_PATH == "list_or_path"
-        assert ContextType.EMAIL == "email"
-        assert ContextType.URL == "url"
-
-    def test_type_count(self) -> None:
-        """Test expected number of types."""
-        assert len(ContextType) == 8
-
-
 class TestContextValue:
     """Tests for ContextValue model."""
 

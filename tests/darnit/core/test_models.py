@@ -3,30 +3,11 @@
 import pytest
 
 from darnit.core.models import (
-    AdapterCapability,
     AuditResult,
     CheckResult,
     CheckStatus,
     RemediationResult,
 )
-
-
-class TestCheckStatus:
-    """Tests for CheckStatus enum."""
-
-    @pytest.mark.unit
-    def test_status_values(self):
-        """Test all status values are accessible."""
-        assert CheckStatus.PASS.value == "pass"
-        assert CheckStatus.FAIL.value == "fail"
-        assert CheckStatus.WARN.value == "warn"
-        assert CheckStatus.NA.value == "na"
-        assert CheckStatus.ERROR.value == "error"
-
-    @pytest.mark.unit
-    def test_status_count(self):
-        """Test we have exactly 5 status values."""
-        assert len(CheckStatus) == 5
 
 
 class TestCheckResult:
@@ -116,31 +97,6 @@ class TestRemediationResult:
         assert result.success is False
         assert result.requires_manual_action is True
         assert len(result.manual_steps) == 2
-
-
-class TestAdapterCapability:
-    """Tests for AdapterCapability dataclass."""
-
-    @pytest.mark.unit
-    def test_specific_controls(self):
-        """Test capability with specific controls."""
-        cap = AdapterCapability(
-            control_ids={"OSPS-AC-01.01", "OSPS-AC-02.01"}
-        )
-        assert "OSPS-AC-01.01" in cap.control_ids
-        assert cap.supports_batch is False
-
-    @pytest.mark.unit
-    def test_wildcard_capability(self):
-        """Test capability with wildcard."""
-        cap = AdapterCapability(
-            control_ids={"*"},
-            supports_batch=True,
-            batch_command="run_all_checks"
-        )
-        assert "*" in cap.control_ids
-        assert cap.supports_batch is True
-        assert cap.batch_command == "run_all_checks"
 
 
 class TestAuditResult:

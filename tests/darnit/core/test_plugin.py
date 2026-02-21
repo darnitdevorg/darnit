@@ -11,43 +11,6 @@ from darnit.core.plugin import (
 )
 
 
-class TestControlSpec:
-    """Tests for ControlSpec dataclass."""
-
-    @pytest.mark.unit
-    def test_basic_creation(self):
-        """Test basic ControlSpec creation."""
-        spec = ControlSpec(
-            control_id="OSPS-AC-01.01",
-            name="Access Control",
-            description="Verify access control policies",
-            level=1,
-            domain="AC",
-            metadata={}
-        )
-        assert spec.control_id == "OSPS-AC-01.01"
-        assert spec.name == "Access Control"
-        assert spec.level == 1
-        assert spec.domain == "AC"
-
-    @pytest.mark.unit
-    def test_with_metadata(self):
-        """Test ControlSpec with metadata."""
-        spec = ControlSpec(
-            control_id="OSPS-VM-02.01",
-            name="Security Policy",
-            description="Security reporting policy",
-            level=1,
-            domain="VM",
-            metadata={
-                "help_uri": "https://baseline.openssf.org",
-                "remediation": "Create SECURITY.md"
-            }
-        )
-        assert spec.metadata["help_uri"] == "https://baseline.openssf.org"
-        assert "remediation" in spec.metadata
-
-
 class MockImplementation:
     """Mock compliance implementation for testing."""
 

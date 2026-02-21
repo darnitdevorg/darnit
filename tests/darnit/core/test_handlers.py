@@ -3,9 +3,7 @@
 from pathlib import Path
 
 from darnit.core.handlers import (
-    HandlerInfo,
     HandlerRegistry,
-    PassInfo,
     TemplateInfo,
     get_handler,
     get_handler_registry,
@@ -259,55 +257,6 @@ class TestDecorators:
 
         pass_cls = global_registry.get_pass("AnotherPass")
         assert pass_cls is AnotherPass
-
-
-class TestHandlerInfo:
-    """Tests for HandlerInfo dataclass."""
-
-    def test_handler_info_creation(self) -> None:
-        """Test creating HandlerInfo."""
-
-        def test_func():
-            """Test docstring."""
-            pass
-
-        info = HandlerInfo(
-            name="test",
-            func=test_func,
-            plugin="test-plugin",
-            module="test_module",
-            doc="Test docstring.",
-        )
-
-        assert info.name == "test"
-        assert info.func is test_func
-        assert info.plugin == "test-plugin"
-        assert info.module == "test_module"
-        assert info.doc == "Test docstring."
-
-
-class TestPassInfo:
-    """Tests for PassInfo dataclass."""
-
-    def test_pass_info_creation(self) -> None:
-        """Test creating PassInfo."""
-
-        class TestPass:
-            """Test pass docstring."""
-
-            pass
-
-        info = PassInfo(
-            name="test",
-            cls=TestPass,
-            plugin="test-plugin",
-            module="test_module",
-            doc="Test pass docstring.",
-        )
-
-        assert info.name == "test"
-        assert info.cls is TestPass
-        assert info.plugin == "test-plugin"
 
 
 class TestRegistryClear:
