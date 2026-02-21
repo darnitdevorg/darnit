@@ -145,28 +145,141 @@ Set context via the `confirm_project_context` MCP tool or by editing `.project/p
 | `has_compiled_assets` | boolean | No | QA-02.02 | When-clause: control only runs if `true` |
 | `ci_provider` | enum | Yes | BR-01.01, BR-01.02, AC-04.01, AC-04.02 | When-clause: controls only run if `"github"` |
 
-## Automated Remediation Summary
+## Remediation Capabilities
 
-The implementation provides **35 automated remediation actions** across three categories:
+The implementation provides **40 automated remediation actions**: 31 file creations, 7 GitHub API calls, and 2 exec commands. All file creations are conservative-by-default (`overwrite = false`) — they never clobber existing files. All file creations support dry-run. Three governance controls (GV-01.01, GV-01.02, GV-04.01) block until project maintainers are confirmed via `confirm_project_context`. The remaining 15 controls with remediation sections provide manual guidance only, and 7 controls are verification-only with no remediation.
 
-**27 file_create actions** — generates project files from templates:
-- Root files: README.md, SECURITY.md, CONTRIBUTING.md, GOVERNANCE.md, MAINTAINERS.md, CODEOWNERS, LICENSE, .gitignore, SUPPORT.md, ARCHITECTURE.md, THREAT_MODEL.md
-- CI workflows: ci.yml, sca.yml, sast.yml, sbom.yml, release-signing.yml
-- GitHub config: .github/dependabot.yml, .github/ISSUE_TEMPLATE/bug_report.md
-- Policy docs: docs/DEPENDENCIES.md, docs/VEX-POLICY.md, docs/SCA-POLICY.md, docs/SAST-POLICY.md, docs/SECURITY-ASSESSMENT.md, docs/RELEASE-VERIFICATION.md
+### File Creation (31 actions across 28 unique files)
 
-**7 api_call actions** — GitHub API settings changes:
-- Enable org MFA (AC-01.01)
-- Enable forking (AC-02.01)
-- Enable branch protection with PR requirements (AC-03.01)
-- Disable branch deletion (AC-03.02)
-- Make repository public (QA-01.01)
-- Require PR reviews (QA-07.01)
-- Enable private vulnerability reporting (VM-03.01)
+Each action generates a file from a built-in template. Template quality ratings:
 
-**1 exec action** — `zizmor --fix` for GitHub Actions template injection remediation (BR-01.01)
+- **Production-ready** — substantive content, follows best practices, minimal customization needed
+- **Good scaffold** — correct structure, needs project-specific content added
+- **Starter** — minimal placeholder, must be customized before use
 
-All remaining controls provide manual guidance steps as fallback.
+Five templates have `llm_enhance` prompts (marked with \*) that request LLM-based customization of the generated content.
+
+#### Root Project Files
+
+| Control | File | Quality | Notes |
+|---------|------|:-------:|-------|
+| DO-01.01 | `README.md` | Scaffold\* | Generic clone/install, usage section is placeholder. `llm_enhance`, `project_update` |
+| VM-02.01 | `SECURITY.md` | Production\* | Disclosure process, timelines (48h/7d/90d), VEX section. `llm_enhance` |
+| GV-03.01 | `CONTRIBUTING.md` | Scaffold | Fork workflow, PR guidelines; dev setup is placeholder |
+| GV-03.02 | `CONTRIBUTING.md` | Scaffold | Same template as GV-03.01 (no-op if already created) |
+| GV-01.01 | `GOVERNANCE.md` | Scaffold\* | Roles, decision making. `llm_enhance`. **Needs: maintainers** |
+| GV-01.02 | `MAINTAINERS.md` | Scaffold | Responsibilities, criteria. **Needs: maintainers** |
+| GV-04.01 | `CODEOWNERS` | Scaffold | Single global ownership rule. **Needs: maintainers** |
+| LE-01.01 | `LICENSE` | Production | Full MIT license text. `project_update`. Hardcoded to MIT |
+| BR-07.01 | `.gitignore` | Production | Covers .env, \*.pem, \*.key, cloud creds (AWS/GCP/Azure) |
+| DO-03.01 | `SUPPORT.md` | Production | Getting help, scope table, EOL policy with 30-day notice |
+| DO-04.01 | `SUPPORT.md` | Production | Support scope variant (no-op if DO-03.01 ran first) |
+| DO-05.01 | `SUPPORT.md` | Production | End-of-support variant (no-op if DO-03.01 ran first) |
+| SA-01.01 | `ARCHITECTURE.md` | Scaffold\* | Components/actors/data flow — all example data. `llm_enhance` |
+| SA-02.01 | `API.md` | Scaffold\* | Interface tables, usage examples — all placeholder. `llm_enhance` |
+| SA-03.02 | `THREAT_MODEL.md` | Production | Full STRIDE: 5 assets, 9 threats with mitigations. `project_update` |
+
+#### CI Workflows (`.github/workflows/`)
+
+| Control | File | Quality | Notes |
+|---------|------|:-------:|-------|
+| QA-06.01 | `ci.yml` | Starter | Test step is `echo` placeholder. Needs language/framework adaptation |
+| VM-05.02 | `sca.yml` | Production | Pinned `dependency-review-action`, `fail-on-severity: high` |
+| VM-06.02 | `sast.yml` | Production | Pinned CodeQL init/autobuild/analyze, weekly schedule |
+| QA-02.02 | `sbom.yml` | Production | Pinned syft SPDX generation + release asset upload |
+| BR-06.01 | `release-signing.yml` | Scaffold | Pinned `attest-build-provenance`; `subject-path: '.'` needs customization |
+
+#### GitHub Config
+
+| Control | File | Quality | Notes |
+|---------|------|:-------:|-------|
+| VM-05.03 | `.github/dependabot.yml` | Scaffold | GitHub Actions ecosystem by default; others commented out |
+| DO-02.01 | `.github/ISSUE_TEMPLATE/bug_report.md` | Production | Standard template: reproduce, expected, actual, environment |
+
+#### Policy Documentation (`docs/`)
+
+| Control | File | Quality | Notes |
+|---------|------|:-------:|-------|
+| DO-06.01 | `docs/DEPENDENCIES.md` | Production | 3-tier update cadence, 4-severity vulnerability response |
+| SA-03.01 | `docs/SECURITY-ASSESSMENT.md` | Scaffold | 5-item audit checklist, 4-step review process |
+| DO-03.02 | `docs/RELEASE-VERIFICATION.md` | Scaffold | Git tag, GitHub badge, Sigstore/cosign verification |
+| BR-07.02 | `docs/SECRETS-POLICY.md` | Production | Rotation (90d), revocation, CI/CD secrets, annual review |
+| VM-04.02 | `docs/VEX-POLICY.md` | Scaffold | VEX purpose, publication methods, OpenVEX/CISA links |
+| VM-05.01 | `docs/SCA-POLICY.md` | Production | Scanning frequency, 4-severity thresholds, exception process |
+| VM-06.01 | `docs/SAST-POLICY.md` | Production | 3 scanning triggers, severity handling, exception process |
+| QA-06.02 | `docs/TESTING.md` | Starter | `make test` is TODO placeholder. Correct structure |
+| QA-06.03 | `docs/TEST-REQUIREMENTS.md` | Scaffold | Contribution test requirements; `make test` placeholder |
+
+### API Calls (7 actions)
+
+All target the GitHub REST API via `gh`. Require authentication with appropriate scopes (`repo`, `admin:org` for MFA).
+
+| Control | Endpoint | What It Changes | Safe | Reversible |
+|---------|----------|-----------------|:----:|:----------:|
+| AC-01.01 | `PUT /orgs/$OWNER` | Enforce org-wide MFA | No | Hard — may lock out members without MFA |
+| AC-02.01 | `PATCH /repos/$OWNER/$REPO` | Enable repository forking | Yes | Yes |
+| AC-03.01 | `PUT .../branches/$BRANCH/protection` | Require PRs for primary branch | Yes | Yes |
+| AC-03.02 | `PUT .../branches/$BRANCH/protection` | Block primary branch deletion | No | Yes |
+| QA-01.01 | `PATCH /repos/$OWNER/$REPO` | Make repository public | No | Hard — may expose private code |
+| QA-07.01 | `PUT .../branches/$BRANCH/protection` | Require PR approval before merge | No | Yes |
+| VM-03.01 | `PUT .../private-vulnerability-reporting` | Enable private vulnerability reporting | Yes | Yes |
+
+### Exec (2 actions)
+
+| Control | Command | Notes |
+|---------|---------|-------|
+| BR-01.01 | `zizmor --fix=all --offline` | Requires external `zizmor` tool. Applies all fixes including unsafe. GitHub Actions only |
+| BR-01.02 | `zizmor --fix=all --offline` | Same command, targets branch name injection patterns |
+
+### Manual-Only (15 controls)
+
+These controls provide step-by-step guidance but cannot be auto-remediated.
+
+| Control | Why Manual |
+|---------|-----------|
+| QA-01.02 | Commit history visibility — verification-only, nothing to change programmatically |
+| QA-02.01 | Dependency manifest — project-specific; can't generate a real lockfile |
+| QA-04.01 | Subproject documentation — requires human knowledge of project structure |
+| QA-05.01 | No generated executables — requires human judgment on what to remove |
+| QA-05.02 | No binary artifacts — requires human judgment on what to remove |
+| AC-04.01 | Workflow `permissions:` declarations — requires understanding each workflow's needs |
+| AC-04.02 | Least-privilege permissions — requires per-workflow security analysis |
+| BR-02.01 | Unique version IDs — release versioning process is project-specific |
+| BR-04.01 | Changelog in releases — changelog content is project-specific |
+| BR-05.01 | Standard dependency tooling — tool adoption is a project-level decision |
+| BR-02.02 | Assets linked to release IDs — release artifact process is project-specific |
+| QA-03.01 | Required status checks — which checks to require depends on CI setup |
+| QA-04.02 | Subproject security parity — requires cross-repo security review |
+| VM-01.01 | Disclosure process in SECURITY.md — content verification is judgment-based |
+| VM-04.01 | Security advisory support — GitHub platform feature, manual enablement |
+
+### No Remediation (7 controls)
+
+Verification-only controls that check conditions which already exist or can't be meaningfully auto-remediated: BR-03.01 (HTTPS repo URL), BR-03.02 (HTTPS distribution), GV-02.01 (Issues/Discussions enabled), LE-02.01 (OSI-approved license), LE-02.02 (License in releases), LE-03.01 (License in root), LE-03.02 (License in release archives).
+
+### Template Quality Summary
+
+| Rating | Count | Description |
+|--------|:-----:|-------------|
+| Production-ready | 15 | Substantive content following best practices — minimal customization needed |
+| Good scaffold | 14 | Correct structure — needs project-specific content added |
+| Starter | 2 | Minimal placeholder — must be customized before use |
+
+**5 templates with `llm_enhance` prompts**: README.md, SECURITY.md, GOVERNANCE.md, ARCHITECTURE.md, API.md — these request LLM-based customization using project context.
+
+### Known Limitations
+
+- Templates use `$OWNER`, `$REPO`, `$BRANCH` variables resolved from git remote — may be wrong for forks or non-standard remote names
+- `security@$OWNER.github.io` in SECURITY.md is a placeholder email — almost always needs customization
+- LICENSE is hardcoded to MIT — no license type selection
+- GitHub Actions workflows (`ci.yml` especially) are generic starters — need language/framework adaptation
+- `release-signing.yml` uses `subject-path: '.'` which should be customized to actual release artifacts
+- `llm_enhance` prompts are captured in templates but the LLM integration path isn't fully wired in the remediation executor
+- Three SUPPORT.md controls (DO-03.01, DO-04.01, DO-05.01) each create the same file with different templates — only the first to run takes effect due to `overwrite = false`
+- API call remediations require `gh` CLI authentication with appropriate scopes (`repo`, `admin:org` for MFA enforcement)
+- `zizmor --fix=all` applies all fixes including potentially unsafe ones — review changes before committing
+- Manual-only controls have varying depth of guidance (some have 2 steps, some have 6)
+- `dependabot.yml` only enables `github-actions` ecosystem by default — other ecosystems (npm, pip, etc.) need manual addition
 
 ## External Tool Dependencies
 
