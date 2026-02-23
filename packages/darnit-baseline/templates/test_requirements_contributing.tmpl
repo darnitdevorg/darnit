@@ -1,0 +1,23 @@
+# Test Requirements for Contributions
+
+## Before Submitting a Pull Request
+
+All contributions must include appropriate tests:
+
+1. **New features**: Include unit tests covering the main functionality and edge cases
+2. **Bug fixes**: Include a regression test that reproduces the bug and verifies the fix
+3. **Refactoring**: Ensure existing tests still pass; add tests if coverage gaps are found
+
+## Running Tests Locally
+
+```bash
+# Run the full test suite before submitting
+# TODO: Replace with your project's test command
+make test
+```
+
+## CI Checks
+
+- All pull requests are automatically tested in CI
+- Tests must pass before a pull request can be merged
+- Maintainers may request additional test coverage during review

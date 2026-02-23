@@ -1,0 +1,40 @@
+# Testing
+
+## Prerequisites
+
+- Rust stable toolchain (install via [rustup](https://rustup.rs/))
+
+## Running Tests
+
+```bash
+# Run the full test suite
+cargo test
+
+# Run with all features enabled
+cargo test --all-features
+
+# Run a specific test
+cargo test test_name
+
+# Run tests with output shown
+cargo test -- --nocapture
+
+# Run only integration tests
+cargo test --test '*'
+
+# Run benchmarks (nightly)
+cargo bench
+```
+
+## Test Requirements
+
+- All pull requests must include tests for new functionality
+- Bug fixes should include a regression test
+- Tests must pass in CI before a pull request can be merged
+
+## Writing Tests
+
+- Place unit tests in the same file as the code using `#[cfg(test)]` modules
+- Place integration tests in the `tests/` directory
+- Use `#[test]` attribute for test functions
+- Aim for meaningful coverage of critical paths and edge cases

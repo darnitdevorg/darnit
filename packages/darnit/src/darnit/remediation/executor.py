@@ -111,6 +111,7 @@ class RemediationExecutor:
         templates: dict[str, TemplateConfig] | None = None,
         context_values: dict[str, Any] | None = None,
         project_values: dict[str, Any] | None = None,
+        framework_path: str | None = None,
     ):
         """Initialize the executor.
 
@@ -122,9 +123,13 @@ class RemediationExecutor:
             templates: Template definitions from framework config
             context_values: Confirmed context values for ${context.*} substitution
             project_values: Flattened .project/project.yaml for ${project.*} substitution
+            framework_path: Absolute path to the framework TOML file.
+                Template ``file`` references are resolved relative to this
+                file's directory.  Falls back to ``local_path`` when None.
         """
         self.local_path = os.path.abspath(local_path)
         self.templates = templates or {}
+        self._framework_path = framework_path
         self.default_branch = default_branch
         self._context_values = context_values or {}
         self._project_values = project_values or {}
@@ -277,11 +282,17 @@ class RemediationExecutor:
             return template.content
 
         if template.file:
-            # Template file path is relative to framework package
-            # For now, we'll support absolute paths or paths relative to local_path
+            # Resolve relative paths against the framework TOML directory
+            # so that implementation packages can ship templates alongside
+            # their TOML config.  Falls back to local_path when no
+            # framework_path is available.
             template_path = template.file
             if not os.path.isabs(template_path):
-                template_path = os.path.join(self.local_path, template_path)
+                if self._framework_path:
+                    base_dir = os.path.dirname(self._framework_path)
+                else:
+                    base_dir = self.local_path
+                template_path = os.path.join(base_dir, template_path)
 
             try:
                 with open(template_path) as f:

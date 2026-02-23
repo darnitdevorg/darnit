@@ -356,12 +356,9 @@ payload_template = "branch_protection"
 
 ### 4.5 Templates
 
-Templates support variable substitution:
+Templates support variable substitution and can source their content from inline strings or external files:
 
 ```toml
-[templates.security_policy_standard]
-description = "Standard SECURITY.md template"
-content = """
 
 ### 7.3 Context Requirements for Remediation
 

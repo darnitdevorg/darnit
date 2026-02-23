@@ -20,3 +20,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/darnit_baseline"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"templates" = "darnit_baseline/templates"

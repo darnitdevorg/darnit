@@ -263,11 +263,21 @@ def create_security_policy(
         if not control or not control.remediation:
             return "❌ No remediation config found for OSPS-VM-02.01"
 
+        fw_path = None
+        try:
+            from darnit_baseline import get_framework_path
+            p = get_framework_path()
+            if p:
+                fw_path = str(p)
+        except Exception:
+            pass
+
         executor = RemediationExecutor(
             local_path=str(repo_path),
             owner=owner,
             repo=repo,
             templates=framework.templates or {},
+            framework_path=fw_path,
         )
 
         result = executor.execute(

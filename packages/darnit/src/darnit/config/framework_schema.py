@@ -597,13 +597,26 @@ class TemplateConfig(BaseModel):
     # Template content (inline)
     content: str | None = None
 
-    # Path to template file (alternative to inline)
+    # Path to template file (alternative to inline content)
     file: str | None = None
 
     # Description of this template
     description: str | None = None
 
     model_config = ConfigDict(extra="allow")
+
+    @model_validator(mode="after")
+    def _check_content_or_file(self) -> "TemplateConfig":
+        """Validate that exactly one of ``content`` or ``file`` is set."""
+        if self.content and self.file:
+            raise ValueError(
+                "Template must have either 'content' or 'file', not both"
+            )
+        if not self.content and not self.file:
+            raise ValueError(
+                "Template must have either 'content' or 'file'"
+            )
+        return self
 
 
 # =============================================================================

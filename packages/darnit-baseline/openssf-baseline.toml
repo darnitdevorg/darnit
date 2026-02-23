@@ -23,1740 +23,219 @@ remediation_adapter = "builtin"
 
 [templates.security_policy_standard]
 description = "Standard SECURITY.md template for vulnerability reporting"
-content = """# Security Policy
-
-## Supported Versions
-
-| Version | Supported          |
-| ------- | ------------------ |
-| latest  | :white_check_mark: |
-
-## Reporting a Vulnerability
-
-We take security vulnerabilities seriously. If you discover a security issue,
-please report it responsibly.
-
-### How to Report
-
-**Please do NOT report security vulnerabilities through public GitHub issues.**
-
-Instead, please report security vulnerabilities by:
-
-1. **GitHub Security Advisories**: Use the "Report a vulnerability" button in
-   the Security tab of this repository (preferred)
-2. **Email**: Send details to security@$OWNER.github.io
-
-### What to Include
-
-Please include as much of the following information as possible:
-
-- Type of issue (e.g., buffer overflow, SQL injection, cross-site scripting)
-- Full paths of source file(s) related to the issue
-- Location of the affected source code (tag/branch/commit or direct URL)
-- Step-by-step instructions to reproduce the issue
-- Proof-of-concept or exploit code (if possible)
-- Impact of the issue
-
-### Response Timeline
-
-- **Initial Response**: Within 48 hours
-- **Status Update**: Within 7 days
-- **Resolution Target**: Within 90 days (depending on severity)
-
-### Disclosure Policy
-
-- We will acknowledge receipt of your report
-- We will work with you to understand and resolve the issue
-- We will keep you informed of our progress
-- We will credit you in the security advisory (unless you prefer otherwise)
-
-## Security Updates
-
-Security updates will be released as patch versions and announced via:
-- GitHub Security Advisories
-- Release notes
-
-## Vulnerability Exploitability (VEX)
-
-When vulnerabilities are reported in our dependencies that do not affect this project,
-we will provide VEX (Vulnerability Exploitability eXchange) statements explaining why
-the vulnerability is not exploitable in our context.
-
-VEX statements will be published as:
-- GitHub Security Advisories with "not affected" status
-- VEX documents in this repository (when applicable)
-
-For more information about VEX, see:
-- [OpenVEX Specification](https://openvex.dev/)
-- [CISA VEX Guide](https://www.cisa.gov/resources-tools/resources/vulnerability-exploitability-exchange-vex-overview)
-"""
+file = "templates/security_policy_standard.tmpl"
 
 [templates.security_policy_minimal]
 description = "Minimal SECURITY.md template"
-content = """# Security Policy
-
-## Reporting a Vulnerability
-
-Please report security vulnerabilities by:
-- Using GitHub's "Report a vulnerability" feature in the Security tab
-- Or emailing security@$OWNER.github.io
-
-We will respond within 48 hours and work with you to resolve the issue.
-"""
+file = "templates/security_policy_minimal.tmpl"
 
 [templates.contributing_standard]
 description = "Standard CONTRIBUTING.md template"
-content = """# Contributing to $REPO
-
-Thank you for your interest in contributing! This document provides guidelines
-for contributing to this project.
-
-## Code of Conduct
-
-Please read and follow our Code of Conduct to keep our community approachable
-and respectable.
-
-## Getting Started
-
-1. Fork the repository
-2. Clone your fork: `git clone https://github.com/YOUR-USERNAME/$REPO.git`
-3. Create a branch: `git checkout -b feature/your-feature-name`
-4. Make your changes
-5. Run tests: `make test` (or equivalent)
-6. Commit your changes with a clear message
-7. Push to your fork: `git push origin feature/your-feature-name`
-8. Open a Pull Request
-
-## Pull Request Guidelines
-
-- Ensure your code follows the existing style
-- Include tests for new functionality
-- Update documentation as needed
-- Keep PRs focused on a single change
-- Write clear commit messages
-
-## Reporting Issues
-
-- Search existing issues before creating a new one
-- Use the issue templates when available
-- Provide as much context as possible
-
-## Development Setup
-
-```bash
-# Clone the repository
-git clone https://github.com/$OWNER/$REPO.git
-cd $REPO
-
-# Install dependencies
-# (Add project-specific setup instructions here)
-```
-
-## Questions?
-
-Feel free to open an issue for any questions about contributing.
-"""
+file = "templates/contributing_standard.tmpl"
 
 [templates.bug_report_template]
 description = "GitHub issue template for bug reports"
-content = """---
-name: Bug Report
-about: Create a report to help us improve
-title: '[BUG] '
-labels: bug
-assignees: ''
----
-
-## Describe the Bug
-A clear and concise description of what the bug is.
-
-## To Reproduce
-Steps to reproduce the behavior:
-1. Go to '...'
-2. Click on '...'
-3. See error
-
-## Expected Behavior
-A clear and concise description of what you expected to happen.
-
-## Actual Behavior
-What actually happened.
-
-## Screenshots
-If applicable, add screenshots to help explain your problem.
-
-## Environment
-- OS: [e.g., Ubuntu 22.04, macOS 14, Windows 11]
-- Version: [e.g., v1.2.3]
-- Other relevant info:
-
-## Additional Context
-Add any other context about the problem here.
-"""
+file = "templates/bug_report_template.tmpl"
 
 [templates.branch_protection_payload]
 description = "JSON payload for GitHub branch protection API"
-content = """
-{
-  "enforce_admins": true,
-  "required_pull_request_reviews": {
-    "required_approving_review_count": 1,
-    "dismiss_stale_reviews": true,
-    "require_code_owner_reviews": false
-  },
-  "required_status_checks": null,
-  "restrictions": null,
-  "required_linear_history": false,
-  "allow_force_pushes": false,
-  "allow_deletions": false
-}
-"""
+file = "templates/branch_protection_payload.tmpl"
 
 [templates.dependabot_config]
 description = "Dependabot configuration file"
-content = """version: 2
-updates:
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    commit-message:
-      prefix: "ci"
-
-  # Add additional ecosystems as needed:
-  # - package-ecosystem: "npm"
-  #   directory: "/"
-  #   schedule:
-  #     interval: "weekly"
-  #   commit-message:
-  #     prefix: "deps"
-"""
+file = "templates/dependabot_config.tmpl"
 
 [templates.dependabot_python]
 description = "Dependabot configuration for Python projects"
-content = """version: 2
-updates:
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    commit-message:
-      prefix: "ci"
-
-  - package-ecosystem: "pip"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    commit-message:
-      prefix: "deps"
-"""
+file = "templates/dependabot_python.tmpl"
 
 [templates.dependabot_node]
 description = "Dependabot configuration for Node.js projects"
-content = """version: 2
-updates:
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    commit-message:
-      prefix: "ci"
-
-  - package-ecosystem: "npm"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    commit-message:
-      prefix: "deps"
-"""
+file = "templates/dependabot_node.tmpl"
 
 [templates.dependabot_rust]
 description = "Dependabot configuration for Rust projects"
-content = """version: 2
-updates:
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    commit-message:
-      prefix: "ci"
-
-  - package-ecosystem: "cargo"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    commit-message:
-      prefix: "deps"
-"""
+file = "templates/dependabot_rust.tmpl"
 
 [templates.dependabot_go]
 description = "Dependabot configuration for Go projects"
-content = """version: 2
-updates:
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    commit-message:
-      prefix: "ci"
-
-  - package-ecosystem: "gomod"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    commit-message:
-      prefix: "deps"
-"""
+file = "templates/dependabot_go.tmpl"
 
 [templates.readme_basic]
 description = "Basic README.md template with substantive default content"
-content = """# $REPO
-
-A project maintained by $OWNER. This README provides an overview of the project, installation instructions, and usage examples.
-
-## Installation
-
-Clone the repository and install dependencies:
-
-```bash
-git clone https://github.com/$OWNER/$REPO.git
-cd $REPO
-```
-
-Refer to the project's package manager configuration for additional setup steps.
-
-## Usage
-
-After installation, you can use $REPO as follows:
-
-```bash
-# Run the project
-# (Update this section with actual commands for your project)
-```
-
-See the [documentation](docs/) directory for detailed guides.
-
-## Contributing
-
-Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to submit changes, report issues, and set up a development environment.
-
-## License
-
-This project is licensed under the terms specified in [LICENSE](LICENSE).
-"""
+file = "templates/readme_basic.tmpl"
 
 [templates.license_mit]
 description = "MIT License template"
-content = """MIT License
-
-Copyright (c) $YEAR $OWNER
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-"""
+file = "templates/license_mit.tmpl"
 
 [templates.license_apache]
 description = "Apache License 2.0 template"
-content = """
-                                 Apache License
-                           Version 2.0, January 2004
-                        http://www.apache.org/licenses/
-
-   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
-
-   1. Definitions.
-
-      "License" shall mean the terms and conditions for use, reproduction,
-      and distribution as defined by Sections 1 through 9 of this document.
-
-      "Licensor" shall mean the copyright owner or entity authorized by
-      the copyright owner that is granting the License.
-
-      "Legal Entity" shall mean the union of the acting entity and all
-      other entities that control, are controlled by, or are under common
-      control with that entity. For the purposes of this definition,
-      "control" means (i) the power, direct or indirect, to cause the
-      direction or management of such entity, whether by contract or
-      otherwise, or (ii) ownership of fifty percent (50%) or more of the
-      outstanding shares, or (iii) beneficial ownership of such entity.
-
-      "You" (or "Your") shall mean an individual or Legal Entity
-      exercising permissions granted by this License.
-
-      "Source" form shall mean the preferred form for making modifications,
-      including but not limited to software source code, documentation
-      source, and configuration files.
-
-      "Object" form shall mean any form resulting from mechanical
-      transformation or translation of a Source form, including but
-      not limited to compiled object code, generated documentation,
-      and conversions to other media types.
-
-      "Work" shall mean the work of authorship, whether in Source or
-      Object form, made available under the License, as indicated by a
-      copyright notice that is included in or attached to the work
-      (an example is provided in the Appendix below).
-
-      "Derivative Works" shall mean any work, whether in Source or Object
-      form, that is based on (or derived from) the Work and for which the
-      editorial revisions, annotations, elaborations, or other modifications
-      represent, as a whole, an original work of authorship. For the purposes
-      of this License, Derivative Works shall not include works that remain
-      separable from, or merely link (or bind by name) to the interfaces of,
-      the Work and Derivative Works thereof.
-
-      "Contribution" shall mean any work of authorship, including
-      the original version of the Work and any modifications or additions
-      to that Work or Derivative Works thereof, that is intentionally
-      submitted to the Licensor for inclusion in the Work by the copyright owner
-      or by an individual or Legal Entity authorized to submit on behalf of
-      the copyright owner. For the purposes of this definition, "submitted"
-      means any form of electronic, verbal, or written communication sent
-      to the Licensor or its representatives, including but not limited to
-      communication on electronic mailing lists, source code control systems,
-      and issue tracking systems that are managed by, or on behalf of, the
-      Licensor for the purpose of discussing and improving the Work, but
-      excluding communication that is conspicuously marked or otherwise
-      designated in writing by the copyright owner as "Not a Contribution."
-
-      "Contributor" shall mean Licensor and any individual or Legal Entity
-      on behalf of whom a Contribution has been received by the Licensor and
-      subsequently incorporated within the Work.
-
-   2. Grant of Copyright License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      copyright license to reproduce, prepare Derivative Works of,
-      publicly display, publicly perform, sublicense, and distribute the
-      Work and such Derivative Works in Source or Object form.
-
-   3. Grant of Patent License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      (except as stated in this section) patent license to make, have made,
-      use, offer to sell, sell, import, and otherwise transfer the Work,
-      where such license applies only to those patent claims licensable
-      by such Contributor that are necessarily infringed by their
-      Contribution(s) alone or by combination of their Contribution(s)
-      with the Work to which such Contribution(s) was submitted. If You
-      institute patent litigation against any entity (including a
-      cross-claim or counterclaim in a lawsuit) alleging that the Work
-      or a Contribution incorporated within the Work constitutes direct
-      or contributory patent infringement, then any patent licenses
-      granted to You under this License for that Work shall terminate
-      as of the date such litigation is filed.
-
-   4. Redistribution. You may reproduce and distribute copies of the
-      Work or Derivative Works thereof in any medium, with or without
-      modifications, and in Source or Object form, provided that You
-      meet the following conditions:
-
-      (a) You must give any other recipients of the Work or
-          Derivative Works a copy of this License; and
-
-      (b) You must cause any modified files to carry prominent notices
-          stating that You changed the files; and
-
-      (c) You must retain, in the Source form of any Derivative Works
-          that You distribute, all copyright, patent, trademark, and
-          attribution notices from the Source form of the Work,
-          excluding those notices that do not pertain to any part of
-          the Derivative Works; and
-
-      (d) If the Work includes a "NOTICE" text file as part of its
-          distribution, then any Derivative Works that You distribute must
-          include a readable copy of the attribution notices contained
-          within such NOTICE file, excluding any notices that do not
-          pertain to any part of the Derivative Works, in at least one
-          of the following places: within a NOTICE text file distributed
-          as part of the Derivative Works; within the Source form or
-          documentation, if provided along with the Derivative Works; or,
-          within a display generated by the Derivative Works, if and
-          wherever such third-party notices normally appear. The contents
-          of the NOTICE file are for informational purposes only and
-          do not modify the License. You may add Your own attribution
-          notices within Derivative Works that You distribute, alongside
-          or as an addendum to the NOTICE text from the Work, provided
-          that such additional attribution notices cannot be construed
-          as modifying the License.
-
-      You may add Your own copyright statement to Your modifications and
-      may provide additional or different license terms and conditions
-      for use, reproduction, or distribution of Your modifications, or
-      for any such Derivative Works as a whole, provided Your use,
-      reproduction, and distribution of the Work otherwise complies with
-      the conditions stated in this License.
-
-   5. Submission of Contributions. Unless You explicitly state otherwise,
-      any Contribution intentionally submitted for inclusion in the Work
-      by You to the Licensor shall be under the terms and conditions of
-      this License, without any additional terms or conditions.
-      Notwithstanding the above, nothing herein shall supersede or modify
-      the terms of any separate license agreement you may have executed
-      with Licensor regarding such Contributions.
-
-   6. Trademarks. This License does not grant permission to use the trade
-      names, trademarks, service marks, or product names of the Licensor,
-      except as required for reasonable and customary use in describing the
-      origin of the Work and reproducing the content of the NOTICE file.
-
-   7. Disclaimer of Warranty. Unless required by applicable law or
-      agreed to in writing, Licensor provides the Work (and each
-      Contributor provides its Contributions) on an "AS IS" BASIS,
-      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-      implied, including, without limitation, any warranties or conditions
-      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
-      PARTICULAR PURPOSE. You are solely responsible for determining the
-      appropriateness of using or redistributing the Work and assume any
-      risks associated with Your exercise of permissions under this License.
-
-   8. Limitation of Liability. In no event and under no legal theory,
-      whether in tort (including negligence), contract, or otherwise,
-      unless required by applicable law (such as deliberate and grossly
-      negligent acts) or agreed to in writing, shall any Contributor be
-      liable to You for damages, including any direct, indirect, special,
-      incidental, or consequential damages of any character arising as a
-      result of this License or out of the use or inability to use the
-      Work (including but not limited to damages for loss of goodwill,
-      work stoppage, computer failure or malfunction, or any and all
-      other commercial damages or losses), even if such Contributor
-      has been advised of the possibility of such damages.
-
-   9. Accepting Warranty or Additional Liability. While redistributing
-      the Work or Derivative Works thereof, You may choose to offer,
-      and charge a fee for, acceptance of support, warranty, indemnity,
-      or other liability obligations and/or rights consistent with this
-      License. However, in accepting such obligations, You may act only
-      on Your own behalf and on Your sole responsibility, not on behalf
-      of any other Contributor, and only if You agree to indemnify,
-      defend, and hold each Contributor harmless for any liability
-      incurred by, or claims asserted against, such Contributor by reason
-      of your accepting any such warranty or additional liability.
-
-   END OF TERMS AND CONDITIONS
-
-   Copyright $YEAR $OWNER
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-"""
+file = "templates/license_apache.tmpl"
 
 [templates.license_bsd3]
 description = "BSD 3-Clause License template"
-content = """BSD 3-Clause License
-
-Copyright (c) $YEAR, $OWNER
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
-
-1. Redistributions of source code must retain the above copyright notice, this
-   list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright notice,
-   this list of conditions and the following disclaimer in the documentation
-   and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-   contributors may be used to endorse or promote products derived from
-   this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-"""
+file = "templates/license_bsd3.tmpl"
 
 [templates.threat_model_basic]
 description = "STRIDE-based threat model template with example threats"
-content = """# Threat Model — $REPO
-
-## Overview
-
-This document identifies potential security threats to $REPO using the STRIDE methodology and documents mitigations for each threat category.
-
-**Scope**: This threat model covers the core application, its APIs, data storage, and interactions with external services.
-
-## Assets
-
-| Asset | Sensitivity | Description |
-|-------|------------|-------------|
-| User credentials | High | Authentication tokens, API keys, passwords |
-| Application data | Medium | Data processed and stored by the application |
-| Configuration | Medium | Application settings, environment variables |
-| Source code | Medium | Repository contents and build artifacts |
-| CI/CD pipeline | High | Build and deployment infrastructure |
-
-## Threat Analysis (STRIDE)
-
-| Category | Threat | Likelihood | Impact | Mitigation |
-|----------|--------|-----------|--------|------------|
-| **Spoofing** | Attacker impersonates a user via stolen credentials | Medium | High | Enforce MFA, use short-lived tokens, validate session integrity |
-| **Spoofing** | Forged commits appear to come from a maintainer | Low | High | Require signed commits, verify committer identity |
-| **Tampering** | Attacker modifies data in transit | Medium | High | Use TLS for all connections, validate data integrity |
-| **Tampering** | Malicious dependency injected via supply chain | Medium | Critical | Pin dependencies, use lockfiles, enable dependency scanning |
-| **Repudiation** | User denies performing a destructive action | Low | Medium | Maintain audit logs, require authenticated actions |
-| **Info Disclosure** | Secrets exposed in logs or error messages | Medium | High | Sanitize log output, use secret scanning, avoid verbose errors |
-| **Info Disclosure** | Sensitive data leaked via API response | Medium | High | Implement response filtering, minimize data exposure |
-| **Denial of Service** | Resource exhaustion via unbounded input | Medium | Medium | Implement rate limiting, validate input size, set timeouts |
-| **Elevation of Privilege** | User escalates to admin via insecure defaults | Low | Critical | Apply principle of least privilege, validate authorization on every request |
-
-## Mitigations Summary
-
-1. **Authentication**: Enforce MFA, use short-lived tokens, require signed commits
-2. **Data Protection**: TLS everywhere, sanitize logs, filter API responses
-3. **Supply Chain**: Pin dependencies, use lockfiles, enable automated scanning
-4. **Access Control**: Least privilege, validate authorization, audit access
-5. **Availability**: Rate limiting, input validation, resource quotas
-
-## References
-
-- [STRIDE Threat Model](https://learn.microsoft.com/en-us/azure/security/develop/threat-modeling-tool-threats)
-- [OpenSSF Baseline](https://baseline.openssf.org)
-- [OWASP Threat Modeling](https://owasp.org/www-community/Threat_Modeling)
-"""
+file = "templates/threat_model_basic.tmpl"
 
 [templates.codeowners_template]
 description = "CODEOWNERS file defining code ownership"
-content = """# CODEOWNERS - Defines code ownership for review requirements
-# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
-
-# Global ownership - all files require review from these owners
-* ${context.maintainers}
-"""
+file = "templates/codeowners_template.tmpl"
 
 [templates.governance_template]
 description = "GOVERNANCE.md describing project governance model"
-content = """# Governance
-
-## Overview
-
-This document describes the governance model for $REPO.
-
-## Roles
-
-### Maintainers
-
-Maintainers are responsible for the overall direction and health of the project.
-
-**Current Maintainers:**
-${context.maintainers}
-
-### Contributors
-
-Anyone who contributes code, documentation, or other improvements to the project.
-
-## Decision Making
-
-- **Minor changes**: Can be merged by any maintainer after review
-- **Major changes**: Require discussion and consensus among maintainers
-- **Breaking changes**: Require announcement and community feedback period
-
-## Becoming a Maintainer
-
-Contributors who have made significant contributions may be invited to become
-maintainers. Criteria include:
-
-- Sustained contributions over time
-- Quality of contributions
-- Constructive participation in discussions
-- Alignment with project goals
-
-## Code of Conduct
-
-All participants are expected to follow our Code of Conduct.
-
-## Changes to Governance
-
-Significant changes to governance require consensus among maintainers and should
-be discussed openly before implementation.
-"""
+file = "templates/governance_template.tmpl"
 
 [templates.maintainers_template]
 description = "MAINTAINERS.md listing project maintainers"
-content = """# Maintainers
-
-This document lists the maintainers for $REPO.
-
-## Current Maintainers
-
-${context.maintainers}
-
-## Maintainer Responsibilities
-
-Maintainers are responsible for:
-
-- Reviewing and merging pull requests
-- Triaging issues and feature requests
-- Ensuring code quality and security standards
-- Making release decisions
-- Guiding the project's technical direction
-
-## Becoming a Maintainer
-
-New maintainers are nominated by existing maintainers based on:
-
-- Sustained, high-quality contributions
-- Deep understanding of the codebase
-- Demonstrated commitment to the project
-- Constructive collaboration with the community
-
-## Emeritus Maintainers
-
-Former maintainers who have stepped back from active maintenance:
-
-- (none yet)
-"""
+file = "templates/maintainers_template.tmpl"
 
 [templates.support_template]
 description = "SUPPORT.md describing how to get help"
-content = """# Support
-
-## Getting Help
-
-Thanks for using $REPO! Here are some ways to get help:
-
-### Documentation
-
-- Check the [README](README.md) for basic usage
-- Review any documentation in the `/docs` folder
-
-### Issues
-
-If you've found a bug or have a feature request:
-1. Search [existing issues](https://github.com/$OWNER/$REPO/issues) first
-2. If not found, [open a new issue](https://github.com/$OWNER/$REPO/issues/new)
-
-### Security Issues
-
-**Please do not report security vulnerabilities through public issues.**
-
-See our [Security Policy](SECURITY.md) for responsible disclosure instructions.
-
-## Response Times
-
-This is an open source project. Response times may vary based on
-maintainer availability. We appreciate your patience!
-
-## Contributing
-
-Want to help improve $REPO? See our [Contributing Guide](CONTRIBUTING.md).
-
-## Support Scope
-
-| Version | Status | Support Duration |
-|---------|--------|------------------|
-| latest  | Active | Current release  |
-
-Support includes bug fixes and security patches for supported versions.
-
-## End of Support
-
-When a version reaches end of life (EOL):
-- A deprecation notice will be added to release notes
-- A minimum of 30 days notice will be given before support ends
-- Users are encouraged to upgrade to a supported version
-"""
+file = "templates/support_template.tmpl"
 
 [templates.vex_policy_template]
 description = "VEX policy section for SECURITY.md"
-content = """
-## Vulnerability Exploitability (VEX)
-
-When vulnerabilities are reported in our dependencies that do not affect this project,
-we will provide VEX (Vulnerability Exploitability eXchange) statements explaining why
-the vulnerability is not exploitable in our context.
-
-VEX statements will be published as:
-- GitHub Security Advisories with "not affected" status
-- VEX documents in this repository (when applicable)
-
-For more information about VEX, see:
-- [OpenVEX Specification](https://openvex.dev/)
-- [CISA VEX Guide](https://www.cisa.gov/resources-tools/resources/vulnerability-exploitability-exchange-vex-overview)
-"""
+file = "templates/vex_policy_template.tmpl"
 
 [templates.gitignore_secrets]
 description = "Gitignore patterns for common secret files"
-content = """# Secrets and credentials
-.env
-.env.*
-*.pem
-*.key
-*.p12
-*.pfx
-credentials.json
-.secret*
-*.secrets
-
-# Cloud provider credentials
-.aws/credentials
-.gcp/credentials.json
-.azure/credentials
-"""
+file = "templates/gitignore_secrets.tmpl"
 
 # --- API Payload Templates ---
 
 [templates.mfa_enforcement_payload]
 description = "JSON payload for enabling org-level MFA requirement"
-content = """
-{
-  "two_factor_requirement_enabled": true
-}
-"""
+file = "templates/mfa_enforcement_payload.tmpl"
 
 [templates.allow_forking_payload]
 description = "JSON payload for enabling repository forking"
-content = """
-{
-  "allow_forking": true
-}
-"""
+file = "templates/allow_forking_payload.tmpl"
 
 [templates.branch_deletion_protection_payload]
 description = "JSON payload for branch deletion protection"
-content = """
-{
-  "enforce_admins": true,
-  "required_pull_request_reviews": null,
-  "required_status_checks": null,
-  "restrictions": null,
-  "allow_deletions": false
-}
-"""
+file = "templates/branch_deletion_protection_payload.tmpl"
 
 [templates.repo_visibility_payload]
 description = "JSON payload for making a repository public"
-content = """
-{
-  "private": false
-}
-"""
+file = "templates/repo_visibility_payload.tmpl"
 
 [templates.pr_review_payload]
 description = "JSON payload for requiring PR reviews before merging"
-content = """
-{
-  "enforce_admins": true,
-  "required_pull_request_reviews": {
-    "required_approving_review_count": 1,
-    "dismiss_stale_reviews": true,
-    "require_code_owner_reviews": false
-  },
-  "required_status_checks": null,
-  "restrictions": null,
-  "allow_force_pushes": false,
-  "allow_deletions": false
-}
-"""
+file = "templates/pr_review_payload.tmpl"
 
 [templates.vulnerability_reporting_payload]
 description = "JSON payload for enabling private vulnerability reporting"
-content = """
-{}
-"""
+file = "templates/vulnerability_reporting_payload.tmpl"
 
 # --- CI Workflow Templates ---
 
 [templates.ci_test_workflow]
 description = "Basic CI test workflow for GitHub Actions"
-content = """name: CI Tests
-
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
-
-permissions:
-  contents: read
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
-
-      # TODO: Replace with your project's test command
-      - name: Run tests
-        run: echo "Add your test command here"
-"""
+file = "templates/ci_test_workflow.tmpl"
 
 [templates.ci_python_workflow]
 description = "Python CI workflow with pytest"
-content = """name: CI Tests
-
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
-
-permissions:
-  contents: read
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.11", "3.12"]
-
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
-
-      - name: Run tests
-        run: pytest tests/ -v
-"""
+file = "templates/ci_python_workflow.tmpl"
 
 [templates.ci_node_workflow]
 description = "Node.js CI workflow with npm test"
-content = """name: CI Tests
-
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
-
-permissions:
-  contents: read
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: [18, 20, 22]
-
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
-
-      - name: Set up Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4
-        with:
-          node-version: ${{ matrix.node-version }}
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run tests
-        run: npm test
-"""
+file = "templates/ci_node_workflow.tmpl"
 
 [templates.ci_rust_workflow]
 description = "Rust CI workflow with cargo test"
-content = """name: CI Tests
-
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
-
-permissions:
-  contents: read
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
-
-      - name: Set up Rust
-        uses: actions-rust-lang/setup-rust-toolchain@9399c7bb15d4c7d47b27263d024f0a4978346ba4 # v1
-
-      - name: Run tests
-        run: cargo test --all-features
-
-      - name: Run clippy
-        run: cargo clippy --all-features -- -D warnings
-"""
+file = "templates/ci_rust_workflow.tmpl"
 
 [templates.ci_go_workflow]
 description = "Go CI workflow with go test"
-content = """name: CI Tests
-
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
-
-permissions:
-  contents: read
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
-
-      - name: Set up Go
-        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
-        with:
-          go-version-file: go.mod
-
-      - name: Run tests
-        run: go test -race -coverprofile=coverage.out ./...
-
-      - name: Run vet
-        run: go vet ./...
-"""
+file = "templates/ci_go_workflow.tmpl"
 
 [templates.sbom_workflow]
 description = "SBOM generation workflow using syft (default) or configurable tool"
-content = """name: Generate SBOM
-
-on:
-  release:
-    types: [ published ]
-  workflow_dispatch:
-
-permissions:
-  contents: write
-
-jobs:
-  sbom:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
-
-      - name: Generate SBOM with Syft
-        uses: anchore/sbom-action@28d71544de8eaf1b958d335707167c5f783590ad # v0
-        with:
-          artifact-name: sbom-${{ github.event.release.tag_name || 'snapshot' }}.spdx.json
-          output-file: sbom.spdx.json
-
-      - name: Upload SBOM as release asset
-        if: github.event_name == 'release'
-        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2
-        with:
-          files: sbom.spdx.json
-"""
+file = "templates/sbom_workflow.tmpl"
 
 [templates.sast_workflow]
 description = "SAST scanning workflow using CodeQL (default) or configurable tool"
-content = """name: SAST Scan
-
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
-  schedule:
-    - cron: '0 6 * * 1'  # Weekly on Monday
-
-permissions: {}
-
-jobs:
-  analyze:
-    runs-on: ubuntu-latest
-    permissions:
-      security-events: write
-      contents: read
-      actions: read
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@f5c2471be782132e47a6e6f9c725e56730d6e9a3 # v3
-
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@f5c2471be782132e47a6e6f9c725e56730d6e9a3 # v3
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@f5c2471be782132e47a6e6f9c725e56730d6e9a3 # v3
-"""
+file = "templates/sast_workflow.tmpl"
 
 [templates.sca_workflow]
 description = "SCA dependency scanning workflow for pull requests"
-content = """name: Dependency Review
-
-on:
-  pull_request:
-    branches: [ main ]
-
-permissions:
-  contents: read
-
-jobs:
-  dependency-review:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
-
-      - name: Dependency Review
-        uses: actions/dependency-review-action@3c4e3dcb1aa7874d2c16be7d79418e9b7efd6261 # v4
-        with:
-          fail-on-severity: high
-"""
+file = "templates/sca_workflow.tmpl"
 
 [templates.release_signing_workflow]
 description = "Release signing workflow using GitHub artifact attestation"
-content = """name: Sign Release
-
-on:
-  release:
-    types: [ published ]
-
-permissions:
-  id-token: write
-  contents: read
-  attestations: write
-
-jobs:
-  attest:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
-
-      - name: Generate artifact attestation
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
-        with:
-          subject-path: '.'
-"""
+file = "templates/release_signing_workflow.tmpl"
 
 # --- Policy Document Templates ---
 
 [templates.support_scope_template]
 description = "Support scope section with supported versions and duration"
-content = """# Support Scope
-
-## Supported Versions
-
-| Version | Status | End of Support |
-|---------|--------|----------------|
-| latest  | Active | N/A            |
-
-## Support Duration
-
-- **Active support**: Bug fixes and security patches for the latest release
-- **Security-only**: Critical security patches only for previous releases
-- **End of life**: No further updates
-
-## What Is Supported
-
-- Bug reports for supported versions
-- Security vulnerability reports (see [SECURITY.md](SECURITY.md))
-- Feature requests via GitHub Issues
-
-## What Is Not Supported
-
-- Custom deployments or forks
-- Versions that have reached end of life
-"""
+file = "templates/support_scope_template.tmpl"
 
 [templates.end_of_support_template]
 description = "End-of-support policy with notification and migration guidance"
-content = """# End of Support Policy
-
-## Notification Process
-
-When a version approaches end of support:
-1. A deprecation notice will be added to the README and release notes
-2. An issue will be created tracking the end-of-support timeline
-3. A minimum of **30 days notice** will be given before support ends
-
-## Migration Guidance
-
-When upgrading to a new supported version:
-- Review the CHANGELOG for breaking changes
-- Follow the migration guide (if provided in the release notes)
-- Test thoroughly in a non-production environment first
-
-## After End of Support
-
-- The version's code remains available but will not receive updates
-- Issues filed against unsupported versions may be closed
-- Users are encouraged to upgrade to a supported version
-"""
+file = "templates/end_of_support_template.tmpl"
 
 [templates.dependency_management_template]
 description = "Dependency management policy, update cadence, and vulnerability response"
-content = """# Dependency Management
-
-## Policy
-
-$REPO manages dependencies with the following principles:
-- Dependencies are kept to a minimum
-- All dependencies must have compatible licenses
-- Dependencies are regularly updated
-
-## Update Cadence
-
-- **Security patches**: Applied as soon as possible (within 48 hours for critical)
-- **Minor updates**: Reviewed and applied monthly
-- **Major updates**: Evaluated for compatibility and applied quarterly
-
-## Vulnerability Response
-
-When a vulnerability is discovered in a dependency:
-1. Assess the impact on this project
-2. Apply the fix or upgrade within the timeframe based on severity:
-   - **Critical**: 48 hours
-   - **High**: 7 days
-   - **Medium**: 30 days
-   - **Low**: Next scheduled update
-3. If no fix is available, evaluate workarounds or alternative dependencies
-
-## Tools
-
-- Dependabot or Renovate for automated dependency updates
-- `gh api /repos/$OWNER/$REPO/dependabot/alerts` for vulnerability monitoring
-"""
+file = "templates/dependency_management_template.tmpl"
 
 [templates.sca_policy_template]
 description = "SCA policy with scanning frequency, severity thresholds, and remediation timelines"
-content = """# Software Composition Analysis (SCA) Policy
-
-## Scanning Frequency
-
-- **Every pull request**: Automated dependency review before merge
-- **Daily**: Automated vulnerability scanning of all dependencies
-- **On release**: Full dependency audit before each release
-
-## Severity Thresholds
-
-| Severity | Action Required | Timeline |
-|----------|----------------|----------|
-| Critical | Block merge, immediate fix | 48 hours |
-| High     | Block merge, prioritize fix | 7 days |
-| Medium   | Warning, schedule fix | 30 days |
-| Low      | Informational, fix in next cycle | 90 days |
-
-## Remediation Process
-
-1. Automated alerts from dependency scanning tools
-2. Triage by maintainers to confirm applicability
-3. Apply patch, upgrade, or document as not affected (VEX)
-4. Verify fix does not introduce regressions
-
-## Exceptions
-
-Exceptions to the remediation timelines require:
-- Documented justification
-- Approval from a project maintainer
-- A tracking issue with a planned resolution date
-"""
+file = "templates/sca_policy_template.tmpl"
 
 [templates.sast_policy_template]
 description = "SAST policy with scanning triggers, severity handling, and exception process"
-content = """# Static Application Security Testing (SAST) Policy
-
-## Scanning Triggers
-
-- **Every push to main**: Full SAST scan
-- **Every pull request**: Incremental SAST scan
-- **Weekly schedule**: Comprehensive scan with updated rules
-
-## Severity Handling
-
-| Severity | Action | Timeline |
-|----------|--------|----------|
-| Critical/High | Block merge until resolved | Before merge |
-| Medium | Must be resolved or documented | 30 days |
-| Low | Informational, resolve when convenient | 90 days |
-
-## Supported Tools
-
-This project uses automated SAST scanning in CI/CD. Results are reported
-as GitHub code scanning alerts.
-
-## Exception Process
-
-To request an exception for a SAST finding:
-1. Create an issue documenting the finding and why it is not applicable
-2. Get approval from a project maintainer
-3. Add a suppression comment in the code with a reference to the issue
-4. Review exceptions quarterly to ensure they are still valid
-"""
+file = "templates/sast_policy_template.tmpl"
 
 [templates.security_assessment_template]
 description = "Security assessment process documentation"
-content = """# Security Assessment Process
-
-## Pre-Release Security Review
-
-Before each major release, the following security assessment steps are performed:
-
-### Security Audit Checklist
-
-- [ ] Review all dependencies for known vulnerabilities
-- [ ] Run static analysis security testing (SAST) tools
-- [ ] Check for hardcoded credentials or secrets
-- [ ] Review access control and authentication changes
-- [ ] Verify input validation on new endpoints or user inputs
-
-### Security Review Process
-
-1. A security review issue is created for each major release
-2. At least one maintainer reviews security-relevant changes
-3. All critical and high severity findings must be resolved before release
-4. Security review sign-off is documented in the release notes
-"""
+file = "templates/security_assessment_template.tmpl"
 
 [templates.architecture_template]
 description = "Architecture documentation template with example structure"
-content = """# Architecture
-
-## Overview
-
-This document describes the architecture and design of $REPO, including its major components, the actors that interact with it, and how data flows through the system.
-
-## Components
-
-| Component | Responsibility | Key Files |
-|-----------|---------------|-----------|
-| Core Engine | Main processing logic and orchestration | `src/core/` |
-| Configuration | Loading and validating configuration | `src/config/` |
-| API Layer | External interface (CLI, HTTP, or library API) | `src/api/` |
-| Storage | Data persistence and retrieval | `src/storage/` |
-
-Update this table to reflect the actual components in your project.
-
-## Actors
-
-| Actor | Description | Interactions |
-|-------|-------------|-------------|
-| End User | Primary user of the software | Sends requests via CLI/API, receives results |
-| Administrator | Manages configuration and deployment | Configures system, manages access |
-| CI/CD System | Automated build and deployment pipeline | Triggers builds, runs tests, deploys |
-| External Services | Third-party APIs or dependencies | Provides data or services consumed by the system |
-
-## Data Flow
-
-```
-End User → API Layer → Core Engine → Storage
-                ↓
-         Configuration
-                ↓
-         External Services
-```
-
-1. **Input**: User submits a request through the API layer (CLI, HTTP, or library call)
-2. **Validation**: The API layer validates input parameters and authentication
-3. **Processing**: The core engine processes the request using configured rules
-4. **Storage**: Results are persisted to the storage layer
-5. **Response**: Processed results are returned to the user
-
-## Security Boundaries
-
-- **External boundary**: All user input is validated at the API layer
-- **Internal boundary**: Storage access is mediated through the core engine
-- **Trust boundary**: External service calls use authenticated connections
-"""
+file = "templates/architecture_template.tmpl"
 
 [templates.api_documentation_template]
 description = "API/interface documentation template"
-content = """# API Documentation
-
-## Overview
-
-This document describes the public API and interfaces provided by $REPO.
-
-## Interfaces
-
-### Primary Interface
-
-| Method/Command | Description | Parameters |
-|---------------|-------------|------------|
-| `run` | Execute the main operation | `--input <path>`: Input file path |
-| `config` | Display current configuration | `--format <json or yaml>`: Output format |
-| `version` | Show version information | None |
-
-### Configuration
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `verbose` | `bool` | `false` | Enable verbose output |
-| `output` | `str` | `stdout` | Output destination |
-
-## Usage Examples
-
-### Basic Usage
-
-```bash
-# Example command (update with actual usage)
-$REPO run --input data.json
-```
-
-### Programmatic Usage
-
-```python
-# Example library usage (update with actual API)
-import $REPO
-
-result = $REPO.run(input="data.json")
-print(result)
-```
-
-## Error Handling
-
-| Error Code | Description | Resolution |
-|-----------|-------------|------------|
-| 1 | Invalid input | Check input format and path |
-| 2 | Configuration error | Verify configuration file |
-
-## Authentication
-
-If your project requires authentication, document the method here (API keys, OAuth, etc.).
-"""
+file = "templates/api_documentation_template.tmpl"
 
 [templates.release_verification_template]
 description = "Release author verification instructions"
-content = """# Verifying Releases
-
-## Release Signature Verification
-
-All releases are signed to verify author identity and integrity.
-
-### Verify with GitHub
-
-GitHub releases show a "Verified" badge when the release was created
-by an authorized repository collaborator.
-
-### Verify with Git Tags
-
-Signed tags can be verified using:
-
-```bash
-git tag -v <tag-name>
-```
-
-### Verify with Sigstore (if applicable)
-
-If releases are signed with Sigstore:
-
-```bash
-cosign verify-blob --bundle <release>.bundle <release-artifact>
-```
-
-For more information about Sigstore, see: https://www.sigstore.dev/
-"""
+file = "templates/release_verification_template.tmpl"
 
 # --- Secrets & Testing Policy Templates ---
 
 [templates.secrets_management_policy]
 description = "Secrets management policy section for SECURITY.md"
-content = """# Secrets Management Policy
-
-## Credential Handling
-
-- **No secrets in source**: Secrets, API keys, tokens, and credentials MUST NOT be
-  committed to version control, even temporarily.
-- **Environment-based injection**: All secrets are injected at runtime via environment
-  variables or mounted secret volumes.
-
-## CI/CD Secrets
-
-- GitHub Actions secrets or an external vault service (e.g., HashiCorp Vault) are used
-  for all CI/CD credentials.
-- Secrets are scoped to the minimum required environment (repository, environment, or
-  organization level).
-
-## Rotation & Revocation
-
-- **Rotation schedule**: Long-lived credentials are rotated at least every 90 days.
-- **Incident response**: Compromised credentials are revoked immediately and rotated
-  before re-use.
-- **Short-lived tokens**: Prefer OIDC tokens and short-lived credentials over long-lived
-  secrets wherever supported.
-
-## Review
-
-This policy is reviewed annually or when a security incident involving credentials occurs.
-"""
+file = "templates/secrets_management_policy.tmpl"
 
 [templates.testing_instructions]
 description = "Testing instructions section for README or CONTRIBUTING"
-content = """# Testing
-
-## Running Tests
-
-```bash
-# Run the full test suite
-# TODO: Replace with your project's test command
-make test
-```
-
-## Test Requirements
-
-- All pull requests must include tests for new functionality
-- Bug fixes should include a regression test
-- Tests must pass in CI before a pull request can be merged
-
-## Writing Tests
-
-- Place tests alongside the code they test, or in a dedicated `tests/` directory
-- Follow existing test patterns and naming conventions
-- Aim for meaningful coverage of critical paths and edge cases
-"""
+file = "templates/testing_instructions.tmpl"
 
 [templates.testing_python]
 description = "Testing instructions for Python projects"
-content = """# Testing
-
-## Prerequisites
-
-- Python 3.11 or later
-- Install development dependencies:
-
-```bash
-pip install -e ".[dev]"
-# or with uv:
-uv pip install -e ".[dev]"
-```
-
-## Running Tests
-
-```bash
-# Run the full test suite
-pytest tests/ -v
-
-# Run with coverage
-pytest tests/ --cov --cov-report=term-missing
-
-# Run a specific test file
-pytest tests/test_example.py -v
-
-# Run tests matching a pattern
-pytest tests/ -k "test_pattern" -v
-```
-
-## Test Requirements
-
-- All pull requests must include tests for new functionality
-- Bug fixes should include a regression test
-- Tests must pass in CI before a pull request can be merged
-
-## Writing Tests
-
-- Place tests in the `tests/` directory
-- Follow existing test patterns and naming conventions
-- Use pytest fixtures for shared test setup
-- Aim for meaningful coverage of critical paths and edge cases
-"""
+file = "templates/testing_python.tmpl"
 
 [templates.testing_node]
 description = "Testing instructions for Node.js projects"
-content = """# Testing
-
-## Prerequisites
-
-- Node.js 18 or later
-- Install dependencies:
-
-```bash
-npm ci
-```
-
-## Running Tests
-
-```bash
-# Run the full test suite
-npm test
-
-# Run with coverage
-npm run test:coverage
-
-# Run in watch mode during development
-npm run test:watch
-
-# Run a specific test file
-npx jest tests/example.test.js
-```
-
-## Test Requirements
-
-- All pull requests must include tests for new functionality
-- Bug fixes should include a regression test
-- Tests must pass in CI before a pull request can be merged
-
-## Writing Tests
-
-- Place tests alongside source files (`*.test.js` / `*.spec.js`) or in a `tests/` directory
-- Follow existing test patterns and naming conventions
-- Use describe/it blocks to organize test cases
-- Aim for meaningful coverage of critical paths and edge cases
-"""
+file = "templates/testing_node.tmpl"
 
 [templates.testing_rust]
 description = "Testing instructions for Rust projects"
-content = """# Testing
-
-## Prerequisites
-
-- Rust stable toolchain (install via [rustup](https://rustup.rs/))
-
-## Running Tests
-
-```bash
-# Run the full test suite
-cargo test
-
-# Run with all features enabled
-cargo test --all-features
-
-# Run a specific test
-cargo test test_name
-
-# Run tests with output shown
-cargo test -- --nocapture
-
-# Run only integration tests
-cargo test --test '*'
-
-# Run benchmarks (nightly)
-cargo bench
-```
-
-## Test Requirements
-
-- All pull requests must include tests for new functionality
-- Bug fixes should include a regression test
-- Tests must pass in CI before a pull request can be merged
-
-## Writing Tests
-
-- Place unit tests in the same file as the code using `#[cfg(test)]` modules
-- Place integration tests in the `tests/` directory
-- Use `#[test]` attribute for test functions
-- Aim for meaningful coverage of critical paths and edge cases
-"""
+file = "templates/testing_rust.tmpl"
 
 [templates.testing_go]
 description = "Testing instructions for Go projects"
-content = """# Testing
-
-## Prerequisites
-
-- Go 1.21 or later
-
-## Running Tests
-
-```bash
-# Run the full test suite
-go test ./...
-
-# Run with verbose output
-go test -v ./...
-
-# Run with race detector
-go test -race ./...
-
-# Run with coverage
-go test -coverprofile=coverage.out ./...
-go tool cover -html=coverage.out
-
-# Run a specific test
-go test -run TestName ./...
-
-# Run benchmarks
-go test -bench=. ./...
-```
-
-## Test Requirements
-
-- All pull requests must include tests for new functionality
-- Bug fixes should include a regression test
-- Tests must pass in CI before a pull request can be merged
-
-## Writing Tests
-
-- Place tests in `*_test.go` files alongside the source code
-- Follow Go testing conventions (`TestXxx`, `BenchmarkXxx`)
-- Use table-driven tests for parameterized testing
-- Aim for meaningful coverage of critical paths and edge cases
-"""
+file = "templates/testing_go.tmpl"
 
 [templates.test_requirements_contributing]
 description = "Test requirements section for CONTRIBUTING.md"
-content = """# Test Requirements for Contributions
-
-## Before Submitting a Pull Request
-
-All contributions must include appropriate tests:
-
-1. **New features**: Include unit tests covering the main functionality and edge cases
-2. **Bug fixes**: Include a regression test that reproduces the bug and verifies the fix
-3. **Refactoring**: Ensure existing tests still pass; add tests if coverage gaps are found
-
-## Running Tests Locally
-
-```bash
-# Run the full test suite before submitting
-# TODO: Replace with your project's test command
-make test
-```
-
-## CI Checks
-
-- All pull requests are automatically tested in CI
-- Tests must pass before a pull request can be merged
-- Maintainers may request additional test coverage during review
-"""
+file = "templates/test_requirements_contributing.tmpl"
 
 # =============================================================================
 # Context Definitions (Interactive Context Collection)

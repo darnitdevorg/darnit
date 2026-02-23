@@ -471,6 +471,16 @@ def _apply_declarative_remediation(
         except Exception:
             pass  # Context loading is best-effort
 
+        # Resolve framework TOML path for template file resolution
+        fw_path: str | None = None
+        try:
+            from darnit_baseline import get_framework_path
+            p = get_framework_path()
+            if p:
+                fw_path = str(p)
+        except Exception:
+            pass
+
         # Create executor with templates and context
         executor = RemediationExecutor(
             local_path=local_path,
@@ -478,6 +488,7 @@ def _apply_declarative_remediation(
             repo=repo,
             templates=templates or {},
             context_values=context_values,
+            framework_path=fw_path,
         )
 
         # Execute the remediation

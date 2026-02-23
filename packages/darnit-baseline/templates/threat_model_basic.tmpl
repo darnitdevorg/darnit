@@ -1,0 +1,45 @@
+# Threat Model — $REPO
+
+## Overview
+
+This document identifies potential security threats to $REPO using the STRIDE methodology and documents mitigations for each threat category.
+
+**Scope**: This threat model covers the core application, its APIs, data storage, and interactions with external services.
+
+## Assets
+
+| Asset | Sensitivity | Description |
+|-------|------------|-------------|
+| User credentials | High | Authentication tokens, API keys, passwords |
+| Application data | Medium | Data processed and stored by the application |
+| Configuration | Medium | Application settings, environment variables |
+| Source code | Medium | Repository contents and build artifacts |
+| CI/CD pipeline | High | Build and deployment infrastructure |
+
+## Threat Analysis (STRIDE)
+
+| Category | Threat | Likelihood | Impact | Mitigation |
+|----------|--------|-----------|--------|------------|
+| **Spoofing** | Attacker impersonates a user via stolen credentials | Medium | High | Enforce MFA, use short-lived tokens, validate session integrity |
+| **Spoofing** | Forged commits appear to come from a maintainer | Low | High | Require signed commits, verify committer identity |
+| **Tampering** | Attacker modifies data in transit | Medium | High | Use TLS for all connections, validate data integrity |
+| **Tampering** | Malicious dependency injected via supply chain | Medium | Critical | Pin dependencies, use lockfiles, enable dependency scanning |
+| **Repudiation** | User denies performing a destructive action | Low | Medium | Maintain audit logs, require authenticated actions |
+| **Info Disclosure** | Secrets exposed in logs or error messages | Medium | High | Sanitize log output, use secret scanning, avoid verbose errors |
+| **Info Disclosure** | Sensitive data leaked via API response | Medium | High | Implement response filtering, minimize data exposure |
+| **Denial of Service** | Resource exhaustion via unbounded input | Medium | Medium | Implement rate limiting, validate input size, set timeouts |
+| **Elevation of Privilege** | User escalates to admin via insecure defaults | Low | Critical | Apply principle of least privilege, validate authorization on every request |
+
+## Mitigations Summary
+
+1. **Authentication**: Enforce MFA, use short-lived tokens, require signed commits
+2. **Data Protection**: TLS everywhere, sanitize logs, filter API responses
+3. **Supply Chain**: Pin dependencies, use lockfiles, enable automated scanning
+4. **Access Control**: Least privilege, validate authorization, audit access
+5. **Availability**: Rate limiting, input validation, resource quotas
+
+## References
+
+- [STRIDE Threat Model](https://learn.microsoft.com/en-us/azure/security/develop/threat-modeling-tool-threats)
+- [OpenSSF Baseline](https://baseline.openssf.org)
+- [OWASP Threat Modeling](https://owasp.org/www-community/Threat_Modeling)

@@ -1,0 +1,41 @@
+# Testing
+
+## Prerequisites
+
+- Python 3.11 or later
+- Install development dependencies:
+
+```bash
+pip install -e ".[dev]"
+# or with uv:
+uv pip install -e ".[dev]"
+```
+
+## Running Tests
+
+```bash
+# Run the full test suite
+pytest tests/ -v
+
+# Run with coverage
+pytest tests/ --cov --cov-report=term-missing
+
+# Run a specific test file
+pytest tests/test_example.py -v
+
+# Run tests matching a pattern
+pytest tests/ -k "test_pattern" -v
+```
+
+## Test Requirements
+
+- All pull requests must include tests for new functionality
+- Bug fixes should include a regression test
+- Tests must pass in CI before a pull request can be merged
+
+## Writing Tests
+
+- Place tests in the `tests/` directory
+- Follow existing test patterns and naming conventions
+- Use pytest fixtures for shared test setup
+- Aim for meaningful coverage of critical paths and edge cases
