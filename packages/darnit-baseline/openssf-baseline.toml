@@ -1428,7 +1428,7 @@ pass_if_any = true
 [controls."OSPS-LE-01.01".passes.pattern.patterns]
 copyright_and_grant = '(?si)copyright.{0,100}(permission|license|grant|redistribu|free)'
 spdx_identifier = '(?i)SPDX-License-Identifier:\s*\S+'
-known_license_header = '(?i)(MIT License|Apache License|GNU General Public|BSD \d-Clause|Mozilla Public|ISC License)'
+known_license_with_body = '(?si)(MIT License|Apache License|GNU General Public|BSD \d-Clause|Mozilla Public|ISC License).{100,}'
 
 [[controls."OSPS-LE-01.01".passes]]
 handler = "manual"
@@ -1447,21 +1447,21 @@ strategy = "first_match"
 handler = "file_create"
 path = "LICENSE"
 template = "license_apache"
-overwrite = false
+overwrite = true
 when = { license_type = "apache-2.0" }
 
 [[controls."OSPS-LE-01.01".remediation.handlers]]
 handler = "file_create"
 path = "LICENSE"
 template = "license_bsd3"
-overwrite = false
+overwrite = true
 when = { license_type = "bsd-3-clause" }
 
 [[controls."OSPS-LE-01.01".remediation.handlers]]
 handler = "file_create"
 path = "LICENSE"
 template = "license_mit"
-overwrite = false
+overwrite = true
 
 [controls."OSPS-LE-01.01".remediation.project_update]
 set = { "legal.license.path" = "LICENSE" }
@@ -1486,13 +1486,22 @@ help_md = """Use an OSI-approved open source license.
 - [OSI Approved Licenses](https://opensource.org/licenses)
 """
 
+# Local check: Look for SPDX identifier in project files (no API needed)
+[[controls."OSPS-LE-02.01".passes]]
+handler = "regex"
+files = ["LICENSE*", "COPYING*", "NOTICE*", "package.json", "pyproject.toml", "Cargo.toml", "go.mod"]
+patterns = ['(?i)(SPDX-License-Identifier\s*:\s*\S+|"license"\s*:\s*"[^"]+"|license\s*=\s*"[^"]+"|License\s*::\s*OSI)']
+pass_if_any = true
+expr = 'output.any_match'
+description = "Check for SPDX license identifier in project files"
+
+# Fallback: Check via GitHub API if local check is inconclusive
 [[controls."OSPS-LE-02.01".passes]]
 handler = "exec"
 command = ["gh", "api", "/repos/$OWNER/$REPO", "--jq", ".license.spdx_id // \"none\""]
 pass_exit_codes = [0]
 fail_exit_codes = [1]
 output_format = "text"
-# Match common OSI-approved licenses (case-insensitive handled by spdx_id)
 expr = 'output.stdout.matches("^(MIT|Apache-2\\.0|GPL-[23]\\.0|LGPL-[23]\\.[01]|BSD-[23]-Clause|MPL-2\\.0|ISC|Unlicense|0BSD|AGPL-3\\.0|EPL-[12]\\.0|CC0-1\\.0)\\n?$")'
 timeout = 30
 
@@ -1503,6 +1512,32 @@ steps = [
     "Check license badge in repository sidebar",
     "Verify license is OSI-approved at https://opensource.org/licenses",
 ]
+
+[controls."OSPS-LE-02.01".remediation]
+safe = true
+dry_run_supported = true
+strategy = "first_match"
+description = "Add SPDX license identifier to LICENSE file header"
+
+[[controls."OSPS-LE-02.01".remediation.handlers]]
+handler = "file_create"
+path = "LICENSE"
+template = "license_apache"
+overwrite = false
+when = { license_type = "apache-2.0" }
+
+[[controls."OSPS-LE-02.01".remediation.handlers]]
+handler = "file_create"
+path = "LICENSE"
+template = "license_bsd3"
+overwrite = false
+when = { license_type = "bsd-3-clause" }
+
+[[controls."OSPS-LE-02.01".remediation.handlers]]
+handler = "file_create"
+path = "LICENSE"
+template = "license_mit"
+overwrite = false
 
 [controls."OSPS-LE-02.02"]
 name = "ReleaseLicense"
@@ -1561,12 +1596,12 @@ kind = "file"
 handler = "file_exists"
 use_locator = true
 
-# Content validation: LICENSE should contain license-related terms
+# Content validation: LICENSE should contain actual license grant language
 [[controls."OSPS-LE-03.01".passes]]
 handler = "regex"
 file = "$FOUND_FILE"
-pattern = '(?i)(permission|license|copyright|warranty)'
-min_matches = 1
+pattern = '(?i)(licensed under|permission is hereby granted|redistribute|subject to the terms|provided "as is"|without warranty)'
+min_matches = 2
 
 [[controls."OSPS-LE-03.01".passes]]
 handler = "manual"
@@ -1575,6 +1610,31 @@ steps = [
     "Verify a LICENSE or COPYING file exists",
     "Confirm the file contains complete license text",
 ]
+
+[controls."OSPS-LE-03.01".remediation]
+safe = true
+dry_run_supported = true
+strategy = "first_match"
+
+[[controls."OSPS-LE-03.01".remediation.handlers]]
+handler = "file_create"
+path = "LICENSE"
+template = "license_apache"
+overwrite = false
+when = { license_type = "apache-2.0" }
+
+[[controls."OSPS-LE-03.01".remediation.handlers]]
+handler = "file_create"
+path = "LICENSE"
+template = "license_bsd3"
+overwrite = false
+when = { license_type = "bsd-3-clause" }
+
+[[controls."OSPS-LE-03.01".remediation.handlers]]
+handler = "file_create"
+path = "LICENSE"
+template = "license_mit"
+overwrite = false
 
 [controls."OSPS-LE-03.02"]
 name = "LicenseInReleases"
@@ -1599,7 +1659,7 @@ handler = "exec"
 command = ["gh", "release", "view", "--json", "assets"]
 pass_exit_codes = [0]
 output_format = "json"
-expr = 'size(output.json.assets) > 0'
+expr = 'output.json.assets.exists(a, a.name.matches("(?i)^(license|copying|notice)"))'
 timeout = 30
 
 [[controls."OSPS-LE-03.02".passes]]

@@ -7,6 +7,7 @@ from darnit.context.auto_detect import (
     collect_auto_context,
     detect_ci_provider,
     detect_languages,
+    detect_license_type,
     detect_platform,
     detect_primary_language,
 )
@@ -163,6 +164,73 @@ class TestDetectLanguages:
         (tmp_path / "pom.xml").write_text("<project/>")
         (tmp_path / "build.gradle").write_text("plugins {}")
         assert detect_languages(str(tmp_path)) == ["java"]
+
+
+class TestDetectLicenseType:
+    def test_apache(self, tmp_path):
+        (tmp_path / "LICENSE").write_text("Apache License\nVersion 2.0, January 2004")
+        assert detect_license_type(str(tmp_path)) == "apache-2.0"
+
+    def test_mit(self, tmp_path):
+        (tmp_path / "LICENSE").write_text("MIT License\n\nCopyright (c) 2024")
+        assert detect_license_type(str(tmp_path)) == "mit"
+
+    def test_mit_permission_grant(self, tmp_path):
+        (tmp_path / "LICENSE").write_text(
+            "Permission is hereby granted, free of charge, to any person"
+        )
+        assert detect_license_type(str(tmp_path)) == "mit"
+
+    def test_bsd_3_clause(self, tmp_path):
+        (tmp_path / "LICENSE").write_text("BSD 3-Clause License\n\nRedistribution")
+        assert detect_license_type(str(tmp_path)) == "bsd-3-clause"
+
+    def test_gpl(self, tmp_path):
+        (tmp_path / "LICENSE").write_text("GNU General Public License\nVersion 3")
+        assert detect_license_type(str(tmp_path)) == "gpl"
+
+    def test_isc(self, tmp_path):
+        (tmp_path / "LICENSE").write_text("ISC License\n\nCopyright (c) 2024")
+        assert detect_license_type(str(tmp_path)) == "isc"
+
+    def test_mpl(self, tmp_path):
+        (tmp_path / "LICENSE").write_text("Mozilla Public License Version 2.0")
+        assert detect_license_type(str(tmp_path)) == "mpl-2.0"
+
+    def test_lgpl(self, tmp_path):
+        (tmp_path / "LICENSE").write_text("GNU Lesser General Public License\nVersion 2.1")
+        assert detect_license_type(str(tmp_path)) == "lgpl"
+
+    def test_unlicense(self, tmp_path):
+        (tmp_path / "LICENSE").write_text("The Unlicense\n\nThis is free and unencumbered")
+        assert detect_license_type(str(tmp_path)) == "unlicense"
+
+    def test_unlicense_alt_header(self, tmp_path):
+        (tmp_path / "LICENSE").write_text(
+            "This is free and unencumbered software released into the public domain."
+        )
+        assert detect_license_type(str(tmp_path)) == "unlicense"
+
+    def test_no_license_file(self, tmp_path):
+        assert detect_license_type(str(tmp_path)) is None
+
+    def test_unrecognized_content(self, tmp_path):
+        (tmp_path / "LICENSE").write_text("Some proprietary license text here.")
+        assert detect_license_type(str(tmp_path)) is None
+
+    def test_license_md_fallback(self, tmp_path):
+        (tmp_path / "LICENSE.md").write_text("# MIT License\n\nCopyright (c) 2024")
+        assert detect_license_type(str(tmp_path)) == "mit"
+
+    def test_license_txt_fallback(self, tmp_path):
+        (tmp_path / "LICENSE.txt").write_text("Apache License\nVersion 2.0")
+        assert detect_license_type(str(tmp_path)) == "apache-2.0"
+
+    def test_prefers_license_over_license_md(self, tmp_path):
+        """LICENSE file takes precedence over LICENSE.md."""
+        (tmp_path / "LICENSE").write_text("Apache License\nVersion 2.0")
+        (tmp_path / "LICENSE.md").write_text("# MIT License")
+        assert detect_license_type(str(tmp_path)) == "apache-2.0"
 
 
 class TestCollectAutoContext:

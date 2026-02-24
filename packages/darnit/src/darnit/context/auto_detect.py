@@ -168,11 +168,12 @@ def detect_languages(local_path: str) -> list[str]:
 def detect_license_type(local_path: str) -> str | None:
     """Detect license type from LICENSE file content.
 
-    Reads the first 500 characters of the LICENSE file and pattern-matches
+    Reads the first 1000 characters of the LICENSE file and pattern-matches
     against known license headers.
 
     Returns:
-        "apache-2.0", "mit", "bsd-3-clause", "gpl", or None if unknown.
+        "apache-2.0", "mit", "bsd-3-clause", "gpl", "isc", "mpl-2.0",
+        "lgpl", "unlicense", or None if unknown.
     """
     license_path = Path(local_path) / "LICENSE"
     if not license_path.is_file():
@@ -186,7 +187,7 @@ def detect_license_type(local_path: str) -> str | None:
             return None
 
     try:
-        content = license_path.read_text(encoding="utf-8", errors="replace")[:500]
+        content = license_path.read_text(encoding="utf-8", errors="replace")[:1000]
     except OSError:
         return None
 
@@ -197,8 +198,16 @@ def detect_license_type(local_path: str) -> str | None:
         return "mit"
     if "bsd 3-clause" in content_lower or "bsd-3-clause" in content_lower:
         return "bsd-3-clause"
+    if "isc license" in content_lower:
+        return "isc"
+    if "mozilla public license" in content_lower:
+        return "mpl-2.0"
+    if "gnu lesser general public license" in content_lower:
+        return "lgpl"
     if "gnu general public license" in content_lower:
         return "gpl"
+    if "the unlicense" in content_lower or "this is free and unencumbered software" in content_lower:
+        return "unlicense"
 
     return None
 
