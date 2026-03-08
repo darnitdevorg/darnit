@@ -9,6 +9,8 @@ Context variable naming convention:
 - project.security.* - Security section fields
 - project.governance.* - Governance section fields
 - project.maintainers - Maintainer list
+- project.maintainer_teams - Team-based maintainer data
+- project.security.advisory_url - Advisory URL from struct contact
 
 Example:
     from darnit.context.dot_project_mapper import DotProjectMapper
@@ -27,7 +29,13 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from darnit.context.dot_project import DotProjectReader, ProjectConfig
+from darnit.context.dot_project import (
+    DotProjectReader,
+    ProjectConfig,
+    SecurityContact,
+)
+from darnit.context.dot_project_merger import merge_configs
+from darnit.context.dot_project_org import OrgProjectResolver
 
 logger = logging.getLogger(__name__)
 
@@ -37,24 +45,41 @@ class DotProjectMapper:
 
     This class reads .project/ files and flattens them into a dictionary
     of context variables that can be injected into the sieve pipeline.
+
+    When an ``owner`` is provided, the mapper also resolves the org-level
+    ``.project`` repository and merges it with the local config.
     """
 
-    def __init__(self, repo_path: str | Path):
+    def __init__(self, repo_path: str | Path, *, owner: str = ""):
         """Initialize mapper with repository path.
 
         Args:
             repo_path: Path to the repository root
+            owner: GitHub org/user for org-level .project resolution
         """
         self.repo_path = Path(repo_path)
+        self.owner = owner
         self.reader = DotProjectReader(repo_path)
         self._config: ProjectConfig | None = None
         self._context: dict[str, Any] | None = None
 
     @property
     def config(self) -> ProjectConfig:
-        """Get the parsed .project/ configuration."""
+        """Get the parsed .project/ configuration (merged with org if available)."""
         if self._config is None:
-            self._config = self.reader.read()
+            local_config = self.reader.read()
+
+            # Resolve and merge org-level config if owner is provided
+            if self.owner:
+                try:
+                    resolver = OrgProjectResolver()
+                    org_config = resolver.resolve(self.owner)
+                    self._config = merge_configs(org_config, local_config)
+                except Exception as e:
+                    logger.warning("Org .project resolution failed: %s", e)
+                    self._config = local_config
+            else:
+                self._config = local_config
         return self._config
 
     def get_context(self) -> dict[str, Any]:
@@ -96,6 +121,16 @@ class DotProjectMapper:
         # Maintainers (high priority for remediation)
         if config.maintainers:
             context["project.maintainers"] = config.maintainers
+
+        # Structured maintainer data
+        if config.maintainer_org:
+            context["project.maintainer_org"] = config.maintainer_org
+        if config.maintainer_project_id:
+            context["project.maintainer_project_id"] = config.maintainer_project_id
+        if config.maintainer_teams:
+            team_names = [t.name for t in config.maintainer_teams if t.name]
+            if team_names:
+                context["project.maintainer_teams"] = team_names
 
         # Security section
         if config.security:
@@ -143,7 +178,18 @@ class DotProjectMapper:
         if security.threat_model:
             context["project.security.threat_model_path"] = security.threat_model.path
         if security.contact:
-            context["project.security.contact"] = security.contact
+            if isinstance(security.contact, SecurityContact):
+                # Struct format: emit email and advisory_url separately
+                if security.contact.email:
+                    context["project.security.contact"] = security.contact.email
+                    context["project.security.contact_email"] = security.contact.email
+                if security.contact.advisory_url:
+                    context["project.security.advisory_url"] = (
+                        security.contact.advisory_url
+                    )
+            else:
+                # Legacy plain string format
+                context["project.security.contact"] = security.contact
 
         # Include any extra fields
         for key, value in security._extra.items():

@@ -48,6 +48,43 @@ class FileReference:
 
 
 @dataclass
+class MaintainerEntry:
+    """Individual maintainer with optional structured fields.
+
+    Supports both simple handles and the CNCF structured format
+    with handle, email, role, and title.
+    """
+
+    handle: str = ""
+    email: str = ""
+    role: str = ""
+    title: str = ""
+    name: str = ""
+
+    # Allow unknown fields for forward compatibility
+    _extra: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class MaintainerTeam:
+    """Team-based maintainer grouping from CNCF teams format.
+
+    Used in maintainers.yaml with the structure:
+    teams:
+      - name: "maintainers"
+        members:
+          - handle: "@alice"
+            email: "alice@example.com"
+    """
+
+    name: str = ""
+    members: list[MaintainerEntry] = field(default_factory=list)
+
+    # Allow unknown fields for forward compatibility
+    _extra: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class MaintainerLifecycle:
     """Maintainer lifecycle configuration."""
 
@@ -85,12 +122,27 @@ class LandscapeConfig:
 
 
 @dataclass
+class SecurityContact:
+    """Security contact information.
+
+    Supports both the CNCF struct format (email + advisory_url)
+    and the legacy plain-string format for backward compatibility.
+    """
+
+    email: str = ""
+    advisory_url: str = ""
+
+    # Allow unknown fields for forward compatibility
+    _extra: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class SecurityConfig:
     """Security section of .project/project.yaml."""
 
     policy: FileReference | None = None
     threat_model: FileReference | None = None
-    contact: str | None = None
+    contact: SecurityContact | str | None = None
 
     # Allow unknown fields for forward compatibility
     _extra: dict[str, Any] = field(default_factory=dict)
@@ -225,6 +277,12 @@ class ProjectConfig:
     # Maintainers (from project.yaml or maintainers.yaml)
     maintainers: list[str] = field(default_factory=list)
 
+    # Structured maintainer data (teams format from CNCF)
+    maintainer_teams: list[MaintainerTeam] = field(default_factory=list)
+    maintainer_entries: list[MaintainerEntry] = field(default_factory=list)
+    maintainer_org: str = ""
+    maintainer_project_id: str = ""
+
     # Allow unknown fields for forward compatibility
     _extra: dict[str, Any] = field(default_factory=dict)
 
@@ -298,9 +356,7 @@ class DotProjectReader:
 
             # Also check for maintainers.yaml
             if self.maintainers_yaml.exists():
-                maintainers = self._read_maintainers()
-                if maintainers:
-                    config.maintainers = maintainers
+                self._read_maintainers_into(config)
 
             # Validate and log warnings for missing required fields
             is_valid, missing = config.is_valid()
@@ -319,8 +375,13 @@ class DotProjectReader:
             logger.error("Failed to parse .project/project.yaml: %s", e)
             raise ValueError(f"Failed to parse .project/project.yaml: {e}") from e
 
-    def _read_maintainers(self) -> list[str]:
-        """Read maintainers from maintainers.yaml."""
+    def _read_maintainers_into(self, config: ProjectConfig) -> None:
+        """Read maintainers from maintainers.yaml into config.
+
+        Populates both the flat maintainers list (handles) and structured
+        fields (maintainer_entries, maintainer_teams, maintainer_org,
+        maintainer_project_id) when available.
+        """
         try:
             from ruamel.yaml import YAML
 
@@ -329,43 +390,126 @@ class DotProjectReader:
                 data = yaml.load(f)
 
             if data is None:
-                return []
+                return
 
-            # Extract maintainer handles from various formats
-            maintainers = []
+            # Format 1: Plain list of strings or dicts
             if isinstance(data, list):
-                for entry in data:
-                    if isinstance(entry, str):
-                        maintainers.append(self._normalize_handle(entry))
-                    elif isinstance(entry, dict) and "handle" in entry:
-                        maintainers.append(self._normalize_handle(entry["handle"]))
-            elif isinstance(data, dict):
-                # Check for nested maintainers list
-                if "maintainers" in data:
-                    return self._extract_maintainers(data["maintainers"])
-                if "project-maintainers" in data:
-                    return self._extract_maintainers(data["project-maintainers"])
+                handles, entries = self._extract_maintainer_entries(data)
+                if handles:
+                    config.maintainers = handles
+                if entries:
+                    config.maintainer_entries = entries
+                return
 
-            return maintainers
+            if not isinstance(data, dict):
+                return
+
+            # Format 2: CNCF teams-based format
+            # {project_id, org, teams: [{name, members: [{handle, ...}]}]}
+            if "teams" in data:
+                config.maintainer_project_id = str(data.get("project_id", ""))
+                config.maintainer_org = str(data.get("org", ""))
+                teams = self._parse_maintainer_teams(data["teams"])
+                config.maintainer_teams = teams
+                # Also flatten to handles list for backward compat
+                all_handles = []
+                all_entries = []
+                for team in teams:
+                    for member in team.members:
+                        if member.handle and member.handle not in all_handles:
+                            all_handles.append(member.handle)
+                        all_entries.append(member)
+                if all_handles:
+                    config.maintainers = all_handles
+                if all_entries:
+                    config.maintainer_entries = all_entries
+                return
+
+            # Format 3: Dict with nested maintainers list
+            if "maintainers" in data:
+                handles, entries = self._extract_maintainer_entries(data["maintainers"])
+                if handles:
+                    config.maintainers = handles
+                if entries:
+                    config.maintainer_entries = entries
+                return
+            if "project-maintainers" in data:
+                handles, entries = self._extract_maintainer_entries(
+                    data["project-maintainers"]
+                )
+                if handles:
+                    config.maintainers = handles
+                if entries:
+                    config.maintainer_entries = entries
+                return
 
         except Exception as e:
             logger.warning("Failed to read maintainers.yaml: %s", e)
-            return []
 
-    def _extract_maintainers(self, data: Any) -> list[str]:
-        """Extract maintainer handles from various data structures."""
-        if isinstance(data, list):
-            maintainers = []
-            for entry in data:
-                if isinstance(entry, str):
-                    maintainers.append(self._normalize_handle(entry))
-                elif isinstance(entry, dict):
-                    if "handle" in entry:
-                        maintainers.append(self._normalize_handle(entry["handle"]))
-                    elif "github" in entry:
-                        maintainers.append(self._normalize_handle(entry["github"]))
-            return maintainers
-        return []
+    def _extract_maintainer_entries(
+        self, data: Any
+    ) -> tuple[list[str], list[MaintainerEntry]]:
+        """Extract maintainer handles and entries from a list.
+
+        Returns:
+            Tuple of (flat handles list, structured entries list)
+        """
+        handles: list[str] = []
+        entries: list[MaintainerEntry] = []
+        if not isinstance(data, list):
+            return handles, entries
+
+        for item in data:
+            if isinstance(item, str):
+                handle = self._normalize_handle(item)
+                handles.append(handle)
+                entries.append(MaintainerEntry(handle=handle))
+            elif isinstance(item, dict):
+                entry = self._parse_maintainer_entry(item)
+                if entry.handle:
+                    handles.append(entry.handle)
+                entries.append(entry)
+        return handles, entries
+
+    def _parse_maintainer_entry(self, data: dict[str, Any]) -> MaintainerEntry:
+        """Parse a single maintainer entry from a dict."""
+        known = {"handle", "email", "role", "title", "name", "github"}
+        handle = data.get("handle", "") or data.get("github", "")
+        entry = MaintainerEntry(
+            handle=self._normalize_handle(handle) if handle else "",
+            email=data.get("email", ""),
+            role=data.get("role", ""),
+            title=data.get("title", ""),
+            name=data.get("name", ""),
+        )
+        for key, value in data.items():
+            if key not in known:
+                entry._extra[key] = value
+        return entry
+
+    def _parse_maintainer_teams(self, data: list) -> list[MaintainerTeam]:
+        """Parse teams array from CNCF teams-based maintainers format."""
+        teams: list[MaintainerTeam] = []
+        for team_data in data:
+            if not isinstance(team_data, dict):
+                continue
+            known = {"name", "members"}
+            members: list[MaintainerEntry] = []
+            for member_data in team_data.get("members", []):
+                if isinstance(member_data, dict):
+                    members.append(self._parse_maintainer_entry(member_data))
+                elif isinstance(member_data, str):
+                    handle = self._normalize_handle(member_data)
+                    members.append(MaintainerEntry(handle=handle))
+            team = MaintainerTeam(
+                name=team_data.get("name", ""),
+                members=members,
+            )
+            for key, value in team_data.items():
+                if key not in known:
+                    team._extra[key] = value
+            teams.append(team)
+        return teams
 
     def _normalize_handle(self, handle: str) -> str:
         """Normalize a maintainer handle (strip @ and whitespace)."""
@@ -474,12 +618,35 @@ class DotProjectReader:
         config = SecurityConfig(
             policy=self._parse_file_reference(data.get("policy")),
             threat_model=self._parse_file_reference(data.get("threat_model")),
-            contact=data.get("contact"),
+            contact=self._parse_security_contact(data.get("contact")),
         )
         for key, value in data.items():
             if key not in known:
                 config._extra[key] = value
         return config
+
+    def _parse_security_contact(self, data: Any) -> SecurityContact | str | None:
+        """Parse security contact from various formats.
+
+        Supports:
+        - Plain string: "security@example.com"
+        - CNCF struct: {email: "...", advisory_url: "..."}
+        """
+        if data is None:
+            return None
+        if isinstance(data, str):
+            return data
+        if isinstance(data, dict):
+            known = {"email", "advisory_url"}
+            contact = SecurityContact(
+                email=data.get("email", ""),
+                advisory_url=data.get("advisory_url", ""),
+            )
+            for key, value in data.items():
+                if key not in known:
+                    contact._extra[key] = value
+            return contact
+        return None
 
     def _parse_governance(self, data: dict[str, Any]) -> GovernanceConfig:
         """Parse governance section."""

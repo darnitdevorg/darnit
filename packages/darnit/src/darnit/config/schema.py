@@ -200,11 +200,22 @@ class LandscapeConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class SecurityContactModel(BaseModel):
+    """Security contact information (CNCF struct format).
+
+    Supports the CNCF struct format with email and advisory_url fields.
+    """
+    email: EmailStr | None = None
+    advisory_url: HttpUrl | str | None = None
+
+    model_config = ConfigDict(extra="allow")
+
+
 class SecurityConfig(BaseModel):
     """Security documentation references (CNCF standard)."""
     policy: PathRef | None = None
     threat_model: PathRef | None = None
-    contact: EmailStr | None = None
+    contact: SecurityContactModel | EmailStr | str | None = None
 
     model_config = ConfigDict(extra="allow")  # Allow extension fields
 
@@ -579,7 +590,10 @@ class ProjectConfig(BaseModel):
     def get_security_contact(self) -> str | None:
         """Get security contact email."""
         if self.security and self.security.contact:
-            return str(self.security.contact)
+            contact = self.security.contact
+            if isinstance(contact, SecurityContactModel):
+                return str(contact.email) if contact.email else None
+            return str(contact)
         return None
 
     def get_audits(self) -> list[Audit]:

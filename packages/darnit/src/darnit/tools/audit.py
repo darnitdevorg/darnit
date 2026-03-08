@@ -429,6 +429,22 @@ def run_sieve_audit(
     except Exception as e:
         logger.debug("Auto-detect context failed (non-fatal): %s", e)
 
+    # Inject .project/ mapper context (between auto-detect and user-confirmed).
+    # Merge order: auto-detect < .project/ mapper < user-confirmed.
+    try:
+        from darnit.context.dot_project_mapper import DotProjectMapper
+
+        mapper = DotProjectMapper(local_path, owner=owner or "")
+        mapper_context = mapper.get_context()
+        if mapper_context:
+            project_context.update(mapper_context)
+            logger.debug(
+                "Injected %d .project/ mapper context variables",
+                len(mapper_context),
+            )
+    except Exception as e:
+        logger.debug(".project/ mapper context failed (non-fatal): %s", e)
+
     try:
         from darnit.config.context_storage import (
             flatten_user_context,
@@ -437,7 +453,7 @@ def run_sieve_audit(
 
         user_context = load_context(local_path)
         if user_context:
-            # User-confirmed values override auto-detected ones
+            # User-confirmed values override auto-detected and mapper ones
             project_context.update(flatten_user_context(user_context))
     except Exception as e:
         logger.debug("User context load failed (non-fatal): %s", e)

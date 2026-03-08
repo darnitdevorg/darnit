@@ -41,11 +41,15 @@ def inject_project_context(context: CheckContext) -> None:
     This function reads .project/project.yaml from the repository path
     and populates context.project_context with the mapped values.
 
+    When context.owner is set, org-level .project repo resolution is
+    performed automatically and merged with local config.
+
     Args:
         context: CheckContext to populate with .project/ data
     """
     try:
-        mapper = DotProjectMapper(context.local_path)
+        owner = getattr(context, "owner", "") or ""
+        mapper = DotProjectMapper(context.local_path, owner=owner)
         project_context = mapper.get_context()
 
         context.project_context = project_context

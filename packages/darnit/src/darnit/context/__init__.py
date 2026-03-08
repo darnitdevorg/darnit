@@ -44,9 +44,14 @@ from .confidence import (
 from .dot_project import (
     DotProjectReader,
     DotProjectWriter,
+    MaintainerEntry,
+    MaintainerTeam,
     ProjectConfig,
+    SecurityContact,
 )
 from .dot_project_mapper import DotProjectMapper
+from .dot_project_merger import merge_configs
+from .dot_project_org import OrgProjectResolver
 from .inject import (
     create_check_context_with_project,
     get_project_value,
@@ -75,7 +80,12 @@ __all__ = [
     "DotProjectReader",
     "DotProjectWriter",
     "ProjectConfig",
+    "SecurityContact",
+    "MaintainerEntry",
+    "MaintainerTeam",
     "DotProjectMapper",
+    "OrgProjectResolver",
+    "merge_configs",
     "inject_project_context",
     "create_check_context_with_project",
     "get_project_value",

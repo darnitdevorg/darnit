@@ -1537,3 +1537,323 @@ project-maintainers:
         maintainers = get_project_value(context, "project.maintainers")
         assert "alice" in maintainers
         assert "bob" in maintainers
+
+
+class TestSecurityContactStruct:
+    """Test security.contact struct format (CNCF spec)."""
+
+    @pytest.mark.unit
+    def test_parse_security_contact_as_string(self, temp_dir: Path):
+        """Backward compat: plain string contact is preserved as-is."""
+        from darnit.context.dot_project import DotProjectReader
+
+        project_dir = temp_dir / ".project"
+        project_dir.mkdir()
+        (project_dir / "project.yaml").write_text("""
+name: my-project
+repositories:
+  - https://github.com/org/repo
+security:
+  contact: security@example.com
+""")
+
+        reader = DotProjectReader(temp_dir)
+        config = reader.read()
+
+        assert config.security is not None
+        assert config.security.contact == "security@example.com"
+
+    @pytest.mark.unit
+    def test_parse_security_contact_as_struct(self, temp_dir: Path):
+        """CNCF struct format with email and advisory_url."""
+        from darnit.context.dot_project import DotProjectReader, SecurityContact
+
+        project_dir = temp_dir / ".project"
+        project_dir.mkdir()
+        (project_dir / "project.yaml").write_text("""
+name: my-project
+repositories:
+  - https://github.com/org/repo
+security:
+  contact:
+    email: security@example.com
+    advisory_url: https://github.com/org/repo/security/advisories
+""")
+
+        reader = DotProjectReader(temp_dir)
+        config = reader.read()
+
+        assert config.security is not None
+        assert isinstance(config.security.contact, SecurityContact)
+        assert config.security.contact.email == "security@example.com"
+        assert (
+            config.security.contact.advisory_url
+            == "https://github.com/org/repo/security/advisories"
+        )
+
+    @pytest.mark.unit
+    def test_parse_security_contact_struct_extra_fields(self, temp_dir: Path):
+        """Struct contact preserves unknown fields in _extra."""
+        from darnit.context.dot_project import DotProjectReader, SecurityContact
+
+        project_dir = temp_dir / ".project"
+        project_dir.mkdir()
+        (project_dir / "project.yaml").write_text("""
+name: my-project
+repositories:
+  - https://github.com/org/repo
+security:
+  contact:
+    email: security@example.com
+    pgp_key: https://example.com/key.asc
+""")
+
+        reader = DotProjectReader(temp_dir)
+        config = reader.read()
+
+        contact = config.security.contact
+        assert isinstance(contact, SecurityContact)
+        assert contact._extra.get("pgp_key") == "https://example.com/key.asc"
+
+    @pytest.mark.unit
+    def test_mapper_maps_struct_contact(self, temp_dir: Path):
+        """Mapper emits separate context vars for struct contact."""
+        from darnit.context.dot_project_mapper import DotProjectMapper
+
+        project_dir = temp_dir / ".project"
+        project_dir.mkdir()
+        (project_dir / "project.yaml").write_text("""
+name: my-project
+repositories:
+  - https://github.com/org/repo
+security:
+  contact:
+    email: security@example.com
+    advisory_url: https://github.com/org/repo/security/advisories
+""")
+
+        mapper = DotProjectMapper(temp_dir)
+        context = mapper.get_context()
+
+        assert context.get("project.security.contact") == "security@example.com"
+        assert context.get("project.security.contact_email") == "security@example.com"
+        assert (
+            context.get("project.security.advisory_url")
+            == "https://github.com/org/repo/security/advisories"
+        )
+
+    @pytest.mark.unit
+    def test_mapper_maps_string_contact_backward_compat(self, temp_dir: Path):
+        """Mapper maps plain string contact the same as before."""
+        from darnit.context.dot_project_mapper import DotProjectMapper
+
+        project_dir = temp_dir / ".project"
+        project_dir.mkdir()
+        (project_dir / "project.yaml").write_text("""
+name: my-project
+repositories:
+  - https://github.com/org/repo
+security:
+  contact: security@example.com
+""")
+
+        mapper = DotProjectMapper(temp_dir)
+        context = mapper.get_context()
+
+        assert context.get("project.security.contact") == "security@example.com"
+        # No advisory_url for plain string format
+        assert "project.security.advisory_url" not in context
+
+
+class TestMaintainersTeamsFormat:
+    """Test CNCF teams-based maintainers.yaml format."""
+
+    @pytest.mark.unit
+    def test_parse_teams_format(self, temp_dir: Path):
+        """Reader parses CNCF teams-based maintainers.yaml."""
+        from darnit.context.dot_project import DotProjectReader
+
+        project_dir = temp_dir / ".project"
+        project_dir.mkdir()
+        (project_dir / "project.yaml").write_text("""
+name: my-project
+repositories:
+  - https://github.com/org/repo
+""")
+        (project_dir / "maintainers.yaml").write_text("""
+project_id: my-project
+org: my-org
+teams:
+  - name: maintainers
+    members:
+      - handle: "@alice"
+        email: alice@example.com
+        role: lead
+      - handle: "@bob"
+        email: bob@example.com
+  - name: emeritus
+    members:
+      - handle: "@charlie"
+""")
+
+        reader = DotProjectReader(temp_dir)
+        config = reader.read()
+
+        # Flat handles for backward compat
+        assert "alice" in config.maintainers
+        assert "bob" in config.maintainers
+        assert "charlie" in config.maintainers
+
+        # Structured team data
+        assert config.maintainer_org == "my-org"
+        assert config.maintainer_project_id == "my-project"
+        assert len(config.maintainer_teams) == 2
+        assert config.maintainer_teams[0].name == "maintainers"
+        assert len(config.maintainer_teams[0].members) == 2
+        assert config.maintainer_teams[0].members[0].handle == "alice"
+        assert config.maintainer_teams[0].members[0].email == "alice@example.com"
+        assert config.maintainer_teams[0].members[0].role == "lead"
+
+    @pytest.mark.unit
+    def test_parse_teams_format_string_members(self, temp_dir: Path):
+        """Reader handles teams with plain string members."""
+        from darnit.context.dot_project import DotProjectReader
+
+        project_dir = temp_dir / ".project"
+        project_dir.mkdir()
+        (project_dir / "project.yaml").write_text("""
+name: my-project
+repositories:
+  - https://github.com/org/repo
+""")
+        (project_dir / "maintainers.yaml").write_text("""
+teams:
+  - name: maintainers
+    members:
+      - "@alice"
+      - "@bob"
+""")
+
+        reader = DotProjectReader(temp_dir)
+        config = reader.read()
+
+        assert "alice" in config.maintainers
+        assert "bob" in config.maintainers
+        assert len(config.maintainer_teams) == 1
+        assert config.maintainer_teams[0].members[0].handle == "alice"
+
+    @pytest.mark.unit
+    def test_flat_list_still_works(self, temp_dir: Path):
+        """Backward compat: plain list of strings still works."""
+        from darnit.context.dot_project import DotProjectReader
+
+        project_dir = temp_dir / ".project"
+        project_dir.mkdir()
+        (project_dir / "project.yaml").write_text("""
+name: my-project
+repositories:
+  - https://github.com/org/repo
+""")
+        (project_dir / "maintainers.yaml").write_text("""
+- alice
+- bob
+- charlie
+""")
+
+        reader = DotProjectReader(temp_dir)
+        config = reader.read()
+
+        assert config.maintainers == ["alice", "bob", "charlie"]
+        assert config.maintainer_teams == []
+
+    @pytest.mark.unit
+    def test_dict_with_handle_still_works(self, temp_dir: Path):
+        """Backward compat: dict entries with handle field still work."""
+        from darnit.context.dot_project import DotProjectReader
+
+        project_dir = temp_dir / ".project"
+        project_dir.mkdir()
+        (project_dir / "project.yaml").write_text("""
+name: my-project
+repositories:
+  - https://github.com/org/repo
+""")
+        (project_dir / "maintainers.yaml").write_text("""
+- handle: "@alice"
+  name: Alice Smith
+  email: alice@example.com
+- handle: "@bob"
+  name: Bob Jones
+""")
+
+        reader = DotProjectReader(temp_dir)
+        config = reader.read()
+
+        assert "alice" in config.maintainers
+        assert "bob" in config.maintainers
+        assert len(config.maintainer_entries) == 2
+        assert config.maintainer_entries[0].handle == "alice"
+        assert config.maintainer_entries[0].email == "alice@example.com"
+        assert config.maintainer_entries[0].name == "Alice Smith"
+
+    @pytest.mark.unit
+    def test_mapper_emits_team_context_vars(self, temp_dir: Path):
+        """Mapper emits maintainer team context variables."""
+        from darnit.context.dot_project_mapper import DotProjectMapper
+
+        project_dir = temp_dir / ".project"
+        project_dir.mkdir()
+        (project_dir / "project.yaml").write_text("""
+name: my-project
+repositories:
+  - https://github.com/org/repo
+""")
+        (project_dir / "maintainers.yaml").write_text("""
+project_id: my-project
+org: my-org
+teams:
+  - name: maintainers
+    members:
+      - handle: "@alice"
+  - name: emeritus
+    members:
+      - handle: "@bob"
+""")
+
+        mapper = DotProjectMapper(temp_dir)
+        context = mapper.get_context()
+
+        assert context.get("project.maintainer_org") == "my-org"
+        assert context.get("project.maintainer_project_id") == "my-project"
+        assert context.get("project.maintainer_teams") == ["maintainers", "emeritus"]
+        assert "alice" in context.get("project.maintainers", [])
+
+    @pytest.mark.unit
+    def test_deduplicate_handles_across_teams(self, temp_dir: Path):
+        """Handles are deduplicated across teams."""
+        from darnit.context.dot_project import DotProjectReader
+
+        project_dir = temp_dir / ".project"
+        project_dir.mkdir()
+        (project_dir / "project.yaml").write_text("""
+name: my-project
+repositories:
+  - https://github.com/org/repo
+""")
+        (project_dir / "maintainers.yaml").write_text("""
+teams:
+  - name: team-a
+    members:
+      - handle: "@alice"
+  - name: team-b
+    members:
+      - handle: "@alice"
+      - handle: "@bob"
+""")
+
+        reader = DotProjectReader(temp_dir)
+        config = reader.read()
+
+        # alice should appear only once in the flat list
+        assert config.maintainers.count("alice") == 1
+        assert "bob" in config.maintainers
