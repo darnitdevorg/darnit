@@ -160,6 +160,8 @@ class OSPSBaselineImplementation:
         # This allows re-registration after registry.clear() in tests
         handlers = [
             ("audit_openssf_baseline", tools.audit_openssf_baseline),
+            ("list_org_repos", tools.list_org_repos),
+            ("audit_org", tools.audit_org),
             ("list_available_checks", tools.list_available_checks),
             ("get_project_config", tools.get_project_config),
             ("create_security_policy", tools.create_security_policy),

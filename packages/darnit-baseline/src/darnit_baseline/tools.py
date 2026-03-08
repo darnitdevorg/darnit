@@ -1170,9 +1170,109 @@ def _detect_default_branch(repo_path: Path) -> str:
     return "main"
 
 
+def list_org_repos(
+    owner: str,
+    include_archived: bool = False,
+) -> str:
+    """
+    List all repositories in a GitHub org or user account.
+
+    Returns a JSON list of repository names. Use this to discover repos
+    before auditing them individually with ``audit_org``.
+
+    Requires the ``gh`` CLI to be installed and authenticated.
+
+    Args:
+        owner: GitHub org or user (e.g., "kusari-oss")
+        include_archived: Include archived repositories. Default: False
+
+    Returns:
+        JSON object with repo list and count
+    """
+    from darnit.tools.audit_org import enumerate_org_repos
+
+    repo_names, error = enumerate_org_repos(
+        owner, include_archived=include_archived
+    )
+    if error:
+        return json.dumps({"error": error, "repos": [], "count": 0})
+
+    return json.dumps({
+        "owner": owner,
+        "repos": repo_names,
+        "count": len(repo_names),
+    })
+
+
+def audit_org(
+    owner: str,
+    repo: str,
+    level: int = 3,
+    tags: str | list[str] | None = None,
+    output_format: str = "markdown",
+) -> str:
+    """
+    Audit a single repository from a GitHub org by cloning it to a temp
+    directory and running the OpenSSF Baseline audit pipeline.
+
+    Use ``list_org_repos`` first to discover available repos, then call
+    this tool for each repo individually.
+
+    Requires the ``gh`` CLI to be installed and authenticated.
+
+    Args:
+        owner: GitHub org or user (e.g., "kusari-oss")
+        repo: Repository name to audit (e.g., "my-repo")
+        level: Maximum OSPS level to check (1, 2, or 3). Default: 3
+        tags: Filter controls by tags (same format as audit_openssf_baseline)
+        output_format: "markdown" or "json". Default: "markdown"
+
+    Returns:
+        Audit report for the single repository
+    """
+    from darnit.tools.audit_org import _audit_single_repo
+
+    # Normalize tags
+    tags_list: list[str] | None = None
+    if tags:
+        if isinstance(tags, str):
+            tags_list = [tags]
+        else:
+            tags_list = list(tags)
+
+    result = _audit_single_repo(owner, repo, level, tags_list)
+
+    if output_format == "json":
+        return json.dumps(result, indent=2)
+
+    # Markdown format
+    if result["status"] == "ERROR":
+        return f"# Audit: {owner}/{repo}\n\n**Error:** {result['error']}"
+
+    from darnit.tools.audit import calculate_compliance, format_results_markdown
+
+    results = result["results"]
+    summary = result["summary"]
+
+    if not results:
+        return f"# Audit: {owner}/{repo}\n\nNo results available."
+
+    compliance = calculate_compliance(results, level)
+    return format_results_markdown(
+        owner=owner,
+        repo=repo,
+        results=results,
+        summary=summary,
+        compliance=compliance,
+        level=level,
+    )
+
+
 __all__ = [
     # Audit
     "audit_openssf_baseline",
+    "list_org_repos",
+    "audit_org",
     "list_available_checks",
     # Configuration
     "get_project_config",

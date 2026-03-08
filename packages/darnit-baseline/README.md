@@ -295,6 +295,71 @@ Some controls use external tools for deeper analysis. These are **optional** —
 | [gh](https://cli.github.com/) | AC-*, BR-02/03/04, LE-02/03, QA-01/03/07, GV-02, VM-03/04 | GitHub API queries | `brew install gh` |
 | [jq](https://jqlang.github.io/jq/) | — | JSON processing (used internally by some exec passes) | `brew install jq` |
 
+## Org-Wide Audits
+
+Audit every repository in a GitHub organization (or user account) one at a time. The workflow uses two MCP tools: one to discover repos, and another to audit each individually.
+
+**Prerequisites:** `gh` CLI installed and authenticated (`gh auth login`).
+
+### Step 1: List repos — `list_org_repos`
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `owner` | string | *(required)* | GitHub org or user name |
+| `include_archived` | bool | `false` | Include archived repositories |
+
+Returns a JSON object:
+```json
+{"owner": "my-org", "repos": ["repo-a", "repo-b", "repo-c"], "count": 3}
+```
+
+### Step 2: Audit each repo — `audit_org`
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `owner` | string | *(required)* | GitHub org or user name |
+| `repo` | string | *(required)* | Repository name to audit |
+| `level` | int | `3` | Maximum OSPS maturity level (1, 2, or 3) |
+| `tags` | string or list | `null` | Filter controls by tags (e.g., `"domain=AC"`) |
+| `output_format` | string | `"markdown"` | `"markdown"` or `"json"` |
+
+Clones the repo to a temp directory, runs the full audit pipeline, returns the report, and cleans up.
+
+### Example Workflow
+
+```python
+# 1. Discover repos
+list_org_repos(owner="my-org")
+# → {"repos": ["frontend", "backend", "infra"], "count": 3}
+
+# 2. Audit each repo individually
+audit_org(owner="my-org", repo="frontend", level=1)
+audit_org(owner="my-org", repo="backend", level=1)
+audit_org(owner="my-org", repo="infra", level=1)
+
+# JSON output for a single repo
+audit_org(owner="my-org", repo="frontend", output_format="json")
+```
+
+### Write-Back Routing
+
+When remediating org-wide audit findings, each action is classified as targeting either:
+
+- **`[org]`** — Shared metadata in the org's `.project` repo (e.g., `security.contact`, `maintainers`, `governance`). Only classified as org-level when the field exists in the org config.
+- **`[repo]`** — Repo-specific artifacts (e.g., `SECURITY.md`, `CODEOWNERS`, CI config). Always repo-level regardless of org config.
+
+This classification appears in the audit report's "Write-back Routing" section to help you decide where to apply fixes.
+
+### How It Works
+
+1. **Enumerate** (`list_org_repos`) — `gh repo list {owner}` fetches all repos (filters archived by default)
+2. **Clone** (`audit_org`) — The repo is shallow-cloned (`--depth 1`) to a temp directory
+3. **Audit** — Standard `run_sieve_audit()` pipeline runs against the clone, including `.project/` context resolution (org-level `.project` repo metadata is merged automatically)
+4. **Return** — Single-repo report is returned (fits within MCP response limits)
+5. **Cleanup** — Temp directory is removed even on errors
+
+Failures are non-fatal: if a repo fails to clone or audit, the error is returned in the response.
+
 ## Package Structure
 
 ```

@@ -3998,6 +3998,47 @@ description = "Create a pull request for remediation changes"
 handler = "get_remediation_status"
 description = "Get the current git status for remediation work"
 
+[mcp.tools.list_org_repos]
+handler = "list_org_repos"
+description = """List all repositories in a GitHub org or user account.
+
+Returns a JSON object with the list of repo names. Use this first to discover
+repos, then audit them individually with `audit_org`.
+
+Requires the `gh` CLI to be installed and authenticated.
+
+Parameters:
+- owner (required): GitHub org or user name (e.g., "kusari-oss")
+- include_archived: Include archived repositories. Default: false
+
+Example workflow:
+1. list_org_repos(owner="my-org") → {"repos": ["repo-a", "repo-b", ...], "count": 5}
+2. audit_org(owner="my-org", repo="repo-a") → single-repo audit report
+3. audit_org(owner="my-org", repo="repo-b") → single-repo audit report
+"""
+
+[mcp.tools.audit_org]
+handler = "audit_org"
+description = """Audit a single repository from a GitHub org by cloning it and running the OpenSSF Baseline audit.
+
+Clones the repo to a temp directory, runs the full audit pipeline, and returns
+the report for that one repo. Use `list_org_repos` first to discover repos.
+
+Requires the `gh` CLI to be installed and authenticated.
+
+Parameters:
+- owner (required): GitHub org or user name (e.g., "kusari-oss")
+- repo (required): Repository name to audit (e.g., "my-repo")
+- level: Maximum maturity level (1, 2, or 3). Default: 3
+- tags: Filter controls by tags (e.g., "domain=AC", "security")
+- output_format: "markdown" or "json". Default: "markdown"
+
+Examples:
+- audit_org(owner="my-org", repo="my-repo")
+- audit_org(owner="my-org", repo="my-repo", level=1)
+- audit_org(owner="my-org", repo="my-repo", output_format="json")
+"""
+
 [mcp.tools.create_test_repository]
 handler = "create_test_repository"
 description = "Create a minimal test repository that fails all OpenSSF Baseline controls"
