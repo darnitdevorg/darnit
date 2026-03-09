@@ -1,23 +1,20 @@
 <!--
 Sync Impact Report
 ==================
-Version change: 0.0.0 (template) → 1.0.0
-Added principles:
-  - I. Plugin Separation
-  - II. Conservative-by-Default
-  - III. TOML-First Architecture
-  - IV. Never Guess User Values
-  - V. Sieve Pipeline Integrity
-Added sections:
-  - Architecture Constraints
-  - Development Workflow
-  - Governance
-Removed sections: none (initial constitution)
+Version change: 1.0.0 → 1.1.0
+Modified principles:
+  - IV. Never Guess User Values: expanded to explicitly permit
+    confidence-based auto-acceptance when configured in TOML.
+    Core requirement unchanged (never silently apply values),
+    but now acknowledges configurable thresholds as a valid
+    verification mechanism.
+Added sections: none
+Removed sections: none
 Templates requiring updates:
-  - .specify/templates/plan-template.md ✅ no changes needed (Constitution Check section is dynamic)
-  - .specify/templates/spec-template.md ✅ no changes needed (requirements are feature-specific)
-  - .specify/templates/tasks-template.md ✅ no changes needed (task phases are feature-driven)
-  - .specify/templates/commands/*.md — directory does not exist yet, N/A
+  - .specify/templates/plan-template.md ✅ no changes needed
+  - .specify/templates/spec-template.md ✅ no changes needed
+  - .specify/templates/tasks-template.md ✅ no changes needed
+  - specs/001-tiered-control-automation/ ✅ FR-004 already aligned
 Follow-up TODOs: none
 ==================
 -->
@@ -70,8 +67,9 @@ file. Python code MUST NOT be the source of truth for control metadata.
 
 ### IV. Never Guess User Values
 
-The framework MUST NOT auto-detect and auto-apply values that require
-user judgment (maintainers, security contacts, governance models).
+The framework MUST NOT silently apply values that require user
+judgment. All auto-detected values MUST go through an explicit,
+configurable verification mechanism.
 
 - When `auto_detect = false` in TOML, the sieve MUST NOT run for
   that key. No exceptions.
@@ -79,6 +77,12 @@ user judgment (maintainers, security contacts, governance models).
   ask the user rather than filling values from heuristics.
 - Sieve auto-detection is acceptable ONLY for keys where
   `auto_detect = true` in the TOML definition.
+- Auto-acceptance of detected values MAY use a confidence-based
+  threshold (e.g., `auto_accept_confidence = 0.8`), but this
+  MUST be explicitly configured per-implementation in TOML —
+  never implicit or hard-coded. Implementations MUST be able to
+  force manual confirmation for all fields by setting the
+  threshold to 1.0.
 - LLM-facing prompts MUST NOT contain guessed values in executable
   code snippets.
 
@@ -152,4 +156,4 @@ Compliance with these principles MUST be verified during code review.
 The CLAUDE.md project instructions serve as the runtime development
 guidance and MUST remain consistent with this constitution.
 
-**Version**: 1.0.0 | **Ratified**: 2026-03-08 | **Last Amended**: 2026-03-08
+**Version**: 1.1.0 | **Ratified**: 2026-03-08 | **Last Amended**: 2026-03-08
