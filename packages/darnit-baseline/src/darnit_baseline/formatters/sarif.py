@@ -365,6 +365,17 @@ def result_to_sarif_result(
         }
     }
 
+    # Add pass transparency metadata to SARIF properties
+    resolving_handler = result.get("resolving_pass_handler")
+    if resolving_handler is not None:
+        sarif_result["properties"]["resolvingPassHandler"] = resolving_handler
+    resolving_index = result.get("resolving_pass_index")
+    if resolving_index is not None:
+        sarif_result["properties"]["resolvingPassIndex"] = resolving_index
+    pass_history = result.get("pass_history")
+    if pass_history:
+        sarif_result["properties"]["passHistory"] = pass_history
+
     return sarif_result
 
 

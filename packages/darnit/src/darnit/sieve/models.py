@@ -100,6 +100,10 @@ class SieveResult:
     verification_steps: list[str] | None = None  # For MANUAL phase
     source: str = "sieve"
 
+    # Resolving pass metadata (which pass produced the conclusive result)
+    resolving_pass_index: int | None = None
+    resolving_pass_handler: str | None = None
+
     def to_legacy_dict(self) -> dict[str, Any]:
         """Convert to legacy result format for backward compatibility."""
         result = {
@@ -117,6 +121,24 @@ class SieveResult:
             result["verification_steps"] = self.verification_steps
         if self.evidence:
             result["evidence"] = self.evidence
+        if self.resolving_pass_index is not None:
+            result["resolving_pass_index"] = self.resolving_pass_index
+        if self.resolving_pass_handler is not None:
+            result["resolving_pass_handler"] = self.resolving_pass_handler
+        if self.pass_history:
+            result["pass_history"] = [
+                {
+                    "phase": attempt.phase.value,
+                    "checks_performed": attempt.checks_performed,
+                    "result": {
+                        "outcome": attempt.result.outcome.value,
+                        "message": attempt.result.message,
+                        "confidence": attempt.result.confidence,
+                    },
+                    "duration_ms": attempt.duration_ms,
+                }
+                for attempt in self.pass_history
+            ]
         return result
 
 

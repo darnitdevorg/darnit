@@ -355,3 +355,10 @@ else:
     logger.warning("No implementation found")
     result = []
 ```
+
+## Active Technologies
+- Python >=3.11 (project targets 3.11/3.12) + darnit (core framework), darnit-baseline (001-tiered-control-automation)
+- TOML config files, `.project/` YAML context, local filesystem (001-tiered-control-automation)
+
+## Recent Changes
+- 001-tiered-control-automation: Added Python >=3.11 (project targets 3.11/3.12) + darnit (core framework), darnit-baseline

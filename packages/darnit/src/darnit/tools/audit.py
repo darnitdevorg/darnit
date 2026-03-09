@@ -742,6 +742,22 @@ def format_results_markdown(
                 else:
                     lines.append(f"- **{control_id}** (L{r.get('level', 1)}): {details}")
 
+                # Show resolving pass transparency (which handler produced this result)
+                resolving_handler = r.get("resolving_pass_handler")
+                resolving_index = r.get("resolving_pass_index")
+                if resolving_handler is not None:
+                    lines.append(f"  - *Resolved by:* `{resolving_handler}` (pass #{resolving_index})")
+
+                # Show pass history (tier progression through the cascade)
+                pass_history = r.get("pass_history")
+                if pass_history and len(pass_history) > 1:
+                    history_parts = []
+                    for attempt in pass_history:
+                        phase = attempt.get("phase", "?")
+                        attempt_status = attempt.get("result", {}).get("outcome", "?")
+                        history_parts.append(f"{phase}:{attempt_status}")
+                    lines.append(f"  - *Pass history:* {' → '.join(history_parts)}")
+
                 # Include help_md for failed controls to explain remediation options
                 if status == "FAIL":
                     help_md = _get_control_help(control_id)

@@ -81,6 +81,7 @@ class ContextValue(BaseModel):
     detected_at: datetime | None = None
     detection_method: str | None = None
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    auto_accepted: bool = False
 
     @classmethod
     def user_confirmed(
@@ -101,14 +102,25 @@ class ContextValue(BaseModel):
         method: str,
         confidence: float = 0.8,
         detected_at: datetime | None = None,
+        auto_accept_threshold: float = 0.8,
     ) -> "ContextValue":
-        """Create an auto-detected context value."""
+        """Create an auto-detected context value.
+
+        Args:
+            value: The detected value.
+            method: Detection method name.
+            confidence: Detection confidence (0.0-1.0).
+            detected_at: When the value was detected.
+            auto_accept_threshold: Threshold above which the value is
+                auto-accepted without user confirmation.
+        """
         return cls(
             source=ContextSource.AUTO_DETECTED,
             value=value,
             detected_at=detected_at or datetime.now(),
             detection_method=method,
             confidence=confidence,
+            auto_accepted=confidence >= auto_accept_threshold,
         )
 
     @classmethod

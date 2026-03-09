@@ -874,7 +874,7 @@ class FrameworkContextConfig(BaseModel):
     Example TOML:
         ```toml
         [context]
-        # Context definitions follow
+        auto_accept_confidence = 0.8  # Threshold for auto-accepting detected values
 
         [context.has_releases]
         type = "boolean"
@@ -887,6 +887,11 @@ class FrameworkContextConfig(BaseModel):
         affects = ["OSPS-GV-01.01"]
         ```
     """
+    # Confidence threshold for auto-accepting detected context values.
+    # Values with confidence >= this threshold are auto-accepted without
+    # user confirmation. Set to 1.0 to force manual confirmation for all fields.
+    auto_accept_confidence: float = Field(default=0.8, ge=0.0, le=1.0)
+
     # Dictionary of context key -> definition
     # This is populated by the TOML loader from [context.key] sections
     definitions: dict[str, ContextDefinitionConfig] = Field(default_factory=dict)
@@ -914,15 +919,25 @@ class FrameworkContextConfig(BaseModel):
             if "definitions" in data:
                 return data
 
-            # Otherwise, treat all keys as context definitions
-            # (except known metadata keys if any)
+            # Preserve top-level scalar config fields
+            result: dict[str, Any] = {}
+            known_scalars = {"auto_accept_confidence"}
+            for key in known_scalars:
+                if key in data:
+                    result[key] = data[key]
+
+            # Otherwise, treat remaining dict-typed keys as context definitions
             definitions = {}
             for key, value in data.items():
+                if key in known_scalars:
+                    continue
                 # Each context key should have a 'type' field
                 if isinstance(value, dict) and "type" in value:
                     definitions[key] = value
             if definitions:
-                return {"definitions": definitions}
+                result["definitions"] = definitions
+            if result:
+                return result
         return data
 
     def get_definition(self, key: str) -> ContextDefinitionConfig | None:

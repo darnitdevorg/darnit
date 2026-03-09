@@ -662,6 +662,7 @@ def _build_context_question(req) -> dict:
         question["detected_value"] = value
         question["detection_method"] = method
         question["confidence"] = int(confidence * 100)
+        question["auto_accepted"] = getattr(req.current_value, "auto_accepted", False)
         question["instruction"] = (
             "Show the detected value and ask the user to confirm or correct it."
         )

@@ -491,7 +491,23 @@ def get_pending_context(
         owner = owner or detected_owner or None
         repo = repo or detected_repo or None
 
+    # Load auto_accept_confidence threshold from framework config
+    auto_accept_threshold = 0.8
+    try:
+        from darnit.config.control_loader import load_framework_config
+        from darnit.core.discovery import get_default_implementation
+
+        impl = get_default_implementation()
+        if impl:
+            config_path = impl.get_framework_config_path()
+            if config_path:
+                fw_config = load_framework_config(config_path)
+                auto_accept_threshold = fw_config.context.auto_accept_confidence
+    except Exception:
+        pass  # Use default threshold
+
     pending: list[ContextPromptRequest] = []
+    auto_accepted_keys: list[str] = []
 
     for key, (definition, detect_pipeline) in definitions_with_detect.items():
         # Skip if already confirmed (check both definition key and store_as target)
@@ -520,13 +536,48 @@ def get_pending_context(
             # Fallback: context sieve (hardcoded Python detectors)
             current_value = _try_sieve_detection(key, local_path, owner, repo)
 
-        pending.append(ContextPromptRequest(
-            key=key,
-            definition=definition,
-            control_ids=affected,
-            current_value=current_value,
-            priority=len(affected),  # Priority = number of controls affected
-        ))
+        # Auto-accept high-confidence detections without user prompting
+        if (
+            current_value is not None
+            and current_value.confidence >= auto_accept_threshold
+        ):
+            current_value.auto_accepted = True
+            auto_accepted_keys.append(key)
+            logger.debug(
+                "Auto-accepted context '%s' (confidence: %.0f%%, threshold: %.0f%%)",
+                key,
+                current_value.confidence * 100,
+                auto_accept_threshold * 100,
+            )
+            # Save auto-accepted value directly
+            try:
+                save_context_value(
+                    local_path, key, current_value.value,
+                    source=ContextSource.AUTO_DETECTED,
+                    detection_method=current_value.detection_method,
+                    confidence=current_value.confidence,
+                )
+            except Exception as e:
+                logger.debug("Failed to save auto-accepted '%s': %s", key, e)
+                # Fall through to pending if save fails
+                current_value.auto_accepted = False
+                auto_accepted_keys.pop()
+
+        if key not in auto_accepted_keys:
+            pending.append(ContextPromptRequest(
+                key=key,
+                definition=definition,
+                control_ids=affected,
+                current_value=current_value,
+                priority=len(affected),  # Priority = number of controls affected
+            ))
+
+    if auto_accepted_keys:
+        logger.info(
+            "Auto-accepted %d context field(s): %s",
+            len(auto_accepted_keys),
+            ", ".join(auto_accepted_keys),
+        )
 
     # Sort by priority (highest first)
     pending.sort(key=lambda x: x.priority, reverse=True)

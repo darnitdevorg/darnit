@@ -246,6 +246,11 @@ file = "templates/test_requirements_contributing.tmpl"
 # Note: The CNCF .project/ specification is still under development (PR #131).
 # Context storage format may change as the upstream spec evolves.
 
+[context]
+# Confidence threshold for auto-accepting detected context values without
+# user confirmation. Set to 1.0 to require manual confirmation for all fields.
+auto_accept_confidence = 0.8
+
 [context.maintainers]
 type = "list_or_path"
 prompt = "Who are the project maintainers?"
@@ -3446,6 +3451,21 @@ files = ["SECURITY.md", "README.md", "docs/releases.md", "CONTRIBUTING.md", "doc
 [controls."OSPS-DO-03.02".passes.pattern.patterns]
 verify_author = "(verify|verif|signature|sign|GPG|Sigstore).*(author|release|identity)"
 
+# LLM evaluation: does the document explain how to verify release author identity?
+[[controls."OSPS-DO-03.02".passes]]
+handler = "llm_eval"
+prompt = """Evaluate whether this document explains how to verify the identity of the release author.
+Look for: GPG/PGP key verification instructions, Sigstore/cosign verification steps,
+keyserver references, or other cryptographic identity verification methods.
+A general mention of 'signed releases' without verification instructions is insufficient."""
+files_to_include = ["$FOUND_FILE"]
+confidence_threshold = 0.7
+analysis_hints = [
+    "Look for specific verification commands or tools (gpg --verify, cosign verify)",
+    "Check for public key references or keyserver URLs",
+    "Signing alone is not enough — verification instructions must be present",
+]
+
 [[controls."OSPS-DO-03.02".passes]]
 handler = "manual"
 steps = [
@@ -3486,6 +3506,20 @@ files = ["SUPPORT.md", "SECURITY.md", "README.md"]
 
 [controls."OSPS-DO-04.01".passes.pattern.patterns]
 support_scope = "(support.*(scope|duration|period|timeline)|version.*(support|maintenance))"
+
+# LLM evaluation: does the document define scope and duration of support?
+[[controls."OSPS-DO-04.01".passes]]
+handler = "llm_eval"
+prompt = """Evaluate whether this document defines the scope and expected duration of support.
+Look for: which versions are supported, how long support lasts, what kind of support
+is provided (security fixes, bug fixes, feature development), and maintenance windows."""
+files_to_include = ["$FOUND_FILE"]
+confidence_threshold = 0.7
+analysis_hints = [
+    "Look for version support matrices or timelines",
+    "Check for definitions of support scope (security, bugs, features)",
+    "A vague 'we support this project' is insufficient without specifics",
+]
 
 [[controls."OSPS-DO-04.01".passes]]
 handler = "manual"
@@ -3535,6 +3569,20 @@ files = ["SUPPORT.md", "SECURITY.md", "README.md"]
 
 [controls."OSPS-DO-05.01".passes.pattern.patterns]
 eol_policy = "(end.of.(life|support)|EOL|deprecat|sunset)"
+
+# LLM evaluation: does the document describe end-of-support policy?
+[[controls."OSPS-DO-05.01".passes]]
+handler = "llm_eval"
+prompt = """Evaluate whether this document describes the end-of-support policy and process.
+Look for: deprecation timelines, sunset procedures, migration guidance,
+end-of-life announcements, or version retirement policies."""
+files_to_include = ["$FOUND_FILE"]
+confidence_threshold = 0.7
+analysis_hints = [
+    "Look for explicit deprecation timelines or sunset dates",
+    "Check for migration guidance when versions reach end of life",
+    "A mention of 'deprecated' without process description is insufficient",
+]
 
 [[controls."OSPS-DO-05.01".passes]]
 handler = "manual"

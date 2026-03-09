@@ -236,7 +236,7 @@ class SieveOrchestrator:
         # Assemble flat context for when-clause evaluation
         when_context = dict(handler_ctx.project_context)
 
-        for invocation in handler_invocations:
+        for pass_index, invocation in enumerate(handler_invocations):
             # Evaluate when clause — skip handler if condition not met
             if invocation.when and not evaluate_when(
                 invocation.when, when_context
@@ -341,6 +341,8 @@ class SieveOrchestrator:
                     confidence=handler_result.confidence,
                     evidence=accumulated_evidence,
                     source="sieve",
+                    resolving_pass_index=pass_index,
+                    resolving_pass_handler=invocation.handler,
                 )
                 self._apply_on_pass(control_spec, context, accumulated_evidence)
                 return sieve_result
@@ -355,6 +357,8 @@ class SieveOrchestrator:
                     pass_history=pass_history,
                     evidence=accumulated_evidence,
                     source="sieve",
+                    resolving_pass_index=pass_index,
+                    resolving_pass_handler=invocation.handler,
                 )
 
             elif handler_result.status == HandlerResultStatus.ERROR:
@@ -367,6 +371,8 @@ class SieveOrchestrator:
                     pass_history=pass_history,
                     evidence=accumulated_evidence,
                     source="sieve",
+                    resolving_pass_index=pass_index,
+                    resolving_pass_handler=invocation.handler,
                 )
 
             # INCONCLUSIVE — check for LLM consultation
