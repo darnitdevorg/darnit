@@ -84,6 +84,18 @@ class TestFileExistsHandler:
         assert result.status == HandlerResultStatus.PASS
         assert result.evidence["relative_path"] == "README.md"
 
+    def test_pass_when_directory_exists(self, tmp_path, ctx):
+        """file_exists_handler returns PASS for directories (e.g. .github/workflows)."""
+        (tmp_path / ".github" / "workflows").mkdir(parents=True)
+        result = file_exists_handler({"files": [".github/workflows"]}, ctx)
+        assert result.status == HandlerResultStatus.PASS
+        assert result.evidence["relative_path"] == ".github/workflows"
+
+    def test_fail_when_directory_missing(self, tmp_path, ctx):
+        """file_exists_handler returns FAIL for nonexistent directory."""
+        result = file_exists_handler({"files": [".github/workflows"]}, ctx)
+        assert result.status == HandlerResultStatus.FAIL
+
 
 # =============================================================================
 # exec_handler

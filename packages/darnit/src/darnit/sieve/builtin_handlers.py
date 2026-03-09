@@ -69,7 +69,7 @@ def file_exists_handler(config: dict[str, Any], context: HandlerContext) -> Hand
                 )
         else:
             path = os.path.join(context.local_path, pattern)
-            if os.path.isfile(path):
+            if os.path.exists(path):
                 return HandlerResult(
                     status=HandlerResultStatus.PASS,
                     message=f"Required file found: {pattern}",

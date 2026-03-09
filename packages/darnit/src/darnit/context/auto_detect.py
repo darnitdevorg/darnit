@@ -229,32 +229,54 @@ def collect_auto_context(local_path: str) -> dict[str, Any]:
 
     Only includes keys where detection succeeded. Keys use the same names
     as ``when`` clause keys (e.g. ``platform``, ``ci_provider``).
+
+    Persisted context from ``.project/darnit.yaml`` is loaded first and takes
+    precedence over auto-detection. This ensures that user-confirmed values
+    from ``confirm_project_context`` are used in subsequent audits.
     """
     context: dict[str, Any] = {}
 
-    platform = detect_platform(local_path)
-    if platform:
-        context["platform"] = platform
+    # Load persisted context first (user-confirmed values take precedence)
+    try:
+        from darnit.config.context_storage import load_context
 
-    ci_provider = detect_ci_provider(local_path)
-    if ci_provider:
-        context["ci_provider"] = ci_provider
+        stored = load_context(local_path)
+        for category_values in stored.values():
+            for key, ctx_val in category_values.items():
+                context[key] = ctx_val.value
+    except Exception:
+        pass  # Graceful degradation if no .project/ config exists
 
-    primary_language = detect_primary_language(local_path)
-    if primary_language:
-        context["primary_language"] = primary_language
-        # Derive ecosystem from primary language
-        ecosystem = _LANGUAGE_TO_ECOSYSTEM.get(primary_language)
-        if ecosystem:
-            context["detected_ecosystem"] = ecosystem
+    # Auto-detect (only for keys not already persisted)
+    if "platform" not in context:
+        platform = detect_platform(local_path)
+        if platform:
+            context["platform"] = platform
 
-    languages = detect_languages(local_path)
-    # Always include languages (even empty list) so when clauses can evaluate
-    context["languages"] = languages
+    if "ci_provider" not in context:
+        ci_provider = detect_ci_provider(local_path)
+        if ci_provider:
+            context["ci_provider"] = ci_provider
 
-    license_type = detect_license_type(local_path)
-    if license_type:
-        context["license_type"] = license_type
+    if "primary_language" not in context:
+        primary_language = detect_primary_language(local_path)
+        if primary_language:
+            context["primary_language"] = primary_language
+            # Derive ecosystem from primary language
+            if "detected_ecosystem" not in context:
+                ecosystem = _LANGUAGE_TO_ECOSYSTEM.get(primary_language)
+                if ecosystem:
+                    context["detected_ecosystem"] = ecosystem
+
+    if "languages" not in context:
+        languages = detect_languages(local_path)
+        # Always include languages (even empty list) so when clauses can evaluate
+        context["languages"] = languages
+
+    if "license_type" not in context:
+        license_type = detect_license_type(local_path)
+        if license_type:
+            context["license_type"] = license_type
 
     if context:
         logger.debug("Auto-detected context: %s", context)

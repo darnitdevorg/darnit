@@ -606,6 +606,15 @@ def _run_detect_pipeline(
                 )
                 continue
 
+            # Apply CEL expr if present (same as orchestrator does for controls)
+            if handler_config.get("expr"):
+                try:
+                    from darnit.sieve.orchestrator import _apply_cel_expr
+
+                    result = _apply_cel_expr(handler_config, result)
+                except ImportError:
+                    pass
+
             if result.status == HandlerResultStatus.PASS and result.evidence:
                 # First check handler config for value_if_pass
                 value_if_pass = handler_config.get("value_if_pass")

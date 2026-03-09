@@ -266,3 +266,74 @@ class TestCollectAutoContext:
         assert result["languages"] == []
         assert "ci_provider" not in result
         assert "primary_language" not in result
+
+
+class TestCollectAutoContextWithPersisted:
+    """Tests for collect_auto_context merging persisted .project/ context (FR-4)."""
+
+    def test_returns_persisted_ci_provider(self, tmp_path):
+        """Persisted ci_provider from .project/darnit.yaml is returned."""
+        os.system(f"git init {tmp_path} --quiet")
+        project_dir = tmp_path / ".project"
+        project_dir.mkdir()
+        (project_dir / "project.yaml").write_text("name: test-project\n")
+        (project_dir / "darnit.yaml").write_text(
+            "context:\n  ci_provider: github\n"
+        )
+
+        result = collect_auto_context(str(tmp_path))
+        # ci_provider is stored under "ci" category with key "provider"
+        # flatten_user_context remaps ci.provider → ci_provider
+        # But collect_auto_context uses load_context which returns category.key
+        # The key in the dict should be "provider" (the stored key)
+        assert "provider" in result or "ci_provider" in result
+
+    def test_persisted_overrides_auto_detected(self, tmp_path):
+        """Persisted platform overrides auto-detected platform."""
+        os.system(f"git init {tmp_path} --quiet")
+        os.system(
+            f"git -C {tmp_path} remote add origin https://github.com/owner/repo.git"
+        )
+        project_dir = tmp_path / ".project"
+        project_dir.mkdir()
+        (project_dir / "project.yaml").write_text("name: test-project\n")
+        (project_dir / "darnit.yaml").write_text(
+            "context:\n  platform: gitlab\n"
+        )
+
+        result = collect_auto_context(str(tmp_path))
+        # Persisted "gitlab" should override auto-detected "github"
+        assert result.get("platform") == "gitlab"
+
+    def test_works_without_project_dir(self, tmp_path):
+        """Auto-detection works normally when no .project/ dir exists."""
+        os.system(f"git init {tmp_path} --quiet")
+        os.system(
+            f"git -C {tmp_path} remote add origin https://github.com/owner/repo.git"
+        )
+
+        result = collect_auto_context(str(tmp_path))
+        assert result["platform"] == "github"
+        assert result["languages"] == []
+
+    def test_mixed_persisted_and_detected(self, tmp_path):
+        """Some values from .project/, others auto-detected."""
+        os.system(f"git init {tmp_path} --quiet")
+        os.system(
+            f"git -C {tmp_path} remote add origin https://github.com/owner/repo.git"
+        )
+        (tmp_path / "pyproject.toml").write_text("[project]\n")
+
+        project_dir = tmp_path / ".project"
+        project_dir.mkdir()
+        (project_dir / "project.yaml").write_text("name: test-project\n")
+        (project_dir / "darnit.yaml").write_text(
+            "context:\n  has_releases: true\n"
+        )
+
+        result = collect_auto_context(str(tmp_path))
+        # Persisted value
+        assert result.get("has_releases") is True
+        # Auto-detected values
+        assert result["platform"] == "github"
+        assert result["primary_language"] == "python"

@@ -5,12 +5,14 @@ with provenance tracking.
 """
 
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 import yaml
 
 from darnit.config.context_schema import ContextValue
 from darnit.config.context_storage import (
+    _run_detect_pipeline,
     get_context_definitions,
     get_context_value,
     get_pending_context,
@@ -393,3 +395,142 @@ class TestSaveNewContextFields:
         cv = get_context_value(str(tmp_path), "maintainers")
         assert cv is not None
         assert cv.value == maintainers
+
+
+class TestRunDetectPipelineHasReleases:
+    """Tests for has_releases detect pipeline (FR-2)."""
+
+    def _make_invocation(self, **kwargs):
+        from darnit.config.framework_schema import HandlerInvocation
+        return HandlerInvocation(**kwargs)
+
+    def test_detects_changelog(self, tmp_path: Path) -> None:
+        """has_releases detected when CHANGELOG.md exists."""
+        (tmp_path / "CHANGELOG.md").write_text("# Changelog\n## v1.0.0\n")
+        pipeline = [
+            self._make_invocation(handler="file_exists", files=["CHANGELOG.md", "CHANGELOG", "CHANGES.md", "CHANGES"], value_if_pass=True),
+        ]
+        result = _run_detect_pipeline("has_releases", pipeline, str(tmp_path), "owner", "repo")
+        assert result is not None
+        assert result.value is True
+        assert "file_exists" in result.detection_method
+
+    def test_detects_changes_file(self, tmp_path: Path) -> None:
+        """has_releases detected when CHANGES file exists."""
+        (tmp_path / "CHANGES").write_text("Changes\n")
+        pipeline = [
+            self._make_invocation(handler="file_exists", files=["CHANGELOG.md", "CHANGELOG", "CHANGES.md", "CHANGES"], value_if_pass=True),
+        ]
+        result = _run_detect_pipeline("has_releases", pipeline, str(tmp_path), "owner", "repo")
+        assert result is not None
+        assert result.value is True
+
+    def test_detects_release_workflow(self, tmp_path: Path) -> None:
+        """has_releases detected when release workflow exists."""
+        workflows = tmp_path / ".github" / "workflows"
+        workflows.mkdir(parents=True)
+        (workflows / "release.yml").write_text("on: release\n")
+        pipeline = [
+            self._make_invocation(handler="file_exists", files=[".github/workflows/release*"], value_if_pass=True),
+        ]
+        result = _run_detect_pipeline("has_releases", pipeline, str(tmp_path), "owner", "repo")
+        assert result is not None
+        assert result.value is True
+
+    def test_no_evidence_returns_none(self, tmp_path: Path) -> None:
+        """has_releases returns None when no release evidence exists."""
+        pipeline = [
+            self._make_invocation(handler="file_exists", files=[".github/workflows/release*"], value_if_pass=True),
+            self._make_invocation(handler="file_exists", files=["CHANGELOG.md", "CHANGELOG"], value_if_pass=True),
+        ]
+        result = _run_detect_pipeline("has_releases", pipeline, str(tmp_path), "owner", "repo")
+        assert result is None
+
+
+class TestRunDetectPipelinePlatform:
+    """Tests for platform detect pipeline (FR-3)."""
+
+    def _make_invocation(self, **kwargs):
+        from darnit.config.framework_schema import HandlerInvocation
+        return HandlerInvocation(**kwargs)
+
+    @patch("darnit.sieve.builtin_handlers.subprocess.run")
+    def test_detects_github_from_remote(self, mock_run, tmp_path: Path) -> None:
+        """platform detected as 'github' when remote contains github.com."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="https://github.com/owner/repo.git\n",
+            stderr="",
+        )
+        pipeline = [
+            self._make_invocation(
+                handler="exec",
+                command=["git", "remote", "get-url", "origin"],
+                pass_exit_codes=[0],
+                expr='output.stdout.contains("github.com")',
+                value_if_pass="github",
+            ),
+        ]
+        result = _run_detect_pipeline("platform", pipeline, str(tmp_path), "owner", "repo")
+        assert result is not None
+        assert result.value == "github"
+
+    @patch("darnit.sieve.builtin_handlers.subprocess.run")
+    def test_detects_gitlab_from_remote(self, mock_run, tmp_path: Path) -> None:
+        """platform detected as 'gitlab' when remote contains gitlab.com."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="https://gitlab.com/owner/repo.git\n",
+            stderr="",
+        )
+        pipeline = [
+            self._make_invocation(
+                handler="exec",
+                command=["git", "remote", "get-url", "origin"],
+                pass_exit_codes=[0],
+                expr='output.stdout.contains("github.com")',
+                value_if_pass="github",
+            ),
+            self._make_invocation(
+                handler="exec",
+                command=["git", "remote", "get-url", "origin"],
+                pass_exit_codes=[0],
+                expr='output.stdout.contains("gitlab.com")',
+                value_if_pass="gitlab",
+            ),
+        ]
+        result = _run_detect_pipeline("platform", pipeline, str(tmp_path), "owner", "repo")
+        assert result is not None
+        assert result.value == "gitlab"
+
+    def test_falls_back_to_github_dir(self, tmp_path: Path) -> None:
+        """platform detected as 'github' from .github/ directory when no remote."""
+        (tmp_path / ".github").mkdir()
+        pipeline = [
+            self._make_invocation(handler="file_exists", files=[".github"], value_if_pass="github"),
+        ]
+        result = _run_detect_pipeline("platform", pipeline, str(tmp_path), "owner", "repo")
+        assert result is not None
+        assert result.value == "github"
+
+    @patch("darnit.sieve.builtin_handlers.subprocess.run")
+    def test_no_remote_no_github_dir_returns_none(self, mock_run, tmp_path: Path) -> None:
+        """platform returns None when no remote and no .github/ directory."""
+        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="")
+        pipeline = [
+            self._make_invocation(
+                handler="exec",
+                command=["sh", "-c", "git remote get-url origin 2>/dev/null | grep -q github.com"],
+                pass_exit_codes=[0],
+                value_if_pass="github",
+            ),
+            self._make_invocation(
+                handler="exec",
+                command=["sh", "-c", "git remote get-url origin 2>/dev/null | grep -q gitlab.com"],
+                pass_exit_codes=[0],
+                value_if_pass="gitlab",
+            ),
+            self._make_invocation(handler="file_exists", files=[".github"], value_if_pass="github"),
+        ]
+        result = _run_detect_pipeline("platform", pipeline, str(tmp_path), "owner", "repo")
+        assert result is None

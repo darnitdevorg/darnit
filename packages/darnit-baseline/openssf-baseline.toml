@@ -305,6 +305,9 @@ auto_detect = true
 required = false
 presentation_hint = "[y/N]"
 detect = [
+    { handler = "file_exists", files = [".github/workflows/release*"], value_if_pass = true },
+    { handler = "file_exists", files = ["CHANGELOG.md", "CHANGELOG", "CHANGES.md", "CHANGES"], value_if_pass = true },
+    { handler = "exec", command = ["git", "tag", "--list", "v*"], pass_exit_codes = [0], expr = 'output.stdout != ""', value_if_pass = true },
     { handler = "exec", command = ["gh", "release", "list", "--repo", "$OWNER/$REPO", "--limit", "1"], pass_exit_codes = [0], value_if_pass = true, value_if_fail = false },
 ]
 
@@ -348,6 +351,23 @@ detect = [
     { handler = "file_exists", files = [".circleci/config.yml"], value_if_pass = "circleci" },
     { handler = "file_exists", files = ["azure-pipelines.yml"], value_if_pass = "azure" },
     { handler = "file_exists", files = [".travis.yml"], value_if_pass = "travis" },
+]
+
+[context.platform]
+type = "enum"
+prompt = "What hosting platform does this project use?"
+hint = "Select the platform where the canonical repository is hosted"
+values = ["github", "gitlab", "bitbucket", "other"]
+examples = ["github", "gitlab"]
+affects = ["OSPS-AC-01.01", "OSPS-AC-02.01", "OSPS-AC-03.01", "OSPS-AC-03.02", "OSPS-BR-03.01"]
+store_as = "project.platform"
+auto_detect = true
+required = false
+presentation_hint = "[github/gitlab/bitbucket/other]"
+detect = [
+    { handler = "exec", command = ["git", "remote", "get-url", "origin"], pass_exit_codes = [0], expr = 'output.stdout.contains("github.com")', value_if_pass = "github" },
+    { handler = "exec", command = ["git", "remote", "get-url", "origin"], pass_exit_codes = [0], expr = 'output.stdout.contains("gitlab.com")', value_if_pass = "gitlab" },
+    { handler = "file_exists", files = [".github"], value_if_pass = "github" },
 ]
 
 # NOTE: detected_ecosystem and license_type are auto-detected by
