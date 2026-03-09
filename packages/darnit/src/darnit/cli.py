@@ -25,6 +25,7 @@ Examples:
 """
 
 import argparse
+import importlib.metadata
 import json
 import sys
 from pathlib import Path
@@ -532,6 +533,11 @@ def create_parser() -> argparse.ArgumentParser:
         epilog=__doc__,
     )
 
+    parser.add_argument(
+        "-V", "--version",
+        action="version",
+        version=f"%(prog)s {importlib.metadata.version('darnit')}",
+    )
     parser.add_argument(
         "-v", "--verbose",
         action="store_true",
