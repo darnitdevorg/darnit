@@ -1,6 +1,6 @@
 # Contributing to darnit
 
-Thank you for your interest in contributing! This document provides guidelines and instructions for contributing.
+Thank you for your interest in contributing! This document provides our contribution policy. For detailed setup and workflow instructions, see the [Getting Started Guide](GETTING_STARTED.md).
 
 ## Code of Conduct
 
@@ -8,56 +8,12 @@ Please read and follow our Code of Conduct to maintain a welcoming environment f
 
 ## Getting Started
 
-### Prerequisites
+See the [Getting Started Guide](GETTING_STARTED.md) for:
 
-- Git
-- A GitHub account
-
-### Setup
-
-1. Fork the repository on GitHub
-2. Clone your fork locally:
-   ```bash
-   git clone https://github.com/YOUR-USERNAME/darnit.git
-   cd darnit
-   ```
-3. Add the upstream remote:
-   ```bash
-   git remote add upstream https://github.com/kusari-oss/darnit.git
-   ```
-
-## Making Changes
-
-### Branch Naming
-
-Create a branch with a descriptive name:
-- `feat/description` - New features
-- `fix/description` - Bug fixes
-- `docs/description` - Documentation updates
-- `refactor/description` - Code refactoring
-
-### Commit Messages
-
-Write clear, concise commit messages:
-```
-type: short description
-
-Longer description if needed explaining the what and why.
-```
-
-Types: `feat`, `fix`, `docs`, `test`, `refactor`, `ci`, `chore`
-
-### Pull Request Process
-
-1. Update your fork with the latest upstream changes:
-   ```bash
-   git fetch upstream
-   git rebase upstream/main
-   ```
-2. Push your changes to your fork
-3. Open a Pull Request against the `main` branch
-4. Fill out the PR template with relevant details
-5. Wait for review and address any feedback
+- [Environment Setup](docs/getting-started/environment-setup.md) — Prerequisites, fork, clone, install
+- [Development Workflow](docs/getting-started/development-workflow.md) — Branching, pre-commit checklist, PRs
+- [Framework Development](docs/getting-started/framework-development.md) — Working on the core framework
+- [Implementation Development](docs/getting-started/implementation-development.md) — Creating compliance plugins
 
 ## Development Guidelines
 
@@ -73,6 +29,8 @@ Types: `feat`, `fix`, `docs`, `test`, `refactor`, `ci`, `chore`
 - Ensure all tests pass before submitting a PR
 - Maintain or improve test coverage
 
+See the [Testing Guide](docs/getting-started/testing.md) for details.
+
 ### Documentation
 
 - Update relevant documentation for any changes
@@ -82,6 +40,7 @@ Types: `feat`, `fix`, `docs`, `test`, `refactor`, `ci`, `chore`
 ## Questions?
 
 If you have questions, feel free to:
+- Check the [Troubleshooting Guide](docs/getting-started/troubleshooting.md)
 - Open a GitHub Issue
 - Start a Discussion
 

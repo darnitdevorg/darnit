@@ -89,22 +89,14 @@ remediate_audit_findings(
 
 ## Architecture
 
-```
-darnit/                        # Core Framework
-├── core/                      # Plugin system, models, discovery
-├── config/                    # Project configuration (.project.yaml)
-├── sieve/                     # Progressive verification pipeline
-├── attestation/               # in-toto attestation generation
-├── threat_model/              # STRIDE threat modeling
-├── remediation/               # Auto-fix framework
-└── server/                    # MCP server infrastructure
+For a detailed architecture overview with diagrams, see the [Framework Development Guide](docs/getting-started/framework-development.md).
 
-darnit-baseline/               # OpenSSF Baseline Implementation
-├── controls/                  # Control definitions (levels 1-3)
-├── rules/                     # OSPS rules catalog
-├── remediation/               # Baseline-specific remediations
-└── formatters/                # SARIF output formatting
-```
+The project uses a plugin architecture with two main packages:
+
+| Package | Description |
+|---------|-------------|
+| `darnit` | Core framework — plugin system, sieve pipeline, configuration, MCP server |
+| `darnit-baseline` | OpenSSF Baseline implementation — 62 controls across 3 maturity levels |
 
 ## Project Configuration
 
@@ -176,24 +168,7 @@ confirm_project_context(
 
 ## Creating a Plugin
 
-To create a new compliance implementation:
-
-1. Create a package with the `darnit.implementations` entry point
-2. Implement the `ComplianceImplementation` protocol
-3. Register controls and checks
-
-```python
-# pyproject.toml
-[project.entry-points."darnit.implementations"]
-my-standard = "my_package:register"
-
-# my_package/__init__.py
-def register():
-    from .implementation import MyImplementation
-    return MyImplementation()
-```
-
-See `packages/darnit-baseline` for a complete example.
+To create a new compliance implementation, see the [Implementation Development Guide](docs/getting-started/implementation-development.md) and the [step-by-step tutorial](docs/tutorials/create-new-implementation.md).
 
 ## Available MCP Tools
 
@@ -402,18 +377,7 @@ To report security vulnerabilities, see [SECURITY.md](SECURITY.md).
 
 ## Development
 
-### Running Tests
-
-```bash
-uv run pytest
-```
-
-### Package Structure
-
-| Package | Description |
-|---------|-------------|
-| `darnit` | Core framework - plugin system, configuration, attestation |
-| `darnit-baseline` | OpenSSF Baseline implementation |
+For contributor setup and development workflow, see the [Getting Started Guide](GETTING_STARTED.md).
 
 ## License
 

@@ -1,5 +1,13 @@
 # Building a darnit Implementation
 
+> **New to darnit?** Start with the [Getting Started Guide](getting-started/README.md) instead. It provides:
+> - [Implementation Development](getting-started/implementation-development.md) — Concise reference for TOML controls, pass types, handlers
+> - [CEL Reference](getting-started/cel-reference.md) — CEL expression syntax and pitfalls
+> - [Tutorial: Add a New Control](tutorials/add-new-control.md) — Copy-paste walkthrough
+> - [Tutorial: Create a New Implementation](tutorials/create-new-implementation.md) — Build a plugin from scratch
+>
+> This document is a **deep technical reference** covering the full implementation surface area in detail.
+
 This guide walks through building a compliance implementation for the darnit framework.
 By the end, you'll have a working plugin that defines controls, runs automated checks
 through the sieve pipeline, and provides remediation actions.
