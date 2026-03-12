@@ -22,6 +22,7 @@ Example:
 
 import json
 import os
+import subprocess
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -342,7 +343,7 @@ class RemediationExecutor:
                     self.local_path, config.project_update, control_id
                 )
                 result.details["project_update"] = "applied"
-            except Exception as e:
+            except (OSError, RuntimeError, ValueError) as e:
                 logger.warning(
                     f"Remediation for {control_id} succeeded but "
                     f"project_update failed: {e}"
@@ -460,7 +461,12 @@ class RemediationExecutor:
                     }
                 if handler_result.status in (HandlerResultStatus.FAIL, HandlerResultStatus.ERROR):
                     all_success = False
-            except Exception as e:
+            except (
+                RuntimeError,
+                ValueError,
+                OSError,
+                subprocess.SubprocessError,
+            ) as e:
                 results.append({
                     "handler": invocation.handler,
                     "status": "error",
@@ -621,7 +627,7 @@ def _coerce_to_field_type(
     # Try constructing the model with path=value (PathRef pattern)
     try:
         return model_type(path=value)
-    except Exception:
+    except (TypeError, ValueError):
         pass
 
     return value
@@ -650,7 +656,7 @@ def _create_field_default(obj: object, field_name: str) -> object:
             if isinstance(annotation, type) and issubclass(annotation, BaseModel):
                 try:
                     return annotation()
-                except Exception:
+                except (TypeError, ValueError):
                     pass
 
             # Union type (X | Y or Optional[X]) — find a BaseModel subclass
@@ -663,7 +669,7 @@ def _create_field_default(obj: object, field_name: str) -> object:
                     if isinstance(arg, type) and issubclass(arg, BaseModel):
                         try:
                             return arg()
-                        except Exception:
+                        except (TypeError, ValueError):
                             break
     return {}
 
@@ -794,7 +800,7 @@ def _try_construct_nested(
 
     try:
         return model_type(**kwargs)
-    except Exception:
+    except (TypeError, ValueError):
         return None
 
 
