@@ -8,8 +8,6 @@ Implementations register under the 'darnit.implementations' group.
 from .logging import get_logger
 from .plugin import ComplianceImplementation
 
-from darnit.core.verification import PluginVerifier, VerificationConfig
-
 logger = get_logger("core.discovery")
 
 # Cache for discovered implementations
@@ -17,7 +15,20 @@ _implementations: dict[str, ComplianceImplementation] | None = None
 
 
 def discover_implementations() -> dict[str, ComplianceImplementation]:
-    """Discover compliance implementations from entry points."""
+    """Discover all installed compliance implementations.
+
+    Implementations are discovered via Python entry points registered under
+    the 'darnit.implementations' group.
+
+    Returns:
+        Dict mapping implementation names to implementation instances.
+
+    Example:
+        implementations = discover_implementations()
+        baseline = implementations.get("openssf-baseline")
+        if baseline:
+            controls = baseline.get_all_controls()
+    """
     global _implementations
 
     if _implementations is not None:
@@ -27,39 +38,19 @@ def discover_implementations() -> dict[str, ComplianceImplementation]:
 
     # Use importlib.metadata for Python 3.9+
     from importlib.metadata import entry_points
-
     eps = entry_points(group="darnit.implementations")
 
-    # Create plugin verifier (default: allow unsigned plugins for backward compatibility)
-    verification_config = VerificationConfig(allow_unsigned=True)
-    verifier = PluginVerifier(verification_config)
+    # TODO: Integrate plugin verification before loading.
+    # The PluginVerifier (darnit.core.verification) is fully implemented but
+    # not yet called here. Before loading each entry point, we should:
+    #   1. Call PluginVerifier.verify_plugin(ep.name)
+    #   2. Skip plugins that fail verification (when allow_unsigned=False)
+    #   3. Log warnings for unsigned plugins (when allow_unsigned=True)
+    # This requires reading VerificationConfig from the user's .baseline.toml.
+    # See: docs/SECURITY_GUIDE.md "Plugin Security Model" for configuration details.
 
     for ep in eps:
         try:
-            try:
-                verification_result = verifier.verify_plugin(ep.name)
-            except Exception as e:
-                    logger.warning(
-                        f"Plugin verification errored for '{ep.name}', loading anyway because "
-                        f"allow_unsigned=True: {e}"
-                    )
-                    verification_result = None
-
-            if verification_result is not None and not verification_result.verified:
-                message = verification_result.error or verification_result.warning or "unknown verification failure"
-
-                if verification_config.allow_unsigned:
-                    logger.warning(
-                        f"Plugin '{ep.name}' failed verification but will be loaded anyway: "
-                        f"{message}"
-                    )
-                else:
-                    logger.warning(
-                        f"Skipping plugin '{ep.name}' because verification failed: "
-                        f"{message}"
-                    )
-                    continue
-
             # Load the entry point (calls the register() function)
             register_func = ep.load()
             impl = register_func()
@@ -72,12 +63,8 @@ def discover_implementations() -> dict[str, ComplianceImplementation]:
                     f"Entry point {ep.name} returned {type(impl)}, "
                     f"expected ComplianceImplementation"
                 )
-
         except (ImportError, AttributeError, TypeError) as e:
             logger.error(f"Failed to load implementation {ep.name}: {e}")
-            continue
-        except Exception as e:
-            logger.error(f"Error occurred while verifying or loading plugin '{ep.name}': {e}")
             continue
 
     logger.info(f"Discovered {len(_implementations)} implementation(s)")
