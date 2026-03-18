@@ -111,7 +111,7 @@ class ComplianceImplementation(Protocol):
         """
         ...
 
-    def register_controls(self) -> None:
+def register_controls(self) -> None:
         """Register this implementation's Python-defined controls.
 
         Implementations should import their control modules here to trigger
@@ -125,6 +125,57 @@ class ComplianceImplementation(Protocol):
                 from .controls import level1, level2, level3  # noqa: F401
         """
         ...
+
+    # -------------------------------------------------------------------------
+    # Optional action handlers
+    # Plugins implement these to participate in the three main actions.
+    # The framework checks with hasattr() before calling them, so a plugin
+    # that only does checks doesn't need to implement the other two.
+    # -------------------------------------------------------------------------
+
+def get_check_handlers(self) -> dict[str, Any]:
+        """Return custom handlers for the Checks action.
+
+        Keys are handler names (referenced in TOML via handler = "my_handler").
+        Values are callables that accept a CheckContext and return a PassResult.
+
+        Example:
+            def get_check_handlers(self):
+                return {
+                    "gittuf_policy_check": self._check_policy,
+                    "gittuf_verify": self._verify_attestations,
+                }
+        """
+        return {}
+
+def get_context_handlers(self) -> dict[str, Any]:
+        """Return custom handlers for the Collect Context action.
+
+        Keys are handler names. Values are callables that accept a local_path
+        and project_context dict, and return a dict of discovered values.
+
+        Example:
+            def get_context_handlers(self):
+                return {
+                    "gittuf_collect_policy": self._collect_policy_context,
+                }
+        """
+        return {}
+
+def get_remediation_handlers(self) -> dict[str, Any]:
+        """Return custom handlers for the Remediate action.
+
+        Keys are handler names (referenced in TOML via handler = "my_fix").
+        Values are callables that accept a local_path and context dict,
+        and return a string describing what was done.
+
+        Example:
+            def get_remediation_handlers(self):
+                return {
+                    "gittuf_init_policy": self._init_policy,
+                }
+        """
+        return {}
 
 
 __all__ = [
