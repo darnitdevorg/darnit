@@ -1,0 +1,22 @@
+[project]
+name = "darnit-gittuf"
+version = "0.1.0"
+description = "Gittuf policy checks plugin for darnit"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "darnit>=0.1.0",
+]
+
+[project.entry-points."darnit.implementations"]
+gittuf = "darnit_gittuf:register"
+
+[project.entry-points."darnit.frameworks"]
+gittuf = "darnit_gittuf:get_framework_path"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/darnit_gittuf"]

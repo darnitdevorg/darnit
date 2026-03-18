@@ -1,0 +1,84 @@
+[framework]
+name = "gittuf"
+display_name = "Gittuf Policy Checks"
+version = "0.1.0"
+spec_version = "gittuf v0.1"
+description = "Security policy checks using Gittuf"
+
+[mcp]
+name = "gittuf"
+description = "Run Gittuf policy checks on a repository"
+
+[mcp.tools.audit_gittuf]
+builtin = "audit"
+description = "Run Gittuf policy checks"
+
+# =============================================================================
+# Control: Is Gittuf initialized in this repo?
+# =============================================================================
+
+[controls."GT-01.01"]
+name = "GittufInitialized"
+description = "Repository has Gittuf initialized"
+tags = { level = 1, domain = "GT" }
+
+[[controls."GT-01.01".passes]]
+handler = "file_exists"
+files = [".gittuf/policy.json", ".gittuf/root.json"]
+
+[[controls."GT-01.01".passes]]
+handler = "manual"
+steps = [
+    "Check if .gittuf/ directory exists in the repository root",
+    "Verify it contains policy.json and root.json",
+    "Run: gittuf policy list-rules to confirm policy is readable",
+]
+
+[controls."GT-01.01".remediation]
+safe = true
+dry_run_supported = true
+
+[[controls."GT-01.01".remediation.handlers]]
+handler = "exec"
+command = ["gittuf", "policy", "init"]
+dry_run_command = ["gittuf", "policy", "list-rules"]
+
+# =============================================================================
+# Control: Is the Gittuf policy valid?
+# =============================================================================
+
+[controls."GT-01.02"]
+name = "GittufPolicyValid"
+description = "Gittuf policy passes verification"
+tags = { level = 1, domain = "GT" }
+
+[[controls."GT-01.02".passes]]
+handler = "gittuf_verify_policy"
+
+[[controls."GT-01.02".passes]]
+handler = "manual"
+steps = [
+    "Run: gittuf verify-ref HEAD",
+    "Verify the command exits with code 0",
+    "Check output for any policy violations",
+]
+
+# =============================================================================
+# Control: Are commits signed?
+# =============================================================================
+
+[controls."GT-02.01"]
+name = "CommitsSigned"
+description = "Recent commits are cryptographically signed"
+tags = { level = 2, domain = "GT" }
+
+[[controls."GT-02.01".passes]]
+handler = "gittuf_commits_signed"
+
+[[controls."GT-02.01".passes]]
+handler = "manual"
+steps = [
+    "Run: git log --show-signature -5",
+    "Verify each commit shows a valid GPG or SSH signature",
+    "Check that no commits show 'BAD signature'",
+]

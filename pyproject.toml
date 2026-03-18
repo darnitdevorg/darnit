@@ -47,6 +47,7 @@ members = ["packages/*"]
 darnit = { workspace = true }
 darnit-baseline = { workspace = true }
 darnit-example = { workspace = true }
+darnit-gittuf = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
