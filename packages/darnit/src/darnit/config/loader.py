@@ -330,6 +330,8 @@ def init_project_config(
 ) -> ProjectConfig:
     """Initialize a new project configuration with discovered values."""
     from darnit.config.discovery import discover_project_name
+    from darnit.context.detectors import detect_forge, detect_ci, detect_build_system
+    from darnit.config.schema import BaselineExtension, ProjectContext
 
     project_name = name or discover_project_name(local_path) or "unnamed"
 
@@ -339,6 +341,23 @@ def init_project_config(
         project_type=project_type,
     )
     config.local_path = local_path
+
+    # Auto-detect forge, CI, and build system
+    forge = detect_forge(local_path)
+    ci = detect_ci(local_path)
+    build = detect_build_system(local_path)
+
+    logger.debug(f"Detected forge={forge}, ci={ci}, build={build}")
+
+    # Write detected values into the config
+    if config.x_openssf_baseline is None:
+        config.x_openssf_baseline = BaselineExtension()
+    if config.x_openssf_baseline.context is None:
+        config.x_openssf_baseline.context = ProjectContext()
+
+    context = config.x_openssf_baseline.context
+    if context.ci_provider is None and ci != "unknown":
+        context.ci_provider = ci
 
     return config
 
