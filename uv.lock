@@ -461,6 +461,8 @@ dependencies = [
     { name = "darnit" },
     { name = "darnit-baseline" },
     { name = "darnit-example" },
+    { name = "darnit-gittuf" },
+    { name = "darnit-reproducibility" },
 ]
 
 [package.optional-dependencies]
@@ -488,6 +490,8 @@ requires-dist = [
     { name = "darnit", extras = ["attestation"], marker = "extra == 'attestation'", editable = "packages/darnit" },
     { name = "darnit-baseline", editable = "packages/darnit-baseline" },
     { name = "darnit-example", editable = "packages/darnit-example" },
+    { name = "darnit-gittuf", editable = "packages/darnit-gittuf" },
+    { name = "darnit-reproducibility", editable = "packages/darnit-reproducibility" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.0.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0.0" },
