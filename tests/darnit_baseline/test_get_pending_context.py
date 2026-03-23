@@ -16,7 +16,7 @@ from darnit.config.context_schema import (
 )
 from darnit_baseline.tools import (
     _CONTEXT_KEY_ORDER,
-    _LLM_DIRECTIVE,
+    _LLM_DIRECTIVE_PREFIX,
     _build_context_question,
     get_pending_context,
 )
@@ -41,8 +41,14 @@ def _make_pending(count: int) -> list[ContextPromptRequest]:
 
 
 def _parse_json_from_result(result: str) -> dict:
-    """Strip directive footer and parse JSON from get_pending_context result."""
-    json_str = result.split("\n---")[0].rstrip()
+    """Strip directive prefix/footer and parse JSON from get_pending_context result."""
+    # The directive prefix ends with "---\n", JSON starts after that
+    if "---\n" in result:
+        # Find the JSON portion (starts with '{')
+        idx = result.index("{")
+        json_str = result[idx:]
+    else:
+        json_str = result
     return json.loads(json_str)
 
 
@@ -52,7 +58,7 @@ class TestGetPendingContextPagination:
     @patch("darnit_baseline.tools.Path")
     @patch("darnit.config.context_storage.get_pending_context")
     def test_default_limit_returns_four_questions(self, mock_get, mock_path) -> None:
-        """Default limit=4 returns up to four questions."""
+        """Default limit=4 returns up to four questions in ask_user_batch."""
         mock_path.return_value.resolve.return_value = "/tmp/repo"
         mock_get.return_value = _make_pending(5)
 
@@ -60,7 +66,7 @@ class TestGetPendingContextPagination:
         data = _parse_json_from_result(result)
 
         assert data["status"] == "pending"
-        assert len(data["questions"]) == 4
+        assert len(data["ask_user_batch"]) == 4
 
     @patch("darnit_baseline.tools.Path")
     @patch("darnit.config.context_storage.get_pending_context")
@@ -72,7 +78,7 @@ class TestGetPendingContextPagination:
         result = get_pending_context(local_path="/tmp/repo")
         data = _parse_json_from_result(result)
 
-        assert len(data["questions"]) == 2
+        assert len(data["ask_user_batch"]) == 2
 
     @patch("darnit_baseline.tools.Path")
     @patch("darnit.config.context_storage.get_pending_context")
@@ -85,7 +91,7 @@ class TestGetPendingContextPagination:
         data = _parse_json_from_result(result)
 
         assert data["status"] == "pending"
-        assert len(data["questions"]) == 5
+        assert len(data["ask_user_batch"]) == 5
 
     @patch("darnit_baseline.tools.Path")
     @patch("darnit.config.context_storage.get_pending_context")
@@ -97,7 +103,7 @@ class TestGetPendingContextPagination:
         result = get_pending_context(local_path="/tmp/repo", limit=3)
         data = _parse_json_from_result(result)
 
-        assert len(data["questions"]) == 3
+        assert len(data["ask_user_batch"]) == 3
 
 
 class TestGetPendingContextProgress:
@@ -123,27 +129,27 @@ class TestGetPendingContextDirective:
 
     @patch("darnit_baseline.tools.Path")
     @patch("darnit.config.context_storage.get_pending_context")
-    def test_directive_appended_when_pending(self, mock_get, mock_path) -> None:
-        """LLM directive footer is appended when questions are pending."""
+    def test_directive_prepended_when_pending(self, mock_get, mock_path) -> None:
+        """LLM directive prefix is prepended when questions are pending."""
         mock_path.return_value.resolve.return_value = "/tmp/repo"
         mock_get.return_value = _make_pending(3)
 
         result = get_pending_context(local_path="/tmp/repo")
 
-        assert result.endswith(_LLM_DIRECTIVE)
-        assert "IMPORTANT" in result
-        assert "ask_user_batch" in result
+        assert result.startswith(_LLM_DIRECTIVE_PREFIX)
+        assert "MANDATORY" in result
+        assert "AskUserQuestion" in result
 
     @patch("darnit_baseline.tools.Path")
     @patch("darnit.config.context_storage.get_pending_context")
     def test_no_directive_when_complete(self, mock_get, mock_path) -> None:
-        """No directive footer when no questions are pending."""
+        """No directive when no questions are pending."""
         mock_path.return_value.resolve.return_value = "/tmp/repo"
         mock_get.return_value = []
 
         result = get_pending_context(local_path="/tmp/repo")
 
-        assert _LLM_DIRECTIVE not in result
+        assert _LLM_DIRECTIVE_PREFIX not in result
         data = json.loads(result)
         assert data["status"] == "complete"
 
@@ -346,7 +352,7 @@ class TestAskUserBatch:
     @patch("darnit_baseline.tools.Path")
     @patch("darnit.config.context_storage.get_pending_context")
     def test_batch_contains_all_ask_user_questions(self, mock_get, mock_path) -> None:
-        """ask_user_batch.questions aggregates per-question ask_user params."""
+        """ask_user_batch is an array of AskUserQuestion-compatible question objects."""
         mock_path.return_value.resolve.return_value = "/tmp/repo"
         mock_get.return_value = _make_pending(3)
 
@@ -354,7 +360,8 @@ class TestAskUserBatch:
         data = _parse_json_from_result(result)
 
         assert "ask_user_batch" in data
-        batch = data["ask_user_batch"]["questions"]
+        batch = data["ask_user_batch"]
+        assert isinstance(batch, list)
         assert len(batch) == 3
         # Each batch question has the AskUserQuestion structure
         for q in batch:
@@ -483,7 +490,8 @@ class TestTomlDefinitionOrder:
         result = get_pending_context(local_path="/tmp/repo", limit=0)
         data = _parse_json_from_result(result)
 
-        keys = [q["key"] for q in data["questions"]]
+        # answer_mapping preserves the order of ask_user_batch
+        keys = [m["context_key"] for m in data["answer_mapping"]]
         # Should be in TOML order: maintainers, has_subprojects, ci_provider
         assert keys == ["maintainers", "has_subprojects", "ci_provider"]
 
@@ -511,7 +519,7 @@ class TestTomlDefinitionOrder:
         result = get_pending_context(local_path="/tmp/repo", limit=0)
         data = _parse_json_from_result(result)
 
-        keys = [q["key"] for q in data["questions"]]
+        keys = [m["context_key"] for m in data["answer_mapping"]]
         assert keys == ["maintainers", "custom_key"]
 
     def test_context_key_order_has_all_eight_keys(self) -> None:
