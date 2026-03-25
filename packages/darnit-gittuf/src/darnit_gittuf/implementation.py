@@ -80,6 +80,7 @@ class GittufImplementation:
     def register_sieve_handlers(self) -> None:
         """Register the Gittuf-specific check handlers."""
         from darnit.sieve.handler_registry import get_sieve_handler_registry
+
         from . import handlers
 
         registry = get_sieve_handler_registry()

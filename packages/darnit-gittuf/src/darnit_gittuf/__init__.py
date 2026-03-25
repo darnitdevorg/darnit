@@ -1,6 +1,7 @@
 """Gittuf plugin for darnit."""
 
 from pathlib import Path
+
 from .implementation import GittufImplementation
 
 

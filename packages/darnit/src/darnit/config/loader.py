@@ -330,8 +330,8 @@ def init_project_config(
 ) -> ProjectConfig:
     """Initialize a new project configuration with discovered values."""
     from darnit.config.discovery import discover_project_name
-    from darnit.context.detectors import detect_forge, detect_ci, detect_build_system
     from darnit.config.schema import BaselineExtension, ProjectContext
+    from darnit.context.detectors import detect_build_system, detect_ci, detect_forge
 
     project_name = name or discover_project_name(local_path) or "unnamed"
 

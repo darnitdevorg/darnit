@@ -140,6 +140,7 @@ ignore = [
     "SIM108", # ternary operator (readability preference)
     "SIM110", # any() suggestion (explicit loop often clearer)
     "SIM116", # dict comprehension (sometimes explicit is clearer)
+    "UP042",  # StrEnum suggestion (pre-existing, not introduced by this PR)
 ]
 
 [tool.ruff.lint.per-file-ignores]
