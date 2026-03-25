@@ -367,9 +367,12 @@ def cmd_init(args: argparse.Namespace) -> int:
     if args.framework:
         framework = args.framework
     else:
-        from darnit.core.discovery import get_default_implementation
-        impl = get_default_implementation()
-        framework = impl.name if impl else "openssf-baseline"
+        from darnit.core.discovery import discover_implementations
+        impls = discover_implementations()
+        if len(impls) == 1:
+            framework = next(iter(impls))
+        else:
+            framework = "openssf-baseline"
 
     template = f'''# Darnit configuration file
 # See: https://github.com/kusari-oss/darnit

@@ -4,9 +4,9 @@ This framework provides the core infrastructure for running compliance audits
 against various standards. Implementations register via Python entry points.
 
 Usage:
-    from darnit.core.discovery import get_default_implementation
+    from darnit.core.discovery import get_implementation
 
-    impl = get_default_implementation()
+    impl = get_implementation("openssf-baseline")
     if impl:
         controls = impl.get_all_controls()
 """

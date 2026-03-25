@@ -1075,10 +1075,11 @@ The darnit framework package SHALL NOT contain code, modules, or string literals
 - **THEN** `attestation/` and `threat_model/` directories SHALL NOT exist
 - **AND** these modules SHALL reside in the implementation package
 
-#### Requirement: No hardcoded implementation preference in discovery
-- **WHEN** `get_default_implementation()` is called
-- **THEN** it SHALL return the first discovered implementation
-- **AND** SHALL NOT hardcode a preference for any specific implementation name
+#### Requirement: Explicit implementation selection
+- **WHEN** callers need a compliance implementation
+- **THEN** they SHALL use `get_implementation(name)` with an explicit name
+- **AND** the name SHALL be resolved from `.baseline.toml` `extends` field,
+  an explicit parameter, or `discover_implementations()` to list available options
 
 ---
 

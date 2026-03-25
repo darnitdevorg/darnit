@@ -495,14 +495,24 @@ def get_pending_context(
     auto_accept_threshold = 0.8
     try:
         from darnit.config.control_loader import load_framework_config
-        from darnit.core.discovery import get_default_implementation
+        from darnit.config.merger import resolve_framework_path
 
-        impl = get_default_implementation()
-        if impl:
-            config_path = impl.get_framework_config_path()
-            if config_path:
-                fw_config = load_framework_config(config_path)
-                auto_accept_threshold = fw_config.context.auto_accept_confidence
+        # Try .baseline.toml extends, then fall back to "openssf-baseline"
+        fw_name = None
+        try:
+            from darnit.config import load_user_config
+
+            user_cfg = load_user_config(Path(local_path))
+            if user_cfg and user_cfg.extends:
+                fw_name = user_cfg.extends
+        except Exception:
+            pass
+        fw_name = fw_name or "openssf-baseline"
+
+        config_path = resolve_framework_path(fw_name)
+        if config_path and config_path.exists():
+            fw_config = load_framework_config(config_path)
+            auto_accept_threshold = fw_config.context.auto_accept_confidence
     except Exception:
         pass  # Use default threshold
 

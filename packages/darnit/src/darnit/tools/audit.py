@@ -46,11 +46,14 @@ def _get_sieve_components():
     return _sieve_components
 
 
-def _register_toml_controls() -> int:
+def _register_toml_controls(framework_name: str | None = None) -> int:
     """Load and register controls from the framework TOML file.
 
     This enables declarative control definitions from openssf-baseline.toml
     to be used alongside (or instead of) Python-defined controls.
+
+    Args:
+        framework_name: Explicit framework name for TOML resolution.
 
     Returns:
         Number of controls registered from TOML
@@ -59,7 +62,7 @@ def _register_toml_controls() -> int:
     if _toml_controls_registered:
         return 0
 
-    framework_path = _get_framework_config_path()
+    framework_path = _get_framework_config_path(framework_name)
     if not framework_path:
         logger.debug("No framework TOML found, skipping TOML control registration")
         return 0
@@ -101,43 +104,58 @@ def _register_toml_controls() -> int:
 _effective_config_cache: dict[str, Any] = {}
 
 
-def _get_framework_config_path() -> Path | None:
+def _get_framework_config_path(framework_name: str | None = None) -> Path | None:
     """Get path to the framework TOML file via plugin discovery.
 
-    This uses the ComplianceImplementation protocol to get the framework
-    config path, avoiding direct imports of implementation packages.
+    Uses the PluginRegistry to resolve the framework TOML path by name.
+    Falls back to the ComplianceImplementation protocol if a name is given.
+
+    Args:
+        framework_name: Explicit framework name (e.g., "openssf-baseline").
+            If None, attempts auto-resolution via resolve_framework_path.
 
     Returns:
         Path to framework TOML file or None if not found
     """
-    try:
-        from darnit.core.discovery import get_default_implementation
+    # Try PluginRegistry resolution first (works with or without a name)
+    if framework_name:
+        try:
+            from darnit.config.merger import resolve_framework_path
 
-        impl = get_default_implementation()
-        if impl and hasattr(impl, "get_framework_config_path"):
-            path = impl.get_framework_config_path()
+            path = resolve_framework_path(framework_name)
             if path and path.exists():
                 return path
-            logger.debug(f"Framework config path from {impl.name} does not exist: {path}")
-        elif impl:
-            logger.debug(f"Implementation {impl.name} does not provide get_framework_config_path()")
-        else:
-            logger.debug("No compliance implementation found")
+        except Exception as e:
+            logger.debug(f"Framework path resolution failed for '{framework_name}': {e}")
 
-    except Exception as e:
-        logger.debug(f"Error locating framework config: {e}")
+        # Fall back to ComplianceImplementation protocol
+        try:
+            from darnit.core.discovery import get_implementation
 
+            impl = get_implementation(framework_name)
+            if impl and hasattr(impl, "get_framework_config_path"):
+                path = impl.get_framework_config_path()
+                if path and path.exists():
+                    return path
+        except Exception as e:
+            logger.debug(f"Implementation lookup failed for '{framework_name}': {e}")
+
+    logger.debug("No framework config path resolved (framework_name=%s)", framework_name)
     return None
 
 
-def load_effective_audit_config(local_path: str) -> Any | None:
+def load_effective_audit_config(
+    local_path: str, framework_name: str | None = None
+) -> Any | None:
     """Load the effective configuration for auditing.
 
-    This loads the framework config (openssf-baseline.toml) and merges it
-    with any user config (.baseline.toml) found in the repository.
+    This loads the framework config and merges it with any user config
+    (.baseline.toml) found in the repository.
 
     Args:
         local_path: Path to the repository
+        framework_name: Explicit framework name. If None, resolved from
+            .baseline.toml ``extends`` field or defaults to "openssf-baseline".
 
     Returns:
         EffectiveConfig if successful, None otherwise
@@ -148,35 +166,14 @@ def load_effective_audit_config(local_path: str) -> Any | None:
         return _effective_config_cache[abs_path]
 
     try:
-        from darnit.config import (
-            load_framework_config,
-            load_user_config,
-            merge_configs,
+        from darnit.config import load_effective_config_auto
+
+        effective = load_effective_config_auto(
+            Path(local_path), framework_name=framework_name
         )
-
-        # Load framework config
-        framework_path = _get_framework_config_path()
-        if not framework_path:
-            logger.debug("Framework config not found, using legacy checks only")
-            return None
-
-        framework = load_framework_config(framework_path)
-
-        # Load user config if exists
-        user = load_user_config(Path(local_path))
-
-        # Merge configs
-        effective = merge_configs(framework, user)
 
         # Cache the result
         _effective_config_cache[abs_path] = effective
-
-        if user:
-            logger.info(f"Loaded user config from {local_path}/.baseline.toml")
-            excluded = effective.get_excluded_controls()
-            if excluded:
-                logger.info(f"User config excludes {len(excluded)} controls")
-
         return effective
 
     except Exception as e:
@@ -327,6 +324,7 @@ def run_sieve_audit(
     tags: list[str] | None = None,
     apply_user_config: bool = True,
     stop_on_llm: bool = True,
+    framework_name: str | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     """Run a sieve-based compliance audit — the canonical audit pipeline.
 
@@ -350,6 +348,9 @@ def run_sieve_audit(
         tags: Tag filters to apply to controls (e.g., ["domain=AC"]).
         apply_user_config: Apply .baseline.toml user config exclusions.
         stop_on_llm: Return PENDING_LLM for LLM consultation.
+        framework_name: Explicit framework name (e.g., "openssf-baseline").
+            Required when controls is None and multiple implementations are
+            installed. If None, resolved from .baseline.toml in the repo.
 
     Returns:
         Tuple of (results, summary) where results is a list of check result
@@ -374,27 +375,40 @@ def run_sieve_audit(
         if excluded_ids:
             logger.info(f"Skipping {len(excluded_ids)} controls per user config")
 
+    # Resolve framework name from .baseline.toml if not provided
+    resolved_fw = framework_name
+    if not resolved_fw:
+        try:
+            from darnit.config import load_user_config
+
+            user_cfg = load_user_config(Path(local_path))
+            if user_cfg and user_cfg.extends:
+                resolved_fw = user_cfg.extends
+        except Exception:
+            pass
+
     # Resolve controls: use provided list or load from TOML/registry
     if controls is not None:
         all_controls = list(controls)
     else:
         # Register Python-defined controls via plugin system
-        try:
-            from darnit.core.discovery import get_default_implementation
+        if resolved_fw:
+            try:
+                from darnit.core.discovery import get_implementation
 
-            impl = get_default_implementation()
-            if impl and hasattr(impl, "register_controls"):
-                impl.register_controls()
-                logger.debug(f"Registered Python control definitions from {impl.name}")
-            elif impl:
-                logger.debug(f"Implementation {impl.name} does not provide register_controls()")
-            else:
-                logger.debug("No compliance implementation found for control registration")
-        except Exception as e:
-            logger.debug(f"Python control modules not available: {e}")
+                impl = get_implementation(resolved_fw)
+                if impl and hasattr(impl, "register_controls"):
+                    impl.register_controls()
+                    logger.debug(f"Registered Python control definitions from {impl.name}")
+                elif impl:
+                    logger.debug(f"Implementation {impl.name} does not provide register_controls()")
+                else:
+                    logger.debug("Implementation '%s' not found for control registration", resolved_fw)
+            except Exception as e:
+                logger.debug(f"Python control modules not available: {e}")
 
         # Register controls from TOML framework definition (primary source of truth)
-        _register_toml_controls()
+        _register_toml_controls(resolved_fw)
 
         registry = get_control_registry()
         all_controls = []
@@ -515,13 +529,8 @@ def run_sieve_audit(
     # Failures here must never break the audit pipeline.
     try:
         from darnit.core.audit_cache import write_audit_cache
-        from darnit.core.discovery import get_default_implementation as _get_impl
 
-        fw_name = ""
-        _impl = _get_impl()
-        if _impl:
-            fw_name = _impl.name
-        write_audit_cache(local_path, all_results, summary, level, fw_name)
+        write_audit_cache(local_path, all_results, summary, level, resolved_fw or "")
     except Exception as exc:
         logger.warning("Failed to write audit cache (non-fatal): %s", exc)
 
@@ -589,17 +598,18 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, int]:
     return summary
 
 
-def _get_control_help(control_id: str) -> str | None:
+def _get_control_help(control_id: str, framework_name: str | None = None) -> str | None:
     """Get help_md for a control from the framework config.
 
     Args:
         control_id: Control identifier (e.g., "OSPS-BR-04.01")
+        framework_name: Framework name for config resolution.
 
     Returns:
         Help markdown string or None if not found
     """
     try:
-        framework_path = _get_framework_config_path()
+        framework_path = _get_framework_config_path(framework_name)
         if not framework_path:
             return None
 

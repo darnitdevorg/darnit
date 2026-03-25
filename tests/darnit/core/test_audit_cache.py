@@ -396,7 +396,7 @@ class TestRunSieveAuditCacheIntegration:
             patch("darnit.tools.audit._get_sieve_components", return_value=sieve_components),
             patch("darnit.tools.audit._register_toml_controls", return_value=0),
             patch("darnit.tools.audit.get_excluded_control_ids", return_value={}),
-            patch("darnit.core.discovery.get_default_implementation", return_value=None),
+            patch("darnit.config.load_user_config", return_value=None),
         ):
             from darnit.tools.audit import run_sieve_audit
 

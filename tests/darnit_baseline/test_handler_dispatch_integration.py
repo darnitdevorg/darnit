@@ -141,10 +141,10 @@ class TestTomlControlsLoadAsHandlerFormat:
         from pathlib import Path
 
         from darnit.config.control_loader import load_controls_from_toml
-        from darnit.core.discovery import get_default_implementation
+        from darnit.core.discovery import get_implementation
 
-        impl = get_default_implementation()
-        assert impl is not None, "No implementation found"
+        impl = get_implementation("openssf-baseline")
+        assert impl is not None, "openssf-baseline implementation not found"
 
         toml_path = impl.get_framework_config_path()
         assert toml_path is not None and Path(toml_path).exists(), (

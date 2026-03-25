@@ -42,8 +42,8 @@ import darnit_baseline
 from darnit_baseline.controls import level1
 
 # ✅ CORRECT - Use plugin discovery
-from darnit.core.discovery import get_default_implementation
-impl = get_default_implementation()
+from darnit.core.discovery import get_implementation
+impl = get_implementation("openssf-baseline")
 if impl:
     controls = impl.get_all_controls()
 ```
@@ -338,7 +338,7 @@ Default trusted publishers: `kusari-oss`, `kusaridev`
 Use `hasattr()` for backward compatibility when adding new protocol methods:
 
 ```python
-impl = get_default_implementation()
+impl = get_implementation("openssf-baseline")
 if impl and hasattr(impl, "new_method"):
     impl.new_method()
 ```
@@ -348,7 +348,7 @@ if impl and hasattr(impl, "new_method"):
 Always handle missing implementations gracefully:
 
 ```python
-impl = get_default_implementation()
+impl = get_implementation("openssf-baseline")
 if impl:
     result = impl.get_all_controls()
 else:

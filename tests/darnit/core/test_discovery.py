@@ -5,7 +5,6 @@ import pytest
 from darnit.core.discovery import (
     clear_cache,
     discover_implementations,
-    get_default_implementation,
     get_implementation,
 )
 
@@ -58,22 +57,3 @@ class TestGetImplementation:
         """Test getting a nonexistent implementation returns None."""
         impl = get_implementation("nonexistent-implementation")
         assert impl is None
-
-
-class TestGetDefaultImplementation:
-    """Tests for get_default_implementation function."""
-
-    @pytest.fixture(autouse=True)
-    def clear_discovery_cache(self):
-        """Clear cache before each test."""
-        clear_cache()
-        yield
-        clear_cache()
-
-    @pytest.mark.unit
-    def test_returns_openssf_baseline_as_default(self):
-        """Test that openssf-baseline is the default implementation."""
-        impl = get_default_implementation()
-        assert impl is not None
-        assert impl.name == "openssf-baseline"
-

@@ -40,7 +40,6 @@ from .adapters import (
 )
 from .discovery import (
     discover_implementations,
-    get_default_implementation,
     get_implementation,
 )
 from .handlers import (
@@ -110,7 +109,6 @@ __all__ = [
     "ComplianceImplementation",
     "discover_implementations",
     "get_implementation",
-    "get_default_implementation",
     # Plugin registry (new)
     "PluginRegistry",
     "get_plugin_registry",

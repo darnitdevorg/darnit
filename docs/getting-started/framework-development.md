@@ -57,8 +57,8 @@ import darnit_baseline
 from darnit_baseline.controls import level1
 
 # CORRECT — Use plugin discovery
-from darnit.core.discovery import get_default_implementation
-impl = get_default_implementation()
+from darnit.core.discovery import get_implementation
+impl = get_implementation("openssf-baseline")
 if impl:
     controls = impl.get_all_controls()
 ```

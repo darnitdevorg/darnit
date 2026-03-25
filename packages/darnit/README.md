@@ -23,10 +23,10 @@ pip install darnit
 ### Discover Implementations
 
 ```python
-from darnit.core.discovery import get_default_implementation
+from darnit.core.discovery import get_implementation
 
-# Get the default installed compliance implementation
-impl = get_default_implementation()
+# Get a compliance implementation by name
+impl = get_implementation("openssf-baseline")
 if impl:
     controls = impl.get_all_controls()
 ```

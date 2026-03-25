@@ -183,6 +183,7 @@ def _audit_single_repo(
     repo: str,
     level: int,
     tags: list[str] | None,
+    framework_name: str | None = None,
 ) -> dict[str, Any]:
     """Clone and audit a single repo, returning structured results."""
     with tempfile.TemporaryDirectory(prefix=f"darnit-org-{repo}-") as tmpdir:
@@ -214,6 +215,7 @@ def _audit_single_repo(
                 tags=tags,
                 apply_user_config=True,
                 stop_on_llm=True,
+                framework_name=framework_name,
             )
             return {
                 "repo": repo,

@@ -132,6 +132,7 @@ def audit_openssf_baseline(
         tags=tags_list,
         apply_user_config=True,
         stop_on_llm=True,
+        framework_name="openssf-baseline",
     )
 
     # Format output
@@ -1271,7 +1272,7 @@ def audit_org(
         else:
             tags_list = list(tags)
 
-    result = _audit_single_repo(owner, repo, level, tags_list)
+    result = _audit_single_repo(owner, repo, level, tags_list, framework_name="openssf-baseline")
 
     if output_format == "json":
         return json.dumps(result, indent=2)

@@ -97,24 +97,6 @@ def get_implementation(name: str) -> ComplianceImplementation | None:
     return implementations.get(name)
 
 
-def get_default_implementation() -> ComplianceImplementation | None:
-    """Get the default implementation.
-
-    Returns the first discovered implementation. If multiple implementations
-    are installed, the caller should use get_implementation(name) to select
-    a specific one.
-
-    Returns:
-        Implementation instance or None if no implementations found.
-    """
-    implementations = discover_implementations()
-
-    if implementations:
-        return next(iter(implementations.values()))
-
-    return None
-
-
 def clear_cache() -> None:
     """Clear the implementation cache.
 
@@ -127,6 +109,5 @@ def clear_cache() -> None:
 __all__ = [
     "discover_implementations",
     "get_implementation",
-    "get_default_implementation",
     "clear_cache",
 ]

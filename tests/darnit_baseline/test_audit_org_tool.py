@@ -51,7 +51,7 @@ class TestAuditOrgTool:
             "summary": {"PASS": 0, "FAIL": 0, "WARN": 0, "N/A": 0, "total": 0},
         }
         result = audit_org(owner="my-org", repo="my-repo", level=1)
-        mock_audit.assert_called_once_with("my-org", "my-repo", 1, None)
+        mock_audit.assert_called_once_with("my-org", "my-repo", 1, None, framework_name="openssf-baseline")
         assert "my-repo" in result
 
     @patch("darnit.tools.audit_org._audit_single_repo")
