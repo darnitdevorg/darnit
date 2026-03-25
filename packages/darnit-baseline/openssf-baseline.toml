@@ -3929,11 +3929,10 @@ safe = true
 dry_run_supported = true
 
 [[controls."OSPS-SA-03.02".remediation.handlers]]
-handler = "file_create"
+handler = "generate_threat_model"
 path = "THREAT_MODEL.md"
 template = "threat_model_basic"
 overwrite = false
-llm_enhance = "Customize this threat model: run threat discovery to identify the project's actual entry points, data stores, authentication mechanisms, and sensitive data. Replace the generic STRIDE examples with threats specific to the discovered assets and architecture."
 
 [controls."OSPS-SA-03.02".remediation.project_update]
 set = { "security.threat_model.path" = "THREAT_MODEL.md" }

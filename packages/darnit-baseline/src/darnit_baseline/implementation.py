@@ -185,5 +185,20 @@ class OSPSBaselineImplementation:
         # Clear plugin context
         registry.set_plugin_context(None)
 
+        # Register sieve remediation handlers
+        from darnit.sieve.handler_registry import get_sieve_handler_registry
+
+        from .threat_model.remediation import generate_threat_model_handler
+
+        sieve_registry = get_sieve_handler_registry()
+        sieve_registry.set_plugin_context(self.name)
+        sieve_registry.register(
+            "generate_threat_model",
+            phase="deterministic",
+            handler_fn=generate_threat_model_handler,
+            description="Generate dynamic STRIDE threat model",
+        )
+        sieve_registry.set_plugin_context(None)
+
 
 __all__ = ["OSPSBaselineImplementation"]
