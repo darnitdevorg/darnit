@@ -22,7 +22,6 @@ dependencies = [
     "darnit-baseline",
     "darnit-example",
     "darnit-gittuf",
-    "darnit-reproducibility",
 ]
 
 [project.urls]
