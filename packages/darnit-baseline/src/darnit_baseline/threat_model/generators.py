@@ -1,7 +1,7 @@
 """Output generators for threat models.
 
 This module provides functions to generate threat model reports
-in various formats including Markdown and SARIF.
+in various formats including Markdown, SARIF, and JSON.
 """
 
 from datetime import datetime
@@ -9,10 +9,209 @@ from typing import Any
 
 from .models import (
     AssetInventory,
+    AttackChain,
     RiskLevel,
     StrideCategory,
     Threat,
 )
+
+# Human-readable category names and descriptions for empty-category explanations
+_CATEGORY_DESCRIPTIONS: dict[StrideCategory, dict[str, str]] = {
+    StrideCategory.SPOOFING: {
+        "name": "Spoofing",
+        "checked": "Checked for unauthenticated endpoints and missing identity verification.",
+    },
+    StrideCategory.TAMPERING: {
+        "name": "Tampering",
+        "checked": "Checked for injection vulnerabilities (SQL, command, XSS, path traversal, SSRF, code injection).",
+    },
+    StrideCategory.REPUDIATION: {
+        "name": "Repudiation",
+        "checked": "Checked for insufficient audit logging on security-relevant actions.",
+    },
+    StrideCategory.INFORMATION_DISCLOSURE: {
+        "name": "Information Disclosure",
+        "checked": "Checked for hardcoded secrets, PII handling, financial data exposure, and XSS.",
+    },
+    StrideCategory.DENIAL_OF_SERVICE: {
+        "name": "Denial Of Service",
+        "checked": "Checked for public endpoints without rate limiting.",
+    },
+    StrideCategory.ELEVATION_OF_PRIVILEGE: {
+        "name": "Elevation Of Privilege",
+        "checked": "Checked for server actions without authorization and injection-based privilege escalation.",
+    },
+}
+
+_RISK_ICONS: dict[RiskLevel, str] = {
+    RiskLevel.CRITICAL: "🔴",
+    RiskLevel.HIGH: "🟠",
+    RiskLevel.MEDIUM: "🟡",
+    RiskLevel.LOW: "🟢",
+    RiskLevel.INFORMATIONAL: "ℹ️",
+}
+
+
+def generate_mermaid_dfd(
+    assets: AssetInventory,
+    threats: list[Threat],
+) -> str:
+    """Generate a Mermaid data-flow diagram from asset inventory.
+
+    Args:
+        assets: Discovered asset inventory
+        threats: List of identified threats (used for >50 node simplification)
+
+    Returns:
+        Mermaid flowchart LR string, or empty string if no assets
+    """
+    if not assets.entry_points and not assets.data_stores:
+        return ""
+
+    # Determine if simplification is needed
+    total_nodes = (
+        len(assets.entry_points)
+        + len(assets.data_stores)
+        + len(assets.authentication)
+        + 1  # external actor
+    )
+    simplify = total_nodes > 50
+
+    if simplify:
+        # Only show entry points connected to CRITICAL/HIGH threats
+        high_risk_asset_ids: set[str] = set()
+        for t in threats:
+            if t.risk.level in (RiskLevel.CRITICAL, RiskLevel.HIGH):
+                high_risk_asset_ids.update(t.affected_assets)
+        entry_points = [ep for ep in assets.entry_points if ep.id in high_risk_asset_ids]
+        data_stores = assets.data_stores[:5]  # Limit data stores
+    else:
+        entry_points = assets.entry_points
+        data_stores = assets.data_stores
+
+    lines = ["```mermaid", "flowchart LR"]
+
+    # External actor
+    lines.append('    User(["External Actor"])')
+
+    # Split entry points by auth requirement for trust boundaries
+    authed = [ep for ep in entry_points if ep.authentication_required]
+    unauthed = [ep for ep in entry_points if not ep.authentication_required]
+
+    if unauthed:
+        lines.append("    subgraph Public Zone")
+        for ep in unauthed[:20]:
+            safe_id = ep.id.replace("-", "_")
+            lines.append(f"        {safe_id}[{ep.method} {ep.path}]")
+        lines.append("    end")
+
+    if authed:
+        lines.append("    subgraph Authenticated Zone")
+        for ep in authed[:20]:
+            safe_id = ep.id.replace("-", "_")
+            lines.append(f"        {safe_id}[{ep.method} {ep.path}]")
+        if assets.authentication:
+            for auth in assets.authentication[:3]:
+                safe_id = auth.id.replace("-", "_")
+                lines.append(f"        {safe_id}{{{{{auth.auth_type}}}}}")
+        lines.append("    end")
+
+    if data_stores:
+        lines.append("    subgraph Data Layer")
+        for ds in data_stores[:10]:
+            safe_id = ds.id.replace("-", "_")
+            lines.append(f"        {safe_id}[({ds.technology})]")
+        lines.append("    end")
+
+    # Edges: User -> entry points
+    for ep in entry_points[:20]:
+        safe_id = ep.id.replace("-", "_")
+        lines.append(f"    User --> {safe_id}")
+
+    # Edges: entry points -> data stores (simplified)
+    if data_stores:
+        ds_id = data_stores[0].id.replace("-", "_")
+        for ep in entry_points[:20]:
+            safe_id = ep.id.replace("-", "_")
+            lines.append(f"    {safe_id} --> {ds_id}")
+
+    lines.append("```")
+
+    if simplify:
+        lines.append("")
+        lines.append("> **Note:** Diagram simplified to show only high-risk paths. See Asset Inventory table for full details.")
+
+    return "\n".join(lines)
+
+
+def _render_threat_detailed(threat: Threat) -> list[str]:
+    """Render a single threat in detailed mode."""
+    md: list[str] = []
+    risk_icon = _RISK_ICONS.get(threat.risk.level, "⚪")
+
+    md.append(f"#### {risk_icon} {threat.id}: {threat.title}")
+    md.append("")
+    md.append(f"**Risk Score:** {threat.risk.overall:.2f} ({threat.risk.level.value.upper()})")
+    md.append("")
+    md.append(f"**Description:** {threat.description}")
+    md.append("")
+    md.append(f"**Attack Vector:** {threat.attack_vector}")
+    md.append("")
+
+    # Exploitation scenario (new)
+    if threat.exploitation_scenario:
+        md.append("**Exploitation Scenario:**")
+        md.append("")
+        for i, step in enumerate(threat.exploitation_scenario, 1):
+            md.append(f"{i}. {step}")
+        md.append("")
+
+    # Data flow impact (new)
+    if threat.data_flow_impact:
+        md.append(f"**Data Flow Impact:** {threat.data_flow_impact}")
+        md.append("")
+
+    if threat.code_locations:
+        md.append("**Code Locations:**")
+        for cl in threat.code_locations[:3]:
+            md.append(f"- `{cl.file}:{cl.line_start}` - {cl.annotation}")
+        md.append("")
+
+    # Ranked controls (new, preferred over recommended_controls)
+    if threat.ranked_controls:
+        md.append("**Recommended Controls:**")
+        md.append("")
+        md.append("| Control | Effectiveness | Rationale |")
+        md.append("|---------|--------------|-----------|")
+        for rc in threat.ranked_controls:
+            md.append(f"| {rc.control} | {rc.effectiveness} | {rc.rationale} |")
+        md.append("")
+    elif threat.recommended_controls:
+        md.append("**Recommended Controls:**")
+        for control in threat.recommended_controls:
+            md.append(f"- {control}")
+        md.append("")
+
+    if threat.references:
+        md.append("**References:**")
+        for ref in threat.references:
+            md.append(f"- {ref}")
+        md.append("")
+
+    return md
+
+
+def _render_threat_summary(threat: Threat) -> str:
+    """Render a single threat in summary mode (single line)."""
+    risk_icon = _RISK_ICONS.get(threat.risk.level, "⚪")
+    top_control = ""
+    if threat.ranked_controls:
+        top_control = threat.ranked_controls[0].control
+    elif threat.recommended_controls:
+        top_control = threat.recommended_controls[0]
+    else:
+        top_control = "Review required"
+    return f"- {risk_icon} **{threat.id}: {threat.title}** — Risk: {threat.risk.overall:.2f} ({threat.risk.level.value.upper()}) — {top_control}"
 
 
 def generate_markdown_threat_model(
@@ -20,7 +219,9 @@ def generate_markdown_threat_model(
     assets: AssetInventory,
     threats: list[Threat],
     control_gaps: list[dict],
-    frameworks: list[str]
+    frameworks: list[str],
+    detail_level: str = "detailed",
+    attack_chains: list[AttackChain] | None = None,
 ) -> str:
     """Generate a markdown-formatted threat model document.
 
@@ -30,11 +231,17 @@ def generate_markdown_threat_model(
         threats: List of identified threats
         control_gaps: List of control gaps
         frameworks: List of detected frameworks
+        detail_level: "detailed" (default) or "summary"
+        attack_chains: Optional list of detected attack chains
 
     Returns:
         Markdown-formatted threat model document
     """
-    md = []
+    is_summary = detail_level == "summary"
+    if attack_chains is None:
+        attack_chains = []
+
+    md: list[str] = []
     md.append("# Threat Model Report")
     md.append("")
     md.append(f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -103,52 +310,76 @@ def generate_markdown_threat_model(
         md.append("No data stores detected.")
     md.append("")
 
-    # STRIDE Threats
+    # Data Flow Diagram (detailed mode only)
+    if not is_summary:
+        dfd = generate_mermaid_dfd(assets, threats)
+        if dfd:
+            md.append("## Data Flow Diagram")
+            md.append("")
+            md.append(dfd)
+            md.append("")
+
+    # STRIDE Threats — show all 6 categories
     md.append("## Threat Analysis (STRIDE)")
     md.append("")
 
     for category in StrideCategory:
         category_threats = [t for t in threats if t.category == category]
-        if category_threats:
-            category_name = category.value.replace("_", " ").title()
-            md.append(f"### {category_name}")
+        cat_info = _CATEGORY_DESCRIPTIONS.get(category, {"name": category.value.replace("_", " ").title(), "checked": ""})
+        category_name = cat_info["name"]
+
+        md.append(f"### {category_name}")
+        md.append("")
+
+        if not category_threats:
+            # FR-009: Show what was checked for empty categories
+            md.append(f"No threats identified. {cat_info['checked']}")
+            md.append("")
+            continue
+
+        # FR-010: Group and summarize if >10 findings
+        if len(category_threats) > 10:
+            md.append(f"**{len(category_threats)} threats identified.** Showing representative examples:")
+            md.append("")
+            # Show top 3 by risk, then summarize the rest
+            sorted_threats = sorted(category_threats, key=lambda t: t.risk.overall, reverse=True)
+            display_threats = sorted_threats[:3]
+            remaining = len(category_threats) - 3
+        else:
+            display_threats = category_threats
+            remaining = 0
+
+        for threat in display_threats:
+            if is_summary:
+                md.append(_render_threat_summary(threat))
+            else:
+                md.extend(_render_threat_detailed(threat))
+
+        if remaining > 0:
+            md.append("")
+            md.append(f"*...and {remaining} additional {category_name.lower()} threats (see SARIF/JSON output for full details).*")
             md.append("")
 
-            for threat in category_threats:
-                risk_icon = {
-                    RiskLevel.CRITICAL: "🔴",
-                    RiskLevel.HIGH: "🟠",
-                    RiskLevel.MEDIUM: "🟡",
-                    RiskLevel.LOW: "🟢",
-                    RiskLevel.INFORMATIONAL: "ℹ️"
-                }.get(threat.risk.level, "⚪")
-
-                md.append(f"#### {risk_icon} {threat.id}: {threat.title}")
+    # Attack Chains (detailed mode only)
+    if not is_summary:
+        md.append("## Attack Chains")
+        md.append("")
+        if attack_chains:
+            for chain in attack_chains:
+                risk_icon = _RISK_ICONS.get(chain.composite_risk.level, "⚪")
+                md.append(f"### {risk_icon} {chain.id}: {chain.name}")
                 md.append("")
-                md.append(f"**Risk Score:** {threat.risk.overall:.2f} ({threat.risk.level.value.upper()})")
+                md.append(f"**Composite Risk:** {chain.composite_risk.overall:.2f} ({chain.composite_risk.level.value.upper()})")
                 md.append("")
-                md.append(f"**Description:** {threat.description}")
+                md.append(f"**Description:** {chain.description}")
                 md.append("")
-                md.append(f"**Attack Vector:** {threat.attack_vector}")
+                md.append(f"**Constituent Threats:** {', '.join(chain.threat_ids)}")
                 md.append("")
-
-                if threat.code_locations:
-                    md.append("**Code Locations:**")
-                    for cl in threat.code_locations[:3]:
-                        md.append(f"- `{cl.file}:{cl.line_start}` - {cl.annotation}")
-                    md.append("")
-
-                if threat.recommended_controls:
-                    md.append("**Recommended Controls:**")
-                    for control in threat.recommended_controls:
-                        md.append(f"- {control}")
-                    md.append("")
-
-                if threat.references:
-                    md.append("**References:**")
-                    for ref in threat.references:
-                        md.append(f"- {ref}")
-                    md.append("")
+                md.append(f"**Shared Assets:** {', '.join(chain.shared_assets[:5])}")
+                md.append("")
+        else:
+            md.append("No compound attack paths identified.")
+            md.append("")
 
     # Control Gaps
     if control_gaps:
@@ -172,7 +403,12 @@ def generate_markdown_threat_model(
     immediate_threats = [t for t in threats if t.risk.level in [RiskLevel.CRITICAL, RiskLevel.HIGH]]
     if immediate_threats:
         for i, threat in enumerate(immediate_threats[:10], 1):
-            control = threat.recommended_controls[0] if threat.recommended_controls else 'Review required'
+            if threat.ranked_controls:
+                control = threat.ranked_controls[0].control
+            elif threat.recommended_controls:
+                control = threat.recommended_controls[0]
+            else:
+                control = "Review required"
             md.append(f"{i}. **{threat.title}** - {control}")
     else:
         md.append("No critical or high severity threats identified.")
@@ -211,16 +447,24 @@ def generate_markdown_threat_model(
     return "\n".join(md)
 
 
-def generate_sarif_threat_model(repo_path: str, threats: list[Threat]) -> dict[str, Any]:
+def generate_sarif_threat_model(
+    repo_path: str,
+    threats: list[Threat],
+    attack_chains: list[AttackChain] | None = None,
+) -> dict[str, Any]:
     """Generate SARIF format for IDE/CI integration.
 
     Args:
         repo_path: Path to the repository
         threats: List of identified threats
+        attack_chains: Optional list of detected attack chains
 
     Returns:
         SARIF-formatted dictionary
     """
+    if attack_chains is None:
+        attack_chains = []
+
     severity_map = {
         RiskLevel.CRITICAL: "error",
         RiskLevel.HIGH: "error",
@@ -233,8 +477,8 @@ def generate_sarif_threat_model(repo_path: str, threats: list[Threat]) -> dict[s
     results = []
 
     for threat in threats:
-        # Create rule
-        rule = {
+        # Create rule with extended properties
+        rule: dict[str, Any] = {
             "id": threat.id,
             "name": threat.title.replace(" ", ""),
             "shortDescription": {
@@ -248,7 +492,20 @@ def generate_sarif_threat_model(repo_path: str, threats: list[Threat]) -> dict[s
             },
             "defaultConfiguration": {
                 "level": severity_map.get(threat.risk.level, "warning")
-            }
+            },
+            "properties": {
+                "exploitationScenario": threat.exploitation_scenario,
+                "dataFlowImpact": threat.data_flow_impact,
+                "rankedControls": [
+                    {
+                        "control": rc.control,
+                        "effectiveness": rc.effectiveness,
+                        "rationale": rc.rationale,
+                    }
+                    for rc in threat.ranked_controls
+                ],
+                "attackChainIds": threat.attack_chain_ids,
+            },
         }
         rules.append(rule)
 
@@ -274,7 +531,7 @@ def generate_sarif_threat_model(repo_path: str, threats: list[Threat]) -> dict[s
             }
             results.append(result)
 
-    sarif = {
+    sarif: dict[str, Any] = {
         "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
         "version": "2.1.0",
         "runs": [{
@@ -286,7 +543,24 @@ def generate_sarif_threat_model(repo_path: str, threats: list[Threat]) -> dict[s
                     "rules": rules
                 }
             },
-            "results": results
+            "results": results,
+            "properties": {
+                "attackChains": [
+                    {
+                        "id": c.id,
+                        "name": c.name,
+                        "description": c.description,
+                        "threatIds": c.threat_ids,
+                        "categories": [cat.value for cat in c.categories],
+                        "sharedAssets": c.shared_assets,
+                        "compositeRisk": {
+                            "overall": c.composite_risk.overall,
+                            "level": c.composite_risk.level.value,
+                        },
+                    }
+                    for c in attack_chains
+                ],
+            },
         }]
     }
 
@@ -298,7 +572,8 @@ def generate_json_summary(
     frameworks: list[str],
     assets: AssetInventory,
     threats: list[Threat],
-    control_gaps: list[dict]
+    control_gaps: list[dict],
+    attack_chains: list[AttackChain] | None = None,
 ) -> dict[str, Any]:
     """Generate a JSON summary of the threat model.
 
@@ -308,10 +583,14 @@ def generate_json_summary(
         assets: Discovered asset inventory
         threats: List of identified threats
         control_gaps: List of control gaps
+        attack_chains: Optional list of detected attack chains
 
     Returns:
         JSON-serializable dictionary
     """
+    if attack_chains is None:
+        attack_chains = []
+
     return {
         "version": "1.0",
         "repository": repo_path,
@@ -329,15 +608,42 @@ def generate_json_summary(
                 "category": t.category.value,
                 "title": t.title,
                 "risk_level": t.risk.level.value,
-                "risk_score": t.risk.overall
+                "risk_score": t.risk.overall,
+                "exploitation_scenario": t.exploitation_scenario,
+                "data_flow_impact": t.data_flow_impact,
+                "ranked_controls": [
+                    {
+                        "control": rc.control,
+                        "effectiveness": rc.effectiveness,
+                        "rationale": rc.rationale,
+                    }
+                    for rc in t.ranked_controls
+                ],
+                "attack_chain_ids": t.attack_chain_ids,
             } for t in threats
         ],
-        "control_gaps": control_gaps
+        "attack_chains": [
+            {
+                "id": c.id,
+                "name": c.name,
+                "description": c.description,
+                "threat_ids": c.threat_ids,
+                "categories": [cat.value for cat in c.categories],
+                "shared_assets": c.shared_assets,
+                "composite_risk": {
+                    "overall": c.composite_risk.overall,
+                    "level": c.composite_risk.level.value,
+                },
+            }
+            for c in attack_chains
+        ],
+        "control_gaps": control_gaps,
     }
 
 
 __all__ = [
     "generate_markdown_threat_model",
+    "generate_mermaid_dfd",
     "generate_sarif_threat_model",
     "generate_json_summary",
 ]

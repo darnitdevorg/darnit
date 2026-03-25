@@ -21,8 +21,19 @@ from .models import (
     StrideCategory,
     Threat,
 )
+from .scenarios import get_scenario
 
 logger = get_logger("threat_model.stride")
+
+
+def _apply_scenario(threat: Threat, sub_type: str) -> None:
+    """Apply exploitation scenario template to a threat if available."""
+    scenario = get_scenario(sub_type)
+    if scenario is None:
+        return
+    threat.exploitation_scenario = list(scenario["steps"])
+    threat.data_flow_impact = scenario["data_flow_pattern"]
+    threat.ranked_controls = list(scenario["control_rankings"])
 
 
 def calculate_risk_score(
@@ -170,6 +181,7 @@ def analyze_stride_threats(
                 )],
                 references=["OWASP API Security Top 10 - API2:2023 Broken Authentication"]
             ))
+            _apply_scenario(threats[-1], "unauthenticated_endpoint")
 
         # Elevation of Privilege for server actions
         if ep.entry_type == "server_action":
@@ -204,6 +216,7 @@ def analyze_stride_threats(
                 )],
                 references=["OWASP API Security Top 10 - API1:2023 Broken Object Level Authorization"]
             ))
+            _apply_scenario(threats[-1], "server_action_no_auth")
 
     # Analyze injection sinks
     for sink in injection_sinks:
@@ -246,6 +259,7 @@ def analyze_stride_threats(
             )],
             references=[f"CWE: {sink['cwe']}", "OWASP Injection Prevention Cheat Sheet"]
         ))
+        _apply_scenario(threats[-1], f"injection_{sink['type']}")
 
     # Analyze secrets
     for secret in assets.secrets:
@@ -283,6 +297,7 @@ def analyze_stride_threats(
             )],
             references=["CWE-798: Use of Hard-coded Credentials", "OWASP Secrets Management Cheat Sheet"]
         ))
+        _apply_scenario(threats[-1], "hardcoded_secret")
 
     # Analyze sensitive data handling (PII)
     pii_fields = [sd for sd in assets.sensitive_data if sd.data_type == "pii"]
@@ -321,6 +336,7 @@ def analyze_stride_threats(
             ],
             references=["GDPR Article 32", "OWASP Data Protection Cheat Sheet"]
         ))
+        _apply_scenario(threats[-1], "pii_handling")
 
     # Analyze financial data
     financial_fields = [sd for sd in assets.sensitive_data if sd.data_type == "financial"]
@@ -359,6 +375,7 @@ def analyze_stride_threats(
             ],
             references=["PCI-DSS Requirements", "OWASP Payment Security Cheat Sheet"]
         ))
+        _apply_scenario(threats[-1], "financial_data_handling")
 
     # Denial of Service threats for public endpoints
     public_endpoints = [ep for ep in assets.entry_points if not ep.authentication_required]
@@ -397,6 +414,7 @@ def analyze_stride_threats(
             ],
             references=["OWASP API Security Top 10 - API4:2023 Unrestricted Resource Consumption"]
         ))
+        _apply_scenario(threats[-1], "missing_rate_limit")
 
     # Repudiation - check for logging
     if assets.entry_points:
@@ -428,6 +446,7 @@ def analyze_stride_threats(
             code_locations=[],
             references=["OWASP Logging Cheat Sheet", "NIST SP 800-92"]
         ))
+        _apply_scenario(threats[-1], "missing_audit_log")
 
     return threats
 

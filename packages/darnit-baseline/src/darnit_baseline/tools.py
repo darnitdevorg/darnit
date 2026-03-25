@@ -809,6 +809,7 @@ def generate_threat_model(
     local_path: str = ".",
     output_format: str = "markdown",
     output_path: str | None = None,
+    detail_level: str = "detailed",
 ) -> str:
     """
     Generate a STRIDE-based threat model for a repository.
@@ -823,6 +824,8 @@ def generate_threat_model(
         output_format: Output format - "markdown", "sarif", or "json"
         output_path: Optional file path (relative to local_path) to write
             the threat model to disk. If not provided, returns content as string.
+        detail_level: Detail level for Markdown output - "summary" or "detailed"
+            (default). Only affects Markdown; SARIF/JSON always include full detail.
 
     Returns:
         Threat model report with identified threats and recommendations,
@@ -830,6 +833,7 @@ def generate_threat_model(
     """
     from darnit_baseline.threat_model import (
         analyze_stride_threats,
+        detect_attack_chains,
         detect_frameworks,
         discover_all_assets,
         discover_injection_sinks,
@@ -862,16 +866,23 @@ def generate_threat_model(
         # Analyze threats
         threats = analyze_stride_threats(assets, injection_sinks)
 
+        # Detect attack chains
+        attack_chains = detect_attack_chains(threats, assets)
+
         # Identify control gaps
         control_gaps = identify_control_gaps(assets, threats)
 
+        # Validate detail_level
+        if detail_level not in ("summary", "detailed"):
+            detail_level = "detailed"
+
         # Generate output
         if output_format == "sarif":
-            content = json.dumps(generate_sarif_threat_model(str(repo_path), threats), indent=2)
+            content = json.dumps(generate_sarif_threat_model(str(repo_path), threats, attack_chains), indent=2)
         elif output_format == "json":
-            content = json.dumps(generate_json_summary(str(repo_path), frameworks, assets, threats, control_gaps), indent=2)
+            content = json.dumps(generate_json_summary(str(repo_path), frameworks, assets, threats, control_gaps, attack_chains), indent=2)
         else:
-            content = generate_markdown_threat_model(str(repo_path), assets, threats, control_gaps, frameworks)
+            content = generate_markdown_threat_model(str(repo_path), assets, threats, control_gaps, frameworks, detail_level, attack_chains)
 
         # Write to disk if output_path provided
         if output_path:

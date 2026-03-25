@@ -32,6 +32,12 @@ Note:
 
 # Data models
 # Discovery functions
+# Attack chain detection
+from .chains import (
+    CHAIN_PATTERNS,
+    calculate_composite_risk,
+    detect_attack_chains,
+)
 from .discovery import (
     detect_frameworks,
     discover_all_assets,
@@ -47,14 +53,18 @@ from .discovery import (
 from .generators import (
     generate_json_summary,
     generate_markdown_threat_model,
+    generate_mermaid_dfd,
     generate_sarif_threat_model,
 )
 from .models import (
     AssetInventory,
+    AttackChain,
     AuthMechanism,
     CodeLocation,
     DataStore,
+    DetailLevel,
     EntryPoint,
+    RankedControl,
     RiskLevel,
     RiskScore,
     SecretReference,
@@ -76,6 +86,15 @@ from .patterns import (
     SOURCE_EXTENSIONS,
 )
 
+# Remediation handler
+from .remediation import generate_threat_model_handler
+
+# Scenario templates
+from .scenarios import (
+    SCENARIO_TEMPLATES,
+    get_scenario,
+)
+
 # STRIDE analysis
 from .stride import (
     analyze_stride_threats,
@@ -87,6 +106,7 @@ __all__ = [
     # Enums
     "StrideCategory",
     "RiskLevel",
+    "DetailLevel",
     # Data classes
     "CodeLocation",
     "EntryPoint",
@@ -95,7 +115,9 @@ __all__ = [
     "SecretReference",
     "AuthMechanism",
     "RiskScore",
+    "RankedControl",
     "Threat",
+    "AttackChain",
     "AssetInventory",
     "ThreatAnalysis",
     # Patterns
@@ -120,8 +142,18 @@ __all__ = [
     "calculate_risk_score",
     "analyze_stride_threats",
     "identify_control_gaps",
+    # Scenarios
+    "SCENARIO_TEMPLATES",
+    "get_scenario",
+    # Chains
+    "CHAIN_PATTERNS",
+    "calculate_composite_risk",
+    "detect_attack_chains",
+    # Remediation
+    "generate_threat_model_handler",
     # Generators
     "generate_markdown_threat_model",
+    "generate_mermaid_dfd",
     "generate_sarif_threat_model",
     "generate_json_summary",
 ]

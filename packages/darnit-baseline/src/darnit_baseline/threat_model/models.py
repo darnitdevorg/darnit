@@ -109,6 +109,20 @@ class RiskScore:
     factors: dict[str, Any] = field(default_factory=dict)
 
 
+class DetailLevel(Enum):
+    """Detail level for threat model output."""
+    SUMMARY = "summary"
+    DETAILED = "detailed"
+
+
+@dataclass
+class RankedControl:
+    """A recommended control ranked by effectiveness."""
+    control: str
+    effectiveness: str  # "high", "medium", "low"
+    rationale: str
+
+
 @dataclass
 class Threat:
     """A security threat identified through STRIDE analysis."""
@@ -124,6 +138,10 @@ class Threat:
     recommended_controls: list[str]
     code_locations: list[CodeLocation]
     references: list[str] = field(default_factory=list)
+    exploitation_scenario: list[str] = field(default_factory=list)
+    data_flow_impact: str = ""
+    ranked_controls: list["RankedControl"] = field(default_factory=list)
+    attack_chain_ids: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -139,18 +157,32 @@ class AssetInventory:
 
 
 @dataclass
+class AttackChain:
+    """A compound attack path combining multiple threats."""
+    id: str
+    name: str
+    description: str
+    threat_ids: list[str]
+    categories: list[StrideCategory]
+    shared_assets: list[str]
+    composite_risk: RiskScore
+
+
+@dataclass
 class ThreatAnalysis:
     """Complete threat analysis result."""
     methodology: str
     threats: list[Threat]
     control_gaps: list[dict[str, Any]]
     summary: dict[str, Any]
+    attack_chains: list[AttackChain] = field(default_factory=list)
 
 
 __all__ = [
     # Enums
     "StrideCategory",
     "RiskLevel",
+    "DetailLevel",
     # Data classes
     "CodeLocation",
     "EntryPoint",
@@ -159,7 +191,9 @@ __all__ = [
     "SecretReference",
     "AuthMechanism",
     "RiskScore",
+    "RankedControl",
     "Threat",
+    "AttackChain",
     "AssetInventory",
     "ThreatAnalysis",
 ]
