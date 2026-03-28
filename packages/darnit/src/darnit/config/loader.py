@@ -358,6 +358,10 @@ def init_project_config(
     context = config.x_openssf_baseline.context
     if context.ci_provider is None and ci != "unknown":
         context.ci_provider = ci
+    if context.platform is None and forge != "unknown":
+        context.platform = forge
+    if context.primary_language is None and build != "unknown":
+        context.primary_language = build
 
     return config
 
