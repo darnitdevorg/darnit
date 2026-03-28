@@ -80,10 +80,27 @@ def gittuf_commits_signed_handler(
 
     Looks at the last 5 commits. PASS if all are signed, FAIL if any
     are unsigned, INCONCLUSIVE if git is not available.
+
+    Note: SSH-signed commits require gpg.ssh.allowedSignersFile to be
+    configured for git to verify them. Without it, SSH-signed commits
+    report as unsigned. This handler warns when this condition is detected.
     """
+    # Check if allowedSignersFile is configured for SSH signing verification
+    try:
+        signers_check = subprocess.run(
+            ["git", "config", "gpg.ssh.allowedSignersFile"],
+            cwd=ctx.local_path,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        ssh_signers_configured = signers_check.returncode == 0
+    except Exception:
+        ssh_signers_configured = False
+
     try:
         result = subprocess.run(
-            ["git", "log", "--format=%G?", "-5"],
+            ["git", "log", "--format=%G?%n%GK", "-5"],
             cwd=ctx.local_path,
             capture_output=True,
             text=True,
@@ -97,27 +114,47 @@ def gittuf_commits_signed_handler(
                 confidence=0.0,
             )
 
-        # %G? returns one character per commit:
-        # G = good signature, B = bad signature, N = no signature
-        # U = good signature, unknown validity
-        signatures = result.stdout.strip().splitlines()
+        lines = result.stdout.strip().splitlines()
 
-        if not signatures:
+        # %G? and %GK alternate — collect signature status lines
+        sig_statuses = [line.strip() for i, line in enumerate(lines) if i % 2 == 0 and line.strip()]
+        sig_keys = [line.strip() for i, line in enumerate(lines) if i % 2 == 1]
+
+        if not sig_statuses:
             return HandlerResult(
                 status=HandlerResultStatus.INCONCLUSIVE,
                 message="No commits found to check",
                 confidence=0.0,
             )
 
-        unsigned = [s for s in signatures if s.strip() == "N"]
-        bad = [s for s in signatures if s.strip() == "B"]
-        signed = [s for s in signatures if s.strip() in ("G", "U")]
+        unsigned = [s for s in sig_statuses if s == "N"]
+        bad = [s for s in sig_statuses if s == "B"]
+        signed = [s for s in sig_statuses if s in ("G", "U", "E", "X")]
+
+        # Detect if SSH keys are in use without allowedSignersFile
+        has_ssh_keys = any(k.startswith("ssh-") for k in sig_keys if k)
+        if unsigned and has_ssh_keys and not ssh_signers_configured:
+            return HandlerResult(
+                status=HandlerResultStatus.INCONCLUSIVE,
+                message=(
+                    "SSH-signed commits detected but gpg.ssh.allowedSignersFile "
+                    "is not configured — git cannot verify SSH signatures. "
+                    "Set gpg.ssh.allowedSignersFile to enable verification."
+                ),
+                confidence=0.0,
+                evidence={
+                    "total_checked": len(sig_statuses),
+                    "ssh_signers_configured": False,
+                    "hint": "Run: git config gpg.ssh.allowedSignersFile ~/.ssh/allowed_signers",
+                },
+            )
 
         evidence = {
-            "total_checked": len(signatures),
+            "total_checked": len(sig_statuses),
             "signed": len(signed),
             "unsigned": len(unsigned),
             "bad_signature": len(bad),
+            "ssh_signers_configured": ssh_signers_configured,
         }
 
         if bad:
@@ -131,7 +168,7 @@ def gittuf_commits_signed_handler(
         if unsigned:
             return HandlerResult(
                 status=HandlerResultStatus.FAIL,
-                message=f"{len(unsigned)} of last {len(signatures)} commits are unsigned",
+                message=f"{len(unsigned)} of last {len(sig_statuses)} commits are unsigned",
                 confidence=1.0,
                 evidence=evidence,
             )
