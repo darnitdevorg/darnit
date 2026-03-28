@@ -23,25 +23,35 @@ description = "Repository has Gittuf initialized"
 tags = { level = 1, domain = "GT" }
 
 [[controls."GT-01.01".passes]]
-handler = "file_exists"
-files = [".gittuf/policy.json", ".gittuf/root.json"]
+handler = "exec"
+command = ["git", "show-ref", "--verify", "refs/gittuf/policy"]
+pass_exit_codes = [0]
+fail_exit_codes = [1]
+timeout = 10
 
 [[controls."GT-01.01".passes]]
 handler = "manual"
 steps = [
-    "Check if .gittuf/ directory exists in the repository root",
-    "Verify it contains policy.json and root.json",
-    "Run: gittuf policy list-rules to confirm policy is readable",
+    "Run: git show-ref --verify refs/gittuf/policy",
+    "Verify the command exits with code 0",
+    "If it fails, Gittuf has not been initialized in this repo",
+    "To initialize: run gittuf trust init, then gittuf policy init",
 ]
 
 [controls."GT-01.01".remediation]
-safe = true
-dry_run_supported = true
+safe = false
+dry_run_supported = false
 
 [[controls."GT-01.01".remediation.handlers]]
-handler = "exec"
-command = ["gittuf", "policy", "init"]
-dry_run_command = ["gittuf", "policy", "list-rules"]
+handler = "manual"
+steps = [
+    "1. gittuf trust init -k <signing-key>",
+    "2. gittuf trust add-policy-key -k <signing-key> --policy-key <pub-key>",
+    "3. gittuf trust apply --local-only -k <signing-key>",
+    "4. gittuf policy init -k <signing-key>",
+    "5. Add rules: gittuf policy add-rule ...",
+    "6. gittuf policy apply --local-only -k <signing-key>",
+]
 
 # =============================================================================
 # Control: Is the Gittuf policy valid?
