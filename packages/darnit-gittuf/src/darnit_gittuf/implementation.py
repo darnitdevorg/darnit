@@ -31,10 +31,11 @@ class GittufImplementation:
         return "gittuf v0.1"
 
     def get_all_controls(self) -> list[ControlSpec]:
-        controls = []
-        for level in [1, 2]:
-            controls.extend(self.get_controls_by_level(level))
-        return controls
+        """Get all controls by collecting across all known levels."""
+        all_controls = []
+        for level in [1, 2, 3]:
+            all_controls.extend(self.get_controls_by_level(level))
+        return all_controls
 
     def get_controls_by_level(self, level: int) -> list[ControlSpec]:
         all_controls = [
