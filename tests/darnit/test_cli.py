@@ -136,6 +136,45 @@ class TestCreateParser:
         assert "Declarative compliance auditing for software projects" in captured.out
 
 
+    @pytest.mark.unit
+    def test_audit_command_parses_profile_flag(self):
+        """The audit command accepts --profile flag."""
+        args = create_parser().parse_args(["audit", "--profile", "level1_quick", "."])
+
+        assert args.command == "audit"
+        assert args.profile == "level1_quick"
+
+    @pytest.mark.unit
+    def test_audit_command_parses_profile_short_flag(self):
+        """The audit command accepts -p short flag for profile."""
+        args = create_parser().parse_args(["audit", "-p", "access_control", "."])
+
+        assert args.profile == "access_control"
+
+    @pytest.mark.unit
+    def test_plan_command_parses_profile_flag(self):
+        """The plan command accepts --profile flag."""
+        args = create_parser().parse_args(["plan", "--profile", "security_critical", "."])
+
+        assert args.command == "plan"
+        assert args.profile == "security_critical"
+
+    @pytest.mark.unit
+    def test_profiles_command_parses(self):
+        """The profiles command parses without arguments."""
+        args = create_parser().parse_args(["profiles"])
+
+        assert args.command == "profiles"
+
+    @pytest.mark.unit
+    def test_profiles_command_parses_impl_flag(self):
+        """The profiles command accepts --impl flag."""
+        args = create_parser().parse_args(["profiles", "--impl", "openssf-baseline"])
+
+        assert args.command == "profiles"
+        assert args.impl == "openssf-baseline"
+
+
 class TestFormatting:
     """Tests for CLI output formatting helpers."""
 

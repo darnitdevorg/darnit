@@ -4,6 +4,12 @@ Welcome to the darnit contributor documentation. Choose your path below based on
 
 ## Choose Your Path
 
+### I want to use darnit with Claude Code
+
+Use skills for guided compliance workflows — no need to call individual tools.
+
+1. [Using Skills](using-skills.md) — Install, usage examples, profiles, multi-module support
+
 ### I want to work on the framework
 
 The core darnit framework — plugin system, sieve pipeline, configuration, MCP server.

@@ -47,6 +47,7 @@ def audit_openssf_baseline(
     sign_attestation: bool = True,
     staging: bool = False,
     prefer_upstream: bool = True,
+    profile: str | None = None,
 ) -> str:
     """
     Run a comprehensive OpenSSF Baseline audit on a repository.
@@ -70,6 +71,8 @@ def audit_openssf_baseline(
         staging: Use Sigstore staging environment. Default: False
         prefer_upstream: If True, prefer 'upstream' git remote when auto-detecting owner/repo.
                          Useful for auditing forks against their upstream repository. Default: True
+        profile: Optional audit profile name to filter controls. Short name (e.g., "level1_quick")
+                 or qualified name (e.g., "openssf-baseline:level1_quick"). Default: None (all controls)
 
     Returns:
         Formatted audit report with compliance status and remediation instructions
@@ -107,6 +110,26 @@ def audit_openssf_baseline(
     # Load controls filtered by level
     controls = load_controls_from_effective(config)
     controls = [c for c in controls if c.level <= level]
+
+    # Apply profile filtering if specified
+    if profile:
+        from darnit.config.profile_resolver import (
+            ProfileAmbiguousError,
+            ProfileNotFoundError,
+            resolve_profile,
+            resolve_profile_control_ids,
+        )
+
+        try:
+            # Build implementations dict from loaded config
+            profile_impls: dict = {}
+            if config._framework_config and config._framework_config.audit_profiles:
+                profile_impls[config.framework_name] = config._framework_config.audit_profiles
+            _, profile_config = resolve_profile(profile, profile_impls)
+            profile_ids = resolve_profile_control_ids(profile_config, controls)
+            controls = [c for c in controls if c.control_id in profile_ids]
+        except (ProfileNotFoundError, ProfileAmbiguousError) as e:
+            return f"❌ {e}"
 
     if not controls:
         return "❌ No controls loaded"
@@ -159,19 +182,43 @@ def audit_openssf_baseline(
         )
 
 
-def list_available_checks() -> str:
+def list_available_checks(profile: str | None = None) -> str:
     """
     List all available OpenSSF Baseline checks organized by level.
 
+    Args:
+        profile: Optional audit profile name to filter controls.
+
     Returns:
-        Formatted list of all 62 OSPS controls across 3 levels
+        Formatted list of OSPS controls across 3 levels
     """
     from darnit.config.merger import load_framework_by_name
 
     config = load_framework_by_name("openssf-baseline")
+
+    # Resolve profile filter if specified
+    profile_ids: set[str] | None = None
+    if profile and config.audit_profiles:
+        from darnit.config.control_loader import load_controls_from_framework
+        from darnit.config.profile_resolver import (
+            resolve_profile,
+            resolve_profile_control_ids,
+        )
+
+        try:
+            _, profile_config = resolve_profile(
+                profile, {"openssf-baseline": config.audit_profiles}
+            )
+            controls = load_controls_from_framework(config)
+            profile_ids = set(resolve_profile_control_ids(profile_config, controls))
+        except Exception:
+            profile_ids = None
+
     checks: dict[str, list] = {"level1": [], "level2": [], "level3": []}
 
     for control_id, control in config.controls.items():
+        if profile_ids is not None and control_id not in profile_ids:
+            continue
         level = control.tags.get("level", 1) if control.tags else 1
         level_key = f"level{level}"
         if level_key in checks:
@@ -493,6 +540,7 @@ def get_pending_context(
     repo: str | None = None,
     limit: int = 4,
     _tool_config: dict | None = None,
+    profile: str | None = None,
 ) -> str:
     """Get context values that would improve audit accuracy.
 
@@ -964,6 +1012,7 @@ def remediate_audit_findings(
     repo: str | None = None,
     categories: list | None = None,
     dry_run: bool = True,
+    profile: str | None = None,
 ) -> str:
     """
     Apply automated remediations for failed audit controls.
@@ -981,6 +1030,7 @@ def remediate_audit_findings(
         repo: Repository name (auto-detected if not provided)
         categories: Optional filter — list of category names, or ["all"]
         dry_run: If True (default), show what would be changed without applying
+        profile: Optional audit profile name to filter remediation to profile controls only
 
     Returns:
         Summary of applied or planned remediations

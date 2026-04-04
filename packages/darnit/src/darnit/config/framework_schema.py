@@ -1163,6 +1163,45 @@ class FrameworkMetadata(BaseModel):
 
 
 # =============================================================================
+# Audit Profiles
+# =============================================================================
+
+
+class AuditProfileConfig(BaseModel):
+    """Named subset of controls representing a distinct audit scenario.
+
+    Profiles allow implementation modules to define multiple audit workflows
+    (e.g., "onboard" vs "verify") within a single TOML config.
+
+    At least one of `controls` or `tags` must be non-empty.
+    When both are provided, the result is their union.
+
+    Example:
+        ```toml
+        [audit_profiles.onboard]
+        description = "Verify initial setup is complete"
+        controls = ["SETUP-01", "SETUP-02"]
+
+        [audit_profiles.security_critical]
+        description = "High-severity controls only"
+        tags = { security_severity_gte = 8.0 }
+        ```
+    """
+    description: str
+    controls: list[str] = Field(default_factory=list)
+    tags: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def at_least_one_selector(self) -> "AuditProfileConfig":
+        """Ensure at least one of controls or tags is non-empty."""
+        if not self.controls and not self.tags:
+            raise ValueError(
+                "Audit profile must specify at least one of 'controls' or 'tags'"
+            )
+        return self
+
+
+# =============================================================================
 # Main Framework Configuration
 # =============================================================================
 
@@ -1226,6 +1265,9 @@ class FrameworkConfig(BaseModel):
 
     # Plugin configurations (for extending framework with additional handlers)
     plugins: PluginsConfig = Field(default_factory=PluginsConfig)
+
+    # Named audit profiles (optional, for multi-scenario implementations)
+    audit_profiles: dict[str, AuditProfileConfig] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="allow")
 

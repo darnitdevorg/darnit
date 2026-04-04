@@ -18,6 +18,28 @@ check_adapter = "builtin"
 remediation_adapter = "builtin"
 
 # =============================================================================
+# Audit Profiles
+# =============================================================================
+# Named subsets of controls for different audit scenarios.
+# Use: darnit audit --profile level1_quick
+
+[audit_profiles.level1_quick]
+description = "Level 1 controls only — quick compliance check for basic hygiene"
+tags = { level = 1 }
+
+[audit_profiles.security_critical]
+description = "High-severity security controls across all levels"
+tags = { security_severity_gte = 8.0 }
+
+[audit_profiles.access_control]
+description = "Access control domain — branch protection, MFA, permissions"
+controls = [
+    "OSPS-AC-01.01", "OSPS-AC-01.02", "OSPS-AC-01.03",
+    "OSPS-AC-02.01", "OSPS-AC-02.02",
+    "OSPS-AC-03.01", "OSPS-AC-03.02",
+]
+
+# =============================================================================
 # Templates for Remediation
 # =============================================================================
 

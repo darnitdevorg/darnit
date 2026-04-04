@@ -431,8 +431,51 @@ def cmd_list(args: argparse.Namespace) -> int:
 
     return 0
 
+def _find_skills_dir() -> Path | None:
+    """Find the skills directory from the darnit package."""
+    skills_dir = Path(__file__).parent / "skills"
+    if skills_dir.is_dir():
+        has_skills = any(
+            (d / "SKILL.md").exists() for d in skills_dir.iterdir() if d.is_dir()
+        )
+        if has_skills:
+            return skills_dir
+    return None
+
+
+def _install_skills(target_dir: Path, force: bool = False) -> int:
+    """Copy skill directories to a target location."""
+    import shutil
+
+    source = _find_skills_dir()
+    if source is None:
+        logger.warning("No skills found in darnit-baseline package. Skipping skill installation.")
+        return 0
+
+    skill_dirs = [d for d in source.iterdir() if d.is_dir() and (d / "SKILL.md").exists()]
+    if not skill_dirs:
+        logger.warning("No valid skill directories found.")
+        return 0
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+    installed = 0
+
+    for skill_dir in skill_dirs:
+        dest = target_dir / skill_dir.name
+        if dest.exists() and not force:
+            print(f"  Skill '{skill_dir.name}' already exists at {dest}, skipping (use --force to overwrite)")
+            continue
+        if dest.exists():
+            shutil.rmtree(dest)
+        shutil.copytree(skill_dir, dest)
+        installed += 1
+        print(f"  ✓ Installed skill '{skill_dir.name}' → {dest}")
+
+    return installed
+
+
 def cmd_install(args: argparse.Namespace) -> int:
-    """Install darnit MCP server config into a supported client settings file."""
+    """Install darnit MCP server config and skills into a supported client."""
     import shutil
 
     if args.client == "claude":
@@ -477,8 +520,60 @@ def cmd_install(args: argparse.Namespace) -> int:
         return 1
 
     print(f"✓ Installed darnit MCP server config in {settings_path}")
-    print("Next step: restart your AI client and use the configured MCP server.")
+
+    # Install skills
+    if not args.mcp_only and args.client == "claude":
+        if args.project:
+            skills_target = Path.cwd() / ".claude" / "skills"
+            print(f"\nInstalling skills (project) → {skills_target}")
+        else:
+            skills_target = Path.home() / ".claude" / "skills"
+            print(f"\nInstalling skills (global) → {skills_target}")
+
+        count = _install_skills(skills_target, force=args.force)
+        if count > 0:
+            print(f"✓ Installed {count} skill(s)")
+        elif count == 0:
+            print("  No new skills to install")
+    elif args.mcp_only:
+        print("  Skipping skill installation (--mcp-only)")
+
+    print("\nNext step: restart your AI client and use the configured MCP server.")
+    print("Skills available: /darnit-audit, /darnit-context, /darnit-comply, /darnit-remediate")
     return 0
+
+def cmd_profiles(args: argparse.Namespace) -> int:
+    """List available audit profiles across all implementations."""
+    from darnit.core.discovery import discover_implementations
+
+    impls = discover_implementations()
+    if not impls:
+        print("No implementations found.")
+        return 0
+
+    impl_filter = getattr(args, "impl", None)
+    found_any = False
+
+    for name, impl in impls.items():
+        if impl_filter and name != impl_filter:
+            continue
+        if not hasattr(impl, "get_audit_profiles"):
+            continue
+        profiles = impl.get_audit_profiles()
+        if not profiles:
+            continue
+
+        found_any = True
+        print(f"\n{name}:")
+        for profile_name, profile in profiles.items():
+            ctrl_count = len(profile.controls) if profile.controls else "tag-based"
+            print(f"  {profile_name:<25} {profile.description} ({ctrl_count} controls)")
+
+    if not found_any:
+        print("No audit profiles defined by any implementation.")
+
+    return 0
+
 
 def cmd_serve(args: argparse.Namespace) -> int:
     """Start the MCP server.
@@ -669,6 +764,12 @@ def create_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Don't exit with error code on failures",
     )
+    audit_parser.add_argument(
+        "--profile", "-p",
+        dest="profile",
+        default=None,
+        help="Audit profile name to filter controls (e.g., 'level1_quick' or 'openssf-baseline:level1_quick')",
+    )
     audit_parser.set_defaults(func=cmd_audit)
 
     # plan command (debug)
@@ -702,7 +803,26 @@ def create_parser() -> argparse.ArgumentParser:
         "--exclude",
         help="Exclude these control IDs (comma-separated)",
     )
+    plan_parser.add_argument(
+        "--profile", "-p",
+        dest="profile",
+        default=None,
+        help="Audit profile name to filter controls",
+    )
     plan_parser.set_defaults(func=cmd_plan)
+
+    # profiles command
+    profiles_parser = subparsers.add_parser(
+        "profiles",
+        help="List available audit profiles",
+        description="List named audit profiles defined by loaded implementations.",
+    )
+    profiles_parser.add_argument(
+        "--impl",
+        default=None,
+        help="Filter to a specific implementation (e.g., 'openssf-baseline')",
+    )
+    profiles_parser.set_defaults(func=cmd_profiles)
 
     # validate command
     validate_parser = subparsers.add_parser("validate", help="Validate framework config")
@@ -750,6 +870,16 @@ def create_parser() -> argparse.ArgumentParser:
         "--force",
         action="store_true",
         help="Overwrite existing darnit entry without prompting",
+    )
+    install_parser.add_argument(
+        "--mcp-only",
+        action="store_true",
+        help="Only install MCP server config, skip skills",
+    )
+    install_parser.add_argument(
+        "--project",
+        action="store_true",
+        help="Install skills into .claude/skills/ (per-project) instead of ~/.claude/skills/ (global)",
     )
     install_parser.set_defaults(func=cmd_install)
 
