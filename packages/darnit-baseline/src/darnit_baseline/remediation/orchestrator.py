@@ -258,7 +258,10 @@ def _run_baseline_checks(
         return None, error
 
     # Run checks - returns (results_list, skipped_controls_dict)
-    all_results, skipped_controls = run_checks(owner, repo, resolved_path, default_branch, level)
+    all_results, skipped_controls = run_checks(
+        owner, repo, resolved_path, default_branch, level,
+        framework_name="openssf-baseline",
+    )
 
     # Calculate summary
     summary = summarize_results(all_results)
@@ -746,7 +749,8 @@ def remediate_audit_findings(
     owner: str | None = None,
     repo: str | None = None,
     categories: list[str] | None = None,
-    dry_run: bool = True
+    dry_run: bool = True,
+    profile: str | None = None,
 ) -> str:
     """Apply automated remediations for failed audit controls.
 
@@ -760,6 +764,7 @@ def remediate_audit_findings(
         repo: Repository name (auto-detected if not provided)
         categories: Optional filter — list of category names, or ["all"]
         dry_run: If True (default), show what would be changed without applying
+        profile: Optional audit profile name to filter to profile controls only
 
     Returns:
         Markdown-formatted summary of applied or planned remediations
@@ -782,6 +787,25 @@ def remediate_audit_findings(
     framework = _get_framework_config()
     if not framework:
         return "❌ Error: Could not load framework TOML config"
+
+    # Apply profile filtering if specified
+    profile_ids: set[str] | None = None
+    if profile:
+        try:
+            from darnit.config.control_loader import load_controls_from_framework
+            from darnit.config.profile_resolver import (
+                resolve_profile,
+                resolve_profile_control_ids,
+            )
+
+            all_controls = load_controls_from_framework(framework)
+            profile_impls: dict = {}
+            if framework.audit_profiles:
+                profile_impls["openssf-baseline"] = dict(framework.audit_profiles)
+            _, profile_config = resolve_profile(profile, profile_impls)
+            profile_ids = set(resolve_profile_control_ids(profile_config, all_controls))
+        except Exception as e:
+            return f"❌ Error resolving profile '{profile}': {e}"
 
     # ------------------------------------------------------------------
     # Determine which controls failed the audit.
@@ -812,6 +836,10 @@ def remediate_audit_findings(
                 r.get("id", "") for r in audit_result.all_results if r.get("status") == "FAIL"
             }
 
+    # Apply profile filter to failed_ids
+    if profile_ids is not None and failed_ids is not None:
+        failed_ids = failed_ids & profile_ids
+
     # ------------------------------------------------------------------
     # Build the list of controls to remediate
     # ------------------------------------------------------------------
@@ -819,7 +847,9 @@ def remediate_audit_findings(
         if error:
             return f"❌ Error running audit: {error}"
         if not failed_ids:
-            return "✅ No remediations needed - all controls with available auto-fixes are passing."
+            if failed_ids is None:
+                return "❌ Audit did not produce results. Try running an audit first."
+            return "✅ No remediations needed - all controls are passing."
 
         # All failed controls that have ANY remediation in TOML
         remediable_ids = []
@@ -858,7 +888,14 @@ def remediate_audit_findings(
             )
 
     if not remediable_ids:
-        return "✅ No remediations needed - all controls with available auto-fixes are passing."
+        if failed_ids:
+            no_handler_ids = sorted(failed_ids)
+            return (
+                f"⚠️ {len(failed_ids)} control(s) failed but none have auto-fix handlers.\n\n"
+                f"**Controls without auto-fix:** {', '.join(no_handler_ids)}\n\n"
+                "These require manual remediation."
+            )
+        return "✅ No remediations needed - all controls are passing."
 
     # ------------------------------------------------------------------
     # Pre-flight context check (prompt for ALL missing context upfront)

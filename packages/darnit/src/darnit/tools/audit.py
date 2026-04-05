@@ -282,6 +282,7 @@ def run_checks(
     level: int = 3,
     stop_on_llm: bool = True,
     apply_user_config: bool = True,
+    framework_name: str | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, str]]:
     """Run OSPS baseline checks at the specified level.
 
@@ -297,6 +298,8 @@ def run_checks(
         level: Maximum level to check (1, 2, or 3)
         stop_on_llm: Return PENDING_LLM for LLM consultation
         apply_user_config: Apply .baseline.toml user config overrides
+        framework_name: Explicit framework name (e.g., "openssf-baseline").
+            If None, resolved from .baseline.toml in the repo.
 
     Returns:
         Tuple of (check_results, skipped_controls)
@@ -308,6 +311,7 @@ def run_checks(
         owner, repo, local_path, default_branch, level,
         apply_user_config=apply_user_config,
         stop_on_llm=stop_on_llm,
+        framework_name=framework_name,
     )
 
     return results, skipped_controls

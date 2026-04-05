@@ -1,60 +1,68 @@
 ---
 name: darnit-remediate
 description: Apply automated fixes for failing compliance controls. Shows a plan first, then creates a branch with fixes and optionally a PR. Use when the user wants to fix compliance failures, apply remediations, or create a compliance PR.
-compatibility: Requires darnit MCP server running (darnit serve) and gh CLI for PR creation
+compatibility: Requires darnit MCP server running (darnit serve)
 metadata:
   author: kusari-oss
-  version: "1.2"
+  version: "2.0"
 ---
 
 # Compliance Remediation
 
-Apply automated fixes for failing compliance controls on a new branch.
+Show a dry-run plan of fixes for failing controls, get confirmation, then apply changes on a new branch. After applying, enhance generated template files with project-specific content.
 
-## Quick vs reviewed mode
+## Workflow
 
-If the user signals they want speed (e.g., "quick", "just fix it", "skip the review", "apply everything"), use **quick mode**: skip the dry-run, create the branch, apply fixes, commit, and report what changed. Do not ask for confirmation.
+### 1. Show dry-run plan
 
-Otherwise, use **reviewed mode** (default): show a dry-run plan first, get confirmation, then apply.
-
-## Quick mode
-
-1. Call `create_remediation_branch`
-2. Call `remediate_audit_findings` with `dry_run: false`
-3. Call `commit_remediation_changes`
-4. Report: branch name, controls fixed, files changed
-5. Ask if the user wants a PR
-
-## Reviewed mode
-
-### 1. Get audit results
-
-Check conversation context for recent audit results. If none exist, call the appropriate `audit_*` MCP tool with `output_format: "json"`.
-
-### 2. Show dry-run plan
-
-Call `remediate_audit_findings` with `dry_run: true`.
+Call `remediate_audit_findings` with `dry_run: true` and any profile mentioned.
+The tool internally runs an audit (or uses cached results) — do NOT run a separate audit call.
 
 Present the plan:
 - **Safe auto-fixes**: what will be created or modified
 - **Unsafe / manual**: why these can't be auto-fixed, what to do instead
+- **No fix available**: controls without remediation handlers
 
 Ask: "Apply the safe auto-fixes? This will create a new branch."
 
-### 3. Apply fixes (if confirmed)
+### 2. Apply fixes (if confirmed)
 
-1. `create_remediation_branch`
-2. `remediate_audit_findings` with `dry_run: false`
-3. `commit_remediation_changes`
+Call `remediate_audit_findings` with:
+- `dry_run: false`
+- `branch_name: "fix/compliance"` (or `"fix/compliance-{profile}"` if a profile was specified)
+- `auto_commit: true`
+
+This single call creates the branch, applies all remediations, and commits. Do NOT make separate calls to `create_remediation_branch` or `commit_remediation_changes`.
+
+### 3. Enhance generated files (value-add)
+
+This is where the skill adds unique value beyond what the tool provides. Read the generated template files and improve them with project-specific content:
+
+- Read each generated file (e.g., SECURITY.md, CONTRIBUTING.md, docs/*.md)
+- Enhance with real project details: actual maintainer names, real security contact, specific CI/CD details
+- Improve language, formatting, and completeness
+- Make templates feel like real documentation rather than boilerplate
+
+If any files were enhanced, make a new commit with the improvements.
 
 ### 4. Offer PR creation
 
 Ask if the user wants a PR. If yes, call `create_remediation_pr` and display the URL.
 
+### 5. Summary
+
+Show: branch name, controls fixed, files changed, PR URL (if created), and remaining manual items.
+
 ## Gotchas
 
-- In reviewed mode, always show the plan before applying. In quick mode, skip straight to applying.
-- The tool only applies `safe: true` remediations. Unsafe ones are always skipped regardless of mode.
-- If there are unresolved context questions, the remediation tool will block. Suggest running `/darnit-context` first.
-- If `remediate_audit_findings` fails mid-way, report which files were already changed.
-- Tool names vary by implementation. Discover available tools from the darnit MCP server.
+- Always show the dry-run plan first. Never apply changes without confirmation.
+- Do NOT call `audit_openssf_baseline` separately — `remediate_audit_findings` handles audit internally.
+- Do NOT call `create_remediation_branch` or `commit_remediation_changes` separately — use the `branch_name` and `auto_commit` params instead.
+- If `remediate_audit_findings` fails mid-way, report which files were already changed so the user can review.
+- The tool respects the `safe` flag on remediations — only safe remediations are auto-applied. Unsafe ones are listed but excluded.
+- If there are unresolved context questions, the remediation tool will block and tell you. Suggest running `/darnit-context` first.
+
+## Error handling
+
+If the tool returns a context warning, suggest running `/darnit-context` first.
+If branch creation fails, report the error — the tool aborts before applying any changes.

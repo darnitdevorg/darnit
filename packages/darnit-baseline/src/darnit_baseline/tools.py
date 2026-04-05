@@ -64,7 +64,8 @@ def audit_openssf_baseline(
               - Different fields use AND logic: domain=AC AND level=1
               - Same field repeated uses OR logic: priority=low OR priority=high
               - Bare values match against control tags dict keys
-        output_format: Output format - "markdown", "json", or "sarif". Default: "markdown"
+        output_format: Output format - "markdown", "json", "summary", or "sarif". Default: "markdown".
+              Use "summary" for compact JSON (id/status/level/details only, no evidence).
         auto_init_config: Create .project.yaml if missing. Default: True
         attest: Generate in-toto attestation after audit. Default: False
         sign_attestation: Sign attestation with Sigstore. Default: True
@@ -159,7 +160,26 @@ def audit_openssf_baseline(
     )
 
     # Format output
-    if output_format == "json":
+    if output_format == "summary":
+        # Compact JSON: only id/status/level/details — no evidence or pass_history.
+        # ~5-8K vs ~164K for full JSON with 62 controls.
+        compact_results = [
+            {
+                "id": r.get("id"),
+                "status": r.get("status"),
+                "level": r.get("level"),
+                "details": r.get("details", ""),
+            }
+            for r in results
+        ]
+        return json.dumps({
+            "owner": owner,
+            "repo": repo,
+            "level": level,
+            "summary": summary,
+            "results": compact_results,
+        }, indent=2)
+    elif output_format == "json":
         return json.dumps({
             "owner": owner,
             "repo": repo,
@@ -1013,6 +1033,9 @@ def remediate_audit_findings(
     categories: list | None = None,
     dry_run: bool = True,
     profile: str | None = None,
+    branch_name: str | None = None,
+    auto_commit: bool = False,
+    create_pr: bool = False,
 ) -> str:
     """
     Apply automated remediations for failed audit controls.
@@ -1024,6 +1047,11 @@ def remediate_audit_findings(
     - access_control, build_release, documentation, governance, legal,
       quality, security_architecture, vulnerability_management
 
+    Supports optional git workflow (ignored when dry_run=True):
+    - branch_name: Create/switch to this branch before applying (e.g., "fix/compliance")
+    - auto_commit: Commit changes after applying (requires dry_run=false)
+    - create_pr: Create a pull request after committing (requires auto_commit=true)
+
     Args:
         local_path: ABSOLUTE path to repo
         owner: GitHub org/user (auto-detected if not provided)
@@ -1031,15 +1059,22 @@ def remediate_audit_findings(
         categories: Optional filter — list of category names, or ["all"]
         dry_run: If True (default), show what would be changed without applying
         profile: Optional audit profile name to filter remediation to profile controls only
+        branch_name: Create/checkout this branch before applying remediations
+        auto_commit: Automatically commit after applying remediations
+        create_pr: Create a pull request after committing
 
     Returns:
-        Summary of applied or planned remediations
+        Summary of applied or planned remediations (with git workflow status if applicable)
     """
     from darnit_baseline.remediation import remediate_audit_findings as apply_remediations
 
     repo_path = Path(local_path).resolve()
     if not repo_path.exists():
         return f"❌ Error: Repository path not found: {repo_path}"
+
+    # Validate git workflow param combinations
+    if create_pr and not auto_commit:
+        return "❌ Error: create_pr requires auto_commit=True"
 
     from darnit.core.utils import detect_owner_repo
 
@@ -1066,6 +1101,19 @@ def remediate_audit_findings(
     except Exception:
         pass  # If context check fails, proceed with remediation anyway
 
+    # Step 1: Create branch before applying (so changes land on the right branch)
+    git_report: list[str] = []
+    if branch_name and not dry_run:
+        from darnit.server.tools.git_operations import create_remediation_branch_impl
+
+        branch_result = create_remediation_branch_impl(
+            branch_name=branch_name, local_path=str(repo_path),
+        )
+        if "❌" in branch_result:
+            return f"❌ Branch creation failed, aborting remediation.\n\n{branch_result}"
+        git_report.append(branch_result)
+
+    # Step 2: Apply remediations
     try:
         result = apply_remediations(
             local_path=str(repo_path),
@@ -1073,10 +1121,34 @@ def remediate_audit_findings(
             repo=repo,
             categories=categories or ["all"],
             dry_run=dry_run,
+            profile=profile,
         )
-        return result
     except Exception as e:
         return f"❌ Error applying remediations: {e}"
+
+    # Step 3: Commit and optionally create PR (only on successful non-dry-run apply)
+    if not dry_run and "❌" not in result:
+        if auto_commit:
+            from darnit.server.tools.git_operations import commit_remediation_changes_impl
+
+            commit_result = commit_remediation_changes_impl(
+                local_path=str(repo_path),
+            )
+            git_report.append(commit_result)
+
+            if create_pr and "❌" not in commit_result:
+                from darnit.server.tools.git_operations import create_remediation_pr_impl
+
+                pr_result = create_remediation_pr_impl(
+                    local_path=str(repo_path),
+                )
+                git_report.append(pr_result)
+
+    # Append git workflow summary if any git steps ran
+    if git_report:
+        result += "\n\n---\n## Git Workflow\n\n" + "\n\n".join(git_report)
+
+    return result
 
 
 # =============================================================================

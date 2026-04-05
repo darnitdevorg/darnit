@@ -4,7 +4,7 @@ description: Run a compliance audit on the current repository using darnit. Use 
 compatibility: Requires darnit MCP server running (darnit serve)
 metadata:
   author: kusari-oss
-  version: "1.1"
+  version: "2.0"
 ---
 
 # Compliance Audit
@@ -21,6 +21,7 @@ Common audit tools:
 ## Workflow
 
 1. Identify the audit tool to use (see above). Call it with `local_path` set to the repository root and `output_format` set to `"markdown"`.
+   - Use `output_format: "summary"` if you only need pass/fail counts (compact JSON, ~5-8K vs ~164K for full JSON).
    - If the user mentions a profile (e.g., "just level 1", "access control only", "onboard"), pass it as the `profile` parameter.
    - If the user mentions a level, pass it as the `level` parameter.
 

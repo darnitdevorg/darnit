@@ -49,7 +49,7 @@ def create_remediation_branch_impl(
             text=True
         )
         if result.returncode == 0:
-            # Branch exists, check it out
+            # Branch exists, check it out (stash dirty files if needed)
             result = subprocess.run(
                 ["git", "checkout", branch_name],
                 cwd=resolved_path,
@@ -57,7 +57,35 @@ def create_remediation_branch_impl(
                 text=True
             )
             if result.returncode != 0:
-                return f"❌ Error checking out existing branch: {result.stderr.strip()}"
+                if "local changes" in result.stderr or "would be overwritten" in result.stderr:
+                    stash_result = subprocess.run(
+                        ["git", "stash", "--include-untracked"],
+                        cwd=resolved_path, capture_output=True, text=True,
+                    )
+                    if stash_result.returncode != 0:
+                        return f"❌ Error stashing changes: {stash_result.stderr.strip()}"
+
+                    checkout_result = subprocess.run(
+                        ["git", "checkout", branch_name],
+                        cwd=resolved_path, capture_output=True, text=True,
+                    )
+                    if checkout_result.returncode != 0:
+                        subprocess.run(["git", "stash", "pop"], cwd=resolved_path,
+                                       capture_output=True, text=True)
+                        return f"❌ Error checking out branch: {checkout_result.stderr.strip()}"
+
+                    pop_result = subprocess.run(
+                        ["git", "stash", "pop"],
+                        cwd=resolved_path, capture_output=True, text=True,
+                    )
+                    if pop_result.returncode != 0:
+                        subprocess.run(["git", "checkout", "--theirs", ".project/"],
+                                       cwd=resolved_path, capture_output=True, text=True)
+                        subprocess.run(["git", "stash", "drop"],
+                                       cwd=resolved_path, capture_output=True, text=True)
+                else:
+                    return f"❌ Error checking out existing branch: {result.stderr.strip()}"
+
             return f"""✅ Switched to existing branch '{branch_name}'
 
 **Next steps:**
@@ -66,7 +94,7 @@ def create_remediation_branch_impl(
 3. Create PR: `create_remediation_pr(local_path="{resolved_path}")`
 """
 
-        # Create and checkout new branch
+        # Create and checkout new branch (preserves dirty working tree)
         result = subprocess.run(
             ["git", "checkout", "-b", branch_name],
             cwd=resolved_path,

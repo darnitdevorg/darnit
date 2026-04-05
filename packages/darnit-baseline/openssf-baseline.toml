@@ -3977,10 +3977,17 @@ Supports filtering by:
 - level: Maximum maturity level (1, 2, or 3). Default: 3
 - tags: Filter by domain, tags, or custom attributes (e.g., "domain=AC", "security", "severity>=7.0")
 
+Output formats:
+- "markdown" (default): Human-readable report with remediation guidance
+- "json": Full JSON with all evidence and pass history (~164K for 62 controls)
+- "summary": Compact JSON with id/status/level/details only (~5-8K for 62 controls)
+- "sarif": SARIF format for tool integration
+
 Examples:
 - Level 1 only: level=1
 - AC domain controls: tags="domain=AC"
 - Security-tagged level 2: level=2, tags="security"
+- Compact output: output_format="summary"
 """
 
 [mcp.tools.list_available_checks]
@@ -4069,6 +4076,11 @@ description = """Apply automated remediations for failed audit controls.
 missing project context (maintainers, security contact, governance model, etc.). Some remediations
 require confirmed context to generate correct files (e.g., CODEOWNERS needs maintainers).
 Gather all context before remediating.
+
+Supports optional git workflow (ignored when dry_run=True):
+- branch_name: Create/switch to this branch before applying (e.g., "fix/compliance")
+- auto_commit: Commit changes after applying (requires dry_run=false)
+- create_pr: Create a pull request after committing (requires auto_commit=true)
 """
 
 [mcp.tools.create_remediation_branch]
