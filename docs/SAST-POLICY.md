@@ -1,0 +1,28 @@
+# Static Application Security Testing (SAST) Policy
+
+## Scanning Triggers
+
+- **Every push to main**: Full SAST scan
+- **Every pull request**: Incremental SAST scan
+- **Weekly schedule**: Comprehensive scan with updated rules
+
+## Severity Handling
+
+| Severity | Action | Timeline |
+|----------|--------|----------|
+| Critical/High | Block merge until resolved | Before merge |
+| Medium | Must be resolved or documented | 30 days |
+| Low | Informational, resolve when convenient | 90 days |
+
+## Tools
+
+SAST scanning is performed by Kusari Inspector. See
+[`.github/workflows/sast.yml`](../.github/workflows/sast.yml) for configuration.
+
+## Exception Process
+
+To request an exception for a SAST finding:
+1. Create an issue documenting the finding and why it is not applicable
+2. Get approval from a project maintainer
+3. Add a suppression comment in the code with a reference to the issue
+4. Review exceptions quarterly to ensure they are still valid

@@ -3,19 +3,34 @@
 # Extension fields for security tooling (OpenSSF Baseline, etc.)
 # Standard CNCF .project fields are in project.yaml
 
-project_type: software
-artifacts: {}
+slug: ''
+project_lead: ''
+cncf_slack_channel: ''
+package_managers: {}
+version: '1.0'
+controls: {}
+context:
+  has_subprojects: false
+  has_releases: true
+  is_library: true
+  has_compiled_assets: true
+  ci_provider: github
+  platform: github
+  maintainers:
+  - '@mlieberman85'
+  security_contact: security@example.com
+  governance_model: corporate
 quality: {}
-dependencies: {}
+artifacts: {}
+dependencies:
+  manifest: pyproject.toml
+ci:
+  workflows: []
+  security_scanning: []
+  testing: []
+  code_quality: []
+  github:
+    dependabot: .github/dependabot.yml
+project_type: software
 testing: {}
 releases: {}
-ci:
-  provider: github
-  workflows:
-  - .github/workflows/publish.yml
-  - .github/workflows/ci.yml
-  dependency_scanning: .github/dependabot.yml
-  security_scanning: []
-  testing:
-  - .github/workflows/ci.yml
-  code_quality: []

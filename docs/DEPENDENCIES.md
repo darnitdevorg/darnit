@@ -1,0 +1,30 @@
+# Dependency Management
+
+## Policy
+
+darnit manages dependencies with the following principles:
+- Dependencies are kept to a minimum
+- All dependencies must have compatible licenses
+- Dependencies are regularly updated
+
+## Update Cadence
+
+- **Security patches**: Applied as soon as possible (within 48 hours for critical)
+- **Minor updates**: Reviewed and applied monthly
+- **Major updates**: Evaluated for compatibility and applied quarterly
+
+## Vulnerability Response
+
+When a vulnerability is discovered in a dependency:
+1. Assess the impact on this project
+2. Apply the fix or upgrade within the timeframe based on severity:
+   - **Critical**: 48 hours
+   - **High**: 7 days
+   - **Medium**: 30 days
+   - **Low**: Next scheduled update
+3. If no fix is available, evaluate workarounds or alternative dependencies
+
+## Tools
+
+- [Dependabot](../.github/dependabot.yml) for automated dependency updates
+- [SCA workflow](../.github/workflows/sca.yml) for pull request dependency review
