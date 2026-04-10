@@ -5,13 +5,10 @@ These tests use mocking to isolate each node from its external dependencies
 run without a real repository or framework installation.
 """
 
-from unittest.mock import MagicMock, call, patch
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from darnit.agent.graph import audit, collect_context, remediate, route
 from darnit.agent.state import AuditState, FeedbackQuestion
-
 
 # ---------------------------------------------------------------------------
 # Helpers

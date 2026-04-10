@@ -1,6 +1,5 @@
 """Tests for darnit.agent.state."""
 
-import pytest
 
 from darnit.agent.state import AuditState, FeedbackQuestion
 
