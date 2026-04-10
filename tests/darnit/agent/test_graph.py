@@ -7,7 +7,15 @@ run without a real repository or framework installation.
 
 from unittest.mock import MagicMock, patch
 
-from darnit.agent.graph import audit, collect_context, remediate, route
+import pytest
+
+from darnit.agent.graph import (
+    _validate_context_answer,
+    audit,
+    collect_context,
+    remediate,
+    route,
+)
 from darnit.agent.state import AuditState, FeedbackQuestion
 
 # ---------------------------------------------------------------------------
@@ -199,6 +207,70 @@ class TestCollectContextNode:
 
         # context_values still set in memory even if persist failed
         assert state.context_values == {"has_releases": "yes"}
+
+    def test_rejects_answer_with_null_byte(self):
+        """Security: null bytes in answers must be rejected."""
+        state = _make_state()
+        state.feedback_questions = [FeedbackQuestion("CTRL-01", "path", "Q?")]
+
+        with pytest.raises(ValueError, match="disallowed character"):
+            collect_context(state, answers={"path": "safe\x00injection"})
+
+    def test_rejects_answer_with_newline(self):
+        """Security: newlines in answers must be rejected."""
+        state = _make_state()
+        state.feedback_questions = [FeedbackQuestion("CTRL-01", "path", "Q?")]
+
+        with pytest.raises(ValueError, match="disallowed character"):
+            collect_context(state, answers={"path": "first\nsecond"})
+
+    def test_rejects_answer_with_shell_metacharacter(self):
+        """Security: shell metacharacters in answers must be rejected."""
+        state = _make_state()
+        state.feedback_questions = [FeedbackQuestion("CTRL-01", "cmd", "Q?")]
+
+        with pytest.raises(ValueError, match="disallowed character"):
+            collect_context(state, answers={"cmd": "value; rm -rf /"})
+
+    def test_accepts_safe_answer(self):
+        """Paths and plain strings that are legitimately safe must be accepted."""
+        state = _make_state()
+        state.feedback_questions = [FeedbackQuestion("CTRL-01", "policy_path", "Q?")]
+
+        with patch("darnit.agent.graph.save_context_values"):
+            state = collect_context(state, answers={"policy_path": "docs/SECURITY.md"})
+
+        assert state.context_values["policy_path"] == "docs/SECURITY.md"
+
+
+# ---------------------------------------------------------------------------
+# _validate_context_answer helper
+# ---------------------------------------------------------------------------
+
+
+class TestValidateContextAnswer:
+    @pytest.mark.parametrize("bad_char,value", [
+        ("null byte", "a\x00b"),
+        ("newline", "a\nb"),
+        ("carriage return", "a\rb"),
+        ("semicolon", "a;b"),
+        ("pipe", "a|b"),
+        ("ampersand", "a&b"),
+        ("dollar", "a$b"),
+        ("backtick", "a`b"),
+    ])
+    def test_raises_on_dangerous_character(self, bad_char, value):
+        with pytest.raises(ValueError, match="disallowed character"):
+            _validate_context_answer("key", value)
+
+    def test_accepts_typical_path(self):
+        _validate_context_answer("policy_path", "docs/SECURITY.md")
+
+    def test_accepts_maintainer_handle(self):
+        _validate_context_answer("maintainer", "@alice")
+
+    def test_accepts_email(self):
+        _validate_context_answer("contact", "security@example.com")
 
 
 # ---------------------------------------------------------------------------

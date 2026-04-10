@@ -127,6 +127,13 @@ def collect_context(state: AuditState, answers: dict[str, str]) -> AuditState:
     if not answers:
         return state
 
+    # Security: validate all answers before storing any of them.  User-supplied
+    # values ultimately flow into RemediationExecutor._substitute_command(); even
+    # without shell=True, null bytes and newlines can break argument handling and
+    # shell metacharacters are rejected as a defence-in-depth measure.
+    for key, value in answers.items():
+        _validate_context_answer(key, value)
+
     # Record answers on the individual questions
     for question in state.feedback_questions:
         if question.context_key in answers:
@@ -332,6 +339,33 @@ def _get_framework_path(framework_name: str | None) -> str | None:
         path = resolve_framework_path(name)
         if path and path.exists():
             return str(path)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Failed to resolve framework path for %r: %s", framework_name, exc)
     return None
+
+
+# Characters that must never appear in user-supplied context answer values.
+# These could be interpreted as shell metacharacters or break argument parsing
+# even when shell=False, and have no legitimate use in compliance context values
+# (paths, maintainer names, policy filenames, etc.).
+_INVALID_ANSWER_CHARS = frozenset("\x00\n\r;|&$`(){}[]<>\\")
+
+
+def _validate_context_answer(key: str, value: str) -> None:
+    """Raise ValueError if *value* contains characters unsafe for context substitution.
+
+    Args:
+        key: The context key (used only for the error message).
+        value: The user-supplied answer string to validate.
+
+    Raises:
+        ValueError: If the value contains shell metacharacters, newlines, or
+            null bytes that could enable injection via command substitution.
+    """
+    found = _INVALID_ANSWER_CHARS & set(value)
+    if found:
+        raise ValueError(
+            f"Context answer for {key!r} contains disallowed character(s) "
+            f"{sorted(found)!r}. Values must not include shell metacharacters, "
+            "newlines, or null bytes."
+        )
