@@ -7,8 +7,6 @@ and config synchronisation helpers.
 import json
 import os
 
-import pytest
-
 from darnit.config.discovery import (
     discover_and_create_config,
     discover_ci_config,
@@ -21,7 +19,6 @@ from darnit.config.schema import (
     SecurityConfig,
     create_minimal_config,
 )
-
 
 # ---------------------------------------------------------------------------
 # discover_files

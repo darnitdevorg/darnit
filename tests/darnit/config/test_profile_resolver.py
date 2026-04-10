@@ -16,7 +16,6 @@ from darnit.config.profile_resolver import (
 )
 from darnit.core.plugin import ControlSpec
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

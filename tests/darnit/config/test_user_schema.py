@@ -4,7 +4,6 @@ Tests for darnit.config.user_schema - Pydantic models for
 user customisation configuration loaded from .baseline.toml.
 """
 
-import pytest
 
 from darnit.config.framework_schema import CheckConfig, CommandAdapterConfig
 from darnit.config.user_schema import (
@@ -17,7 +16,6 @@ from darnit.config.user_schema import (
     create_user_config,
     create_user_config_with_kusari,
 )
-
 
 # ---------------------------------------------------------------------------
 # UserSettings

@@ -4,31 +4,29 @@ Tests for darnit.config.loader - loading, saving, and caching
 .project/ configuration files.
 """
 
-import pytest
 import yaml
 
 from darnit.config.loader import (
     EXTENSION_FILE,
     PROJECT_DIR,
     PROJECT_FILE,
+    _split_config_data,
     clear_config_cache,
     config_exists,
     get_config_path,
+    get_default_extension,
+    get_extension_by_key,
     get_extension_path,
     get_project_config,
     list_extension_files,
     load_project_config,
     save_project_config,
-    _split_config_data,
-    get_default_extension,
-    get_extension_by_key,
 )
 from darnit.config.schema import (
     PathRef,
     SecurityConfig,
     create_minimal_config,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
