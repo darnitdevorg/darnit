@@ -26,7 +26,7 @@ def detect_forge(local_path: str) -> str:
         else:
             return "unknown"
 
-    except Exception:
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         return "unknown"
 
 

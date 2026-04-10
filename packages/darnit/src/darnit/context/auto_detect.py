@@ -349,7 +349,7 @@ def collect_auto_context(local_path: str) -> dict[str, Any]:
         for category_values in stored.values():
             for key, ctx_val in category_values.items():
                 context[key] = ctx_val.value
-    except Exception:
+    except (OSError, KeyError, AttributeError):
         pass  # Graceful degradation if no .project/ config exists
 
     # Auto-detect (only for keys not already persisted)

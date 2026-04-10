@@ -18,6 +18,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from darnit.core.logging import get_logger
 
 logger = get_logger("context.collection")
@@ -102,8 +104,6 @@ def parse_yaml_path(file_path: Path, path: str) -> Any:
         return None
 
     try:
-        import yaml
-
         content = file_path.read_text(encoding="utf-8")
         data = yaml.safe_load(content)
 
@@ -119,7 +119,7 @@ def parse_yaml_path(file_path: Path, path: str) -> Any:
                 return None
 
         return current
-    except Exception as e:
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as e:
         logger.debug(f"Could not parse YAML {file_path}: {e}")
         return None
 
@@ -171,7 +171,7 @@ def parse_json_path(file_path: Path, path: str) -> Any:
                 return None
 
         return current
-    except Exception as e:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as e:
         logger.debug(f"Could not parse JSON {file_path}: {e}")
         return None
 

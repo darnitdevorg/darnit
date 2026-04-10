@@ -54,7 +54,7 @@ class TestDetectForge:
 
     def test_git_command_fails(self, tmp_path: Path) -> None:
         """Returns 'unknown' gracefully when git remote fails."""
-        with patch("subprocess.run", side_effect=Exception("git error")):
+        with patch("subprocess.run", side_effect=OSError("git error")):
             result = detect_forge(str(tmp_path))
         assert result == "unknown"
 
