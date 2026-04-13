@@ -7,6 +7,7 @@ location for controls, including:
 3. Syncing discovered evidence back to .project/
 """
 
+import logging
 import os
 
 from darnit.config.discovery import _set_config_path, discover_files
@@ -18,6 +19,9 @@ from darnit.core.logging import get_logger
 from .models import FoundEvidence, LocateResult
 
 logger = get_logger("locate.locator")
+
+
+logger = logging.getLogger(__name__)
 
 
 class UnifiedLocator:
@@ -41,7 +45,7 @@ class UnifiedLocator:
         result = locator.locate("OSPS-VM-01.01", config)
 
         if result.success:
-            print(f"Found: {result.found.path}")
+            logger.info(f"Found: {result.found.path}")
             if result.needs_sync:
                 locator.sync_to_project("OSPS-VM-01.01", result.found, config)
         ```

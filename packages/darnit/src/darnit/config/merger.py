@@ -528,7 +528,7 @@ def load_framework_by_name(name: str) -> FrameworkConfig:
 
     Example:
         >>> framework = load_framework_by_name("openssf-baseline")
-        >>> print(f"Loaded {len(framework.controls)} controls")
+        >>> logger.info(f"Loaded {len(framework.controls)} controls")
     """
     path = resolve_framework_path(name)
 
@@ -557,7 +557,7 @@ def list_available_frameworks() -> list[str]:
 
     Example:
         >>> for name in list_available_frameworks():
-        ...     print(f"Available: {name}")
+        ...     logger.info(f"Available: {name}")
     """
     try:
         from darnit.core.registry import get_plugin_registry
@@ -592,7 +592,7 @@ def load_effective_config_by_name(
         ...     "openssf-baseline",
         ...     Path("/path/to/repo"),
         ... )
-        >>> print(f"Loaded {len(effective.controls)} controls")
+        >>> logger.info(f"Loaded {len(effective.controls)} controls")
     """
     framework = load_framework_by_name(framework_name)
 

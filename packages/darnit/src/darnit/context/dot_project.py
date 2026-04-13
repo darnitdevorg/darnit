@@ -16,8 +16,8 @@ Example:
     reader = DotProjectReader("/path/to/repo")
     if reader.exists():
         config = reader.read()
-        print(config.name)
-        print(config.maintainers)
+        logger.info(config.name)
+        logger.info(config.maintainers)
 
     # Write updates (preserving comments)
     writer = DotProjectWriter("/path/to/repo")

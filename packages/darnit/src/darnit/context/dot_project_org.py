@@ -11,8 +11,8 @@ Example:
     resolver = OrgProjectResolver()
     config = resolver.resolve("my-org")
     if config:
-        print(config.name)
-        print(config.maintainers)
+        logger.info(config.name)
+        logger.info(config.maintainers)
 """
 
 from __future__ import annotations

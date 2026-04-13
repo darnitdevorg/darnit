@@ -22,7 +22,7 @@ Example:
 
         # List available frameworks
         for name in registry.list_frameworks():
-            print(f"Framework: {name}")
+            logger.info(f"Framework: {name}")
 
         # Get an adapter by name
         adapter = registry.get_check_adapter("kusari")
@@ -91,7 +91,7 @@ class FrameworkInfo:
 
     Example:
         >>> info = registry.get_framework_info("openssf-baseline")
-        >>> print(info.path)  # Lazily loads path
+        >>> logger.info(info.path)  # Lazily loads path
         /path/to/openssf-baseline.toml
     """
 
@@ -183,7 +183,7 @@ class PluginRegistry:
 
             # List frameworks
             for name in registry.list_frameworks():
-                print(f"Found framework: {name}")
+                logger.info(f"Found framework: {name}")
 
             # Get a check adapter
             adapter = registry.get_check_adapter("kusari")
@@ -240,7 +240,7 @@ class PluginRegistry:
         Example:
             >>> registry = get_plugin_registry()
             >>> registry.discover_all()
-            >>> print(f"Found {len(registry.list_frameworks())} frameworks")
+            >>> logger.info(f"Found {len(registry.list_frameworks())} frameworks")
         """
         self.discover_frameworks()
         self.discover_check_adapters()
@@ -257,7 +257,7 @@ class PluginRegistry:
         Example:
             >>> frameworks = registry.discover_frameworks()
             >>> for name, info in frameworks.items():
-            ...     print(f"{name}: {info.path}")
+            ...     logger.info(f"{name}: {info.path}")
         """
         if ENTRY_POINT_FRAMEWORKS in self._discovered:
             return self._frameworks
@@ -296,7 +296,7 @@ class PluginRegistry:
         Example:
             >>> adapters = registry.discover_check_adapters()
             >>> for name, info in adapters.items():
-            ...     print(f"{name}: {info.adapter_class}")
+            ...     logger.info(f"{name}: {info.adapter_class}")
         """
         if ENTRY_POINT_CHECK_ADAPTERS in self._discovered:
             return self._check_adapters
@@ -370,7 +370,7 @@ class PluginRegistry:
 
         Example:
             >>> for name in registry.list_frameworks():
-            ...     print(name)
+            ...     logger.info(name)
             openssf-baseline
             testchecks
         """
@@ -430,7 +430,7 @@ class PluginRegistry:
 
         Example:
             >>> for name in registry.list_check_adapters():
-            ...     print(name)
+            ...     logger.info(name)
             builtin
             kusari
             trivy
@@ -752,7 +752,7 @@ class PluginRegistry:
 
         Example:
             >>> summary = registry.get_plugin_summary()
-            >>> print(summary)
+            >>> logger.info(summary)
             {
                 "frameworks": ["openssf-baseline", "testchecks"],
                 "check_adapters": ["builtin", "kusari"],
