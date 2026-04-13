@@ -383,20 +383,64 @@ class TestLLMEnhancement:
 class TestTemplateFallbackDefaults:
     """Verify templates render sensible defaults when context is missing."""
 
-    def test_security_policy_fallback_contact(self, tmp_path):
-        """Security policy renders placeholder email when no contact set."""
+    def test_security_policy_omits_email_when_no_contact(self, tmp_path):
+        """Security policy omits the email option when no contact is confirmed.
+
+        Regression guard: previously the template used
+        ``default('security@example.com')`` which leaked a fake address into
+        real SECURITY.md outputs, violating the "Never Guess User-Specific
+        Values" rule.
+        """
         rendered = _render_template("security_policy_standard", tmp_path)
 
-        # Should have the fallback, not a raw variable or empty string
-        assert "security@example.com" in rendered
+        # No placeholder email leaks
+        assert "security@example.com" not in rendered
+        assert "example.com" not in rendered
+        # No raw template variables
         assert "${context.security_contact}" not in rendered
+        assert "<< context.security_contact" not in rendered
+        # GitHub Security Advisories path is still present
+        assert "GitHub Security Advisories" in rendered
 
-    def test_security_policy_minimal_fallback_contact(self, tmp_path):
-        """Minimal security policy renders placeholder email when no contact set."""
+    def test_security_policy_minimal_omits_email_when_no_contact(self, tmp_path):
+        """Minimal security policy omits the email bullet when no contact set."""
         rendered = _render_template("security_policy_minimal", tmp_path)
 
-        assert "security@example.com" in rendered
+        assert "security@example.com" not in rendered
+        assert "example.com" not in rendered
         assert "${context.security_contact}" not in rendered
+        assert "<< context.security_contact" not in rendered
+        # GitHub vulnerability reporting path is still present
+        assert "Report a vulnerability" in rendered
+
+    def test_security_policy_renders_contact_when_confirmed(self, tmp_path):
+        """When context.security_contact is set, the email line is rendered verbatim."""
+        scan_ctx = scan_repository(str(tmp_path))
+        scan_values = flatten_scan_context(scan_ctx)
+
+        fw_path = _get_framework_path()
+        templates = _load_template("security_policy_standard")
+
+        executor = RemediationExecutor(
+            local_path=str(tmp_path),
+            owner="test-org",
+            repo="test-repo",
+            templates=templates,
+            context_values={"security_contact": "security@example-project.test"},
+            scan_values=scan_values,
+            framework_path=fw_path,
+        )
+
+        content = executor._get_template_content("security_policy_standard")
+        assert content is not None
+        rendered = executor._substitute(content, "OSPS-TEST-01")
+
+        # The confirmed contact is rendered
+        assert "security@example-project.test" in rendered
+        # The email section appears
+        assert "Email" in rendered
+        # No fallback fake address
+        assert "security@example.com" not in rendered
 
     def test_codeowners_fallback(self, tmp_path):
         """CODEOWNERS renders a valid placeholder when no maintainers set."""

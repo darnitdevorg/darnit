@@ -4,6 +4,8 @@
 
 Please report security vulnerabilities by:
 - Using GitHub's "Report a vulnerability" feature in the Security tab
-- Or emailing << context.security_contact | default('security@example.com') >>
+<% if context.security_contact %>
+- Or emailing << context.security_contact >>
+<% endif %>
 
 We will respond within 48 hours and work with you to resolve the issue.

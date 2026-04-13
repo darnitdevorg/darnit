@@ -19,7 +19,9 @@ Instead, please report security vulnerabilities by:
 
 1. **GitHub Security Advisories**: Use the "Report a vulnerability" button in
    the Security tab of this repository (preferred)
-2. **Email**: Send details to << context.security_contact | default('security@example.com') >>
+<% if context.security_contact %>
+2. **Email**: Send details to << context.security_contact >>
+<% endif %>
 
 ### What to Include
 
