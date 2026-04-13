@@ -182,7 +182,7 @@ def generate_sarif_audit(
         # Filter based on status
         if status == "PASS" and not include_passing:
             continue
-        if status == "N/A" and not include_na:
+        if status in ("NA", "N/A") and not include_na:
             continue
 
         control_id = check_result["id"]
