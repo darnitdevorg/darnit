@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from darnit.config.framework_schema import LocatorConfig
+    from darnit.core.models import ExecutionContext
     from darnit.locate import UnifiedLocator
 
 
@@ -49,6 +50,8 @@ class CheckContext:
     # .project/ context (from DotProjectMapper)
     # Contains flattened project metadata like project.security.policy_path, project.maintainers
     project_context: dict[str, Any] = field(default_factory=dict)
+    # Shared execution context for caching tools across controls
+    execution_context: "ExecutionContext | None" = None
 
 
 @dataclass

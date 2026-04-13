@@ -580,8 +580,24 @@ class SieveOrchestrator:
 
         # Execute in dependency order, collect results
         result_map: dict[str, SieveResult] = {}
+
+        # Shared execution context for caching tools across this batch
+        shared_exec_context = None
+
         for spec in ordered:
             context = context_factory(spec.control_id)
+
+            # Initialize shared execution context from the first context
+            if shared_exec_context is None:
+                from darnit.core.models import ExecutionContext
+                shared_exec_context = ExecutionContext(
+                    owner=context.owner,
+                    repo=context.repo,
+                    local_path=context.local_path
+                )
+
+            context.execution_context = shared_exec_context
+
             result = self.verify(spec, context)
             result_map[spec.control_id] = result
 

@@ -425,3 +425,27 @@ These files are the best companions while authoring handlers:
 - `packages/darnit-example/src/darnit_example/implementation.py`
 - `packages/darnit/src/darnit/sieve/builtin_handlers.py`
 - `packages/darnit/src/darnit/sieve/handler_registry.py`
+
+## Integrating Shared Execution Context
+
+For multi-control frameworks, running the same static analysis tools (e.g., OpenSSF Scorecard, Trivy) across multiple controls can quickly become a performance bottleneck. To optimize this, the framework utilizes a thread-safe `ExecutionContext` injected across active handler lifecycles.
+
+When writing a Python handler that invokes an external tool or expensive API call, use `context.execution_context.get_or_run_tool()` to cache the result for any subsequent checks within the same batch block:
+
+```python
+def scorecard_handler(context: CheckContext, **kwargs) -> SieveResult:
+    def run_scorecard():
+        # Expensive external subprocess call
+        return subprocess.run(["scorecard", "--repo", context.local_path], capture_output=True)
+
+    # Automatically caches or retrieves previous scorecard execution
+    scorecard_data = context.execution_context.get_or_run_tool(
+        "scorecard",
+        run_scorecard
+    )
+
+    # Process scorecard_data...
+    return SieveResult(control_id=context.control_id, status="PASS", message="Scorecard valid", level=1, source="scorecard")
+```
+
+The execution context manages thread locks automatically, meaning concurrent handlers can safely request the same tool key without triggering multiple underlying system calls.
