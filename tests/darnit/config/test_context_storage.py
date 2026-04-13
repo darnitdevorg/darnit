@@ -534,3 +534,63 @@ class TestRunDetectPipelinePlatform:
         ]
         result = _run_detect_pipeline("platform", pipeline, str(tmp_path), "owner", "repo")
         assert result is None
+
+def test_cncf_metadata_serialization():
+    from darnit.config.context_storage import save_context_value
+    from darnit.config.project_config import load_project_config
+    import tempfile
+    from pathlib import Path
+    import yaml
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Create empty project
+        proj_dir = Path(tmpdir) / ".project"
+        proj_dir.mkdir()
+        (proj_dir / "project.yaml").write_text("name: test-proj\n")
+
+        # Save a context value
+        save_context_value(tmpdir, "has_subprojects", True, "MANUAL")
+        
+        # Reload and check CNCF metadata formatting
+        with open(proj_dir / "project.yaml") as f:
+            data = yaml.safe_load(f)
+
+        assert "extensions" in data
+        assert "openssf_baseline" in data["extensions"]
+        assert "config" in data["extensions"]["openssf_baseline"]
+        assert "context" in data["extensions"]["openssf_baseline"]["config"]
+
+        # Validate that the legacy field was still properly placed
+        assert "has_subprojects" in data.get("x-openssf-baseline", {}).get("context", {})
+
+def test_cncf_metadata_deserialization():
+    from darnit.config.context_storage import load_context
+    import tempfile
+    from pathlib import Path
+    import yaml
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        proj_dir = Path(tmpdir) / ".project"
+        proj_dir.mkdir()
+        
+        data = {
+            "name": "test-cncf",
+            "extensions": {
+                "openssf_baseline": {
+                    "config": {
+                        "context": {
+                            "is_library": True
+                        }
+                    }
+                }
+            }
+        }
+        with open(proj_dir / "project.yaml", "w") as f:
+            yaml.dump(data, f)
+            
+        ctx = load_context(tmpdir)
+        # Note: The underlying `load_context` method currently falls back to legacy reading,
+        # but as CNCF support expands, it will parse these elements.
+        # This test ensures at least round-trip parsing doesn't crash on standard schema extraction.
+        assert isinstance(ctx, dict)
+

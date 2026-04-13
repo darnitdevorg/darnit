@@ -66,7 +66,17 @@ def load_context(local_path: str) -> ContextByCategory:
     context_by_category: ContextByCategory = {}
 
     # Currently we support the legacy format
-    # TODO: Add CNCF format support when spec is finalized
+    if config.extensions and "openssf_baseline" in config.extensions:
+        ext = config.extensions["openssf_baseline"]
+        if isinstance(ext, dict) and "config" in ext and "context" in ext["config"]:
+            ctx_dict = ext["config"]["context"]
+            # Minimal read mapping
+            for cat, values in ctx_dict.items():
+                if isinstance(values, dict):
+                    if cat not in context_by_category:
+                        context_by_category[cat] = {}
+                    for k, v in values.items():
+                        context_by_category[cat][k] = ContextValue.user_confirmed(v)
     if config.x_openssf_baseline and config.x_openssf_baseline.context:
         ctx = config.x_openssf_baseline.context
 
@@ -272,7 +282,13 @@ def save_context_value(
 
     # Map keys to context fields
     # Note: Currently we store in the legacy flat format
-    # TODO: Add support for CNCF extensions format with full provenance
+    # CNCF output structure mapping
+    config.extensions = config.extensions or {}
+    config.extensions["openssf_baseline"] = {
+        "config": {
+            "context": existing_context
+        }
+    }
     key_mapping = {
         "has_subprojects": "has_subprojects",
         "has_releases": "has_releases",
