@@ -1,12 +1,14 @@
 """Tests for the declarative remediation executor."""
 
 import tempfile
+from pathlib import Path
 
 import pytest
 
 from darnit.config.framework_schema import (
     HandlerInvocation,
     RemediationConfig,
+    TemplateConfig,
 )
 from darnit.remediation.executor import RemediationExecutor, RemediationResult
 
@@ -773,5 +775,84 @@ class TestLlmEnhancePropagation:
         assert "Customize this README." in md
 
 
+
+class TestTemplateLoading:
+    def test_template_file_loading_local_path(self):
+        """Test template loads relative to local path when no framework path is provided."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            template_path = tmpdir_path / "test.md"
+            template_path.write_text("Hello << CONTROL >>", encoding="utf-8")
+
+            executor = RemediationExecutor(
+                local_path=tmpdir,
+                owner="testorg",
+                repo="testrepo",
+                templates={
+                    "my_template": TemplateConfig(file="test.md"),
+                }
+            )
+
+            content = executor._get_template_content("my_template")
+            assert content == "Hello << CONTROL >>"
+
+    def test_template_file_loading_framework_path(self):
+        """Test template loads relative to framework path if provided."""
+        with tempfile.TemporaryDirectory() as local_repo_dir:
+            with tempfile.TemporaryDirectory() as framework_dir:
+                fw_dir_path = Path(framework_dir)
+                template_path = fw_dir_path / "templates" / "policy.md"
+                template_path.parent.mkdir(parents=True)
+                template_path.write_text("Framework template", encoding="utf-8")
+
+                fw_toml = fw_dir_path / "darnit-config.toml"
+
+                executor = RemediationExecutor(
+                    local_path=local_repo_dir,
+                    owner="testorg",
+                    repo="testrepo",
+                    framework_path=str(fw_toml),
+                    templates={
+                        "my_template": TemplateConfig(file="templates/policy.md"),
+                    }
+                )
+
+                content = executor._get_template_content("my_template")
+                assert content == "Framework template"
+
+    def test_template_file_loading_absolute_path(self):
+        """Test absolute template paths load correctly."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            template_path = tmpdir_path / "abs_policy.md"
+            template_path.write_text("Absolute template", encoding="utf-8")
+
+            executor = RemediationExecutor(
+                local_path="/some/other/path",
+                owner="testorg",
+                repo="testrepo",
+                templates={
+                    "my_template": TemplateConfig(file=str(template_path)),
+                }
+            )
+
+            content = executor._get_template_content("my_template")
+            assert content == "Absolute template"
+
+    def test_template_remote_loading_unsupported(self):
+        """Test that remote template loading throws NotImplementedError."""
+        executor = RemediationExecutor(
+            local_path="/some/path",
+            owner="testorg",
+            repo="testrepo",
+            templates={
+                "my_template": TemplateConfig(file="https://example.com/template.md"),
+            }
+        )
+
+        with pytest.raises(NotImplementedError, match="Remote template loading is not yet supported for URI: https://example.com/template.md"):
+            executor._get_template_content("my_template")
+
 if __name__ == "__main__":
+
     pytest.main([__file__, "-v"])

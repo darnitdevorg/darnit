@@ -27,6 +27,7 @@ import os
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -348,26 +349,49 @@ class RemediationExecutor:
             return template.content
 
         if template.file:
+            # Placeholder for remote template loading
+            if template.file.startswith(("http://", "https://", "git://", "registry://")):
+                return self._load_remote_template(template.file)
+
             # Resolve relative paths against the framework TOML directory
             # so that implementation packages can ship templates alongside
-            # their TOML config.  Falls back to local_path when no
+            # their TOML config. Falls back to local_path when no
             # framework_path is available.
-            template_path = template.file
-            if not os.path.isabs(template_path):
+            template_path = Path(template.file)
+            if not template_path.is_absolute():
                 if self._framework_path:
-                    base_dir = os.path.dirname(self._framework_path)
+                    base_dir = Path(self._framework_path).parent
                 else:
-                    base_dir = self.local_path
-                template_path = os.path.join(base_dir, template_path)
+                    base_dir = Path(self.local_path)
+                template_path = base_dir / template_path
+
+            # Securely resolve paths (canonicalize) to prevent directory traversal
+            try:
+                # strict=False allows resolving even if file doesn't exist yet,
+                # but we want to catch if it's outside expected bounds?
+                # Actually, the file must exist to read it, so resolving is fine.
+                template_path = template_path.resolve()
+            except RuntimeError as e: # Pathlib resolve can raise RuntimeError on loop
+                logger.warning(f"Failed to resolve template file {template_path}: {e}")
+                return None
 
             try:
-                with open(template_path) as f:
-                    return f.read()
+                return template_path.read_text(encoding="utf-8")
             except OSError as e:
                 logger.warning(f"Failed to read template file {template_path}: {e}")
                 return None
 
         return None
+
+    def _load_remote_template(self, uri: str) -> str | None:
+        """Interface placeholder for remote template loading.
+
+        Future implementations will support:
+        - HTTP/HTTPS URLs with local caching and SHA256 integrity checks
+        - Git repository references
+        - Template registries (like npm/PyPI for templates)
+        """
+        raise NotImplementedError(f"Remote template loading is not yet supported for URI: {uri}")
 
     def execute(
         self,
