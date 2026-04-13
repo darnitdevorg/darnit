@@ -420,3 +420,87 @@ class TestRunSieveAuditCacheIntegration:
         assert data["results"] == results
         assert data["summary"] == summary
         assert data["commit"] is not None
+
+class TestDictionaryIsolation:
+    """Test that cache handles multi-control isolation correctly."""
+
+    def test_cache_isolates_by_control_id(self):
+        """Verify the cache envelope stores control results independently."""
+        import tempfile
+
+        from darnit.core.audit_cache import read_audit_cache, write_audit_cache
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a mock cache envelope
+            data = [
+                {"id": "CTRL-1", "status": "PASS"},
+                {"id": "CTRL-2", "status": "FAIL"}
+            ]
+
+            write_audit_cache(tmpdir, data, {"PASS": 1, "FAIL": 1}, 1, "openssf-baseline")
+
+            recovered = read_audit_cache(tmpdir)
+            assert recovered is not None
+            assert len(recovered) == 2
+
+            # Map by ID for assertion
+        recovered_map = {item["id"]: item for item in recovered}
+        assert recovered_map["CTRL-1"]["status"] == "PASS"
+        assert recovered_map["CTRL-2"]["status"] == "FAIL"
+
+class TestDictionaryIsolation:
+    """Test that cache handles multi-control isolation correctly."""
+
+    def test_cache_isolates_by_control_id(self, temp_git_repo):
+        """Verify the cache envelope stores control results independently."""
+        from darnit.core.audit_cache import write_audit_cache, read_audit_cache
+
+        tmpdir = str(temp_git_repo)
+        
+        # Create a mock cache envelope
+        data = [
+            {"id": "CTRL-1", "status": "PASS"},
+            {"id": "CTRL-2", "status": "FAIL"}
+        ]
+        
+        write_audit_cache(tmpdir, data, {"PASS": 1, "FAIL": 1}, 1, "openssf-baseline")
+        
+        recovered = read_audit_cache(tmpdir)
+        assert recovered is not None
+        assert "results" in recovered
+        assert len(recovered["results"]) == 2
+        recovered = recovered["results"]
+            
+            # Map by ID for assertion
+        recovered_map = {item["id"]: item for item in recovered}
+        assert recovered_map["CTRL-1"]["status"] == "PASS"
+        assert recovered_map["CTRL-2"]["status"] == "FAIL"
+
+class TestConcurrentAuditCache:
+    """Test that the cache handles concurrent access correctly."""
+
+    def test_concurrent_cache_writes(self, temp_git_repo):
+        """Verify that writing to the cache across multiple threads does not corrupt the data."""
+        from darnit.core.audit_cache import write_audit_cache, read_audit_cache
+        import concurrent.futures
+
+        tmpdir = str(temp_git_repo)
+
+        def cache_writer(i):
+            data = [{"id": f"CTRL-{i}", "status": "PASS"}]
+            summary = {"PASS": 1}
+            write_audit_cache(tmpdir, data, summary, 1, "concurrent-tests")
+
+        # Simulate 20 concurrent threads trying to write to the cache simultaneously
+        with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+            list(executor.map(cache_writer, range(100)))
+
+        # If atomic writing didn't work, reading the cache might fail or the dictionary might be corrupt
+        recovered = read_audit_cache(tmpdir)
+        assert recovered is not None
+        assert "results" in recovered
+        # Since it's a race condition to the final file, we just care that it's valid JSON and structurally sound.
+        assert len(recovered["results"]) == 1
+        assert recovered["results"][0]["status"] == "PASS"
+        assert recovered["results"][0]["id"].startswith("CTRL-")
+
