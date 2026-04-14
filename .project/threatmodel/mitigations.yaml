@@ -6,60 +6,60 @@
 #
 # Fingerprints include the file path. Renaming a file will make its entries stale.
 # Re-record decisions against the new path after a deliberate rename.
+#
+# Initial review: 2026-04-14 — 176 findings reviewed against source code.
+# Subprocess findings sub-classified by mitigation pattern (git CLI, TOML config,
+# adapter commands, test fixtures, etc).
 
 version: '1'
 entries:
 - fingerprint: sha256:cc49613296a8838c
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: TOML-config-driven command execution using list-form subprocess. The base
+    command and binary path come from trusted TOML configuration shipped with the
+    package. Config options are type-checked and formatted as --key value pairs. Running
+    external audit binaries (kusari, custom adapters) is a core design requirement
+    of this compliance framework.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/core/adapters.py:231
 - fingerprint: sha256:db8e2ee72c815ac2
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Sieve exec handler — commands loaded from TOML control definitions (a trusted,
+    admin-controlled source). Variable substitution uses an allowlisted set of placeholders
+    ($OWNER, $REPO, $BRANCH, $PATH) with values from MCP CheckContext. List-form subprocess
+    prevents shell metacharacter injection.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/sieve/builtin_handlers.py:137
 - fingerprint: sha256:24a2697035d5e27d
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: TOML-config-driven command execution using list-form subprocess. The base
+    command and binary path come from trusted TOML configuration shipped with the
+    package. Config options are type-checked and formatted as --key value pairs. Running
+    external audit binaries (kusari, custom adapters) is a core design requirement
+    of this compliance framework.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit-plugins/src/darnit_plugins/adapters/kusari.py:253
 - fingerprint: sha256:41862387f34d79ea
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Opengrep/Semgrep binary invocation with fully static argv. Binary path is
+    detected via shutil.which() (safe). All flags are hardcoded; only the target directory
+    (validated repository path) varies. No user-controlled arguments reach the command.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit-baseline/src/darnit_baseline/threat_model/opengrep_runner.py:131
 - fingerprint: sha256:dfdce82c38a896bc
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
@@ -121,166 +121,143 @@ entries:
   query_id: python.eop.dynamic_import_attr
   file_hint: packages/darnit/src/darnit/server/registry.py:151
 - fingerprint: sha256:3d3f25c7170f616c
-  status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  status: accepted
+  note: Test fixture, example, or build script — not production code. Commands are
+    hardcoded for documentation or repository setup purposes. Risk is accepted because
+    these scripts run in trusted developer environments.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: docs/examples/python-framework/example_framework/implementation.py:400
 - fingerprint: sha256:bad09bad71eb0156
-  status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  status: accepted
+  note: Test fixture, example, or build script — not production code. Commands are
+    hardcoded for documentation or repository setup purposes. Risk is accepted because
+    these scripts run in trusted developer environments.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: docs/examples/python-framework/example_framework/implementation.py:603
 - fingerprint: sha256:9888d88f0b31a80e
-  status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  status: accepted
+  note: Test fixture, example, or build script — not production code. Commands are
+    hardcoded for documentation or repository setup purposes. Risk is accepted because
+    these scripts run in trusted developer environments.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: scripts/create-example-test-repo.py:142
 - fingerprint: sha256:39dcf5bd1ab43e91
-  status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  status: accepted
+  note: Test fixture, example, or build script — not production code. Commands are
+    hardcoded for documentation or repository setup purposes. Risk is accepted because
+    these scripts run in trusted developer environments.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: scripts/create-example-test-repo.py:308
 - fingerprint: sha256:8da33a516f06a8ce
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Opengrep/Semgrep binary invocation with fully static argv. Binary path is
+    detected via shutil.which() (safe). All flags are hardcoded; only the target directory
+    (validated repository path) varies. No user-controlled arguments reach the command.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit-baseline/src/darnit_baseline/threat_model/opengrep_runner.py:64
 - fingerprint: sha256:6e3774ff3c658fd3
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Single git-remote-get-url invocation to derive repository display name. Fixed
+    command, no user input, 5-second timeout, failure gracefully falls back to directory
+    basename.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit-baseline/src/darnit_baseline/threat_model/renderers/common.py:116
 - fingerprint: sha256:367df569737792bc
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: GitHub CLI (gh) invocation with list-form arguments for PR/repo operations.
+    Command structure is fixed; variable parts (owner, repo, branch) come from validated
+    MCP tool parameters. gh CLI validates all arguments internally.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/tools/audit_org.py:62
 - fingerprint: sha256:c2dd17568f51d619
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: GitHub CLI (gh) invocation with list-form arguments for PR/repo operations.
+    Command structure is fixed; variable parts (owner, repo, branch) come from validated
+    MCP tool parameters. gh CLI validates all arguments internally.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/tools/audit_org.py:113
 - fingerprint: sha256:f8caab336c4ae9ee
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/context/auto_detect.py:518
 - fingerprint: sha256:dee7091858b0f9f5
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Utility functions wrapping git/gh CLI with fixed command structures and list-form
+    arguments. Used internally for repository metadata queries (remote URL, branch
+    info, commit log). No external input reaches command arguments — all values are
+    derived from the local repository state.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/core/utils.py:27
 - fingerprint: sha256:c4b49ebd194e2307
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Utility functions wrapping git/gh CLI with fixed command structures and list-form
+    arguments. Used internally for repository metadata queries (remote URL, branch
+    info, commit log). No external input reaches command arguments — all values are
+    derived from the local repository state.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/core/utils.py:99
 - fingerprint: sha256:7a160723ebbc9aee
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Utility functions wrapping git/gh CLI with fixed command structures and list-form
+    arguments. Used internally for repository metadata queries (remote URL, branch
+    info, commit log). No external input reaches command arguments — all values are
+    derived from the local repository state.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/core/utils.py:161
 - fingerprint: sha256:123e1abed2e24186
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Utility functions wrapping git/gh CLI with fixed command structures and list-form
+    arguments. Used internally for repository metadata queries (remote URL, branch
+    info, commit log). No external input reaches command arguments — all values are
+    derived from the local repository state.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/core/utils.py:367
 - fingerprint: sha256:71d55a458afb5f9b
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Utility functions wrapping git/gh CLI with fixed command structures and list-form
+    arguments. Used internally for repository metadata queries (remote URL, branch
+    info, commit log). No external input reaches command arguments — all values are
+    derived from the local repository state.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/core/utils.py:385
 - fingerprint: sha256:b6443b8189fafc96
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Utility functions wrapping git/gh CLI with fixed command structures and list-form
+    arguments. Used internally for repository metadata queries (remote URL, branch
+    info, commit log). No external input reaches command arguments — all values are
+    derived from the local repository state.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
@@ -345,7 +322,7 @@ entries:
   reviewed_at: '2026-04-14'
   query_id: python.info_disc.open_call
   file_hint: packages/darnit-baseline/src/darnit_baseline/implementation.py:103
-- fingerprint: sha256:bf1d0549a87fe9e9
+- fingerprint: sha256:ddec0c64011807a7
   status: mitigated
   note: 'All file paths originate from trusted sources: TOML configuration, computed
     paths via os.path.join with repository root, glob patterns over known directories,
@@ -354,9 +331,8 @@ entries:
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.info_disc.open_call
-  file_hint: packages/darnit-baseline/src/darnit_baseline/threat_model/remediation.py:301
-  stale: true
-- fingerprint: sha256:72f2be1dafc4a893
+  file_hint: packages/darnit-baseline/src/darnit_baseline/threat_model/remediation.py:290
+- fingerprint: sha256:8c15dc2100055855
   status: mitigated
   note: 'All file paths originate from trusted sources: TOML configuration, computed
     paths via os.path.join with repository root, glob patterns over known directories,
@@ -365,9 +341,8 @@ entries:
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.info_disc.open_call
-  file_hint: packages/darnit-baseline/src/darnit_baseline/threat_model/remediation.py:394
-  stale: true
-- fingerprint: sha256:177d151630e24ed7
+  file_hint: packages/darnit-baseline/src/darnit_baseline/threat_model/remediation.py:384
+- fingerprint: sha256:7daeab381034098b
   status: mitigated
   note: 'All file paths originate from trusted sources: TOML configuration, computed
     paths via os.path.join with repository root, glob patterns over known directories,
@@ -376,9 +351,8 @@ entries:
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.info_disc.open_call
-  file_hint: packages/darnit-baseline/src/darnit_baseline/threat_model/remediation.py:401
-  stale: true
-- fingerprint: sha256:25338012f25f2cd2
+  file_hint: packages/darnit-baseline/src/darnit_baseline/threat_model/remediation.py:391
+- fingerprint: sha256:9c977d381e2c3a60
   status: mitigated
   note: 'All file paths originate from trusted sources: TOML configuration, computed
     paths via os.path.join with repository root, glob patterns over known directories,
@@ -387,9 +361,8 @@ entries:
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.info_disc.open_call
-  file_hint: packages/darnit-baseline/src/darnit_baseline/threat_model/remediation.py:415
-  stale: true
-- fingerprint: sha256:947dddce6c057514
+  file_hint: packages/darnit-baseline/src/darnit_baseline/threat_model/remediation.py:403
+- fingerprint: sha256:8cd4f103965b554c
   status: mitigated
   note: 'All file paths originate from trusted sources: TOML configuration, computed
     paths via os.path.join with repository root, glob patterns over known directories,
@@ -398,8 +371,7 @@ entries:
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.info_disc.open_call
-  file_hint: packages/darnit-baseline/src/darnit_baseline/threat_model/remediation.py:428
-  stale: true
+  file_hint: packages/darnit-baseline/src/darnit_baseline/threat_model/remediation.py:414
 - fingerprint: sha256:660203d2e97a3052
   status: mitigated
   note: 'All file paths originate from trusted sources: TOML configuration, computed
@@ -491,133 +463,117 @@ entries:
   query_id: python.info_disc.open_call
   file_hint: packages/darnit/src/darnit/core/verification.py:221
 - fingerprint: sha256:a92b64e3fb7d00ef
-  status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  status: accepted
+  note: Test fixture, example, or build script — not production code. Commands are
+    hardcoded for documentation or repository setup purposes. Risk is accepted because
+    these scripts run in trusted developer environments.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: scripts/create-example-test-repo.py:136
 - fingerprint: sha256:d8b8307b8c16479f
-  status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  status: accepted
+  note: Test fixture, example, or build script — not production code. Commands are
+    hardcoded for documentation or repository setup purposes. Risk is accepted because
+    these scripts run in trusted developer environments.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: scripts/create-example-test-repo.py:139
 - fingerprint: sha256:2603b50ec203f5cc
-  status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  status: accepted
+  note: Test fixture, example, or build script — not production code. Commands are
+    hardcoded for documentation or repository setup purposes. Risk is accepted because
+    these scripts run in trusted developer environments.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: scripts/create-example-test-repo.py:280
 - fingerprint: sha256:18143895dff565cf
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: TOML-config-driven command execution using list-form subprocess. The base
+    command and binary path come from trusted TOML configuration shipped with the
+    package. Config options are type-checked and formatted as --key value pairs. Running
+    external audit binaries (kusari, custom adapters) is a core design requirement
+    of this compliance framework.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/core/adapters.py:354
 - fingerprint: sha256:622a9ce74e35cef5
-  status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  status: accepted
+  note: Test repository creation tool — runs git commands to set up ephemeral test
+    repos. Commands are hardcoded (git init, git add, git commit). Only runs in controlled
+    testing/demo contexts with trusted input.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/server/tools/test_repository.py:141
 - fingerprint: sha256:a34c9dfda3186c19
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/server/tools/git_operations.py:45
 - fingerprint: sha256:2119c3ebd5c17207
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/server/tools/git_operations.py:53
 - fingerprint: sha256:e860cb6848fb8aee
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/server/tools/git_operations.py:68
 - fingerprint: sha256:f60b47b77736311b
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/server/tools/git_operations.py:98
 - fingerprint: sha256:80f0d84ccd9b18e0
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/server/tools/git_operations.py:209
 - fingerprint: sha256:82f39587e9b51a3b
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/server/tools/git_operations.py:295
 - fingerprint: sha256:d47ea4092047cb93
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: GitHub CLI (gh) invocation with list-form arguments for PR/repo operations.
+    Command structure is fixed; variable parts (owner, repo, branch) come from validated
+    MCP tool parameters. gh CLI validates all arguments internally.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
@@ -903,518 +859,443 @@ entries:
   query_id: python.info_disc.open_call
   file_hint: packages/darnit-example/src/darnit_example/handlers.py:85
 - fingerprint: sha256:1efd167695e4ea87
-  status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  status: accepted
+  note: Test fixture, example, or build script — not production code. Commands are
+    hardcoded for documentation or repository setup purposes. Risk is accepted because
+    these scripts run in trusted developer environments.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: scripts/create-example-test-repo.py:297
 - fingerprint: sha256:74cd6b4caf19c0bc
-  status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  status: accepted
+  note: Test fixture, example, or build script — not production code. Commands are
+    hardcoded for documentation or repository setup purposes. Risk is accepted because
+    these scripts run in trusted developer environments.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: scripts/create-example-test-repo.py:329
 - fingerprint: sha256:2ef91acfef1096bd
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit-baseline/src/darnit_baseline/attestation/git.py:24
 - fingerprint: sha256:81dcd4935092c147
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit-baseline/src/darnit_baseline/attestation/git.py:48
 - fingerprint: sha256:3c3d73bed50716ca
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit-baseline/src/darnit_baseline/attestation/git.py:60
 - fingerprint: sha256:f018627c60f5d6fc
-  status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  status: accepted
+  note: Test repository creation tool — runs git commands to set up ephemeral test
+    repos. Commands are hardcoded (git init, git add, git commit). Only runs in controlled
+    testing/demo contexts with trusted input.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/server/tools/test_repository.py:83
 - fingerprint: sha256:89407fc3ca3150fc
-  status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  status: accepted
+  note: Test repository creation tool — runs git commands to set up ephemeral test
+    repos. Commands are hardcoded (git init, git add, git commit). Only runs in controlled
+    testing/demo contexts with trusted input.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/server/tools/test_repository.py:89
 - fingerprint: sha256:ce685cb43b2f5e1e
-  status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  status: accepted
+  note: Test repository creation tool — runs git commands to set up ephemeral test
+    repos. Commands are hardcoded (git init, git add, git commit). Only runs in controlled
+    testing/demo contexts with trusted input.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/server/tools/test_repository.py:95
 - fingerprint: sha256:cd500bb8cc40bb2e
-  status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  status: accepted
+  note: Test repository creation tool — runs git commands to set up ephemeral test
+    repos. Commands are hardcoded (git init, git add, git commit). Only runs in controlled
+    testing/demo contexts with trusted input.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/server/tools/test_repository.py:123
 - fingerprint: sha256:982a8ec2bb0caf7b
-  status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  status: accepted
+  note: Test repository creation tool — runs git commands to set up ephemeral test
+    repos. Commands are hardcoded (git init, git add, git commit). Only runs in controlled
+    testing/demo contexts with trusted input.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/server/tools/test_repository.py:133
 - fingerprint: sha256:a5278274b2d417fd
-  status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  status: accepted
+  note: Test repository creation tool — runs git commands to set up ephemeral test
+    repos. Commands are hardcoded (git init, git add, git commit). Only runs in controlled
+    testing/demo contexts with trusted input.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/server/tools/test_repository.py:157
 - fingerprint: sha256:156814859be94b2d
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/server/tools/git_operations.py:34
 - fingerprint: sha256:98cea13da7635581
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/server/tools/git_operations.py:61
 - fingerprint: sha256:a0a53bc7a7cdea3a
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/server/tools/git_operations.py:73
 - fingerprint: sha256:257cd0b3f2c47725
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/server/tools/git_operations.py:77
 - fingerprint: sha256:517a48b5532ba599
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/server/tools/git_operations.py:82
 - fingerprint: sha256:3335397712f63a67
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/server/tools/git_operations.py:84
 - fingerprint: sha256:70c17208fefa34b3
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/server/tools/git_operations.py:144
 - fingerprint: sha256:cfb9a942683feb7d
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/server/tools/git_operations.py:168
 - fingerprint: sha256:ab673e50fa5252bb
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/server/tools/git_operations.py:222
 - fingerprint: sha256:fe177b8e76bf50bb
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/server/tools/git_operations.py:277
 - fingerprint: sha256:2e7adeae35296364
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/server/tools/git_operations.py:308
 - fingerprint: sha256:5750c0cf270f34ee
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/server/tools/git_operations.py:318
 - fingerprint: sha256:43905a0aebc97d45
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/server/tools/git_operations.py:393
 - fingerprint: sha256:b50f455db7f869b6
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/server/tools/git_operations.py:442
 - fingerprint: sha256:47b0bb3835809ea1
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/server/tools/git_operations.py:453
 - fingerprint: sha256:a887b9f9a68a4e20
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/server/tools/git_operations.py:464
 - fingerprint: sha256:6d4f75cbdba1eb55
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/server/tools/git_operations.py:475
 - fingerprint: sha256:6454128dff46e375
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: GitHub CLI (gh) invocation with list-form arguments for PR/repo operations.
+    Command structure is fixed; variable parts (owner, repo, branch) come from validated
+    MCP tool parameters. gh CLI validates all arguments internally.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/remediation/helpers.py:93
 - fingerprint: sha256:e374864441e572c6
-  status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  status: accepted
+  note: Test fixture, example, or build script — not production code. Commands are
+    hardcoded for documentation or repository setup purposes. Risk is accepted because
+    these scripts run in trusted developer environments.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: docs/examples/python-framework/example_framework/implementation.py:317
 - fingerprint: sha256:28830df9902a725f
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: List-form subprocess invocation with no shell=True. Command structure is fixed
+    or derived from trusted configuration sources.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
-  file_hint: packages/darnit-baseline/src/darnit_baseline/tools.py:1331
+  file_hint: packages/darnit-baseline/src/darnit_baseline/tools.py:1330
 - fingerprint: sha256:ca4f58823f01fa39
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: List-form subprocess invocation with no shell=True. Command structure is fixed
+    or derived from trusted configuration sources.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit-baseline/src/darnit_baseline/remediation/scanner.py:481
 - fingerprint: sha256:fe8bb4484c5d157f
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: List-form subprocess invocation with no shell=True. Command structure is fixed
+    or derived from trusted configuration sources.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/cli.py:652
 - fingerprint: sha256:d6b09e5a9c607be6
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: GitHub CLI (gh) invocation with list-form arguments for PR/repo operations.
+    Command structure is fixed; variable parts (owner, repo, branch) come from validated
+    MCP tool parameters. gh CLI validates all arguments internally.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/tools/audit_org.py:47
 - fingerprint: sha256:fdddc78b3ca4c729
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: GitHub CLI (gh) invocation with list-form arguments for PR/repo operations.
+    Command structure is fixed; variable parts (owner, repo, branch) come from validated
+    MCP tool parameters. gh CLI validates all arguments internally.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/tools/audit_org.py:416
 - fingerprint: sha256:2be41a086a00137f
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/context/dot_project_org.py:82
 - fingerprint: sha256:b74488963e08d1cf
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/context/dot_project_org.py:99
 - fingerprint: sha256:fb90a95c5579d026
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/context/dot_project_org.py:120
 - fingerprint: sha256:3e5433bba85cf746
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/context/sieve.py:394
 - fingerprint: sha256:32a27d13648d2c27
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/context/sieve.py:637
 - fingerprint: sha256:f650dbefa3dd5235
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,
+    no user-controlled command names. Variable arguments (branch names, paths) come
+    from validated MCP context or repository state. The gh CLI validates arguments
+    before execution.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/context/detectors.py:11
 - fingerprint: sha256:786bc45a110c94ce
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Utility functions wrapping git/gh CLI with fixed command structures and list-form
+    arguments. Used internally for repository metadata queries (remote URL, branch
+    info, commit log). No external input reaches command arguments — all values are
+    derived from the local repository state.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/core/utils.py:272
 - fingerprint: sha256:3df7b0298bf26a43
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: List-form subprocess invocation with no shell=True. Command structure is fixed
+    or derived from trusted configuration sources.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/core/audit_cache.py:62
 - fingerprint: sha256:97d9967cd79e7882
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: List-form subprocess invocation with no shell=True. Command structure is fixed
+    or derived from trusted configuration sources.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit/src/darnit/core/audit_cache.py:79
 - fingerprint: sha256:506876eb95804f3e
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Gittuf CLI invocation with fixed binary name and static flags. Only the repository
+    path (validated by the framework) varies. List-form subprocess with no shell interpretation.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit-gittuf/src/darnit_gittuf/handlers.py:28
 - fingerprint: sha256:07f0c1bff4c2d1fe
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Gittuf CLI invocation with fixed binary name and static flags. Only the repository
+    path (validated by the framework) varies. List-form subprocess with no shell interpretation.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
   file_hint: packages/darnit-gittuf/src/darnit_gittuf/handlers.py:90
 - fingerprint: sha256:42102c75d277346a
   status: mitigated
-  note: All subprocess invocations use list-form arguments (no shell=True). Commands
-    come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari,
-    opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO,
-    etc). Running external commands is a core design requirement for this compliance
-    auditing tool.
+  note: Gittuf CLI invocation with fixed binary name and static flags. Only the repository
+    path (validated by the framework) varies. List-form subprocess with no shell interpretation.
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr

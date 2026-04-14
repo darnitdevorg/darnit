@@ -6,7 +6,9 @@
 
 ## Mitigation
 
-No specific guidance available.
+> MCP servers operate over stdio transport — authentication is enforced by the MCP client (e.g., Claude Code), not by endpoint decorators. The scanner flagged missing decorator-level auth, which is an architectural pattern mismatch, not a real vulnerability.
+
+*Applies to 2 of 2 instances.*
 
 ## Representative Examples
 
@@ -70,8 +72,8 @@ No specific guidance available.
 
 | # | File | Line | Severity | Confidence | Status |
 |---|------|------|----------|------------|--------|
-| 1 | `packages/darnit/src/darnit/server/factory.py` | 149 | MEDIUM | 0.85 | Mitigationstatus.mitigated |
-| 2 | `packages/darnit/src/darnit/server/factory.py` | 195 | MEDIUM | 0.85 | Mitigationstatus.mitigated |
+| 1 | `packages/darnit/src/darnit/server/factory.py` | 149 | MEDIUM | 0.85 | Mitigated |
+| 2 | `packages/darnit/src/darnit/server/factory.py` | 195 | MEDIUM | 0.85 | Mitigated |
 
 *2 instances total.*
 

@@ -5,7 +5,7 @@
 | Field | Value |
 |-------|-------|
 | Repository | `mlieberman85/darnit` |
-| Scan date | 2026-04-14 10:58:47 |
+| Scan date | 2026-04-14 11:20:00 |
 | Languages | python, yaml |
 | Total findings | 176 |
 | Critical | 0 |
@@ -20,13 +20,11 @@
 | [Potential command injection via subprocess.run](findings/python-sink-dangerous_attr.md) | Tampering | 122 | HIGH | 122/122 |
 | [Unauthenticated mcp tool (mcp): (dynamic — registered from registry.tools)](findings/python-entry-mcp_tool_imperative.md) | Spoofing | 2 | MEDIUM | 2/2 |
 | [Dynamic import via importlib.import_module(module_path)](findings/python-eop-dynamic_import_attr.md) | Elevation of Privilege | 4 | MEDIUM | 4/4 |
-| [File open with variable path: filepath](findings/python-info_disc-open_call.md) | Information Disclosure | 48 | MEDIUM | 43/48 |
+| [File open with variable path: filepath](findings/python-info_disc-open_call.md) | Information Disclosure | 48 | MEDIUM | 48/48 |
 
 ## Unmitigated Findings
 
-| Class | Instances | Max Severity | Detail |
-|-------|-----------|--------------|--------|
-| File open with variable path: filepath | 5 | MEDIUM | [python-info_disc-open_call.md](findings/python-info_disc-open_call.md) |
+All findings have been mitigated, accepted, or marked as false positives.
 
 ## Companion Artefacts
 
@@ -41,11 +39,7 @@ No critical or high severity findings requiring immediate action.
 
 ### Short-term Actions (Medium)
 
-1. **File open with variable path: full_path** — `packages/darnit-baseline/src/darnit_baseline/threat_model/remediation.py:290`
-2. **File open with variable path: full_path** — `packages/darnit-baseline/src/darnit_baseline/threat_model/remediation.py:384`
-3. **File open with variable path: data_flow_path** — `packages/darnit-baseline/src/darnit_baseline/threat_model/remediation.py:391`
-4. **File open with variable path: raw_json_path** — `packages/darnit-baseline/src/darnit_baseline/threat_model/remediation.py:403`
-5. **File open with variable path: group_path** — `packages/darnit-baseline/src/darnit_baseline/threat_model/remediation.py:414`
+No medium severity findings.
 
 ## Verification Prompts
 

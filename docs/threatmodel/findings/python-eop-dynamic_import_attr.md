@@ -6,7 +6,9 @@
 
 ## Mitigation
 
-No specific guidance available.
+> All dynamic imports enforce ALLOWED_MODULE_PREFIXES allowlist (darnit., darnit_baseline., darnit_plugins., darnit_testchecks.) before importing. Module paths come from TOML configuration, not external input.
+
+*Applies to 4 of 4 instances.*
 
 ## Representative Examples
 
@@ -107,10 +109,10 @@ No specific guidance available.
 
 | # | File | Line | Severity | Confidence | Status |
 |---|------|------|----------|------------|--------|
-| 1 | `packages/darnit/src/darnit/core/registry.py` | 821 | MEDIUM | 0.50 | Mitigationstatus.mitigated |
-| 2 | `packages/darnit/src/darnit/core/handlers.py` | 237 | MEDIUM | 0.50 | Mitigationstatus.mitigated |
-| 3 | `packages/darnit/src/darnit/core/adapters.py` | 666 | MEDIUM | 0.50 | Mitigationstatus.mitigated |
-| 4 | `packages/darnit/src/darnit/server/registry.py` | 151 | MEDIUM | 0.50 | Mitigationstatus.mitigated |
+| 1 | `packages/darnit/src/darnit/core/registry.py` | 821 | MEDIUM | 0.50 | Mitigated |
+| 2 | `packages/darnit/src/darnit/core/handlers.py` | 237 | MEDIUM | 0.50 | Mitigated |
+| 3 | `packages/darnit/src/darnit/core/adapters.py` | 666 | MEDIUM | 0.50 | Mitigated |
+| 4 | `packages/darnit/src/darnit/server/registry.py` | 151 | MEDIUM | 0.50 | Mitigated |
 
 *4 instances total.*
 

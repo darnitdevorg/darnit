@@ -1,7 +1,7 @@
 {
   "metadata": {
     "repository": "mlieberman85/darnit",
-    "scan_date": "2026-04-14T14:58:47.450572+00:00",
+    "scan_date": "2026-04-14T15:20:00.977342+00:00",
     "languages": [
       "python",
       "yaml"
@@ -23,7 +23,7 @@
       "fingerprint": "sha256:cc49613296a8838c",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "TOML-config-driven command execution using list-form subprocess. The base command and binary path come from trusted TOML configuration shipped with the package. Config options are type-checked and formatted as --key value pairs. Running external audit binaries (kusari, custom adapters) is a core design requirement of this compliance framework.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -42,7 +42,7 @@
       "fingerprint": "sha256:db8e2ee72c815ac2",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Sieve exec handler \u2014 commands loaded from TOML control definitions (a trusted, admin-controlled source). Variable substitution uses an allowlisted set of placeholders ($OWNER, $REPO, $BRANCH, $PATH) with values from MCP CheckContext. List-form subprocess prevents shell metacharacter injection.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -61,7 +61,7 @@
       "fingerprint": "sha256:24a2697035d5e27d",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "TOML-config-driven command execution using list-form subprocess. The base command and binary path come from trusted TOML configuration shipped with the package. Config options are type-checked and formatted as --key value pairs. Running external audit binaries (kusari, custom adapters) is a core design requirement of this compliance framework.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -80,7 +80,7 @@
       "fingerprint": "sha256:41862387f34d79ea",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Opengrep/Semgrep binary invocation with fully static argv. Binary path is detected via shutil.which() (safe). All flags are hardcoded; only the target directory (validated repository path) varies. No user-controlled arguments reach the command.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -99,7 +99,7 @@
       "fingerprint": "sha256:dfdce82c38a896bc",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -231,8 +231,8 @@
       "snippet": "        message=\"No dependency scanning configuration found\",\n        level=3,\n        domain=\"VM\",\n        details={\"searched\": scanning_patterns},\n    )\n\n\ndef check_sbom_compliance(local_path: str) -> CheckResult:\n    \"\"\"Check EXAMPLE-VM-02: SBOM compliance using external tool.\"\"\"\n    try:\n        result = subprocess.run(\n            [\"kusari\", \"repo\", \"scan\", local_path, \"HEAD\"],\n            capture_output=True,\n            text=True,\n            timeout=120,\n        )\n\n        if result.returncode == 0:\n            return CheckResult(\n                id=\"EXAMPLE-VM-02\",\n                name=\"SBOMCompliance\",",
       "fingerprint": "sha256:3d3f25c7170f616c",
       "mitigation": {
-        "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "status": "accepted",
+        "note": "Test fixture, example, or build script \u2014 not production code. Commands are hardcoded for documentation or repository setup purposes. Risk is accepted because these scripts run in trusted developer environments.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -250,8 +250,8 @@
       "snippet": "        \"allow_force_pushes\": False,\n        \"allow_deletions\": False,\n    }\n\n    endpoint = f\"/repos/{owner}/{repo}/branches/{branch}/protection\"\n\n    if dry_run:\n        return f\"Would call: PUT {endpoint}\\nPayload: {json.dumps(payload, indent=2)}\"\n\n    try:\n        result = subprocess.run(\n            [\"gh\", \"api\", \"-X\", \"PUT\", endpoint, \"--input\", \"-\"],\n            input=json.dumps(payload),\n            capture_output=True,\n            text=True,\n            timeout=30,\n        )\n\n        if result.returncode == 0:\n            return f\"Branch protection enabled for {branch}\"\n        else:",
       "fingerprint": "sha256:bad09bad71eb0156",
       "mitigation": {
-        "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "status": "accepted",
+        "note": "Test fixture, example, or build script \u2014 not production code. Commands are hardcoded for documentation or repository setup purposes. Risk is accepted because these scripts run in trusted developer environments.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -269,8 +269,8 @@
       "snippet": "    (repo_path / \"CLAUDE.md\").write_text(claude_md)\n\n    # -- Initialize git -------------------------------------------------------\n    try:\n        subprocess.run(\n            [\"git\", \"init\"], cwd=repo_path, capture_output=True, check=True\n        )\n        subprocess.run(\n            [\"git\", \"add\", \".\"], cwd=repo_path, capture_output=True, check=True\n        )\n        subprocess.run(\n            [\n                \"git\",\n                \"commit\",\n                \"-m\",\n                \"Initial commit - intentionally non-compliant\\n\\n\"\n                \"This repository is designed for testing Project Hygiene Standard\\n\"\n                \"compliance. It intentionally fails all 8 PH controls.\",\n            ],\n            cwd=repo_path,\n            capture_output=True,",
       "fingerprint": "sha256:9888d88f0b31a80e",
       "mitigation": {
-        "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "status": "accepted",
+        "note": "Test fixture, example, or build script \u2014 not production code. Commands are hardcoded for documentation or repository setup purposes. Risk is accepted because these scripts run in trusted developer environments.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -288,8 +288,8 @@
       "snippet": "            [\"gh\", \"api\", \"user\", \"--jq\", \".login\"],\n            capture_output=True,\n            text=True,\n        )\n        github_org = result.stdout.strip()\n        print(f\"\\033[1;33mUsing GitHub user: {github_org}\\033[0m\")\n\n    print(f\"\\033[0;32mCreating GitHub repository: {github_org}/{repo_name}\\033[0m\")\n\n    try:\n        subprocess.run(\n            [\n                \"gh\",\n                \"repo\",\n                \"create\",\n                f\"{github_org}/{repo_name}\",\n                \"--public\",\n                \"--source\",\n                str(repo_path),\n                \"--remote\",\n                \"origin\",",
       "fingerprint": "sha256:39dcf5bd1ab43e91",
       "mitigation": {
-        "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "status": "accepted",
+        "note": "Test fixture, example, or build script \u2014 not production code. Commands are hardcoded for documentation or repository setup purposes. Risk is accepted because these scripts run in trusted developer environments.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -308,7 +308,7 @@
       "fingerprint": "sha256:8da33a516f06a8ce",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Opengrep/Semgrep binary invocation with fully static argv. Binary path is detected via shutil.which() (safe). All flags are hardcoded; only the target directory (validated repository path) varies. No user-controlled arguments reach the command.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -327,7 +327,7 @@
       "fingerprint": "sha256:6e3774ff3c658fd3",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Single git-remote-get-url invocation to derive repository display name. Fixed command, no user input, 5-second timeout, failure gracefully falls back to directory basename.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -346,7 +346,7 @@
       "fingerprint": "sha256:367df569737792bc",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "GitHub CLI (gh) invocation with list-form arguments for PR/repo operations. Command structure is fixed; variable parts (owner, repo, branch) come from validated MCP tool parameters. gh CLI validates all arguments internally.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -365,7 +365,7 @@
       "fingerprint": "sha256:c2dd17568f51d619",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "GitHub CLI (gh) invocation with list-form arguments for PR/repo operations. Command structure is fixed; variable parts (owner, repo, branch) come from validated MCP tool parameters. gh CLI validates all arguments internally.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -384,7 +384,7 @@
       "fingerprint": "sha256:f8caab336c4ae9ee",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -403,7 +403,7 @@
       "fingerprint": "sha256:dee7091858b0f9f5",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Utility functions wrapping git/gh CLI with fixed command structures and list-form arguments. Used internally for repository metadata queries (remote URL, branch info, commit log). No external input reaches command arguments \u2014 all values are derived from the local repository state.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -422,7 +422,7 @@
       "fingerprint": "sha256:c4b49ebd194e2307",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Utility functions wrapping git/gh CLI with fixed command structures and list-form arguments. Used internally for repository metadata queries (remote URL, branch info, commit log). No external input reaches command arguments \u2014 all values are derived from the local repository state.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -441,7 +441,7 @@
       "fingerprint": "sha256:7a160723ebbc9aee",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Utility functions wrapping git/gh CLI with fixed command structures and list-form arguments. Used internally for repository metadata queries (remote URL, branch info, commit log). No external input reaches command arguments \u2014 all values are derived from the local repository state.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -460,7 +460,7 @@
       "fingerprint": "sha256:123e1abed2e24186",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Utility functions wrapping git/gh CLI with fixed command structures and list-form arguments. Used internally for repository metadata queries (remote URL, branch info, commit log). No external input reaches command arguments \u2014 all values are derived from the local repository state.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -479,7 +479,7 @@
       "fingerprint": "sha256:71d55a458afb5f9b",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Utility functions wrapping git/gh CLI with fixed command structures and list-form arguments. Used internally for repository metadata queries (remote URL, branch info, commit log). No external input reaches command arguments \u2014 all values are derived from the local repository state.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -498,7 +498,7 @@
       "fingerprint": "sha256:b6443b8189fafc96",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Utility functions wrapping git/gh CLI with fixed command structures and list-form arguments. Used internally for repository metadata queries (remote URL, branch info, commit log). No external input reaches command arguments \u2014 all values are derived from the local repository state.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -628,7 +628,14 @@
       "line": 290,
       "end_line": 290,
       "snippet": "                status=HandlerResultStatus.ERROR,\n                message=(f\"Tree-sitter pipeline failed ({ts_output.failure_reason}) and no template content available\"),\n                evidence={\n                    \"path\": path,\n                    \"error\": ts_output.failure_reason or \"unknown\",\n                    **ts_evidence,\n                },\n            )\n        try:\n            os.makedirs(os.path.dirname(full_path) or \".\", exist_ok=True)\n            with open(full_path, \"w\", encoding=\"utf-8\") as f:\n                f.write(fallback_content)\n        except OSError as write_err:\n            return HandlerResult(\n                status=HandlerResultStatus.ERROR,\n                message=f\"Failed to write fallback template: {write_err}\",\n                evidence={\n                    \"path\": path,\n                    \"error\": str(write_err),\n                    **ts_evidence,\n                },",
-      "fingerprint": "sha256:ddec0c64011807a7"
+      "fingerprint": "sha256:ddec0c64011807a7",
+      "mitigation": {
+        "status": "mitigated",
+        "note": "All file paths originate from trusted sources: TOML configuration, computed paths via os.path.join with repository root, glob patterns over known directories, or framework template files. No instance accepts raw user input as a file path without validation.",
+        "reviewer": "claude-opus-4-6",
+        "reviewed_at": "2026-04-14",
+        "stale": false
+      }
     },
     {
       "query_id": "python.info_disc.open_call",
@@ -640,7 +647,14 @@
       "line": 384,
       "end_line": 384,
       "snippet": "\n        # SUMMARY.md\n        summary_content = render_summary(\n            groups=groups,\n            sidecar_matches=sidecar_matches,\n            result=result,\n            options=options,\n            overflow_hint=overflow_hint,\n            repo_path=local_path,\n        )\n        with open(full_path, \"w\", encoding=\"utf-8\") as f:\n            f.write(summary_content)\n        files_written.append(path)\n\n        # data-flow.md\n        data_flow_path = os.path.join(output_dir, \"data-flow.md\")\n        data_flow_content = render_data_flow(result=result, options=options)\n        with open(data_flow_path, \"w\", encoding=\"utf-8\") as f:\n            f.write(data_flow_content)\n        files_written.append(os.path.relpath(data_flow_path, local_path))\n",
-      "fingerprint": "sha256:8c15dc2100055855"
+      "fingerprint": "sha256:8c15dc2100055855",
+      "mitigation": {
+        "status": "mitigated",
+        "note": "All file paths originate from trusted sources: TOML configuration, computed paths via os.path.join with repository root, glob patterns over known directories, or framework template files. No instance accepts raw user input as a file path without validation.",
+        "reviewer": "claude-opus-4-6",
+        "reviewed_at": "2026-04-14",
+        "stale": false
+      }
     },
     {
       "query_id": "python.info_disc.open_call",
@@ -652,7 +666,14 @@
       "line": 391,
       "end_line": 391,
       "snippet": "            overflow_hint=overflow_hint,\n            repo_path=local_path,\n        )\n        with open(full_path, \"w\", encoding=\"utf-8\") as f:\n            f.write(summary_content)\n        files_written.append(path)\n\n        # data-flow.md\n        data_flow_path = os.path.join(output_dir, \"data-flow.md\")\n        data_flow_content = render_data_flow(result=result, options=options)\n        with open(data_flow_path, \"w\", encoding=\"utf-8\") as f:\n            f.write(data_flow_content)\n        files_written.append(os.path.relpath(data_flow_path, local_path))\n\n        # raw-findings.json\n        raw_json_path = os.path.join(output_dir, \"raw-findings.json\")\n        raw_json_content = render_raw_json(\n            result=result,\n            all_findings=ranked,\n            sidecar_matches=sidecar_matches,\n            repo_path=local_path,",
-      "fingerprint": "sha256:7daeab381034098b"
+      "fingerprint": "sha256:7daeab381034098b",
+      "mitigation": {
+        "status": "mitigated",
+        "note": "All file paths originate from trusted sources: TOML configuration, computed paths via os.path.join with repository root, glob patterns over known directories, or framework template files. No instance accepts raw user input as a file path without validation.",
+        "reviewer": "claude-opus-4-6",
+        "reviewed_at": "2026-04-14",
+        "stale": false
+      }
     },
     {
       "query_id": "python.info_disc.open_call",
@@ -664,7 +685,14 @@
       "line": 403,
       "end_line": 403,
       "snippet": "        files_written.append(os.path.relpath(data_flow_path, local_path))\n\n        # raw-findings.json\n        raw_json_path = os.path.join(output_dir, \"raw-findings.json\")\n        raw_json_content = render_raw_json(\n            result=result,\n            all_findings=ranked,\n            sidecar_matches=sidecar_matches,\n            repo_path=local_path,\n        )\n        with open(raw_json_path, \"w\", encoding=\"utf-8\") as f:\n            f.write(raw_json_content)\n        files_written.append(os.path.relpath(raw_json_path, local_path))\n\n        # Per-class detail files: findings/<slug>.md\n        for group in groups:\n            group_path = os.path.join(findings_dir, f\"{group.slug}.md\")\n            group_content = render_group_file(\n                group=group,\n                sidecar_matches=sidecar_matches,\n            )",
-      "fingerprint": "sha256:9c977d381e2c3a60"
+      "fingerprint": "sha256:9c977d381e2c3a60",
+      "mitigation": {
+        "status": "mitigated",
+        "note": "All file paths originate from trusted sources: TOML configuration, computed paths via os.path.join with repository root, glob patterns over known directories, or framework template files. No instance accepts raw user input as a file path without validation.",
+        "reviewer": "claude-opus-4-6",
+        "reviewed_at": "2026-04-14",
+        "stale": false
+      }
     },
     {
       "query_id": "python.info_disc.open_call",
@@ -676,7 +704,14 @@
       "line": 414,
       "end_line": 414,
       "snippet": "            f.write(raw_json_content)\n        files_written.append(os.path.relpath(raw_json_path, local_path))\n\n        # Per-class detail files: findings/<slug>.md\n        for group in groups:\n            group_path = os.path.join(findings_dir, f\"{group.slug}.md\")\n            group_content = render_group_file(\n                group=group,\n                sidecar_matches=sidecar_matches,\n            )\n            with open(group_path, \"w\", encoding=\"utf-8\") as f:\n                f.write(group_content)\n            files_written.append(os.path.relpath(group_path, local_path))\n\n    except OSError as e:\n        return HandlerResult(\n            status=HandlerResultStatus.ERROR,\n            message=f\"Failed to write threat model: {e}\",\n            evidence={\n                \"path\": path,\n                \"error\": str(e),",
-      "fingerprint": "sha256:8cd4f103965b554c"
+      "fingerprint": "sha256:8cd4f103965b554c",
+      "mitigation": {
+        "status": "mitigated",
+        "note": "All file paths originate from trusted sources: TOML configuration, computed paths via os.path.join with repository root, glob patterns over known directories, or framework template files. No instance accepts raw user input as a file path without validation.",
+        "reviewer": "claude-opus-4-6",
+        "reviewed_at": "2026-04-14",
+        "stale": false
+      }
     },
     {
       "query_id": "python.info_disc.open_call",
@@ -861,8 +896,8 @@
       "snippet": "| PH-SEC-01 | SECURITY.md |\n| PH-CFG-01 | .gitignore |\n| PH-CFG-02 | .editorconfig |\n| PH-QA-01 | CONTRIBUTING.md |\n| PH-CI-01 | .github/workflows/*.yml |\n\"\"\"\n    (repo_path / \"CLAUDE.md\").write_text(claude_md)\n\n    # -- Initialize git -------------------------------------------------------\n    try:\n        subprocess.run(\n            [\"git\", \"init\"], cwd=repo_path, capture_output=True, check=True\n        )\n        subprocess.run(\n            [\"git\", \"add\", \".\"], cwd=repo_path, capture_output=True, check=True\n        )\n        subprocess.run(\n            [\n                \"git\",\n                \"commit\",\n                \"-m\",",
       "fingerprint": "sha256:a92b64e3fb7d00ef",
       "mitigation": {
-        "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "status": "accepted",
+        "note": "Test fixture, example, or build script \u2014 not production code. Commands are hardcoded for documentation or repository setup purposes. Risk is accepted because these scripts run in trusted developer environments.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -880,8 +915,8 @@
       "snippet": "| PH-QA-01 | CONTRIBUTING.md |\n| PH-CI-01 | .github/workflows/*.yml |\n\"\"\"\n    (repo_path / \"CLAUDE.md\").write_text(claude_md)\n\n    # -- Initialize git -------------------------------------------------------\n    try:\n        subprocess.run(\n            [\"git\", \"init\"], cwd=repo_path, capture_output=True, check=True\n        )\n        subprocess.run(\n            [\"git\", \"add\", \".\"], cwd=repo_path, capture_output=True, check=True\n        )\n        subprocess.run(\n            [\n                \"git\",\n                \"commit\",\n                \"-m\",\n                \"Initial commit - intentionally non-compliant\\n\\n\"\n                \"This repository is designed for testing Project Hygiene Standard\\n\"\n                \"compliance. It intentionally fails all 8 PH controls.\",",
       "fingerprint": "sha256:d8b8307b8c16479f",
       "mitigation": {
-        "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "status": "accepted",
+        "note": "Test fixture, example, or build script \u2014 not production code. Commands are hardcoded for documentation or repository setup purposes. Risk is accepted because these scripts run in trusted developer environments.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -899,8 +934,8 @@
       "snippet": "    (repo_path / \"CLAUDE.md\").write_text(claude_md)\n\n    # -- Initialize git -------------------------------------------------------\n    try:\n        subprocess.run(\n            [\"git\", \"init\"], cwd=repo_path, capture_output=True, check=True\n        )\n        subprocess.run(\n            [\"git\", \"add\", \".\"], cwd=repo_path, capture_output=True, check=True\n        )\n        subprocess.run(\n            [\n                \"git\",\n                \"commit\",\n                \"-m\",\n                \"Initial commit - intentionally non-compliant\\n\\n\"\n                \"This repository is designed for testing Project Hygiene Standard\\n\"\n                \"compliance. It intentionally fails all 8 PH controls.\",\n            ],\n            cwd=repo_path,\n            capture_output=True,",
       "fingerprint": "sha256:9888d88f0b31a80e",
       "mitigation": {
-        "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "status": "accepted",
+        "note": "Test fixture, example, or build script \u2014 not production code. Commands are hardcoded for documentation or repository setup purposes. Risk is accepted because these scripts run in trusted developer environments.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -918,8 +953,8 @@
       "snippet": "\n\ndef _create_github_repo(\n    repo_path: Path,\n    repo_name: str,\n    github_org: str | None,\n    make_template: bool,\n) -> None:\n    \"\"\"Create a GitHub repository using the gh CLI.\"\"\"\n    try:\n        result = subprocess.run(\n            [\"gh\", \"auth\", \"status\"], capture_output=True\n        )\n        if result.returncode != 0:\n            print(\n                \"\\033[1;33m\u26a0 GitHub CLI not authenticated. \"\n                \"Skipping GitHub repo creation.\\033[0m\"\n            )\n            return\n    except FileNotFoundError:\n        print(",
       "fingerprint": "sha256:2603b50ec203f5cc",
       "mitigation": {
-        "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "status": "accepted",
+        "note": "Test fixture, example, or build script \u2014 not production code. Commands are hardcoded for documentation or repository setup purposes. Risk is accepted because these scripts run in trusted developer environments.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -938,7 +973,7 @@
       "fingerprint": "sha256:18143895dff565cf",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "TOML-config-driven command execution using list-form subprocess. The base command and binary path come from trusted TOML configuration shipped with the package. Config options are type-checked and formatted as --key value pairs. Running external audit binaries (kusari, custom adapters) is a core design requirement of this compliance framework.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -956,8 +991,8 @@
       "snippet": "                # Get org if not specified\n                if not github_org:\n                    result = subprocess.run(\n                        [\"gh\", \"api\", \"user\", \"--jq\", \".login\"],\n                        capture_output=True,\n                        text=True\n                    )\n                    github_org = result.stdout.strip()\n\n                # Create GitHub repo\n                subprocess.run(\n                    [\n                        \"gh\", \"repo\", \"create\", f\"{github_org}/{repo_name}\",\n                        \"--public\",\n                        \"--source\", repo_path,\n                        \"--remote\", \"origin\",\n                        \"--description\", \"OpenSSF Baseline test repo - intentionally non-compliant\",\n                        \"--push\"\n                    ],\n                    capture_output=True,\n                    check=True",
       "fingerprint": "sha256:622a9ce74e35cef5",
       "mitigation": {
-        "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "status": "accepted",
+        "note": "Test repository creation tool \u2014 runs git commands to set up ephemeral test repos. Commands are hardcoded (git init, git add, git commit). Only runs in controlled testing/demo contexts with trusted input.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -976,7 +1011,7 @@
       "fingerprint": "sha256:a34c9dfda3186c19",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -995,7 +1030,7 @@
       "fingerprint": "sha256:2119c3ebd5c17207",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -1014,7 +1049,7 @@
       "fingerprint": "sha256:e860cb6848fb8aee",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -1033,7 +1068,7 @@
       "fingerprint": "sha256:f60b47b77736311b",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -1052,7 +1087,7 @@
       "fingerprint": "sha256:80f0d84ccd9b18e0",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -1071,7 +1106,7 @@
       "fingerprint": "sha256:82f39587e9b51a3b",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -1090,7 +1125,7 @@
       "fingerprint": "sha256:d47ea4092047cb93",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "GitHub CLI (gh) invocation with list-form arguments for PR/repo operations. Command structure is fixed; variable parts (owner, repo, branch) come from validated MCP tool parameters. gh CLI validates all arguments internally.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -1640,8 +1675,8 @@
       "snippet": "            )\n            return\n    except FileNotFoundError:\n        print(\n            \"\\033[1;33m\u26a0 GitHub CLI (gh) not found. \"\n            \"Skipping GitHub repo creation.\\033[0m\"\n        )\n        return\n\n    if not github_org:\n        result = subprocess.run(\n            [\"gh\", \"api\", \"user\", \"--jq\", \".login\"],\n            capture_output=True,\n            text=True,\n        )\n        github_org = result.stdout.strip()\n        print(f\"\\033[1;33mUsing GitHub user: {github_org}\\033[0m\")\n\n    print(f\"\\033[0;32mCreating GitHub repository: {github_org}/{repo_name}\\033[0m\")\n\n    try:",
       "fingerprint": "sha256:1efd167695e4ea87",
       "mitigation": {
-        "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "status": "accepted",
+        "note": "Test fixture, example, or build script \u2014 not production code. Commands are hardcoded for documentation or repository setup purposes. Risk is accepted because these scripts run in trusted developer environments.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -1659,8 +1694,8 @@
       "snippet": "            [\"gh\", \"api\", \"user\", \"--jq\", \".login\"],\n            capture_output=True,\n            text=True,\n        )\n        github_org = result.stdout.strip()\n        print(f\"\\033[1;33mUsing GitHub user: {github_org}\\033[0m\")\n\n    print(f\"\\033[0;32mCreating GitHub repository: {github_org}/{repo_name}\\033[0m\")\n\n    try:\n        subprocess.run(\n            [\n                \"gh\",\n                \"repo\",\n                \"create\",\n                f\"{github_org}/{repo_name}\",\n                \"--public\",\n                \"--source\",\n                str(repo_path),\n                \"--remote\",\n                \"origin\",",
       "fingerprint": "sha256:39dcf5bd1ab43e91",
       "mitigation": {
-        "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "status": "accepted",
+        "note": "Test fixture, example, or build script \u2014 not production code. Commands are hardcoded for documentation or repository setup purposes. Risk is accepted because these scripts run in trusted developer environments.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -1678,8 +1713,8 @@
       "snippet": "                \"--description\",\n                \"Project Hygiene test repo - intentionally non-compliant\",\n                \"--push\",\n            ],\n            capture_output=True,\n            check=True,\n        )\n        print(\"\\033[0;32m\u2713 GitHub repository created\\033[0m\")\n\n        if make_template:\n            subprocess.run(\n                [\n                    \"gh\",\n                    \"api\",\n                    \"--method\",\n                    \"PATCH\",\n                    \"-H\",\n                    \"Accept: application/vnd.github+json\",\n                    f\"/repos/{github_org}/{repo_name}\",\n                    \"-f\",\n                    \"is_template=true\",",
       "fingerprint": "sha256:74cd6b4caf19c0bc",
       "mitigation": {
-        "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "status": "accepted",
+        "note": "Test fixture, example, or build script \u2014 not production code. Commands are hardcoded for documentation or repository setup purposes. Risk is accepted because these scripts run in trusted developer environments.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -1698,7 +1733,7 @@
       "fingerprint": "sha256:2ef91acfef1096bd",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -1717,7 +1752,7 @@
       "fingerprint": "sha256:81dcd4935092c147",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -1736,7 +1771,7 @@
       "fingerprint": "sha256:3c3d73bed50716ca",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -1755,7 +1790,7 @@
       "fingerprint": "sha256:dee7091858b0f9f5",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Utility functions wrapping git/gh CLI with fixed command structures and list-form arguments. Used internally for repository metadata queries (remote URL, branch info, commit log). No external input reaches command arguments \u2014 all values are derived from the local repository state.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -1773,8 +1808,8 @@
       "snippet": "    # Create minimal .gitignore (intentionally missing security exclusions)\n    gitignore = \"\"\"# Intentionally minimal .gitignore for testing\n# This is MISSING important security exclusions!\nnode_modules/\n\"\"\"\n    with open(os.path.join(repo_path, \".gitignore\"), \"w\") as f:\n        f.write(gitignore)\n\n    # Initialize git\n    try:\n        subprocess.run(\n            [\"git\", \"init\"],\n            cwd=repo_path,\n            capture_output=True,\n            check=True\n        )\n        subprocess.run(\n            [\"git\", \"add\", \".\"],\n            cwd=repo_path,\n            capture_output=True,\n            check=True",
       "fingerprint": "sha256:f018627c60f5d6fc",
       "mitigation": {
-        "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "status": "accepted",
+        "note": "Test repository creation tool \u2014 runs git commands to set up ephemeral test repos. Commands are hardcoded (git init, git add, git commit). Only runs in controlled testing/demo contexts with trusted input.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -1792,8 +1827,8 @@
       "snippet": "        f.write(gitignore)\n\n    # Initialize git\n    try:\n        subprocess.run(\n            [\"git\", \"init\"],\n            cwd=repo_path,\n            capture_output=True,\n            check=True\n        )\n        subprocess.run(\n            [\"git\", \"add\", \".\"],\n            cwd=repo_path,\n            capture_output=True,\n            check=True\n        )\n        subprocess.run(\n            [\"git\", \"commit\", \"-m\", \"Initial commit - intentionally non-compliant\"],\n            cwd=repo_path,\n            capture_output=True,\n            check=True",
       "fingerprint": "sha256:89407fc3ca3150fc",
       "mitigation": {
-        "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "status": "accepted",
+        "note": "Test repository creation tool \u2014 runs git commands to set up ephemeral test repos. Commands are hardcoded (git init, git add, git commit). Only runs in controlled testing/demo contexts with trusted input.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -1811,8 +1846,8 @@
       "snippet": "            cwd=repo_path,\n            capture_output=True,\n            check=True\n        )\n        subprocess.run(\n            [\"git\", \"add\", \".\"],\n            cwd=repo_path,\n            capture_output=True,\n            check=True\n        )\n        subprocess.run(\n            [\"git\", \"commit\", \"-m\", \"Initial commit - intentionally non-compliant\"],\n            cwd=repo_path,\n            capture_output=True,\n            check=True\n        )\n    except subprocess.CalledProcessError as e:\n        return f\"\u274c Git error: {e.stderr.decode() if e.stderr else str(e)}\"\n\n    output_lines = [\n        f\"\u2705 Created test repository: {repo_path}\",",
       "fingerprint": "sha256:ce685cb43b2f5e1e",
       "mitigation": {
-        "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "status": "accepted",
+        "note": "Test repository creation tool \u2014 runs git commands to set up ephemeral test repos. Commands are hardcoded (git init, git add, git commit). Only runs in controlled testing/demo contexts with trusted input.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -1830,8 +1865,8 @@
       "snippet": "        \"- \u2717 Branch protection\",\n        \"- \u2717 Package lockfile\",\n        \"- \u2717 ...and 50+ more controls\",\n        \"\",\n    ]\n\n    # Create GitHub repo if requested\n    if create_github:\n        try:\n            # Check if gh is available\n            gh_check = subprocess.run(\n                [\"gh\", \"auth\", \"status\"],\n                capture_output=True\n            )\n            if gh_check.returncode != 0:\n                output_lines.append(\"\u26a0\ufe0f GitHub CLI not authenticated. Skipping GitHub repo creation.\")\n                output_lines.append(\"   Run: gh auth login\")\n            else:\n                # Get org if not specified\n                if not github_org:\n                    result = subprocess.run(",
       "fingerprint": "sha256:cd500bb8cc40bb2e",
       "mitigation": {
-        "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "status": "accepted",
+        "note": "Test repository creation tool \u2014 runs git commands to set up ephemeral test repos. Commands are hardcoded (git init, git add, git commit). Only runs in controlled testing/demo contexts with trusted input.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -1849,8 +1884,8 @@
       "snippet": "            gh_check = subprocess.run(\n                [\"gh\", \"auth\", \"status\"],\n                capture_output=True\n            )\n            if gh_check.returncode != 0:\n                output_lines.append(\"\u26a0\ufe0f GitHub CLI not authenticated. Skipping GitHub repo creation.\")\n                output_lines.append(\"   Run: gh auth login\")\n            else:\n                # Get org if not specified\n                if not github_org:\n                    result = subprocess.run(\n                        [\"gh\", \"api\", \"user\", \"--jq\", \".login\"],\n                        capture_output=True,\n                        text=True\n                    )\n                    github_org = result.stdout.strip()\n\n                # Create GitHub repo\n                subprocess.run(\n                    [\n                        \"gh\", \"repo\", \"create\", f\"{github_org}/{repo_name}\",",
       "fingerprint": "sha256:982a8ec2bb0caf7b",
       "mitigation": {
-        "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "status": "accepted",
+        "note": "Test repository creation tool \u2014 runs git commands to set up ephemeral test repos. Commands are hardcoded (git init, git add, git commit). Only runs in controlled testing/demo contexts with trusted input.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -1868,8 +1903,8 @@
       "snippet": "                # Get org if not specified\n                if not github_org:\n                    result = subprocess.run(\n                        [\"gh\", \"api\", \"user\", \"--jq\", \".login\"],\n                        capture_output=True,\n                        text=True\n                    )\n                    github_org = result.stdout.strip()\n\n                # Create GitHub repo\n                subprocess.run(\n                    [\n                        \"gh\", \"repo\", \"create\", f\"{github_org}/{repo_name}\",\n                        \"--public\",\n                        \"--source\", repo_path,\n                        \"--remote\", \"origin\",\n                        \"--description\", \"OpenSSF Baseline test repo - intentionally non-compliant\",\n                        \"--push\"\n                    ],\n                    capture_output=True,\n                    check=True",
       "fingerprint": "sha256:622a9ce74e35cef5",
       "mitigation": {
-        "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "status": "accepted",
+        "note": "Test repository creation tool \u2014 runs git commands to set up ephemeral test repos. Commands are hardcoded (git init, git add, git commit). Only runs in controlled testing/demo contexts with trusted input.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -1887,8 +1922,8 @@
       "snippet": "                        \"--description\", \"OpenSSF Baseline test repo - intentionally non-compliant\",\n                        \"--push\"\n                    ],\n                    capture_output=True,\n                    check=True\n                )\n                output_lines.append(f\"\u2705 GitHub repo created: https://github.com/{github_org}/{repo_name}\")\n\n                # Make template if requested\n                if make_template:\n                    subprocess.run(\n                        [\n                            \"gh\", \"api\",\n                            \"--method\", \"PATCH\",\n                            \"-H\", \"Accept: application/vnd.github+json\",\n                            f\"/repos/{github_org}/{repo_name}\",\n                            \"-f\", \"is_template=true\"\n                        ],\n                        capture_output=True,\n                        check=True\n                    )",
       "fingerprint": "sha256:a5278274b2d417fd",
       "mitigation": {
-        "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "status": "accepted",
+        "note": "Test repository creation tool \u2014 runs git commands to set up ephemeral test repos. Commands are hardcoded (git init, git add, git commit). Only runs in controlled testing/demo contexts with trusted input.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -1907,7 +1942,7 @@
       "fingerprint": "sha256:156814859be94b2d",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -1926,7 +1961,7 @@
       "fingerprint": "sha256:a34c9dfda3186c19",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -1945,7 +1980,7 @@
       "fingerprint": "sha256:2119c3ebd5c17207",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -1964,7 +1999,7 @@
       "fingerprint": "sha256:98cea13da7635581",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -1983,7 +2018,7 @@
       "fingerprint": "sha256:e860cb6848fb8aee",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2002,7 +2037,7 @@
       "fingerprint": "sha256:a0a53bc7a7cdea3a",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2021,7 +2056,7 @@
       "fingerprint": "sha256:257cd0b3f2c47725",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2040,7 +2075,7 @@
       "fingerprint": "sha256:517a48b5532ba599",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2059,7 +2094,7 @@
       "fingerprint": "sha256:3335397712f63a67",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2078,7 +2113,7 @@
       "fingerprint": "sha256:f60b47b77736311b",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2097,7 +2132,7 @@
       "fingerprint": "sha256:70c17208fefa34b3",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2116,7 +2151,7 @@
       "fingerprint": "sha256:cfb9a942683feb7d",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2135,7 +2170,7 @@
       "fingerprint": "sha256:80f0d84ccd9b18e0",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2154,7 +2189,7 @@
       "fingerprint": "sha256:ab673e50fa5252bb",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2173,7 +2208,7 @@
       "fingerprint": "sha256:fe177b8e76bf50bb",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2192,7 +2227,7 @@
       "fingerprint": "sha256:82f39587e9b51a3b",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2211,7 +2246,7 @@
       "fingerprint": "sha256:2e7adeae35296364",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2230,7 +2265,7 @@
       "fingerprint": "sha256:5750c0cf270f34ee",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2249,7 +2284,7 @@
       "fingerprint": "sha256:dfdce82c38a896bc",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2268,7 +2303,7 @@
       "fingerprint": "sha256:43905a0aebc97d45",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2287,7 +2322,7 @@
       "fingerprint": "sha256:b50f455db7f869b6",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2306,7 +2341,7 @@
       "fingerprint": "sha256:47b0bb3835809ea1",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2325,7 +2360,7 @@
       "fingerprint": "sha256:a887b9f9a68a4e20",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2344,7 +2379,7 @@
       "fingerprint": "sha256:6d4f75cbdba1eb55",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2363,7 +2398,7 @@
       "fingerprint": "sha256:6454128dff46e375",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "GitHub CLI (gh) invocation with list-form arguments for PR/repo operations. Command structure is fixed; variable parts (owner, repo, branch) come from validated MCP tool parameters. gh CLI validates all arguments internally.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2381,8 +2416,8 @@
       "snippet": "    )\n\n\ndef check_branch_protection(\n    owner: str,\n    repo: str,\n    branch: str,\n) -> CheckResult:\n    \"\"\"Check EXAMPLE-AC-01: Branch protection must be enabled.\"\"\"\n    try:\n        result = subprocess.run(\n            [\"gh\", \"api\", f\"/repos/{owner}/{repo}/branches/{branch}/protection\"],\n            capture_output=True,\n            text=True,\n            timeout=30,\n        )\n\n        if result.returncode == 0:\n            return CheckResult(\n                id=\"EXAMPLE-AC-01\",\n                name=\"BranchProtectionEnabled\",",
       "fingerprint": "sha256:e374864441e572c6",
       "mitigation": {
-        "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "status": "accepted",
+        "note": "Test fixture, example, or build script \u2014 not production code. Commands are hardcoded for documentation or repository setup purposes. Risk is accepted because these scripts run in trusted developer environments.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2400,8 +2435,8 @@
       "snippet": "| PH-SEC-01 | SECURITY.md |\n| PH-CFG-01 | .gitignore |\n| PH-CFG-02 | .editorconfig |\n| PH-QA-01 | CONTRIBUTING.md |\n| PH-CI-01 | .github/workflows/*.yml |\n\"\"\"\n    (repo_path / \"CLAUDE.md\").write_text(claude_md)\n\n    # -- Initialize git -------------------------------------------------------\n    try:\n        subprocess.run(\n            [\"git\", \"init\"], cwd=repo_path, capture_output=True, check=True\n        )\n        subprocess.run(\n            [\"git\", \"add\", \".\"], cwd=repo_path, capture_output=True, check=True\n        )\n        subprocess.run(\n            [\n                \"git\",\n                \"commit\",\n                \"-m\",",
       "fingerprint": "sha256:a92b64e3fb7d00ef",
       "mitigation": {
-        "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "status": "accepted",
+        "note": "Test fixture, example, or build script \u2014 not production code. Commands are hardcoded for documentation or repository setup purposes. Risk is accepted because these scripts run in trusted developer environments.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2419,8 +2454,8 @@
       "snippet": "| PH-QA-01 | CONTRIBUTING.md |\n| PH-CI-01 | .github/workflows/*.yml |\n\"\"\"\n    (repo_path / \"CLAUDE.md\").write_text(claude_md)\n\n    # -- Initialize git -------------------------------------------------------\n    try:\n        subprocess.run(\n            [\"git\", \"init\"], cwd=repo_path, capture_output=True, check=True\n        )\n        subprocess.run(\n            [\"git\", \"add\", \".\"], cwd=repo_path, capture_output=True, check=True\n        )\n        subprocess.run(\n            [\n                \"git\",\n                \"commit\",\n                \"-m\",\n                \"Initial commit - intentionally non-compliant\\n\\n\"\n                \"This repository is designed for testing Project Hygiene Standard\\n\"\n                \"compliance. It intentionally fails all 8 PH controls.\",",
       "fingerprint": "sha256:d8b8307b8c16479f",
       "mitigation": {
-        "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "status": "accepted",
+        "note": "Test fixture, example, or build script \u2014 not production code. Commands are hardcoded for documentation or repository setup purposes. Risk is accepted because these scripts run in trusted developer environments.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2438,8 +2473,8 @@
       "snippet": "\n\ndef _create_github_repo(\n    repo_path: Path,\n    repo_name: str,\n    github_org: str | None,\n    make_template: bool,\n) -> None:\n    \"\"\"Create a GitHub repository using the gh CLI.\"\"\"\n    try:\n        result = subprocess.run(\n            [\"gh\", \"auth\", \"status\"], capture_output=True\n        )\n        if result.returncode != 0:\n            print(\n                \"\\033[1;33m\u26a0 GitHub CLI not authenticated. \"\n                \"Skipping GitHub repo creation.\\033[0m\"\n            )\n            return\n    except FileNotFoundError:\n        print(",
       "fingerprint": "sha256:2603b50ec203f5cc",
       "mitigation": {
-        "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "status": "accepted",
+        "note": "Test fixture, example, or build script \u2014 not production code. Commands are hardcoded for documentation or repository setup purposes. Risk is accepted because these scripts run in trusted developer environments.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2457,8 +2492,8 @@
       "snippet": "            )\n            return\n    except FileNotFoundError:\n        print(\n            \"\\033[1;33m\u26a0 GitHub CLI (gh) not found. \"\n            \"Skipping GitHub repo creation.\\033[0m\"\n        )\n        return\n\n    if not github_org:\n        result = subprocess.run(\n            [\"gh\", \"api\", \"user\", \"--jq\", \".login\"],\n            capture_output=True,\n            text=True,\n        )\n        github_org = result.stdout.strip()\n        print(f\"\\033[1;33mUsing GitHub user: {github_org}\\033[0m\")\n\n    print(f\"\\033[0;32mCreating GitHub repository: {github_org}/{repo_name}\\033[0m\")\n\n    try:",
       "fingerprint": "sha256:1efd167695e4ea87",
       "mitigation": {
-        "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "status": "accepted",
+        "note": "Test fixture, example, or build script \u2014 not production code. Commands are hardcoded for documentation or repository setup purposes. Risk is accepted because these scripts run in trusted developer environments.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2476,8 +2511,8 @@
       "snippet": "                \"--description\",\n                \"Project Hygiene test repo - intentionally non-compliant\",\n                \"--push\",\n            ],\n            capture_output=True,\n            check=True,\n        )\n        print(\"\\033[0;32m\u2713 GitHub repository created\\033[0m\")\n\n        if make_template:\n            subprocess.run(\n                [\n                    \"gh\",\n                    \"api\",\n                    \"--method\",\n                    \"PATCH\",\n                    \"-H\",\n                    \"Accept: application/vnd.github+json\",\n                    f\"/repos/{github_org}/{repo_name}\",\n                    \"-f\",\n                    \"is_template=true\",",
       "fingerprint": "sha256:74cd6b4caf19c0bc",
       "mitigation": {
-        "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "status": "accepted",
+        "note": "Test fixture, example, or build script \u2014 not production code. Commands are hardcoded for documentation or repository setup purposes. Risk is accepted because these scripts run in trusted developer environments.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2496,7 +2531,7 @@
       "fingerprint": "sha256:28830df9902a725f",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "List-form subprocess invocation with no shell=True. Command structure is fixed or derived from trusted configuration sources.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2515,7 +2550,7 @@
       "fingerprint": "sha256:2ef91acfef1096bd",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2534,7 +2569,7 @@
       "fingerprint": "sha256:81dcd4935092c147",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2553,7 +2588,7 @@
       "fingerprint": "sha256:3c3d73bed50716ca",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2572,7 +2607,7 @@
       "fingerprint": "sha256:ca4f58823f01fa39",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "List-form subprocess invocation with no shell=True. Command structure is fixed or derived from trusted configuration sources.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2591,7 +2626,7 @@
       "fingerprint": "sha256:fe8bb4484c5d157f",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "List-form subprocess invocation with no shell=True. Command structure is fixed or derived from trusted configuration sources.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2610,7 +2645,7 @@
       "fingerprint": "sha256:d6b09e5a9c607be6",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "GitHub CLI (gh) invocation with list-form arguments for PR/repo operations. Command structure is fixed; variable parts (owner, repo, branch) come from validated MCP tool parameters. gh CLI validates all arguments internally.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2629,7 +2664,7 @@
       "fingerprint": "sha256:fdddc78b3ca4c729",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "GitHub CLI (gh) invocation with list-form arguments for PR/repo operations. Command structure is fixed; variable parts (owner, repo, branch) come from validated MCP tool parameters. gh CLI validates all arguments internally.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2648,7 +2683,7 @@
       "fingerprint": "sha256:2be41a086a00137f",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2667,7 +2702,7 @@
       "fingerprint": "sha256:b74488963e08d1cf",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2686,7 +2721,7 @@
       "fingerprint": "sha256:fb90a95c5579d026",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2705,7 +2740,7 @@
       "fingerprint": "sha256:3e5433bba85cf746",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2724,7 +2759,7 @@
       "fingerprint": "sha256:32a27d13648d2c27",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2743,7 +2778,7 @@
       "fingerprint": "sha256:f650dbefa3dd5235",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2762,7 +2797,7 @@
       "fingerprint": "sha256:786bc45a110c94ce",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Utility functions wrapping git/gh CLI with fixed command structures and list-form arguments. Used internally for repository metadata queries (remote URL, branch info, commit log). No external input reaches command arguments \u2014 all values are derived from the local repository state.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2781,7 +2816,7 @@
       "fingerprint": "sha256:3df7b0298bf26a43",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "List-form subprocess invocation with no shell=True. Command structure is fixed or derived from trusted configuration sources.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2800,7 +2835,7 @@
       "fingerprint": "sha256:97d9967cd79e7882",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "List-form subprocess invocation with no shell=True. Command structure is fixed or derived from trusted configuration sources.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2818,8 +2853,8 @@
       "snippet": "    # Create minimal .gitignore (intentionally missing security exclusions)\n    gitignore = \"\"\"# Intentionally minimal .gitignore for testing\n# This is MISSING important security exclusions!\nnode_modules/\n\"\"\"\n    with open(os.path.join(repo_path, \".gitignore\"), \"w\") as f:\n        f.write(gitignore)\n\n    # Initialize git\n    try:\n        subprocess.run(\n            [\"git\", \"init\"],\n            cwd=repo_path,\n            capture_output=True,\n            check=True\n        )\n        subprocess.run(\n            [\"git\", \"add\", \".\"],\n            cwd=repo_path,\n            capture_output=True,\n            check=True",
       "fingerprint": "sha256:f018627c60f5d6fc",
       "mitigation": {
-        "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "status": "accepted",
+        "note": "Test repository creation tool \u2014 runs git commands to set up ephemeral test repos. Commands are hardcoded (git init, git add, git commit). Only runs in controlled testing/demo contexts with trusted input.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2837,8 +2872,8 @@
       "snippet": "        f.write(gitignore)\n\n    # Initialize git\n    try:\n        subprocess.run(\n            [\"git\", \"init\"],\n            cwd=repo_path,\n            capture_output=True,\n            check=True\n        )\n        subprocess.run(\n            [\"git\", \"add\", \".\"],\n            cwd=repo_path,\n            capture_output=True,\n            check=True\n        )\n        subprocess.run(\n            [\"git\", \"commit\", \"-m\", \"Initial commit - intentionally non-compliant\"],\n            cwd=repo_path,\n            capture_output=True,\n            check=True",
       "fingerprint": "sha256:89407fc3ca3150fc",
       "mitigation": {
-        "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "status": "accepted",
+        "note": "Test repository creation tool \u2014 runs git commands to set up ephemeral test repos. Commands are hardcoded (git init, git add, git commit). Only runs in controlled testing/demo contexts with trusted input.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2856,8 +2891,8 @@
       "snippet": "            cwd=repo_path,\n            capture_output=True,\n            check=True\n        )\n        subprocess.run(\n            [\"git\", \"add\", \".\"],\n            cwd=repo_path,\n            capture_output=True,\n            check=True\n        )\n        subprocess.run(\n            [\"git\", \"commit\", \"-m\", \"Initial commit - intentionally non-compliant\"],\n            cwd=repo_path,\n            capture_output=True,\n            check=True\n        )\n    except subprocess.CalledProcessError as e:\n        return f\"\u274c Git error: {e.stderr.decode() if e.stderr else str(e)}\"\n\n    output_lines = [\n        f\"\u2705 Created test repository: {repo_path}\",",
       "fingerprint": "sha256:ce685cb43b2f5e1e",
       "mitigation": {
-        "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "status": "accepted",
+        "note": "Test repository creation tool \u2014 runs git commands to set up ephemeral test repos. Commands are hardcoded (git init, git add, git commit). Only runs in controlled testing/demo contexts with trusted input.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2875,8 +2910,8 @@
       "snippet": "        \"- \u2717 Branch protection\",\n        \"- \u2717 Package lockfile\",\n        \"- \u2717 ...and 50+ more controls\",\n        \"\",\n    ]\n\n    # Create GitHub repo if requested\n    if create_github:\n        try:\n            # Check if gh is available\n            gh_check = subprocess.run(\n                [\"gh\", \"auth\", \"status\"],\n                capture_output=True\n            )\n            if gh_check.returncode != 0:\n                output_lines.append(\"\u26a0\ufe0f GitHub CLI not authenticated. Skipping GitHub repo creation.\")\n                output_lines.append(\"   Run: gh auth login\")\n            else:\n                # Get org if not specified\n                if not github_org:\n                    result = subprocess.run(",
       "fingerprint": "sha256:cd500bb8cc40bb2e",
       "mitigation": {
-        "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "status": "accepted",
+        "note": "Test repository creation tool \u2014 runs git commands to set up ephemeral test repos. Commands are hardcoded (git init, git add, git commit). Only runs in controlled testing/demo contexts with trusted input.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2894,8 +2929,8 @@
       "snippet": "            gh_check = subprocess.run(\n                [\"gh\", \"auth\", \"status\"],\n                capture_output=True\n            )\n            if gh_check.returncode != 0:\n                output_lines.append(\"\u26a0\ufe0f GitHub CLI not authenticated. Skipping GitHub repo creation.\")\n                output_lines.append(\"   Run: gh auth login\")\n            else:\n                # Get org if not specified\n                if not github_org:\n                    result = subprocess.run(\n                        [\"gh\", \"api\", \"user\", \"--jq\", \".login\"],\n                        capture_output=True,\n                        text=True\n                    )\n                    github_org = result.stdout.strip()\n\n                # Create GitHub repo\n                subprocess.run(\n                    [\n                        \"gh\", \"repo\", \"create\", f\"{github_org}/{repo_name}\",",
       "fingerprint": "sha256:982a8ec2bb0caf7b",
       "mitigation": {
-        "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "status": "accepted",
+        "note": "Test repository creation tool \u2014 runs git commands to set up ephemeral test repos. Commands are hardcoded (git init, git add, git commit). Only runs in controlled testing/demo contexts with trusted input.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2913,8 +2948,8 @@
       "snippet": "                        \"--description\", \"OpenSSF Baseline test repo - intentionally non-compliant\",\n                        \"--push\"\n                    ],\n                    capture_output=True,\n                    check=True\n                )\n                output_lines.append(f\"\u2705 GitHub repo created: https://github.com/{github_org}/{repo_name}\")\n\n                # Make template if requested\n                if make_template:\n                    subprocess.run(\n                        [\n                            \"gh\", \"api\",\n                            \"--method\", \"PATCH\",\n                            \"-H\", \"Accept: application/vnd.github+json\",\n                            f\"/repos/{github_org}/{repo_name}\",\n                            \"-f\", \"is_template=true\"\n                        ],\n                        capture_output=True,\n                        check=True\n                    )",
       "fingerprint": "sha256:a5278274b2d417fd",
       "mitigation": {
-        "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "status": "accepted",
+        "note": "Test repository creation tool \u2014 runs git commands to set up ephemeral test repos. Commands are hardcoded (git init, git add, git commit). Only runs in controlled testing/demo contexts with trusted input.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2933,7 +2968,7 @@
       "fingerprint": "sha256:156814859be94b2d",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2952,7 +2987,7 @@
       "fingerprint": "sha256:98cea13da7635581",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2971,7 +3006,7 @@
       "fingerprint": "sha256:a0a53bc7a7cdea3a",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -2990,7 +3025,7 @@
       "fingerprint": "sha256:257cd0b3f2c47725",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -3009,7 +3044,7 @@
       "fingerprint": "sha256:517a48b5532ba599",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -3028,7 +3063,7 @@
       "fingerprint": "sha256:3335397712f63a67",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -3047,7 +3082,7 @@
       "fingerprint": "sha256:70c17208fefa34b3",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -3066,7 +3101,7 @@
       "fingerprint": "sha256:cfb9a942683feb7d",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -3085,7 +3120,7 @@
       "fingerprint": "sha256:ab673e50fa5252bb",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -3104,7 +3139,7 @@
       "fingerprint": "sha256:fe177b8e76bf50bb",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -3123,7 +3158,7 @@
       "fingerprint": "sha256:2e7adeae35296364",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -3142,7 +3177,7 @@
       "fingerprint": "sha256:5750c0cf270f34ee",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -3161,7 +3196,7 @@
       "fingerprint": "sha256:43905a0aebc97d45",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -3180,7 +3215,7 @@
       "fingerprint": "sha256:b50f455db7f869b6",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -3199,7 +3234,7 @@
       "fingerprint": "sha256:47b0bb3835809ea1",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -3218,7 +3253,7 @@
       "fingerprint": "sha256:a887b9f9a68a4e20",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -3237,7 +3272,7 @@
       "fingerprint": "sha256:6d4f75cbdba1eb55",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True, no user-controlled command names. Variable arguments (branch names, paths) come from validated MCP context or repository state. The gh CLI validates arguments before execution.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -3256,7 +3291,7 @@
       "fingerprint": "sha256:6454128dff46e375",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "GitHub CLI (gh) invocation with list-form arguments for PR/repo operations. Command structure is fixed; variable parts (owner, repo, branch) come from validated MCP tool parameters. gh CLI validates all arguments internally.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -3275,7 +3310,7 @@
       "fingerprint": "sha256:506876eb95804f3e",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Gittuf CLI invocation with fixed binary name and static flags. Only the repository path (validated by the framework) varies. List-form subprocess with no shell interpretation.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -3294,7 +3329,7 @@
       "fingerprint": "sha256:07f0c1bff4c2d1fe",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Gittuf CLI invocation with fixed binary name and static flags. Only the repository path (validated by the framework) varies. List-form subprocess with no shell interpretation.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
@@ -3313,7 +3348,7 @@
       "fingerprint": "sha256:42102c75d277346a",
       "mitigation": {
         "status": "mitigated",
-        "note": "All subprocess invocations use list-form arguments (no shell=True). Commands come from trusted TOML configs or are hardcoded CLI binaries (gh, git, kusari, opengrep). Variable substitution uses allowlisted placeholders ($OWNER, $REPO, etc). Running external commands is a core design requirement for this compliance auditing tool.",
+        "note": "Gittuf CLI invocation with fixed binary name and static flags. Only the repository path (validated by the framework) varies. List-form subprocess with no shell interpretation.",
         "reviewer": "claude-opus-4-6",
         "reviewed_at": "2026-04-14",
         "stale": false
