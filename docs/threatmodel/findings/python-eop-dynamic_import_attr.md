@@ -107,10 +107,10 @@ No specific guidance available.
 
 | # | File | Line | Severity | Confidence | Status |
 |---|------|------|----------|------------|--------|
-| 1 | `packages/darnit/src/darnit/core/registry.py` | 821 | MEDIUM | 0.50 | Unmitigated |
-| 2 | `packages/darnit/src/darnit/core/handlers.py` | 237 | MEDIUM | 0.50 | Unmitigated |
-| 3 | `packages/darnit/src/darnit/core/adapters.py` | 666 | MEDIUM | 0.50 | Unmitigated |
-| 4 | `packages/darnit/src/darnit/server/registry.py` | 151 | MEDIUM | 0.50 | Unmitigated |
+| 1 | `packages/darnit/src/darnit/core/registry.py` | 821 | MEDIUM | 0.50 | Mitigationstatus.mitigated |
+| 2 | `packages/darnit/src/darnit/core/handlers.py` | 237 | MEDIUM | 0.50 | Mitigationstatus.mitigated |
+| 3 | `packages/darnit/src/darnit/core/adapters.py` | 666 | MEDIUM | 0.50 | Mitigationstatus.mitigated |
+| 4 | `packages/darnit/src/darnit/server/registry.py` | 151 | MEDIUM | 0.50 | Mitigationstatus.mitigated |
 
 *4 instances total.*
 

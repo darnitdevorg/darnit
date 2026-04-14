@@ -70,8 +70,8 @@ No specific guidance available.
 
 | # | File | Line | Severity | Confidence | Status |
 |---|------|------|----------|------------|--------|
-| 1 | `packages/darnit/src/darnit/server/factory.py` | 149 | MEDIUM | 0.85 | Unmitigated |
-| 2 | `packages/darnit/src/darnit/server/factory.py` | 195 | MEDIUM | 0.85 | Unmitigated |
+| 1 | `packages/darnit/src/darnit/server/factory.py` | 149 | MEDIUM | 0.85 | Mitigationstatus.mitigated |
+| 2 | `packages/darnit/src/darnit/server/factory.py` | 195 | MEDIUM | 0.85 | Mitigationstatus.mitigated |
 
 *2 instances total.*
 

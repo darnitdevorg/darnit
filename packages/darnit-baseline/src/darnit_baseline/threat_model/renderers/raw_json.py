@@ -77,7 +77,14 @@ def render_raw_json(
         }
         # Only include mitigation if a sidecar match exists for this fingerprint
         if f.fingerprint and f.fingerprint in sidecar_matches:
-            entry["mitigation"] = sidecar_matches[f.fingerprint]
+            m = sidecar_matches[f.fingerprint]
+            entry["mitigation"] = {
+                "status": m.status if isinstance(m.status, str) else m.status.value,
+                "note": m.note,
+                "reviewer": m.reviewer,
+                "reviewed_at": m.reviewed_at,
+                "stale": m.stale,
+            }
         findings_json.append(entry)
 
     # -- entry_points -------------------------------------------------------
