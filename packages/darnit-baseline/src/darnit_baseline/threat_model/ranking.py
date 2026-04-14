@@ -106,49 +106,52 @@ def apply_cap(
     max_findings: int,
     diversity_threshold: float = 0.4,
 ) -> tuple[list[CandidateFinding], TrimmedOverflow]:
-    """Trim the ranked list to at most ``max_findings`` entries.
+    """Rank all findings and compute a display-level overflow hint.
 
-    Runs a category-diversity tie-break: after filling the first
-    ``max_findings`` ranks, if any single STRIDE category would account for
-    more than ``diversity_threshold`` (default 40%) of the emitted findings,
-    demote low-ranked members of the dominant category and promote higher-
-    ranked members of underrepresented categories until the dominance is
-    broken (or we exhaust the promotion candidates).
+    **No findings are dropped.**  All findings are returned in ranked order.
+    The ``max_findings`` parameter controls only the *display threshold* used
+    by the SUMMARY renderer's top-risks table.  The :class:`TrimmedOverflow`
+    describes findings that fall below this threshold so the summary can
+    render an "and N more" line.
 
-    Returns the emitted list plus a :class:`TrimmedOverflow` describing how
-    many candidates were trimmed per category.
+    Diversity rebalancing still applies to ordering: within the top
+    ``max_findings``, underrepresented STRIDE categories may be promoted
+    over dominant ones.
+
+    Returns ``(all_findings_sorted, overflow_hint)``.
     """
-    if max_findings <= 0:
-        by_category: dict[StrideCategory, int] = {}
-        for f in findings:
-            by_category[f.category] = by_category.get(f.category, 0) + 1
-        return [], TrimmedOverflow(by_category=by_category, total=len(findings))
-
     ranked = rank_findings(findings)
-    if len(ranked) <= max_findings:
+
+    if max_findings <= 0 or len(ranked) <= max_findings:
         return ranked, TrimmedOverflow(by_category={}, total=0)
 
-    emitted = ranked[:max_findings]
+    # Use diversity rebalancing to determine the "top N" display set,
+    # but keep all findings in the returned list.
+    top_display = ranked[:max_findings]
     leftover = ranked[max_findings:]
+    top_display = _apply_diversity_rebalance(top_display, leftover, diversity_threshold)
 
-    emitted = _apply_diversity_rebalance(emitted, leftover, diversity_threshold)
-
-    # Recompute leftover after rebalance (order-preserving set diff)
-    emitted_ids = {id(f) for f in emitted}
-    trimmed = [f for f in ranked if id(f) not in emitted_ids]
+    # Build overflow hint from findings not in the top display set.
+    top_ids = {id(f) for f in top_display}
+    below_threshold = [f for f in ranked if id(f) not in top_ids]
 
     by_category: dict[StrideCategory, int] = {}
-    for f in trimmed:
+    for f in below_threshold:
         by_category[f.category] = by_category.get(f.category, 0) + 1
-    overflow = TrimmedOverflow(by_category=by_category, total=len(trimmed))
+    overflow = TrimmedOverflow(by_category=by_category, total=len(below_threshold))
+
+    # Re-order: top display set first (preserving diversity order),
+    # then remaining findings in their original rank order.
+    reordered = list(top_display) + below_threshold
+
     logger.debug(
-        "ranking.apply_cap: emitted %d of %d, trimmed %d (by category: %s)",
-        len(emitted),
+        "ranking.apply_cap: top_display %d of %d, overflow %d (by category: %s)",
+        len(top_display),
         len(ranked),
-        len(trimmed),
+        len(below_threshold),
         by_category,
     )
-    return emitted, overflow
+    return reordered, overflow
 
 
 def _apply_diversity_rebalance(

@@ -39,8 +39,12 @@ from .discovery_models import (
     DiscoveryResult,
     EntryPointKind,
     FileScanStats,
+    FindingGroup,
     FindingSource,
     Location,
+    MitigationEntry,
+    MitigationSidecar,
+    MitigationStatus,
     TrimmedOverflow,
 )
 
@@ -70,6 +74,10 @@ __all__ = [
     "FileScanStats",
     "TrimmedOverflow",
     "DiscoveryResult",
+    "FindingGroup",
+    "MitigationStatus",
+    "MitigationEntry",
+    "MitigationSidecar",
     # Remediation
     "generate_threat_model_handler",
 ]

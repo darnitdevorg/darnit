@@ -79,6 +79,7 @@ class GoQuery:
     id: str
     query: Any
     intent: str
+    mitigation_hint: str = ""
 
 
 QUERY_REGISTRY: dict[str, GoQuery] = {

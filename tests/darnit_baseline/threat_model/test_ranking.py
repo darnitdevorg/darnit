@@ -84,28 +84,13 @@ class TestConfidenceFor:
         assert confidence_for(FindingSource.OPENGREP_PATTERN) == 0.9
 
     def test_structural_constructor_is_0_9(self) -> None:
-        assert (
-            confidence_for(
-                FindingSource.TREE_SITTER_STRUCTURAL, query_intent="constructor_call"
-            )
-            == 0.9
-        )
+        assert confidence_for(FindingSource.TREE_SITTER_STRUCTURAL, query_intent="constructor_call") == 0.9
 
     def test_structural_decorator_is_0_85(self) -> None:
-        assert (
-            confidence_for(
-                FindingSource.TREE_SITTER_STRUCTURAL, query_intent="decorator"
-            )
-            == 0.85
-        )
+        assert confidence_for(FindingSource.TREE_SITTER_STRUCTURAL, query_intent="decorator") == 0.85
 
     def test_structural_bare_call_is_0_6(self) -> None:
-        assert (
-            confidence_for(
-                FindingSource.TREE_SITTER_STRUCTURAL, query_intent="bare_call"
-            )
-            == 0.6
-        )
+        assert confidence_for(FindingSource.TREE_SITTER_STRUCTURAL, query_intent="bare_call") == 0.6
 
 
 class TestRankFindings:
@@ -132,24 +117,22 @@ class TestApplyCap:
         assert overflow.total == 0
         assert overflow.by_category == {}
 
-    def test_over_cap_trims_and_accounts(self) -> None:
-        # 10 findings, cap = 5. The 5 lowest-ranked should be trimmed.
-        findings = [
-            _mk(severity=s, confidence=1.0, query_id=f"q{s}", line=s)
-            for s in range(1, 11)
-        ]
+    def test_over_cap_returns_all_with_overflow_hint(self) -> None:
+        # 10 findings, cap = 5. All 10 are returned; overflow describes
+        # the 5 findings below the display threshold.
+        findings = [_mk(severity=s, confidence=1.0, query_id=f"q{s}", line=s) for s in range(1, 11)]
         emitted, overflow = apply_cap(findings, max_findings=5)
-        assert len(emitted) == 5
-        assert overflow.total == 5
-        # All trimmed are Tampering by default in _mk
+        assert len(emitted) == 10  # No findings dropped
+        assert overflow.total == 5  # 5 below display threshold
         assert overflow.by_category == {StrideCategory.TAMPERING: 5}
 
-    def test_diversity_tiebreak_swaps_dominant_for_underrepresented(self) -> None:
-        """If one category numerically dominates, swap in lower-ranked members
-        of other categories until the dominant category is at most 60%."""
+    def test_diversity_tiebreak_reorders_for_underrepresented(self) -> None:
+        """If one category numerically dominates, the top N (display set)
+        should have underrepresented categories promoted.  All findings are
+        still returned."""
         # 8 tampering findings with severity 7, plus 2 spoofing findings with
-        # severity 5. Cap = 5. Without rebalance, all 5 emitted would be
-        # tampering. With rebalance, at most 3 can be tampering (60% of 5).
+        # severity 5. Cap = 5. The first 5 returned should have spoofing
+        # promoted. All 10 findings are returned.
         tampering = [
             _mk(
                 category=StrideCategory.TAMPERING,
@@ -171,26 +154,32 @@ class TestApplyCap:
             for i in range(2)
         ]
         emitted, _ = apply_cap(tampering + spoofing, max_findings=5)
-        categories = [f.category for f in emitted]
-        tampering_count = categories.count(StrideCategory.TAMPERING)
+        assert len(emitted) == 10  # All returned
+        # The first 5 (display set) should have spoofing promoted
+        top5_categories = [f.category for f in emitted[:5]]
+        tampering_count = top5_categories.count(StrideCategory.TAMPERING)
         assert tampering_count <= 3, (
-            f"category-diversity rebalance should cap tampering at 60% of 5; "
-            f"got {tampering_count} of {len(emitted)} ({categories})"
+            f"category-diversity rebalance should cap tampering at 60% of top 5; "
+            f"got {tampering_count} ({top5_categories})"
         )
 
     def test_diversity_leaves_single_category_alone_when_no_swap_possible(
         self,
     ) -> None:
-        """If only one category exists, rebalance cannot demote to anything."""
+        """If only one category exists, rebalance cannot demote to anything.
+        All findings are returned."""
         findings = [_mk(query_id=f"q{i}", line=i + 1) for i in range(8)]
-        emitted, _ = apply_cap(findings, max_findings=3)
-        assert len(emitted) == 3
+        emitted, overflow = apply_cap(findings, max_findings=3)
+        assert len(emitted) == 8  # All returned
+        assert overflow.total == 5  # 5 below display threshold
 
-    def test_zero_cap_returns_empty_with_all_overflow(self) -> None:
+    def test_zero_cap_returns_all_with_no_overflow(self) -> None:
+        """With cap=0, all findings are returned and overflow is empty
+        (zero-cap means 'no display threshold')."""
         findings = [_mk(query_id=f"q{i}", line=i + 1) for i in range(3)]
         emitted, overflow = apply_cap(findings, max_findings=0)
-        assert emitted == []
-        assert overflow.total == 3
+        assert len(emitted) == 3
+        assert overflow.total == 0
 
 
 class TestTrimmedOverflowInvariant:
@@ -206,9 +195,7 @@ class TestTrimmedOverflowInvariant:
 
     def test_mismatched_total_raises(self) -> None:
         with pytest.raises(ValueError, match="total"):
-            TrimmedOverflow(
-                by_category={StrideCategory.TAMPERING: 1}, total=5
-            )
+            TrimmedOverflow(by_category={StrideCategory.TAMPERING: 1}, total=5)
 
 
 class TestCandidateFindingInvariants:
@@ -245,9 +232,7 @@ class TestCandidateFindingInvariants:
                 source=FindingSource.TREE_SITTER_STRUCTURAL,
                 primary_location=_loc(line=42),
                 related_assets=(),
-                code_snippet=CodeSnippet(
-                    lines=("x = 1",), start_line=10, marker_line=10
-                ),
+                code_snippet=CodeSnippet(lines=("x = 1",), start_line=10, marker_line=10),
                 severity=6,
                 confidence=0.75,
                 rationale="x",
@@ -300,17 +285,17 @@ class TestSubprocessTieredScoring:
         ranked = rank_findings([static, param, dynamic, shell])
         assert [f.query_id for f in ranked] == ["shell", "dynamic", "param", "static"]
 
-    def test_static_excluded_by_cap_when_higher_tiers_exist(self) -> None:
-        """With a cap of 3, the static finding should be trimmed in favor
-        of higher-tier findings."""
+    def test_static_below_display_threshold_when_higher_tiers_exist(self) -> None:
+        """With a cap of 3, the static finding should be below the display
+        threshold (overflow hint) while still being in the returned list."""
         static = self._mk_tier("static", severity=1, confidence=0.2, query_id="static", line=1)
         param = self._mk_tier("parameterized", severity=4, confidence=0.6, query_id="param", line=2)
         dynamic = self._mk_tier("dynamic", severity=6, confidence=0.8, query_id="dynamic", line=3)
         shell = self._mk_tier("shell", severity=8, confidence=0.9, query_id="shell", line=4)
 
-        emitted, overflow = apply_cap(
-            [static, param, dynamic, shell], max_findings=3
-        )
-        emitted_ids = {f.query_id for f in emitted}
-        assert "static" not in emitted_ids
+        emitted, overflow = apply_cap([static, param, dynamic, shell], max_findings=3)
+        assert len(emitted) == 4  # All findings returned
+        # Static is last (below display threshold)
+        top3_ids = {f.query_id for f in emitted[:3]}
+        assert "static" not in top3_ids
         assert overflow.total == 1

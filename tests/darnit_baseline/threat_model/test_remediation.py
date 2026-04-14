@@ -37,7 +37,7 @@ class TestDynamicGeneration:
         assert report_path.exists()
         content = report_path.read_text()
         assert "Threat Model Report" in content
-        assert "STRIDE" in content
+        assert "Top Risks" in content
 
     def test_writes_report_even_with_no_assets(self, tmp_path):
         config = {"path": "THREAT_MODEL.md", "overwrite": False}
@@ -113,23 +113,23 @@ class TestFallbackBehavior:
     """
 
     def _force_pipeline_failure(self):
-        """Patch the new pipeline to return content=None."""
+        """Patch the new pipeline to return result=None (pipeline failure)."""
         from darnit_baseline.threat_model.remediation import _TsRunOutput
 
         return patch(
             "darnit_baseline.threat_model.remediation._run_ts_pipeline",
             return_value=_TsRunOutput(
-                content=None,
+                result=None,
+                ranked=[],
+                groups=[],
                 evidence={
                     "file_scan_stats": {},
                     "entry_point_count": 0,
                     "data_store_count": 0,
                     "candidate_finding_count": 0,
-                    "trimmed_overflow": {"by_category": {}, "total": 0},
                     "opengrep_available": False,
                     "opengrep_degraded_reason": "test fixture",
                 },
-                findings=[],
                 failure_reason="forced for test",
             ),
         )
@@ -184,7 +184,7 @@ class TestFallbackBehavior:
         result = generate_threat_model_handler(config, context)
 
         assert result.status == HandlerResultStatus.PASS
-        assert result.evidence.get("generator") == "ts_generators"
+        assert result.evidence.get("generator") == "multi_file_renderers"
         assert result.evidence.get("action") == "created"
         draft = (tmp_path / "THREAT_MODEL.md").read_text()
         assert "# Threat Model Report" in draft
@@ -232,17 +232,17 @@ class TestLlmVerificationFlag:
         with patch(
             "darnit_baseline.threat_model.remediation._run_ts_pipeline",
             return_value=_TsRunOutput(
-                content=None,
+                result=None,
+                ranked=[],
+                groups=[],
                 evidence={
                     "file_scan_stats": {},
                     "entry_point_count": 0,
                     "data_store_count": 0,
                     "candidate_finding_count": 0,
-                    "trimmed_overflow": {"by_category": {}, "total": 0},
                     "opengrep_available": False,
                     "opengrep_degraded_reason": "forced",
                 },
-                findings=[],
                 failure_reason="forced for test",
             ),
         ):
@@ -282,9 +282,7 @@ class TestComplianceCycleSC004:
         from darnit.sieve.builtin_handlers import file_exists_handler
 
         context = _make_context(local_path)
-        result = file_exists_handler(
-            {"files": self.ACCEPTED_PATHS}, context
-        )
+        result = file_exists_handler({"files": self.ACCEPTED_PATHS}, context)
         return result.status
 
     def test_full_audit_remediate_audit_cycle(self, tmp_path):
@@ -292,9 +290,7 @@ class TestComplianceCycleSC004:
 
         # Step 1 — initial audit: control FAILs because no file exists.
         status_before = self._check_sa0302(str(tmp_path))
-        assert status_before == Status.FAIL, (
-            f"Expected SA-03.02 to FAIL on empty repo, got {status_before}"
-        )
+        assert status_before == Status.FAIL, f"Expected SA-03.02 to FAIL on empty repo, got {status_before}"
 
         # Step 2 — remediate: handler writes THREAT_MODEL.md.
         config = {"path": "THREAT_MODEL.md", "overwrite": False}
@@ -305,9 +301,7 @@ class TestComplianceCycleSC004:
 
         # Step 3 — re-audit: control PASSes because the file now exists.
         status_after = self._check_sa0302(str(tmp_path))
-        assert status_after == Status.PASS, (
-            f"Expected SA-03.02 to PASS after remediation, got {status_after}"
-        )
+        assert status_after == Status.PASS, f"Expected SA-03.02 to PASS after remediation, got {status_after}"
 
     def test_remediation_file_lands_at_locator_path(self, tmp_path):
         """The file must be written to one of the SA-03.02 locator paths
@@ -318,12 +312,8 @@ class TestComplianceCycleSC004:
         assert result.status == HandlerResultStatus.PASS
 
         # The written file must be at one of the accepted locator paths.
-        written = [
-            p for p in self.ACCEPTED_PATHS if (tmp_path / p).exists()
-        ]
-        assert len(written) >= 1, (
-            f"Expected file at one of {self.ACCEPTED_PATHS}, found none"
-        )
+        written = [p for p in self.ACCEPTED_PATHS if (tmp_path / p).exists()]
+        assert len(written) >= 1, f"Expected file at one of {self.ACCEPTED_PATHS}, found none"
 
     def test_second_remediation_run_is_idempotent(self, tmp_path):
         """Running remediation twice without overwrite=True should leave
@@ -344,6 +334,4 @@ class TestComplianceCycleSC004:
         assert second.evidence.get("action") == "skipped"
         draft_second = (tmp_path / "THREAT_MODEL.md").read_text()
 
-        assert draft_first == draft_second, (
-            "Skip path must leave the file byte-identical"
-        )
+        assert draft_first == draft_second, "Skip path must leave the file byte-identical"

@@ -300,6 +300,7 @@ class PythonQuery:
     id: str
     query: Any
     intent: str  # "decorator" | "constructor_call" | "bare_call" | "import" | "structural"
+    mitigation_hint: str = ""
 
 
 QUERY_REGISTRY: dict[str, PythonQuery] = {

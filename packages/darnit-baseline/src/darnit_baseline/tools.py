@@ -942,6 +942,29 @@ def generate_threat_model(
             )
 
         if output_path:
+            # Use multi-file pipeline for the new canonical location.
+            if output_path.endswith("SUMMARY.md") or "threatmodel" in output_path:
+                from darnit.sieve.handler_registry import HandlerContext
+                from darnit_baseline.threat_model.remediation import (
+                    generate_threat_model_handler,
+                )
+
+                context = HandlerContext(
+                    local_path=str(repo_path),
+                    owner=owner or "",
+                    repo=repo or "",
+                    control_id="OSPS-SA-03.02",
+                )
+                handler_result = generate_threat_model_handler(
+                    {"path": output_path, "overwrite": True},
+                    context,
+                )
+                files = handler_result.evidence.get("files_written", [output_path])
+                return (
+                    f"Multi-file threat model written to {output_path} "
+                    f"({len(ranked)} findings, {len(files)} files)"
+                )
+
             target = repo_path / output_path
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content)

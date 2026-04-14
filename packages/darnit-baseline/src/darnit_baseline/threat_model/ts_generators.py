@@ -23,11 +23,7 @@ primary output generator for the threat model handler.
 from __future__ import annotations
 
 import json
-import os
-import re
-import subprocess
 from collections import Counter, defaultdict
-from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -39,102 +35,25 @@ from .discovery_models import (
     TrimmedOverflow,
 )
 from .models import StrideCategory
-
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
-
-VERIFICATION_PROMPT_OPEN = "<!-- darnit:verification-prompt-block -->"
-VERIFICATION_PROMPT_CLOSE = "<!-- /darnit:verification-prompt-block -->"
-
-
-@dataclass(frozen=True)
-class GeneratorOptions:
-    """Tunables passed to the Markdown / SARIF / JSON emitters."""
-
-    detail_level: str = "detailed"  # "detailed" | "summary"
-    max_dfd_nodes: int = 50
-
-
-# ---------------------------------------------------------------------------
-# STRIDE category ordering & titles
-# ---------------------------------------------------------------------------
-
-_STRIDE_ORDER: tuple[StrideCategory, ...] = (
-    StrideCategory.SPOOFING,
-    StrideCategory.TAMPERING,
-    StrideCategory.REPUDIATION,
-    StrideCategory.INFORMATION_DISCLOSURE,
-    StrideCategory.DENIAL_OF_SERVICE,
-    StrideCategory.ELEVATION_OF_PRIVILEGE,
+from .renderers.common import (
+    STRIDE_ABBREV,
+    STRIDE_HEADINGS,
+    STRIDE_ORDER,
+    VERIFICATION_PROMPT_CLOSE,
+    VERIFICATION_PROMPT_OPEN,
+    GeneratorOptions,
+    repo_display_name,
+    risk_counts,
+    severity_band,
 )
 
-_STRIDE_HEADINGS: dict[StrideCategory, str] = {
-    StrideCategory.SPOOFING: "Spoofing",
-    StrideCategory.TAMPERING: "Tampering",
-    StrideCategory.REPUDIATION: "Repudiation",
-    StrideCategory.INFORMATION_DISCLOSURE: "Information Disclosure",
-    StrideCategory.DENIAL_OF_SERVICE: "Denial of Service",
-    StrideCategory.ELEVATION_OF_PRIVILEGE: "Elevation of Privilege",
-}
-
-_STRIDE_ABBREV: dict[StrideCategory, str] = {
-    StrideCategory.SPOOFING: "S",
-    StrideCategory.TAMPERING: "T",
-    StrideCategory.REPUDIATION: "R",
-    StrideCategory.INFORMATION_DISCLOSURE: "I",
-    StrideCategory.DENIAL_OF_SERVICE: "D",
-    StrideCategory.ELEVATION_OF_PRIVILEGE: "E",
-}
-
-
-def _severity_band(severity: int, confidence: float) -> str:
-    """Map ``severity × confidence`` to a human-readable band."""
-    score = severity * confidence
-    if score >= 7.0:
-        return "CRITICAL"
-    if score >= 4.5:
-        return "HIGH"
-    if score >= 2.0:
-        return "MEDIUM"
-    return "LOW"
-
-
-def _risk_counts(findings: list[CandidateFinding]) -> dict[str, int]:
-    counts: dict[str, int] = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0, "INFO": 0}
-    for f in findings:
-        band = _severity_band(f.severity, f.confidence)
-        counts[band] += 1
-    return counts
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _repo_display_name(repo_path: str) -> str:
-    """Derive a safe display name for the repository.
-
-    Tries git remote URL first (``owner/repo``), then falls back to the
-    directory basename.  Never leaks an absolute local path.
-    """
-    try:
-        proc = subprocess.run(  # noqa: S603,S607
-            ["git", "-C", repo_path, "remote", "get-url", "origin"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if proc.returncode == 0:
-            url = proc.stdout.strip()
-            # SSH: git@github.com:owner/repo.git  or  HTTPS: …/owner/repo.git
-            m = re.search(r"[:/]([^/:]+/[^/]+?)(?:\.git)?$", url)
-            if m:
-                return m.group(1)
-    except (subprocess.SubprocessError, FileNotFoundError, OSError):
-        pass
-    return os.path.basename(os.path.abspath(repo_path))
+# Backward-compat aliases for internal use (underscore-prefixed names)
+_STRIDE_ORDER = STRIDE_ORDER
+_STRIDE_HEADINGS = STRIDE_HEADINGS
+_STRIDE_ABBREV = STRIDE_ABBREV
+_severity_band = severity_band
+_risk_counts = risk_counts
+_repo_display_name = repo_display_name
 
 
 # ---------------------------------------------------------------------------
@@ -150,9 +69,7 @@ def _render_executive_summary(
     md: list[str] = ["## Executive Summary", ""]
 
     languages = ", ".join(sorted((result.file_scan_stats.by_language or {}).keys()))
-    frameworks = ", ".join(
-        sorted({ep.framework for ep in result.entry_points if ep.framework})
-    )
+    frameworks = ", ".join(sorted({ep.framework for ep in result.entry_points if ep.framework}))
     md.append(f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     md.append(f"**Repository:** `{_repo_display_name(repo_path)}`")
     md.append(f"**Languages scanned:** {languages or 'none'}")
@@ -161,17 +78,11 @@ def _render_executive_summary(
 
     counts = _risk_counts(findings)
     if counts["CRITICAL"] > 0:
-        md.append(
-            f"⚠️ **{counts['CRITICAL']} CRITICAL** findings require "
-            f"immediate attention."
-        )
+        md.append(f"⚠️ **{counts['CRITICAL']} CRITICAL** findings require immediate attention.")
     elif counts["HIGH"] > 0:
         md.append(f"🔴 **{counts['HIGH']} HIGH** severity findings identified.")
     elif counts["MEDIUM"] > 0:
-        md.append(
-            f"🟡 **{counts['MEDIUM']} MEDIUM** severity findings should be "
-            f"reviewed."
-        )
+        md.append(f"🟡 **{counts['MEDIUM']} MEDIUM** severity findings should be reviewed.")
     else:
         md.append(
             "🟢 No high-severity findings detected by the structural pipeline. "
@@ -207,9 +118,7 @@ def _render_asset_inventory(result: DiscoveryResult) -> list[str]:
                 f"`{ep.location.file}:{ep.location.line}` |"
             )
         if len(result.entry_points) > 30:
-            md.append(
-                f"| … | | | | *{len(result.entry_points) - 30} more entries not shown* |"
-            )
+            md.append(f"| … | | | | *{len(result.entry_points) - 30} more entries not shown* |")
     else:
         if result.file_scan_stats.in_scope_files > 50:
             md.append(
@@ -220,9 +129,7 @@ def _render_asset_inventory(result: DiscoveryResult) -> list[str]:
                 f"Limitations section."
             )
         else:
-            md.append(
-                "No HTTP route handlers, CLI commands, or MCP tool endpoints detected."
-            )
+            md.append("No HTTP route handlers, CLI commands, or MCP tool endpoints detected.")
     md.append("")
 
     # Data Stores
@@ -233,10 +140,7 @@ def _render_asset_inventory(result: DiscoveryResult) -> list[str]:
         md.append("|------------|------|-----------------|----------|")
         for ds in result.data_stores[:30]:
             evidence = ds.import_evidence or ds.dependency_manifest_evidence or "—"
-            md.append(
-                f"| {ds.technology} | {ds.kind.value} | `{evidence}` | "
-                f"`{ds.location.file}:{ds.location.line}` |"
-            )
+            md.append(f"| {ds.technology} | {ds.kind.value} | `{evidence}` | `{ds.location.file}:{ds.location.line}` |")
     else:
         md.append("No data stores detected.")
     md.append("")
@@ -248,8 +152,7 @@ def _render_asset_inventory(result: DiscoveryResult) -> list[str]:
     if auth_entries:
         for ep in auth_entries:
             md.append(
-                f"- `{ep.name}` at `{ep.location.file}:{ep.location.line}` "
-                f"({ep.framework or 'unknown framework'})"
+                f"- `{ep.name}` at `{ep.location.file}:{ep.location.line}` ({ep.framework or 'unknown framework'})"
             )
     else:
         md.append(
@@ -296,7 +199,7 @@ def _render_dfd(result: DiscoveryResult, options: GeneratorOptions) -> list[str]
     # Data store nodes
     ds_nodes: list[tuple[str, DiscoveredDataStore]] = []
     if result.data_stores:
-        md.append("    subgraph DataLayer[\"Data Layer\"]")
+        md.append('    subgraph DataLayer["Data Layer"]')
         for idx, ds in enumerate(result.data_stores[: options.max_dfd_nodes]):
             node_id = f"DS{idx}"
             md.append(f'        {node_id}[("{ds.technology}")]')
@@ -343,19 +246,11 @@ def _render_dfd(result: DiscoveryResult, options: GeneratorOptions) -> list[str]
 
 def _render_finding(finding: CandidateFinding, index: int) -> list[str]:
     abbrev = _STRIDE_ABBREV[finding.category]
-    heading = (
-        f"#### TM-{abbrev}-{index:03d}: {finding.title}"
-    )
+    heading = f"#### TM-{abbrev}-{index:03d}: {finding.title}"
     band = _severity_band(finding.severity, finding.confidence)
     md: list[str] = [heading, ""]
-    md.append(
-        f"**Risk:** {band} (severity × confidence = "
-        f"{finding.severity * finding.confidence:.2f})"
-    )
-    md.append(
-        f"**Location:** `{finding.primary_location.file}:"
-        f"{finding.primary_location.line}`"
-    )
+    md.append(f"**Risk:** {band} (severity × confidence = {finding.severity * finding.confidence:.2f})")
+    md.append(f"**Location:** `{finding.primary_location.file}:{finding.primary_location.line}`")
     md.append(f"**Source:** `{finding.source.value}` — query `{finding.query_id}`")
     if finding.enclosing_function:
         md.append(f"**Enclosing function:** `{finding.enclosing_function}`")
@@ -378,18 +273,10 @@ def _render_finding(finding: CandidateFinding, index: int) -> list[str]:
         md.append("**Data Flow Trace:**")
         md.append("")
         md.append("```")
-        md.append(
-            f">>> source at line {finding.data_flow.source.location.line}: "
-            f"{finding.data_flow.source.content}"
-        )
+        md.append(f">>> source at line {finding.data_flow.source.location.line}: {finding.data_flow.source.content}")
         for step in finding.data_flow.intermediate:
-            md.append(
-                f"    step   at line {step.location.line}: {step.content}"
-            )
-        md.append(
-            f">>> sink   at line {finding.data_flow.sink.location.line}: "
-            f"{finding.data_flow.sink.content}"
-        )
+            md.append(f"    step   at line {step.location.line}: {step.content}")
+        md.append(f">>> sink   at line {finding.data_flow.sink.location.line}: {finding.data_flow.sink.content}")
         md.append("```")
         md.append("")
 
@@ -429,9 +316,7 @@ def _render_stride_threats(findings: list[CandidateFinding]) -> list[str]:
 
         # Render LOW findings as a compact summary table
         if low:
-            md.append(
-                f"#### Low-risk findings ({len(low)})"
-            )
+            md.append(f"#### Low-risk findings ({len(low)})")
             md.append("")
             md.append("| # | Title | Location | Score |")
             md.append("|---|-------|----------|-------|")
@@ -440,10 +325,7 @@ def _render_stride_threats(findings: list[CandidateFinding]) -> list[str]:
                 abbrev = _STRIDE_ABBREV[cat]
                 score = f.severity * f.confidence
                 loc = f"{f.primary_location.file}:{f.primary_location.line}"
-                md.append(
-                    f"| TM-{abbrev}-{counter[cat]:03d} | "
-                    f"{f.title} | `{loc}` | {score:.2f} |"
-                )
+                md.append(f"| TM-{abbrev}-{counter[cat]:03d} | {f.title} | `{loc}` | {score:.2f} |")
             md.append("")
     return md
 
@@ -476,18 +358,9 @@ def _render_attack_chains(result: DiscoveryResult) -> list[str]:
         ep_label = ep.route_path or ep.name or ep.kind.value
         md.append(f"### Chain {idx}: {ep_label} → {intermediary} → sink")
         md.append("")
-        md.append(
-            f"1. **Entry point**: `{ep_label}` "
-            f"at `{ep.location.file}:{ep.location.line}`"
-        )
-        md.append(
-            f"2. **Intermediary**: `{intermediary}()` "
-            f"called from the entry point"
-        )
-        md.append(
-            f"3. **Sink**: `{sink_func}()` "
-            f"at `{sink_file}` contains a dangerous call"
-        )
+        md.append(f"1. **Entry point**: `{ep_label}` at `{ep.location.file}:{ep.location.line}`")
+        md.append(f"2. **Intermediary**: `{intermediary}()` called from the entry point")
+        md.append(f"3. **Sink**: `{sink_func}()` at `{sink_file}` contains a dangerous call")
         md.append("")
 
     return md
@@ -518,9 +391,7 @@ def _detect_attack_chains(
     # file matches and its line is within the function's line range.
     finding_locations: dict[str, list[int]] = {}
     for f in result.findings:
-        finding_locations.setdefault(f.primary_location.file, []).append(
-            f.primary_location.line
-        )
+        finding_locations.setdefault(f.primary_location.file, []).append(f.primary_location.line)
 
     funcs_with_sinks: dict[str, set[str]] = {}  # file → {func_name}
     for file_path, by_name in functions_by_file.items():
@@ -533,10 +404,7 @@ def _detect_attack_chains(
             # Approximate function end: next function start or +100 lines
             func_end = func_start + 100  # rough heuristic
             for _other_name, other_node in by_name.items():
-                if (
-                    other_node.location.line > func_start
-                    and other_node.location.line < func_end
-                ):
+                if other_node.location.line > func_start and other_node.location.line < func_end:
                     func_end = other_node.location.line
             if any(func_start <= ln < func_end for ln in file_finding_lines):
                 funcs_with_sinks.setdefault(file_path, set()).add(func_name)
@@ -581,21 +449,14 @@ def _detect_attack_chains(
 def _render_recommendations(findings: list[CandidateFinding]) -> list[str]:
     md: list[str] = ["## Recommendations Summary", ""]
 
-    immediate = [
-        f for f in findings if _severity_band(f.severity, f.confidence) in ("CRITICAL", "HIGH")
-    ]
-    short_term = [
-        f for f in findings if _severity_band(f.severity, f.confidence) == "MEDIUM"
-    ]
+    immediate = [f for f in findings if _severity_band(f.severity, f.confidence) in ("CRITICAL", "HIGH")]
+    short_term = [f for f in findings if _severity_band(f.severity, f.confidence) == "MEDIUM"]
 
     md.append("### Immediate Actions (Critical / High)")
     md.append("")
     if immediate:
         for i, f in enumerate(immediate, start=1):
-            md.append(
-                f"{i}. **{f.title}** — `{f.primary_location.file}:"
-                f"{f.primary_location.line}`"
-            )
+            md.append(f"{i}. **{f.title}** — `{f.primary_location.file}:{f.primary_location.line}`")
     else:
         md.append("No critical or high severity findings.")
     md.append("")
@@ -604,10 +465,7 @@ def _render_recommendations(findings: list[CandidateFinding]) -> list[str]:
     md.append("")
     if short_term:
         for i, f in enumerate(short_term, start=1):
-            md.append(
-                f"{i}. **{f.title}** — `{f.primary_location.file}:"
-                f"{f.primary_location.line}`"
-            )
+            md.append(f"{i}. **{f.title}** — `{f.primary_location.file}:{f.primary_location.line}`")
     else:
         md.append("No medium severity findings.")
     md.append("")
@@ -625,10 +483,7 @@ def _render_verification_prompts() -> list[str]:
         "follow these steps for each finding listed above:"
     )
     md.append("")
-    md.append(
-        "1. Read the embedded code snippet. The line prefixed with `>>>` is "
-        "the anchor line for the finding."
-    )
+    md.append("1. Read the embedded code snippet. The line prefixed with `>>>` is the anchor line for the finding.")
     md.append(
         "2. Ask: does the code at this location plausibly exhibit the "
         "described threat? If not, remove the finding entirely from the "
@@ -661,20 +516,13 @@ def _render_verification_prompts() -> list[str]:
     return md
 
 
-def _render_limitations(
-    result: DiscoveryResult, overflow: TrimmedOverflow | None
-) -> list[str]:
+def _render_limitations(result: DiscoveryResult, overflow: TrimmedOverflow | None) -> list[str]:
     md: list[str] = ["## Limitations", ""]
     stats = result.file_scan_stats
 
     if stats is not None:
-        by_lang = ", ".join(
-            f"{lang}={count}" for lang, count in sorted(stats.by_language.items())
-        )
-        md.append(
-            f"- Scanned **{stats.in_scope_files}** in-scope files "
-            f"({by_lang or 'none'})."
-        )
+        by_lang = ", ".join(f"{lang}={count}" for lang, count in sorted(stats.by_language.items()))
+        md.append(f"- Scanned **{stats.in_scope_files}** in-scope files ({by_lang or 'none'}).")
         md.append(
             f"- Skipped **{stats.excluded_dir_count}** vendor/build directories "
             f"and **{stats.unsupported_file_count}** files in unsupported languages."
@@ -689,10 +537,7 @@ def _render_limitations(
                 f"for the complete analysis."
             )
 
-    md.append(
-        f"- Opengrep taint analysis: "
-        f"{'available' if result.opengrep_available else 'not available'}."
-    )
+    md.append(f"- Opengrep taint analysis: {'available' if result.opengrep_available else 'not available'}.")
     if result.opengrep_degraded_reason:
         md.append(f"  - Reason: {result.opengrep_degraded_reason}")
     if not result.opengrep_available:
@@ -705,16 +550,12 @@ def _render_limitations(
 
     if overflow is not None and overflow.total > 0:
         md.append("")
-        md.append(
-            f"- **{overflow.total}** additional candidate findings were trimmed "
-            f"to fit the draft's finding cap:"
-        )
+        md.append(f"- **{overflow.total}** additional candidate findings were trimmed to fit the draft's finding cap:")
         for cat, count in overflow.by_category.items():
             if count > 0:
                 md.append(f"  - {_STRIDE_HEADINGS[cat]}: {count} trimmed")
         md.append(
-            "  - Raise the `max_findings` TOML config on the SA-03.02 "
-            "remediation handler to include more findings."
+            "  - Raise the `max_findings` TOML config on the SA-03.02 remediation handler to include more findings."
         )
 
     md.append("")
@@ -776,9 +617,7 @@ def generate_sarif_threat_model(
                     "name": rule_id,
                     "shortDescription": {"text": finding.title},
                     "fullDescription": {"text": finding.rationale},
-                    "defaultConfiguration": {
-                        "level": _sarif_level(finding.severity, finding.confidence)
-                    },
+                    "defaultConfiguration": {"level": _sarif_level(finding.severity, finding.confidence)},
                 }
             )
         return rules_index[rule_id]
@@ -803,9 +642,7 @@ def generate_sarif_threat_model(
                         },
                         "contextRegion": {
                             "startLine": finding.code_snippet.start_line,
-                            "snippet": {
-                                "text": "\n".join(finding.code_snippet.lines)
-                            },
+                            "snippet": {"text": "\n".join(finding.code_snippet.lines)},
                         },
                     }
                 }
@@ -826,8 +663,7 @@ def generate_sarif_threat_model(
                     "content": finding.data_flow.source.content,
                 },
                 "intermediate": [
-                    {"line": s.location.line, "content": s.content}
-                    for s in finding.data_flow.intermediate
+                    {"line": s.location.line, "content": s.content} for s in finding.data_flow.intermediate
                 ],
                 "sink": {
                     "line": finding.data_flow.sink.location.line,
@@ -931,9 +767,7 @@ def generate_json_summary(
         "trimmed_overflow": (
             {
                 "total": overflow.total,
-                "by_category": {
-                    cat.value: count for cat, count in overflow.by_category.items()
-                },
+                "by_category": {cat.value: count for cat, count in overflow.by_category.items()},
             }
             if overflow is not None
             else {"total": 0, "by_category": {}}

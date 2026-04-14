@@ -371,6 +371,8 @@ else:
 - Filesystem (`.project/project.yaml`, TOML configs, generated docs) (009-context-aware-remediation)
 - Python 3.11+ (project targets 3.11/3.12; uses modern type hints and `from __future__ import annotations`) + `tree-sitter>=0.25`, `tree-sitter-language-pack>=1.5` (bundles Python/JS/TS/Go/YAML grammars); existing deps: `darnit` (core framework) (010-threat-model-ast)
 - Filesystem only. Writes `THREAT_MODEL.md` (or configured path) via `HandlerContext.local_path`. No persistent state across runs (FR-031). (010-threat-model-ast)
+- Python 3.11+ (project targets 3.11/3.12) + ree-sitter, tree-sitter-language-pack, PyYAML (existing); hashlib (stdlib); no new external dependencies (011-threat-model-restructure)
+- Filesystem — Markdown, JSON, YAML files; no database (011-threat-model-restructure)
 
 ## Recent Changes
 - 001-tiered-control-automation: Added Python >=3.11 (project targets 3.11/3.12) + darnit (core framework), darnit-baseline

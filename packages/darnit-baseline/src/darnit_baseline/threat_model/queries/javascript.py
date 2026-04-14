@@ -109,6 +109,7 @@ class JsQuery:
     query: Any
     intent: str
     grammar: str  # "javascript" | "typescript" | "tsx"
+    mitigation_hint: str = ""
 
 
 # The registry is keyed by grammar + purpose. ts_discovery picks the

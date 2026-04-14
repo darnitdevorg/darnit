@@ -36,9 +36,7 @@ class Location:
         if self.line < 1:
             raise ValueError(f"Location.line must be >= 1, got {self.line}")
         if self.end_line < self.line:
-            raise ValueError(
-                f"Location.end_line ({self.end_line}) must be >= line ({self.line})"
-            )
+            raise ValueError(f"Location.end_line ({self.end_line}) must be >= line ({self.line})")
 
 
 @dataclass(frozen=True)
@@ -59,10 +57,7 @@ class CodeSnippet:
         if not self.lines:
             raise ValueError("CodeSnippet must contain at least one line")
         if self.marker_line < self.start_line:
-            raise ValueError(
-                f"CodeSnippet.marker_line ({self.marker_line}) must be >= "
-                f"start_line ({self.start_line})"
-            )
+            raise ValueError(f"CodeSnippet.marker_line ({self.marker_line}) must be >= start_line ({self.start_line})")
         if self.marker_line >= self.start_line + len(self.lines):
             raise ValueError(
                 f"CodeSnippet.marker_line ({self.marker_line}) is out of range "
@@ -135,13 +130,8 @@ class DiscoveredEntryPoint:
         if not self.id:
             # frozen dataclass — use object.__setattr__ to assign
             object.__setattr__(self, "id", _asset_id("ep", self.language, self.location))
-        if (
-            self.kind in _ENTRY_POINT_KINDS_REQUIRING_FRAMEWORK
-            and self.framework is None
-        ):
-            raise ValueError(
-                f"DiscoveredEntryPoint with kind={self.kind} must set framework"
-            )
+        if self.kind in _ENTRY_POINT_KINDS_REQUIRING_FRAMEWORK and self.framework is None:
+            raise ValueError(f"DiscoveredEntryPoint with kind={self.kind} must set framework")
 
 
 @dataclass(frozen=True)
@@ -164,13 +154,10 @@ class DiscoveredDataStore:
 
     def __post_init__(self) -> None:
         if not self.id:
-            object.__setattr__(
-                self, "id", _asset_id("ds", self.language, self.location)
-            )
+            object.__setattr__(self, "id", _asset_id("ds", self.language, self.location))
         if self.import_evidence is None and self.dependency_manifest_evidence is None:
             raise ValueError(
-                "DiscoveredDataStore must have at least one of "
-                "import_evidence or dependency_manifest_evidence set"
+                "DiscoveredDataStore must have at least one of import_evidence or dependency_manifest_evidence set"
             )
 
 
@@ -259,6 +246,7 @@ class CandidateFinding:
     query_id: str
     data_flow: DataFlowTrace | None = None
     enclosing_function: str | None = None
+    fingerprint: str = ""
 
     def __post_init__(self) -> None:
         if not (1 <= self.severity <= 10):
@@ -266,13 +254,9 @@ class CandidateFinding:
         if not (0.0 <= self.confidence <= 1.0):
             raise ValueError(f"confidence must be in 0.0..1.0, got {self.confidence}")
         if self.source == FindingSource.OPENGREP_TAINT and self.data_flow is None:
-            raise ValueError(
-                "CandidateFinding with source=OPENGREP_TAINT must have data_flow set"
-            )
+            raise ValueError("CandidateFinding with source=OPENGREP_TAINT must have data_flow set")
         if self.source != FindingSource.OPENGREP_TAINT and self.data_flow is not None:
-            raise ValueError(
-                "CandidateFinding with data_flow set must have source=OPENGREP_TAINT"
-            )
+            raise ValueError("CandidateFinding with data_flow set must have source=OPENGREP_TAINT")
         if self.code_snippet.marker_line != self.primary_location.line:
             raise ValueError(
                 "CandidateFinding.code_snippet.marker_line "
@@ -355,6 +339,81 @@ class DiscoveryResult:
     opengrep_degraded_reason: str | None = None
 
 
+# ---------------------------------------------------------------------------
+# Finding group (multi-file output)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class FindingGroup:
+    """A distinct vulnerability class identified by a tree-sitter query ID.
+
+    Groups all :class:`CandidateFinding` instances that share the same
+    ``query_id`` into a single unit for per-class detail file rendering.
+    """
+
+    query_id: str
+    slug: str
+    stride_category: StrideCategory
+    class_name: str
+    mitigation_hint: str
+    findings: tuple[CandidateFinding, ...]
+    max_severity_score: float
+
+    def __post_init__(self) -> None:
+        if len(self.findings) == 0:
+            raise ValueError("FindingGroup must contain at least one finding")
+        for f in self.findings:
+            if f.query_id != self.query_id:
+                raise ValueError(
+                    f"All findings in a FindingGroup must share the same query_id "
+                    f"(expected {self.query_id!r}, got {f.query_id!r})"
+                )
+        expected_slug = self.query_id.replace(".", "-")
+        if self.slug != expected_slug:
+            raise ValueError(
+                f"FindingGroup.slug must be query_id.replace('.', '-') (expected {expected_slug!r}, got {self.slug!r})"
+            )
+
+
+# ---------------------------------------------------------------------------
+# Mitigation sidecar types
+# ---------------------------------------------------------------------------
+
+
+class MitigationStatus(str, Enum):
+    """Status of a reviewer's mitigation decision."""
+
+    MITIGATED = "mitigated"
+    ACCEPTED = "accepted"
+    FALSE_POSITIVE = "false_positive"
+    UNMITIGATED = "unmitigated"
+
+
+@dataclass(frozen=True)
+class MitigationEntry:
+    """One reviewer decision about a specific finding instance.
+
+    Stored in ``.project/threatmodel/mitigations.yaml``.
+    """
+
+    fingerprint: str
+    status: MitigationStatus
+    note: str = ""
+    reviewer: str = ""
+    reviewed_at: str = ""
+    query_id: str = ""  # For human readability; not used for matching
+    file_hint: str = ""  # Last-known file path; not used for matching
+    stale: bool = False
+
+
+@dataclass
+class MitigationSidecar:
+    """Container for all mitigation decisions in a project."""
+
+    entries: list[MitigationEntry] = field(default_factory=list)
+
+
 __all__ = [
     "Location",
     "CodeSnippet",
@@ -370,4 +429,8 @@ __all__ = [
     "FileScanStats",
     "TrimmedOverflow",
     "DiscoveryResult",
+    "FindingGroup",
+    "MitigationStatus",
+    "MitigationEntry",
+    "MitigationSidecar",
 ]

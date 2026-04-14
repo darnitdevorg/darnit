@@ -20,15 +20,19 @@ from darnit.sieve.handler_registry import (
     HandlerResultStatus,
 )
 
-from .discovery_models import CandidateFinding, FileScanStats
-from .ranking import rank_findings
+from .discovery_models import CandidateFinding, FileScanStats, FindingGroup
+from .grouping import group_by_query_id
+from .ranking import apply_cap
+from .renderers.common import GeneratorOptions, severity_band
+from .renderers.data_flow import render_data_flow
+from .renderers.group_file import render_group_file
+from .renderers.raw_json import render_raw_json
+from .renderers.summary import render_summary
+from .sidecar import compute_fingerprint, detect_stale, load_sidecar, match_findings, save_sidecar
 from .ts_discovery import DiscoveryConfig, discover_all
-from .ts_generators import (
-    _severity_band,
-)
-from .ts_generators import (
-    generate_markdown_threat_model as ts_generate_markdown,
-)
+
+# Backward-compat alias
+_severity_band = severity_band
 
 logger = get_logger("threat_model.remediation")
 
@@ -46,21 +50,20 @@ def _empty_scan_stats() -> FileScanStats:
     )
 
 
-
 @dataclass
 class _TsRunOutput:
-    """Result of running the new tree-sitter pipeline + markdown generator.
+    """Result of running the tree-sitter pipeline.
 
-    ``content`` is the rendered Markdown draft. ``evidence`` is the subset
-    of fields destined for ``HandlerResult.evidence``. ``findings`` is the
-    ranked finding list for building LLM consultation payloads.
-    ``failure_reason`` is set iff ``content`` is None — callers should fall
-    back to the legacy generator.
+    ``result`` is the raw DiscoveryResult. ``ranked`` is the full ranked
+    list (no findings dropped). ``groups`` are findings grouped by query ID.
+    ``evidence`` is metadata for HandlerResult. ``failure_reason`` is set
+    iff the pipeline couldn't produce any findings.
     """
 
-    content: str | None
+    result: Any  # DiscoveryResult | None
+    ranked: list[CandidateFinding]
+    groups: list[FindingGroup]
     evidence: dict[str, Any]
-    findings: list[CandidateFinding]
     failure_reason: str | None
 
 
@@ -69,10 +72,10 @@ def _run_ts_pipeline(
     shallow_threshold: int,
     max_findings: int,
 ) -> _TsRunOutput:
-    """Run the full new pipeline: discovery → ranking → markdown generation.
+    """Run the full pipeline: discovery → ranking → grouping.
 
-    Never raises — on any failure returns ``_TsRunOutput(content=None, …)``
-    so the handler can fall back to the legacy regex-era generator.
+    Never raises — on any failure returns ``_TsRunOutput(result=None, …)``
+    so the handler can fall back to the legacy generator.
     """
     from dataclasses import asdict as _asdict
 
@@ -87,7 +90,9 @@ def _run_ts_pipeline(
             exc,
         )
         return _TsRunOutput(
-            content=None,
+            result=None,
+            ranked=[],
+            groups=[],
             evidence={
                 "file_scan_stats": _asdict(_empty_scan_stats()),
                 "entry_point_count": 0,
@@ -96,11 +101,11 @@ def _run_ts_pipeline(
                 "opengrep_available": False,
                 "opengrep_degraded_reason": f"ts_discovery failed: {exc}",
             },
-            findings=[],
             failure_reason=f"ts_discovery: {exc}",
         )
 
-    ranked = rank_findings(result.findings)
+    # Rank all findings (no drop — all are returned).
+    ranked, overflow_hint = apply_cap(result.findings, max_findings)
 
     evidence: dict[str, Any] = {
         "file_scan_stats": _asdict(result.file_scan_stats)
@@ -113,28 +118,15 @@ def _run_ts_pipeline(
         "opengrep_degraded_reason": result.opengrep_degraded_reason,
     }
 
-    try:
-        content = ts_generate_markdown(
-            repo_path=local_path,
-            result=result,
-            capped_findings=ranked,
-            overflow=None,
-        )
-    except Exception as exc:  # noqa: BLE001 — generator must never crash handler
-        logger.warning(
-            "ts_generators.generate_markdown_threat_model raised (%s); "
-            "falling back to legacy generator",
-            exc,
-        )
-        return _TsRunOutput(
-            content=None,
-            evidence=evidence,
-            findings=ranked,
-            failure_reason=f"ts_generators: {exc}",
-        )
+    # Group by query ID for multi-file output.
+    groups = group_by_query_id(ranked)
 
     return _TsRunOutput(
-        content=content, evidence=evidence, findings=ranked, failure_reason=None
+        result=result,
+        ranked=ranked,
+        groups=groups,
+        evidence=evidence,
+        failure_reason=None,
     )
 
 
@@ -182,8 +174,7 @@ def _build_llm_consultation(
             )
         elif f.confidence < 0.5:
             item["review_hint"] = (
-                "Low-confidence structural match. Check whether external "
-                "input actually reaches this code path."
+                "Low-confidence structural match. Check whether external input actually reaches this code path."
             )
         else:
             item["review_hint"] = (
@@ -269,106 +260,209 @@ def generate_threat_model_handler(
             evidence={
                 "path": path,
                 "action": "skipped",
-                "note": (
-                    "Pre-existing threat model preserved. Re-run with "
-                    "overwrite=true to regenerate."
-                ),
+                "note": ("Pre-existing threat model preserved. Re-run with overwrite=true to regenerate."),
             },
         )
 
-    # The tree-sitter pipeline is the primary draft source.
-    # On any failure it produces evidence only and returns content=None,
-    # at which point we fall back to the legacy regex-era generator.
+    # Run the tree-sitter pipeline: discover → rank → group.
     ts_output = _run_ts_pipeline(local_path, shallow_threshold, max_findings)
     ts_evidence = ts_output.evidence
 
-    content: str | None = ts_output.content
-    if content is None:
+    if ts_output.result is None:
+        # Pipeline failed — fall back to template.
         logger.info(
-            "ts_pipeline did not produce content (%s); falling back to template",
+            "ts_pipeline did not produce results (%s); falling back to template",
             ts_output.failure_reason,
         )
-    else:
-        # Short-circuit: skip legacy _run_dynamic_analysis entirely. The new
-        # generator's output is what users actually see.
-        try:
-            os.makedirs(os.path.dirname(full_path) or ".", exist_ok=True)
-            with open(full_path, "w", encoding="utf-8") as f:
-                f.write(content)
-        except OSError as e:
+        fallback_content = config.get("content", "")
+        if not fallback_content:
             return HandlerResult(
                 status=HandlerResultStatus.ERROR,
-                message=f"Failed to write threat model: {e}",
+                message=(f"Tree-sitter pipeline failed ({ts_output.failure_reason}) and no template content available"),
                 evidence={
                     "path": path,
-                    "error": str(e),
+                    "error": ts_output.failure_reason or "unknown",
                     **ts_evidence,
                 },
             )
-        consultation = _build_llm_consultation(ts_output.findings, path)
+        try:
+            os.makedirs(os.path.dirname(full_path) or ".", exist_ok=True)
+            with open(full_path, "w", encoding="utf-8") as f:
+                f.write(fallback_content)
+        except OSError as write_err:
+            return HandlerResult(
+                status=HandlerResultStatus.ERROR,
+                message=f"Failed to write fallback template: {write_err}",
+                evidence={
+                    "path": path,
+                    "error": str(write_err),
+                    **ts_evidence,
+                },
+            )
         return HandlerResult(
             status=HandlerResultStatus.PASS,
-            message=(
-                f"Generated threat model via tree-sitter pipeline: {path} "
-                "— calling agent should verify findings per the embedded "
-                "verification prompt block"
-            ),
+            message=f"Tree-sitter pipeline unavailable — created from template: {path}",
             confidence=1.0,
             evidence={
                 "path": path,
-                "action": "created",
-                "llm_verification_required": True,
-                "llm_consultation": consultation,
-                "note": (
-                    "Threat model produced by the tree-sitter discovery "
-                    "pipeline. Review each finding against its embedded code "
-                    "snippet and remove any false positives the calling "
-                    "agent judges as non-threats before committing."
-                ),
-                "generator": "ts_generators",
+                "action": "created_from_template",
+                "fallback_reason": ts_output.failure_reason,
                 **ts_evidence,
             },
         )
 
-    # Template fallback — used when the new pipeline fails entirely.
-    fallback_content = config.get("content", "")
-    if not fallback_content:
+    # Pipeline succeeded — write multi-file output.
+    result = ts_output.result
+    groups = ts_output.groups
+    ranked = ts_output.ranked
+    options = GeneratorOptions()
+
+    # Compute fingerprints for all findings.
+    repo_root = Path(local_path)
+    for f in ranked:
+        if not f.fingerprint:
+            fp = compute_fingerprint(f, repo_root)
+            # CandidateFinding is frozen, so we need object.__setattr__
+            object.__setattr__(f, "fingerprint", fp)
+
+    # Sidecar support: load, match, detect stale.
+    sidecar_matches: dict[str, Any] = {}
+    try:
+        sidecar = load_sidecar(repo_root)
+    except ValueError as exc:
         return HandlerResult(
             status=HandlerResultStatus.ERROR,
-            message=(
-                f"Tree-sitter pipeline failed ({ts_output.failure_reason}) "
-                f"and no template content available"
-            ),
-            evidence={
-                "path": path,
-                "error": ts_output.failure_reason or "unknown",
-                **ts_evidence,
-            },
+            message=f"Malformed mitigation sidecar: {exc}",
+            evidence={"path": path, "error": str(exc), **ts_evidence},
         )
+
+    if sidecar is not None:
+        sidecar_matches = match_findings(ranked, sidecar)
+        active_fps = {f.fingerprint for f in ranked if f.fingerprint}
+        if detect_stale(sidecar, active_fps):
+            try:
+                save_sidecar(repo_root, sidecar)
+            except OSError as exc:
+                logger.warning("Failed to save sidecar stale flags: %s", exc)
+
+    # Check for legacy THREAT_MODEL.md at repo root.
+    legacy_path = os.path.join(local_path, "THREAT_MODEL.md")
+    migration_note: str | None = None
+    is_writing_to_legacy = os.path.abspath(full_path) == os.path.abspath(legacy_path)
+    if os.path.exists(legacy_path) and not is_writing_to_legacy:
+        logger.warning(
+            "Legacy THREAT_MODEL.md detected at repo root; "
+            "new canonical location is %s. You may remove the legacy file.",
+            path,
+        )
+        migration_note = (
+            "Legacy THREAT_MODEL.md detected at repo root. The new canonical "
+            f"location is {path}. You may remove the legacy file."
+        )
+
+    # Compute overflow hint for SUMMARY display.
+    _, overflow_hint = apply_cap(result.findings, options.top_risks_cap)
+
+    # Derive output directory from the configured path's parent.
+    output_dir = os.path.dirname(full_path)
+    findings_dir = os.path.join(output_dir, "findings")
 
     try:
-        os.makedirs(os.path.dirname(full_path) or ".", exist_ok=True)
+        os.makedirs(findings_dir, exist_ok=True)
+
+        files_written: list[str] = []
+
+        # SUMMARY.md
+        summary_content = render_summary(
+            groups=groups,
+            sidecar_matches=sidecar_matches,
+            result=result,
+            options=options,
+            overflow_hint=overflow_hint,
+            repo_path=local_path,
+        )
         with open(full_path, "w", encoding="utf-8") as f:
-            f.write(fallback_content)
-    except OSError as write_err:
+            f.write(summary_content)
+        files_written.append(path)
+
+        # data-flow.md
+        data_flow_path = os.path.join(output_dir, "data-flow.md")
+        data_flow_content = render_data_flow(result=result, options=options)
+        with open(data_flow_path, "w", encoding="utf-8") as f:
+            f.write(data_flow_content)
+        files_written.append(os.path.relpath(data_flow_path, local_path))
+
+        # raw-findings.json
+        raw_json_path = os.path.join(output_dir, "raw-findings.json")
+        raw_json_content = render_raw_json(
+            result=result,
+            all_findings=ranked,
+            sidecar_matches=sidecar_matches,
+            repo_path=local_path,
+        )
+        with open(raw_json_path, "w", encoding="utf-8") as f:
+            f.write(raw_json_content)
+        files_written.append(os.path.relpath(raw_json_path, local_path))
+
+        # Per-class detail files: findings/<slug>.md
+        for group in groups:
+            group_path = os.path.join(findings_dir, f"{group.slug}.md")
+            group_content = render_group_file(
+                group=group,
+                sidecar_matches=sidecar_matches,
+            )
+            with open(group_path, "w", encoding="utf-8") as f:
+                f.write(group_content)
+            files_written.append(os.path.relpath(group_path, local_path))
+
+    except OSError as e:
         return HandlerResult(
             status=HandlerResultStatus.ERROR,
-            message=f"Failed to write fallback template: {write_err}",
+            message=f"Failed to write threat model: {e}",
             evidence={
                 "path": path,
-                "error": str(write_err),
+                "error": str(e),
+                **ts_evidence,
+            },
+        )
+    except Exception as e:  # noqa: BLE001 — renderer bugs must not crash the handler
+        logger.warning("Renderer error during multi-file output: %s", e)
+        return HandlerResult(
+            status=HandlerResultStatus.ERROR,
+            message=f"Renderer error generating threat model: {e}",
+            evidence={
+                "path": path,
+                "error": str(e),
+                "generator": "multi_file_renderers",
                 **ts_evidence,
             },
         )
 
+    consultation = _build_llm_consultation(ranked, path)
     return HandlerResult(
         status=HandlerResultStatus.PASS,
-        message=f"Tree-sitter pipeline unavailable — created from template: {path}",
+        message=(
+            f"Generated multi-file threat model: {path} "
+            f"({len(groups)} classes, {len(ranked)} findings) "
+            "— calling agent should verify findings per the embedded "
+            "verification prompt block"
+        ),
         confidence=1.0,
         evidence={
             "path": path,
-            "action": "created_from_template",
-            "fallback_reason": ts_output.failure_reason,
+            "action": "created",
+            "files_written": files_written,
+            "group_count": len(groups),
+            "llm_verification_required": True,
+            "llm_consultation": consultation,
+            "note": (
+                "Multi-file threat model produced by the tree-sitter discovery "
+                "pipeline. Summary at the path above; per-class details in "
+                "findings/ subdirectory. Review each finding against its code "
+                "snippet and remove false positives before committing."
+            ),
+            "generator": "multi_file_renderers",
+            **({"migration_note": migration_note} if migration_note else {}),
             **ts_evidence,
         },
     )

@@ -3978,7 +3978,7 @@ help_md = """Perform and document threat modeling.
 
 [controls."OSPS-SA-03.02".locator]
 project_path = "security.threat_model"
-discover = ["THREAT_MODEL.md", "docs/threat-model.md", "docs/security/threat-model.md"]
+discover = ["docs/threatmodel/SUMMARY.md", "THREAT_MODEL.md", "docs/THREAT_MODEL.md", "docs/threat-model.md", "docs/security/threat-model.md", "threatmodel/SUMMARY.md"]
 kind = "file"
 
 [controls."OSPS-SA-03.02".locator.llm_hints]
@@ -4035,12 +4035,12 @@ dry_run_supported = true
 
 [[controls."OSPS-SA-03.02".remediation.handlers]]
 handler = "generate_threat_model"
-path = "THREAT_MODEL.md"
+path = "docs/threatmodel/SUMMARY.md"
 template = "threat_model_basic"
 overwrite = false
 
 [controls."OSPS-SA-03.02".remediation.project_update]
-set = { "security.threat_model.path" = "THREAT_MODEL.md" }
+set = { "security.threat_model.path" = "docs/threatmodel/SUMMARY.md" }
 
 # =============================================================================
 # MCP Server Configuration

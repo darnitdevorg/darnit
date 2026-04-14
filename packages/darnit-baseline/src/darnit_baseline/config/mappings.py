@@ -102,6 +102,7 @@ DEFAULT_FILE_LOCATIONS: dict[str, list[str]] = {
         "docs/SECURITY.md", "docs/security.md"
     ],
     "security.threat_model": [
+        "docs/threatmodel/SUMMARY.md", "threatmodel/SUMMARY.md",
         "THREAT_MODEL.md", "threat_model.md", "threat-model.md",
         "docs/THREAT_MODEL.md", "docs/threat_model.md", "docs/threat-model.md",
         "docs/security/THREAT_MODEL.md", "security/THREAT_MODEL.md"

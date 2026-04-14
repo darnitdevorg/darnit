@@ -24,6 +24,7 @@ logger = get_logger("remediation.enhancer")
 LLM_ENHANCEABLE_FILES: dict[str, str] = {
     "ARCHITECTURE.md": "architecture",
     "THREAT_MODEL.md": "threat_model",
+    "docs/threatmodel/SUMMARY.md": "threat_model",
     "SECURITY-ASSESSMENT.md": "security_assessment",
     "docs/SECURITY-ASSESSMENT.md": "security_assessment",
 }
@@ -94,9 +95,7 @@ def enhance_generated_file(
     return None
 
 
-def _enhance_architecture(
-    content: str, local_path: str, *, llm_fn: object | None = None
-) -> str | None:
+def _enhance_architecture(content: str, local_path: str, *, llm_fn: object | None = None) -> str | None:
     """Enhance ARCHITECTURE.md with component descriptions.
 
     Reads top-level module docstrings from source directories mentioned in
@@ -132,6 +131,7 @@ def _enhance_architecture(
         # Try using the framework's LLM evaluation
         try:
             from darnit.sieve.builtin_handlers import _call_llm
+
             result = _call_llm(prompt)
             if isinstance(result, str) and result.strip():
                 return result
@@ -142,9 +142,7 @@ def _enhance_architecture(
     return None
 
 
-def _enhance_threat_model(
-    content: str, local_path: str, *, llm_fn: object | None = None
-) -> str | None:
+def _enhance_threat_model(content: str, local_path: str, *, llm_fn: object | None = None) -> str | None:
     """Enhance threat model with refined analysis."""
     # Threat model enhancement is more complex — for now, return None
     # to indicate no enhancement available. The deterministic threat model
@@ -153,9 +151,7 @@ def _enhance_threat_model(
     return None
 
 
-def _enhance_security_assessment(
-    content: str, local_path: str, *, llm_fn: object | None = None
-) -> str | None:
+def _enhance_security_assessment(content: str, local_path: str, *, llm_fn: object | None = None) -> str | None:
     """Enhance security assessment with project-specific checklist items."""
     logger.debug("Security assessment enhancement not yet implemented")
     return None
@@ -184,9 +180,7 @@ def _collect_source_docstrings(local_path: str, max_files: int = 20) -> str:
                 fpath = os.path.join(root, fname)
                 rel_path = os.path.relpath(fpath, local_path)
                 try:
-                    first_lines = Path(fpath).read_text(
-                        encoding="utf-8", errors="replace"
-                    )[:500]
+                    first_lines = Path(fpath).read_text(encoding="utf-8", errors="replace")[:500]
                 except OSError:
                     continue
 
