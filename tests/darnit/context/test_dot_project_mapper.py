@@ -11,7 +11,7 @@ These tests verify:
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -65,11 +65,11 @@ class TestDotProjectMapperInitialization:
 
         with patch.object(DotProjectReader, "read", return_value=local_config) as mock_read:
             mapper = DotProjectMapper(tmp_path)
-            
+
             # Multiple accesses should only call read once
             _ = mapper.config
             _ = mapper.config
-            
+
             assert mock_read.call_count == 1
 
     @pytest.mark.unit
@@ -83,10 +83,11 @@ class TestDotProjectMapperInitialization:
         local_config = ProjectConfig(name="local-project", repositories=["https://github.com/org/repo2"])
         merged_config = ProjectConfig(name="local-project", repositories=["https://github.com/org/repo2"])
 
-        with patch.object(DotProjectReader, "read", return_value=local_config), \
-             patch.object(OrgProjectResolver, "resolve", return_value=org_config), \
-             patch("darnit.context.dot_project_mapper.merge_configs", return_value=merged_config):
-            
+        with (
+            patch.object(DotProjectReader, "read", return_value=local_config),
+            patch.object(OrgProjectResolver, "resolve", return_value=org_config),
+            patch("darnit.context.dot_project_mapper.merge_configs", return_value=merged_config),
+        ):
             mapper = DotProjectMapper(tmp_path, owner="my-org")
             config = mapper.config
 
@@ -101,9 +102,10 @@ class TestDotProjectMapperInitialization:
 
         local_config = ProjectConfig(name="local-project", repositories=[])
 
-        with patch.object(DotProjectReader, "read", return_value=local_config), \
-             patch.object(OrgProjectResolver, "resolve", side_effect=RuntimeError("Network error")):
-            
+        with (
+            patch.object(DotProjectReader, "read", return_value=local_config),
+            patch.object(OrgProjectResolver, "resolve", side_effect=RuntimeError("Network error")),
+        ):
             mapper = DotProjectMapper(tmp_path, owner="my-org")
             config = mapper.config
 
@@ -112,7 +114,6 @@ class TestDotProjectMapperInitialization:
     @pytest.mark.unit
     def test_config_property_handles_missing_dot_project(self, tmp_path: Path):
         """Config property returns empty config when .project/ doesn't exist."""
-        from darnit.context.dot_project import ProjectConfig
         from darnit.context.dot_project_mapper import DotProjectMapper
 
         # DotProjectReader returns empty config when file doesn't exist
@@ -150,10 +151,10 @@ class TestDotProjectMapperContextGeneration:
 
         with patch.object(DotProjectReader, "read", return_value=config):
             mapper = DotProjectMapper(tmp_path)
-            
+
             context1 = mapper.get_context()
             context2 = mapper.get_context()
-            
+
             assert context1 is context2  # Same object reference
 
     @pytest.mark.unit
@@ -209,9 +210,9 @@ class TestDotProjectMapperContextGeneration:
         """get_context() maps security section paths to context variables."""
         from darnit.context.dot_project import (
             DotProjectReader,
+            FileReference,
             ProjectConfig,
             SecurityConfig,
-            FileReference,
             SecurityContact,
         )
         from darnit.context.dot_project_mapper import DotProjectMapper
@@ -222,10 +223,7 @@ class TestDotProjectMapperContextGeneration:
             security=SecurityConfig(
                 policy=FileReference(path="SECURITY.md"),
                 threat_model=FileReference(path="docs/threat-model.md"),
-                contact=SecurityContact(
-                    email="security@example.com",
-                    advisory_url="https://example.com/advisories"
-                ),
+                contact=SecurityContact(email="security@example.com", advisory_url="https://example.com/advisories"),
             ),
         )
 
@@ -265,9 +263,9 @@ class TestDotProjectMapperContextGeneration:
         """get_context() maps governance section paths to context variables."""
         from darnit.context.dot_project import (
             DotProjectReader,
-            ProjectConfig,
-            GovernanceConfig,
             FileReference,
+            GovernanceConfig,
+            ProjectConfig,
         )
         from darnit.context.dot_project_mapper import DotProjectMapper
 
@@ -296,10 +294,10 @@ class TestDotProjectMapperContextGeneration:
         """get_context() maps nested maintainer lifecycle paths."""
         from darnit.context.dot_project import (
             DotProjectReader,
-            ProjectConfig,
+            FileReference,
             GovernanceConfig,
             MaintainerLifecycle,
-            FileReference,
+            ProjectConfig,
         )
         from darnit.context.dot_project_mapper import DotProjectMapper
 
@@ -320,8 +318,14 @@ class TestDotProjectMapperContextGeneration:
             mapper = DotProjectMapper(tmp_path)
             context = mapper.get_context()
 
-            assert context["project.governance.maintainer_lifecycle.onboarding_doc_path"] == "docs/maintainer-onboarding.md"
-            assert context["project.governance.maintainer_lifecycle.progression_ladder_path"] == "docs/progression-ladder.md"
+            assert (
+                context["project.governance.maintainer_lifecycle.onboarding_doc_path"]
+                == "docs/maintainer-onboarding.md"
+            )
+            assert (
+                context["project.governance.maintainer_lifecycle.progression_ladder_path"]
+                == "docs/progression-ladder.md"
+            )
             assert context["project.governance.maintainer_lifecycle.offboarding_policy_path"] == "docs/offboarding.md"
             assert context["project.governance.maintainer_lifecycle.mentoring_program"] == ["mentoring-guide.md"]
 
@@ -330,10 +334,10 @@ class TestDotProjectMapperContextGeneration:
         """get_context() maps legal section to context variables."""
         from darnit.context.dot_project import (
             DotProjectReader,
-            ProjectConfig,
-            LegalConfig,
-            IdentityType,
             FileReference,
+            IdentityType,
+            LegalConfig,
+            ProjectConfig,
         )
         from darnit.context.dot_project_mapper import DotProjectMapper
 
@@ -364,10 +368,10 @@ class TestDotProjectMapperContextGeneration:
     def test_get_context_maps_documentation_section(self, tmp_path: Path):
         """get_context() maps documentation section paths."""
         from darnit.context.dot_project import (
-            DotProjectReader,
-            ProjectConfig,
             DocumentationConfig,
+            DotProjectReader,
             FileReference,
+            ProjectConfig,
         )
         from darnit.context.dot_project_mapper import DotProjectMapper
 
@@ -418,7 +422,7 @@ class TestDotProjectMapperContextGeneration:
     @pytest.mark.unit
     def test_get_context_maps_extensions(self, tmp_path: Path):
         """get_context() maps extension configurations."""
-        from darnit.context.dot_project import DotProjectReader, ProjectConfig, ExtensionConfig
+        from darnit.context.dot_project import DotProjectReader, ExtensionConfig, ProjectConfig
         from darnit.context.dot_project_mapper import DotProjectMapper
 
         config = ProjectConfig(
@@ -454,9 +458,9 @@ class TestDotProjectMapperHelperMethods:
         """has_security_policy() returns True when policy is defined."""
         from darnit.context.dot_project import (
             DotProjectReader,
+            FileReference,
             ProjectConfig,
             SecurityConfig,
-            FileReference,
         )
         from darnit.context.dot_project_mapper import DotProjectMapper
 
@@ -487,9 +491,9 @@ class TestDotProjectMapperHelperMethods:
         """has_codeowners() returns True when CODEOWNERS is defined."""
         from darnit.context.dot_project import (
             DotProjectReader,
-            ProjectConfig,
-            GovernanceConfig,
             FileReference,
+            GovernanceConfig,
+            ProjectConfig,
         )
         from darnit.context.dot_project_mapper import DotProjectMapper
 
@@ -548,9 +552,9 @@ class TestDotProjectMapperHelperMethods:
         """get_security_policy_path() returns correct path."""
         from darnit.context.dot_project import (
             DotProjectReader,
+            FileReference,
             ProjectConfig,
             SecurityConfig,
-            FileReference,
         )
         from darnit.context.dot_project_mapper import DotProjectMapper
 
@@ -581,9 +585,9 @@ class TestDotProjectMapperHelperMethods:
         """get_codeowners_path() returns correct path."""
         from darnit.context.dot_project import (
             DotProjectReader,
-            ProjectConfig,
-            GovernanceConfig,
             FileReference,
+            GovernanceConfig,
+            ProjectConfig,
         )
         from darnit.context.dot_project_mapper import DotProjectMapper
 
@@ -612,7 +616,7 @@ class TestDotProjectMapperHelperMethods:
     @pytest.mark.unit
     def test_get_darnit_extension_config(self, tmp_path: Path):
         """get_darnit_extension_config() returns darnit extension config."""
-        from darnit.context.dot_project import DotProjectReader, ProjectConfig, ExtensionConfig
+        from darnit.context.dot_project import DotProjectReader, ExtensionConfig, ProjectConfig
         from darnit.context.dot_project_mapper import DotProjectMapper
 
         config = ProjectConfig(
@@ -736,9 +740,9 @@ class TestDotProjectMapperEdgeCases:
         """get_context() omits None file references."""
         from darnit.context.dot_project import (
             DotProjectReader,
-            ProjectConfig,
-            GovernanceConfig,
             FileReference,
+            GovernanceConfig,
+            ProjectConfig,
         )
         from darnit.context.dot_project_mapper import DotProjectMapper
 
@@ -763,7 +767,7 @@ class TestDotProjectMapperEdgeCases:
     @pytest.mark.unit
     def test_get_context_with_structured_maintainers(self, tmp_path: Path):
         """get_context() maps structured maintainer fields."""
-        from darnit.context.dot_project import DotProjectReader, ProjectConfig, MaintainerTeam, MaintainerEntry
+        from darnit.context.dot_project import DotProjectReader, MaintainerTeam, ProjectConfig
         from darnit.context.dot_project_mapper import DotProjectMapper
 
         config = ProjectConfig(
@@ -788,7 +792,7 @@ class TestDotProjectMapperEdgeCases:
     @pytest.mark.unit
     def test_get_context_with_landscape_section(self, tmp_path: Path):
         """get_context() maps landscape category and subcategory."""
-        from darnit.context.dot_project import DotProjectReader, ProjectConfig, LandscapeConfig
+        from darnit.context.dot_project import DotProjectReader, LandscapeConfig, ProjectConfig
         from darnit.context.dot_project_mapper import DotProjectMapper
 
         config = ProjectConfig(
@@ -828,7 +832,7 @@ class TestDotProjectMapperEdgeCases:
     @pytest.mark.unit
     def test_get_context_with_adopters_path(self, tmp_path: Path):
         """get_context() maps adopters file reference."""
-        from darnit.context.dot_project import DotProjectReader, ProjectConfig, FileReference
+        from darnit.context.dot_project import DotProjectReader, FileReference, ProjectConfig
         from darnit.context.dot_project_mapper import DotProjectMapper
 
         config = ProjectConfig(
