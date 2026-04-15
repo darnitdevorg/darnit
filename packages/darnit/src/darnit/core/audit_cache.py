@@ -132,9 +132,7 @@ def write_audit_cache(
     cache_path = cache_dir / CACHE_FILENAME
 
     # Atomic write: write to temp file in same directory, then rename.
-    fd, tmp_path = tempfile.mkstemp(
-        dir=str(cache_dir), suffix=".tmp", prefix="audit-cache-"
-    )
+    fd, tmp_path = tempfile.mkstemp(dir=str(cache_dir), suffix=".tmp", prefix="audit-cache-")
     try:
         with os.fdopen(fd, "w") as f:
             json.dump(envelope, f, indent=2)
@@ -149,12 +147,13 @@ def write_audit_cache(
         raise
 
 
-def read_audit_cache(local_path: str) -> dict[str, Any] | None:
+def read_audit_cache(local_path: str, ttl_seconds: int = 3600) -> dict[str, Any] | None:
     """Read cached audit results if they are still fresh.
 
     Returns the full cache envelope (including ``results`` and ``summary``)
-    when the cache exists, is valid JSON, has a supported version, and
-    the git commit + dirty state match the current repository state.
+    when the cache exists, is valid JSON, has a supported version,
+    is within the TTL limit, and the git commit + dirty state match
+    the current repository state.
 
     Returns ``None`` on any mismatch, missing file, or corruption —
     callers should fall back to running a fresh audit.
@@ -181,6 +180,21 @@ def read_audit_cache(local_path: str) -> dict[str, Any] | None:
     version = data.get("version")
     if not isinstance(version, int) or version > CACHE_VERSION:
         logger.debug("Unknown audit cache version: %s", version)
+        return None
+
+    # Staleness: TTL expiry
+    timestamp_str = data.get("timestamp")
+    if isinstance(timestamp_str, str):
+        try:
+            cached_time = datetime.fromisoformat(timestamp_str)
+            if (datetime.now(UTC) - cached_time).total_seconds() > ttl_seconds:
+                logger.debug("Audit cache expired per TTL (%s seconds)", ttl_seconds)
+                return None
+        except ValueError:
+            logger.debug("Audit cache has invalid timestamp: %s", timestamp_str)
+            return None
+    else:
+        logger.debug("Audit cache missing timestamp")
         return None
 
     # Staleness: commit hash
