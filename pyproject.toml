@@ -86,6 +86,7 @@ dev = [
     "mypy>=1.8.0",
     "ruff>=0.8.0",
     "skills-ref>=0.1.1",
+    "jsonschema>=4.26.0",
 ]
 
 [tool.mypy]
