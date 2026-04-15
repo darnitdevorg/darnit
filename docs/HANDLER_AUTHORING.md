@@ -425,3 +425,39 @@ These files are the best companions while authoring handlers:
 - `packages/darnit-example/src/darnit_example/implementation.py`
 - `packages/darnit/src/darnit/sieve/builtin_handlers.py`
 - `packages/darnit/src/darnit/sieve/handler_registry.py`
+
+## Shared Execution Context
+
+For large tools or API calls that provide data for multiple controls (like OpenSSF Scorecard or an external API), you can use the `ExecutionContext` to ensure the tool is only executed once per audit run.
+
+The `ExecutionContext` is exposed via `handler_ctx.execution_context` natively on custom Python handlers and provides thread-safe caching. 
+
+### Using `get_or_run_tool`
+
+Inside a custom Python handler:
+
+```python
+from darnit.sieve.handler_registry import HandlerContext, HandlerResult, HandlerResultStatus
+
+def scorecard_handler(config: dict[str, Any], handler_ctx: HandlerContext) -> HandlerResult:
+    ctx = handler_ctx.execution_context
+    if not ctx:
+        return HandlerResult(
+            status=HandlerResultStatus.ERROR,
+            message="No execution context available"
+        )
+        
+    def run_scorecard():
+        # Expensive blocking call
+        return {"data": "some_expensive_computation"}
+
+    # get_or_run_tool is thread-safe and will only execute run_scorecard once per `tool_key`
+    scorecard_data = ctx.get_or_run_tool("scorecard", run_scorecard)
+    
+    # Process the scorecard data for this specific control
+    return HandlerResult(
+        status=HandlerResultStatus.PASS,
+        message="Scorecard passed",
+        evidence=scorecard_data
+    )
+```

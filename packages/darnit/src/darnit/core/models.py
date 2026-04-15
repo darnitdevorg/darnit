@@ -1,5 +1,7 @@
 """Core data models for the baseline MCP server."""
 
+import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any
@@ -10,6 +12,7 @@ if TYPE_CHECKING:
 
 class CheckStatus(Enum):
     """Status of a control check."""
+
     PASS = "pass"
     FAIL = "fail"
     WARN = "warn"
@@ -20,6 +23,7 @@ class CheckStatus(Enum):
 @dataclass
 class CheckResult:
     """Result of a single control check."""
+
     control_id: str
     status: CheckStatus
     message: str
@@ -42,6 +46,7 @@ class CheckResult:
 @dataclass
 class RemediationResult:
     """Result of a remediation action."""
+
     control_id: str
     success: bool
     message: str
@@ -54,65 +59,91 @@ class RemediationResult:
 @dataclass
 class AdapterCapability:
     """Describes what controls an adapter can handle."""
+
     control_ids: set[str]  # Specific control IDs, or {"*"} for all
     supports_batch: bool = False  # Can handle multiple controls in one call
     batch_command: str | None = None  # Command for batch mode
-    # TODO: Add cache_key for shared execution context
-    # cache_key: Optional[str] = None  # Key for caching tool output (e.g., "scorecard")
+    cache_key: str | None = None  # Key for caching tool output (e.g., "scorecard")
 
 
-# TODO: Shared Execution Context (Future Enhancement)
-# Add ExecutionContext class for sharing tool outputs across controls.
-# This enables tools like OpenSSF Scorecard to run once and provide
-# results for multiple controls.
-#
-# @dataclass
-# class ExecutionContext:
-#     """Shared context for an audit run, enabling result caching across controls.
-#
-#     Example usage:
-#         context = ExecutionContext(owner="org", repo="repo", local_path="/path")
-#
-#         # Adapter caches its output
-#         scorecard_data = context.get_or_run_tool(
-#             "scorecard",
-#             lambda: run_scorecard(context.local_path)
-#         )
-#
-#         # Extract specific control result
-#         return extract_branch_protection_result(scorecard_data)
-#     """
-#     owner: str
-#     repo: str
-#     local_path: str
-#
-#     # Cached tool outputs (scorecard JSON, trivy results, etc.)
-#     tool_outputs: Dict[str, Any] = field(default_factory=dict)
-#
-#     # Cached GitHub API responses
-#     api_responses: Dict[str, Any] = field(default_factory=dict)
-#
-#     # Already-computed check results
-#     cached_results: Dict[str, CheckResult] = field(default_factory=dict)
-#
-#     def get_or_run_tool(self, tool_key: str, run_func: Callable) -> Any:
-#         """Get cached tool output or run the tool and cache result."""
-#         if tool_key not in self.tool_outputs:
-#             self.tool_outputs[tool_key] = run_func()
-#         return self.tool_outputs[tool_key]
-#
-#     def get_cached_result(self, control_id: str) -> Optional[CheckResult]:
-#         """Get a previously cached check result."""
-#         return self.cached_results.get(control_id)
-#
-#     def cache_result(self, result: CheckResult) -> None:
-#         """Cache a check result for later retrieval."""
-#         self.cached_results[result.control_id] = result
+@dataclass
+class ExecutionContext:
+    """Shared context for an audit run, enabling result caching across controls.
+
+    This context is thread-safe to support concurrent tool evaluations.
+
+    Example usage:
+        context = ExecutionContext(owner="org", repo="repo", local_path="/path")
+
+        # Adapter caches its output
+        scorecard_data = context.get_or_run_tool(
+            "scorecard",
+            lambda: run_scorecard(context.local_path)
+        )
+
+        # Extract specific control result
+        return extract_branch_protection_result(scorecard_data)
+    """
+
+    owner: str
+    repo: str
+    local_path: str
+
+    # Cached tool outputs (scorecard JSON, trivy results, etc.)
+    tool_outputs: dict[str, Any] = field(default_factory=dict)
+
+    # Cached GitHub API responses
+    api_responses: dict[str, Any] = field(default_factory=dict)
+
+    # Already-computed check results
+    cached_results: dict[str, CheckResult] = field(default_factory=dict)
+
+    # Threading locks
+    _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
+    _tool_locks: dict[str, threading.Lock] = field(default_factory=dict, init=False, repr=False)
+
+    def get_or_run_tool(self, tool_key: str, run_func: Callable[[], Any]) -> Any:
+        """Get cached tool output or run the tool and cache result.
+
+        Uses fine-grained locking to prevent redundant concurrent executions
+        of the same tool while allowing different tools to run in parallel.
+        """
+        # Fast path check
+        with self._lock:
+            if tool_key in self.tool_outputs:
+                return self.tool_outputs[tool_key]
+
+            # Get or create a lock specific to this tool
+            tool_lock = self._tool_locks.setdefault(tool_key, threading.Lock())
+
+        with tool_lock:
+            # Check again while inside the tool lock
+            if tool_key in self.tool_outputs:
+                return self.tool_outputs[tool_key]
+
+            # Actually run the tool
+            result = run_func()
+
+            with self._lock:
+                self.tool_outputs[tool_key] = result
+
+        return result
+
+    def get_cached_result(self, control_id: str) -> CheckResult | None:
+        """Get a previously cached check result."""
+        with self._lock:
+            return self.cached_results.get(control_id)
+
+    def cache_result(self, result: CheckResult) -> None:
+        """Cache a check result for later retrieval."""
+        with self._lock:
+            self.cached_results[result.control_id] = result
 
 
 @dataclass
 class AuditResult:
     """Complete result structure for baseline audit."""
+
     owner: str
     repo: str
     local_path: str

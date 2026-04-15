@@ -112,12 +112,16 @@ def evaluate_when_clause(when: dict[str, Any], context: dict[str, Any]) -> bool:
         if actual is None:
             # Missing context key → run normally (conservative)
             logger.debug(
-                "when key '%s' missing from context, running normally", key,
+                "when key '%s' missing from context, running normally",
+                key,
             )
             continue
         if actual != expected:
             logger.debug(
-                "when condition failed (%s=%r, expected %r)", key, actual, expected,
+                "when condition failed (%s=%r, expected %r)",
+                key,
+                actual,
+                expected,
             )
             return False
     return True
@@ -156,9 +160,7 @@ class SieveOrchestrator:
         self._shared_cache.clear()
         self._dependency_results.clear()
 
-    def _evaluate_when(
-        self, control_spec: ControlSpec, context: CheckContext
-    ) -> bool:
+    def _evaluate_when(self, control_spec: ControlSpec, context: CheckContext) -> bool:
         """Evaluate when clause for conditional applicability.
 
         Returns True if the control should run, False if N/A.
@@ -172,9 +174,7 @@ class SieveOrchestrator:
         merged = {**context.control_metadata, **context.project_context}
         return evaluate_when_clause(when, merged)
 
-    def _check_inferred_from(
-        self, control_spec: ControlSpec
-    ) -> SieveResult | None:
+    def _check_inferred_from(self, control_spec: ControlSpec) -> SieveResult | None:
         """Check if this control can be auto-passed via inferred_from.
 
         If the referenced control PASSED, return an auto-PASS result.
@@ -228,9 +228,8 @@ class SieveOrchestrator:
             project_context=dict(context.project_context),
             gathered_evidence=dict(context.gathered_evidence),
             shared_cache=self._shared_cache,
-            dependency_results={
-                cid: r.status for cid, r in self._dependency_results.items()
-            },
+            dependency_results={cid: r.status for cid, r in self._dependency_results.items()},
+            execution_context=context.execution_context,
         )
 
         # Assemble flat context for when-clause evaluation
@@ -238,9 +237,7 @@ class SieveOrchestrator:
 
         for pass_index, invocation in enumerate(handler_invocations):
             # Evaluate when clause — skip handler if condition not met
-            if invocation.when and not evaluate_when(
-                invocation.when, when_context
-            ):
+            if invocation.when and not evaluate_when(invocation.when, when_context):
                 logger.debug(
                     "Control %s: handler '%s' skipped (when clause not met)",
                     control_spec.control_id,
@@ -315,9 +312,7 @@ class SieveOrchestrator:
                 pass_history.append(
                     PassAttempt(
                         phase=phase,
-                        checks_performed=[
-                            f"handler:{invocation.handler}"
-                        ],
+                        checks_performed=[f"handler:{invocation.handler}"],
                         result=pass_result,
                         duration_ms=duration_ms,
                     )
@@ -391,9 +386,7 @@ class SieveOrchestrator:
                     pass_history=pass_history,
                     evidence={
                         **accumulated_evidence,
-                        "llm_consultation": handler_result.details[
-                            "consultation_request"
-                        ],
+                        "llm_consultation": handler_result.details["consultation_request"],
                     },
                     source="sieve",
                 )
@@ -498,9 +491,7 @@ class SieveOrchestrator:
         for inv in handler_invocations:
             if inv.handler == "llm_eval":
                 extra = inv.model_extra or {}
-                confidence_threshold = extra.get(
-                    "confidence_threshold", 0.8
-                )
+                confidence_threshold = extra.get("confidence_threshold", 0.8)
                 break
 
         # Determine outcome based on confidence
@@ -586,11 +577,7 @@ class SieveOrchestrator:
             result_map[spec.control_id] = result
 
         # Return in original order
-        return [
-            result_map[spec.control_id]
-            for spec in control_specs
-            if spec.control_id in result_map
-        ]
+        return [result_map[spec.control_id] for spec in control_specs if spec.control_id in result_map]
 
     def _apply_on_pass(
         self,
@@ -629,7 +616,7 @@ class SieveOrchestrator:
         resolved: dict[str, Any] = {}
         for key, value in updates.items():
             if isinstance(value, str) and value.startswith("$EVIDENCE."):
-                evidence_key = value[len("$EVIDENCE."):]
+                evidence_key = value[len("$EVIDENCE.") :]
                 resolved[key] = evidence.get(evidence_key, value)
             else:
                 resolved[key] = value
@@ -647,16 +634,11 @@ class SieveOrchestrator:
 
             config = ProjectUpdateRemediationConfig(set=resolved)
             apply_project_update(local_path, config, control_spec.control_id)
-            logger.debug(
-                f"Applied on_pass for {control_spec.control_id}: "
-                f"set {len(resolved)} values"
-            )
+            logger.debug(f"Applied on_pass for {control_spec.control_id}: set {len(resolved)} values")
         except ImportError:
             logger.debug("Remediation executor not available for on_pass")
         except Exception as e:
-            logger.warning(
-                f"Failed to apply on_pass for {control_spec.control_id}: {e}"
-            )
+            logger.warning(f"Failed to apply on_pass for {control_spec.control_id}: {e}")
 
 
 # =============================================================================

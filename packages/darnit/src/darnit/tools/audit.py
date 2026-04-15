@@ -35,6 +35,7 @@ def _get_sieve_components():
                 SieveOrchestrator,
                 get_control_registry,
             )
+
             _sieve_components = {
                 "SieveOrchestrator": SieveOrchestrator,
                 "get_control_registry": get_control_registry,
@@ -144,9 +145,7 @@ def _get_framework_config_path(framework_name: str | None = None) -> Path | None
     return None
 
 
-def load_effective_audit_config(
-    local_path: str, framework_name: str | None = None
-) -> Any | None:
+def load_effective_audit_config(local_path: str, framework_name: str | None = None) -> Any | None:
     """Load the effective configuration for auditing.
 
     This loads the framework config and merges it with any user config
@@ -168,9 +167,7 @@ def load_effective_audit_config(
     try:
         from darnit.config import load_effective_config_auto
 
-        effective = load_effective_config_auto(
-            Path(local_path), framework_name=framework_name
-        )
+        effective = load_effective_config_auto(Path(local_path), framework_name=framework_name)
 
         # Cache the result
         _effective_config_cache[abs_path] = effective
@@ -222,6 +219,7 @@ def get_adapter_for_control(control_id: str, local_path: str) -> str | None:
 @dataclass
 class AuditOptions:
     """Options for running an audit."""
+
     level: int = 3
     auto_init_config: bool = True
     output_format: str = "markdown"  # markdown, json, sarif
@@ -230,9 +228,7 @@ class AuditOptions:
 
 
 def prepare_audit(
-    owner: str | None,
-    repo: str | None,
-    local_path: str
+    owner: str | None, repo: str | None, local_path: str
 ) -> tuple[str | None, str | None, str, str, str | None]:
     """Prepare for running an audit by validating and resolving inputs.
 
@@ -268,9 +264,12 @@ def prepare_audit(
         default_branch = detected.get("default_branch", "main")
         return owner, repo, resolved_path, default_branch, None
     else:
-        return None, None, resolved_path, default_branch, (
-            "Could not auto-detect owner/repo. "
-            "Please provide owner and repo parameters."
+        return (
+            None,
+            None,
+            resolved_path,
+            default_branch,
+            ("Could not auto-detect owner/repo. Please provide owner and repo parameters."),
         )
 
 
@@ -308,7 +307,11 @@ def run_checks(
     skipped_controls = get_excluded_control_ids(local_path) if apply_user_config else {}
 
     results, _summary = run_sieve_audit(
-        owner, repo, local_path, default_branch, level,
+        owner,
+        repo,
+        local_path,
+        default_branch,
+        level,
         apply_user_config=apply_user_config,
         stop_on_llm=stop_on_llm,
         framework_name=framework_name,
@@ -362,10 +365,7 @@ def run_sieve_audit(
     """
     sieve = _get_sieve_components()
     if not sieve:
-        raise RuntimeError(
-            "Sieve components not available. "
-            "Ensure darnit is properly installed with all dependencies."
-        )
+        raise RuntimeError("Sieve components not available. Ensure darnit is properly installed with all dependencies.")
 
     get_control_registry = sieve["get_control_registry"]
     SieveOrchestrator = sieve["SieveOrchestrator"]
@@ -426,6 +426,7 @@ def run_sieve_audit(
     if tags:
         try:
             from darnit.filtering import filter_controls, parse_tags_arg
+
             tag_filters = parse_tags_arg(tags) if isinstance(tags, (str, list)) else tags
             if isinstance(tag_filters, str):
                 tag_filters = [tag_filters]
@@ -434,6 +435,13 @@ def run_sieve_audit(
             logger.debug("Filtering module not available, skipping tag filter")
 
     orchestrator = SieveOrchestrator(stop_on_llm=stop_on_llm)
+    from darnit.core.models import ExecutionContext
+
+    execution_context = ExecutionContext(
+        owner=owner,
+        repo=repo,
+        local_path=local_path,
+    )
     all_results = []
 
     # Build project_context once for all controls.
@@ -483,6 +491,7 @@ def run_sieve_audit(
     locator = None
     try:
         from darnit.locate import UnifiedLocator
+
         locator = UnifiedLocator(local_path)
         logger.debug("UnifiedLocator created for .project/ integration")
     except ImportError:
@@ -496,12 +505,14 @@ def run_sieve_audit(
 
         # Handle user config exclusions
         if control_id in excluded_ids:
-            all_results.append({
-                "id": control_id,
-                "status": "N/A",
-                "details": "Excluded via .baseline.toml",
-                "level": spec.level or 1,
-            })
+            all_results.append(
+                {
+                    "id": control_id,
+                    "status": "N/A",
+                    "details": "Excluded via .baseline.toml",
+                    "level": spec.level or 1,
+                }
+            )
             continue
 
         # Create check context
@@ -519,6 +530,7 @@ def run_sieve_audit(
             locator=locator,
             locator_config=spec.locator_config,
             project_context=dict(project_context),
+            execution_context=execution_context,
         )
 
         # Run sieve verification
@@ -549,10 +561,7 @@ def run_sieve_audit(
     return all_results, summary
 
 
-def calculate_compliance(
-    results: list[dict[str, Any]],
-    level: int = 3
-) -> dict[int, bool]:
+def calculate_compliance(results: list[dict[str, Any]], level: int = 3) -> dict[int, bool]:
     """Calculate level compliance from check results.
 
     A level is compliant only when every applicable control at that level
@@ -571,10 +580,7 @@ def calculate_compliance(
     compliance = {}
 
     for lvl in range(1, level + 1):
-        level_results = [
-            r for r in results
-            if r.get("level", 1) == lvl and r.get("status") != "N/A"
-        ]
+        level_results = [r for r in results if r.get("level", 1) == lvl and r.get("status") != "N/A"]
         all_pass = all(r.get("status") == "PASS" for r in level_results)
         compliance[lvl] = all_pass and len(level_results) > 0
 
@@ -597,7 +603,7 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, int]:
         "N/A": 0,
         "ERROR": 0,
         "PENDING_LLM": 0,  # Sieve: awaiting LLM consultation
-        "total": len(results)
+        "total": len(results),
     }
 
     for r in results:
@@ -626,6 +632,7 @@ def _get_control_help(control_id: str, framework_name: str | None = None) -> str
             return None
 
         from darnit.config import load_framework_config
+
         framework = load_framework_config(framework_path)
 
         if framework.controls and control_id in framework.controls:
@@ -712,10 +719,7 @@ def format_results_markdown(
             lines.append(f"- **Level {lvl}:** ✅ Compliant")
         else:
             # Show breakdown of what's blocking compliance
-            lvl_results = [
-                r for r in results
-                if r.get("level", 1) == lvl and r.get("status") != "N/A"
-            ]
+            lvl_results = [r for r in results if r.get("level", 1) == lvl and r.get("status") != "N/A"]
             n_pass = sum(1 for r in lvl_results if r.get("status") == "PASS")
             n_fail = sum(1 for r in lvl_results if r.get("status") == "FAIL")
             n_warn = sum(1 for r in lvl_results if r.get("status") == "WARN")
@@ -736,10 +740,26 @@ def format_results_markdown(
 
     # Status display configuration with clear action-oriented labels
     status_config = {
-        "FAIL": {"icon": "❌", "label": "FAIL - Action Required", "description": "These controls are NOT satisfied and must be addressed:"},
-        "PENDING_LLM": {"icon": "🤖", "label": "PENDING LLM ANALYSIS", "description": "These controls require LLM-assisted analysis. Review the consultation prompts below:"},
-        "WARN": {"icon": "⚠️", "label": "NEEDS VERIFICATION - Manual Review Required", "description": "These controls could not be automatically verified. They may be failing and require manual inspection:"},
-        "ERROR": {"icon": "🔴", "label": "ERROR - Check Failed", "description": "These checks encountered errors and need investigation:"},
+        "FAIL": {
+            "icon": "❌",
+            "label": "FAIL - Action Required",
+            "description": "These controls are NOT satisfied and must be addressed:",
+        },
+        "PENDING_LLM": {
+            "icon": "🤖",
+            "label": "PENDING LLM ANALYSIS",
+            "description": "These controls require LLM-assisted analysis. Review the consultation prompts below:",
+        },
+        "WARN": {
+            "icon": "⚠️",
+            "label": "NEEDS VERIFICATION - Manual Review Required",
+            "description": "These controls could not be automatically verified. They may be failing and require manual inspection:",
+        },
+        "ERROR": {
+            "icon": "🔴",
+            "label": "ERROR - Check Failed",
+            "description": "These checks encountered errors and need investigation:",
+        },
         "PASS": {"icon": "✅", "label": "PASS", "description": "These controls are satisfied:"},
         "N/A": {"icon": "➖", "label": "N/A", "description": "These controls don't apply to this project:"},
     }
@@ -751,12 +771,12 @@ def format_results_markdown(
             config = status_config.get(status, {"icon": "", "label": status, "description": ""})
             lines.append(f"### {config['icon']} {config['label']} ({len(status_results)})")
             lines.append("")
-            if config['description']:
+            if config["description"]:
                 lines.append(f"*{config['description']}*")
                 lines.append("")
             for r in status_results:
-                control_id = r.get('id', '')
-                details = r.get('details', 'No details')
+                control_id = r.get("id", "")
+                details = r.get("details", "No details")
 
                 # Task 8.2: Annotate inferred PASSes with source control
                 if status == "PASS" and "Inferred from" in details:
@@ -785,7 +805,7 @@ def format_results_markdown(
                     help_md = _get_control_help(control_id)
                     if help_md:
                         # Indent help text and add as a sub-item
-                        help_lines = help_md.strip().split('\n')
+                        help_lines = help_md.strip().split("\n")
                         lines.append("")
                         lines.append(f"  > **ℹ️ Note for {control_id}:**")
                         for help_line in help_lines[:10]:  # Limit to first 10 lines
@@ -804,10 +824,7 @@ def format_results_markdown(
                         # ones where the user answering "no" would flip the
                         # control to N/A.  Keys like platform="github" are
                         # auto-detected and not actionable here.
-                        actionable_keys = [
-                            k for k, v in when_clause.items()
-                            if v is True
-                        ]
+                        actionable_keys = [k for k, v in when_clause.items() if v is True]
                         if actionable_keys:
                             keys_str = ", ".join(f"`{k}`" for k in actionable_keys)
                             lines.append(
@@ -820,9 +837,7 @@ def format_results_markdown(
                     sieve_evidence = r.get("evidence") if isinstance(r.get("evidence"), dict) else None
                     when_clause = sieve_evidence.get("when") if sieve_evidence else None
                     if when_clause and isinstance(when_clause, dict):
-                        conditions = ", ".join(
-                            f"`{k}={v}`" for k, v in when_clause.items()
-                        )
+                        conditions = ", ".join(f"`{k}={v}`" for k, v in when_clause.items())
                         lines.append(f"  - Requires: {conditions}")
 
             lines.append("")
@@ -846,23 +861,32 @@ def format_results_markdown(
             for group in remediation_map.get("groups", []):
                 matched = control_ids & set(group.get("control_ids", set()))
                 if matched:
-                    remediation_suggestions.append({
-                        "tool": group["tool"],
-                        "description": group["description"],
-                        "controls": sorted(matched),
-                    })
+                    remediation_suggestions.append(
+                        {
+                            "tool": group["tool"],
+                            "description": group["description"],
+                            "controls": sorted(matched),
+                        }
+                    )
 
             # General bulk remediation for multiple issues
             bulk_tool = remediation_map.get("bulk_tool")
             if bulk_tool and len(fail_results) > 2:
-                remediation_suggestions.insert(0, {
-                    "tool": bulk_tool,
-                    "description": remediation_map.get("bulk_description", "Auto-fix multiple issues"),
-                    "controls": ["multiple"],
-                })
+                remediation_suggestions.insert(
+                    0,
+                    {
+                        "tool": bulk_tool,
+                        "description": remediation_map.get("bulk_description", "Auto-fix multiple issues"),
+                        "controls": ["multiple"],
+                    },
+                )
 
         # Extract shared values from remediation_map
-        bulk_tool_name = remediation_map.get("bulk_tool", "remediate_audit_findings") if remediation_map else "remediate_audit_findings"
+        bulk_tool_name = (
+            remediation_map.get("bulk_tool", "remediate_audit_findings")
+            if remediation_map
+            else "remediate_audit_findings"
+        )
         branch_name = remediation_map.get("branch_name", "fix/compliance") if remediation_map else "fix/compliance"
         framework_name = remediation_map.get("framework_name", "Compliance") if remediation_map else "Compliance"
 
@@ -871,7 +895,7 @@ def format_results_markdown(
             lines.append("")
             for suggestion in remediation_suggestions:
                 lines.append(f"**`{suggestion['tool']}()`** - {suggestion['description']}")
-                if suggestion['controls'] != ["multiple"]:
+                if suggestion["controls"] != ["multiple"]:
                     lines.append(f"  - Fixes: {', '.join(suggestion['controls'])}")
                 lines.append("")
 
@@ -903,7 +927,9 @@ def format_results_markdown(
         lines.append(f'{bulk_tool_name}(local_path="/path/to/repo")')
         lines.append("")
         lines.append("# 3. Commit the changes")
-        lines.append(f'commit_remediation_changes(message="Add {framework_name} compliance files", local_path="/path/to/repo")')
+        lines.append(
+            f'commit_remediation_changes(message="Add {framework_name} compliance files", local_path="/path/to/repo")'
+        )
         lines.append("")
         lines.append("# 4. Open a pull request")
         lines.append(f'create_remediation_pr(title="{framework_name} Compliance", local_path="/path/to/repo")')
@@ -982,8 +1008,10 @@ def _get_next_steps_section(
         lp = local_path or "."
         lines.append(f"**Step {step}: Confirm project context** ({count} items needed)")
         lines.append("")
-        lines.append(f"Call `get_pending_context(local_path=\"{lp}\")` to start. "
-                      "It will walk you through each question one at a time.")
+        lines.append(
+            f'Call `get_pending_context(local_path="{lp}")` to start. '
+            "It will walk you through each question one at a time."
+        )
         lines.append("")
         step += 1
 
@@ -1047,7 +1075,11 @@ def _format_context_collection_step(
         lines.append(f'    local_path="{local_path}",')
         for item in auto_detected:
             value = item.current_value.value
-            comment = f"  # {item.current_value.detection_method}" if hasattr(item.current_value, "detection_method") and item.current_value.detection_method else ""
+            comment = (
+                f"  # {item.current_value.detection_method}"
+                if hasattr(item.current_value, "detection_method") and item.current_value.detection_method
+                else ""
+            )
             if isinstance(value, list):
                 formatted = [f'"{v}"' for v in value]
                 lines.append(f"    {item.key}=[{', '.join(formatted)}],{comment}")
@@ -1085,7 +1117,9 @@ def _format_context_collection_step(
         lines.append("")
 
     # Re-audit directive
-    lines.append(f'> After confirming context, re-run the audit for updated results: `audit_openssf_baseline(local_path="{local_path}")`')
+    lines.append(
+        f'> After confirming context, re-run the audit for updated results: `audit_openssf_baseline(local_path="{local_path}")`'
+    )
     lines.append("")
 
     return lines
@@ -1103,21 +1137,21 @@ def list_available_checks() -> dict[str, list[dict[str, Any]]]:
         "level_1": {
             "count": 24,
             "domains": ["AC", "BR", "DO", "GV", "LE", "QA", "VM"],
-            "description": "Basic security hygiene for all projects"
+            "description": "Basic security hygiene for all projects",
         },
         "level_2": {
             "count": 18,
             "domains": ["AC", "BR", "DO", "GV", "LE", "QA", "SA", "VM"],
-            "description": "Enhanced security for projects with moderate risk"
+            "description": "Enhanced security for projects with moderate risk",
         },
         "level_3": {
             "count": 19,
             "domains": ["AC", "BR", "DO", "GV", "QA", "SA", "VM"],
-            "description": "Comprehensive security for high-risk projects"
+            "description": "Comprehensive security for high-risk projects",
         },
         "total": 61,
         "specification": "OSPS v2025.10.10",
-        "url": "https://baseline.openssf.org/versions/2025-10-10"
+        "url": "https://baseline.openssf.org/versions/2025-10-10",
     }
 
 

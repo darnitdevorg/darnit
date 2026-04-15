@@ -342,3 +342,57 @@ class TestHandlerWhenClause:
         result = orchestrator.verify(spec, ctx)
         # First handler skipped (go != python), second runs and finds README.md
         assert result.status == "PASS"
+
+
+class TestExecutionContextPropagation:
+    """Test that ExecutionContext correctly propagates through the orchestrator to handlers."""
+
+    def test_execution_context_propagates_to_handler(self):
+        from darnit.core.models import ExecutionContext
+        from darnit.sieve.handler_registry import (
+            HandlerResult,
+            HandlerResultStatus,
+            get_sieve_handler_registry,
+        )
+
+        exec_ctx = ExecutionContext(owner="test", repo="test", local_path="/test")
+
+        # We need a custom handler to capture the HandlerContext passed to it
+        captured_ctx = None
+
+        def spy_handler(config, handler_ctx):
+            nonlocal captured_ctx
+            captured_ctx = handler_ctx
+            return HandlerResult(status=HandlerResultStatus.PASS, message="Spy done")
+
+        registry = get_sieve_handler_registry()
+        registry.register("spy_tool", phase="deterministic", handler_fn=spy_handler)
+
+        # Inject our spy handler into the control spec
+        spec = ControlSpec(
+            control_id="TEST-01",
+            level=1,
+            domain="TEST",
+            name="TestControl",
+            description="Test",
+            metadata={
+                "handler_invocations": [HandlerInvocation(handler="spy_tool")],
+            },
+        )
+
+        check_ctx = CheckContext(
+            owner="test",
+            repo="repo",
+            local_path="/path",
+            default_branch="main",
+            control_id="TEST-01",
+            execution_context=exec_ctx,
+        )
+
+        orchestrator = SieveOrchestrator()
+        # Mock any other behavior if needed
+        res = orchestrator.verify(spec, check_ctx)
+
+        assert captured_ctx is not None
+        assert captured_ctx.execution_context is exec_ctx, "ExecutionContext was not propagated to HandlerContext!"
+        assert res.to_legacy_dict()["status"] == "PASS"
