@@ -58,6 +58,13 @@ class TestDetectForge:
             result = detect_forge(str(tmp_path))
         assert result == "unknown"
 
+    def test_git_command_timeout(self, tmp_path: Path) -> None:
+        """Returns 'unknown' gracefully when git command times out."""
+        import subprocess
+        with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="git", timeout=10)):
+            result = detect_forge(str(tmp_path))
+        assert result == "unknown"
+
 
 class TestDetectCI:
     """Tests for detect_ci()."""
