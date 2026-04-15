@@ -288,57 +288,18 @@ class RemediationExecutor:
     def _get_template_content(self, template_name: str) -> str | None:
         """Get content from a template by name.
 
-        # TODO: Enhanced Template File Loading (Future Enhancement)
-        # =========================================================
-        # Current implementation only supports:
-        # - Inline content in TOML
-        # - File paths relative to the audited repository (local_path)
-        #
-        # Primary enhancement: Relative paths from framework TOML location
-        # ----------------------------------------------------------------
-        # Templates should be resolved relative to the framework TOML file,
-        # not the repository being audited. This allows frameworks to bundle
-        # templates alongside their TOML definition.
-        #
-        # Example directory structure:
-        #   darnit-baseline/
-        #   ├── openssf-baseline.toml
-        #   └── templates/
-        #       ├── security_policy.md
-        #       └── contributing.md
-        #
-        # Example TOML usage:
-        #   [templates.security_policy]
-        #   file = "templates/security_policy.md"  # Relative to TOML location
-        #
-        # Implementation requirements:
-        # - Pass framework_path (TOML file location) to executor
-        # - Resolve template.file relative to framework_path directory
-        # - Fall back to local_path for backward compatibility
-        # - Add validation for template existence at config load time
-        #
-        # Future: Remote template sources (to explore later)
-        # ---------------------------------------------------
-        # For shared templates across organizations or projects:
-        #
-        # - HTTP/HTTPS URLs with local caching
-        #   Example: `file = "https://example.com/templates/security.md"`
-        #   Requires: `file_sha256 = "abc123..."` for integrity
-        #
-        # - Git repository references
-        #   Example: `file = "git://github.com/org/templates#security.md"`
-        #
-        # - Template registries (like npm/PyPI for templates)
-        #   Example: `file = "registry://openssf/security-policy@1.0"`
-        #
-        # These require careful security consideration (trust, integrity,
-        # availability) and should be explored after local file support
-        # is solid.
-        #
-        # Other enhancements:
-        # - Template inheritance: `extends = "security_policy_base"`
-        # - Template directories: `[metadata] templates_dir = "templates/"`
-        # - Caching for performance
+        Resolves template file paths relative to the framework TOML location
+        to allow plugins to ship templates alongside their configuration.
+        Falls back to local_path (repository root) if framework_path is unavailable.
+
+        Future Enhancement: Remote Template Sources
+        -------------------------------------------
+        For shared templates across organizations or projects:
+        - HTTP/HTTPS URLs with local caching: `file = "https://example.com/security.md"`
+          (Requires: `file_sha256 = "..."` for integrity)
+        - Template registries (like npm/PyPI for templates): `file = "registry://openssf/policy@1.0"`
+
+        These require careful security consideration (trust, integrity, availability).
         """
         template = self.templates.get(template_name)
         if not template:
@@ -404,20 +365,13 @@ class RemediationExecutor:
         # Apply project_update if the primary remediation succeeded
         if result.success and not dry_run and config.project_update:
             try:
-                apply_project_update(
-                    self.local_path, config.project_update, control_id
-                )
+                apply_project_update(self.local_path, config.project_update, control_id)
                 result.details["project_update"] = "applied"
             except (OSError, RuntimeError, ValueError) as e:
-                logger.warning(
-                    f"Remediation for {control_id} succeeded but "
-                    f"project_update failed: {e}"
-                )
+                logger.warning(f"Remediation for {control_id} succeeded but project_update failed: {e}")
                 result.details["project_update"] = f"failed: {e}"
         elif result.success and dry_run and config.project_update:
-            result.details["project_update"] = (
-                f"would set: {config.project_update.set}"
-            )
+            result.details["project_update"] = f"would set: {config.project_update.set}"
 
         return result
 
@@ -463,12 +417,9 @@ class RemediationExecutor:
 
         for invocation in config.handlers:
             # Evaluate when clause — skip handler if condition not met
-            if invocation.when and not evaluate_when(
-                invocation.when, when_context
-            ):
+            if invocation.when and not evaluate_when(invocation.when, when_context):
                 logger.debug(
-                    "Control %s: remediation handler '%s' skipped "
-                    "(when clause not met: %s)",
+                    "Control %s: remediation handler '%s' skipped (when clause not met: %s)",
                     control_id,
                     invocation.handler,
                     invocation.when,
@@ -487,12 +438,14 @@ class RemediationExecutor:
                     handler_config["content"] = content
 
             if dry_run:
-                results.append({
-                    "handler": invocation.handler,
-                    "status": "dry_run",
-                    "message": f"Would execute handler: {invocation.handler}",
-                    "config": handler_config,
-                })
+                results.append(
+                    {
+                        "handler": invocation.handler,
+                        "status": "dry_run",
+                        "message": f"Would execute handler: {invocation.handler}",
+                        "config": handler_config,
+                    }
+                )
                 matched_any = True
                 if first_match:
                     break
@@ -500,11 +453,13 @@ class RemediationExecutor:
 
             handler_info = registry.get(invocation.handler)
             if not handler_info:
-                results.append({
-                    "handler": invocation.handler,
-                    "status": "error",
-                    "message": f"Handler '{invocation.handler}' not found",
-                })
+                results.append(
+                    {
+                        "handler": invocation.handler,
+                        "status": "error",
+                        "message": f"Handler '{invocation.handler}' not found",
+                    }
+                )
                 all_success = False
                 matched_any = True
                 if first_match:
@@ -524,10 +479,7 @@ class RemediationExecutor:
                     result_entry["evidence"] = handler_result.evidence
                 results.append(result_entry)
                 # Propagate llm_enhance metadata for AI-assisted file customization
-                if (
-                    handler_result.status == HandlerResultStatus.PASS
-                    and "llm_enhance" in handler_config
-                ):
+                if handler_result.status == HandlerResultStatus.PASS and "llm_enhance" in handler_config:
                     results[-1]["llm_enhance"] = {
                         "prompt": handler_config["llm_enhance"],
                         "file_path": handler_config.get("path", ""),
@@ -540,11 +492,13 @@ class RemediationExecutor:
                 OSError,
                 subprocess.SubprocessError,
             ) as e:
-                results.append({
-                    "handler": invocation.handler,
-                    "status": "error",
-                    "message": str(e),
-                })
+                results.append(
+                    {
+                        "handler": invocation.handler,
+                        "status": "error",
+                        "message": str(e),
+                    }
+                )
                 all_success = False
 
             matched_any = True
@@ -553,11 +507,7 @@ class RemediationExecutor:
 
         # Handle first_match with no matching handlers
         if first_match and not matched_any:
-            unmatched = [
-                str(inv.when)
-                for inv in config.handlers
-                if inv.when
-            ]
+            unmatched = [str(inv.when) for inv in config.handlers if inv.when]
             return RemediationResult(
                 success=False,
                 message=(
@@ -584,6 +534,7 @@ class RemediationExecutor:
             dry_run=dry_run,
             details={"handlers": results},
         )
+
 
 def apply_project_update(
     local_path: str,
@@ -629,15 +580,10 @@ def apply_project_update(
             # .project/ exists but config failed validation — do NOT overwrite
             # with a blank config as that would destroy existing extension data
             # (context, ci settings, etc. in darnit.yaml)
-            logger.warning(
-                f"Skipping project_update for {control_id}: "
-                f".project/ exists but config failed validation"
-            )
+            logger.warning(f"Skipping project_update for {control_id}: .project/ exists but config failed validation")
             return
         if not project_update.create_if_missing:
-            logger.debug(
-                f"No .project/ found for {control_id} and create_if_missing=False"
-            )
+            logger.debug(f"No .project/ found for {control_id} and create_if_missing=False")
             return
         config = ProjectConfig(name="unknown")
 
@@ -648,15 +594,10 @@ def apply_project_update(
 
     # Save
     save_project_config(config, local_path)
-    logger.info(
-        f"Applied project_update for {control_id}: "
-        f"set {len(project_update.set)} values"
-    )
+    logger.info(f"Applied project_update for {control_id}: set {len(project_update.set)} values")
 
 
-def _coerce_to_field_type(
-    obj: object, field_name: str, value: object
-) -> object:
+def _coerce_to_field_type(obj: object, field_name: str, value: object) -> object:
     """Coerce a value to match the expected Pydantic field type.
 
     When setting a string value to a field that expects a Pydantic model
@@ -685,10 +626,7 @@ def _coerce_to_field_type(
         model_type = annotation
     else:
         args = getattr(annotation, "__args__", ())
-        if args and (
-            isinstance(annotation, types.UnionType)
-            or getattr(annotation, "__origin__", None) is not None
-        ):
+        if args and (isinstance(annotation, types.UnionType) or getattr(annotation, "__origin__", None) is not None):
             for arg in args:
                 if isinstance(arg, type) and issubclass(arg, BaseModel):
                     model_type = arg
@@ -735,8 +673,7 @@ def _create_field_default(obj: object, field_name: str) -> object:
             # Union type (X | Y or Optional[X]) — find a BaseModel subclass
             args = getattr(annotation, "__args__", ())
             if args and (
-                isinstance(annotation, types.UnionType)
-                or getattr(annotation, "__origin__", None) is not None
+                isinstance(annotation, types.UnionType) or getattr(annotation, "__origin__", None) is not None
             ):
                 for arg in args:
                     if isinstance(arg, type) and issubclass(arg, BaseModel):
@@ -779,7 +716,7 @@ def _set_nested_value(obj: object, dotted_path: str, value: object) -> None:
                 if isinstance(default, dict):
                     # Fallback dict — but check if the remaining path can be
                     # constructed as a Pydantic model with the leaf value
-                    remaining = parts[i + 1:]
+                    remaining = parts[i + 1 :]
                     model = _try_construct_nested(current, part, remaining, value)
                     if model is not None:
                         try:
@@ -815,14 +752,10 @@ def _set_nested_value(obj: object, dotted_path: str, value: object) -> None:
         try:
             setattr(current, final_key, coerced)
         except (AttributeError, TypeError, ValueError) as e:
-            logger.warning(
-                f"Could not set {dotted_path} = {value}: {e}"
-            )
+            logger.warning(f"Could not set {dotted_path} = {value}: {e}")
 
 
-def _try_construct_nested(
-    parent: object, field_name: str, remaining_parts: list[str], value: object
-) -> object | None:
+def _try_construct_nested(parent: object, field_name: str, remaining_parts: list[str], value: object) -> object | None:
     """Try to construct a Pydantic model from a field with nested path values.
 
     For example, if parent has field 'readme' of type PathRef and remaining
@@ -849,10 +782,7 @@ def _try_construct_nested(
         model_type = annotation
     else:
         args = getattr(annotation, "__args__", ())
-        if args and (
-            isinstance(annotation, types.UnionType)
-            or getattr(annotation, "__origin__", None) is not None
-        ):
+        if args and (isinstance(annotation, types.UnionType) or getattr(annotation, "__origin__", None) is not None):
             for arg in args:
                 if isinstance(arg, type) and issubclass(arg, BaseModel):
                     model_type = arg

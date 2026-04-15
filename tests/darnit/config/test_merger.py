@@ -15,6 +15,7 @@ from darnit.config.framework_schema import (
 from darnit.config.merger import (
     EffectiveConfig,
     EffectiveControl,
+    load_framework_config,
     merge_configs,
     merge_control,
 )
@@ -371,3 +372,35 @@ class TestUserSettings:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+class TestLoadFrameworkConfig:
+    def test_load_framework_config_success(self, tmp_path):
+        config_path = tmp_path / "valid.toml"
+        template_file = tmp_path / "template.md"
+        template_file.write_text("Hello $OWNER")
+
+        config_path.write_text("""[metadata]
+name = "test"
+version = "1.0"
+display_name = "test"
+[templates.test_template]
+file = "template.md"
+""")
+
+        config = load_framework_config(config_path)
+        assert "test_template" in config.templates
+        assert config.templates["test_template"].file == "template.md"
+
+    def test_load_framework_config_missing_template(self, tmp_path):
+        config_path = tmp_path / "invalid.toml"
+
+        config_path.write_text("""[metadata]
+name = "test"
+version = "1.0"
+display_name = "test"
+[templates.test_template]
+file = "missing.md"
+""")
+
+        with pytest.raises(FileNotFoundError, match="not found relative to framework config"):
+            load_framework_config(config_path)
