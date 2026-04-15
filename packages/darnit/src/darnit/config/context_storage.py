@@ -42,6 +42,26 @@ logger = get_logger("config.context_storage")
 # =============================================================================
 
 
+def _parse_context_value(val: Any) -> ContextValue | None:
+    """Helper to reconstruct ContextValue from a raw dictionary or wrap a native value."""
+    if val is None:
+        return None
+    if isinstance(val, dict) and "value" in val and "source" in val:
+        try:
+            return ContextValue.model_validate(val)
+        except Exception:
+            pass
+    if isinstance(val, ContextValue):
+        return val
+    # Wrap primitive in a USER_CONFIRMED context value
+    # primitives found natively or untracked are considered user-confirmed overrides
+    return ContextValue(
+        source=ContextSource.USER_CONFIRMED,
+        value=val,
+        confidence=1.0,
+    )
+
+
 def load_context(local_path: str) -> ContextByCategory:
     """Load all context values with provenance from project config.
 
@@ -49,7 +69,7 @@ def load_context(local_path: str) -> ContextByCategory:
     organized by category with full provenance tracking.
 
     Priority order:
-    1. CNCF format: .project/project.yaml extensions.openssf-baseline.config.context
+    1. CNCF format: .project/project.yaml native fields + extensions.openssf-baseline.config.context
     2. Legacy format: .project.yaml x-openssf-baseline.context
 
     Args:
@@ -57,7 +77,7 @@ def load_context(local_path: str) -> ContextByCategory:
 
     Returns:
         Dict of category -> {key -> ContextValue}
-        Categories include: governance, security, build, project, ci
+        Categories include: governance, security, build, project, ci, custom
     """
     config = load_project_config(local_path)
     if not config:
@@ -65,62 +85,65 @@ def load_context(local_path: str) -> ContextByCategory:
 
     context_by_category: ContextByCategory = {}
 
-    # Currently we support the legacy format
-    # TODO: Add CNCF format support when spec is finalized
+    def _add_context(category: str, key: str, value: Any) -> None:
+        ctx_val = _parse_context_value(value)
+        if ctx_val is not None:
+            if category not in context_by_category:
+                context_by_category[category] = {}
+            context_by_category[category][key] = ctx_val
+
+    # 1. Native CNCF Fields Mapping
+    if contact := config.get_security_contact():
+        _add_context("security", "security_contact", contact)
+
+    # Note: Other native mappings (like governance_model native equivalent) would go here
+    # once they are merged upstream into the CNCF spec.
+
+    # 2. Extensions / Legacy Mapping (x_openssf_baseline.context)
     if config.x_openssf_baseline and config.x_openssf_baseline.context:
         ctx = config.x_openssf_baseline.context
 
         # Build category
-        build_context: dict[str, ContextValue] = {}
-        if ctx.has_releases is not None:
-            build_context["has_releases"] = ContextValue.user_confirmed(ctx.has_releases)
-        if ctx.has_compiled_assets is not None:
-            build_context["has_compiled_assets"] = ContextValue.user_confirmed(ctx.has_compiled_assets)
-        if build_context:
-            context_by_category["build"] = build_context
+        _add_context("build", "has_releases", ctx.has_releases)
+        _add_context("build", "has_compiled_assets", ctx.has_compiled_assets)
 
         # Project category
-        project_context: dict[str, ContextValue] = {}
-        if ctx.has_subprojects is not None:
-            project_context["has_subprojects"] = ContextValue.user_confirmed(ctx.has_subprojects)
-        if ctx.is_library is not None:
-            project_context["is_library"] = ContextValue.user_confirmed(ctx.is_library)
-        if project_context:
-            context_by_category["project"] = project_context
+        _add_context("project", "has_subprojects", ctx.has_subprojects)
+        _add_context("project", "is_library", ctx.is_library)
 
         # CI category
-        ci_context: dict[str, ContextValue] = {}
-        if ctx.ci_provider is not None:
-            ci_context["provider"] = ContextValue.user_confirmed(ctx.ci_provider)
-        if ci_context:
-            context_by_category["ci"] = ci_context
+        _add_context("ci", "provider", ctx.ci_provider)
 
-        # Platform category (auto-detected or user-confirmed)
-        platform_context: dict[str, ContextValue] = {}
-        if ctx.platform is not None:
-            platform_context["platform"] = ContextValue.user_confirmed(ctx.platform)
-        if ctx.primary_language is not None:
-            platform_context["primary_language"] = ContextValue.user_confirmed(ctx.primary_language)
-        if ctx.languages is not None:
-            platform_context["languages"] = ContextValue.user_confirmed(ctx.languages)
-        if platform_context:
-            context_by_category["platform"] = platform_context
+        # Platform category
+        _add_context("platform", "platform", ctx.platform)
+        _add_context("platform", "primary_language", ctx.primary_language)
+        _add_context("platform", "languages", ctx.languages)
 
         # Governance category
-        governance_context: dict[str, ContextValue] = {}
-        if ctx.maintainers is not None:
-            governance_context["maintainers"] = ContextValue.user_confirmed(ctx.maintainers)
-        if ctx.governance_model is not None:
-            governance_context["governance_model"] = ContextValue.user_confirmed(ctx.governance_model)
-        if governance_context:
-            context_by_category["governance"] = governance_context
+        _add_context("governance", "maintainers", ctx.maintainers)
+        _add_context("governance", "governance_model", ctx.governance_model)
 
-        # Security category
-        security_context: dict[str, ContextValue] = {}
-        if ctx.security_contact is not None:
-            security_context["security_contact"] = ContextValue.user_confirmed(ctx.security_contact)
-        if security_context:
-            context_by_category["security"] = security_context
+        # Security category (fallback if native not found)
+        if ctx.security_contact is not None and "security_contact" not in context_by_category.get("security", {}):
+            _add_context("security", "security_contact", ctx.security_contact)
+
+        # Dynamically load unmapped arbitrary fields into 'custom' category
+        known_keys = {
+            "has_releases",
+            "has_compiled_assets",
+            "has_subprojects",
+            "is_library",
+            "ci_provider",
+            "platform",
+            "primary_language",
+            "languages",
+            "maintainers",
+            "governance_model",
+            "security_contact",
+        }
+        for key, val in ctx.model_dump(exclude_unset=True).items():
+            if key not in known_keys and val is not None:
+                _add_context("custom", key, val)
 
     return context_by_category
 
@@ -270,47 +293,39 @@ def save_context_value(
 
     ctx = config.x_openssf_baseline.context
 
-    # Map keys to context fields
-    # Note: Currently we store in the legacy flat format
-    # TODO: Add support for CNCF extensions format with full provenance
-    key_mapping = {
-        "has_subprojects": "has_subprojects",
-        "has_releases": "has_releases",
-        "is_library": "is_library",
-        "has_compiled_assets": "has_compiled_assets",
-        "ci_provider": "ci_provider",
-        "provider": "ci_provider",  # Alias for ci context
-        # Auto-detectable context
-        "platform": "platform",
-        "primary_language": "primary_language",
-        # New governance and security context keys
-        "maintainers": "maintainers",
-        "security_contact": "security_contact",
-        "governance_model": "governance_model",
+    # Normalize key (e.g. provider -> ci_provider)
+    if key == "provider" and category == "ci":
+        key = "ci_provider"
+
+    # 1. Native CNCF Fields mapping (value is saved without provenance in native fields)
+    if key == "security_contact":
+        from darnit.config.schema import SecurityConfig
+
+        if config.security is None:
+            config.security = SecurityConfig()
+        config.security.contact = value  # Unwrapped primitive
+
+    # 2. Extensions Framework mapping (with provenance)
+    from datetime import datetime
+
+    kwargs = {
+        "source": source,
+        "value": value,
+        "confidence": confidence,
     }
+    if source == ContextSource.AUTO_DETECTED:
+        kwargs["detected_at"] = datetime.now()
+        kwargs["detection_method"] = detection_method
+    elif source == ContextSource.USER_CONFIRMED:
+        kwargs["confirmed_at"] = datetime.now()
 
-    mapped_key = key_mapping.get(key)
-    if mapped_key is None:
-        # Check if it's a new context key we don't have direct storage for yet
-        logger.warning(
-            f"Context key '{key}' does not have direct storage support yet. "
-            "Storing in generic context."
-        )
-        # For now, we can't store arbitrary keys in the legacy format
-        # This will be addressed when we implement CNCF format support
-        raise ValueError(
-            f"Unknown context key: {key}. "
-            f"Supported keys: {list(key_mapping.keys())}"
-        )
+    ctx_val = ContextValue(**kwargs)
 
-    # Set the value
-    setattr(ctx, mapped_key, value)
+    # Store complete provenance struct under baseline context
+    setattr(ctx, key, ctx_val.model_dump(exclude_none=True))
 
     # Log provenance (even though we can't store it in legacy format)
-    logger.info(
-        f"Saved context {key}={value} "
-        f"(source={source.value}, confidence={confidence})"
-    )
+    logger.info(f"Saved context {key}={value} (source={source.value}, confidence={confidence})")
 
     # Save config
     config_path = save_project_config(config, str(resolved_path))
@@ -541,18 +556,13 @@ def get_pending_context(
         current_value = None
         if detect_pipeline:
             # Primary: handler-based detection from TOML detect pipeline
-            current_value = _run_detect_pipeline(
-                key, detect_pipeline, local_path, owner, repo
-            )
+            current_value = _run_detect_pipeline(key, detect_pipeline, local_path, owner, repo)
         if current_value is None and definition.auto_detect:
             # Fallback: context sieve (hardcoded Python detectors)
             current_value = _try_sieve_detection(key, local_path, owner, repo)
 
         # Auto-accept high-confidence detections without user prompting
-        if (
-            current_value is not None
-            and current_value.confidence >= auto_accept_threshold
-        ):
+        if current_value is not None and current_value.confidence >= auto_accept_threshold:
             current_value.auto_accepted = True
             auto_accepted_keys.append(key)
             logger.debug(
@@ -564,7 +574,9 @@ def get_pending_context(
             # Save auto-accepted value directly
             try:
                 save_context_value(
-                    local_path, key, current_value.value,
+                    local_path,
+                    key,
+                    current_value.value,
                     source=ContextSource.AUTO_DETECTED,
                     detection_method=current_value.detection_method,
                     confidence=current_value.confidence,
@@ -576,13 +588,15 @@ def get_pending_context(
                 auto_accepted_keys.pop()
 
         if key not in auto_accepted_keys:
-            pending.append(ContextPromptRequest(
-                key=key,
-                definition=definition,
-                control_ids=affected,
-                current_value=current_value,
-                priority=len(affected),  # Priority = number of controls affected
-            ))
+            pending.append(
+                ContextPromptRequest(
+                    key=key,
+                    definition=definition,
+                    control_ids=affected,
+                    current_value=current_value,
+                    priority=len(affected),  # Priority = number of controls affected
+                )
+            )
 
     if auto_accepted_keys:
         logger.info(
@@ -688,9 +702,7 @@ def _run_detect_pipeline(
                         confidence=result.confidence,
                     )
                 # Fallback: extract value from evidence
-                detected_value = result.evidence.get("value") or result.evidence.get(
-                    key
-                )
+                detected_value = result.evidence.get("value") or result.evidence.get(key)
                 if detected_value is not None:
                     return ContextValue.auto_detected(
                         value=detected_value,
@@ -701,9 +713,7 @@ def _run_detect_pipeline(
             # INCONCLUSIVE or FAIL — try next handler in pipeline
 
     except ImportError:
-        logger.debug(
-            "Sieve handler registry not available for context detection"
-        )
+        logger.debug("Sieve handler registry not available for context detection")
     except Exception as e:
         logger.warning(f"Context detect pipeline failed for '{key}': {e}")
 

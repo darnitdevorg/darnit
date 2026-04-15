@@ -26,6 +26,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl
 
 class ProjectType(str, Enum):
     """Types of projects with different control applicability."""
+
     SOFTWARE = "software"
     SPECIFICATION = "specification"
     DOCUMENTATION = "documentation"
@@ -35,6 +36,7 @@ class ProjectType(str, Enum):
 
 class ControlStatusValue(str, Enum):
     """Valid status values for control overrides."""
+
     NA = "n/a"
     ENABLED = "enabled"
     DISABLED = "disabled"
@@ -42,6 +44,7 @@ class ControlStatusValue(str, Enum):
 
 class ContributorAgreementType(str, Enum):
     """Types of contributor agreements."""
+
     DCO = "dco"
     CLA = "cla"
     NONE = "none"
@@ -49,12 +52,14 @@ class ContributorAgreementType(str, Enum):
 
 class SBOMFormat(str, Enum):
     """Supported SBOM formats."""
+
     CYCLONEDX = "cyclonedx"
     SPDX = "spdx"
 
 
 class SigningMethod(str, Enum):
     """Supported signing methods."""
+
     SIGSTORE = "sigstore"
     GPG = "gpg"
     MINISIGN = "minisign"
@@ -62,6 +67,7 @@ class SigningMethod(str, Enum):
 
 class ProvenanceFormat(str, Enum):
     """Supported provenance formats."""
+
     SLSA = "slsa"
     IN_TOTO = "in-toto"
 
@@ -73,6 +79,7 @@ class ProvenanceFormat(str, Enum):
 
 class PathRef(BaseModel):
     """Reference to a local file path."""
+
     path: str
 
     model_config = ConfigDict(extra="forbid")
@@ -80,6 +87,7 @@ class PathRef(BaseModel):
 
 class UrlRef(BaseModel):
     """Reference to an external URL."""
+
     url: HttpUrl
 
     model_config = ConfigDict(extra="forbid")
@@ -87,6 +95,7 @@ class UrlRef(BaseModel):
 
 class RepoRef(BaseModel):
     """Reference to a file in another repository."""
+
     repo: str  # "owner/repo" format
     path: str | None = None
     ref: str | None = None  # branch, tag, or commit
@@ -96,6 +105,7 @@ class RepoRef(BaseModel):
 
 class SectionRef(BaseModel):
     """Reference to a section/heading within another file."""
+
     section: str  # Format: "section.key#heading" or "path#heading"
 
     model_config = ConfigDict(extra="forbid")
@@ -103,6 +113,7 @@ class SectionRef(BaseModel):
 
 class NARef(BaseModel):
     """Explicit N/A status for a resource."""
+
     status: str = "n/a"
     reason: str
 
@@ -156,6 +167,7 @@ def get_path_from_ref(ref: ResourceRef | None) -> str | None:
 
 class MaturityEntry(BaseModel):
     """CNCF maturity phase entry."""
+
     phase: str  # sandbox, incubating, graduated
     date: date
     issue: str | None = None  # URL to maturity issue
@@ -165,6 +177,7 @@ class MaturityEntry(BaseModel):
 
 class Audit(BaseModel):
     """Security or compliance audit record."""
+
     date: date
     type: str  # security, performance, compliance
     url: str  # URL to audit report
@@ -174,6 +187,7 @@ class Audit(BaseModel):
 
 class MaintainerLifecycleConfig(BaseModel):
     """Maintainer lifecycle configuration (CNCF standard)."""
+
     onboarding_doc: PathRef | None = None
     progression_ladder: PathRef | None = None
     offboarding_policy: PathRef | None = None
@@ -184,6 +198,7 @@ class MaintainerLifecycleConfig(BaseModel):
 
 class IdentityTypeConfig(BaseModel):
     """Identity/contributor agreement type (CNCF standard)."""
+
     has_dco: bool = False
     has_cla: bool = False
     dco_url: PathRef | None = None
@@ -194,6 +209,7 @@ class IdentityTypeConfig(BaseModel):
 
 class LandscapeConfig(BaseModel):
     """CNCF Landscape placement configuration."""
+
     category: str = ""
     subcategory: str = ""
 
@@ -205,6 +221,7 @@ class SecurityContactModel(BaseModel):
 
     Supports the CNCF struct format with email and advisory_url fields.
     """
+
     email: EmailStr | None = None
     advisory_url: HttpUrl | str | None = None
 
@@ -213,6 +230,7 @@ class SecurityContactModel(BaseModel):
 
 class SecurityConfig(BaseModel):
     """Security documentation references (CNCF standard)."""
+
     policy: PathRef | None = None
     threat_model: PathRef | None = None
     contact: SecurityContactModel | EmailStr | str | None = None
@@ -222,6 +240,7 @@ class SecurityConfig(BaseModel):
 
 class GovernanceConfig(BaseModel):
     """Governance documentation references (CNCF standard)."""
+
     contributing: PathRef | None = None
     codeowners: PathRef | None = None
     governance_doc: PathRef | None = None
@@ -244,6 +263,7 @@ class GovernanceConfig(BaseModel):
 
 class LegalConfig(BaseModel):
     """Legal documentation references (CNCF standard)."""
+
     license: PathRef | None = None
     identity_type: IdentityTypeConfig | None = None
 
@@ -252,6 +272,7 @@ class LegalConfig(BaseModel):
 
 class DocumentationConfig(BaseModel):
     """Project documentation references (CNCF standard)."""
+
     readme: PathRef | None = None
     support: PathRef | None = None
     architecture: PathRef | None = None
@@ -267,6 +288,7 @@ class DocumentationConfig(BaseModel):
 
 class ControlOverride(BaseModel):
     """Override status for a specific OSPS control."""
+
     status: ControlStatusValue
     reason: str | None = None
 
@@ -275,6 +297,7 @@ class ControlOverride(BaseModel):
 
 class ArtifactConfig(BaseModel):
     """Build artifact configuration."""
+
     path: str | None = None
     format: str | None = None  # cyclonedx, spdx, slsa
     enabled: bool | None = None
@@ -285,6 +308,7 @@ class ArtifactConfig(BaseModel):
 
 class ContributorAgreementConfig(BaseModel):
     """Contributor licensing configuration."""
+
     type: ContributorAgreementType
     url: str | None = None
 
@@ -293,6 +317,7 @@ class ContributorAgreementConfig(BaseModel):
 
 class CIConfig(BaseModel):
     """CI/CD configuration references."""
+
     provider: str | None = None  # github, gitlab, jenkins
     workflows: list[str] = Field(default_factory=list)
     dependency_scanning: str | None = None
@@ -305,31 +330,32 @@ class CIConfig(BaseModel):
 
 class ProjectContext(BaseModel):
     """User-confirmed project context that affects control evaluation."""
+
     # Existing context keys
-    has_subprojects: bool | None = None
-    has_releases: bool | None = None
-    is_library: bool | None = None
-    has_compiled_assets: bool | None = None
-    ci_provider: str | None = None
+    has_subprojects: Any | None = None
+    has_releases: Any | None = None
+    is_library: Any | None = None
+    has_compiled_assets: Any | None = None
+    ci_provider: Any | None = None
 
     # Auto-detectable context (factual, safe to infer from filesystem)
-    platform: str | None = None
+    platform: Any | None = None
     """Hosting platform - github, gitlab, bitbucket, or None."""
 
-    primary_language: str | None = None
+    primary_language: Any | None = None
     """Primary programming language - python, go, rust, javascript, etc."""
 
-    languages: list[str] | None = None
+    languages: Any | None = None
     """All detected programming languages in the repository."""
 
     # New context keys for governance and security
-    maintainers: list[str] | str | None = None
+    maintainers: Any | None = None
     """Project maintainers - list of GitHub usernames or path to MAINTAINERS file."""
 
-    security_contact: str | None = None
+    security_contact: Any | None = None
     """Security contact for vulnerability reports - email, URL, or reference."""
 
-    governance_model: str | None = None
+    governance_model: Any | None = None
     """Governance model - bdfl, meritocracy, democracy, corporate, foundation, committee, other."""
 
     model_config = ConfigDict(extra="allow")
@@ -337,6 +363,7 @@ class ProjectContext(BaseModel):
 
 class ExtendedGovernance(BaseModel):
     """Extended governance fields not in CNCF spec (yet)."""
+
     maintainers: PathRef | None = None
     code_of_conduct: PathRef | None = None
 
@@ -345,6 +372,7 @@ class ExtendedGovernance(BaseModel):
 
 class ExtendedQuality(BaseModel):
     """Quality tracking fields."""
+
     changelog: PathRef | None = None
 
     model_config = ConfigDict(extra="allow")
@@ -352,6 +380,7 @@ class ExtendedQuality(BaseModel):
 
 class ExtendedSecurity(BaseModel):
     """Extended security fields."""
+
     advisories: str | None = None  # URL or path
     secrets_policy: PathRef | None = None
     vex_policy: SectionRef | None = None
@@ -363,6 +392,7 @@ class ExtendedSecurity(BaseModel):
 
 class ExtendedLegal(BaseModel):
     """Extended legal fields."""
+
     contributor_agreement: ContributorAgreementConfig | None = None
 
     model_config = ConfigDict(extra="allow")
@@ -370,6 +400,7 @@ class ExtendedLegal(BaseModel):
 
 class DependenciesConfig(BaseModel):
     """Dependency management configuration."""
+
     lockfile: str | None = None
     manifest: str | None = None
     docs: str | None = None
@@ -379,6 +410,7 @@ class DependenciesConfig(BaseModel):
 
 class ArtifactsConfig(BaseModel):
     """Build artifacts configuration."""
+
     sbom: ArtifactConfig | None = None
     signing: ArtifactConfig | None = None
     provenance: ArtifactConfig | None = None
@@ -392,6 +424,7 @@ class BaselineExtension(BaseModel):
     This extension provides fields for OpenSSF Baseline compliance that are
     not (yet) part of the CNCF .project standard.
     """
+
     # Extension metadata
     version: str = "1.0"
     osps_version: str | None = None  # e.g., "v2025.10.10"
@@ -443,6 +476,7 @@ class ProjectConfig(BaseModel):
               reason: "Specification project"
         ```
     """
+
     # Core metadata (CNCF standard)
     name: str
     description: str = ""
@@ -471,10 +505,7 @@ class ProjectConfig(BaseModel):
     audits: list[Audit] = Field(default_factory=list)
 
     # OpenSSF Baseline extension
-    x_openssf_baseline: BaselineExtension | None = Field(
-        default=None,
-        alias="x-openssf-baseline"
-    )
+    x_openssf_baseline: BaselineExtension | None = Field(default=None, alias="x-openssf-baseline")
 
     # Internal tracking (not serialized)
     config_path: str | None = Field(default=None, exclude=True)
@@ -625,11 +656,7 @@ class ProjectConfig(BaseModel):
 # =============================================================================
 
 
-def create_minimal_config(
-    name: str,
-    description: str = "",
-    project_type: str = "software"
-) -> ProjectConfig:
+def create_minimal_config(name: str, description: str = "", project_type: str = "software") -> ProjectConfig:
     """Create a minimal project configuration.
 
     Args:
@@ -641,18 +668,12 @@ def create_minimal_config(
         Minimal ProjectConfig instance
     """
     return ProjectConfig(
-        name=name,
-        description=description,
-        type=project_type,
-        x_openssf_baseline=BaselineExtension(version="1.0")
+        name=name, description=description, type=project_type, x_openssf_baseline=BaselineExtension(version="1.0")
     )
 
 
 def create_full_config(
-    name: str,
-    description: str = "",
-    project_type: str = "software",
-    **kwargs: Any
+    name: str, description: str = "", project_type: str = "software", **kwargs: Any
 ) -> ProjectConfig:
     """Create a full project configuration with all sections.
 
@@ -683,5 +704,5 @@ def create_full_config(
             dependencies=DependenciesConfig(),
             ci=CIConfig(),
         ),
-        **kwargs
+        **kwargs,
     )
