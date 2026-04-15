@@ -20,7 +20,11 @@ Usage:
 """
 
 import argparse
+import logging
 import sys
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logger = logging.getLogger(__name__)
 from pathlib import Path
 from typing import NamedTuple
 
@@ -300,7 +304,7 @@ def run_validations(verbose: bool = False) -> int:
     ]
 
     results = []
-    print("Running sync validations...\n")
+    logger.info("Running sync validations...\n")
 
     for name, validator in validations:
         result = validator()
@@ -318,25 +322,25 @@ def run_validations(verbose: bool = False) -> int:
             color = "\033[31m"  # Red
 
         reset = "\033[0m"
-        print(f"{color}{status}{reset} {name}: {result.message}")
+        logger.info(f"{color}{status}{reset} {name}: {result.message}")
 
         if verbose and result.details:
-            print(f"  {result.details}")
+            logger.info(f"  {result.details}")
 
-    print()
+    logger.info("")
 
     # Determine exit code
     has_failure = any(not r.passed and not r.is_warning for _, r in results)
     has_warning = any(not r.passed and r.is_warning for _, r in results)
 
     if has_failure:
-        print("FAILED: Critical validation errors found")
+        logger.info("FAILED: Critical validation errors found")
         return 1
     elif has_warning:
-        print("WARNING: Non-critical issues found")
+        logger.info("WARNING: Non-critical issues found")
         return 2
     else:
-        print("PASSED: All validations successful")
+        logger.info("PASSED: All validations successful")
         return 0
 
 

@@ -206,9 +206,9 @@ def cmd_audit(args: argparse.Namespace) -> int:
 
     # Output results
     if args.output == "json":
-        print(format_results_json(results, config.framework_name))
+        sys.stdout.write(format_results_json(results, config.framework_name) + "\n")
     else:
-        print(format_results_text(results, config.framework_name))
+        sys.stdout.write(format_results_text(results, config.framework_name) + "\n")
 
     # Return non-zero if any failures
     failures = [r for r in results if r.get("status") == "FAIL"]
@@ -251,18 +251,18 @@ def cmd_plan(args: argparse.Namespace) -> int:
     include_ids = set(args.include.split(",")) if args.include else None
     exclude_ids = set(args.exclude.split(",")) if args.exclude else set()
 
-    print(f"\n=== Execution Plan: {config.framework_name} ===\n")
-    print(f"Framework: {config.framework_name} v{config.framework_version}")
+    logger.info(f"\n=== Execution Plan: {config.framework_name} ===\n")
+    logger.info(f"Framework: {config.framework_name} v{config.framework_version}")
     if config.spec_version:
-        print(f"Spec: {config.spec_version}")
-    print(f"Repository: {repo_path}")
+        logger.info(f"Spec: {config.spec_version}")
+    logger.info(f"Repository: {repo_path}")
     if filters:
-        print(f"Filters: {', '.join(f'{f.field}{f.operator}{f.value}' for f in filters)}")
+        logger.info(f"Filters: {', '.join(f'{f.field}{f.operator}{f.value}' for f in filters)}")
     if include_ids:
-        print(f"Include: {', '.join(sorted(include_ids))}")
+        logger.info(f"Include: {', '.join(sorted(include_ids))}")
     if exclude_ids:
-        print(f"Exclude: {', '.join(sorted(exclude_ids))}")
-    print()
+        logger.info(f"Exclude: {', '.join(sorted(exclude_ids))}")
+    logger.info("")
 
     # Group controls by level
     by_level = {}
@@ -294,25 +294,25 @@ def cmd_plan(args: argparse.Namespace) -> int:
         if not shown_controls:
             continue
 
-        print(f"Level {level} ({len(shown_controls)} controls):")
+        logger.info(f"Level {level} ({len(shown_controls)} controls):")
         for cid, ctrl in shown_controls:
             if ctrl.is_applicable():
                 adapter = ctrl.check_adapter
-                print(f"  • {cid}: {ctrl.name} [adapter: {adapter}]")
+                logger.info(f"  • {cid}: {ctrl.name} [adapter: {adapter}]")
             else:
-                print(f"  - {cid}: {ctrl.name} [skipped: {ctrl.status_reason}]")
-        print()
+                logger.info(f"  - {cid}: {ctrl.name} [skipped: {ctrl.status_reason}]")
+        logger.info("")
         total_shown += len(shown_controls)
 
     if total_filtered > 0:
-        print(f"({total_filtered} controls filtered out)")
+        logger.info(f"({total_filtered} controls filtered out)")
 
     # Show excluded controls
     excluded = config.get_excluded_controls()
     if excluded:
-        print(f"Excluded ({len(excluded)}):")
+        logger.info(f"Excluded ({len(excluded)}):")
         for cid, reason in excluded.items():
-            print(f"  - {cid}: {reason}")
+            logger.info(f"  - {cid}: {reason}")
 
     return 0
 
@@ -335,14 +335,14 @@ def cmd_validate(args: argparse.Namespace) -> int:
     errors = validate_framework_config(config)
 
     if errors:
-        print(f"\n✗ Validation failed with {len(errors)} error(s):\n")
+        logger.info(f"\n✗ Validation failed with {len(errors)} error(s):\n")
         for error in errors:
-            print(f"  • {error}")
+            logger.info(f"  • {error}")
         return 1
     else:
-        print(f"\n✓ Framework '{config.metadata.name}' is valid")
-        print(f"  Controls: {len(config.controls)}")
-        print(f"  Adapters: {len(config.adapters)}")
+        logger.info(f"\n✓ Framework '{config.metadata.name}' is valid")
+        logger.info(f"  Controls: {len(config.controls)}")
+        logger.info(f"  Adapters: {len(config.adapters)}")
 
         # Show level breakdown
         by_level = {}
@@ -350,7 +350,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
             by_level.setdefault(ctrl.level, 0)
             by_level[ctrl.level] += 1
 
-        print(f"  By level: {', '.join(f'L{k}={v}' for k, v in sorted(by_level.items()))}")
+        logger.info(f"  By level: {', '.join(f'L{k}={v}' for k, v in sorted(by_level.items()))}")
         return 0
 
 
@@ -401,7 +401,7 @@ timeout = 300
 '''
 
     baseline_path.write_text(template)
-    print(f"✓ Created {baseline_path}")
+    logger.info(f"✓ Created {baseline_path}")
     return 0
 
 
@@ -412,22 +412,22 @@ def cmd_list(args: argparse.Namespace) -> int:
     frameworks = list_available_frameworks()
 
     if not frameworks:
-        print("No frameworks found. Install a framework package like darnit-baseline.")
+        logger.info("No frameworks found. Install a framework package like darnit-baseline.")
         return 0
 
-    print("\nAvailable Frameworks:\n")
+    logger.info("\nAvailable Frameworks:\n")
     for name in frameworks:
         try:
             config = load_framework_by_name(name)
-            print(f"  • {name}")
-            print(f"    Display: {config.metadata.display_name}")
-            print(f"    Version: {config.metadata.version}")
+            logger.info(f"  • {name}")
+            logger.info(f"    Display: {config.metadata.display_name}")
+            logger.info(f"    Version: {config.metadata.version}")
             if config.metadata.spec_version:
-                print(f"    Spec: {config.metadata.spec_version}")
-            print(f"    Controls: {len(config.controls)}")
-            print()
+                logger.info(f"    Spec: {config.metadata.spec_version}")
+            logger.info(f"    Controls: {len(config.controls)}")
+            logger.info("")
         except Exception as e:
-            print(f"  • {name} (error loading: {e})")
+            logger.info(f"  • {name} (error loading: {e})")
 
     return 0
 
@@ -463,13 +463,13 @@ def _install_skills(target_dir: Path, force: bool = False) -> int:
     for skill_dir in skill_dirs:
         dest = target_dir / skill_dir.name
         if dest.exists() and not force:
-            print(f"  Skill '{skill_dir.name}' already exists at {dest}, skipping (use --force to overwrite)")
+            logger.info(f"  Skill '{skill_dir.name}' already exists at {dest}, skipping (use --force to overwrite)")
             continue
         if dest.exists():
             shutil.rmtree(dest)
         shutil.copytree(skill_dir, dest)
         installed += 1
-        print(f"  ✓ Installed skill '{skill_dir.name}' → {dest}")
+        logger.info(f"  ✓ Installed skill '{skill_dir.name}' → {dest}")
 
     return installed
 
@@ -507,7 +507,7 @@ def cmd_install(args: argparse.Namespace) -> int:
             f"'darnit' entry already exists in {settings_path}. Overwrite? [y/N]: "
         ).strip().lower()
         if response not in {"y", "yes"}:
-            print("Install cancelled.")
+            logger.info("Install cancelled.")
             return 1
 
     mcp_servers["darnit"] = darnit_entry
@@ -519,27 +519,27 @@ def cmd_install(args: argparse.Namespace) -> int:
         logger.error(f"Failed to write settings file: {e}")
         return 1
 
-    print(f"✓ Installed darnit MCP server config in {settings_path}")
+    logger.info(f"✓ Installed darnit MCP server config in {settings_path}")
 
     # Install skills
     if not args.mcp_only and args.client == "claude":
         if args.project:
             skills_target = Path.cwd() / ".claude" / "skills"
-            print(f"\nInstalling skills (project) → {skills_target}")
+            logger.info(f"\nInstalling skills (project) → {skills_target}")
         else:
             skills_target = Path.home() / ".claude" / "skills"
-            print(f"\nInstalling skills (global) → {skills_target}")
+            logger.info(f"\nInstalling skills (global) → {skills_target}")
 
         count = _install_skills(skills_target, force=args.force)
         if count > 0:
-            print(f"✓ Installed {count} skill(s)")
+            logger.info(f"✓ Installed {count} skill(s)")
         elif count == 0:
-            print("  No new skills to install")
+            logger.info("  No new skills to install")
     elif args.mcp_only:
-        print("  Skipping skill installation (--mcp-only)")
+        logger.info("  Skipping skill installation (--mcp-only)")
 
-    print("\nNext step: restart your AI client and use the configured MCP server.")
-    print("Skills available: /darnit-audit, /darnit-context, /darnit-comply, /darnit-remediate")
+    logger.info("\nNext step: restart your AI client and use the configured MCP server.")
+    logger.info("Skills available: /darnit-audit, /darnit-context, /darnit-comply, /darnit-remediate")
     return 0
 
 def cmd_profiles(args: argparse.Namespace) -> int:
@@ -548,7 +548,7 @@ def cmd_profiles(args: argparse.Namespace) -> int:
 
     impls = discover_implementations()
     if not impls:
-        print("No implementations found.")
+        logger.info("No implementations found.")
         return 0
 
     impl_filter = getattr(args, "impl", None)
@@ -564,13 +564,13 @@ def cmd_profiles(args: argparse.Namespace) -> int:
             continue
 
         found_any = True
-        print(f"\n{name}:")
+        logger.info(f"\n{name}:")
         for profile_name, profile in profiles.items():
             ctrl_count = len(profile.controls) if profile.controls else "tag-based"
-            print(f"  {profile_name:<25} {profile.description} ({ctrl_count} controls)")
+            logger.info(f"  {profile_name:<25} {profile.description} ({ctrl_count} controls)")
 
     if not found_any:
-        print("No audit profiles defined by any implementation.")
+        logger.info("No audit profiles defined by any implementation.")
 
     return 0
 

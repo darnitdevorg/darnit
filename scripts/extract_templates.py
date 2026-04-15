@@ -13,15 +13,19 @@ Defaults to packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml
 
 from __future__ import annotations
 
+import logging
 import re
 import sys
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logger = logging.getLogger(__name__)
 from pathlib import Path
 
 
 def extract_templates(toml_path: str) -> None:
     toml_file = Path(toml_path).resolve()
     if not toml_file.exists():
-        print(f"Error: {toml_file} not found")
+        logger.info(f"Error: {toml_file} not found")
         sys.exit(1)
 
     templates_dir = toml_file.parent / "templates"
@@ -145,10 +149,10 @@ def extract_templates(toml_path: str) -> None:
     new_content = "\n".join(output_lines)
     toml_file.write_text(new_content, encoding="utf-8")
 
-    print(f"Extracted {extracted} templates to {templates_dir}/")
+    logger.info(f"Extracted {extracted} templates to {templates_dir}/")
     if skipped:
-        print(f"Skipped {skipped} templates (no inline content)")
-    print(f"Rewrote {toml_file}")
+        logger.info(f"Skipped {skipped} templates (no inline content)")
+    logger.info(f"Rewrote {toml_file}")
 
 
 if __name__ == "__main__":

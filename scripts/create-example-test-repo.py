@@ -26,8 +26,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import subprocess
 import sys
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logger = logging.getLogger(__name__)
 import tempfile
 from pathlib import Path
 
@@ -51,11 +55,11 @@ def create_repo(
     repo_path = parent_path / repo_name
 
     if repo_path.exists():
-        print(f"\033[0;31mError: Directory '{repo_path}' already exists.\033[0m")
+        logger.info(f"\033[0;31mError: Directory '{repo_path}' already exists.\033[0m")
         sys.exit(1)
 
-    print("\033[0;32m=== Project Hygiene Test Repo Generator ===\033[0m\n")
-    print(f"Creating: {repo_path}\n")
+    logger.info("\033[0;32m=== Project Hygiene Test Repo Generator ===\033[0m\n")
+    logger.info(f"Creating: {repo_path}\n")
 
     # -- Directory structure --------------------------------------------------
     (repo_path / "src").mkdir(parents=True)
@@ -72,9 +76,9 @@ requires-python = ">=3.10"
     # -- src/main.py ----------------------------------------------------------
     main_py = """\
 def main():
-    print("Hello from hygiene-test!")
-    print("This repo intentionally has no hygiene files.")
-    print("Run the example_hygiene_check MCP tool to see what is missing.")
+    logger.info("Hello from hygiene-test!")
+    logger.info("This repo intentionally has no hygiene files.")
+    logger.info("Run the example_hygiene_check MCP tool to see what is missing.")
 
 
 if __name__ == "__main__":
@@ -154,17 +158,17 @@ then fix each failing control.
         )
     except subprocess.CalledProcessError as e:
         stderr = e.stderr.decode() if e.stderr else str(e)
-        print(f"\033[0;31mGit error: {stderr}\033[0m")
+        logger.info(f"\033[0;31mGit error: {stderr}\033[0m")
         sys.exit(1)
 
-    print("\033[0;32m✓ Local repository created\033[0m")
+    logger.info("\033[0;32m✓ Local repository created\033[0m")
 
     # -- Optional GitHub repo -------------------------------------------------
     if create_github:
         _create_github_repo(repo_path, repo_name, github_org, make_template)
 
     # -- Summary --------------------------------------------------------------
-    print(f"""
+    logger.info(f"""
 \033[0;32m=== Repository Created ===\033[0m
 
   Location: {repo_path}
@@ -192,11 +196,11 @@ def remediate_repo(repo_path_str: str) -> None:
     """Apply minimal fixes to make all 8 PH controls pass."""
     repo_path = Path(repo_path_str).resolve()
     if not repo_path.exists():
-        print(f"\033[0;31mError: '{repo_path}' does not exist.\033[0m")
+        logger.info(f"\033[0;31mError: '{repo_path}' does not exist.\033[0m")
         sys.exit(1)
 
-    print("\033[0;32m=== Applying Quick Remediations ===\033[0m\n")
-    print(f"Target: {repo_path}\n")
+    logger.info("\033[0;32m=== Applying Quick Remediations ===\033[0m\n")
+    logger.info(f"Target: {repo_path}\n")
 
     created: list[str] = []
 
@@ -260,13 +264,13 @@ def remediate_repo(repo_path_str: str) -> None:
         created.append(".github/workflows/ci.yml")
 
     if created:
-        print("\033[0;32mCreated files:\033[0m")
+        logger.info("\033[0;32mCreated files:\033[0m")
         for f in created:
-            print(f"  ✓ {f}")
-        print(f"\n\033[0;32mDone! {len(created)} files created.\033[0m")
-        print("Re-run the audit to verify all controls pass.")
+            logger.info(f"  ✓ {f}")
+        logger.info(f"\n\033[0;32mDone! {len(created)} files created.\033[0m")
+        logger.info("Re-run the audit to verify all controls pass.")
     else:
-        print("\033[1;33mAll files already exist — nothing to do.\033[0m")
+        logger.info("\033[1;33mAll files already exist — nothing to do.\033[0m")
 
 
 def _create_github_repo(
@@ -281,13 +285,13 @@ def _create_github_repo(
             ["gh", "auth", "status"], capture_output=True
         )
         if result.returncode != 0:
-            print(
+            logger.info(
                 "\033[1;33m⚠ GitHub CLI not authenticated. "
                 "Skipping GitHub repo creation.\033[0m"
             )
             return
     except FileNotFoundError:
-        print(
+        logger.info(
             "\033[1;33m⚠ GitHub CLI (gh) not found. "
             "Skipping GitHub repo creation.\033[0m"
         )
@@ -300,9 +304,9 @@ def _create_github_repo(
             text=True,
         )
         github_org = result.stdout.strip()
-        print(f"\033[1;33mUsing GitHub user: {github_org}\033[0m")
+        logger.info(f"\033[1;33mUsing GitHub user: {github_org}\033[0m")
 
-    print(f"\033[0;32mCreating GitHub repository: {github_org}/{repo_name}\033[0m")
+    logger.info(f"\033[0;32mCreating GitHub repository: {github_org}/{repo_name}\033[0m")
 
     try:
         subprocess.run(
@@ -323,7 +327,7 @@ def _create_github_repo(
             capture_output=True,
             check=True,
         )
-        print("\033[0;32m✓ GitHub repository created\033[0m")
+        logger.info("\033[0;32m✓ GitHub repository created\033[0m")
 
         if make_template:
             subprocess.run(
@@ -341,11 +345,11 @@ def _create_github_repo(
                 capture_output=True,
                 check=True,
             )
-            print("\033[0;32m✓ Repository is now a template\033[0m")
+            logger.info("\033[0;32m✓ Repository is now a template\033[0m")
 
     except subprocess.CalledProcessError as e:
         stderr = e.stderr.decode() if e.stderr else str(e)
-        print(f"\033[1;33m⚠ GitHub error: {stderr}\033[0m")
+        logger.info(f"\033[1;33m⚠ GitHub error: {stderr}\033[0m")
 
 
 def main() -> None:

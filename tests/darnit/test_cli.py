@@ -7,7 +7,7 @@ import pytest
 from darnit.cli import create_parser, format_result_text, format_results_json, main
 
 
-def test_install_claude_creates_settings(tmp_path, monkeypatch, capsys):
+def test_install_claude_creates_settings(tmp_path, monkeypatch, capsys, caplog):
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
 
     exit_code = main(["install"])
@@ -24,7 +24,7 @@ def test_install_claude_creates_settings(tmp_path, monkeypatch, capsys):
     assert data["mcpServers"]["darnit"]["args"] == ["--from", "darnit", "darnit", "serve"]
 
     captured = capsys.readouterr()
-    assert "Installed darnit MCP server config" in captured.out
+    assert "Installed darnit MCP server config" in captured.err
 
 def test_install_cursor_creates_settings(tmp_path, monkeypatch):
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)

@@ -33,8 +33,12 @@ Output:
 
 import argparse
 import hashlib
+import logging
 import re
 import sys
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logger = logging.getLogger(__name__)
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -248,16 +252,16 @@ def process_content_with_markers(
 
         if cached:
             if verbose:
-                print(f"  Cache hit: {marker.marker_type} ({marker.section_hash[:8]})")
+                logger.info(f"  Cache hit: {marker.marker_type} ({marker.section_hash[:8]})")
             replacement = cached
         elif skip_llm:
             if verbose:
-                print(f"  Skipping LLM: {marker.marker_type} ({marker.section_hash[:8]})")
+                logger.info(f"  Skipping LLM: {marker.marker_type} ({marker.section_hash[:8]})")
             # Keep the marker as-is or use placeholder
             replacement = f"*[LLM content pending: {marker.marker_type}]*\n\n{marker.prompt_content}"
         else:
             if verbose:
-                print(f"  Generating: {marker.marker_type} ({marker.section_hash[:8]})")
+                logger.info(f"  Generating: {marker.marker_type} ({marker.section_hash[:8]})")
             replacement = generate_llm_content(marker, verbose)
             save_cache(cache_dir, marker.section_hash, replacement)
 
@@ -483,19 +487,19 @@ def main():
 
     # Verify spec exists
     if not SPEC_PATH.exists():
-        print(f"Error: Spec not found at {SPEC_PATH}", file=sys.stderr)
+        logger.info(f"Error: Spec not found at {SPEC_PATH}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Reading spec from: {SPEC_PATH}")
+    logger.info(f"Reading spec from: {SPEC_PATH}")
 
     # Parse spec
     metadata, content = parse_spec(SPEC_PATH)
 
     if args.verbose:
-        print(f"Spec metadata: {metadata}")
+        logger.info(f"Spec metadata: {metadata}")
 
     # Process LLM markers
-    print("Processing content...")
+    logger.info("Processing content...")
     processed_content = process_content_with_markers(
         content,
         CACHE_DIR,
@@ -508,24 +512,24 @@ def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     # Generate documents
-    print(f"Generating documentation to {OUTPUT_DIR}/")
+    logger.info(f"Generating documentation to {OUTPUT_DIR}/")
 
     arch_doc = generate_architecture_doc(processed_content, metadata)
     arch_path = OUTPUT_DIR / "ARCHITECTURE.md"
     arch_path.write_text(arch_doc)
-    print(f"  Written: {arch_path.name}")
+    logger.info(f"  Written: {arch_path.name}")
 
     schema_doc = generate_schema_reference(processed_content, metadata)
     schema_path = OUTPUT_DIR / "SCHEMA_REFERENCE.md"
     schema_path.write_text(schema_doc)
-    print(f"  Written: {schema_path.name}")
+    logger.info(f"  Written: {schema_path.name}")
 
     usage_doc = generate_usage_guide(processed_content, metadata)
     usage_path = OUTPUT_DIR / "USAGE_GUIDE.md"
     usage_path.write_text(usage_doc)
-    print(f"  Written: {usage_path.name}")
+    logger.info(f"  Written: {usage_path.name}")
 
-    print("\nDone!")
+    logger.info("\nDone!")
 
 
 if __name__ == "__main__":

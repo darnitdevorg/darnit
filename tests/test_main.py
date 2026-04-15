@@ -164,4 +164,4 @@ class TestCLI:
             text=True
         )
         assert result.returncode == 0
-        assert "openssf-baseline" in result.stdout.lower()
+        assert "openssf-baseline" in result.stderr.lower()
