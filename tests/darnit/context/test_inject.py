@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import MagicMock, Mock, patch
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from darnit.context.inject import (
     create_check_context_with_project,
@@ -32,9 +30,7 @@ class TestInjectProjectContext:
             "project.maintainers": ["@alice", "@bob"],
         }
 
-        with patch(
-            "darnit.context.inject.DotProjectMapper"
-        ) as mock_mapper_class:
+        with patch("darnit.context.inject.DotProjectMapper") as mock_mapper_class:
             mock_mapper = MagicMock()
             mock_mapper.get_context.return_value = mock_context_data
             mock_mapper_class.return_value = mock_mapper
@@ -57,9 +53,7 @@ class TestInjectProjectContext:
 
         mock_context_data = {"project.name": "Test Project"}
 
-        with patch(
-            "darnit.context.inject.DotProjectMapper"
-        ) as mock_mapper_class:
+        with patch("darnit.context.inject.DotProjectMapper") as mock_mapper_class:
             mock_mapper = MagicMock()
             mock_mapper.get_context.return_value = mock_context_data
             mock_mapper_class.return_value = mock_mapper
@@ -81,9 +75,7 @@ class TestInjectProjectContext:
 
         mock_context_data = {"project.security.policy_path": "SECURITY.md"}
 
-        with patch(
-            "darnit.context.inject.DotProjectMapper"
-        ) as mock_mapper_class:
+        with patch("darnit.context.inject.DotProjectMapper") as mock_mapper_class:
             mock_mapper = MagicMock()
             mock_mapper.get_context.return_value = mock_context_data
             mock_mapper_class.return_value = mock_mapper
@@ -103,9 +95,7 @@ class TestInjectProjectContext:
             control_id="OSPS-AC-01.01",
         )
 
-        with patch(
-            "darnit.context.inject.DotProjectMapper"
-        ) as mock_mapper_class:
+        with patch("darnit.context.inject.DotProjectMapper") as mock_mapper_class:
             mock_mapper = MagicMock()
             mock_mapper.get_context.return_value = {}
             mock_mapper_class.return_value = mock_mapper
@@ -124,9 +114,7 @@ class TestInjectProjectContext:
             control_id="OSPS-AC-01.01",
         )
 
-        with patch(
-            "darnit.context.inject.DotProjectMapper"
-        ) as mock_mapper_class:
+        with patch("darnit.context.inject.DotProjectMapper") as mock_mapper_class:
             mock_mapper_class.side_effect = RuntimeError("Config read failed")
 
             inject_project_context(context)
@@ -143,9 +131,7 @@ class TestInjectProjectContext:
             control_id="OSPS-AC-01.01",
         )
 
-        with patch(
-            "darnit.context.inject.DotProjectMapper"
-        ) as mock_mapper_class:
+        with patch("darnit.context.inject.DotProjectMapper") as mock_mapper_class:
             mock_mapper = MagicMock()
             mock_mapper.get_context.side_effect = ValueError("Invalid YAML")
             mock_mapper_class.return_value = mock_mapper
@@ -155,8 +141,10 @@ class TestInjectProjectContext:
             assert context.project_context == {}
 
     def test_inject_project_context_logging_on_success(self, caplog):
-        import logging; caplog.set_level(logging.DEBUG)
         """Test logging on successful injection with context."""
+        import logging
+
+        caplog.set_level(logging.DEBUG)
         context = CheckContext(
             owner="test-org",
             repo="test-repo",
@@ -170,22 +158,20 @@ class TestInjectProjectContext:
             "project.security.policy_path": "SECURITY.md",
         }
 
-        with patch(
-            "darnit.context.inject.DotProjectMapper"
-        ) as mock_mapper_class:
+        with patch("darnit.context.inject.DotProjectMapper") as mock_mapper_class:
             mock_mapper = MagicMock()
             mock_mapper.get_context.return_value = mock_context_data
             mock_mapper_class.return_value = mock_mapper
 
             inject_project_context(context)
 
-            assert any(
-                "Injected 2 .project/" in record.message for record in caplog.records
-            )
+            assert any("Injected 2 .project/" in record.message for record in caplog.records)
 
     def test_inject_project_context_logging_on_empty(self, caplog):
-        import logging; caplog.set_level(logging.DEBUG)
         """Test logging when no project context is available."""
+        import logging
+
+        caplog.set_level(logging.DEBUG)
         context = CheckContext(
             owner="test-org",
             repo="test-repo",
@@ -194,19 +180,14 @@ class TestInjectProjectContext:
             control_id="OSPS-AC-01.01",
         )
 
-        with patch(
-            "darnit.context.inject.DotProjectMapper"
-        ) as mock_mapper_class:
+        with patch("darnit.context.inject.DotProjectMapper") as mock_mapper_class:
             mock_mapper = MagicMock()
             mock_mapper.get_context.return_value = {}
             mock_mapper_class.return_value = mock_mapper
 
             inject_project_context(context)
 
-            assert any(
-                "No .project/ context available" in record.message
-                for record in caplog.records
-            )
+            assert any("No .project/ context available" in record.message for record in caplog.records)
 
     def test_inject_project_context_logging_on_exception(self, caplog):
         """Test logging when exception occurs during injection."""
@@ -218,17 +199,12 @@ class TestInjectProjectContext:
             control_id="OSPS-AC-01.01",
         )
 
-        with patch(
-            "darnit.context.inject.DotProjectMapper"
-        ) as mock_mapper_class:
+        with patch("darnit.context.inject.DotProjectMapper") as mock_mapper_class:
             mock_mapper_class.side_effect = OSError("Permission denied")
 
             inject_project_context(context)
 
-            assert any(
-                "Failed to inject .project/ context" in record.message
-                for record in caplog.records
-            )
+            assert any("Failed to inject .project/ context" in record.message for record in caplog.records)
 
 
 class TestCreateCheckContextWithProject:
@@ -238,9 +214,7 @@ class TestCreateCheckContextWithProject:
         """Test creating CheckContext with basic parameters."""
         mock_context_data = {"project.name": "Test Project"}
 
-        with patch(
-            "darnit.context.inject.DotProjectMapper"
-        ) as mock_mapper_class:
+        with patch("darnit.context.inject.DotProjectMapper") as mock_mapper_class:
             mock_mapper = MagicMock()
             mock_mapper.get_context.return_value = mock_context_data
             mock_mapper_class.return_value = mock_mapper
@@ -266,9 +240,7 @@ class TestCreateCheckContextWithProject:
         metadata = {"level": 1, "severity": "HIGH"}
         mock_context_data = {"project.security.policy_path": "SECURITY.md"}
 
-        with patch(
-            "darnit.context.inject.DotProjectMapper"
-        ) as mock_mapper_class:
+        with patch("darnit.context.inject.DotProjectMapper") as mock_mapper_class:
             mock_mapper = MagicMock()
             mock_mapper.get_context.return_value = mock_context_data
             mock_mapper_class.return_value = mock_mapper
@@ -287,9 +259,7 @@ class TestCreateCheckContextWithProject:
 
     def test_create_check_context_without_metadata(self):
         """Test creating CheckContext without metadata defaults to empty dict."""
-        with patch(
-            "darnit.context.inject.DotProjectMapper"
-        ) as mock_mapper_class:
+        with patch("darnit.context.inject.DotProjectMapper") as mock_mapper_class:
             mock_mapper = MagicMock()
             mock_mapper.get_context.return_value = {}
             mock_mapper_class.return_value = mock_mapper
@@ -313,9 +283,7 @@ class TestCreateCheckContextWithProject:
             "project.security.policy_path": "SECURITY.md",
         }
 
-        with patch(
-            "darnit.context.inject.DotProjectMapper"
-        ) as mock_mapper_class:
+        with patch("darnit.context.inject.DotProjectMapper") as mock_mapper_class:
             mock_mapper = MagicMock()
             mock_mapper.get_context.return_value = mock_context_data
             mock_mapper_class.return_value = mock_mapper
@@ -543,9 +511,7 @@ class TestIntegrationScenarios:
             "project.maintainers": ["@alice", "@bob"],
         }
 
-        with patch(
-            "darnit.context.inject.DotProjectMapper"
-        ) as mock_mapper_class:
+        with patch("darnit.context.inject.DotProjectMapper") as mock_mapper_class:
             mock_mapper = MagicMock()
             mock_mapper.get_context.return_value = mock_context_data
             mock_mapper_class.return_value = mock_mapper
@@ -560,10 +526,7 @@ class TestIntegrationScenarios:
 
             assert has_project_value(context, "project.name") is True
             assert get_project_value(context, "project.name") == "MyProject"
-            assert (
-                get_project_value(context, "project.security.policy_path")
-                == "SECURITY.md"
-            )
+            assert get_project_value(context, "project.security.policy_path") == "SECURITY.md"
             assert get_project_value(context, "project.maintainers") == [
                 "@alice",
                 "@bob",
@@ -572,9 +535,7 @@ class TestIntegrationScenarios:
 
     def test_workflow_with_exception_fallback(self):
         """Test workflow when context injection fails gracefully."""
-        with patch(
-            "darnit.context.inject.DotProjectMapper"
-        ) as mock_mapper_class:
+        with patch("darnit.context.inject.DotProjectMapper") as mock_mapper_class:
             mock_mapper_class.side_effect = RuntimeError("File not found")
 
             context = create_check_context_with_project(
@@ -601,9 +562,7 @@ class TestIntegrationScenarios:
 
         mock_context_data = {"project.security.policy_path": "SECURITY.md"}
 
-        with patch(
-            "darnit.context.inject.DotProjectMapper"
-        ) as mock_mapper_class:
+        with patch("darnit.context.inject.DotProjectMapper") as mock_mapper_class:
             mock_mapper = MagicMock()
             mock_mapper.get_context.return_value = mock_context_data
             mock_mapper_class.return_value = mock_mapper
@@ -611,7 +570,4 @@ class TestIntegrationScenarios:
             inject_project_context(context)
 
             assert has_project_value(context, "project.security.policy_path") is True
-            assert (
-                get_project_value(context, "project.security.policy_path")
-                == "SECURITY.md"
-            )
+            assert get_project_value(context, "project.security.policy_path") == "SECURITY.md"
