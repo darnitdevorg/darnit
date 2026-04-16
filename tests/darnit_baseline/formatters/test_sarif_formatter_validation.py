@@ -1,5 +1,4 @@
 import json
-import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -15,28 +14,34 @@ except ImportError:
 from darnit.core.models import AuditResult
 from darnit_baseline.formatters.sarif import generate_sarif_audit
 
-SARIF_SCHEMA_URL = "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json"
+SARIF_SCHEMA_URL = (
+    "https://docs.oasis-open.org/sarif/sarif/v2.1.0"
+    "/errata01/os/schemas/sarif-schema-2.1.0.json"
+)
 CACHE_DIR = Path(".pytest_cache")
-SCHEMA_PATH = CACHE_DIR / "sarif-2.1.0-rtm.5.json"
+SCHEMA_PATH = CACHE_DIR / "sarif-schema-2.1.0.json"
 
 
 @pytest.fixture(scope="session")
 def sarif_schema():
-    """Download and cache the official SARIF schema for validation tests."""
+    """Download and cache the official SARIF schema for validation tests.
+
+    Skips only when ``jsonschema`` is not installed (e.g. minimal test
+    environment).  When ``jsonschema`` IS available (CI), a download
+    failure is a hard error — this prevents CI from silently skipping
+    schema validation when the URL is temporarily unreachable.
+    """
     if not HAS_JSONSCHEMA:
         pytest.skip("jsonschema is not installed, skipping strict validation")
 
     if not SCHEMA_PATH.exists():
         CACHE_DIR.mkdir(exist_ok=True, parents=True)
-        try:
-            with urllib.request.urlopen(SARIF_SCHEMA_URL, timeout=10) as response:
-                schema_data = json.loads(response.read().decode())
-                with open(SCHEMA_PATH, "w") as f:
-                    json.dump(schema_data, f)
-        except urllib.error.URLError as e:
-            print(f"Failed to download SARIF schema: {e}")
-            pytest.skip(f"Failed to download SARIF schema: {e}")
-            return None
+        # Hard failure when jsonschema IS installed — don't let CI
+        # silently skip validation because of a transient network issue.
+        with urllib.request.urlopen(SARIF_SCHEMA_URL, timeout=30) as response:
+            schema_data = json.loads(response.read().decode())
+            with open(SCHEMA_PATH, "w") as f:
+                json.dump(schema_data, f)
 
     with open(SCHEMA_PATH) as f:
         return json.load(f)
