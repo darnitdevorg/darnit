@@ -251,7 +251,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
     include_ids = set(args.include.split(",")) if args.include else None
     exclude_ids = set(args.exclude.split(",")) if args.exclude else set()
 
-    logger.info(f"\n=== Execution Plan: {config.framework_name} ===\n")
+    logger.info(f"=== Execution Plan: {config.framework_name} ===")
     logger.info(f"Framework: {config.framework_name} v{config.framework_version}")
     if config.spec_version:
         logger.info(f"Spec: {config.spec_version}")
@@ -262,7 +262,6 @@ def cmd_plan(args: argparse.Namespace) -> int:
         logger.info(f"Include: {', '.join(sorted(include_ids))}")
     if exclude_ids:
         logger.info(f"Exclude: {', '.join(sorted(exclude_ids))}")
-    logger.info("")
 
     # Group controls by level
     by_level = {}
@@ -301,7 +300,6 @@ def cmd_plan(args: argparse.Namespace) -> int:
                 logger.info(f"  • {cid}: {ctrl.name} [adapter: {adapter}]")
             else:
                 logger.info(f"  - {cid}: {ctrl.name} [skipped: {ctrl.status_reason}]")
-        logger.info("")
         total_shown += len(shown_controls)
 
     if total_filtered > 0:
@@ -335,12 +333,12 @@ def cmd_validate(args: argparse.Namespace) -> int:
     errors = validate_framework_config(config)
 
     if errors:
-        logger.info(f"\n✗ Validation failed with {len(errors)} error(s):\n")
+        logger.error(f"Validation failed with {len(errors)} error(s):")
         for error in errors:
-            logger.info(f"  • {error}")
+            logger.error(f"  • {error}")
         return 1
     else:
-        logger.info(f"\n✓ Framework '{config.metadata.name}' is valid")
+        logger.info(f"Framework '{config.metadata.name}' is valid")
         logger.info(f"  Controls: {len(config.controls)}")
         logger.info(f"  Adapters: {len(config.adapters)}")
 
@@ -415,7 +413,7 @@ def cmd_list(args: argparse.Namespace) -> int:
         logger.info("No frameworks found. Install a framework package like darnit-baseline.")
         return 0
 
-    logger.info("\nAvailable Frameworks:\n")
+    logger.info("Available Frameworks:")
     for name in frameworks:
         try:
             config = load_framework_by_name(name)
@@ -425,7 +423,6 @@ def cmd_list(args: argparse.Namespace) -> int:
             if config.metadata.spec_version:
                 logger.info(f"    Spec: {config.metadata.spec_version}")
             logger.info(f"    Controls: {len(config.controls)}")
-            logger.info("")
         except Exception as e:
             logger.info(f"  • {name} (error loading: {e})")
 
@@ -525,10 +522,10 @@ def cmd_install(args: argparse.Namespace) -> int:
     if not args.mcp_only and args.client == "claude":
         if args.project:
             skills_target = Path.cwd() / ".claude" / "skills"
-            logger.info(f"\nInstalling skills (project) → {skills_target}")
+            logger.info(f"Installing skills (project) → {skills_target}")
         else:
             skills_target = Path.home() / ".claude" / "skills"
-            logger.info(f"\nInstalling skills (global) → {skills_target}")
+            logger.info(f"Installing skills (global) → {skills_target}")
 
         count = _install_skills(skills_target, force=args.force)
         if count > 0:
@@ -538,7 +535,7 @@ def cmd_install(args: argparse.Namespace) -> int:
     elif args.mcp_only:
         logger.info("  Skipping skill installation (--mcp-only)")
 
-    logger.info("\nNext step: restart your AI client and use the configured MCP server.")
+    logger.info("Next step: restart your AI client and use the configured MCP server.")
     logger.info("Skills available: /darnit-audit, /darnit-context, /darnit-comply, /darnit-remediate")
     return 0
 
@@ -564,7 +561,7 @@ def cmd_profiles(args: argparse.Namespace) -> int:
             continue
 
         found_any = True
-        logger.info(f"\n{name}:")
+        logger.info(f"{name}:")
         for profile_name, profile in profiles.items():
             ctrl_count = len(profile.controls) if profile.controls else "tag-based"
             logger.info(f"  {profile_name:<25} {profile.description} ({ctrl_count} controls)")
