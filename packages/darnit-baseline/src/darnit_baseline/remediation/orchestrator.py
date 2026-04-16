@@ -466,8 +466,8 @@ def _apply_declarative_remediation(
         try:
             from darnit.context.auto_detect import collect_auto_context
             context_values = collect_auto_context(local_path)
-        except Exception:
-            pass  # Auto-detection is best-effort
+        except Exception as exc:
+            logger.warning(f"Auto-detection of context values failed: {exc}")
 
         # Confirmed context overrides auto-detected values
         try:
@@ -476,8 +476,8 @@ def _apply_declarative_remediation(
             for _category, values in all_context.items():
                 for key, ctx_val in values.items():
                     context_values[key] = ctx_val.value
-        except Exception:
-            pass  # Context loading is best-effort
+        except Exception as exc:
+            logger.warning(f"Context loading failed: {exc}")
 
         # Resolve framework TOML path for template file resolution
         fw_path: str | None = None
@@ -486,8 +486,8 @@ def _apply_declarative_remediation(
             p = get_framework_path()
             if p:
                 fw_path = str(p)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(f"Framework path resolution failed: {exc}")
 
         # Scan repository for context-aware template rendering
         scan_values: dict[str, Any] = {}
@@ -498,8 +498,8 @@ def _apply_declarative_remediation(
             )
             scan_ctx = scan_repository(local_path)
             scan_values = flatten_scan_context(scan_ctx)
-        except Exception:
-            pass  # Repo scanning is best-effort
+        except Exception as exc:
+            logger.warning(f"Repository scanning failed: {exc}")
 
         # Load .project/project.yaml for ${project.*} substitution
         project_values: dict[str, Any] = {}
@@ -520,8 +520,8 @@ def _apply_declarative_remediation(
                             out[key] = str(v) if not isinstance(v, list) else " ".join(str(i) for i in v)
                     return out
                 project_values = _flatten(raw)
-        except Exception:
-            pass  # Project YAML loading is best-effort
+        except Exception as exc:
+            logger.warning(f"Project YAML loading failed: {exc}")
 
         # Create executor with templates and context
         executor = RemediationExecutor(
@@ -911,7 +911,8 @@ def remediate_audit_findings(
     try:
         from darnit.core.audit_cache import read_audit_cache
         cache = read_audit_cache(local_path)
-    except Exception:
+    except Exception as exc:
+        logger.warning(f"Audit cache read failed: {exc}")
         cache = None
 
     if cache is not None:

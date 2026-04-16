@@ -5,7 +5,7 @@ description = "Generic compliance audit framework with plugin architecture"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "mcp>=1.23.0",  # CVE-2025-66416 DNS rebinding fix
+    "mcp>=1.23.0,<2",  # CVE-2025-66416 DNS rebinding fix; cap at next major
     "pydantic>=2.0.0",
     "pyyaml>=6.0.0",
     "pydantic[email]>=2.0.0",
@@ -27,8 +27,8 @@ darnit = "darnit.cli:main"
 attestation = [
     "sigstore>=3.0.0",
     "in-toto-attestation>=0.9.0",
-    "urllib3>=2.6.3",  # CVE-2025-66471, CVE-2026-21441, CVE-2025-66418 fixes
-    "cryptography>=46.0.6",  # CVE-2026-34073 DNS name constraint bypass
+    "urllib3>=2.6.3,<3",  # CVE-2025-66471, CVE-2026-21441, CVE-2025-66418 fixes
+    "cryptography>=46.0.6,<48",  # CVE-2026-34073 DNS name constraint bypass
 ]
 
 [build-system]
