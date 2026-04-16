@@ -332,30 +332,30 @@ class ProjectContext(BaseModel):
     """User-confirmed project context that affects control evaluation."""
 
     # Existing context keys
-    has_subprojects: Any | None = None
-    has_releases: Any | None = None
-    is_library: Any | None = None
-    has_compiled_assets: Any | None = None
-    ci_provider: Any | None = None
+    has_subprojects: bool | None = None
+    has_releases: bool | None = None
+    is_library: bool | None = None
+    has_compiled_assets: bool | None = None
+    ci_provider: str | None = None
 
     # Auto-detectable context (factual, safe to infer from filesystem)
-    platform: Any | None = None
+    platform: str | None = None
     """Hosting platform - github, gitlab, bitbucket, or None."""
 
-    primary_language: Any | None = None
+    primary_language: str | None = None
     """Primary programming language - python, go, rust, javascript, etc."""
 
-    languages: Any | None = None
+    languages: list[str] | None = None
     """All detected programming languages in the repository."""
 
     # New context keys for governance and security
-    maintainers: Any | None = None
+    maintainers: list[str] | str | None = None
     """Project maintainers - list of GitHub usernames or path to MAINTAINERS file."""
 
-    security_contact: Any | None = None
+    security_contact: str | None = None
     """Security contact for vulnerability reports - email, URL, or reference."""
 
-    governance_model: Any | None = None
+    governance_model: str | None = None
     """Governance model - bdfl, meritocracy, democracy, corporate, foundation, committee, other."""
 
     model_config = ConfigDict(extra="allow")

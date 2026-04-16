@@ -321,8 +321,12 @@ def save_context_value(
 
     ctx_val = ContextValue(**kwargs)
 
-    # Store complete provenance struct under baseline context
-    setattr(ctx, key, ctx_val.model_dump(exclude_none=True))
+    # Store complete provenance struct under baseline context for dynamic fields,
+    # and just the raw primitive for strictly typed fields.
+    if key in ctx.__class__.model_fields:
+        setattr(ctx, key, value)
+    else:
+        setattr(ctx, key, ctx_val.model_dump(exclude_none=True))
 
     # Log provenance (even though we can't store it in legacy format)
     logger.info(f"Saved context {key}={value} (source={source.value}, confidence={confidence})")
