@@ -313,19 +313,35 @@ class RemediationExecutor:
             # so that implementation packages can ship templates alongside
             # their TOML config.  Falls back to local_path when no
             # framework_path is available.
-            template_path = template.file
-            if not os.path.isabs(template_path):
-                if self._framework_path:
-                    base_dir = os.path.dirname(self._framework_path)
-                else:
-                    base_dir = self.local_path
-                template_path = os.path.join(base_dir, template_path)
+            from pathlib import Path
+            template_path = Path(template.file)
+
+            if template_path.is_absolute():
+                raise ValueError(
+                    f"Template '{template_name}' specifies absolute path '{template.file}'. "
+                    f"Template files must be relative paths within the plugin package."
+                )
+
+            if self._framework_path:
+                base_dir = Path(self._framework_path).parent.resolve()
+            else:
+                base_dir = Path(self.local_path).resolve()
+
+            resolved = (base_dir / template_path).resolve()
+            try:
+                resolved.relative_to(base_dir)
+            except ValueError as err:
+                raise ValueError(
+                    f"Template '{template_name}' resolves to {resolved}, outside framework "
+                    f"directory {base_dir}. Template files must live within "
+                    f"the plugin package."
+                ) from err
 
             try:
-                with open(template_path) as f:
+                with open(resolved) as f:
                     return f.read()
             except OSError as e:
-                logger.warning(f"Failed to read template file {template_path}: {e}")
+                logger.warning(f"Failed to read template file {resolved}: {e}")
                 return None
 
         return None

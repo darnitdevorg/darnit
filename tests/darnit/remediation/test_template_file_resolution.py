@@ -24,8 +24,8 @@ class TestTemplateFileResolution:
         content = executor._get_template_content("hello")
         assert content == "Hello $OWNER"
 
-    def test_absolute_file_used_as_is(self, tmp_path):
-        """Absolute file= path is used directly, ignoring framework_path."""
+    def test_absolute_file_rejected(self, tmp_path):
+        """Absolute file= path is rejected with ValueError."""
         tmpl_file = tmp_path / "abs_template.tmpl"
         tmpl_file.write_text("Absolute content")
 
@@ -34,8 +34,40 @@ class TestTemplateFileResolution:
             templates={"abs": TemplateConfig(file=str(tmpl_file))},
             framework_path="/some/other/path/framework.toml",
         )
-        content = executor._get_template_content("abs")
-        assert content == "Absolute content"
+        import pytest
+        with pytest.raises(ValueError, match="specifies absolute path"):
+            executor._get_template_content("abs")
+
+    def test_path_traversal_dotdot_rejected(self, tmp_path):
+        """Parent directory escape attempts are rejected."""
+        executor = RemediationExecutor(
+            local_path=str(tmp_path),
+            templates={"escape": TemplateConfig(file="../outside.tmpl")},
+            framework_path=str(tmp_path / "pkg" / "framework.toml"),
+        )
+        import pytest
+        with pytest.raises(ValueError, match="outside framework directory"):
+            executor._get_template_content("escape")
+
+    def test_path_traversal_symlink_rejected(self, tmp_path):
+        """Symlinks traversing outside the directory are rejected."""
+        base_dir = tmp_path / "pkg"
+        base_dir.mkdir()
+        outside_file = tmp_path / "outside.tmpl"
+        outside_file.write_text("outside")
+
+        symlink_file = base_dir / "symlink.tmpl"
+        # Create a symlink pointing outside
+        symlink_file.symlink_to(outside_file)
+
+        executor = RemediationExecutor(
+            local_path=str(tmp_path),
+            templates={"symlink": TemplateConfig(file="symlink.tmpl")},
+            framework_path=str(base_dir / "framework.toml"),
+        )
+        import pytest
+        with pytest.raises(ValueError, match="resolves to .* outside framework directory"):
+            executor._get_template_content("symlink")
 
     def test_missing_file_returns_none(self, tmp_path):
         """Missing template file returns None with a warning."""
