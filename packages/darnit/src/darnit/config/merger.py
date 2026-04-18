@@ -435,7 +435,7 @@ def load_framework_config(path: Path) -> FrameworkConfig:
     for name, template in config.templates.items():
         if template.file:
             template_path = Path(template.file)
-            
+
             if template_path.is_absolute():
                 raise ValueError(
                     f"Template '{name}' specifies absolute path '{template.file}'. "
