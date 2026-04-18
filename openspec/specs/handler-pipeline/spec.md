@@ -45,7 +45,7 @@ The `HandlerInvocation` model SHALL have `handler: str` (required), `shared: str
 - **AND** SHALL NOT include `when` in the handler's configuration dictionary
 - **AND** SHALL pass only `command` to the handler
 
-### Requirement: The same confidence gradient applies to context gathering
+### Requirement: The same confidence gradient applies to data gathering
 Context definitions in the TOML MAY specify a `detect` pipeline following the same phase ordering. The framework SHALL process detection handlers through the confidence gradient to auto-detect context values.
 
 #### Scenario: Context detection via deterministic handler

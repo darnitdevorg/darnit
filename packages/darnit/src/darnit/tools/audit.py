@@ -1002,14 +1002,14 @@ def _get_next_steps_section(
 
     step = 1
 
-    # Step: Collect pending context (show count only, direct to get_pending_context)
+    # Step: Collect pending context (show count only, direct to get_pending_data)
     if has_pending_context:
         count = len(pending_context)
         lp = local_path or "."
         lines.append(f"**Step {step}: Confirm project context** ({count} items needed)")
         lines.append("")
         lines.append(
-            f'Call `get_pending_context(local_path="{lp}")` to start. '
+            f'Call `get_pending_data(local_path="{lp}")` to start. '
             "It will walk you through each question one at a time."
         )
         lines.append("")
@@ -1047,7 +1047,7 @@ def _format_context_collection_step(
     """Format the context collection step with grouped tool calls.
 
     Auto-detected values are combined into a single compound
-    confirm_project_context() call. Unknown values are listed individually.
+    confirm_project_data() call. Unknown values are listed individually.
 
     Args:
         step: Step number for display
@@ -1071,7 +1071,7 @@ def _format_context_collection_step(
         lines.append("The following values were auto-detected. Verify and correct if needed, then execute:")
         lines.append("")
         lines.append("```python")
-        lines.append("confirm_project_context(")
+        lines.append("confirm_project_data(")
         lines.append(f'    local_path="{local_path}",')
         for item in auto_detected:
             value = item.current_value.value
@@ -1105,7 +1105,7 @@ def _format_context_collection_step(
             elif item.definition.hint:
                 lines.append(f"  *{item.definition.hint}*")
             lines.append("  ```python")
-            lines.append(f'  confirm_project_context({item.key}="<ask user>")')
+            lines.append(f'  confirm_project_data({item.key}="<ask user>")')
             lines.append("  ```")
             lines.append("")
 
@@ -1113,7 +1113,7 @@ def _format_context_collection_step(
     total_pending = len(pending)
     shown = len(auto_detected) + len(unknown)
     if total_pending > shown:
-        lines.append(f"*...and {total_pending - shown} more. Use `get_pending_context()` to see all.*")
+        lines.append(f"*...and {total_pending - shown} more. Use `get_pending_data()` to see all.*")
         lines.append("")
 
     # Re-audit directive

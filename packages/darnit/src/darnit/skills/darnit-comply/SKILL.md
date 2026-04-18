@@ -1,6 +1,6 @@
 ---
 name: darnit-comply
-description: Run the full compliance pipeline — audit, collect context, remediate failures, and create a PR. Use when the user wants to fix all compliance issues, bring a repo into compliance end-to-end, or run the complete compliance workflow.
+description: Run the full compliance pipeline — audit, collect data, remediate failures, and create a PR. Use when the user wants to fix all compliance issues, bring a repo into compliance end-to-end, or run the complete compliance workflow.
 compatibility: Requires darnit MCP server running (darnit serve) and gh CLI for PR creation
 metadata:
   author: kusari-oss
@@ -21,11 +21,11 @@ Darnit registers tools per implementation module. Look for available tools match
 
 Call the appropriate `audit_*` tool with `output_format: "summary"` and any profile the user mentioned. The "summary" format returns compact JSON (~5-8K vs ~164K for full JSON). Present a brief summary: total controls, pass/fail/warn counts, compliance percentage. Resolve any PENDING_LLM controls using your own reasoning.
 
-### 2. Collect context (if needed)
+### 2. Collect data (if needed)
 
-If WARN controls exist due to missing context:
-- Tell the user you'll collect context to improve accuracy
-- Follow the `/darnit-context` skill workflow: call `get_pending_context`, present questions, call `confirm_project_context` for answers
+If WARN controls exist due to missing data:
+- Tell the user you'll collect data to improve accuracy
+- Follow the `/darnit-data` skill workflow: call `get_pending_data`, present questions, call `confirm_project_data` for answers
 - Continue until `status: "complete"` or the user says "skip remaining"
 
 ### 3. Remediation plan

@@ -460,7 +460,7 @@ def init_project_config(
         return f"❌ Error creating config: {e}"
 
 
-def confirm_project_context(
+def confirm_project_data(
     local_path: str = ".",
     has_subprojects: bool | None = None,
     has_releases: bool | None = None,
@@ -473,9 +473,9 @@ def confirm_project_context(
     governance_model: str | None = None,
 ) -> str:
     """
-    Record user-confirmed project context in .project.yaml.
+    Record user-confirmed project data in .project.yaml.
 
-    **IMPORTANT**: This is the ONLY way to set project context. DO NOT directly edit
+    **IMPORTANT**: This is the ONLY way to set project data. DO NOT directly edit
     .project/ files - always use this tool instead.
 
     **Parameters:**
@@ -492,13 +492,13 @@ def confirm_project_context(
     **Examples:**
     ```
     # Reference existing CODEOWNERS file (RECOMMENDED)
-    confirm_project_context(maintainers="CODEOWNERS")
+    confirm_project_data(maintainers="CODEOWNERS")
 
     # Explicit maintainer list
-    confirm_project_context(maintainers=["@alice", "@bob"])
+    confirm_project_data(maintainers=["@alice", "@bob"])
 
-    # Multiple context values
-    confirm_project_context(
+    # Multiple data values
+    confirm_project_data(
         maintainers="CODEOWNERS",
         security_contact="security@example.com",
         ci_provider="github"
@@ -508,9 +508,9 @@ def confirm_project_context(
     Returns:
         Confirmation of what was recorded
     """
-    from darnit.server.tools.project_context import confirm_project_context_impl
+    from darnit.server.tools.project_data import confirm_project_data_impl
 
-    return confirm_project_context_impl(
+    return confirm_project_data_impl(
         local_path=local_path,
         has_subprojects=has_subprojects,
         has_releases=has_releases,
@@ -542,17 +542,17 @@ Copy "ask_user_batch" below verbatim as the "questions" parameter to AskUserQues
 Do NOT render these questions as text. Do NOT paraphrase. Do NOT summarize.
 You MUST call the AskUserQuestion tool now.
 
-After the user answers, use "answer_mapping" to call confirm_project_context() for EACH answer:
+After the user answers, use "answer_mapping" to call confirm_project_data() for EACH answer:
 - "Yes" / "No" for booleans → pass true / false (not strings)
 - Selected option label for enums → pass the label as a string
 - "Other" selections → pass the user's typed value
-Then call get_pending_context() again for the next batch (if any remain).
+Then call get_pending_data() again for the next batch (if any remain).
 
 ---
 """
 
 
-def get_pending_context(
+def get_pending_data(
     local_path: str = ".",
     control_ids: list[str] | None = None,
     level: int = 3,
@@ -562,15 +562,15 @@ def get_pending_context(
     _tool_config: dict | None = None,
     profile: str | None = None,
 ) -> str:
-    """Get context values that would improve audit accuracy.
+    """Get data values that would improve audit accuracy.
 
     Returns up to `limit` questions per call as a batch.
 
     MANDATORY WORKFLOW — your next action MUST be calling AskUserQuestion:
     1. Call this tool. It returns "ask_user_batch" — an array ready for AskUserQuestion.
     2. Call AskUserQuestion(questions=<ask_user_batch>). Pass VERBATIM. Do NOT render as text.
-    3. After the user answers, use "answer_mapping" to call confirm_project_context() per answer.
-    4. Call get_pending_context() again for the next batch. Repeat until status is "complete".
+    3. After the user answers, use "answer_mapping" to call confirm_project_data() per answer.
+    4. Call get_pending_data() again for the next batch. Repeat until status is "complete".
 
     Parameters:
     - `local_path`: Path to repository (default: ".")
@@ -582,7 +582,7 @@ def get_pending_context(
 
     Returns:
         JSON with ask_user_batch (pass directly to AskUserQuestion),
-        answer_mapping for confirm_project_context, and a progress indicator.
+        answer_mapping for confirm_project_data, and a progress indicator.
     """
     from darnit.config.context_storage import get_pending_context as _get_pending
 
@@ -746,11 +746,11 @@ def _build_context_question(req) -> dict:
         )
         if isinstance(value, list):
             question["confirm_command"] = (
-                f"confirm_project_context({req.key}={repr(value)})"
+                f"confirm_project_data({req.key}={repr(value)})"
             )
         else:
             question["confirm_command"] = (
-                f'confirm_project_context({req.key}="{value}")'
+                f'confirm_project_data({req.key}="{value}")'
             )
 
     elif req.definition.type == "enum" and req.definition.values:
@@ -764,7 +764,7 @@ def _build_context_question(req) -> dict:
         if effective_hint:
             question["hint"] = effective_hint
         question["command_template"] = (
-            f'confirm_project_context({req.key}="<selected_value>")'
+            f'confirm_project_data({req.key}="<selected_value>")'
         )
 
     elif req.definition.type == "boolean":
@@ -776,7 +776,7 @@ def _build_context_question(req) -> dict:
         if effective_hint:
             question["hint"] = effective_hint
         question["command_template"] = (
-            f"confirm_project_context({req.key}=<true_or_false>)"
+            f"confirm_project_data({req.key}=<true_or_false>)"
         )
 
     else:
@@ -794,7 +794,7 @@ def _build_context_question(req) -> dict:
         if req.definition.examples:
             question["example_format"] = req.definition.examples
         question["command_template"] = (
-            f"confirm_project_context({req.key}=<user_answer>)"
+            f"confirm_project_data({req.key}=<user_answer>)"
         )
 
     # Add ask_user params for interactive presentation (AskUserQuestion)
@@ -1111,8 +1111,8 @@ def remediate_audit_findings(
             return (
                 "⚠️ Cannot remediate yet — there are unresolved context questions.\n\n"
                 f"**Pending context keys**: {', '.join(keys)}\n\n"
-                "Please call `get_pending_context()` first to collect the missing "
-                "project context, then confirm each answer with `confirm_project_context()`. "
+                "Please call `get_pending_data()` first to collect the missing "
+                "project context, then confirm each answer with `confirm_project_data()`. "
                 "Once all context is resolved, call `remediate_audit_findings()` again."
             )
     except Exception:
@@ -1449,8 +1449,8 @@ __all__ = [
     # Configuration
     "get_project_config",
     "init_project_config",
-    "confirm_project_context",
-    "get_pending_context",
+    "confirm_project_data",
+    "get_pending_data",
     # Threat Model & Attestation
     "generate_threat_model",
     "generate_attestation",

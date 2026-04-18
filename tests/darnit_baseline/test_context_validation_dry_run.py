@@ -41,10 +41,10 @@ class TestContextValidationAfterConfirmation:
     @pytest.mark.unit
     def test_governance_proceeds_after_confirmation_dry_run_true(self, temp_repo):
         """After confirmation, dry_run=True should show preview (not needs_confirmation)."""
-        from darnit.server.tools.project_context import confirm_project_context_impl
+        from darnit.server.tools.project_data import confirm_project_data_impl
         from darnit_baseline.remediation.orchestrator import _apply_control_remediation
 
-        confirm_project_context_impl(
+        confirm_project_data_impl(
             local_path=temp_repo,
             maintainers=["@alice", "@bob"],
         )
@@ -64,10 +64,10 @@ class TestContextValidationAfterConfirmation:
     @pytest.mark.unit
     def test_governance_proceeds_after_confirmation_dry_run_false(self, temp_repo):
         """After confirmation, dry_run=False should create the file."""
-        from darnit.server.tools.project_context import confirm_project_context_impl
+        from darnit.server.tools.project_data import confirm_project_data_impl
         from darnit_baseline.remediation.orchestrator import _apply_control_remediation
 
-        confirm_project_context_impl(
+        confirm_project_data_impl(
             local_path=temp_repo,
             maintainers=["@alice", "@bob"],
         )
@@ -199,9 +199,9 @@ class TestFileReferenceRecommendation:
     def test_file_reference_stored_as_string_not_list(self, temp_repo_with_codeowners):
         """When user confirms with file path, it should be stored as string, not list."""
         from darnit.config.loader import load_project_config
-        from darnit_baseline.tools import confirm_project_context
+        from darnit_baseline.tools import confirm_project_data
 
-        confirm_project_context(
+        confirm_project_data(
             local_path=temp_repo_with_codeowners,
             maintainers="CODEOWNERS",
         )
@@ -237,10 +237,10 @@ class TestPreflightContextCheck:
     @pytest.mark.unit
     def test_preflight_allows_after_confirmation(self, temp_repo):
         """After confirming context, remediation should proceed."""
-        from darnit.server.tools.project_context import confirm_project_context_impl
+        from darnit.server.tools.project_data import confirm_project_data_impl
         from darnit_baseline.remediation.orchestrator import remediate_audit_findings
 
-        confirm_project_context_impl(
+        confirm_project_data_impl(
             local_path=temp_repo,
             maintainers=["@testuser"],
         )
@@ -273,7 +273,7 @@ class TestExplicitWarningAgainstDirectEdits:
             f"Pre-flight prompt missing 'DO NOT' warning: {result[:500]}"
         assert ".project/" in result or "project" in result.lower(), \
             f"Pre-flight prompt should mention .project/ files: {result[:500]}"
-        assert "confirm_project_context" in result, \
+        assert "confirm_project_data" in result, \
             f"Pre-flight prompt should mention the tool to use: {result[:500]}"
 
     @pytest.mark.unit
@@ -294,7 +294,7 @@ class TestExplicitWarningAgainstDirectEdits:
 
         assert "DO NOT" in prompt_text, \
             f"Context prompt missing 'DO NOT' warning: {prompt_text[:500]}"
-        assert "confirm_project_context" in prompt_text, \
+        assert "confirm_project_data" in prompt_text, \
             f"Context prompt should mention the tool to use: {prompt_text[:500]}"
 
 

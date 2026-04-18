@@ -68,15 +68,17 @@ class TestMCPServerIntegration:
                 tools_result = await session.list_tools()
                 tool_names = [t.name for t in tools_result.tools]
 
-                # Verify all 15 expected tools are present
+                # Verify all 18 expected tools are present
                 expected_tools = [
                     # Audit
                     "audit_openssf_baseline",
                     "list_available_checks",
+                    "audit_org",
                     # Configuration
                     "get_project_config",
                     "init_project_config",
-                    "confirm_project_context",
+                    "confirm_project_data",
+                    "get_pending_data",
                     # Threat Model & Attestation
                     "generate_threat_model",
                     "generate_attestation",
@@ -89,14 +91,15 @@ class TestMCPServerIntegration:
                     "commit_remediation_changes",
                     "create_remediation_pr",
                     "get_remediation_status",
-                    # Test Repository
+                    # Org & Test Repository
+                    "list_org_repos",
                     "create_test_repository",
                 ]
                 for tool in expected_tools:
                     assert tool in tool_names, f"Missing tool: {tool}"
 
-                # Should have exactly 15 tools
-                assert len(tool_names) == 15, f"Expected 15 tools, got {len(tool_names)}: {tool_names}"
+                # Should have exactly 18 tools
+                assert len(tool_names) == 18, f"Expected 18 tools, got {len(tool_names)}: {tool_names}"
 
     @pytest.mark.asyncio
     async def test_list_available_checks(self):

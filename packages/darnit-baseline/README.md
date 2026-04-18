@@ -132,7 +132,7 @@ Controls gated by `platform = "github"` require the GitHub CLI (`gh`). Additiona
 
 Context values serve two purposes: **(1)** they gate which controls apply to your project via `when` clauses, and **(2)** they populate templates during remediation. Controls gated by context that hasn't been set show as N/A.
 
-Set context via the `confirm_project_context` MCP tool or by editing `.project/project.yaml`.
+Set context via the `confirm_project_data` MCP tool or by editing `.project/project.yaml`.
 
 | Key | Type | Auto-Detect | Controls | Usage |
 |-----|------|-------------|----------|-------|
@@ -149,7 +149,7 @@ Set context via the `confirm_project_context` MCP tool or by editing `.project/p
 
 ## Remediation Capabilities
 
-The implementation provides **40 automated remediation actions**: 31 file creations, 7 GitHub API calls, and 2 exec commands. All file creations are conservative-by-default (`overwrite = false`) — they never clobber existing files. All file creations support dry-run. Three governance controls (GV-01.01, GV-01.02, GV-04.01) block until project maintainers are confirmed via `confirm_project_context`. The remaining 15 controls with remediation sections provide manual guidance only, and 7 controls are verification-only with no remediation.
+The implementation provides **40 automated remediation actions**: 31 file creations, 7 GitHub API calls, and 2 exec commands. All file creations are conservative-by-default (`overwrite = false`) — they never clobber existing files. All file creations support dry-run. Three governance controls (GV-01.01, GV-01.02, GV-04.01) block until project maintainers are confirmed via `confirm_project_data`. The remaining 15 controls with remediation sections provide manual guidance only, and 7 controls are verification-only with no remediation.
 
 ### File Creation (31 actions across 28 unique files)
 
@@ -283,7 +283,7 @@ Verification-only controls that check conditions which already exist or can't be
 - Manual-only controls have varying depth of guidance (some have 2 steps, some have 6)
 - `dependabot.yml` auto-detects project ecosystem — falls back to `github-actions` only if ecosystem is unrecognized
 - Ecosystem detection maps primary language to ecosystem (python→python, javascript/typescript→node, go→go, rust→rust, java→java, ruby→ruby); unrecognized languages get no ecosystem
-- **Monorepo limitation:** Language and ecosystem auto-detection only checks manifest files at the repository root (e.g., `pyproject.toml`, `go.mod`, `package.json`). Nested service directories are not scanned. In a monorepo with multiple languages, only the root-level manifest is detected — check order favors Go and Rust over Python and JavaScript. Use `confirm_project_context(detected_ecosystem="...")` to override if the wrong ecosystem is selected
+- **Monorepo limitation:** Language and ecosystem auto-detection only checks manifest files at the repository root (e.g., `pyproject.toml`, `go.mod`, `package.json`). Nested service directories are not scanned. In a monorepo with multiple languages, only the root-level manifest is detected — check order favors Go and Rust over Python and JavaScript. Use `confirm_project_data(detected_ecosystem="...")` to override if the wrong ecosystem is selected
 
 ## External Tool Dependencies
 

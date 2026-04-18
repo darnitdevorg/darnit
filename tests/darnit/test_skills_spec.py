@@ -13,7 +13,7 @@ from skills_ref import read_properties, validate
 
 SKILLS_DIR = Path(__file__).parent.parent.parent / "packages" / "darnit" / "src" / "darnit" / "skills"
 
-EXPECTED_SKILLS = ["darnit-audit", "darnit-context", "darnit-comply", "darnit-remediate"]
+EXPECTED_SKILLS = ["darnit-audit", "darnit-data", "darnit-comply", "darnit-remediate"]
 
 
 def _skill_path(name: str) -> Path:

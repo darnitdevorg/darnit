@@ -73,7 +73,7 @@ class TestGetNextStepsSection:
         # Step 2 is remediation
         assert "Step 2: Remediate failures" in output
         # Directs to get_pending_context (not direct confirm_project_context dump)
-        assert "get_pending_context(" in output
+        assert "get_pending_data(" in output
         # Legacy section is gone
         assert "Help Improve This Audit" not in output
 
@@ -118,7 +118,7 @@ class TestGetNextStepsSection:
         result = _get_next_steps_section("/repo", summary)
         output = "\n".join(result)
 
-        assert "get_pending_context(" in output
+        assert "get_pending_data(" in output
         assert "one at a time" in output.lower()
 
     @patch("darnit.config.context_storage.get_pending_context")
@@ -194,7 +194,7 @@ class TestFormatContextCollectionStep:
         output = "\n".join(result)
 
         # Single compound call for auto-detected values
-        assert output.count("confirm_project_context(") >= 2  # compound + individual
+        assert output.count("confirm_project_data(") >= 2  # compound + individual
         assert 'ci_provider="github"' in output
         assert "maintainers=" in output
         assert '"@alice"' in output
@@ -292,4 +292,4 @@ class TestFormatContextCollectionStep:
 
         # Should show 8 of 12 and indicate overflow
         assert "...and 4 more" in output
-        assert "get_pending_context()" in output
+        assert "get_pending_data()" in output

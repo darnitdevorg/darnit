@@ -34,7 +34,7 @@ Common audit tools:
    - LLM-resolved: any controls you judged, with your reasoning
 
 4. Suggest next steps based on results:
-   - Missing context causing WARNs → suggest `/darnit-context`
+   - Missing context causing WARNs → suggest `/darnit-data`
    - Failures with auto-fixes available → suggest `/darnit-remediate`
    - All passing → congratulate the user
 
@@ -42,7 +42,7 @@ Common audit tools:
 
 - WARN means "we don't know" — treat it the same as FAIL for compliance calculations. Never report a level as compliant if any control is WARN.
 - The audit tool uses `stop_on_llm=True` by default, so PENDING_LLM controls appear in results for you to resolve.
-- If `.project/` doesn't exist yet, the tool auto-initializes basic context using detectors. Mention that running `/darnit-context` would improve accuracy.
+- If `.project/` doesn't exist yet, the tool auto-initializes basic context using detectors. Mention that running `/darnit-data` would improve accuracy.
 - Profile names are scoped per-implementation. If the user says a profile name that's ambiguous, ask which implementation they mean.
 - Each implementation module registers its own tool names. Don't assume `audit_openssf_baseline` exists — discover available tools first.
 

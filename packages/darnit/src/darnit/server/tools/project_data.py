@@ -1,4 +1,4 @@
-"""Project context confirmation tool for OpenSSF Baseline.
+"""Project data confirmation tool for OpenSSF Baseline.
 
 Allows users to record project-specific context that cannot be auto-detected,
 such as whether a project has subprojects or which CI system is used.
@@ -20,7 +20,7 @@ VALID_CI_PROVIDERS = ["github", "gitlab", "jenkins", "circleci", "azure", "travi
 VALID_GOVERNANCE_MODELS = ["bdfl", "meritocracy", "democracy", "corporate", "foundation", "committee", "other"]
 
 
-def confirm_project_context_impl(
+def confirm_project_data_impl(
     local_path: str = ".",
     # Existing parameters (backward compatible)
     has_subprojects: bool | None = None,
@@ -33,7 +33,7 @@ def confirm_project_context_impl(
     security_contact: str | None = None,
     governance_model: str | None = None,
 ) -> str:
-    """Record user-confirmed project context in .project.yaml.
+    """Record user-confirmed project data in .project.yaml.
 
     Updates the x-openssf-baseline.context section with user-confirmed values
     that affect how controls are evaluated.
@@ -95,11 +95,11 @@ def confirm_project_context_impl(
         updates.append(f"  - governance_model: {governance_model}")
 
     if not updates:
-        return """ℹ️ No context values provided.
+        return """ℹ️ No data values provided.
 
 **Usage:**
 ```python
-confirm_project_context(
+confirm_project_data(
     local_path=".",
     has_subprojects=False,  # No related repos
     has_releases=True,      # We make releases
@@ -110,7 +110,7 @@ confirm_project_context(
 )
 ```
 
-**Available context keys:**
+**Available data keys:**
 - `has_subprojects`: Does this project have subprojects or related repositories?
 - `has_releases`: Does this project make official releases?
 - `is_library`: Is this a library/framework consumed by other projects?
@@ -136,7 +136,7 @@ confirm_project_context(
 
     context = config.x_openssf_baseline.context
 
-    # Update context values (only those provided)
+    # Update data values (only those provided)
     if has_subprojects is not None:
         context.has_subprojects = has_subprojects
     if has_releases is not None:
@@ -203,7 +203,7 @@ confirm_project_context(
 
     updates_str = '\n'.join(updates)
     verified_str = '\n'.join(verified_values)
-    return f"""✅ Project context updated in .project.yaml
+    return f"""✅ Project data updated in .project.yaml
 
 **Recorded:**
 {updates_str}

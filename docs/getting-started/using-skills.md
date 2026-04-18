@@ -22,7 +22,7 @@ After installation, restart Claude Code. The skills appear as slash commands.
 | Skill | What it does |
 |-------|-------------|
 | `/darnit-audit` | Run a compliance audit and get a formatted report |
-| `/darnit-context` | Collect missing project context to improve audit accuracy |
+| `/darnit-data` | Collect missing project context to improve audit accuracy |
 | `/darnit-remediate` | Apply automated fixes for failing controls |
 | `/darnit-comply` | Full pipeline: audit, context, remediate, and PR creation |
 
@@ -62,16 +62,16 @@ Profiles are named subsets of controls defined by each implementation module.
 ### Collect project context
 
 ```
-/darnit-context
+/darnit-data
 ```
 
 Guides you through answering questions about your project (maintainers, CI provider, governance model). Auto-detected values are presented for confirmation. You can skip any question.
 
-### Scoped context collection
+### Scoped data collection
 
 ```
-/darnit-context for gittuf
-/darnit-context just what's needed for access control
+/darnit-data for gittuf
+/darnit-data just what's needed for access control
 ```
 
 ### Apply fixes

@@ -1,6 +1,6 @@
 """Sieve handler registry for the confidence gradient pipeline.
 
-Handlers are pluggable units that perform verification, context gathering, or
+Handlers are pluggable units that perform verification, data gathering, or
 remediation work within a phase of the confidence gradient:
 
     deterministic → pattern → llm → manual
@@ -84,7 +84,7 @@ class HandlerContext:
         owner: Repository owner (org or user).
         repo: Repository name.
         default_branch: Default branch name (e.g., "main").
-        control_id: ID of the control being verified (empty for context gathering).
+        control_id: ID of the control being verified (empty for data gathering).
         project_context: Flattened .project/project.yaml values.
         gathered_evidence: Evidence accumulated from previous handlers in this control.
         shared_cache: Cache for shared handler results (keyed by shared handler name).

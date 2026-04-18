@@ -18,8 +18,8 @@ from .git_operations import (
     create_remediation_pr_impl,
     get_remediation_status_impl,
 )
-from .project_context import (
-    confirm_project_context_impl,
+from .project_data import (
+    confirm_project_data_impl,
 )
 from .test_repository import (
     create_test_repository_impl,
@@ -45,5 +45,5 @@ __all__ = [
     # Test repository
     "create_test_repository_impl",
     # Project context
-    "confirm_project_context_impl",
+    "confirm_project_data_impl",
 ]

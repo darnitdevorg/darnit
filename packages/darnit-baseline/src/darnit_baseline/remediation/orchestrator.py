@@ -770,7 +770,7 @@ def _format_preflight_prompt(
     md.append("")
     md.append("## DO NOT directly edit `.project/` files!")
     md.append("")
-    md.append("You **MUST** use the `confirm_project_context()` tool to set context values.")
+    md.append("You **MUST** use the `confirm_project_data()` tool to set context values.")
     md.append("Direct file edits will be rejected and may cause inconsistent state.")
     md.append("")
     md.append("---")
@@ -792,7 +792,7 @@ def _format_preflight_prompt(
                 md.append(f"- `{key}`: {', '.join(controls)}")
         md.append("")
 
-    # Build a ready-to-use confirm_project_context() call from auto-detected values
+    # Build a ready-to-use confirm_project_data() call from auto-detected values
     auto_detected = context_info.get("auto_detected", {})
     missing = context_info.get("missing_context", [])
     tool_args = []
@@ -818,12 +818,12 @@ def _format_preflight_prompt(
         md.append("**After the user provides values, run this to confirm, then re-run remediation:**")
         md.append("```python")
         args_str = ",\n    ".join(tool_args)
-        md.append(f'confirm_project_context(\n    local_path="{local_path}",\n    {args_str}\n)')
+        md.append(f'confirm_project_data(\n    local_path="{local_path}",\n    {args_str}\n)')
         md.append("```")
     else:
         md.append("**After the user provides values, confirm them, then re-run remediation:**")
         md.append("```python")
-        md.append(f'confirm_project_context(local_path="{local_path}", ...)')
+        md.append(f'confirm_project_data(local_path="{local_path}", ...)')
         md.append("```")
 
     return "\n".join(md)

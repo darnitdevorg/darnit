@@ -1,8 +1,8 @@
-"""Tests for get_pending_context batch context collection.
+"""Tests for get_pending_data batch context collection.
 
 Tests the pagination, LLM directive footer, progress indicator,
 presentation hint, ask_user_batch, answer_mapping, and TOML ordering
-features for batched AskUserQuestion-based context gathering.
+features for batched AskUserQuestion-based data gathering.
 """
 
 import json
@@ -18,7 +18,7 @@ from darnit_baseline.tools import (
     _CONTEXT_KEY_ORDER,
     _LLM_DIRECTIVE_PREFIX,
     _build_context_question,
-    get_pending_context,
+    get_pending_data,
 )
 
 
@@ -41,7 +41,7 @@ def _make_pending(count: int) -> list[ContextPromptRequest]:
 
 
 def _parse_json_from_result(result: str) -> dict:
-    """Strip directive prefix/footer and parse JSON from get_pending_context result."""
+    """Strip directive prefix/footer and parse JSON from get_pending_data result."""
     # The directive prefix ends with "---\n", JSON starts after that
     if "---\n" in result:
         # Find the JSON portion (starts with '{')
@@ -62,7 +62,7 @@ class TestGetPendingContextPagination:
         mock_path.return_value.resolve.return_value = "/tmp/repo"
         mock_get.return_value = _make_pending(5)
 
-        result = get_pending_context(local_path="/tmp/repo")
+        result = get_pending_data(local_path="/tmp/repo")
         data = _parse_json_from_result(result)
 
         assert data["status"] == "pending"
@@ -75,7 +75,7 @@ class TestGetPendingContextPagination:
         mock_path.return_value.resolve.return_value = "/tmp/repo"
         mock_get.return_value = _make_pending(2)
 
-        result = get_pending_context(local_path="/tmp/repo")
+        result = get_pending_data(local_path="/tmp/repo")
         data = _parse_json_from_result(result)
 
         assert len(data["ask_user_batch"]) == 2
@@ -87,7 +87,7 @@ class TestGetPendingContextPagination:
         mock_path.return_value.resolve.return_value = "/tmp/repo"
         mock_get.return_value = _make_pending(5)
 
-        result = get_pending_context(local_path="/tmp/repo", limit=0)
+        result = get_pending_data(local_path="/tmp/repo", limit=0)
         data = _parse_json_from_result(result)
 
         assert data["status"] == "pending"
@@ -100,7 +100,7 @@ class TestGetPendingContextPagination:
         mock_path.return_value.resolve.return_value = "/tmp/repo"
         mock_get.return_value = _make_pending(5)
 
-        result = get_pending_context(local_path="/tmp/repo", limit=3)
+        result = get_pending_data(local_path="/tmp/repo", limit=3)
         data = _parse_json_from_result(result)
 
         assert len(data["ask_user_batch"]) == 3
@@ -116,7 +116,7 @@ class TestGetPendingContextProgress:
         mock_path.return_value.resolve.return_value = "/tmp/repo"
         mock_get.return_value = _make_pending(8)
 
-        result = get_pending_context(local_path="/tmp/repo")
+        result = get_pending_data(local_path="/tmp/repo")
         data = _parse_json_from_result(result)
 
         assert "progress" in data
@@ -134,7 +134,7 @@ class TestGetPendingContextDirective:
         mock_path.return_value.resolve.return_value = "/tmp/repo"
         mock_get.return_value = _make_pending(3)
 
-        result = get_pending_context(local_path="/tmp/repo")
+        result = get_pending_data(local_path="/tmp/repo")
 
         assert result.startswith(_LLM_DIRECTIVE_PREFIX)
         assert "MANDATORY" in result
@@ -147,7 +147,7 @@ class TestGetPendingContextDirective:
         mock_path.return_value.resolve.return_value = "/tmp/repo"
         mock_get.return_value = []
 
-        result = get_pending_context(local_path="/tmp/repo")
+        result = get_pending_data(local_path="/tmp/repo")
 
         assert _LLM_DIRECTIVE_PREFIX not in result
         data = json.loads(result)
@@ -356,7 +356,7 @@ class TestAskUserBatch:
         mock_path.return_value.resolve.return_value = "/tmp/repo"
         mock_get.return_value = _make_pending(3)
 
-        result = get_pending_context(local_path="/tmp/repo")
+        result = get_pending_data(local_path="/tmp/repo")
         data = _parse_json_from_result(result)
 
         assert "ask_user_batch" in data
@@ -377,7 +377,7 @@ class TestAskUserBatch:
         mock_path.return_value.resolve.return_value = "/tmp/repo"
         mock_get.return_value = _make_pending(3)
 
-        result = get_pending_context(local_path="/tmp/repo")
+        result = get_pending_data(local_path="/tmp/repo")
         data = _parse_json_from_result(result)
 
         assert "answer_mapping" in data
@@ -405,7 +405,7 @@ class TestAskUserBatch:
             priority=1,
         )]
 
-        result = get_pending_context(local_path="/tmp/repo")
+        result = get_pending_data(local_path="/tmp/repo")
         data = _parse_json_from_result(result)
 
         mapping = data["answer_mapping"][0]
@@ -430,7 +430,7 @@ class TestAskUserBatch:
             current_value=ContextValue.auto_detected(value="github", method="detected"),
         )]
 
-        result = get_pending_context(local_path="/tmp/repo")
+        result = get_pending_data(local_path="/tmp/repo")
         data = _parse_json_from_result(result)
 
         mapping = data["answer_mapping"][0]
@@ -455,7 +455,7 @@ class TestAskUserBatch:
             priority=1,
         )]
 
-        result = get_pending_context(local_path="/tmp/repo")
+        result = get_pending_data(local_path="/tmp/repo")
         data = _parse_json_from_result(result)
 
         assert "ask_user_batch" not in data
@@ -487,7 +487,7 @@ class TestTomlDefinitionOrder:
             ))
         mock_get.return_value = items
 
-        result = get_pending_context(local_path="/tmp/repo", limit=0)
+        result = get_pending_data(local_path="/tmp/repo", limit=0)
         data = _parse_json_from_result(result)
 
         # answer_mapping preserves the order of ask_user_batch
@@ -516,7 +516,7 @@ class TestTomlDefinitionOrder:
             ))
         mock_get.return_value = items
 
-        result = get_pending_context(local_path="/tmp/repo", limit=0)
+        result = get_pending_data(local_path="/tmp/repo", limit=0)
         data = _parse_json_from_result(result)
 
         keys = [m["context_key"] for m in data["answer_mapping"]]

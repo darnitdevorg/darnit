@@ -69,9 +69,9 @@ Show: branch name, controls fixed, files changed, PR URL (if created), and remai
 - Do NOT call `create_remediation_branch` or `commit_remediation_changes` separately — use the `branch_name` and `auto_commit` params instead.
 - If `remediate_audit_findings` fails mid-way, report which files were already changed so the user can review.
 - The tool respects the `safe` flag on remediations — only safe remediations are auto-applied. Unsafe ones are listed but excluded.
-- If there are unresolved context questions, the remediation tool will block and tell you. Suggest running `/darnit-context` first.
+- If there are unresolved data questions, the remediation tool will block and tell you. Suggest running `/darnit-data` first.
 
 ## Error handling
 
-If the tool returns a context warning, suggest running `/darnit-context` first.
+If the tool returns a data warning, suggest running `/darnit-data` first.
 If branch creation fails, report the error — the tool aborts before applying any changes.

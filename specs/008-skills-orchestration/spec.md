@@ -129,7 +129,7 @@ When running the compliance pipeline with a specific profile, context collection
 - **FR-006**: System MUST provide a `/remediate` skill that creates a branch, applies safe auto-fixes, commits changes, and offers PR creation.
 - **FR-007**: System MUST support named audit profiles defined in implementation TOML configs under an `[audit_profiles]` section. Profile names are scoped per-implementation.
 - **FR-008**: Each audit profile MUST specify its control set via either explicit control IDs, tag-based filters, or both. When both are provided, the profile includes the union of explicitly listed controls and controls matching the tag filter.
-- **FR-009**: Profiles MUST be filterable across all three pipeline layers: audit (control selection), context gathering (relevant questions only), and remediation (relevant fixes only).
+- **FR-009**: Profiles MUST be filterable across all three pipeline layers: audit (control selection), data gathering (relevant questions only), and remediation (relevant fixes only).
 - **FR-010**: System MUST accept an optional `--profile` parameter on `/audit`, `/context`, `/remediate`, and `/comply` skills. When only one loaded implementation defines a given profile name, the short name suffices (e.g., `--profile onboard`). When multiple implementations define the same profile name, the system MUST require disambiguation via `--profile <impl>:<profile>` syntax.
 - **FR-011**: When no profile is specified, the system MUST evaluate all controls (backward compatible default behavior).
 - **FR-012**: System MUST expose profiles via the existing CLI (`darnit audit --profile <name>`) and MCP tools (optional `profile` parameter).

@@ -34,7 +34,7 @@ This is a compliance auditing tool. Incorrect results are worse than incomplete 
 Here's the end-to-end flow that an AI assistant (or human) goes through when auditing a project:
 
 ```
- 1. LOAD                     2. AUDIT                      3. GATHER CONTEXT
+ 1. LOAD                     2. AUDIT                      3. GATHER DATA
  ───────────────────         ───────────────────────        ───────────────────────
  Load controls from          Run each control through       For controls that WARN:
  framework TOML              the sieve pipeline:
@@ -74,7 +74,7 @@ Here's the end-to-end flow that an AI assistant (or human) goes through when aud
                                • custom plugin handlers
 ```
 
-**Why context gathering matters**: Many controls can't be fully automated. The sieve might find that *something* exists but not *where*, or it might need human judgment about project-specific facts. For example:
+**Why data gathering matters**: Many controls can't be fully automated. The sieve might find that *something* exists but not *where*, or it might need human judgment about project-specific facts. For example:
 
 - **Custom checks**: Each sieve phase uses built-in handlers (`file_exists`, `exec`, `pattern`, `manual`) by default, but any phase can be replaced with a custom Python handler registered by a plugin — e.g., running OpenSSF Scorecard, querying a vulnerability database, or checking internal policy systems.
 - **Locator misses**: The control checks `SECURITY.md` and `.github/SECURITY.md`, but your project keeps security docs at `docs/security.txt`. The user tells the framework where to look, and that location is stored so future audits find it automatically.

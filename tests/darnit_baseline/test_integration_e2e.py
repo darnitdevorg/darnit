@@ -32,7 +32,7 @@ class TestRemediationE2EFlow:
     @pytest.mark.integration
     def test_governance_full_flow_prompts_then_creates(self, temp_git_repo):
         """Test complete governance flow: prompt -> confirm -> create."""
-        from darnit.server.tools.project_context import confirm_project_context_impl
+        from darnit.server.tools.project_data import confirm_project_data_impl
         from darnit_baseline.remediation.orchestrator import remediate_audit_findings
 
         # Step 1: Run remediation without confirmation - should prompt
@@ -43,11 +43,11 @@ class TestRemediationE2EFlow:
         )
 
         assert "BLOCKED: Remediation Cannot Proceed" in result1 or "Needs Confirmation" in result1
-        assert "confirm_project_context" in result1
+        assert "confirm_project_data" in result1
         assert not (Path(temp_git_repo) / "GOVERNANCE.md").exists()
 
         # Step 2: Confirm maintainers
-        confirm_result = confirm_project_context_impl(
+        confirm_result = confirm_project_data_impl(
             local_path=temp_git_repo,
             maintainers=["@alice", "@bob"],
         )
@@ -145,5 +145,5 @@ class TestOutputContainsExpectedContent:
 
         assert result["status"] == "needs_confirmation"
         assert "result" in result
-        assert "confirm_project_context" in result["result"]
+        assert "confirm_project_data" in result["result"]
         assert "maintainers=" in result["result"]

@@ -405,7 +405,7 @@ detect = [
 # NOTE: detected_ecosystem and license_type are auto-detected by
 # darnit.context.auto_detect (collect_auto_context) without prompting.
 # They do NOT need TOML [context.*] definitions because they never go
-# through get_pending_context / confirm_project_context.
+# through get_pending_data / confirm_project_data.
 
 # =============================================================================
 # Shared Handlers (cached across controls within a single audit run)
@@ -4093,8 +4093,8 @@ description = "Enable branch protection rules on GitHub repository"
 handler = "init_project_config"
 description = "Initialize a new .project.yaml configuration file"
 
-[mcp.tools.confirm_project_context]
-handler = "confirm_project_context"
+[mcp.tools.confirm_project_data]
+handler = "confirm_project_data"
 description = """Record user-confirmed project context in .project.yaml.
 
 **IMPORTANT**: This is the ONLY way to set project context. DO NOT directly edit
@@ -4114,13 +4114,13 @@ description = """Record user-confirmed project context in .project.yaml.
 **Examples:**
 ```
 # Reference existing CODEOWNERS file (RECOMMENDED)
-confirm_project_context(maintainers="CODEOWNERS")
+confirm_project_data(maintainers="CODEOWNERS")
 
 # Explicit maintainer list
-confirm_project_context(maintainers=["@alice", "@bob"])
+confirm_project_data(maintainers=["@alice", "@bob"])
 
 # Multiple context values
-confirm_project_context(
+confirm_project_data(
     maintainers="CODEOWNERS",
     security_contact="security@example.com",
     ci_provider="github"
@@ -4128,8 +4128,8 @@ confirm_project_context(
 ```
 """
 
-[mcp.tools.get_pending_context]
-handler = "get_pending_context"
+[mcp.tools.get_pending_data]
+handler = "get_pending_data"
 limit = 4
 append_directive = true
 description = """Batch context collection wizard. Returns up to 4 questions at a time.
@@ -4137,7 +4137,7 @@ description = """Batch context collection wizard. Returns up to 4 questions at a
 MANDATORY WORKFLOW — your next action after calling this tool MUST be calling AskUserQuestion:
 1. Call this tool. It returns "ask_user_batch" — an array of AskUserQuestion-compatible question objects.
 2. Call AskUserQuestion with questions=<ask_user_batch>. Pass the array VERBATIM. Do NOT render as text.
-3. After the user answers, use "answer_mapping" to call confirm_project_context() for EACH answer.
+3. After the user answers, use "answer_mapping" to call confirm_project_data() for EACH answer.
 4. Call this tool again for the next batch. Repeat until status is "complete".
 
 Do NOT pre-fill or suggest answers. Do NOT summarize questions as text. ALWAYS use AskUserQuestion.
@@ -4155,7 +4155,7 @@ description = "Generate an in-toto attestation for OpenSSF Baseline compliance"
 handler = "remediate_audit_findings"
 description = """Apply automated remediations for failed audit controls.
 
-**IMPORTANT**: Before running remediation, ALWAYS call get_pending_context() first to gather any
+**IMPORTANT**: Before running remediation, ALWAYS call get_pending_data() first to gather any
 missing project context (maintainers, security contact, governance model, etc.). Some remediations
 require confirmed context to generate correct files (e.g., CODEOWNERS needs maintainers).
 Gather all context before remediating.

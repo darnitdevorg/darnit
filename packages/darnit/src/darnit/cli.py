@@ -35,9 +35,7 @@ from darnit.core.logging import configure_logging, get_logger
 logger = get_logger("cli")
 
 
-# =============================================================================
 # Output Formatters
-# =============================================================================
 
 
 def format_result_text(result: dict) -> str:
@@ -117,9 +115,7 @@ def format_results_json(results: list[dict], framework_name: str) -> str:
     return json.dumps(output, indent=2)
 
 
-# =============================================================================
 # Commands
-# =============================================================================
 
 
 def cmd_audit(args: argparse.Namespace) -> int:
@@ -536,7 +532,7 @@ def cmd_install(args: argparse.Namespace) -> int:
         logger.info("  Skipping skill installation (--mcp-only)")
 
     logger.info("Next step: restart your AI client and use the configured MCP server.")
-    logger.info("Skills available: /darnit-audit, /darnit-context, /darnit-comply, /darnit-remediate")
+    logger.info("Skills available: /darnit-audit, /darnit-data, /darnit-comply, /darnit-remediate")
     return 0
 
 def cmd_profiles(args: argparse.Namespace) -> int:
@@ -635,9 +631,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
             return 1
 
 
-# =============================================================================
 # Helpers
-# =============================================================================
 
 
 
@@ -662,9 +656,7 @@ def _detect_default_branch(repo_path: Path) -> str:
     return "main"
 
 
-# =============================================================================
 # Main Entry Point
-# =============================================================================
 
 
 def create_parser() -> argparse.ArgumentParser:

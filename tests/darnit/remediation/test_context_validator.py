@@ -220,7 +220,7 @@ class TestFormatContextPrompt:
 
         assert "maintainers" in prompt
         assert "GitHub collaborators are not project maintainers" in prompt
-        assert "confirm_project_context" in prompt
+        assert "confirm_project_data" in prompt
 
     def test_maintainers_does_not_show_auto_detected_value(self):
         """Maintainers prompt should NOT show auto-detected values (security measure).
@@ -304,7 +304,7 @@ class TestFormatContextPrompt:
         assert "@bob" in prompt
         assert "@charlie" in prompt
         # Should use a placeholder in the command, NOT the filename or actual values
-        assert 'confirm_project_context(maintainers=<user-confirmed values>)' in prompt
+        assert 'confirm_project_data(maintainers=<user-confirmed values>)' in prompt
         # Should NOT suggest passing the filename
         assert 'maintainers="CODEOWNERS"' not in prompt
 
@@ -338,7 +338,7 @@ class TestFormatContextPrompt:
         assert "@detected1" in prompt
         assert "@detected2" in prompt
         # Should use a placeholder in the command, NOT the actual detected values
-        assert 'confirm_project_context(maintainers=<user-confirmed values>)' in prompt
+        assert 'confirm_project_data(maintainers=<user-confirmed values>)' in prompt
         # Should NOT have executable command with actual values
         assert "['@detected1', '@detected2']" not in prompt
 
@@ -483,7 +483,7 @@ class TestOrchestratorContextIntegration:
         # Should return needs_confirmation status
         assert result["status"] == "needs_confirmation"
         assert "maintainers" in result.get("missing_context", [])
-        assert "confirm_project_context" in result.get("result", "")
+        assert "confirm_project_data" in result.get("result", "")
 
     @pytest.mark.integration
     def test_orchestrator_returns_needs_confirmation_status(self, temp_repo):
@@ -504,11 +504,11 @@ class TestOrchestratorContextIntegration:
     @pytest.mark.integration
     def test_orchestrator_proceeds_when_context_confirmed(self, temp_repo):
         """Remediation should run when all context is confirmed."""
-        from darnit.server.tools.project_context import confirm_project_context_impl
+        from darnit.server.tools.project_data import confirm_project_data_impl
         from darnit_baseline.remediation.orchestrator import _apply_control_remediation
 
         # First confirm maintainers
-        confirm_result = confirm_project_context_impl(
+        confirm_result = confirm_project_data_impl(
             local_path=temp_repo,
             maintainers=["@alice", "@bob"],
         )

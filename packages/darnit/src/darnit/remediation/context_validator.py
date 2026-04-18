@@ -189,7 +189,7 @@ def format_context_prompt(
     # Header
     lines.append(f"⚠️ **Context confirmation required: `{context_key}`**")
     lines.append("")
-    lines.append("🚨 **DO NOT** directly edit `.project/` files! Use `confirm_project_context()` instead.")
+    lines.append("🚨 **DO NOT** directly edit `.project/` files! Use `confirm_project_data()` instead.")
     lines.append("")
     lines.append("🛑 **AI Agents:** You MUST ask the user for this value. Do NOT guess or infer from repository owner, git history, or other sources.")
     lines.append("")
@@ -235,7 +235,7 @@ def format_context_prompt(
 
         lines.append("**⚠️ Ask the user to confirm or correct these values, then use:**")
         lines.append("```")
-        lines.append(f"confirm_project_context({context_key}=<user-confirmed values>)")
+        lines.append(f"confirm_project_data({context_key}=<user-confirmed values>)")
         lines.append("```")
         lines.append("")
     elif allow_sieve_hints and current_value is not None and isinstance(current_value, ContextValue):
@@ -253,7 +253,7 @@ def format_context_prompt(
         lines.append("")
         lines.append("**⚠️ Ask the user to confirm or correct these values, then use:**")
         lines.append("```")
-        lines.append(f"confirm_project_context({context_key}=<user-confirmed values>)")
+        lines.append(f"confirm_project_data({context_key}=<user-confirmed values>)")
         lines.append("```")
         lines.append("")
     else:
@@ -283,9 +283,9 @@ def format_context_prompt(
         # Show example based on context type
         if definition and definition.examples:
             example = definition.examples[0]
-            lines.append(f'confirm_project_context({context_key}={example})')
+            lines.append(f'confirm_project_data({context_key}={example})')
         else:
-            lines.append(f'confirm_project_context({context_key}=<value>)')
+            lines.append(f'confirm_project_data({context_key}=<value>)')
         lines.append("```")
 
     return "\n".join(lines)

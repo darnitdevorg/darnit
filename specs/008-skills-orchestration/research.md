@@ -30,7 +30,7 @@
 - `run_sieve_audit()` accepts `controls: list[str] | None` — when None, all controls are used
 - The existing tag-based filtering in `filtering/filters.py` provides a model for profile tag filters
 - Profile resolution needs: (1) load profiles from TOML, (2) resolve control IDs from explicit list or tag filter, (3) intersect with any additional `--tags` filters
-- Context gathering already accepts `control_ids` parameter in `get_pending_context()`
+- Data collection already accepts `control_ids` parameter in `get_pending_context()`
 - Remediation already filters by control ID in `remediate_audit_findings`
 
 **Alternatives considered**:

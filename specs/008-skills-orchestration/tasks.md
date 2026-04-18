@@ -135,7 +135,7 @@
 ### Implementation for User Story 6
 
 - [x] T031 [US6] Add `profile` parameter to `get_pending_context` handler in packages/darnit-baseline/src/darnit_baseline/tools.py — filter pending context to only include questions affecting the profile's control set
-- [x] T032 [US6] Write integration test for profile-scoped context gathering in tests/darnit_baseline/test_profiles.py — verify that with a profile, only relevant context questions are returned
+- [x] T032 [US6] Write integration test for profile-scoped data gathering in tests/darnit_baseline/test_profiles.py — verify that with a profile, only relevant context questions are returned
 - [x] T033 [US6] Write integration test for profile-scoped remediation in tests/darnit_baseline/test_profiles.py — verify that with a profile, only relevant remediations are offered
 
 **Checkpoint**: Profile filtering works across all three pipeline layers.

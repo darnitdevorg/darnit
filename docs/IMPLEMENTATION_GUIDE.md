@@ -871,7 +871,7 @@ def my_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResult
 | `owner` | `str` | Repository owner (GitHub org or user). Empty string if unknown. |
 | `repo` | `str` | Repository name. Empty string if unknown. |
 | `default_branch` | `str` | Default branch name (e.g., `"main"`). Defaults to `"main"`. |
-| `control_id` | `str` | ID of the control being verified (e.g., `"OSPS-AC-01.01"`). Empty for context gathering. |
+| `control_id` | `str` | ID of the control being verified (e.g., `"OSPS-AC-01.01"`). Empty for data gathering. |
 | `project_context` | `dict[str, Any]` | Flattened values from `.project/project.yaml` and `.project/darnit.yaml`. |
 | `gathered_evidence` | `dict[str, Any]` | Evidence accumulated from earlier handlers in this control's pipeline. See [Evidence propagation](#evidence-propagation). |
 | `shared_cache` | `dict[str, HandlerResult]` | Cache of shared handler results, keyed by the shared handler name. Shared handlers run once and cache their result for all controls that reference them. |
