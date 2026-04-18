@@ -86,8 +86,9 @@ def _run_ts_pipeline(
         )
     except Exception as exc:  # noqa: BLE001 — never break the handler
         logger.warning(
-            "ts_discovery.discover_all raised (%s); falling back to template",
-            exc,
+            "ts_discovery.discover_all raised (%s) on %s; falling back to template",
+            type(exc).__name__,
+            local_path,
         )
         return _TsRunOutput(
             result=None,
@@ -426,7 +427,12 @@ def generate_threat_model_handler(
             },
         )
     except Exception as e:  # noqa: BLE001 — renderer bugs must not crash the handler
-        logger.warning("Renderer error during multi-file output: %s", e)
+        logger.warning(
+            "Renderer error during multi-file output for %s (error type: %s): %s",
+            path,
+            type(e).__name__,
+            e,
+        )
         return HandlerResult(
             status=HandlerResultStatus.ERROR,
             message=f"Renderer error generating threat model: {e}",

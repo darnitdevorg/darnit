@@ -1446,7 +1446,13 @@ def _normalize_opengrep_findings(
         try:
             candidate = _normalize_one_opengrep_finding(entry, scanned_files, file_cache)
         except Exception as exc:  # noqa: BLE001
-            logger.debug("skipping malformed opengrep finding: %s", exc)
+            path = entry.get("path", "unknown")
+            logger.warning(
+                "skipping malformed opengrep finding in file %s (error type: %s): %s",
+                path,
+                type(exc).__name__,
+                exc,
+            )
             continue
         if candidate is not None:
             candidates.append(candidate)
@@ -1505,7 +1511,13 @@ def _normalize_one_opengrep_finding(
         source_enum = FindingSource.OPENGREP_TAINT
         try:
             data_flow = _parse_dataflow_trace(dataflow_raw, relpath)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "malformed opengrep dataflow trace in file %s (error type: %s): %s",
+                relpath,
+                type(exc).__name__,
+                exc,
+            )
             # Malformed trace — downgrade to pattern match
             source_enum = FindingSource.OPENGREP_PATTERN
             data_flow = None
@@ -1936,7 +1948,12 @@ def _run_opengrep_enrichment(repo_root: Path) -> OpengrepResult:
         with as_file(rules_ref) as rules_path:
             return run_opengrep(target=repo_root, rules_dir=rules_path)
     except Exception as exc:  # noqa: BLE001 — never break discovery
-        logger.debug("opengrep enrichment failed: %s", exc)
+        logger.warning(
+            "opengrep enrichment failed on %s (error type: %s): %s",
+            repo_root,
+            type(exc).__name__,
+            exc,
+        )
         return OpengrepResult(
             available=False,
             degraded_reason=f"opengrep rules resolution failed: {exc}",
@@ -1952,7 +1969,12 @@ def _read_dependency_names(repo_root: Path) -> set[str]:
     try:
         names = deps_module.parse_dependency_manifests(str(repo_root))
     except Exception as e:  # noqa: BLE001 — best-effort
-        logger.debug("dependency manifest parse failed: %s", e)
+        logger.warning(
+            "dependency manifest parse failed for %s (error type: %s): %s",
+            repo_root,
+            type(e).__name__,
+            e,
+        )
         return set()
     if isinstance(names, dict):
         return set(names.keys())
