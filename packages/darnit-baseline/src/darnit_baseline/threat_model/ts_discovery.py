@@ -11,6 +11,7 @@ functions operate on already-loaded source bytes.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -1779,6 +1780,71 @@ def _get_source_for(
     return None
 
 
+def _is_suppressed_by_noqa(finding: CandidateFinding, source: bytes) -> bool:
+    """Check if finding's line has a matching noqa comment.
+
+    Returns True if the line contains:
+    - # noqa (suppresses all)
+    - # noqa: RULE_ID (suppresses if finding's query_id matches)
+    """
+    try:
+        source_str = source.decode("utf-8", errors="replace")
+        all_lines = source_str.splitlines()
+        # line is 1-indexed
+        line_idx = finding.primary_location.line - 1
+        if not (0 <= line_idx < len(all_lines)):
+            return False
+
+        line_text = all_lines[line_idx]
+
+        # Extract noqa comment from the line
+        if "# noqa" not in line_text and "#noqa" not in line_text:
+            return False
+
+        # Parse suppression comments with rule identifiers
+        # We split by '#' to find comments, then find the first one that is a suppression
+        parts = line_text.split("#")
+        for part in parts[1:]:
+            match = re.search(r'^\s*noqa(?::\s*([A-Za-z0-9_,\.\s-]+))?', part)
+            if not match:
+                continue
+
+            # If no specific rules listed, suppress all
+            if not match.group(1):
+                return True
+
+            # Check if finding's query_id matches any listed rule
+            rules = {r.strip() for r in match.group(1).split(",")}
+            return finding.query_id in rules or any(
+                finding.query_id.endswith(r) for r in rules
+            )
+        return False
+    except Exception:
+        return False  # On parse error, don't suppress
+
+
+def _filter_suppressed_findings(
+    findings: list[CandidateFinding],
+    scanned_files: dict[str, ScannedFile],
+) -> list[CandidateFinding]:
+    """Remove findings on lines with matching noqa suppressions."""
+    filtered = []
+    for finding in findings:
+        scanned_file = scanned_files.get(finding.primary_location.file)
+        if scanned_file:
+            source = scanned_file.read_bytes()
+            if _is_suppressed_by_noqa(finding, source):
+                logger.debug(
+                    "suppressed finding %s at %s:%d by noqa",
+                    finding.query_id,
+                    finding.primary_location.file,
+                    finding.primary_location.line,
+                )
+                continue
+        filtered.append(finding)
+    return filtered
+
+
 # ---------------------------------------------------------------------------
 # Top-level orchestrator
 # ---------------------------------------------------------------------------
@@ -1903,6 +1969,12 @@ def discover_all(
             "the project's framework or registration pattern.",
             scan_stats.in_scope_files,
         )
+
+    # Filter out findings explicitly suppressed by developers via # noqa comments
+    findings = _filter_suppressed_findings(
+        findings,
+        {f.relpath: f for f in scanned_files}
+    )
 
     logger.debug(
         "discover_all: %d entry points, %d data stores, %d findings, %d call graph nodes",

@@ -25,6 +25,28 @@ from darnit_baseline.threat_model.ts_discovery import DiscoveryConfig, discover_
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
+class TestNoqaSuppression:
+    def test_suppressed_findings_filtered(self, tmp_path: Path) -> None:
+        """Verify that Findings annotated with `# noqa` are completely removed."""
+        (tmp_path / "app.py").write_text(
+            "import subprocess\n"
+            "subprocess.run('ls', shell=True)\n"  # line 2: unsuppressed
+            "subprocess.run('ls', shell=True)  # noqa\n"  # line 3: suppressed (all)
+            "subprocess.run('ls', shell=True)  # noqa: irrelevant_rule\n"  # line 4: unsuppressed
+            "subprocess.run('ls', shell=True)  # noqa: python.sink.dangerous_attr\n"  # line 5: suppressed
+            "subprocess.run('ls', shell=True)  # noqa: other, python.sink.dangerous_attr, more\n"  # line 6: suppressed (in list)
+        )
+
+        result = discover_all(tmp_path)
+
+        # We expect findings from lines 2 and 4 to survive.
+        # Noting that subprocess.run produces 2 findings (command injection & dos timeout)
+        assert len(result.findings) == 4
+        lines = [f.primary_location.line for f in result.findings]
+        # Findings order isn't strictly guaranteed, so sort before compare
+        assert sorted(set(lines)) == [2, 4]
+
+
 # ---------------------------------------------------------------------------
 # US1 fixture tests
 # ---------------------------------------------------------------------------
@@ -57,9 +79,7 @@ class TestFastApiFixture:
     def test_spoofing_findings_for_unauthenticated_routes(self, result) -> None:
         """Each entry point without an auth decorator should produce a
         Spoofing candidate finding."""
-        spoofing = [
-            f for f in result.findings if f.category == StrideCategory.SPOOFING
-        ]
+        spoofing = [f for f in result.findings if f.category == StrideCategory.SPOOFING]
         assert len(spoofing) == 2  # both FastAPI routes are unauthenticated
 
 
@@ -128,11 +148,7 @@ class TestImperativeHttpRouteDetected:
             'app.add_url_rule("/foo", "foo", foo_handler)\n'
         )
         result = discover_all(tmp_path)
-        imperative_eps = [
-            ep
-            for ep in result.entry_points
-            if ep.source_query == "python.entry.http_route_imperative"
-        ]
+        imperative_eps = [ep for ep in result.entry_points if ep.source_query == "python.entry.http_route_imperative"]
         assert len(imperative_eps) == 1
         ep = imperative_eps[0]
         assert ep.kind == EntryPointKind.HTTP_ROUTE
@@ -151,11 +167,7 @@ class TestImperativeHttpRouteDetected:
             'app.add_route("/home", homepage)\n'
         )
         result = discover_all(tmp_path)
-        imperative_eps = [
-            ep
-            for ep in result.entry_points
-            if ep.source_query == "python.entry.http_route_imperative"
-        ]
+        imperative_eps = [ep for ep in result.entry_points if ep.source_query == "python.entry.http_route_imperative"]
         assert len(imperative_eps) == 1
         ep = imperative_eps[0]
         assert ep.kind == EntryPointKind.HTTP_ROUTE
@@ -171,9 +183,7 @@ class TestSubprocessTaintedFixture:
         assert len(result.entry_points) == 1
         assert result.entry_points[0].route_path == "/run"
 
-        tampering = [
-            f for f in result.findings if f.category == StrideCategory.TAMPERING
-        ]
+        tampering = [f for f in result.findings if f.category == StrideCategory.TAMPERING]
         assert len(tampering) == 1
         finding = tampering[0]
         assert finding.source == FindingSource.TREE_SITTER_STRUCTURAL
@@ -183,9 +193,7 @@ class TestSubprocessTaintedFixture:
 
     def test_spoofing_finding_for_unauthenticated_route(self, result) -> None:
         """The /run endpoint has no auth decorator → Spoofing finding."""
-        spoofing = [
-            f for f in result.findings if f.category == StrideCategory.SPOOFING
-        ]
+        spoofing = [f for f in result.findings if f.category == StrideCategory.SPOOFING]
         assert len(spoofing) == 1
         assert "/run" in spoofing[0].title
 
@@ -217,11 +225,7 @@ class TestDatastoreBareImportFixture:
             assert ds.import_evidence is not None
 
     def test_info_disclosure_findings_for_each_store(self, result) -> None:
-        info_findings = [
-            f
-            for f in result.findings
-            if f.category == StrideCategory.INFORMATION_DISCLOSURE
-        ]
+        info_findings = [f for f in result.findings if f.category == StrideCategory.INFORMATION_DISCLOSURE]
         assert len(info_findings) == 3  # one per data store
 
 
@@ -245,27 +249,21 @@ class TestSubprocessTieredClassification:
 
     def test_static_findings_have_lowest_scores(self, result) -> None:
         # Static literal-list calls get severity=1, confidence=0.2.
-        static_findings = [
-            f for f in result.findings if "subprocess/static" in f.rationale
-        ]
+        static_findings = [f for f in result.findings if "subprocess/static" in f.rationale]
         assert len(static_findings) == 2
         for f in static_findings:
             assert f.severity == 1
             assert f.confidence == 0.2
 
     def test_dynamic_finding_scores_higher(self, result) -> None:
-        dynamic_findings = [
-            f for f in result.findings if "subprocess/dynamic" in f.rationale
-        ]
+        dynamic_findings = [f for f in result.findings if "subprocess/dynamic" in f.rationale]
         assert len(dynamic_findings) == 1
         f = dynamic_findings[0]
         assert f.severity == 6
         assert f.confidence == 0.8
 
     def test_shell_finding_scores_highest(self, result) -> None:
-        shell_findings = [
-            f for f in result.findings if "subprocess/shell" in f.rationale
-        ]
+        shell_findings = [f for f in result.findings if "subprocess/shell" in f.rationale]
         assert len(shell_findings) == 1
         f = shell_findings[0]
         assert f.severity == 8
@@ -299,15 +297,11 @@ class TestConfigDrivenSubprocess:
         # The fixture's subprocess.run(full_cmd, ...) should be detected as
         # config-driven because full_cmd is built from config["command"] and
         # config.get("args", []) within the same function scope.
-        config_findings = [
-            f for f in result.findings if f.confidence >= 0.9
-        ]
+        config_findings = [f for f in result.findings if f.confidence >= 0.9]
         assert len(config_findings) >= 1
 
     def test_rationale_mentions_configuration(self, result) -> None:
-        config_findings = [
-            f for f in result.findings if f.confidence >= 0.9
-        ]
+        config_findings = [f for f in result.findings if f.confidence >= 0.9]
         assert len(config_findings) >= 1
         for f in config_findings:
             assert "configuration" in f.rationale.lower() or "config" in f.rationale.lower()
@@ -365,9 +359,7 @@ class TestRedHerringsRegression:
         keywords inside a module docstring. The old pipeline flagged it.
         The new pipeline MUST ignore it because tree-sitter queries
         structurally skip comment/string nodes."""
-        postgres_stores = [
-            ds for ds in result.data_stores if ds.technology == "postgresql"
-        ]
+        postgres_stores = [ds for ds in result.data_stores if ds.technology == "postgresql"]
         assert postgres_stores == []
 
     def test_specifically_no_pii_email_finding(self, result) -> None:
@@ -400,10 +392,7 @@ class TestDogfoodAgainstDarnit:
         The new pipeline MUST NOT produce any postgresql finding from
         that file."""
         phantom = [
-            ds
-            for ds in result.data_stores
-            if ds.technology == "postgresql"
-            and "darnit-gittuf" in ds.location.file
+            ds for ds in result.data_stores if ds.technology == "postgresql" and "darnit-gittuf" in ds.location.file
         ]
         assert phantom == [], (
             f"Expected no phantom postgresql from darnit-gittuf, got: "
@@ -414,11 +403,7 @@ class TestDogfoodAgainstDarnit:
         """The old pipeline flagged maintainer-metadata parsing in
         dot_project.py as PII handling. The new pipeline should have no
         PII findings at all in v1, so this is a doc-assertion check."""
-        pii_findings = [
-            f
-            for f in result.findings
-            if "pii" in f.title.lower() or "email" in f.title.lower()
-        ]
+        pii_findings = [f for f in result.findings if "pii" in f.title.lower() or "email" in f.title.lower()]
         assert pii_findings == []
 
     def test_darnit_literal_list_subprocess_calls_are_filtered(self, result) -> None:
@@ -431,10 +416,7 @@ class TestDogfoodAgainstDarnit:
         regex pipeline's heuristics also (sometimes) caught.
         """
         literal_list_findings = [
-            f
-            for f in result.findings
-            if "subprocess.run" in f.title
-            and "conftest.py" in f.primary_location.file
+            f for f in result.findings if "subprocess.run" in f.title and "conftest.py" in f.primary_location.file
         ]
         assert literal_list_findings == [], (
             f"Expected literal-list subprocess.run calls to be filtered "
@@ -447,9 +429,7 @@ class TestDogfoodAgainstDarnit:
         calls with f-string interpolation stay as findings but at
         confidence 0.3 so the top-N cap deprioritizes them.
         """
-        os_system_findings = [
-            f for f in result.findings if "os.system" in f.title
-        ]
+        os_system_findings = [f for f in result.findings if "os.system" in f.title]
         # May be zero in a future version of darnit; if present, verify
         # they're low-confidence so the top-N cap filters them.
         for f in os_system_findings:
@@ -469,9 +449,7 @@ class TestFrameworkInferenceH2Regression:
     not from a substring search over the raw source bytes.
     """
 
-    def test_docstring_mentioning_fastapi_does_not_set_framework(
-        self, tmp_path: Path
-    ) -> None:
+    def test_docstring_mentioning_fastapi_does_not_set_framework(self, tmp_path: Path) -> None:
         """A file containing 'from fastapi' inside a docstring but no actual
         import MUST NOT be tagged as using the fastapi framework."""
         (tmp_path / "main.py").write_text(
@@ -501,13 +479,7 @@ class TestFrameworkInferenceH2Regression:
 
     def test_real_fastapi_import_sets_framework(self, tmp_path: Path) -> None:
         (tmp_path / "main.py").write_text(
-            "from fastapi import FastAPI\n"
-            "\n"
-            "app = FastAPI()\n"
-            "\n"
-            '@app.get("/")\n'
-            "def root():\n"
-            "    return {}\n"
+            'from fastapi import FastAPI\n\napp = FastAPI()\n\n@app.get("/")\ndef root():\n    return {}\n'
         )
         result = discover_all(tmp_path)
         assert len(result.entry_points) == 1
@@ -547,19 +519,13 @@ class TestOpengrepEnrichment:
             available=True,
             findings=findings or [],
             rule_errors=rule_errors or [],
-            degraded_reason=(
-                f"{len(rule_errors)} rule-schema error(s)"
-                if rule_errors
-                else None
-            ),
+            degraded_reason=(f"{len(rule_errors)} rule-schema error(s)" if rule_errors else None),
             binary_used="opengrep",
             version="1.6.0",
             scan_duration_s=0.1,
         )
 
-    def _synthetic_taint_finding(
-        self, *, file: str = "app.py", line: int = 21
-    ) -> dict:
+    def _synthetic_taint_finding(self, *, file: str = "app.py", line: int = 21) -> dict:
         """A synthetic Opengrep JSON entry mimicking a taint finding from
         ``darnit.taint.external-input-to-subprocess``."""
         return {
@@ -600,27 +566,19 @@ class TestOpengrepEnrichment:
             },
         }
 
-    def test_opengrep_taint_finding_replaces_tree_sitter_structural(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_opengrep_taint_finding_replaces_tree_sitter_structural(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """When Opengrep produces a taint finding at the same (file, line)
         as an existing tree-sitter structural finding, the Opengrep finding
         wins because it includes a data-flow trace."""
 
-        og_result = self._fake_opengrep_result(
-            findings=[self._synthetic_taint_finding(file="app.py", line=21)]
-        )
+        og_result = self._fake_opengrep_result(findings=[self._synthetic_taint_finding(file="app.py", line=21)])
         monkeypatch.setattr(
             "darnit_baseline.threat_model.ts_discovery._run_opengrep_enrichment",
             lambda repo_root: og_result,
         )
 
         result = discover_all(FIXTURES / "subprocess_tainted")
-        tampering = [
-            f
-            for f in result.findings
-            if f.category == StrideCategory.TAMPERING
-        ]
+        tampering = [f for f in result.findings if f.category == StrideCategory.TAMPERING]
         # Should have exactly one Tampering finding (the Opengrep one
         # replaced the tree-sitter structural one at the same line).
         assert len(tampering) == 1
@@ -630,9 +588,7 @@ class TestOpengrepEnrichment:
         assert finding.confidence == 1.0  # taint = full confidence
         assert finding.primary_location.line == 21
 
-    def test_opengrep_unavailable_produces_subset(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_opengrep_unavailable_produces_subset(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """SC-007 regression: when Opengrep is unavailable, the finding
         set must be a strict subset of what Opengrep would produce —
         meaning no NEW findings appear from the absence."""
@@ -641,9 +597,7 @@ class TestOpengrepEnrichment:
         result_without = discover_all(FIXTURES / "subprocess_tainted")
 
         # Run with Opengrep returning a taint finding
-        og_result = self._fake_opengrep_result(
-            findings=[self._synthetic_taint_finding(file="app.py", line=21)]
-        )
+        og_result = self._fake_opengrep_result(findings=[self._synthetic_taint_finding(file="app.py", line=21)])
         monkeypatch.setattr(
             "darnit_baseline.threat_model.ts_discovery._run_opengrep_enrichment",
             lambda repo_root: og_result,
@@ -651,22 +605,13 @@ class TestOpengrepEnrichment:
         result_with = discover_all(FIXTURES / "subprocess_tainted")
 
         # "without" finding locations must be a subset of "with" locations
-        locations_without = {
-            (f.primary_location.file, f.primary_location.line)
-            for f in result_without.findings
-        }
-        locations_with = {
-            (f.primary_location.file, f.primary_location.line)
-            for f in result_with.findings
-        }
+        locations_without = {(f.primary_location.file, f.primary_location.line) for f in result_without.findings}
+        locations_with = {(f.primary_location.file, f.primary_location.line) for f in result_with.findings}
         assert locations_without <= locations_with, (
-            f"Opengrep-absent produced locations not in Opengrep-present: "
-            f"{locations_without - locations_with}"
+            f"Opengrep-absent produced locations not in Opengrep-present: {locations_without - locations_with}"
         )
 
-    def test_opengrep_evidence_reflects_availability(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_opengrep_evidence_reflects_availability(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """The DiscoveryResult must reflect whether Opengrep was available."""
 
         og_result = self._fake_opengrep_result(findings=[])
@@ -678,9 +623,7 @@ class TestOpengrepEnrichment:
         assert result.opengrep_available is True
         assert result.opengrep_degraded_reason is None
 
-    def test_opengrep_rule_errors_surfaced_in_result(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_opengrep_rule_errors_surfaced_in_result(self, monkeypatch: pytest.MonkeyPatch) -> None:
 
         og_result = self._fake_opengrep_result(
             findings=[],
@@ -718,14 +661,10 @@ class TestDiscoverAllOrchestrator:
     def test_custom_shallow_threshold(self, tmp_path: Path) -> None:
         for i in range(5):
             (tmp_path / f"f{i}.py").write_text("pass\n")
-        result = discover_all(
-            tmp_path, config=DiscoveryConfig(shallow_threshold=3)
-        )
+        result = discover_all(tmp_path, config=DiscoveryConfig(shallow_threshold=3))
         assert result.file_scan_stats.shallow_mode is True
 
-    def test_empty_inventory_warning_on_large_repo(
-        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_empty_inventory_warning_on_large_repo(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
         """When a repo has many in-scope files but no entry points, a warning
         should be logged indicating likely missing query coverage."""
         import logging
@@ -753,19 +692,16 @@ class TestDiscoverAllOrchestrator:
             result = discover_all(tmp_path)
 
         assert result.entry_points == []
-        assert any(
-            "zero entry points found" in msg and "75" in msg
-            for msg in caplog.messages
-        ), f"Expected warning about zero entry points; got: {caplog.messages}"
+        assert any("zero entry points found" in msg and "75" in msg for msg in caplog.messages), (
+            f"Expected warning about zero entry points; got: {caplog.messages}"
+        )
 
     def test_extra_excludes_applied(self, tmp_path: Path) -> None:
         (tmp_path / "src" / "a.py").parent.mkdir()
         (tmp_path / "src" / "a.py").write_text("pass\n")
         (tmp_path / "generated" / "big.py").parent.mkdir()
         (tmp_path / "generated" / "big.py").write_text("pass\n")
-        result = discover_all(
-            tmp_path, config=DiscoveryConfig(extra_excludes=("generated",))
-        )
+        result = discover_all(tmp_path, config=DiscoveryConfig(extra_excludes=("generated",)))
         in_scope = {Path(p.location.file).name for p in result.call_graph}
         assert "big.py" not in in_scope
 
@@ -808,12 +744,8 @@ class TestSelfScanDogfood:
             f"Expected at least 2 entry points from server.add_tool() calls; "
             f"got {len(result.entry_points)}: {result.entry_points}"
         )
-        mcp_tools = [
-            ep for ep in result.entry_points if ep.kind == EntryPointKind.MCP_TOOL
-        ]
-        assert len(mcp_tools) >= 2, (
-            f"Expected at least 2 MCP_TOOL entry points; got {len(mcp_tools)}"
-        )
+        mcp_tools = [ep for ep in result.entry_points if ep.kind == EntryPointKind.MCP_TOOL]
+        assert len(mcp_tools) >= 2, f"Expected at least 2 MCP_TOOL entry points; got {len(mcp_tools)}"
 
     def test_subprocess_scores_differentiated_sc001b(self, result) -> None:
         """SC-001b: subprocess findings must NOT all have identical scores.
@@ -821,13 +753,9 @@ class TestSelfScanDogfood:
         Static literal calls (e.g., ["git", "init"]) must score lower than
         dynamic calls (e.g., resolved_cmd from config).
         """
-        tampering_findings = [
-            f for f in result.findings
-            if f.category == StrideCategory.TAMPERING
-        ]
+        tampering_findings = [f for f in result.findings if f.category == StrideCategory.TAMPERING]
         subprocess_findings = [
-            f for f in tampering_findings
-            if "subprocess" in f.title.lower() or "command injection" in f.title.lower()
+            f for f in tampering_findings if "subprocess" in f.title.lower() or "command injection" in f.title.lower()
         ]
         assert len(subprocess_findings) >= 5, (
             f"Expected at least 5 subprocess findings; "
@@ -858,7 +786,4 @@ class TestSelfScanDogfood:
         """SC-002a: imperative registration fixture must produce entry points."""
         result = discover_all(FIXTURES / "mcp_server_imperative")
         assert len(result.entry_points) >= 2
-        assert all(
-            ep.source_query == "python.entry.mcp_tool_imperative"
-            for ep in result.entry_points
-        )
+        assert all(ep.source_query == "python.entry.mcp_tool_imperative" for ep in result.entry_points)
