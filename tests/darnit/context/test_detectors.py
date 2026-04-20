@@ -5,6 +5,7 @@ and verify the detectors return the expected values.
 No real git repos or network calls needed.
 """
 
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -56,6 +57,16 @@ class TestDetectForge:
         """Returns 'unknown' gracefully when git remote fails."""
         with patch("subprocess.run", side_effect=OSError("git error")):
             result = detect_forge(str(tmp_path))
+        assert result == "unknown"
+
+    def test_git_command_times_out(self, tmp_path: Path) -> None:
+        """Returns 'unknown' when git remote lookup times out."""
+        with patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="git", timeout=10),
+        ):
+            result = detect_forge(str(tmp_path))
+
         assert result == "unknown"
 
 
