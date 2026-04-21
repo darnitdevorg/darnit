@@ -371,6 +371,33 @@ class TestRedHerringsRegression:
         # is really a doc-assertion test that we didn't regress.
         assert result.findings == []
 
+    def test_python_url_validator_produces_no_entry_points(self, result) -> None:
+        """url_validator.py contains route-format strings and a docstring
+        with GET/POST/DELETE examples, but no decorated function definitions.
+        The tree-sitter query requires @app.method(...) decorator shape, so
+        string literals and docstring content are structurally ignored."""
+        ep_from_validator = [
+            ep for ep in result.entry_points
+            if "url_validator" in ep.location.file
+        ]
+        assert ep_from_validator == [], (
+            f"url_validator.py must produce zero entry points; got: "
+            f"{[(ep.route_path, ep.location.file) for ep in ep_from_validator]}"
+        )
+
+    def test_go_config_getter_produces_no_entry_points(self, result) -> None:
+        """go_config_getter.go uses cfg.Get('/database/host', ...) — a path-
+        like key in a config reader. Without an HTTP routing library import
+        the extractor must skip these calls and emit no entry points."""
+        ep_from_config = [
+            ep for ep in result.entry_points
+            if "go_config_getter" in ep.location.file
+        ]
+        assert ep_from_config == [], (
+            f"go_config_getter.go must produce zero entry points; got: "
+            f"{[(ep.route_path, ep.location.file) for ep in ep_from_config]}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Dogfood: run against darnit itself (SC-001)
