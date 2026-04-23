@@ -124,21 +124,27 @@ _GO_HTTP_HANDLER_METHODS: frozenset[str] = frozenset(
     }
 )
 
-#: Go import paths that signal an HTTP routing library is present.
+#: Go import path prefixes that signal an HTTP routing library is present.
 #: Used to corroborate ``obj.Get("/path", ...)`` calls so that non-HTTP
 #: callers (config readers, caches, etc.) do not produce false positives.
-_GO_HTTP_ROUTING_PACKAGES: frozenset[str] = frozenset(
-    {
-        "net/http",
-        "github.com/go-chi/chi",
-        "github.com/go-chi/chi/v5",
-        "github.com/gorilla/mux",
-        "github.com/gin-gonic/gin",
-        "github.com/labstack/echo",
-        "github.com/labstack/echo/v4",
-        "github.com/julienschmidt/httprouter",
-        "github.com/valyala/fasthttp",
-    }
+#:
+#: Prefix matching (``imp == prefix or imp.startswith(prefix + "/")``) handles
+#: Go module major-version suffixes (/v2, /v5, …) and sub-packages without
+#: requiring an explicit entry for every release.
+_GO_HTTP_ROUTING_PREFIXES: tuple[str, ...] = (
+    "net/http",
+    "github.com/go-chi/chi",
+    "github.com/gorilla/mux",
+    "github.com/gin-gonic/gin",
+    "github.com/labstack/echo",
+    "github.com/julienschmidt/httprouter",
+    "github.com/valyala/fasthttp",
+    "github.com/gofiber/fiber",
+    "github.com/beego/beego",
+    "github.com/kataras/iris",
+    "github.com/gobuffalo/buffalo",
+    "github.com/goji/goji",
+    "github.com/emicklei/go-restful",
 )
 
 #: Go ``(pkg, method)`` pairs that open a SQL connection. The first string
@@ -1305,7 +1311,11 @@ def _extract_go_entry_points(
 ) -> list[DiscoveredEntryPoint]:
     entries: list[DiscoveredEntryPoint] = []
     go_imports = _collect_go_imports(source, tree)
-    has_http_routing = any(imp in _GO_HTTP_ROUTING_PACKAGES for imp in go_imports)
+    has_http_routing = any(
+        imp == prefix or imp.startswith(prefix + "/")
+        for imp in go_imports
+        for prefix in _GO_HTTP_ROUTING_PREFIXES
+    )
     query = go_queries.QUERY_REGISTRY["go.entry.selector_string_arg"].query
     for caps in run_query(query, tree.root_node):
         method = _text(caps["method"][0], source)
