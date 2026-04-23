@@ -1,5 +1,6 @@
 """Tests for template file resolution in RemediationExecutor."""
 
+import logging
 from unittest.mock import patch
 
 import pytest
@@ -56,17 +57,17 @@ class TestTemplateFileResolution:
         with pytest.raises(ValueError, match="specifies absolute path"):
             executor._get_template_content("abs")
 
-    def test_path_traversal_dotdot_rejected(self, tmp_path):
+    def test_path_traversal_dotdot_rejected(self, tmp_path, executor_factory):
         """Parent directory escape attempts are rejected."""
-        executor = RemediationExecutor(
-            local_path=str(tmp_path),
+        executor = executor_factory(
+            local_path_str=str(tmp_path),
             templates={"escape": TemplateConfig(file="../outside.tmpl")},
-            framework_path=str(tmp_path / "pkg" / "framework.toml"),
+            framework_path_str=str(tmp_path / "pkg" / "framework.toml"),
         )
         with pytest.raises(ValueError, match="outside framework directory"):
             executor._get_template_content("escape")
 
-    def test_path_traversal_symlink_rejected(self, tmp_path):
+    def test_path_traversal_symlink_rejected(self, tmp_path, executor_factory):
         """Symlinks traversing outside the directory are rejected."""
         base_dir = tmp_path / "pkg"
         base_dir.mkdir()
@@ -77,10 +78,10 @@ class TestTemplateFileResolution:
         # Create a symlink pointing outside
         symlink_file.symlink_to(outside_file)
 
-        executor = RemediationExecutor(
-            local_path=str(tmp_path),
+        executor = executor_factory(
+            local_path_str=str(tmp_path),
             templates={"symlink": TemplateConfig(file="symlink.tmpl")},
-            framework_path=str(base_dir / "framework.toml"),
+            framework_path_str=str(base_dir / "framework.toml"),
         )
         with pytest.raises(ValueError, match="resolves to .* outside framework directory"):
             executor._get_template_content("symlink")
@@ -129,6 +130,7 @@ class TestTemplateFileResolution:
 
     def test_oserror_at_read_time_logs_warning(self, tmp_path, executor_factory, caplog):
         """Simulates race condition: file exists at init but is deleted before read."""
+        caplog.set_level(logging.WARNING, logger="darnit.remediation.executor")
         executor = executor_factory(
             local_path_str=str(tmp_path),
             templates={"race": TemplateConfig(file="templates/race_condition.tmpl")},
