@@ -4,8 +4,11 @@ T050: All templates render without error and have no unresolved placeholders.
 T051: YAML templates produce parseable YAML after rendering.
 T052: GitHub Actions ${{ }} expressions survive substitution intact.
 
-Covers the 52 templates defined in openssf-baseline.toml with a realistic
-repository context (CI workflows, Dependabot, Python project, common doc files).
+ALL_TEMPLATES is derived dynamically from openssf-baseline.toml so a new
+template added to TOML automatically gets T050 coverage without any edit
+here. YAML_TEMPLATES and WORKFLOW_TEMPLATES are kept as explicit lists
+because T051/T052 require categorisation; test_template_lists_cover_toml
+enforces that every TOML entry is categorised here.
 """
 
 from __future__ import annotations
@@ -81,13 +84,29 @@ DOCUMENTATION_TEMPLATES = [
     "vex_policy_template",
 ]
 
-ALL_TEMPLATES = YAML_TEMPLATES + DOCUMENTATION_TEMPLATES + [
+# Templates that don't fit the YAML / documentation split.
+_OTHER_TEMPLATES = [
     "gitignore_secrets",
     "license_apache",
     "license_bsd3",
     "license_mit",
     "vulnerability_reporting_payload",
 ]
+
+
+def _all_template_names_from_toml() -> list[str]:
+    """Return every template name defined in openssf-baseline.toml."""
+    from darnit_baseline import get_framework_path
+
+    p = get_framework_path()
+    assert p is not None, "Framework path not found"
+    with open(p, "rb") as f:
+        config = tomllib.load(f)
+    return sorted(config.get("templates", {}).keys())
+
+
+# Derived at collection time so pytest parametrises against the live TOML.
+ALL_TEMPLATES = _all_template_names_from_toml()
 
 # ---------------------------------------------------------------------------
 # Helpers (independent copies; not imported from test_template_rendering to
@@ -144,6 +163,26 @@ def _get_raw_template(template_name: str) -> str | None:
         return tmpl_data.get("content")
     template_path = Path(fw_path).parent / file_field
     return template_path.read_text() if template_path.exists() else None
+
+
+# ---------------------------------------------------------------------------
+# Completeness guard
+# ---------------------------------------------------------------------------
+
+
+def test_template_lists_cover_toml() -> None:
+    """Every template in openssf-baseline.toml must appear in one of the
+    category lists so YAML / GHA tests pick it up automatically when a new
+    template is added.  Fails loudly instead of silently skipping coverage."""
+    toml_names = set(_all_template_names_from_toml())
+    categorised = (
+        set(YAML_TEMPLATES) | set(DOCUMENTATION_TEMPLATES) | set(_OTHER_TEMPLATES)
+    )
+    missing = toml_names - categorised
+    assert not missing, (
+        f"Templates in TOML but not categorised in test_all_templates.py: {missing}\n"
+        "Add each name to YAML_TEMPLATES, DOCUMENTATION_TEMPLATES, or _OTHER_TEMPLATES."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -217,14 +256,22 @@ class TestAllTemplatesRender:
         )
 
     @pytest.mark.parametrize("template_name", ALL_TEMPLATES)
-    def test_no_unrendered_jinja_variables(
+    def test_no_malformed_jinja_delimiters(
         self, template_name: str, rich_repo: Path
     ) -> None:
-        """Jinja2 << identifier >> delimiters must not survive into rendered output."""
+        """Malformed << identifier >> delimiter pairs must not survive into output.
+
+        This catches delimiter-level syntax errors (unclosed tags, mis-typed
+        variable names that couldn't be parsed). It does NOT detect silent
+        empty-string substitutions for optional context variables — the executor
+        uses ``undefined=jinja2.Undefined`` (silent), so a template that
+        references an unset optional key (e.g. ``<< context.security_contact >>``)
+        renders to an empty string rather than raising or leaking a raw tag.
+        """
         rendered = _render_template(template_name, rich_repo)
         leaks = re.findall(r"<<\s+[\w][\w.]*\s+>>", rendered)
         assert not leaks, (
-            f"Unrendered Jinja2 variable(s) in '{template_name}': {leaks}"
+            f"Malformed Jinja2 delimiter(s) survived rendering in '{template_name}': {leaks}"
         )
 
 
