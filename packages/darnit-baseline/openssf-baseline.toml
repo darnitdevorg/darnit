@@ -1242,7 +1242,12 @@ help_md = """Create a guide for reporting bugs and defects.
 
 [controls."OSPS-DO-02.01".locator]
 project_path = "security.policy"
-discover = [".github/ISSUE_TEMPLATE/bug_report.md", ".github/ISSUE_TEMPLATE/bug_report.yml", ".github/ISSUE_TEMPLATE.md"]
+discover = [
+  ".github/ISSUE_TEMPLATE/*bug*.md",
+  ".github/ISSUE_TEMPLATE/*bug*.yml",
+  ".github/ISSUE_TEMPLATE/*bug*.yaml",
+  ".github/ISSUE_TEMPLATE.md",
+]
 kind = "file"
 
 [controls."OSPS-DO-02.01".locator.llm_hints]
@@ -1256,7 +1261,14 @@ use_locator = true
 
 [[controls."OSPS-DO-02.01".passes]]
 handler = "pattern"
-files = [".github/ISSUE_TEMPLATE/bug_report.md", ".github/ISSUE_TEMPLATE/bug_report.yml", ".github/ISSUE_TEMPLATE.md", "README.md", "CONTRIBUTING.md"]
+files = [
+  ".github/ISSUE_TEMPLATE/*bug*.md",
+  ".github/ISSUE_TEMPLATE/*bug*.yml",
+  ".github/ISSUE_TEMPLATE/*bug*.yaml",
+  ".github/ISSUE_TEMPLATE.md",
+  "README.md",
+  "CONTRIBUTING.md",
+]
 pass_if_any = true
 
 [controls."OSPS-DO-02.01".passes.pattern.patterns]
