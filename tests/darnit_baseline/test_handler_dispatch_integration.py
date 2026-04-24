@@ -498,15 +498,25 @@ class TestIssueTemplateGlobbingRegression:
     """Regression coverage for OSPS-DO-02.01 issue template globbing."""
 
     @pytest.mark.unit
-    def test_osps_do_02_01_passes_for_bug_yaml_issue_form(self, tmp_path):
-        """A GitHub issue form at bug.yaml should satisfy OSPS-DO-02.01."""
+    @pytest.mark.parametrize(
+        "template_filename",
+        [
+            "bug_report.md",
+            "bug_report.yml",
+            "bug.md",
+            "bug.yml",
+            "bug.yaml",
+        ],
+    )
+    def test_osps_do_02_01_passes_for_bug_template(self, tmp_path, template_filename):
+        """OSPS-DO-02.01 should pass for reasonable bug template filenames."""
         from pathlib import Path
 
         from darnit.config import load_controls_from_effective, load_effective_config_by_name
 
         issue_templates = tmp_path / ".github" / "ISSUE_TEMPLATE"
         issue_templates.mkdir(parents=True)
-        (issue_templates / "bug.yaml").write_text(
+        (issue_templates / template_filename).write_text(
             """name: Bug Report
 description: File a bug report
 body:
@@ -538,4 +548,43 @@ body:
         result = orchestrator.verify(control, context)
 
         assert result.status == "PASS"
-        assert result.evidence.get("relative_path") == ".github/ISSUE_TEMPLATE/bug.yaml"
+        assert result.evidence.get("relative_path") == f".github/ISSUE_TEMPLATE/{template_filename}"
+
+    @pytest.mark.unit
+    def test_osps_do_02_01_fails_for_feature_only_template(self, tmp_path):
+        """OSPS-DO-02.01 should fail when only a feature template exists."""
+        from pathlib import Path
+
+        from darnit.config import load_controls_from_effective, load_effective_config_by_name
+
+        issue_templates = tmp_path / ".github" / "ISSUE_TEMPLATE"
+        issue_templates.mkdir(parents=True)
+        (issue_templates / "feature.yaml").write_text(
+            """name: Feature Request
+description: Suggest a feature
+body:
+  - type: textarea
+    attributes:
+      label: Problem statement
+  - type: textarea
+    attributes:
+      label: Proposed solution
+""",
+        )
+
+        config = load_effective_config_by_name("openssf-baseline", Path("."))
+        controls = load_controls_from_effective(config)
+        control = next(ctrl for ctrl in controls if ctrl.control_id == "OSPS-DO-02.01")
+
+        orchestrator = SieveOrchestrator()
+        context = CheckContext(
+            owner="testorg",
+            repo="testrepo",
+            local_path=str(tmp_path),
+            default_branch="main",
+            control_id="OSPS-DO-02.01",
+            project_context={},
+        )
+        result = orchestrator.verify(control, context)
+
+        assert result.status == "FAIL"
