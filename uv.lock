@@ -449,10 +449,10 @@ attestation = [
 [package.metadata]
 requires-dist = [
     { name = "cel-python", specifier = ">=0.5.0" },
-    { name = "cryptography", marker = "extra == 'attestation'", specifier = ">=46.0.6" },
+    { name = "cryptography", marker = "extra == 'attestation'", specifier = ">=46.0.6,<48" },
     { name = "in-toto-attestation", marker = "extra == 'attestation'", specifier = ">=0.9.0" },
     { name = "jinja2", specifier = ">=3.1.0" },
-    { name = "mcp", specifier = ">=1.23.0" },
+    { name = "mcp", specifier = ">=1.23.0,<2" },
     { name = "pydantic", specifier = ">=2.0.0" },
     { name = "pydantic", extras = ["email"], specifier = ">=2.0.0" },
     { name = "pyyaml", specifier = ">=6.0.0" },
@@ -460,7 +460,7 @@ requires-dist = [
     { name = "sigstore", marker = "extra == 'attestation'", specifier = ">=3.0.0" },
     { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2.0.0" },
     { name = "tomllib-stubs", marker = "python_full_version < '3.11'", specifier = ">=0.1.0" },
-    { name = "urllib3", marker = "extra == 'attestation'", specifier = ">=2.6.3" },
+    { name = "urllib3", marker = "extra == 'attestation'", specifier = ">=2.6.3,<3" },
 ]
 provides-extras = ["attestation"]
 
