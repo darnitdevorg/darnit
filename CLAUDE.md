@@ -363,3 +363,10 @@ else:
 - **Attestation**: sigstore, in-toto (optional)
 - **Config**: TOML framework configs, `.project/project.yaml` (YAML), `.baseline.toml` (user overrides)
 - **Storage**: Filesystem only (Markdown, JSON, YAML output files; no database)
+
+## Active Technologies
+- Python 3.11/3.12 (workspace targets) plus bash for release scripts and GitHub Actions YAML + `shiv` (binary builder), `cosign` (image + binary signing), `syft` (SBOM generation), `docker buildx` (multi-arch images), `gh` CLI (release creation), Sigstore-action (PyPI wheel signing via `pypa/gh-action-pypi-publish`). No new runtime dependencies in any darnit Python package. (012-packaging-distribution)
+- External release surfaces only — PyPI, TestPyPI, GHCR, GitHub Releases (binary assets + attestations), `kusari-oss/homebrew-tap` repo (formula). Repo itself stores only build configs and workflow definitions. (012-packaging-distribution)
+
+## Recent Changes
+- 012-packaging-distribution: Added Python 3.11/3.12 (workspace targets) plus bash for release scripts and GitHub Actions YAML + `shiv` (binary builder), `cosign` (image + binary signing), `syft` (SBOM generation), `docker buildx` (multi-arch images), `gh` CLI (release creation), Sigstore-action (PyPI wheel signing via `pypa/gh-action-pypi-publish`). No new runtime dependencies in any darnit Python package.

@@ -1,0 +1,46 @@
+name: Release workflow lint
+
+# T010: run actionlint over release.yml and release-smoke.yml on every PR that
+# touches them. Cheap static check; catches schema errors, undefined matrix
+# keys, deprecated action versions, etc. before a release attempt would fail.
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/release.yml'
+      - '.github/workflows/release-smoke.yml'
+      - '.github/workflows/release-yml-lint.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release.yml'
+      - '.github/workflows/release-smoke.yml'
+      - '.github/workflows/release-yml-lint.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+        with:
+          persist-credentials: false
+
+      - name: Install actionlint
+        run: |
+          set -euo pipefail
+          curl -sSLo /tmp/actionlint.tar.gz https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz
+          tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
+          sudo mv /tmp/actionlint /usr/local/bin/actionlint
+          actionlint -version
+
+      - name: Lint release workflows
+        run: |
+          set -euo pipefail
+          actionlint .github/workflows/release.yml
+          actionlint .github/workflows/release-smoke.yml

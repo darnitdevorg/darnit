@@ -1,0 +1,34 @@
+name: Release Smoke Tests
+
+# Per-channel smoke tests that exercise the PUBLISHED artifact end-to-end.
+# Triggered after .github/workflows/release.yml completes; channel jobs are
+# added phase-by-phase as their channels go live.
+#
+#   Phase 3 (US1) → pypi_smoke
+#   Phase 4 (US2) → container_smoke
+#   Phase 5 (US3) → binary_smoke + homebrew_smoke
+#   Phase 6 (US4) → plugin_structural_smoke + plugin_behavioral_smoke
+#
+# A smoke failure does not unpublish — published artifacts are immutable.
+# A failed smoke surfaces a release-failure issue via release.yml's finalize job.
+
+on:
+  workflow_run:
+    workflows: ["Release"]
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+# Channel-specific smoke jobs are added in subsequent phases. This file is a
+# skeleton so the trigger contract (workflow_run on "Release") exists before
+# the first channel job is wired up.
+jobs:
+  noop:
+    name: Skeleton — no channels wired yet
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - run: echo "release-smoke.yml skeleton. Channel-specific smoke jobs will be added in Phases 3–6."

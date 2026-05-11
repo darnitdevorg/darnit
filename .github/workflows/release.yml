@@ -1,0 +1,176 @@
+name: Release
+
+# Tag-driven release orchestrator. Fans out per-channel publishes from a single
+# tag. See specs/012-packaging-distribution/ for the spec, plan, and contracts.
+#
+# Stable tags trigger publication to all channels.
+# Pre-release tags (rcN suffix) trigger PyPI/TestPyPI, container, and binary
+# only — Homebrew formula and Claude Code plugin are stable-only.
+#
+# Re-running this workflow on an already-published tag is REJECTED in preflight.
+# Recovery from partial failures is per-channel; see packaging/RECOVERY.md.
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'         # stable: vX.Y.Z
+      - 'v[0-9]+.[0-9]+.[0-9]+rc[0-9]+' # pre-release: vX.Y.Zrc<N>
+
+# Minimum permissions at the workflow level; per-job permissions narrow further.
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.12"
+  UV_VERSION: "0.5.0"
+
+jobs:
+  preflight:
+    name: Preflight gates
+    runs-on: ubuntu-latest
+    # SC-007: synchronous channels must complete within 30 minutes total for
+    # stable tags. Workflow-level timeout is set in a sibling job (see T071a);
+    # preflight itself is a small fraction of that budget.
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.parse-tag.outputs.version }}
+      is_prerelease: ${{ steps.parse-tag.outputs.is_prerelease }}
+    steps:
+      - name: Checkout repository at tagged commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+        with:
+          # Tag refs check out the tagged commit directly; no extra history
+          # needed.
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Parse tag
+        id: parse-tag
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF#refs/tags/}"
+          if [[ "$tag" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            version="${BASH_REMATCH[1]}"
+            is_prerelease="false"
+          elif [[ "$tag" =~ ^v([0-9]+\.[0-9]+\.[0-9]+rc[0-9]+)$ ]]; then
+            version="${BASH_REMATCH[1]}"
+            is_prerelease="true"
+          else
+            echo "::error::Tag '$tag' does not match release pattern v<X.Y.Z> or v<X.Y.Z>rc<N>"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "is_prerelease=$is_prerelease" >> "$GITHUB_OUTPUT"
+          echo "Parsed: tag=$tag version=$version is_prerelease=$is_prerelease"
+
+      - name: Reject re-tag (no existing GitHub Release for this tag)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF#refs/tags/}"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::A GitHub Release already exists for tag $tag. Re-running the release pipeline on an already-published tag is rejected by design (FR-002). See packaging/RECOVERY.md for per-channel repair procedures."
+            exit 1
+          fi
+
+      - name: Verify version consistency across all public packages (FR-004 lockstep)
+        run: |
+          set -euo pipefail
+          expected="${{ steps.parse-tag.outputs.version }}"
+          fail=0
+          while IFS= read -r pkg; do
+            [ -z "$pkg" ] && continue
+            case "$pkg" in
+              "darnit-mcp")
+                pyproject="pyproject.toml"
+                ;;
+              *)
+                pyproject="packages/$pkg/pyproject.toml"
+                ;;
+            esac
+            if [ ! -f "$pyproject" ]; then
+              echo "::error::Public package $pkg has no pyproject.toml at $pyproject"
+              fail=1
+              continue
+            fi
+            actual=$(awk -F'"' '/^version[[:space:]]*=/{print $2; exit}' "$pyproject")
+            if [ "$actual" != "$expected" ]; then
+              echo "::error::Version mismatch in $pyproject: expected $expected, found $actual"
+              fail=1
+            else
+              echo "OK: $pkg pyproject.toml version=$actual matches tag"
+            fi
+          done < packaging/pypi/public-packages.txt
+          exit $fail
+
+      # T008a: FR-002 enforcement — no out-of-band inputs.
+      - name: Assert working tree clean against tagged commit
+        run: |
+          set -euo pipefail
+          if ! git diff --exit-code; then
+            echo "::error::Working tree has uncommitted changes against the tagged commit. FR-002 requires every release artifact to be derivable solely from the tagged source commit."
+            exit 1
+          fi
+          if ! git diff --cached --exit-code; then
+            echo "::error::Index has staged changes against the tagged commit. FR-002 requires every release artifact to be derivable solely from the tagged source commit."
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v4
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Lint (Constitution §Development Workflow item 1)
+        run: uv run ruff check .
+
+      - name: Tests (Constitution §Development Workflow item 2)
+        run: uv run pytest tests/ --ignore=tests/integration/ -q
+
+      - name: Spec sync (Constitution §Development Workflow item 3)
+        run: uv run python scripts/validate_sync.py --verbose
+
+      - name: Generated docs are up to date (Constitution §Development Workflow item 4)
+        run: |
+          set -euo pipefail
+          uv run python scripts/generate_docs.py
+          if ! git diff --exit-code docs/generated/; then
+            echo "::error::docs/generated/ is stale. Run scripts/generate_docs.py and commit the changes."
+            exit 1
+          fi
+
+      # T008a: actionlint over the release workflow files. Catches static issues
+      # (typos, undefined matrices) before publishing anything.
+      - name: Install actionlint
+        run: |
+          set -euo pipefail
+          curl -sSLo /tmp/actionlint.tar.gz https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz
+          tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
+          sudo mv /tmp/actionlint /usr/local/bin/actionlint
+
+      - name: Lint release workflows (T008a)
+        run: |
+          set -euo pipefail
+          actionlint .github/workflows/release.yml
+          if [ -f .github/workflows/release-smoke.yml ]; then
+            actionlint .github/workflows/release-smoke.yml
+          fi
+
+  # Channel jobs are added in subsequent phases:
+  #   Phase 3 (US1) → pypi_publish
+  #   Phase 4 (US2) → container_build_push
+  #   Phase 5 (US3) → binary_matrix + homebrew_dispatch
+  #   Phase 6 (US4) → plugin_package
+  #   Phase 8       → finalize (with timing/SC-007 enforcement, T071/T071a)

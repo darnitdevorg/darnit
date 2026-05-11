@@ -20,14 +20,13 @@ classifiers = [
 dependencies = [
     "darnit",
     "darnit-baseline",
-    "darnit-example",
     "darnit-gittuf",
 ]
 
 [project.urls]
-Homepage = "https://github.com/kusaridev/darnit-mcp"
-Repository = "https://github.com/kusaridev/darnit-mcp"
-Issues = "https://github.com/kusaridev/darnit-mcp/issues"
+Homepage = "https://github.com/kusari-oss/darnit"
+Repository = "https://github.com/kusari-oss/darnit"
+Issues = "https://github.com/kusari-oss/darnit/issues"
 
 [project.optional-dependencies]
 attestation = [
@@ -87,6 +86,10 @@ dev = [
     "ruff>=0.8.0",
     "skills-ref>=0.1.1",
     "jsonschema>=4.26.0",
+    # Internal/test-only workspace packages — not published to PyPI. Pinned here
+    # so they install for development and tests via `uv sync`, but do not become
+    # runtime dependencies of any published wheel.
+    "darnit-example",
 ]
 
 [tool.mypy]

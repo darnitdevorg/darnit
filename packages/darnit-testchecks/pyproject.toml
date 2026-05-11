@@ -40,8 +40,8 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/kusaridev/baseline-mcp"
-Repository = "https://github.com/kusaridev/baseline-mcp"
+Homepage = "https://github.com/kusari-oss/darnit"
+Repository = "https://github.com/kusari-oss/darnit"
 
 # Entry points for darnit plugin discovery
 [project.entry-points."darnit.frameworks"]
