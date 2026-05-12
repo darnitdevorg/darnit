@@ -758,7 +758,98 @@ jobs:
             $flags \
             dist/binary/*
 
+  # T043: Homebrew tap formula bump. STABLE TAGS ONLY — pre-release tags do
+  # not touch the formula (per spec clarification Q2).
+  #
+  # Depends on release_attach_binaries because the formula references the
+  # GH Release's binary assets by URL + SHA-256; the assets must exist on
+  # the release before we compute hashes and dispatch.
+  #
+  # Authentication: HOMEBREW_TAP_TOKEN is a GitHub App installation token
+  # scoped to `contents: write` on kusari-oss/homebrew-tap ONLY. See
+  # packaging/README.md "External setup" for the maintainer-side steps.
+  homebrew_dispatch:
+    name: Dispatch formula bump to kusari-oss/homebrew-tap
+    needs: [preflight, release_attach_binaries]
+    if: needs.preflight.outputs.is_prerelease == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: release
+    permissions:
+      contents: read
+    steps:
+      - name: Compute per-platform SHA-256s from the GH Release
+        id: sha
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+          # Download just the binaries (not signatures or SBOMs) into a
+          # scratch directory and sha256sum each.
+          mkdir -p /tmp/sha-dl
+          for plat in macos-arm64 linux-arm64 linux-amd64; do
+            asset="darnit-${VERSION}-${plat}"
+            gh release download "$tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --pattern "$asset" \
+              --dir /tmp/sha-dl
+            sha=$(sha256sum "/tmp/sha-dl/$asset" | awk '{print $1}')
+            echo "${plat}: ${sha}"
+            # Normalize key name for the dispatch payload
+            key=$(echo "$plat" | tr '-' '_')
+            echo "sha256_${key}=${sha}" >> "$GITHUB_OUTPUT"
+          done
+
+      - name: Dispatch darnit-release to kusari-oss/homebrew-tap
+        env:
+          # GitHub App installation token, scoped to contents:write on the
+          # tap repo only. Configured one-time per packaging/README.md.
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ needs.preflight.outputs.version }}
+          SHA_MACOS_ARM64: ${{ steps.sha.outputs.sha256_macos_arm64 }}
+          SHA_LINUX_ARM64: ${{ steps.sha.outputs.sha256_linux_arm64 }}
+          SHA_LINUX_AMD64: ${{ steps.sha.outputs.sha256_linux_amd64 }}
+        run: |
+          set -euo pipefail
+          base="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}"
+          payload=$(jq -n \
+            --arg version "$VERSION" \
+            --arg darnit_repo "$GITHUB_REPOSITORY" \
+            --arg release_url "https://github.com/${GITHUB_REPOSITORY}/releases/tag/v${VERSION}" \
+            --arg url_macos_arm64 "${base}/darnit-${VERSION}-macos-arm64" \
+            --arg url_linux_arm64 "${base}/darnit-${VERSION}-linux-arm64" \
+            --arg url_linux_amd64 "${base}/darnit-${VERSION}-linux-amd64" \
+            --arg sha_macos_arm64 "$SHA_MACOS_ARM64" \
+            --arg sha_linux_arm64 "$SHA_LINUX_ARM64" \
+            --arg sha_linux_amd64 "$SHA_LINUX_AMD64" \
+            '{
+              event_type: "darnit-release",
+              client_payload: {
+                version: $version,
+                darnit_repo: $darnit_repo,
+                release_url: $release_url,
+                url_macos_arm64: $url_macos_arm64,
+                url_linux_arm64: $url_linux_arm64,
+                url_linux_amd64: $url_linux_amd64,
+                sha256_macos_arm64: $sha_macos_arm64,
+                sha256_linux_arm64: $sha_linux_arm64,
+                sha256_linux_amd64: $sha_linux_amd64
+              }
+            }')
+          echo "Dispatching to kusari-oss/homebrew-tap"
+          echo "$payload" | jq -c '.client_payload | del(.url_macos_arm64, .url_linux_arm64, .url_linux_amd64)'
+          curl --fail-with-body -sSL \
+            -X POST \
+            -H "Authorization: Bearer ${TAP_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/kusari-oss/homebrew-tap/dispatches \
+            -d "$payload"
+          echo "✓ Dispatched darnit-release for v${VERSION}"
+
   # Channel jobs added in later phases:
-  #   Phase 5 (US3 — Homebrew side) → homebrew_dispatch
-  #   Phase 6 (US4)                → plugin_package
+  #   Phase 6 (US4) → plugin_package
+  #   Phase 8       → finalize (with timing/SC-007 enforcement, T071/T071a)
   #   Phase 8       → finalize (with timing/SC-007 enforcement, T071/T071a)

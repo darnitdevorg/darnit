@@ -248,15 +248,81 @@ cosign verify-blob \
 
 ## Homebrew
 
-> _Filled by Phase 5 (User Story 3) — Homebrew side._
+The Homebrew flow has three steps and three corresponding failure surfaces:
 
-Failure modes:
+1. **In `kusari-oss/darnit::release.yml`**: `homebrew_dispatch` job sends a `repository_dispatch` event to `kusari-oss/homebrew-tap` with the version + per-platform SHA-256s + the binary URL set.
+2. **In `kusari-oss/homebrew-tap::.github/workflows/bump-formula.yml`**: renders `Formula/darnit.rb` from the template, runs `brew style` + `brew install --build-from-source`, opens an auto-merging PR.
+3. **In `kusari-oss/homebrew-tap::.github/workflows/ci.yml`**: gates the auto-merge with `brew install --build-from-source` on macOS arm64 + Linux amd64.
 
-- `repository_dispatch` succeeded but the tap workflow did not start.
-- The tap workflow opened a PR but auto-merge failed (CI red).
-- The auto-merge did not complete within the 30-minute SC-007 budget.
+### Failure mode 1 — `homebrew_dispatch` sent the event but the tap workflow never started
 
-Repair procedure: _TBD in T048._
+**Symptom**: `release.yml::homebrew_dispatch` job is green, but no workflow run appears at `https://github.com/kusari-oss/homebrew-tap/actions` for the corresponding time window. No `darnit <version>` PR is opened.
+
+**Common root causes**:
+- `HOMEBREW_TAP_TOKEN` secret is missing, expired, or has wrong scope (must be `contents: write` on `kusari-oss/homebrew-tap` only).
+- The tap repo doesn't yet exist (see [packaging/README.md "External setup"](README.md#external-setup-one-time)).
+- The tap repo doesn't have `bump-formula.yml` installed (was the tap initialized from `packaging/homebrew/tap-workflows/`?).
+
+**Procedure**:
+
+1. Inspect the GitHub Actions log for `homebrew_dispatch` — the `curl` against `/repos/kusari-oss/homebrew-tap/dispatches` will have logged any HTTP error (401/404).
+2. If 401: rotate `HOMEBREW_TAP_TOKEN` per the setup runbook. Re-issue the GitHub App's installation token and update the repo secret.
+3. If 404: confirm the tap repo exists and `bump-formula.yml` is present.
+4. After fixing, manually trigger a new dispatch using `gh api`:
+   ```bash
+   payload='{"event_type":"darnit-release","client_payload":{"version":"<X.Y.Z>", ...}}'  # use the full payload schema from release.yml
+   gh api /repos/kusari-oss/homebrew-tap/dispatches -X POST -H "Accept: application/vnd.github+json" --input - <<< "$payload"
+   ```
+5. The tap workflow will run and open the PR. From here, recovery follows the standard auto-merge path.
+
+### Failure mode 2 — Tap PR opened but auto-merge failed (CI red on the formula)
+
+**Symptom**: A `darnit <version>` PR exists at `https://github.com/kusari-oss/homebrew-tap/pulls`, but it's not merged. The PR's CI shows a failure on either `brew style` or `brew install --build-from-source`.
+
+**Common root causes**:
+- The template (`packaging/homebrew/darnit.rb.tmpl`) is out of sync with the tap-repo `bump-formula.yml`'s expectations (e.g., a placeholder name changed).
+- The release binary URL or SHA-256 is wrong (most likely cause: a binary failed to attach to the GH release, so the URL 404s).
+- A new Homebrew style rule started failing.
+
+**Procedure**:
+
+1. Open the PR and read the CI log.
+2. **If a URL 404s**: the binary is missing from the GH release. Recover the binary attachment first (see [Standalone binary](#standalone-binary) recovery), then re-run the failed tap-repo workflow.
+3. **If a SHA-256 mismatch**: compute the SHA-256 of the actual GH release asset and update the formula in the PR (or edit the dispatch payload and re-fire).
+4. **If `brew style` is unhappy**: patch the template (`packaging/homebrew/darnit.rb.tmpl`) in this repo, cut a new tag, let `homebrew_dispatch` send a fresh PR. The old PR can be closed.
+5. After the PR turns green, `gh pr merge --auto --squash` should pick it up. If auto-merge isn't enabled on the tap repo, merge manually.
+
+### Failure mode 3 — Auto-merge didn't complete within the 30-minute SC-007 budget
+
+**Symptom**: `homebrew_smoke` in this repo failed with "Tap PR for darnit `<version>` did not merge within 30 minutes (SC-007 violation)".
+
+**Procedure**:
+
+1. Check whether the PR exists and is merged. If yes, `homebrew_smoke` simply took too long to notice — re-run the smoke matrix.
+2. If the PR exists but isn't merged, follow Failure mode 2.
+3. If no PR exists, follow Failure mode 1.
+
+### Failure mode 4 — Template drift between this repo and the tap repo
+
+**Symptom**: Everything looks fine until a release runs, then `bump-formula.yml` in the tap repo fails parsing the template or substituting a placeholder.
+
+**Important**: `bump-formula.yml` (in the tap repo) fetches the formula template (`packaging/homebrew/darnit.rb.tmpl`) from this repo at the tagged commit. The template is versioned alongside the release. The tap-repo workflow itself is not — it must be re-synced manually when this repo's `packaging/homebrew/tap-workflows/` reference copies change.
+
+**Procedure**:
+
+1. Identify which file drifted (template vs. tap-repo workflow).
+2. If the **template** changed in a way the **tap workflow** doesn't handle: roll the tap workflow forward by copying the latest `packaging/homebrew/tap-workflows/bump-formula.yml` from this repo into the tap repo's `.github/workflows/`. Tag is irrelevant here — the tap workflow runs on whatever code is on `main`.
+3. If the **tap workflow** changed in a way the **template** doesn't handle: cut a new patch release of darnit with the template fixed.
+
+### Verification after recovery
+
+```bash
+# Sanity check from a fresh runner or developer machine
+brew tap kusari-oss/tap
+brew install darnit
+darnit --version  # must report <X.Y.Z>
+brew test darnit
+```
 
 ---
 

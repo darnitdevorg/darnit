@@ -1,0 +1,125 @@
+# Drop this file into `.github/workflows/bump-formula.yml` of the
+# `kusari-oss/homebrew-tap` repository. This is a reference copy that lives
+# in the darnit source tree so the formula renderer ships alongside the
+# template it consumes.
+#
+# Triggers on a repository_dispatch event sent from
+# kusari-oss/darnit's release.yml::homebrew_dispatch job. Renders
+# `Formula/darnit.rb` from the template, validates with `brew style` +
+# `brew install`, and opens an auto-merging PR.
+
+name: Bump darnit formula
+
+on:
+  repository_dispatch:
+    types: [darnit-release]
+
+permissions:
+  contents: write       # render formula, push branch
+  pull-requests: write  # open the bump PR
+
+jobs:
+  bump:
+    name: Render and merge formula bump
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Validate dispatch payload
+        env:
+          PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+        run: |
+          set -euo pipefail
+          echo "$PAYLOAD" | jq -e '
+            .version
+            and .darnit_repo
+            and .release_url
+            and .url_macos_arm64
+            and .url_linux_arm64
+            and .url_linux_amd64
+            and (.sha256_macos_arm64 | test("^[0-9a-f]{64}$"))
+            and (.sha256_linux_arm64 | test("^[0-9a-f]{64}$"))
+            and (.sha256_linux_amd64 | test("^[0-9a-f]{64}$"))
+          ' > /dev/null
+          echo "✓ Payload looks well-formed"
+
+      - name: Checkout tap repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+        with:
+          persist-credentials: true   # need write for the PR
+
+      - name: Fetch the formula template from the canonical source
+        env:
+          DARNIT_REPO: ${{ github.event.client_payload.darnit_repo }}
+          VERSION: ${{ github.event.client_payload.version }}
+        run: |
+          set -euo pipefail
+          # Vendored copy of the template lives in the darnit repo at the
+          # tagged commit. Using the tag means template churn between
+          # darnit releases is captured, not "main" drift.
+          url="https://raw.githubusercontent.com/${DARNIT_REPO}/v${VERSION}/packaging/homebrew/darnit.rb.tmpl"
+          curl -fsSLo /tmp/darnit.rb.tmpl "$url"
+          echo "Fetched template from $url"
+
+      - name: Render Formula/darnit.rb
+        env:
+          PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+        run: |
+          set -euo pipefail
+          mkdir -p Formula
+          python3 <<'PY' > Formula/darnit.rb
+          import json, os, re
+          payload = json.loads(os.environ["PAYLOAD"])
+          with open("/tmp/darnit.rb.tmpl") as f:
+              tmpl = f.read()
+          for key, value in payload.items():
+              tmpl = tmpl.replace("{{ " + key + " }}", value)
+          # Sanity check — no placeholders left.
+          leftover = re.findall(r"\{\{[^}]+\}\}", tmpl)
+          if leftover:
+              raise SystemExit("Unfilled placeholders: " + ", ".join(leftover))
+          print(tmpl, end="")
+          PY
+          echo "Rendered Formula/darnit.rb:"
+          head -20 Formula/darnit.rb
+
+      - name: Set up Homebrew
+        uses: Homebrew/actions/setup-homebrew@a07d8e07cef6f3185a64da81e1167d8d52f7a39a # master
+        with:
+          # Tap-local CI: run as a regular user; no need for the test-bot
+          test-bot: false
+
+      - name: brew style
+        run: brew style Formula/darnit.rb
+
+      - name: brew install --build-from-source (smoke)
+        run: |
+          set -euo pipefail
+          # Install the rendered formula end-to-end on the runner. Confirms
+          # the URLs resolve, the SHA-256s match, the binary launches.
+          brew install --build-from-source ./Formula/darnit.rb
+          darnit --version
+
+      - name: Create branch, commit, open PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ github.event.client_payload.version }}
+        run: |
+          set -euo pipefail
+          git config user.name "kusari-bot"
+          git config user.email "release-bot@kusari.dev"
+          branch="bump/darnit-${VERSION}"
+          git checkout -b "$branch"
+          git add Formula/darnit.rb
+          git commit -m "darnit ${VERSION}
+
+          Bumped by repository_dispatch from kusari-oss/darnit
+          release ${VERSION}.
+
+          Source: ${{ github.event.client_payload.release_url }}"
+          git push -u origin "$branch"
+          gh pr create \
+            --title "darnit ${VERSION}" \
+            --body "Automated formula bump triggered by [kusari-oss/darnit ${VERSION}](${{ github.event.client_payload.release_url }}). CI ran \`brew style\` and \`brew install --build-from-source\` against the rendered formula." \
+            --base main \
+            --head "$branch"
+          gh pr merge --auto --squash --delete-branch

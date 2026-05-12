@@ -69,7 +69,8 @@ See [`RECOVERY.md`](RECOVERY.md). Each channel has a documented recovery path. R
 | `.github/workflows/release-smoke.yml` | Per-channel post-publish smoke tests |
 | `.github/workflows/release-yml-lint.yml` | `actionlint` over `release.yml` + `release-smoke.yml` on every PR |
 | `.github/workflows/container-edge.yml` | `main`-branch builds tagged `:edge` (unsigned, non-release) |
-| `.github/workflows/homebrew-bump.yml` | Cross-repo dispatch to `kusari-oss/homebrew-tap` (stable tags only) |
+| `.github/workflows/release.yml::homebrew_dispatch` job | Cross-repo dispatch to `kusari-oss/homebrew-tap` (stable tags only) |
+| `packaging/homebrew/tap-workflows/` | Reference copies of the workflows that live in `kusari-oss/homebrew-tap` (`bump-formula.yml`, `ci.yml`) — copy into the tap repo on initial setup |
 
 ### Pinned tool versions
 
