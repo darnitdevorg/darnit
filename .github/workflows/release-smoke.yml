@@ -5,7 +5,7 @@ name: Release Smoke Tests
 # added phase-by-phase as their channels go live.
 #
 #   Phase 3 (US1) → pypi_smoke ✅
-#   Phase 4 (US2) → container_smoke
+#   Phase 4 (US2) → container_smoke ✅
 #   Phase 5 (US3) → binary_smoke + homebrew_smoke
 #   Phase 6 (US4) → plugin_structural_smoke + plugin_behavioral_smoke
 #
@@ -221,3 +221,83 @@ jobs:
             --cert-oidc-issuer https://token.actions.githubusercontent.com \
             "$wheel"
           echo "✓ Sigstore identity verified for $PKG $VERSION"
+
+  # T028: pull the published image, run --version, then cosign-verify the
+  # image's signing identity against the canonical release.yml workflow URI.
+  container_smoke:
+    name: container_smoke (${{ matrix.platform }})
+    needs: parse-trigger
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+    steps:
+      - name: Set up QEMU (for arm64 pull on amd64 runner)
+        if: matrix.platform == 'linux/arm64'
+        uses: docker/setup-qemu-action@49b3bc8e6bdd4a60e6116a5414239cba5943d3cf # v3
+        with:
+          platforms: arm64
+
+      - name: Compute image reference
+        id: image
+        env:
+          VERSION: ${{ needs.parse-trigger.outputs.version }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')/darnit"
+          tag="v${VERSION}"
+          {
+            echo "image=$image"
+            echo "tag=$tag"
+            echo "ref=${image}:${tag}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Pull image for ${{ matrix.platform }}
+        env:
+          REF: ${{ steps.image.outputs.ref }}
+          PLAT: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          docker pull --platform "$PLAT" "$REF"
+
+      - name: Run --version
+        env:
+          REF: ${{ steps.image.outputs.ref }}
+          PLAT: ${{ matrix.platform }}
+          VERSION: ${{ needs.parse-trigger.outputs.version }}
+        run: |
+          set -euo pipefail
+          actual=$(docker run --rm --platform "$PLAT" "$REF" --version 2>&1 | tail -n1)
+          echo "darnit --version → $actual"
+          echo "$actual" | grep -F "$VERSION"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@0d05a4e36810cebf0e25e51fb1a4ee45ac1b75e2 # v3.10.1
+
+      - name: cosign verify image signature
+        env:
+          REF: ${{ steps.image.outputs.ref }}
+        run: |
+          set -euo pipefail
+          cosign verify "$REF" \
+            --certificate-identity-regexp '^https://github\.com/kusari-oss/darnit/\.github/workflows/release\.yml@' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            > /tmp/cosign-verify.json
+          echo "✓ cosign verified $REF"
+
+      - name: cosign verify SBOM attestation
+        env:
+          REF: ${{ steps.image.outputs.ref }}
+        run: |
+          set -euo pipefail
+          cosign verify-attestation "$REF" \
+            --type spdx \
+            --certificate-identity-regexp '^https://github\.com/kusari-oss/darnit/\.github/workflows/release\.yml@' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            > /tmp/cosign-verify-attestation.json
+          echo "✓ cosign verified SBOM attestation on $REF"

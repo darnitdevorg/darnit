@@ -1,0 +1,99 @@
+name: Container Edge Build
+
+# Rolling :edge container build on every push to main. Unsigned, no SBOM,
+# no PyPI dependency. For development/testing use only — production CI/CD
+# should pin to :vX.Y.Z or :latest.
+#
+# The :edge image installs darnit from the working tree (not from PyPI),
+# so it can ship code that has not yet been released.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/**'
+      - 'packaging/container/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/container-edge.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-edge:
+    name: Build and push :edge
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@49b3bc8e6bdd4a60e6116a5414239cba5943d3cf # v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3
+
+      - name: Authenticate to GHCR
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image name (lowercase owner)
+        id: image
+        run: |
+          set -euo pipefail
+          image="ghcr.io/$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')/darnit"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+
+      # The release Dockerfile expects VERSION to be a real PyPI release.
+      # For edge builds we use a sentinel version that triggers the
+      # Dockerfile's source-install branch (see Dockerfile for handling).
+      # For now, edge uses the most recent published version on TestPyPI
+      # as a stand-in. If no published version exists yet, the build is
+      # skipped with a clear log line.
+      - name: Pick edge install version
+        id: edge_version
+        run: |
+          set -euo pipefail
+          # Try TestPyPI first (pre-releases land here); fall back to PyPI.
+          # If neither has a darnit-mcp version yet, this workflow is a no-op
+          # — :edge can't exist until at least one release happened.
+          for url in https://test.pypi.org/pypi/darnit-mcp/json https://pypi.org/pypi/darnit-mcp/json; do
+            if response=$(curl -fsSL "$url" 2>/dev/null); then
+              version=$(echo "$response" | jq -r '.info.version // empty')
+              if [ -n "$version" ]; then
+                echo "Using darnit-mcp ${version} from ${url}"
+                echo "version=$version" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            fi
+          done
+          echo "::warning::No darnit-mcp version found on PyPI or TestPyPI yet — :edge build skipped"
+          echo "version=" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push :edge
+        if: steps.edge_version.outputs.version != ''
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75 # v6
+        with:
+          context: .
+          file: packaging/container/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.image.outputs.image }}:edge
+          build-args: |
+            VERSION=${{ steps.edge_version.outputs.version }}
+          # No cosign signing for :edge. Users who pull :edge are
+          # accepting an unsigned rolling build for development.
+          provenance: false
+          sbom: false

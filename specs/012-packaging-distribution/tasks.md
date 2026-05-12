@@ -86,17 +86,17 @@ description: "Task list for 012-packaging-distribution"
 
 ### Implementation for User Story 2
 
-- [ ] T020 [US2] Author `packaging/container/Dockerfile` with the multi-stage build per `contracts/container-image-contract.md`: builder stage installs `darnit-mcp==<version>` (version passed as `ARG VERSION`) into a venv; runtime stage based on `python:3.12-slim`, installs `git` + `gh` via apt with caches purged, copies the venv, creates non-root user `darnit` (uid 10001), sets `WORKDIR /repo`, sets `ENTRYPOINT`/`CMD`
-- [ ] T021 [US2] Write `packaging/container/entrypoint.sh` per the contract — dispatch on first positional arg (`audit`/`remediate`/`list-controls`/`--version`/`--help` → `darnit`; `mcp` → `darnit-mcp`; anything else → exec direct)
-- [ ] T022 [US2] [P] Write `packaging/container/README.md` describing the image's contents, supported architectures, and entry-point usage (this README is mirrored to the GHCR overview page)
-- [ ] T023 [US2] Add a `container_build_push` job to `.github/workflows/release.yml`, gated on `pypi_publish` success. Use `docker/setup-qemu-action` + `docker/setup-buildx-action` + `docker/build-push-action` with `platforms: linux/amd64,linux/arm64`. Tag policy from the contract (stable: `:vX.Y.Z` + `:latest`; pre-release: `:vX.Y.Zrc<N>` only). Pass `--build-arg VERSION=<version>`.
-- [ ] T024 [US2] In the same job, after push, run `cosign sign --yes ghcr.io/kusari-oss/darnit@${DIGEST}` using OIDC keyless signing
-- [ ] T025 [US2] After signing, run `syft ghcr.io/kusari-oss/darnit@${DIGEST} -o spdx-json > sbom.spdx.json` and attach via `cosign attest --yes --predicate sbom.spdx.json --type spdx ghcr.io/kusari-oss/darnit@${DIGEST}`
-- [ ] T026 [US2] Add compressed-size reporting: capture `docker manifest inspect` JSON, sum compressed sizes per arch, post to job summary; emit a `::warning::` (not failure) if growth >15% vs the previous release (look up previous size via `gh release view`)
-- [ ] T027 [US2] Create a separate `.github/workflows/container-edge.yml` triggered on `push` to `main` that builds and pushes `:edge` (no signing, no SBOM); record this is non-release in the README
-- [ ] T028 [US2] Add a `container_smoke` job to `release-smoke.yml`: pull the published tag, run `darnit --version`, then run the `cosign verify` command from the contract
-- [ ] T029 [P] [US2] Write `docs/install/container.md` per the quickstart's container section, including the SBOM download command
-- [ ] T030 [P] [US2] Populate the `container` section of `packaging/RECOVERY.md` with the digest-pinning + re-push recipe for partial failures
+- [X] T020 [US2] Author `packaging/container/Dockerfile` with the multi-stage build per `contracts/container-image-contract.md`: builder stage installs `darnit-mcp==<version>` (version passed as `ARG VERSION`) into a venv; runtime stage based on `python:3.12-slim`, installs `git` + `gh` via apt with caches purged, copies the venv, creates non-root user `darnit` (uid 10001), sets `WORKDIR /repo`, sets `ENTRYPOINT`/`CMD`
+- [X] T021 [US2] Write `packaging/container/entrypoint.sh` per the contract — dispatch on first positional arg (`audit`/`remediate`/`list-controls`/`--version`/`--help` → `darnit`; `mcp` → `darnit-mcp`; anything else → exec direct)
+- [X] T022 [US2] [P] Write `packaging/container/README.md` describing the image's contents, supported architectures, and entry-point usage (this README is mirrored to the GHCR overview page)
+- [X] T023 [US2] Add a `container_build_push` job to `.github/workflows/release.yml`, gated on `pypi_publish` success. Use `docker/setup-qemu-action` + `docker/setup-buildx-action` + `docker/build-push-action` with `platforms: linux/amd64,linux/arm64`. Tag policy from the contract (stable: `:vX.Y.Z` + `:latest`; pre-release: `:vX.Y.Zrc<N>` only). Pass `--build-arg VERSION=<version>`.
+- [X] T024 [US2] In the same job, after push, run `cosign sign --yes ghcr.io/kusari-oss/darnit@${DIGEST}` using OIDC keyless signing
+- [X] T025 [US2] After signing, run `syft ghcr.io/kusari-oss/darnit@${DIGEST} -o spdx-json > sbom.spdx.json` and attach via `cosign attest --yes --predicate sbom.spdx.json --type spdx ghcr.io/kusari-oss/darnit@${DIGEST}`
+- [X] T026 [US2] Add compressed-size reporting: capture `docker manifest inspect` JSON, sum compressed sizes per arch, post to job summary; emit a `::warning::` (not failure) if growth >15% vs the previous release (look up previous size via `gh release view`)
+- [X] T027 [US2] Create a separate `.github/workflows/container-edge.yml` triggered on `push` to `main` that builds and pushes `:edge` (no signing, no SBOM); record this is non-release in the README
+- [X] T028 [US2] Add a `container_smoke` job to `release-smoke.yml`: pull the published tag, run `darnit --version`, then run the `cosign verify` command from the contract
+- [X] T029 [P] [US2] Write `docs/install/container.md` per the quickstart's container section, including the SBOM download command
+- [X] T030 [P] [US2] Populate the `container` section of `packaging/RECOVERY.md` with the digest-pinning + re-push recipe for partial failures
 - [ ] T031 [US2] Run the end-to-end test from the Independent Test above against a real `v0.0.0rc2` tag
 
 **Checkpoint US2**: Container image is live on GHCR, signed, multi-arch.

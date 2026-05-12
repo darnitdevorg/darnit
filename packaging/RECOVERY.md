@@ -75,15 +75,88 @@ The smoke job is read-only and safe to re-run any number of times.
 
 ## Container image
 
-> _Filled by Phase 4 (User Story 2)._
+The `container_build_push` job pushes a multi-arch manifest, signs each digest with cosign, and attaches an SPDX-JSON SBOM as a cosign attestation. Partial failure surfaces at any of these steps.
 
-Failure modes:
+### Failure mode 1 — Multi-arch incomplete (one platform pushed, the other failed)
 
-- One platform manifest pushed; the other failed (multi-arch incomplete).
-- cosign signing failed after image push.
-- SBOM attestation upload failed.
+**Symptom**: `docker manifest inspect ghcr.io/kusari-oss/darnit:v<X.Y.Z>` returns only one platform manifest entry instead of two, OR `docker pull --platform linux/arm64 ...` fails while `linux/amd64` works.
 
-Repair procedure: _TBD in T030._
+**Important**: GHCR tags are technically mutable. We treat them as immutable by convention to give users a stable signing chain to verify against.
+
+**Procedure**:
+
+1. Investigate the cause via the failed job's log (commonly: qemu emulation timeout, buildx OOM, or registry transient).
+2. **Do not re-push under the same tag.** Even though GHCR would accept it, the cosign signature on the original digest would no longer match what users pull, breaking the trust chain.
+3. Roll forward to `v<X.Y.Z+1>` and re-tag. The bad partial tag stays for historical resolution; downstream users pinned to it get a warning from cosign verify (the signed digest will not match the new push if anyone overwrote it, which is itself a meaningful signal).
+4. Document the incident in the release notes for `v<X.Y.Z+1>`.
+
+### Failure mode 2 — Image pushed; cosign signing failed
+
+**Symptom**: `docker pull` works for both platforms but `cosign verify ...` returns "no matching signatures".
+
+**Important**: Without a signature, FR-003 ("every artifact MUST carry a verifiable signature") is violated. The image must not be advertised as a release.
+
+**Procedure**:
+
+1. **Do not** retry just the cosign step manually unless you can do it with the same OIDC identity as the release workflow — a maintainer's local cosign signing would produce a wrong identity and fail user verification.
+2. The cleanest recovery is to roll forward: bump to `v<X.Y.Z+1>` and let `release.yml` re-sign the new push.
+3. As a fallback for transient signing failures (rare; usually a Fulcio outage), the workflow can be re-run **only** on a fresh tag — `release.yml`'s preflight rejects reruns on already-published tags.
+4. Optionally, manually mark the unsigned digest as superseded: push a deprecation note to the release notes for the broken tag.
+
+### Failure mode 3 — SBOM attestation upload failed
+
+**Symptom**: `cosign verify` succeeds but `cosign verify-attestation --type spdx ...` returns "no matching attestations". `cosign download attestation` returns empty.
+
+**Important**: SBOM absence is less severe than signature absence — the artifact is still trustworthy, just lacks the supply-chain manifest. Users can regenerate the SBOM locally via `syft ghcr.io/kusari-oss/darnit:v<X.Y.Z> -o spdx-json`.
+
+**Procedure**:
+
+1. Confirm the image and its signature are present (`cosign verify` works).
+2. Re-run only the SBOM attestation step locally with the appropriate OIDC token:
+   ```bash
+   # On a machine with cosign and a fresh OIDC token for the release workflow
+   syft ghcr.io/kusari-oss/darnit:v<X.Y.Z> -o spdx-json > sbom.spdx.json
+   cosign attest --yes --predicate sbom.spdx.json --type spdx ghcr.io/kusari-oss/darnit:v<X.Y.Z>
+   ```
+3. If a manual attestation cannot be produced with the canonical workflow identity, document the gap in the release notes and roll forward in `v<X.Y.Z+1>`.
+
+### Failure mode 4 — :latest still pointing at the previous release after a stable push
+
+**Symptom**: `docker pull ghcr.io/kusari-oss/darnit:latest` returns the previous version's digest.
+
+**Important**: `:latest` movement is part of the release workflow. If it didn't move, the push itself likely failed silently.
+
+**Procedure**:
+
+1. Confirm `:v<X.Y.Z>` pulls successfully.
+2. Manually re-push `:latest` to the new digest **only if** the immutable tag verification passes:
+   ```bash
+   docker buildx imagetools create \
+     -t ghcr.io/kusari-oss/darnit:latest \
+     ghcr.io/kusari-oss/darnit:v<X.Y.Z>
+   ```
+3. Verify the move: `cosign verify ghcr.io/kusari-oss/darnit:latest ...` must produce the same identity as `:v<X.Y.Z>`.
+
+### Verification after recovery
+
+```bash
+# Pull both platforms
+docker pull --platform linux/amd64 ghcr.io/kusari-oss/darnit:v<X.Y.Z>
+docker pull --platform linux/arm64 ghcr.io/kusari-oss/darnit:v<X.Y.Z>
+
+# Verify signing identity
+cosign verify ghcr.io/kusari-oss/darnit:v<X.Y.Z> \
+  --certificate-identity-regexp '^https://github\.com/kusari-oss/darnit/\.github/workflows/release\.yml@' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+# Verify SBOM attestation
+cosign verify-attestation ghcr.io/kusari-oss/darnit:v<X.Y.Z> \
+  --type spdx \
+  --certificate-identity-regexp '^https://github\.com/kusari-oss/darnit/\.github/workflows/release\.yml@' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+Then re-run the smoke job: `gh run rerun <smoke-run-id> --repo kusari-oss/darnit`.
 
 ---
 

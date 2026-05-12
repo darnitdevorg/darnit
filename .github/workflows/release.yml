@@ -334,8 +334,207 @@ jobs:
           attestations: true
           skip-existing: false
 
+  # T023 + T024 + T025 + T026: container build, push, sign, SBOM, size report.
+  # Depends on publish-darnit-mcp because the Dockerfile installs darnit-mcp
+  # from PyPI at the tagged version — the package must be live before the
+  # image build can resolve it.
+  container_build_push:
+    name: Build, push, and sign container image
+    needs:
+      - preflight
+      - publish-darnit-mcp
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: release
+    permissions:
+      contents: write       # for OCI image labels referenced from release notes
+      packages: write       # push to ghcr.io
+      id-token: write       # cosign keyless signing via OIDC
+      attestations: write   # SBOM attestation via cosign
+    outputs:
+      image_digest: ${{ steps.build_push.outputs.digest }}
+      compressed_size_bytes: ${{ steps.size.outputs.compressed_size_bytes }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up QEMU (multi-arch emulation for arm64 build on amd64 runner)
+        uses: docker/setup-qemu-action@49b3bc8e6bdd4a60e6116a5414239cba5943d3cf # v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3
+
+      - name: Authenticate to GHCR
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tags
+        id: tags
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+          IS_PRERELEASE: ${{ needs.preflight.outputs.is_prerelease }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER}/darnit"
+          # Lowercase the owner name — GHCR rejects uppercase in repos.
+          image=$(echo "$image" | tr '[:upper:]' '[:lower:]')
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            # Pre-release: only the immutable version tag. NEVER move :latest.
+            tags="${image}:v${VERSION}"
+          else
+            # Stable: immutable version + move :latest.
+            tags="${image}:v${VERSION},${image}:latest"
+          fi
+          {
+            echo "image=$image"
+            echo "tags=$tags"
+          } >> "$GITHUB_OUTPUT"
+          echo "Tagging: $tags"
+
+      - name: Wait briefly for PyPI to propagate ${{ needs.preflight.outputs.version }}
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+          IS_PRERELEASE: ${{ needs.preflight.outputs.is_prerelease }}
+        run: |
+          set -euo pipefail
+          # PyPI's CDN typically caches the index for ~minutes after a new
+          # upload. The Dockerfile's `pip install darnit-mcp==<version>` step
+          # will fail until the version is visible. Poll up to 2 minutes
+          # before giving up so the image build is not racing publication.
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            base_url="https://test.pypi.org/pypi/darnit-mcp/${VERSION}/json"
+          else
+            base_url="https://pypi.org/pypi/darnit-mcp/${VERSION}/json"
+          fi
+          for attempt in $(seq 1 24); do
+            if curl -fsSL "$base_url" >/dev/null 2>&1; then
+              echo "darnit-mcp ${VERSION} is visible on the index (attempt $attempt)"
+              exit 0
+            fi
+            echo "Waiting for darnit-mcp ${VERSION} on the index (attempt $attempt/24)..."
+            sleep 5
+          done
+          echo "::error::darnit-mcp ${VERSION} did not appear on the index within 2 minutes"
+          exit 1
+
+      - name: Build and push multi-arch image
+        id: build_push
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75 # v6
+        with:
+          context: .
+          file: packaging/container/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          build-args: |
+            VERSION=${{ needs.preflight.outputs.version }}
+          provenance: true
+          sbom: false  # we generate our own with syft below, scoped to runtime
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@0d05a4e36810cebf0e25e51fb1a4ee45ac1b75e2 # v3.10.1
+
+      - name: Sign image (cosign keyless)
+        env:
+          DIGEST: ${{ steps.build_push.outputs.digest }}
+          IMAGE: ${{ steps.tags.outputs.image }}
+        run: |
+          set -euo pipefail
+          cosign sign --yes "${IMAGE}@${DIGEST}"
+
+      - name: Install syft
+        uses: anchore/sbom-action/download-syft@7b36ad622f042cab6f59a75c2ac24ccb256e9b45 # v0.20.4
+
+      - name: Generate SBOM (T025)
+        env:
+          DIGEST: ${{ steps.build_push.outputs.digest }}
+          IMAGE: ${{ steps.tags.outputs.image }}
+        run: |
+          set -euo pipefail
+          syft "${IMAGE}@${DIGEST}" -o spdx-json > /tmp/sbom.spdx.json
+          echo "SBOM has $(jq '.packages | length' /tmp/sbom.spdx.json) packages"
+
+      - name: Attach SBOM as cosign attestation (T025)
+        env:
+          DIGEST: ${{ steps.build_push.outputs.digest }}
+          IMAGE: ${{ steps.tags.outputs.image }}
+        run: |
+          set -euo pipefail
+          cosign attest --yes \
+            --predicate /tmp/sbom.spdx.json \
+            --type spdx \
+            "${IMAGE}@${DIGEST}"
+
+      - name: Measure compressed size and warn on growth (T026)
+        id: size
+        env:
+          DIGEST: ${{ steps.build_push.outputs.digest }}
+          IMAGE: ${{ steps.tags.outputs.image }}
+          VERSION: ${{ needs.preflight.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # docker manifest inspect returns the multi-arch list; sum per-arch
+          # compressed sizes from the layer descriptors.
+          manifest=$(docker manifest inspect "${IMAGE}@${DIGEST}")
+          total=$(echo "$manifest" | jq '[ .manifests[].size? // 0, ( .layers[].size? // 0 ) ] | add // 0')
+          # For the multi-arch list above, manifests[].size is the platform
+          # manifest's content size, not its decompressed image. To capture
+          # the actual layer compressed sizes we need to inspect each
+          # platform manifest.
+          per_arch_total=0
+          for plat_digest in $(echo "$manifest" | jq -r '.manifests[].digest'); do
+            arch_manifest=$(docker manifest inspect "${IMAGE}@${plat_digest}")
+            arch_size=$(echo "$arch_manifest" | jq '[ .layers[].size? // 0 ] | add // 0')
+            per_arch_total=$(( per_arch_total + arch_size ))
+          done
+          if [ "$per_arch_total" -gt 0 ]; then
+            total="$per_arch_total"
+          fi
+          target_bytes=$((300 * 1024 * 1024))
+          mib=$(awk -v t="$total" 'BEGIN{printf "%.1f", t/1024/1024}')
+          echo "compressed_size_bytes=$total" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Container image size"
+            echo ""
+            echo "- Compressed (sum across linux/amd64 + linux/arm64 layers): **${mib} MiB**"
+            echo "- Soft target: 300 MiB"
+            if [ "$total" -gt "$target_bytes" ]; then
+              echo "- ⚠️ Exceeds soft target by $(( total - target_bytes )) bytes — confirm justification in release notes."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Compare to the previous release (best-effort). Look up the most
+          # recent release before this one and parse the size out of its
+          # body if we recorded it.
+          prev_tag=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 20 \
+            --json tagName,isPrerelease \
+            | jq -r '[ .[] | select(.isPrerelease == false) ] | .[0].tagName // ""')
+          if [ -n "$prev_tag" ] && [ "$prev_tag" != "v${VERSION}" ]; then
+            prev_body=$(gh release view "$prev_tag" --repo "$GITHUB_REPOSITORY" --json body | jq -r '.body // ""')
+            prev_size=$(echo "$prev_body" | grep -oE 'compressed-size: [0-9]+' | awk '{print $2}' | head -n1 || true)
+            if [ -n "$prev_size" ] && [ "$prev_size" -gt 0 ]; then
+              growth=$(( (total - prev_size) * 100 / prev_size ))
+              if [ "$growth" -gt 15 ]; then
+                echo "::warning::Container image grew ${growth}% vs ${prev_tag} (was ${prev_size} bytes, now ${total}). Justify in release notes."
+              else
+                echo "Image size change vs ${prev_tag}: ${growth}% (within +15% budget)"
+              fi
+            fi
+          else
+            echo "No previous stable release with recorded size; recording baseline."
+          fi
+          # Note: the actual `compressed-size: N` line is embedded in the
+          # release notes by the finalize job (T071) for future comparison.
+
   # Channel jobs added in later phases:
-  #   Phase 4 (US2) → container_build_push
   #   Phase 5 (US3) → binary_matrix + homebrew_dispatch
   #   Phase 6 (US4) → plugin_package
   #   Phase 8       → finalize (with timing/SC-007 enforcement, T071/T071a)
