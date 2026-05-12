@@ -534,7 +534,222 @@ jobs:
           # Note: the actual `compressed-size: N` line is embedded in the
           # release notes by the finalize job (T071) for future comparison.
 
+  # T033–T036: build a shiv standalone binary on each native runner, sign
+  # the blob with cosign, generate an SBOM, attach a GH attestation, and
+  # upload the artifact for the release_attach_binaries job to collect.
+  #
+  # Each matrix entry runs on a NATIVE runner for its target platform so
+  # the platform-specific wheels (especially tree-sitter) resolve correctly.
+  # Cross-compilation is intentionally not used — it would require us to
+  # maintain platform-tag manifests by hand.
+  binary_matrix:
+    name: Build binary (${{ matrix.os }}-${{ matrix.arch }})
+    needs:
+      - preflight
+      - publish-darnit-mcp
+    timeout-minutes: 20
+    runs-on: ${{ matrix.runner }}
+    environment: release
+    permissions:
+      contents: read
+      id-token: write       # cosign keyless + GH artifact attestations
+      attestations: write   # GH artifact attestations
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: macos-14,         os: macos, arch: arm64 }
+          - { runner: macos-15-intel,   os: macos, arch: amd64 }
+          - { runner: ubuntu-22.04,     os: linux, arch: amd64 }
+          - { runner: ubuntu-22.04-arm, os: linux, arch: arm64 }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.11 (matches shiv shebang)
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v5
+        with:
+          python-version: "3.11"
+
+      - name: Install shiv
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install 'shiv>=1.0.4'
+
+      - name: Wait for darnit-mcp ${{ needs.preflight.outputs.version }} on the index
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+          IS_PRERELEASE: ${{ needs.preflight.outputs.is_prerelease }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            url="https://test.pypi.org/pypi/darnit-mcp/${VERSION}/json"
+          else
+            url="https://pypi.org/pypi/darnit-mcp/${VERSION}/json"
+          fi
+          for attempt in $(seq 1 24); do
+            if curl -fsSL "$url" >/dev/null 2>&1; then
+              echo "darnit-mcp ${VERSION} is visible on the index (attempt $attempt)"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::darnit-mcp ${VERSION} did not appear on the index within 2 minutes"
+          exit 1
+
+      - name: Build binary (T032 script)
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+          OS: ${{ matrix.os }}
+          ARCH: ${{ matrix.arch }}
+          INDEX: ${{ needs.preflight.outputs.is_prerelease == 'true' && 'https://test.pypi.org/simple/' || 'https://pypi.org/simple/' }}
+          EXTRA_INDEX: https://pypi.org/simple/
+          OUT_DIR: dist/binary
+        shell: bash
+        run: ./packaging/binary/build-binary.sh
+
+      - name: Sanity check — binary reports the expected version
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+          OS: ${{ matrix.os }}
+          ARCH: ${{ matrix.arch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="dist/binary/darnit-${VERSION}-${OS}-${ARCH}"
+          out=$("$bin" --version 2>&1 | tail -n1)
+          echo "$bin --version → $out"
+          echo "$out" | grep -F "$VERSION"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@0d05a4e36810cebf0e25e51fb1a4ee45ac1b75e2 # v3.10.1
+
+      - name: Sign binary blob (T034)
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+          OS: ${{ matrix.os }}
+          ARCH: ${{ matrix.arch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="dist/binary/darnit-${VERSION}-${OS}-${ARCH}"
+          cosign sign-blob --yes \
+            --bundle "${bin}.sigstore" \
+            "$bin"
+          ls -la "${bin}" "${bin}.sigstore"
+
+      - name: Install syft
+        uses: anchore/sbom-action/download-syft@7b36ad622f042cab6f59a75c2ac24ccb256e9b45 # v0.20.4
+
+      - name: Generate SBOM (T035)
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+          OS: ${{ matrix.os }}
+          ARCH: ${{ matrix.arch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="dist/binary/darnit-${VERSION}-${OS}-${ARCH}"
+          syft "$bin" -o spdx-json > "${bin}.sbom.spdx.json"
+          echo "SBOM has $(jq '.packages | length' "${bin}.sbom.spdx.json") packages"
+
+      - name: Attach GitHub Artifact Attestation for the SBOM (T035)
+        uses: actions/attest@d36e3e88017bf07c79c1b8af5b22a3893e29d1cf # v3
+        with:
+          subject-path: dist/binary/darnit-${{ needs.preflight.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}
+          predicate-type: https://spdx.dev/Document
+          predicate-path: dist/binary/darnit-${{ needs.preflight.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}.sbom.spdx.json
+
+      - name: Upload built binary + signature + SBOM as workflow artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
+        with:
+          name: binary-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            dist/binary/darnit-${{ needs.preflight.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}
+            dist/binary/darnit-${{ needs.preflight.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}.sigstore
+            dist/binary/darnit-${{ needs.preflight.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}.sbom.spdx.json
+          if-no-files-found: error
+          retention-days: 7
+
+  # T036: collect all four binaries + signatures + SBOMs, then create the
+  # GitHub Release and attach them as assets. Pre-release tags create a
+  # release marked as pre-release; stable tags mark the release as `latest`.
+  release_attach_binaries:
+    name: Attach binaries to GitHub Release
+    needs: [preflight, binary_matrix]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download all binary artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: binary-*
+          path: dist/binary
+          merge-multiple: true
+
+      - name: List collected files
+        run: ls -la dist/binary/
+
+      - name: Create GitHub Release and attach binaries
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.preflight.outputs.version }}
+          IS_PRERELEASE: ${{ needs.preflight.outputs.is_prerelease }}
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            flags="--prerelease"
+            title="darnit ${VERSION} (pre-release)"
+          else
+            flags="--latest"
+            title="darnit ${VERSION}"
+          fi
+          # Initial release body; finalize job (T071) will extend with the
+          # full per-channel timing summary.
+          body_file=$(mktemp)
+          cat > "$body_file" <<EOF
+          # darnit ${VERSION}
+
+          Released by [\`release.yml\`](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}) on $(date -u +%Y-%m-%dT%H:%M:%SZ).
+
+          ## Install
+
+          - **PyPI**: \`pip install darnit-mcp==${VERSION}\`
+          - **Container**: \`docker pull ghcr.io/$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')/darnit:v${VERSION}\`
+          - **Standalone binary**: download the platform-matching asset below.
+          - **Homebrew** (stable only): \`brew install kusari-oss/tap/darnit\`
+
+          ## Verify
+
+          See [\`docs/install/\`](https://github.com/${GITHUB_REPOSITORY}/tree/v${VERSION}/docs/install) for per-channel verification recipes.
+
+          ## Binary assets
+
+          | Platform | File |
+          |---|---|
+          | macOS arm64 (Apple Silicon) | \`darnit-${VERSION}-macos-arm64\` |
+          | macOS amd64 (Intel) | \`darnit-${VERSION}-macos-amd64\` |
+          | Linux arm64 | \`darnit-${VERSION}-linux-arm64\` |
+          | Linux amd64 | \`darnit-${VERSION}-linux-amd64\` |
+
+          Each binary ships with a matching \`.sigstore\` bundle (cosign
+          blob signature) and an \`.sbom.spdx.json\` SBOM.
+          EOF
+
+          gh release create "$tag" \
+            --title "$title" \
+            --notes-file "$body_file" \
+            $flags \
+            dist/binary/*
+
   # Channel jobs added in later phases:
-  #   Phase 5 (US3) → binary_matrix + homebrew_dispatch
-  #   Phase 6 (US4) → plugin_package
+  #   Phase 5 (US3 — Homebrew side) → homebrew_dispatch
+  #   Phase 6 (US4)                → plugin_package
   #   Phase 8       → finalize (with timing/SC-007 enforcement, T071/T071a)

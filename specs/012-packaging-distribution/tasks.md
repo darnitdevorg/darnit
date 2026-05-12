@@ -111,14 +111,14 @@ description: "Task list for 012-packaging-distribution"
 
 ### Implementation for User Story 3 — binary side
 
-- [ ] T032 [US3] Author `packaging/binary/shiv.toml` with `console-script = "darnit"`, `python = "/usr/bin/env python3.11"`, `compressed = true`. Test locally first to confirm the resulting zipapp runs.
-- [ ] T033 [US3] Add a `binary_matrix` job to `.github/workflows/release.yml` with strategy matrix `os ∈ {macos-14, macos-13, ubuntu-22.04, ubuntu-22.04-arm}` mapping to four `(os, arch)` artifact filenames. Run `shiv` per matrix entry; output `darnit-<version>-<os>-<arch>` in `dist/binary/`.
-- [ ] T034 [US3] In `binary_matrix`, sign each output: `cosign sign-blob --yes --bundle darnit-<version>-<os>-<arch>.sigstore darnit-<version>-<os>-<arch>`
-- [ ] T035 [US3] In `binary_matrix`, generate SBOM via `syft <binary> -o spdx-json > <binary>.sbom.spdx.json` and attest via `gh attestation create --predicate-type https://spdx.dev/Document --predicate <sbom> <binary>`
-- [ ] T036 [US3] After all four matrix entries complete, run `gh release create v<version> --title "v<version>"` (use `--prerelease` for `rc` tags, `--latest` for stable) with all eight files attached: `darnit-<version>-<os>-<arch>` + `.sigstore` for each `(os, arch)`
-- [ ] T037 [US3] Add a `binary_smoke` job to `release-smoke.yml` with the same matrix; each runner downloads its matching binary, runs `--version`, and runs `cosign verify-blob` per the contract
-- [ ] T038 [P] [US3] Write `docs/install/binary.md` per the quickstart's binary section, including the Python 3.11+ prerequisite and the `cosign verify-blob` command
-- [ ] T039 [P] [US3] Populate the `binary` section of `packaging/RECOVERY.md`
+- [X] T032 [US3] Author `packaging/binary/shiv.toml` with `console-script = "darnit"`, `python = "/usr/bin/env python3.11"`, `compressed = true`. Test locally first to confirm the resulting zipapp runs.  _(Delivered as `packaging/binary/build-binary.sh` — shiv has no native TOML config format; script captures the canonical invocation.)_
+- [X] T033 [US3] Add a `binary_matrix` job to `.github/workflows/release.yml` with strategy matrix `os ∈ {macos-14, macos-13, ubuntu-22.04, ubuntu-22.04-arm}` mapping to four `(os, arch)` artifact filenames. Run `shiv` per matrix entry; output `darnit-<version>-<os>-<arch>` in `dist/binary/`.
+- [X] T034 [US3] In `binary_matrix`, sign each output: `cosign sign-blob --yes --bundle darnit-<version>-<os>-<arch>.sigstore darnit-<version>-<os>-<arch>`
+- [X] T035 [US3] In `binary_matrix`, generate SBOM via `syft <binary> -o spdx-json > <binary>.sbom.spdx.json` and attest via `gh attestation create --predicate-type https://spdx.dev/Document --predicate <sbom> <binary>`
+- [X] T036 [US3] After all four matrix entries complete, run `gh release create v<version> --title "v<version>"` (use `--prerelease` for `rc` tags, `--latest` for stable) with all eight files attached: `darnit-<version>-<os>-<arch>` + `.sigstore` for each `(os, arch)`
+- [X] T037 [US3] Add a `binary_smoke` job to `release-smoke.yml` with the same matrix; each runner downloads its matching binary, runs `--version`, and runs `cosign verify-blob` per the contract
+- [X] T038 [P] [US3] Write `docs/install/binary.md` per the quickstart's binary section, including the Python 3.11+ prerequisite and the `cosign verify-blob` command
+- [X] T039 [P] [US3] Populate the `binary` section of `packaging/RECOVERY.md`
 
 ### Implementation for User Story 3 — Homebrew side
 

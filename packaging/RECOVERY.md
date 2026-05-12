@@ -162,15 +162,87 @@ Then re-run the smoke job: `gh run rerun <smoke-run-id> --repo kusari-oss/darnit
 
 ## Standalone binary
 
-> _Filled by Phase 5 (User Story 3) — binary side._
+The `binary_matrix` job builds on four native runners in parallel (macOS arm64/amd64, Linux arm64/amd64). The `release_attach_binaries` job collects all four sets, creates the GitHub Release, and attaches them. Per spec, missing a platform fails the release for that platform — there is no partial-binary-set acceptance.
 
-Failure modes:
+### Failure mode 1 — Build succeeded for some platforms, failed for others
 
-- Build succeeded for 3 of 4 platforms.
-- Signature blob upload failed.
-- GitHub Release asset upload failed for one or more files.
+**Symptom**: `release.yml` shows 3 of 4 `binary_matrix` matrix entries green and 1 red. The GitHub Release was not created (or was created without the missing platform).
 
-Repair procedure: _TBD in T039._
+**Important**: shiv builds are reproducible from the tagged commit + the published `darnit-mcp` wheel on PyPI. We can rebuild a missing platform on a maintainer machine without re-tagging.
+
+**Procedure**:
+
+1. Determine the failed platform. The `binary_matrix` job name encodes it (`Build binary (macos-arm64)`, etc.).
+2. Investigate via the failed job's log. Common transient causes: runner image hiccup, network blip to PyPI, shiv install failure.
+3. Re-run only the failed matrix entry: in the GitHub Actions UI, click **Re-run jobs** → **Re-run failed jobs**. The job is idempotent on a per-platform basis (writes a fresh workflow artifact).
+4. After the re-run succeeds, manually attach the binary, signature, and SBOM to the existing GitHub Release:
+   ```bash
+   gh release upload v<X.Y.Z> \
+     darnit-<X.Y.Z>-<os>-<arch> \
+     darnit-<X.Y.Z>-<os>-<arch>.sigstore \
+     darnit-<X.Y.Z>-<os>-<arch>.sbom.spdx.json \
+     --repo kusari-oss/darnit
+   ```
+5. Re-run the `binary_smoke` matrix to verify the new asset's signature.
+
+If the failure cannot be recovered (e.g., a runner image change broke the build deterministically), roll forward to `v<X.Y.Z+1>` — but the already-published platforms stay on the GH release, since they're signed correctly.
+
+### Failure mode 2 — Signature blob (.sigstore) upload failed for one platform
+
+**Symptom**: The binary exists on the GitHub Release but the `.sigstore` sibling does not, OR the `.sigstore` is empty/truncated.
+
+**Important**: Without a signature, FR-003 ("every artifact MUST carry a verifiable signature") is violated for that platform. Users running `cosign verify-blob` will fail.
+
+**Procedure**:
+
+1. Re-sign the same binary blob with cosign using the canonical workflow OIDC identity. This **must** be done in the workflow context, not on a maintainer's machine — a local signing would produce a wrong identity.
+2. Re-running the matrix entry from the Actions UI is the standard recovery path; it re-runs the build + sign + upload sequence.
+3. If the matrix entry succeeded but only the upload to GH Release dropped the `.sigstore`, manually upload it via `gh release upload --clobber`. The signature is bound to the binary's bytes, not its location, so re-uploading is safe.
+
+### Failure mode 3 — GitHub Release creation failed (release_attach_binaries)
+
+**Symptom**: All four `binary_matrix` jobs are green but `release_attach_binaries` failed. No GH Release exists for the tag.
+
+**Important**: Container image and PyPI publishes happen earlier in the pipeline and are not blocked by this — they're already live.
+
+**Procedure**:
+
+1. Investigate via the failed job's log. Usual cause: a transient GH API hiccup or a `gh release create` race (if a stale release exists from a prior aborted attempt).
+2. If a partial GH release exists (created but missing assets), delete it: `gh release delete v<X.Y.Z> --repo kusari-oss/darnit --yes` (this does NOT delete the tag).
+3. Download the workflow artifacts to a local machine:
+   ```bash
+   gh run download <run-id> --repo kusari-oss/darnit --pattern 'binary-*'
+   ```
+4. Create the release manually with all assets:
+   ```bash
+   gh release create v<X.Y.Z> \
+     binary-macos-arm64/* \
+     binary-macos-amd64/* \
+     binary-linux-amd64/* \
+     binary-linux-arm64/* \
+     --title "darnit <X.Y.Z>" \
+     --notes "Manually created after release_attach_binaries failed; see workflow run <url>" \
+     --latest \
+     --repo kusari-oss/darnit
+   ```
+5. Re-run `binary_smoke` to verify everything.
+
+### Verification after recovery
+
+```bash
+# For each platform:
+gh release download v<X.Y.Z> --repo kusari-oss/darnit \
+  --pattern 'darnit-<X.Y.Z>-<os>-<arch>*'
+
+chmod +x darnit-<X.Y.Z>-<os>-<arch>
+./darnit-<X.Y.Z>-<os>-<arch> --version  # must match <X.Y.Z>
+
+cosign verify-blob \
+  --bundle darnit-<X.Y.Z>-<os>-<arch>.sigstore \
+  --certificate-identity-regexp '^https://github\.com/kusari-oss/darnit/\.github/workflows/release\.yml@' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  darnit-<X.Y.Z>-<os>-<arch>
+```
 
 ---
 

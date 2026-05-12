@@ -7,7 +7,7 @@ Four artifacts, one per `(os, arch)`:
 | Filename | Platform | Built on |
 |---|---|---|
 | `darnit-<version>-macos-arm64` | macOS arm64 | `macos-14` runner |
-| `darnit-<version>-macos-amd64` | macOS amd64 | `macos-13` runner |
+| `darnit-<version>-macos-amd64` | macOS amd64 | `macos-15-intel` runner |
 | `darnit-<version>-linux-arm64` | Linux arm64 | `ubuntu-22.04-arm` runner |
 | `darnit-<version>-linux-amd64` | Linux amd64 | `ubuntu-22.04` runner |
 
