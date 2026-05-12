@@ -16,25 +16,29 @@ if [ -z "${DARNIT_MCP_VERSION:-}" ]; then
     exit 64
 fi
 
+# Each `try_*` either exec's (replacing this process and letting the
+# runner's stderr flow through to the user) or falls off the end without
+# exec'ing. We must NOT wrap these calls in `2>/dev/null` at the call
+# site, because that redirection would persist past the exec and swallow
+# uvx/pipx's own error messages once they've taken over the process —
+# which is the most common operational failure mode (uvx is installed
+# but PyPI is unreachable, the pinned version is missing, etc.). The
+# probe (`command -v`) uses its own narrow 2>/dev/null so the absence
+# of a tool is silent, but the exec inherits the script's stderr.
 try_uvx() {
-    command -v uvx >/dev/null 2>&1 || return 1
-    # exec replaces this process with uvx — Claude Code's MCP client
-    # talks to uvx's stdio directly.
-    exec uvx --from "darnit-mcp==${DARNIT_MCP_VERSION}" darnit-mcp "$@"
+    if command -v uvx >/dev/null 2>&1; then
+        exec uvx --from "darnit-mcp==${DARNIT_MCP_VERSION}" darnit-mcp "$@"
+    fi
 }
 
 try_pipx() {
-    command -v pipx >/dev/null 2>&1 || return 1
-    exec pipx run "darnit-mcp==${DARNIT_MCP_VERSION}" "$@"
+    if command -v pipx >/dev/null 2>&1; then
+        exec pipx run "darnit-mcp==${DARNIT_MCP_VERSION}" "$@"
+    fi
 }
 
-# Each `try_*` either exec's (replaces this process) or returns
-# non-zero. Append `|| :` so set -e doesn't abort the script when a
-# runner is missing — we want to fall through to the next attempt and
-# ultimately to the actionable-error path. The 2>/dev/null suppresses
-# any noise from the attempt itself; the user only sees the heredoc.
-try_uvx 2>/dev/null || :
-try_pipx 2>/dev/null || :
+try_uvx "$@"
+try_pipx "$@"
 
 cat >&2 <<EOF
 darnit plugin: neither 'uvx' nor 'pipx' is available on PATH.

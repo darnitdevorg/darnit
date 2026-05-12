@@ -493,8 +493,10 @@ jobs:
         run: |
           set -euo pipefail
           zip="/tmp/plugin/darnit-claude-plugin-${VERSION}.zip"
+          # [a-z0-9-]+ per Agent Skills name rules (lowercase letters,
+          # digits, hyphens). [a-z]+ alone would miss every hyphenated name.
           bundled=$(unzip -l "$zip" \
-            | awk '/darnit\/skills\/[a-z]+\/SKILL\.md$/ {sub("^.*skills/",""); sub("/SKILL.md$",""); print}' \
+            | awk '/darnit\/skills\/[a-z0-9-]+\/SKILL\.md$/ {sub("^.*skills/",""); sub("/SKILL.md$",""); print}' \
             | sort | paste -sd, -)
           expected="darnit-audit,darnit-comply,darnit-data,darnit-remediate"
           if [ "$bundled" != "$expected" ]; then

@@ -898,8 +898,11 @@ jobs:
         run: |
           set -euo pipefail
           zip="dist/claude-plugin/darnit-claude-plugin-${VERSION}.zip"
+          # Match skill directory names per the Agent Skills spec:
+          # lowercase letters, digits, and hyphens.
+          # ([a-z]+ alone would silently miss every hyphenated name.)
           bundled=$(unzip -l "$zip" \
-            | awk '/darnit\/skills\/[a-z]+\/SKILL\.md$/ {sub("^.*skills/",""); sub("/SKILL.md$",""); print}' \
+            | awk '/darnit\/skills\/[a-z0-9-]+\/SKILL\.md$/ {sub("^.*skills/",""); sub("/SKILL.md$",""); print}' \
             | sort \
             | paste -sd, -)
           expected="darnit-audit,darnit-comply,darnit-data,darnit-remediate"

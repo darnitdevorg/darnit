@@ -108,9 +108,9 @@ unzip -p darnit-claude-plugin-<version>.zip .claude-plugin/plugin.json \
 unzip -p darnit-claude-plugin-<version>.zip .claude-plugin/plugin.json \
   | jq -e '.mcpServers["darnit-mcp"].env.DARNIT_MCP_VERSION == "<version>"'  # MCP version pin
 
-# skill set matches the contract
+# skill set matches the contract — [a-z0-9-]+ per Agent Skills name rules
 unzip -l darnit-claude-plugin-<version>.zip \
-  | awk '/skills\/[a-z]+\/SKILL\.md$/ {sub("^.*skills/",""); sub("/SKILL.md$",""); print}' \
+  | awk '/skills\/[a-z0-9-]+\/SKILL\.md$/ {sub("^.*skills/",""); sub("/SKILL.md$",""); print}' \
   | sort \
   | diff - <(printf 'darnit-audit\ndarnit-comply\ndarnit-data\ndarnit-remediate\n')
 

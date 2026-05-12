@@ -80,6 +80,29 @@ for src_name in "${EXPECTED_SKILLS[@]}"; do
         echo "::error::Expected skill not found: $src_dir/SKILL.md" >&2
         exit 1
     fi
+
+    # Agent Skills spec: frontmatter `name:` MUST match the parent
+    # directory name. Validate before copying; failing here is cheaper
+    # than shipping a bundle that breaks at install time.
+    declared_name=$(awk -F': *' '
+        BEGIN { in_fm = 0 }
+        /^---[[:space:]]*$/ { in_fm = !in_fm; next }
+        in_fm && /^name:/ {
+            name = $2
+            gsub(/^["'\''[:space:]]+|["'\''[:space:]]+$/, "", name)
+            print name
+            exit
+        }
+    ' "$src_dir/SKILL.md")
+    if [ -z "$declared_name" ]; then
+        echo "::error::$src_dir/SKILL.md has no 'name:' field in frontmatter" >&2
+        exit 1
+    fi
+    if [ "$declared_name" != "$src_name" ]; then
+        echo "::error::Agent Skills spec violation: $src_dir/SKILL.md declares 'name: $declared_name' but its parent directory is '$src_name' — they MUST match." >&2
+        exit 1
+    fi
+
     cp -R "$src_dir" "$BUNDLE/skills/$src_name"
 done
 
