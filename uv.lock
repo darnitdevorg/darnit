@@ -12,6 +12,7 @@ members = [
     "darnit-baseline",
     "darnit-example",
     "darnit-gittuf",
+    "darnit-hello",
     "darnit-mcp",
     "darnit-plugins",
     "darnit-testchecks",
@@ -504,6 +505,17 @@ dependencies = [
 requires-dist = [{ name = "darnit", editable = "packages/darnit" }]
 
 [[package]]
+name = "darnit-hello"
+version = "0.1.0"
+source = { editable = "packages/darnit-hello" }
+dependencies = [
+    { name = "darnit" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "darnit", editable = "packages/darnit" }]
+
+[[package]]
 name = "darnit-mcp"
 version = "0.1.0"
 source = { virtual = "." }
@@ -528,6 +540,7 @@ dev = [
 [package.dev-dependencies]
 dev = [
     { name = "darnit-example" },
+    { name = "darnit-hello" },
     { name = "jsonschema" },
     { name = "mypy" },
     { name = "pytest-asyncio" },
@@ -552,6 +565,7 @@ provides-extras = ["attestation", "dev"]
 [package.metadata.requires-dev]
 dev = [
     { name = "darnit-example", editable = "packages/darnit-example" },
+    { name = "darnit-hello", editable = "packages/darnit-hello" },
     { name = "jsonschema", specifier = ">=4.26.0" },
     { name = "mypy", specifier = ">=1.8.0" },
     { name = "pytest-asyncio", specifier = ">=1.3.0" },

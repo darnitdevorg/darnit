@@ -1,0 +1,58 @@
+[project]
+name = "darnit-hello"
+version = "0.1.0"
+description = "Minimal worked example of a darnit compliance implementation plugin"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [
+    { name = "Kusari", email = "info@kusari.dev" },
+]
+keywords = ["compliance", "darnit", "example", "plugin"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Documentation",
+]
+dependencies = [
+    "darnit>=0.1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/kusari-oss/darnit"
+Repository = "https://github.com/kusari-oss/darnit"
+Issues = "https://github.com/kusari-oss/darnit/issues"
+Documentation = "https://github.com/kusari-oss/darnit/blob/main/docs/packaging-plugins.md"
+
+# This is the ONE line that makes the plugin discoverable. The group name
+# `darnit.implementations` is fixed by the framework; the key on the left
+# (`hello`) is your plugin's slug; the right-hand side is `<module>:<callable>`
+# of the `register()` function the framework calls at discovery time.
+[project.entry-points."darnit.implementations"]
+hello = "darnit_hello:register"
+
+# Optional second entry point for framework TOML discovery. Used by darnit
+# tools that need to locate the implementation's `<name>.toml` config file
+# without importing the package.
+[project.entry-points."darnit.frameworks"]
+hello = "darnit_hello:get_framework_path"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/darnit_hello"]
+
+# Note: `hello.toml` lives inside `src/darnit_hello/` (next to the Python
+# files), so hatchling includes it in the wheel automatically — no
+# `force-include` needed. This works for both editable installs
+# (`pip install -e .`) and wheel installs (`pip install darnit-hello`).
+# Keeping the TOML adjacent to the code also keeps `get_framework_path()`'s
+# resolution to a simple `Path(__file__).parent / "hello.toml"` (no
+# `.parent.parent.parent` climbing).

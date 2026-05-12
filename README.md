@@ -183,7 +183,9 @@ confirm_project_context(
 
 ## Creating a Plugin
 
-To create a new compliance implementation, see the [Implementation Development Guide](docs/getting-started/implementation-development.md) and the [step-by-step tutorial](docs/tutorials/create-new-implementation.md).
+To create a new compliance implementation, start with the [**third-party plugin packaging guide**](docs/packaging-plugins.md) — it walks through `pyproject.toml`, entry points, the `ComplianceImplementation` protocol, the TOML control schema, signing, and distribution end-to-end. A minimal worked example lives at [`packages/darnit-hello/`](packages/darnit-hello/); copy it as a starting point.
+
+For implementation-level details (Python control handlers, custom MCP tools, remediation patterns), see the [Implementation Development Guide](docs/getting-started/implementation-development.md) and the [step-by-step tutorial](docs/tutorials/create-new-implementation.md).
 
 ## Available MCP Tools
 

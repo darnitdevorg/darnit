@@ -48,6 +48,7 @@ darnit = { workspace = true }
 darnit-baseline = { workspace = true }
 darnit-example = { workspace = true }
 darnit-gittuf = { workspace = true }
+darnit-hello = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -90,6 +91,7 @@ dev = [
     # so they install for development and tests via `uv sync`, but do not become
     # runtime dependencies of any published wheel.
     "darnit-example",
+    "darnit-hello",
 ]
 
 [tool.mypy]

@@ -678,6 +678,8 @@ Plugins are appropriate when:
 openssf-baseline = "darnit_baseline:register"
 ```
 
+> **For third-party plugin authors**: a step-by-step packaging guide lives at [`docs/packaging-plugins.md`](../../../docs/packaging-plugins.md), and a minimum-viable copy-paste starter at [`packages/darnit-hello/`](../../../packages/darnit-hello/). Both are kept in sync with this spec by CI (`plugin_discovery_smoke` job in `.github/workflows/ci.yml`).
+
 ### 6.3 Implementation Protocol
 
 ```python
