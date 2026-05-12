@@ -902,7 +902,7 @@ jobs:
             | awk '/darnit\/skills\/[a-z]+\/SKILL\.md$/ {sub("^.*skills/",""); sub("/SKILL.md$",""); print}' \
             | sort \
             | paste -sd, -)
-          expected="audit,comply,data,remediate"
+          expected="darnit-audit,darnit-comply,darnit-data,darnit-remediate"
           if [ "$bundled" != "$expected" ]; then
             echo "::error::Bundled skill set ($bundled) does not match contract ($expected)"
             exit 1

@@ -16,21 +16,21 @@ darnit-claude-plugin-<version>.zip
 ├── bin/
 │   └── darnit-mcp-runner          # Wrapper script: uvx → pipx run → actionable error
 └── skills/
-    ├── audit/
-    │   └── SKILL.md               # darnit-audit (namespaced as darnit:audit)
-    ├── comply/
-    │   └── SKILL.md               # darnit-comply
-    ├── data/
-    │   └── SKILL.md               # darnit-data
-    └── remediate/
-        └── SKILL.md               # darnit-remediate
+    ├── darnit-audit/
+    │   └── SKILL.md               # → /darnit:darnit-audit
+    ├── darnit-comply/
+    │   └── SKILL.md               # → /darnit:darnit-comply
+    ├── darnit-data/
+    │   └── SKILL.md               # → /darnit:darnit-data
+    └── darnit-remediate/
+        └── SKILL.md               # → /darnit:darnit-remediate
 ```
 
 **Skills are auto-discovered** by Claude Code from the `skills/` directory at the plugin root. The plugin manifest does **not** enumerate them.
 
-**Skill renaming**: the source tree at `packages/darnit/src/darnit/skills/` uses prefixed names (`darnit-audit`, `darnit-comply`, `darnit-data`, `darnit-remediate`) so the skills resolve uniquely outside any plugin. Inside the plugin bundle, those prefixes are stripped so the plugin-namespaced identifier reads cleanly: `darnit:audit` instead of `darnit:darnit-audit`. The build script enforces this rename.
+**Skill names**: copied verbatim from `packages/darnit/src/darnit/skills/` — no rename. The [Agent Skills standard](https://agentskills.io/specification) requires the parent directory name and the frontmatter `name:` field to match, and the `darnit-` prefix keeps the skills namespace-safe even when used outside the plugin wrapper (e.g., copied directly into `~/.claude/skills/` for non-plugin Claude Code use, or into another Agent Skills client's skill directory). The plugin-namespaced invocation form is `/darnit:darnit-audit` — slightly redundant aesthetically, but spec-compliant, unambiguous, and consistent with the same pattern spec-kit uses for its commands (`/speckit.specify`).
 
-A CI check asserts the bundle's `skills/` directory contains exactly `{audit, comply, data, remediate}`. Adding or removing skills mid-release is a deliberate change to the contract and requires updating this document.
+A CI check asserts the bundle's `skills/` directory contains exactly `{darnit-audit, darnit-comply, darnit-data, darnit-remediate}`. Adding or removing skills mid-release is a deliberate change to the contract and requires updating this document.
 
 ## Manifest shape
 
@@ -112,7 +112,7 @@ unzip -p darnit-claude-plugin-<version>.zip .claude-plugin/plugin.json \
 unzip -l darnit-claude-plugin-<version>.zip \
   | awk '/skills\/[a-z]+\/SKILL\.md$/ {sub("^.*skills/",""); sub("/SKILL.md$",""); print}' \
   | sort \
-  | diff - <(printf 'audit\ncomply\ndata\nremediate\n')
+  | diff - <(printf 'darnit-audit\ndarnit-comply\ndarnit-data\ndarnit-remediate\n')
 
 # wrapper script is executable
 unzip -l darnit-claude-plugin-<version>.zip bin/darnit-mcp-runner \

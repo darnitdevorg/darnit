@@ -6,22 +6,22 @@
 
 ## What this plugin gives you
 
-darnit is an AI-powered compliance auditing framework. Once this plugin is installed in Claude Code:
+darnit is an AI-powered compliance auditing framework. Once this plugin is installed in Claude Code, four namespaced slash commands appear (the `darnit:` prefix comes from the plugin name):
 
-- **Four agentic skills** become available to Claude. Skills are **model-invoked** — you don't type a slash command to trigger them. Just ask Claude naturally and it picks the right skill based on the skill's description:
+| Command | What it does |
+|---|---|
+| `/darnit:darnit-audit` | Run a compliance audit on the current repository |
+| `/darnit:darnit-comply` | Full audit + remediate pipeline |
+| `/darnit:darnit-data` | Collect missing project data / context |
+| `/darnit:darnit-remediate` | Apply automated fixes for failing controls |
 
-  | Skill | Triggers when you ask things like |
-  |---|---|
-  | `darnit-audit` | "Audit this repo." / "Run a compliance check." |
-  | `darnit-comply` | "Make this repo compliant." / "Run the full pipeline." |
-  | `darnit-data` | "Set up darnit for this project." / "Fill in the project context." |
-  | `darnit-remediate` | "Fix the failing compliance controls." |
+Per the Claude Code skills docs, you can also let Claude pick a skill automatically — just describe what you want ("audit this repo") and Claude will load the matching skill from its `description`. Both paths work.
 
-- **MCP server** (`darnit-mcp`) registers with Claude. Its `audit`, `remediate`, `list_controls`, and supporting tools become available to the agent automatically.
+> **Why `/darnit:darnit-audit` and not `/darnit:audit`?** The plugin namespace is `darnit:` and the skill is named `darnit-audit`. Keeping the `darnit-` prefix on the skill makes it namespace-safe even when copied into non-plugin contexts. The redundancy is intentional — same pattern spec-kit uses for `/speckit.specify`.
+
+The plugin also registers the **`darnit-mcp` MCP server** with Claude. Its `audit`, `remediate`, `list_controls`, and supporting tools become available to the agent.
 
 The plugin and the MCP server it invokes are pinned to **darnit `__VERSION__`** (lockstep with the parent darnit release).
-
-> Per the [Claude Code skills docs](https://docs.claude.com/claude-code/skills), skills are model-invoked. The plugin namespace (`darnit:`) is how Claude internally disambiguates skills across plugins. Whether you can also type a slash form like `/darnit:audit` to invoke explicitly depends on your Claude Code version — when in doubt, just describe what you want.
 
 ## Install
 
@@ -48,13 +48,17 @@ When/if Anthropic ships a public plugin marketplace, this plugin will be submitt
 
 ## Try it
 
-After install, just ask Claude:
+```
+> /darnit:darnit-audit
+```
+
+Or just ask Claude:
 
 ```
 > Run a compliance audit on this repository.
 ```
 
-Claude will match the request to the `darnit-audit` skill's description, load the skill, and invoke the appropriate darnit-mcp tool.
+Either path lands at the same skill.
 
 ## What gets installed
 
@@ -66,13 +70,19 @@ darnit/
 ├── bin/
 │   └── darnit-mcp-runner    # Wrapper script: uvx → pipx → actionable error
 └── skills/
-    ├── audit/SKILL.md       # darnit-audit (auto-discovered by Claude Code)
-    ├── comply/SKILL.md      # darnit-comply
-    ├── data/SKILL.md        # darnit-data
-    └── remediate/SKILL.md   # darnit-remediate
+    ├── darnit-audit/SKILL.md       # → /darnit:darnit-audit
+    ├── darnit-comply/SKILL.md      # → /darnit:darnit-comply
+    ├── darnit-data/SKILL.md        # → /darnit:darnit-data
+    └── darnit-remediate/SKILL.md   # → /darnit:darnit-remediate
 ```
 
-Skill directory names are short (`audit`, `comply`, `data`, `remediate`) so the plugin-namespaced identifier reads cleanly as `darnit:audit` rather than `darnit:darnit-audit`. Skills are auto-discovered by Claude Code from the `skills/` directory — the manifest does not enumerate them.
+Skills are auto-discovered by Claude Code from the `skills/` directory — the manifest does not enumerate them.
+
+## Using darnit's skills on other agents
+
+The skills bundled here follow the open [Agent Skills standard](https://agentskills.io/specification). They are portable to any Agent Skills-compatible client — Cursor, GitHub Copilot, Codex, OpenHands, Gemini CLI, opencode, Goose, and ~30 other tools.
+
+The plugin wrapper (`.claude-plugin/plugin.json`, the MCP-server runner, the version pin) is Claude-Code-specific. The SKILL.md files themselves are not — unzip this bundle and copy the four `skills/darnit-*/` directories into your agent's skill directory. You'll need to wire up the `darnit-mcp` server yourself in your agent's MCP config (e.g., point it at `uvx darnit-mcp==__VERSION__`).
 
 ## Schema version
 
@@ -83,7 +93,7 @@ This plugin targets Claude Code's plugin schema with `.claude-plugin/plugin.json
 | Symptom | Fix |
 |---|---|
 | `darnit plugin: neither 'uvx' nor 'pipx' is available on PATH.` | Install [uv](https://docs.astral.sh/uv/getting-started/installation/) OR [pipx](https://pipx.pypa.io/stable/installation/). |
-| Claude doesn't seem to know about darnit | Confirm the plugin was loaded (consult your Claude Code version's plugin UI). Try being explicit: "use the darnit-audit skill". |
+| `/darnit:darnit-audit` doesn't appear in `/help` | Confirm the plugin was loaded. On dev installs, restart Claude Code after copying the unzipped plugin into your plugin directory. |
 | MCP tools missing in the agent | The runner failed to fetch `darnit-mcp==__VERSION__` from PyPI. Check network access and PyPI availability. The wrapper exits 127 in that case. |
 
 ## Source

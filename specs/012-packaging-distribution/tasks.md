@@ -146,7 +146,7 @@ description: "Task list for 012-packaging-distribution"
 ### Implementation for User Story 4
 
 - [X] T050 [US4] Write `packaging/claude-plugin/manifest.json` per the schema in `contracts/claude-plugin-contract.md`, with `<version>` as a placeholder. Pin the manifest schema version (`mcpServers`, `skills`) and document the pinned version inline.  _(Delivered as `packaging/claude-plugin/templates/plugin.json` — actual filename is `plugin.json` per the Claude Code spec, lives at `.claude-plugin/plugin.json` inside the bundle. Skills are auto-discovered from the bundle's `skills/` directory, not enumerated in the manifest.)_
-- [X] T051 [US4] Write a small `packaging/claude-plugin/build.sh` (or inline in the workflow) that copies `skills/` from the repo root into `packaging/claude-plugin/skills/`, substitutes `<version>` in `manifest.json`, and produces `darnit-claude-plugin-<version>.zip`  _(Build script also renames skills from `darnit-X` → `X` so plugin-namespaced slash commands read as `/darnit:audit` rather than `/darnit:darnit-audit`.)_
+- [X] T051 [US4] Write a small `packaging/claude-plugin/build.sh` (or inline in the workflow) that copies `skills/` from the repo root into `packaging/claude-plugin/skills/`, substitutes `<version>` in `manifest.json`, and produces `darnit-claude-plugin-<version>.zip`  _(Build script copies skills verbatim from `packages/darnit/src/darnit/skills/`; no rename. The Agent Skills standard requires directory name to match the frontmatter `name:` field. Plugin-namespaced invocation is `/darnit:darnit-audit`.)_
 - [X] T052 [US4] Write `packaging/claude-plugin/README.md` documenting install steps, the `uvx`/`pipx` prerequisite, and the schema-version pin
 - [X] T053 [US4] Add a `plugin_package` job to `.github/workflows/release.yml` (stable tags only). The job depends on `pypi_publish`, runs `build.sh`, asserts skill count == 4 and skill paths match `skills/` contents, then uploads the zip to the GitHub Release via `gh release upload`
 - [X] T054 [US4] Add a `plugin_structural_smoke` job to `release-smoke.yml`: download the zip, run the structural assertions from the contract (`unzip -t`, `jq` on manifest, skill-path diff)
@@ -330,3 +330,22 @@ With multiple contributors, after Phase 2 completes:
 - Smoke tests live alongside their channels in `release-smoke.yml`; they exercise the **published artifact**, not pre-publish builds. A smoke failure does not unpublish.
 - Pre-release tags (`rcN` suffix) skip Homebrew (T043) and Claude plugin (T053) jobs by design; this is a hard rule enforced in the workflow `if:` conditions, not a soft guideline.
 - Commit after each task or each logical group. Each [P] doc task is independently committable.
+
+---
+
+## Future work (out of scope for v1)
+
+These tasks were identified during v1 implementation but explicitly deferred. They do not block any v1 task and are not required for the spec's success criteria.
+
+- [ ] **TF-001 Cross-agent SKILL.md install path.** Add a `darnit install-skills [--agent <slug>]` CLI subcommand modelled after [spec-kit's `specify init`](https://github.com/github/spec-kit). Mirror their pattern:
+  - An `AGENT_CONFIG` dict mapping agent slugs (`claude-code`, `cursor`, `copilot`, `codex`, `opencode`, `goose`, ...) to per-agent skill-install paths.
+  - A single source-of-truth — the existing `packages/darnit/src/darnit/skills/darnit-*/SKILL.md` files, no transformation needed since they already conform to the [Agent Skills open standard](https://agentskills.io/specification).
+  - A `generic` fallback that installs to `.agents/skills/` for unrecognised agents.
+  - A sensible default (`copilot` or whatever the user's environment most often runs).
+  - Optional MCP-server wiring per agent — but each agent has its own MCP config format, so this is the harder half. The v1 Claude Code plugin wraps the MCP server; for v2 cross-agent, document the MCP setup per agent rather than try to automate it everywhere.
+
+  **Why deferred**: v1 ships the Claude Code plugin because that's darnit's primary install audience today. The Agent Skills ecosystem is large (~30 clients per [agentskills.io](https://agentskills.io)), but per-agent install adapters are a separate maintenance surface from the release pipeline. Tackle this once v1 is stable in the field.
+
+- [ ] **TF-002 Plugin marketplace submission.** When Anthropic ships a public Claude Code plugin marketplace, submit `darnit-claude-plugin-<version>.zip` for listing. v1 distributes via the GitHub Release asset only.
+
+- [ ] **TF-003 Bundled binary fallback in the plugin.** If the user-facing complaint becomes "I have neither `uvx` nor `pipx` and I just want darnit to work", bundle the platform-specific shiv binary inside the plugin zip and have the runner script prefer it over `uvx`/`pipx`. Trade-off: per-platform plugin zips (or a fat plugin with all four binaries).

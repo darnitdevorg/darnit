@@ -18,13 +18,17 @@
 #   .claude-plugin/plugin.json
 #   README.md
 #   bin/darnit-mcp-runner
-#   skills/{audit,comply,data,remediate}/SKILL.md
+#   skills/{darnit-audit,darnit-comply,darnit-data,darnit-remediate}/SKILL.md
 #
-# The repo's source skills live at packages/darnit/src/darnit/skills/
-# under prefixed names (darnit-audit, darnit-comply, darnit-data,
-# darnit-remediate). The bundle strips the `darnit-` prefix so the
-# plugin-namespaced slash commands read as /darnit:audit, /darnit:comply,
-# /darnit:data, /darnit:remediate (rather than /darnit:darnit-audit).
+# Skill directories are copied VERBATIM from packages/darnit/src/darnit/
+# skills/ — no rename. The Agent Skills standard requires the parent
+# directory name and the frontmatter `name:` field to match, and the
+# `darnit-` prefix protects the skills from collisions if a user copies
+# them into a non-plugin location (e.g., ~/.claude/skills/) on any
+# Agent Skills-compatible agent. The plugin-namespaced invocation form
+# is `/darnit:darnit-audit` — slightly redundant aesthetically, but
+# unambiguous, spec-compliant, and consistent with the same pattern
+# spec-kit uses for its commands (`/speckit.specify`).
 
 set -euo pipefail
 
@@ -64,8 +68,10 @@ fi
 cp "$TEMPLATES_DIR/darnit-mcp-runner" "$BUNDLE/bin/darnit-mcp-runner"
 chmod 0755 "$BUNDLE/bin/darnit-mcp-runner"
 
-# --- skills/ (rename darnit-X → X) ------------------------------------------
-# Expected source skills:
+# --- skills/ (copy verbatim, no rename) -------------------------------------
+# The Agent Skills standard requires directory name == frontmatter `name`.
+# We keep the `darnit-` prefix in both so the skills are namespace-safe even
+# when used standalone (outside the plugin wrapper).
 EXPECTED_SKILLS=(darnit-audit darnit-comply darnit-data darnit-remediate)
 
 for src_name in "${EXPECTED_SKILLS[@]}"; do
@@ -74,14 +80,12 @@ for src_name in "${EXPECTED_SKILLS[@]}"; do
         echo "::error::Expected skill not found: $src_dir/SKILL.md" >&2
         exit 1
     fi
-    # Strip "darnit-" prefix for the bundle.
-    bundle_name="${src_name#darnit-}"
-    cp -R "$src_dir" "$BUNDLE/skills/$bundle_name"
+    cp -R "$src_dir" "$BUNDLE/skills/$src_name"
 done
 
 # Sanity check the bundled skill set matches the contract exactly.
 bundled_skills=$(ls "$BUNDLE/skills" | sort | tr '\n' ' ')
-expected_bundled="audit comply data remediate "
+expected_bundled="darnit-audit darnit-comply darnit-data darnit-remediate "
 if [ "$bundled_skills" != "$expected_bundled" ]; then
     echo "::error::Bundled skills mismatch contract:" >&2
     echo "  expected: $expected_bundled" >&2
