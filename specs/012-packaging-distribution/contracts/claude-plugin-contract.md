@@ -4,7 +4,7 @@
 
 Publishes a Claude Code plugin artifact `darnit-claude-plugin-<version>.zip` attached to each **stable** GitHub Release. Pre-release tags do not produce a plugin artifact (per clarification Q2).
 
-The plugin name is `darnit`, which means slash commands appear as `/darnit:audit`, `/darnit:context`, `/darnit:comply`, `/darnit:remediate` once installed.
+The plugin name is `darnit`. Once installed, Claude Code auto-discovers four **agentic skills** under `skills/`. Per the [Claude Code skills spec](https://docs.claude.com/claude-code/skills), skills are **model-invoked** by default — Claude reads each skill's frontmatter `description` and decides when to load the skill from the user's natural-language request. Skills are **not slash commands**; the plugin namespace (`darnit:`) is what Claude uses internally to disambiguate skills across plugins.
 
 ## Artifact contents
 
@@ -17,18 +17,18 @@ darnit-claude-plugin-<version>.zip
 │   └── darnit-mcp-runner          # Wrapper script: uvx → pipx run → actionable error
 └── skills/
     ├── audit/
-    │   └── SKILL.md               # → /darnit:audit
+    │   └── SKILL.md               # darnit-audit (namespaced as darnit:audit)
     ├── comply/
-    │   └── SKILL.md               # → /darnit:comply
+    │   └── SKILL.md               # darnit-comply
     ├── data/
-    │   └── SKILL.md               # → /darnit:data
+    │   └── SKILL.md               # darnit-data
     └── remediate/
-        └── SKILL.md               # → /darnit:remediate
+        └── SKILL.md               # darnit-remediate
 ```
 
 **Skills are auto-discovered** by Claude Code from the `skills/` directory at the plugin root. The plugin manifest does **not** enumerate them.
 
-**Skill renaming**: the source tree under `skills/` at the repo root uses prefixed names (`darnit-audit`, `darnit-context`, ...) for global slash-command invocation outside any plugin. Inside the plugin bundle, those prefixes are stripped so the plugin-namespaced commands read cleanly (`/darnit:audit`, not `/darnit:darnit-audit`). The build script enforces this rename.
+**Skill renaming**: the source tree at `packages/darnit/src/darnit/skills/` uses prefixed names (`darnit-audit`, `darnit-comply`, `darnit-data`, `darnit-remediate`) so the skills resolve uniquely outside any plugin. Inside the plugin bundle, those prefixes are stripped so the plugin-namespaced identifier reads cleanly: `darnit:audit` instead of `darnit:darnit-audit`. The build script enforces this rename.
 
 A CI check asserts the bundle's `skills/` directory contains exactly `{audit, comply, data, remediate}`. Adding or removing skills mid-release is a deliberate change to the contract and requires updating this document.
 

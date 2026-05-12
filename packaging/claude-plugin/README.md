@@ -8,14 +8,20 @@
 
 darnit is an AI-powered compliance auditing framework. Once this plugin is installed in Claude Code:
 
-- Four `/darnit:*` slash commands appear:
-  - `/darnit:audit` — run a compliance audit
-  - `/darnit:comply` — full audit + remediate pipeline
-  - `/darnit:data` — collect missing project data / context
-  - `/darnit:remediate` — apply automated fixes
-- An MCP server (`darnit-mcp`) is registered with Claude. Its `audit`, `remediate`, `list_controls`, and supporting tools become available to the agent automatically.
+- **Four agentic skills** become available to Claude. Skills are **model-invoked** — you don't type a slash command to trigger them. Just ask Claude naturally and it picks the right skill based on the skill's description:
+
+  | Skill | Triggers when you ask things like |
+  |---|---|
+  | `darnit-audit` | "Audit this repo." / "Run a compliance check." |
+  | `darnit-comply` | "Make this repo compliant." / "Run the full pipeline." |
+  | `darnit-data` | "Set up darnit for this project." / "Fill in the project context." |
+  | `darnit-remediate` | "Fix the failing compliance controls." |
+
+- **MCP server** (`darnit-mcp`) registers with Claude. Its `audit`, `remediate`, `list_controls`, and supporting tools become available to the agent automatically.
 
 The plugin and the MCP server it invokes are pinned to **darnit `__VERSION__`** (lockstep with the parent darnit release).
+
+> Per the [Claude Code skills docs](https://docs.claude.com/claude-code/skills), skills are model-invoked. The plugin namespace (`darnit:`) is how Claude internally disambiguates skills across plugins. Whether you can also type a slash form like `/darnit:audit` to invoke explicitly depends on your Claude Code version — when in doubt, just describe what you want.
 
 ## Install
 
@@ -40,17 +46,15 @@ claude --plugin-url \
 
 When/if Anthropic ships a public plugin marketplace, this plugin will be submitted there. For v1, the GitHub release asset is the canonical distribution.
 
-## Verify the install
+## Try it
 
-After install:
+After install, just ask Claude:
 
-```bash
-# In a Claude Code session, the slash commands appear automatically:
-/darnit:audit ./some-repo
-
-# Or just check the plugin loaded by listing commands:
-/help
 ```
+> Run a compliance audit on this repository.
+```
+
+Claude will match the request to the `darnit-audit` skill's description, load the skill, and invoke the appropriate darnit-mcp tool.
 
 ## What gets installed
 
@@ -62,11 +66,13 @@ darnit/
 ├── bin/
 │   └── darnit-mcp-runner    # Wrapper script: uvx → pipx → actionable error
 └── skills/
-    ├── audit/SKILL.md       # → /darnit:audit
-    ├── comply/SKILL.md      # → /darnit:comply
-    ├── data/SKILL.md        # → /darnit:data
-    └── remediate/SKILL.md   # → /darnit:remediate
+    ├── audit/SKILL.md       # darnit-audit (auto-discovered by Claude Code)
+    ├── comply/SKILL.md      # darnit-comply
+    ├── data/SKILL.md        # darnit-data
+    └── remediate/SKILL.md   # darnit-remediate
 ```
+
+Skill directory names are short (`audit`, `comply`, `data`, `remediate`) so the plugin-namespaced identifier reads cleanly as `darnit:audit` rather than `darnit:darnit-audit`. Skills are auto-discovered by Claude Code from the `skills/` directory — the manifest does not enumerate them.
 
 ## Schema version
 
@@ -77,13 +83,14 @@ This plugin targets Claude Code's plugin schema with `.claude-plugin/plugin.json
 | Symptom | Fix |
 |---|---|
 | `darnit plugin: neither 'uvx' nor 'pipx' is available on PATH.` | Install [uv](https://docs.astral.sh/uv/getting-started/installation/) OR [pipx](https://pipx.pypa.io/stable/installation/). |
-| `/darnit:audit` not in slash-command list | Confirm the plugin was loaded (`/help` should list it). On dev installs, restart Claude Code after copying the unzipped plugin into your plugin directory. |
+| Claude doesn't seem to know about darnit | Confirm the plugin was loaded (consult your Claude Code version's plugin UI). Try being explicit: "use the darnit-audit skill". |
 | MCP tools missing in the agent | The runner failed to fetch `darnit-mcp==__VERSION__` from PyPI. Check network access and PyPI availability. The wrapper exits 127 in that case. |
 
 ## Source
 
 - Plugin source: `packaging/claude-plugin/` in [kusari-oss/darnit](https://github.com/kusari-oss/darnit)
-- darnit framework: same repo, `packages/darnit/`
+- Skill source: `packages/darnit/src/darnit/skills/` (same repo)
+- darnit framework: `packages/darnit/`
 - Issue tracker: https://github.com/kusari-oss/darnit/issues
 
 ## License

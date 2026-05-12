@@ -181,7 +181,7 @@ Adds the agent plugin. Depends on Phase A (the plugin invokes `uvx darnit-mcp`).
 1. Author `packaging/claude-plugin/manifest.json` declaring:
    - Plugin name, version (tracks darnit version), description.
    - MCP server config: command tries `uvx --from darnit-mcp@<version> darnit-mcp`; on failure, retries with `pipx run darnit-mcp==<version>`; on second failure, emits the FR-017 actionable error.
-   - Skill bundling: include `darnit-audit`, `darnit-comply`, `darnit-data`, `darnit-remediate` from `packages/darnit/src/darnit/skills/`, renamed inside the plugin bundle to `audit`/`comply`/`data`/`remediate` so the plugin-namespaced commands read as `/darnit:audit`, etc.
+   - Skill bundling: include `darnit-audit`, `darnit-comply`, `darnit-data`, `darnit-remediate` from `packages/darnit/src/darnit/skills/`, renamed inside the plugin bundle to `audit`/`comply`/`data`/`remediate` so the plugin-namespaced skill identifiers read as `darnit:audit`, etc. Skills are model-invoked (per the Claude Code skills spec) — the user does not type slash commands; the agent picks the right skill from the user's natural-language request.
 2. Add a plugin packaging job to `release.yml` for **stable tags only**:
    - Substitute the `<version>` placeholder in the manifest.
    - Bundle the manifest + skills into a `darnit-claude-plugin-<version>.zip` attached to the GitHub release.
