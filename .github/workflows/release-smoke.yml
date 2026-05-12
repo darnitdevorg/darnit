@@ -4,7 +4,7 @@ name: Release Smoke Tests
 # Triggered after .github/workflows/release.yml completes; channel jobs are
 # added phase-by-phase as their channels go live.
 #
-#   Phase 3 (US1) → pypi_smoke
+#   Phase 3 (US1) → pypi_smoke ✅
 #   Phase 4 (US2) → container_smoke
 #   Phase 5 (US3) → binary_smoke + homebrew_smoke
 #   Phase 6 (US4) → plugin_structural_smoke + plugin_behavioral_smoke
@@ -21,14 +21,203 @@ on:
 permissions:
   contents: read
 
-# Channel-specific smoke jobs are added in subsequent phases. This file is a
-# skeleton so the trigger contract (workflow_run on "Release") exists before
-# the first channel job is wired up.
 jobs:
-  noop:
-    name: Skeleton — no channels wired yet
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+  # Parse the tag that triggered the Release workflow. workflow_run carries the
+  # triggering ref in github.event.workflow_run.head_branch (for tag triggers,
+  # this is the tag name).
+  parse-trigger:
+    name: Parse triggering tag
+    if: ${{ github.event.workflow_run.event == 'push' && startsWith(github.event.workflow_run.head_branch, 'v') && github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    timeout-minutes: 2
+    outputs:
+      version: ${{ steps.parse.outputs.version }}
+      is_prerelease: ${{ steps.parse.outputs.is_prerelease }}
+      index_url: ${{ steps.parse.outputs.index_url }}
     steps:
-      - run: echo "release-smoke.yml skeleton. Channel-specific smoke jobs will be added in Phases 3–6."
+      - name: Parse
+        id: parse
+        env:
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+          tag="$HEAD_BRANCH"
+          if [[ "$tag" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            version="${BASH_REMATCH[1]}"
+            is_prerelease="false"
+            index_url="https://pypi.org/simple/"
+          elif [[ "$tag" =~ ^v([0-9]+\.[0-9]+\.[0-9]+rc[0-9]+)$ ]]; then
+            version="${BASH_REMATCH[1]}"
+            is_prerelease="true"
+            index_url="https://test.pypi.org/simple/"
+          else
+            echo "::error::Trigger ref '$tag' is not a release tag — smoke skipped"
+            exit 1
+          fi
+          {
+            echo "version=$version"
+            echo "is_prerelease=$is_prerelease"
+            echo "index_url=$index_url"
+          } >> "$GITHUB_OUTPUT"
+          echo "Parsed: tag=$tag version=$version is_prerelease=$is_prerelease index=$index_url"
+
+  # T015: install each public package from the selected index in a clean venv,
+  # then run a per-package smoke check (CLI version for darnit-mcp, import for
+  # the others).
+  # T016: verify each package's Sigstore attestation against the release
+  # workflow's OIDC identity.
+  pypi_smoke:
+    name: pypi_smoke (${{ matrix.package }})
+    needs: parse-trigger
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [darnit, darnit-baseline, darnit-gittuf, darnit-mcp]
+    steps:
+      - name: Checkout (for public-packages.txt sanity check)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+        with:
+          persist-credentials: false
+
+      - name: Verify package is in the public set
+        env:
+          PKG: ${{ matrix.package }}
+        run: |
+          set -euo pipefail
+          if ! grep -Fxq "$PKG" packaging/pypi/public-packages.txt; then
+            echo "::error::Matrix package '$PKG' is not in packaging/pypi/public-packages.txt"
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Install sigstore CLI (T016)
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install 'sigstore>=3.0.0,<4'
+
+      - name: Install ${{ matrix.package }} from ${{ needs.parse-trigger.outputs.is_prerelease == 'true' && 'TestPyPI' || 'PyPI' }}
+        env:
+          PKG: ${{ matrix.package }}
+          VERSION: ${{ needs.parse-trigger.outputs.version }}
+          INDEX_URL: ${{ needs.parse-trigger.outputs.index_url }}
+        run: |
+          set -euo pipefail
+          python -m venv "/tmp/smoke-$PKG"
+          # --extra-index-url falls back to PyPI for transitive deps that
+          # only exist there (e.g., tree-sitter for darnit-baseline). The
+          # primary --index-url is the index we just published to.
+          "/tmp/smoke-$PKG/bin/pip" install --upgrade pip
+          "/tmp/smoke-$PKG/bin/pip" install \
+            --index-url "$INDEX_URL" \
+            --extra-index-url https://pypi.org/simple/ \
+            --pre \
+            "${PKG}==${VERSION}"
+
+      - name: Per-package smoke check (T015)
+        env:
+          PKG: ${{ matrix.package }}
+          VERSION: ${{ needs.parse-trigger.outputs.version }}
+        run: |
+          set -euo pipefail
+          venv="/tmp/smoke-$PKG"
+          case "$PKG" in
+            "darnit-mcp")
+              # darnit-mcp installs the `darnit` console script via its
+              # darnit dependency. Confirm the CLI is reachable and reports
+              # the expected version.
+              actual=$("$venv/bin/darnit" --version 2>&1 | tail -n1)
+              echo "darnit --version → $actual"
+              echo "$actual" | grep -F "$VERSION"
+              ;;
+            "darnit")
+              "$venv/bin/python" -c "import darnit; print('darnit imports OK')"
+              ;;
+            "darnit-baseline")
+              "$venv/bin/python" -c "import darnit_baseline; print('darnit_baseline imports OK')"
+              ;;
+            "darnit-gittuf")
+              "$venv/bin/python" -c "import darnit_gittuf; print('darnit_gittuf imports OK')"
+              ;;
+            *)
+              echo "::error::No smoke recipe defined for package '$PKG'"
+              exit 1
+              ;;
+          esac
+
+      - name: Verify Sigstore attestation (T016)
+        env:
+          PKG: ${{ matrix.package }}
+          VERSION: ${{ needs.parse-trigger.outputs.version }}
+          IS_PRERELEASE: ${{ needs.parse-trigger.outputs.is_prerelease }}
+          INDEX_URL: ${{ needs.parse-trigger.outputs.index_url }}
+        run: |
+          set -euo pipefail
+          # Download the wheel directly so we can verify the attestation
+          # against the actual artifact bytes.
+          mkdir -p /tmp/dl
+          "/tmp/smoke-$PKG/bin/pip" download \
+            --no-deps \
+            --dest /tmp/dl \
+            --index-url "$INDEX_URL" \
+            --extra-index-url https://pypi.org/simple/ \
+            --pre \
+            "${PKG}==${VERSION}"
+
+          # Find the .whl. PyPI normalizes hyphens to underscores in wheel
+          # filenames, so we match by version rather than exact package name.
+          wheel=$(find /tmp/dl -maxdepth 1 -type f -name "*-${VERSION}*.whl" | head -n1)
+          if [ -z "$wheel" ]; then
+            echo "::error::No wheel for $PKG $VERSION found in /tmp/dl"
+            exit 1
+          fi
+          echo "Verifying $wheel"
+
+          # PyPI exposes attestations via its provenance API. Fetch the
+          # provenance bundle and verify it. Same path on test.pypi.org.
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            pypi_host="test.pypi.org"
+          else
+            pypi_host="pypi.org"
+          fi
+          wheel_basename=$(basename "$wheel")
+          provenance_url="https://${pypi_host}/integrity/${PKG}/${VERSION}/${wheel_basename}/provenance"
+          echo "Fetching $provenance_url"
+          if ! curl -fsSLo /tmp/provenance.json "$provenance_url"; then
+            echo "::error::Could not fetch provenance for $PKG $VERSION at $provenance_url. PEP 740 attestation is required for FR-003."
+            exit 1
+          fi
+
+          # The provenance response contains attestation_bundles[].attestations[].
+          # Extract the first attestation as a sigstore-readable bundle file.
+          python <<'PY'
+          import json, sys
+          with open('/tmp/provenance.json') as f:
+              data = json.load(f)
+          bundles = data.get('attestation_bundles') or []
+          if not bundles:
+              print('::error::No attestation bundles in provenance response')
+              sys.exit(1)
+          attestations = bundles[0].get('attestations') or []
+          if not attestations:
+              print('::error::Attestation bundle is empty')
+              sys.exit(1)
+          with open('/tmp/attestation.sigstore.json', 'w') as out:
+              json.dump(attestations[0], out)
+          print('Extracted attestation to /tmp/attestation.sigstore.json')
+          PY
+
+          python -m sigstore verify identity \
+            --bundle /tmp/attestation.sigstore.json \
+            --cert-identity-regexp '^https://github\.com/kusari-oss/darnit/\.github/workflows/release\.yml@' \
+            --cert-oidc-issuer https://token.actions.githubusercontent.com \
+            "$wheel"
+          echo "✓ Sigstore identity verified for $PKG $VERSION"

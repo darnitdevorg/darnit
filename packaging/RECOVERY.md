@@ -19,15 +19,57 @@ If recovery is impossible (e.g., a wheel uploaded under the wrong version), the 
 
 ## PyPI
 
-> _Filled by Phase 3 (User Story 1)._
+The four per-package publish jobs (`publish-darnit`, `publish-darnit-baseline`, `publish-darnit-gittuf`, `publish-darnit-mcp`) are sequenced via `needs:` and `darnit` always publishes first. A failure can leave some packages uploaded and others not.
 
-Failure modes:
+### Failure mode 1 — One or more packages uploaded; one failed mid-flight
 
-- Upload to PyPI succeeded for some packages and failed for others.
-- Sigstore attestation upload failed.
-- TestPyPI publish failed for a pre-release tag.
+**Symptom**: `release.yml` shows green for some `publish-*` jobs and red for others. PyPI/TestPyPI shows the green ones live.
 
-Repair procedure: _TBD in T018._
+**Important**: PyPI versions are **immutable**. You cannot re-upload version `X.Y.Z` after one byte of it is on the index, even via the `release.yml` re-run path (which preflight rejects anyway).
+
+**Procedure**:
+
+1. Determine which packages uploaded successfully. The `release.yml` job summary names each failed publish; PyPI's project page is the source of truth (`https://pypi.org/project/<package>/<version>/`).
+2. **For the failed packages**:
+   - If the failure was transient (network, OIDC token, rate limit) and re-running the publish step succeeds: download the dist artifact from the failed workflow run via `gh run download <run-id> --name dist`. Manually invoke the publish action against the package's `dist/<pkg>/` subdirectory, using the same OIDC environment. PyPI is **not** idempotent — if even one wheel for the version is up, the whole upload is rejected.
+   - If the failure was permanent (bad metadata, missing classifier, name collision): **roll forward to a fresh version**. PyPI version numbers cannot be reused; bump to a patch (`X.Y.Z+1`) and re-tag. The already-uploaded packages from the failed run remain on PyPI at the original version but will be unused — yank them via `https://pypi.org/manage/project/<pkg>/release/<version>/`.
+3. **For the succeeded packages**: leave them. Yanking is only necessary if the bad release was already advertised.
+
+### Failure mode 2 — Sigstore attestation upload failed
+
+**Symptom**: Wheel uploaded successfully to PyPI but `release.yml` reports a failure in the publish step's attestation sub-step, OR a smoke run reports "no attestation bundles in provenance response".
+
+**Important**: PEP 740 attestations are signed at publish time. You cannot retroactively add a Sigstore attestation to an existing PyPI release.
+
+**Procedure**:
+
+1. Confirm the wheel itself is on PyPI (`pip download <pkg>==<version>` works).
+2. Bump to `X.Y.Z+1` and re-tag — the new release will carry a fresh attestation.
+3. Yank `X.Y.Z` once `X.Y.Z+1` is up to prevent users from installing the un-attested version.
+
+### Failure mode 3 — TestPyPI failure on a pre-release tag
+
+**Symptom**: `v<X.Y.Z>rc<N>` tag was pushed; `release.yml` failed during the TestPyPI publish step.
+
+**Important**: TestPyPI has more relaxed policies (its index gets nuked periodically) and is less reliable than PyPI. A failure here is **not** a release-blocking event.
+
+**Procedure**:
+
+1. Verify the failure was on TestPyPI (the index URL in the publish action's log will show `test.pypi.org`).
+2. Optionally re-tag as `v<X.Y.Z>rc<N+1>`. TestPyPI rcN versions are cheap and don't affect stable users.
+3. Do **not** promote the failed `rcN` to a stable tag — fix and bump `rcN+1` first.
+
+### Verification after recovery
+
+After any recovery action, re-run the smoke jobs against the published artifacts:
+
+```bash
+# Find the smoke workflow run that corresponds to the recovered release
+gh run list --repo kusari-oss/darnit --workflow "Release Smoke Tests" --limit 5
+gh run rerun <smoke-run-id> --repo kusari-oss/darnit
+```
+
+The smoke job is read-only and safe to re-run any number of times.
 
 ---
 

@@ -168,8 +168,161 @@ jobs:
             actionlint .github/workflows/release-smoke.yml
           fi
 
-  # Channel jobs are added in subsequent phases:
-  #   Phase 3 (US1) → pypi_publish
+  # T013: build all public packages once; per-package publish jobs consume the
+  # uploaded artifacts. Splitting build from publish keeps the build cache hot
+  # across the four publish jobs and isolates a build failure from any partial
+  # PyPI state.
+  build:
+    name: Build public packages
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v4
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Build each public package into its own dist directory
+        run: |
+          set -euo pipefail
+          while IFS= read -r pkg; do
+            [ -z "$pkg" ] && continue
+            echo "::group::Building $pkg"
+            uv build --package "$pkg" --out-dir "dist/$pkg"
+            ls -la "dist/$pkg"
+            echo "::endgroup::"
+          done < packaging/pypi/public-packages.txt
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  # T013 + T014: per-package publish. Sequenced via `needs:` because
+  # `darnit-baseline`, `darnit-gittuf`, and `darnit-mcp` declare
+  # `darnit>=...` runtime dependencies — publishing them before darnit
+  # is on the target index would briefly produce unresolvable wheels.
+  # `darnit-mcp` depends on all three other packages, so it publishes last.
+  publish-darnit:
+    name: Publish darnit to ${{ needs.preflight.outputs.is_prerelease == 'true' && 'TestPyPI' || 'PyPI' }}
+    needs: [preflight, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      id-token: write       # OIDC for Trusted Publishing + Sigstore signing
+      attestations: write   # PEP 740 attestations
+      contents: read
+    steps:
+      - name: Download dist artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish darnit
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
+        with:
+          packages-dir: dist/darnit/
+          repository-url: ${{ needs.preflight.outputs.is_prerelease == 'true' && 'https://test.pypi.org/legacy/' || 'https://upload.pypi.org/legacy/' }}
+          attestations: true
+          # We refuse to overwrite published artifacts. If a re-attempt is
+          # needed, the failure path is per-channel recovery, not retry.
+          skip-existing: false
+
+  publish-darnit-baseline:
+    name: Publish darnit-baseline to ${{ needs.preflight.outputs.is_prerelease == 'true' && 'TestPyPI' || 'PyPI' }}
+    needs: [preflight, build, publish-darnit]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      id-token: write
+      attestations: write
+      contents: read
+    steps:
+      - name: Download dist artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish darnit-baseline
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
+        with:
+          packages-dir: dist/darnit-baseline/
+          repository-url: ${{ needs.preflight.outputs.is_prerelease == 'true' && 'https://test.pypi.org/legacy/' || 'https://upload.pypi.org/legacy/' }}
+          attestations: true
+          skip-existing: false
+
+  publish-darnit-gittuf:
+    name: Publish darnit-gittuf to ${{ needs.preflight.outputs.is_prerelease == 'true' && 'TestPyPI' || 'PyPI' }}
+    needs: [preflight, build, publish-darnit]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      id-token: write
+      attestations: write
+      contents: read
+    steps:
+      - name: Download dist artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish darnit-gittuf
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
+        with:
+          packages-dir: dist/darnit-gittuf/
+          repository-url: ${{ needs.preflight.outputs.is_prerelease == 'true' && 'https://test.pypi.org/legacy/' || 'https://upload.pypi.org/legacy/' }}
+          attestations: true
+          skip-existing: false
+
+  publish-darnit-mcp:
+    name: Publish darnit-mcp to ${{ needs.preflight.outputs.is_prerelease == 'true' && 'TestPyPI' || 'PyPI' }}
+    needs: [preflight, build, publish-darnit-baseline, publish-darnit-gittuf]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      id-token: write
+      attestations: write
+      contents: read
+    steps:
+      - name: Download dist artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish darnit-mcp
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
+        with:
+          packages-dir: dist/darnit-mcp/
+          repository-url: ${{ needs.preflight.outputs.is_prerelease == 'true' && 'https://test.pypi.org/legacy/' || 'https://upload.pypi.org/legacy/' }}
+          attestations: true
+          skip-existing: false
+
+  # Channel jobs added in later phases:
   #   Phase 4 (US2) → container_build_push
   #   Phase 5 (US3) → binary_matrix + homebrew_dispatch
   #   Phase 6 (US4) → plugin_package
