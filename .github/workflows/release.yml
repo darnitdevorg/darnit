@@ -924,5 +924,223 @@ jobs:
             --repo "$GITHUB_REPOSITORY"
           echo "✓ Uploaded darnit-claude-plugin-${VERSION}.zip to release $tag"
 
-  # Channel jobs added in later phases:
-  #   Phase 8       → finalize (with timing/SC-007 enforcement, T071/T071a)
+  # T071 + T071a: finalize + SC-007 enforcement.
+  #
+  # Runs unconditionally (`if: always()`) after every channel job — success,
+  # failure, or skipped. Aggregates per-channel results and timing into a
+  # markdown summary, appends it to the GitHub Release notes, and (for
+  # stable tags only) creates a `release-failure` GitHub issue when:
+  #   - any channel that was supposed to run failed, OR
+  #   - the workflow's total elapsed exceeded the SC-007 30-minute budget.
+  #
+  # Workflow-level timeout: GitHub Actions does not support `timeout-minutes`
+  # at the workflow level for push-triggered runs (only at job + step
+  # levels). The SC-007 30-minute budget for stable releases is therefore
+  # enforced HERE by computing total elapsed and surfacing as a
+  # release-failure issue if exceeded. Per-job `timeout-minutes` caps keep
+  # any single job bounded (preflight 10, container 20, binary matrix 20,
+  # homebrew 5, plugin 5, finalize 5).
+  #
+  # Channels' own `if:` guards make pre-release jobs (homebrew_dispatch,
+  # plugin_package) report `skipped` on rc tags — those are not failures.
+  finalize:
+    name: Finalize release
+    if: always()
+    needs:
+      - preflight
+      - publish-darnit
+      - publish-darnit-baseline
+      - publish-darnit-gittuf
+      - publish-darnit-mcp
+      - container_build_push
+      - binary_matrix
+      - release_attach_binaries
+      - homebrew_dispatch
+      - plugin_package
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write   # append to release notes
+      issues: write     # create release-failure issue
+    steps:
+      - name: Checkout (for RECOVERY.md links)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+        with:
+          persist-credentials: false
+
+      - name: Aggregate per-channel results and timing
+        id: aggregate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IS_PRERELEASE: ${{ needs.preflight.outputs.is_prerelease }}
+          VERSION: ${{ needs.preflight.outputs.version }}
+          PYPI_DARNIT: ${{ needs.publish-darnit.result }}
+          PYPI_BASELINE: ${{ needs.publish-darnit-baseline.result }}
+          PYPI_GITTUF: ${{ needs.publish-darnit-gittuf.result }}
+          PYPI_MCP: ${{ needs.publish-darnit-mcp.result }}
+          CONTAINER: ${{ needs.container_build_push.result }}
+          BINARY: ${{ needs.binary_matrix.result }}
+          RELEASE_ATTACH: ${{ needs.release_attach_binaries.result }}
+          HOMEBREW: ${{ needs.homebrew_dispatch.result }}
+          PLUGIN: ${{ needs.plugin_package.result }}
+        run: |
+          set -euo pipefail
+
+          # Fetch the run's start time to compute total elapsed.
+          run_data=$(gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}")
+          workflow_started=$(echo "$run_data" | jq -r '.run_started_at')
+          started_epoch=$(date -u -d "$workflow_started" +%s 2>/dev/null \
+                          || date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "$workflow_started" +%s)
+          now_epoch=$(date -u +%s)
+          elapsed_seconds=$(( now_epoch - started_epoch ))
+          elapsed_minutes=$(awk -v s="$elapsed_seconds" 'BEGIN{printf "%.1f", s/60}')
+
+          # SC-007 budget: 30 minutes for stable tags. Pre-releases are
+          # uncapped (per spec clarification).
+          budget_seconds=1800
+          over_budget="false"
+          if [ "$IS_PRERELEASE" = "false" ] && [ "$elapsed_seconds" -gt "$budget_seconds" ]; then
+            over_budget="true"
+          fi
+
+          # Tally failures and timeouts. `cancelled` counts as failure
+          # because it usually means we hit a job-level timeout.
+          # `skipped` is NOT a failure (pre-release jobs intentionally skip).
+          failures=""
+          check_channel() {
+              local name="$1" result="$2"
+              case "$result" in
+                  success|skipped) ;;
+                  failure|cancelled|timed_out)
+                      if [ -n "$failures" ]; then
+                          failures="${failures}, ${name}"
+                      else
+                          failures="$name"
+                      fi
+                      ;;
+                  *)
+                      # Unknown state — treat as failure to fail-closed.
+                      if [ -n "$failures" ]; then
+                          failures="${failures}, ${name}(${result})"
+                      else
+                          failures="${name}(${result})"
+                      fi
+                      ;;
+              esac
+          }
+          check_channel pypi-darnit         "$PYPI_DARNIT"
+          check_channel pypi-darnit-baseline "$PYPI_BASELINE"
+          check_channel pypi-darnit-gittuf  "$PYPI_GITTUF"
+          check_channel pypi-darnit-mcp     "$PYPI_MCP"
+          check_channel container           "$CONTAINER"
+          check_channel binary              "$BINARY"
+          check_channel release-attach      "$RELEASE_ATTACH"
+          check_channel homebrew            "$HOMEBREW"
+          check_channel plugin              "$PLUGIN"
+
+          {
+            echo "elapsed_seconds=$elapsed_seconds"
+            echo "elapsed_minutes=$elapsed_minutes"
+            echo "over_budget=$over_budget"
+            echo "failures=$failures"
+            echo "is_prerelease=$IS_PRERELEASE"
+            echo "version=$VERSION"
+          } >> "$GITHUB_OUTPUT"
+
+          # Build the markdown timing table for the step summary AND the
+          # release notes appendix.
+          {
+            echo "## Release ${VERSION} — per-channel summary"
+            echo ""
+            echo "| Channel | Result | Notes |"
+            echo "|---|---|---|"
+            echo "| pypi-darnit | $PYPI_DARNIT | |"
+            echo "| pypi-darnit-baseline | $PYPI_BASELINE | |"
+            echo "| pypi-darnit-gittuf | $PYPI_GITTUF | |"
+            echo "| pypi-darnit-mcp | $PYPI_MCP | |"
+            echo "| container | $CONTAINER | |"
+            echo "| binary | $BINARY | matrix across macOS arm64 + Linux arm64/amd64 |"
+            echo "| release-attach | $RELEASE_ATTACH | GitHub Release asset upload |"
+            echo "| homebrew | $HOMEBREW | $([ "$IS_PRERELEASE" = "true" ] && echo "skipped — pre-release" || echo "stable only") |"
+            echo "| plugin | $PLUGIN | $([ "$IS_PRERELEASE" = "true" ] && echo "skipped — pre-release" || echo "stable only") |"
+            echo ""
+            echo "**Total elapsed:** ${elapsed_minutes} min ($elapsed_seconds s)"
+            if [ "$IS_PRERELEASE" = "false" ]; then
+              echo "**SC-007 budget:** 30 min (stable releases)"
+              if [ "$over_budget" = "true" ]; then
+                echo "⚠️ **Exceeded SC-007 budget** by $(( elapsed_seconds - budget_seconds )) seconds."
+              fi
+            else
+              echo "**SC-007 budget:** N/A (pre-releases are uncapped)"
+            fi
+            if [ -n "$failures" ]; then
+              echo ""
+              echo "**Failed channels:** $failures"
+            fi
+          } > /tmp/release-summary.md
+
+          # Mirror to the GH Actions job summary.
+          cat /tmp/release-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Append summary to the GitHub Release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.preflight.outputs.version }}
+          RELEASE_ATTACH: ${{ needs.release_attach_binaries.result }}
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+          if [ "$RELEASE_ATTACH" != "success" ]; then
+            echo "release_attach_binaries did not succeed — no GitHub Release exists yet, skipping notes append."
+            exit 0
+          fi
+          # Read existing notes, append the summary, write back.
+          existing=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json body --jq '.body')
+          appended_file=$(mktemp)
+          {
+            printf '%s\n\n---\n\n' "$existing"
+            cat /tmp/release-summary.md
+          } > "$appended_file"
+          gh release edit "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --notes-file "$appended_file"
+
+      - name: Create release-failure issue (stable + failure or over-budget)
+        if: needs.preflight.outputs.is_prerelease == 'false' && (steps.aggregate.outputs.failures != '' || steps.aggregate.outputs.over_budget == 'true')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.preflight.outputs.version }}
+          FAILURES: ${{ steps.aggregate.outputs.failures }}
+          ELAPSED_MIN: ${{ steps.aggregate.outputs.elapsed_minutes }}
+          OVER_BUDGET: ${{ steps.aggregate.outputs.over_budget }}
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          body_file=$(mktemp)
+          {
+            echo "## Release-failure — ${tag}"
+            echo ""
+            if [ -n "${FAILURES:-}" ]; then
+              echo "**Failed channels:** ${FAILURES}"
+            fi
+            if [ "${OVER_BUDGET:-false}" = "true" ]; then
+              echo "**SC-007 budget exceeded:** workflow took ${ELAPSED_MIN} min (budget is 30 min)."
+            fi
+            echo ""
+            echo "**Workflow run:** ${run_url}"
+            echo ""
+            echo "## Recovery"
+            echo ""
+            echo "See [packaging/RECOVERY.md](../blob/main/packaging/RECOVERY.md) for the per-channel repair procedure. The release.yml workflow MUST NOT be re-run on this tag — recovery is per-channel."
+            echo ""
+            echo "Successful channels remain published. Failed channels must be either roll-forwarded to a new patch release (v$(echo "${VERSION}" | awk -F. '{print $1"."$2"."$3+1}')), or in a few cases manually repaired against the same tag — see RECOVERY.md for which mode applies per channel."
+            echo ""
+            echo "_Auto-created by .github/workflows/release.yml::finalize._"
+          } > "$body_file"
+
+          gh issue create \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "release-failure: ${tag}" \
+            --body-file "$body_file" \
+            --label "release-failure"

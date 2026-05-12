@@ -51,11 +51,78 @@ Mirror the four configurations above on `test.pypi.org`. Used for pre-release (`
 
 ## Doing a release
 
-1. Confirm the working tree is on `main`, up to date with `origin`, and all CI is green.
-2. Bump `version` in every public `pyproject.toml` to the new version. Lockstep — every public package's version must match the tag (preflight enforces this).
-3. Push the tag: `git tag v0.1.0 && git push origin v0.1.0`.
-4. Watch `.github/workflows/release.yml` in the Actions tab. The workflow runs `preflight` first; if any gate fails, fix and re-tag.
-5. After all channel jobs complete, the `finalize` job posts a per-channel timing table to the release notes. If any channel fails or exceeds the 30-min SC-007 budget, a `release-failure` issue is created.
+### Pre-flight (before tagging)
+
+1. **Sync `main` from upstream and confirm CI is green.**
+   ```bash
+   git checkout main
+   git fetch upstream && git merge --ff-only upstream/main
+   gh run list --branch main --limit 5
+   ```
+2. **Decide the version.** Stable releases are `vX.Y.Z`; pre-releases are `vX.Y.ZrcN` (no hyphen — PEP 440 canonical). Use a pre-release tag if this is the first run after a non-trivial release-pipeline change.
+3. **Bump `version` in every public `pyproject.toml`.** The four public packages must agree exactly with the tag (preflight enforces this):
+   - `pyproject.toml` (the root `darnit-mcp` package)
+   - `packages/darnit/pyproject.toml`
+   - `packages/darnit-baseline/pyproject.toml`
+   - `packages/darnit-gittuf/pyproject.toml`
+4. **Sync and verify locally:**
+   ```bash
+   uv sync --all-extras
+   uv run ruff check .
+   uv run pytest tests/ --ignore=tests/integration/ -q
+   uv run python scripts/validate_sync.py --verbose
+   uv run python scripts/generate_docs.py
+   git diff --exit-code docs/generated/   # no diff allowed
+   ```
+5. **Commit and push the version bump:**
+   ```bash
+   git add -p   # review carefully
+   git commit -m "release: vX.Y.Z"
+   git push upstream main
+   ```
+
+### Cut the tag
+
+```bash
+git tag vX.Y.Z          # or vX.Y.ZrcN for pre-release
+git push upstream vX.Y.Z
+```
+
+The `release.yml` workflow triggers automatically. **No `--force` or amend** — once a tag is pushed and `release.yml` starts, the only way out of a bad release is roll-forward to a new tag.
+
+### Monitor
+
+1. Open the [Actions tab](https://github.com/kusari-oss/darnit/actions). The `Release` workflow should appear within a few seconds of tag push.
+2. Watch `preflight` first. If it fails:
+   - Most common: version mismatch between tag and `pyproject.toml`. Delete the tag (`git push upstream --delete vX.Y.Z`), fix the bump commit, push a new tag.
+   - Other gates (lint/tests/sync/doc-gen) should have been caught in pre-flight above. If they fire here, you skipped step 4.
+3. Once preflight is green, channel jobs run in parallel: `pypi_publish` → `container_build_push` + `binary_matrix`; then `release_attach_binaries`, `homebrew_dispatch` (stable only), `plugin_package` (stable only); then `finalize`.
+4. **SC-007 budget**: stable releases are wall-clocked at 30 minutes (workflow-level timeout). Pre-releases are uncapped.
+
+### After the workflow completes
+
+- `finalize` posts a per-channel timing table to the GitHub Release notes.
+- For stable tags only: if any channel failed OR exceeded its budget, `finalize` opens a `release-failure` issue tagged with the channel name(s).
+- Run smoke tests (`Release Smoke Tests` workflow) — they trigger automatically on workflow_run.
+- Verify the user-facing surfaces:
+  ```bash
+  pip install darnit-mcp==X.Y.Z
+  docker pull ghcr.io/kusari-oss/darnit:vX.Y.Z
+  # stable only:
+  brew tap kusari-oss/tap && brew install darnit
+  ```
+
+### If something goes wrong mid-release
+
+- **A single channel job failed**: see [`RECOVERY.md`](RECOVERY.md). Per-channel repair, never re-run the workflow.
+- **The workflow hit the 30-minute timeout**: all in-flight jobs are cancelled. The `finalize` job (with `if: always()`) still runs and surfaces the timeout in a `release-failure` issue. Recovery: roll forward to `vX.Y.Z+1`.
+- **`preflight` failed AFTER the tag was created on a remote runner** (e.g., a transient PyPI auth issue): delete the tag from the remote, fix the underlying cause, re-tag with the SAME version (no GH Release exists yet so the immutability gate doesn't fire). This is the ONLY case where re-tagging the same version is safe.
+
+### Post-release housekeeping
+
+1. Announce the release internally / on the project's communication channels.
+2. Bump the version in `main` to the next `0.0.0-dev` placeholder if the project uses that convention (we don't currently — versions stay at the just-released value until the next bump).
+3. Close any release-blocker issues; open follow-ups for any deferred work.
 
 ## Recovery from partial failures
 
