@@ -204,7 +204,7 @@ After this change, that team can read a published packaging guide and a worked "
 - **Supported Python versions**: The same range the project targets today (3.11 and 3.12). Adding 3.13 is out of scope for this feature.
 - **Versioning strategy**: Lockstep across all workspace packages. Each release produces the same version number on every public package. This is the simplest model and matches how the workspace currently versions itself. Independent per-package versioning is deliberately out of scope; if the project later wants it, that is a new feature.
 - **Public vs. internal packages**: `darnit`, `darnit-baseline`, `darnit-gittuf`, and `darnit-mcp` are public; `darnit-example`, `darnit-testchecks`, and `darnit-plugins` are internal/example-only and not published to the public index for this feature. The exact list can be revised during planning.
-- **Architecture coverage for binaries and containers**: macOS arm64 and amd64, Linux arm64 and amd64. Windows is explicitly deferred — darnit shells out heavily to POSIX tooling today, and adding Windows support is a separate, larger scope.
+- **Architecture coverage for binaries and containers**: macOS arm64 (Apple Silicon) and Linux on the two most common CPU architectures (arm64 + amd64). macOS amd64 (Intel) and Windows are explicitly deferred — Apple has fully transitioned to Apple Silicon, and darnit shells out heavily to POSIX tooling, so Windows support is a separate larger scope.
 - **Signature scheme**: A keyless, OIDC-backed signing identity scheme (the most common pattern for modern open-source projects) is assumed. Specific tooling choices belong in the plan, not this spec.
 - **Container registry**: GitHub's container registry, given the project already lives on GitHub. Mirroring to additional registries is out of scope.
 - **Homebrew tap location**: A single project-wide tap (one tap that may later host multiple kusari tools). Submitting to homebrew-core is a follow-up, not part of this feature.
@@ -216,6 +216,7 @@ After this change, that team can read a published packaging guide and a worked "
 ## Out of Scope
 
 - **Windows binaries, Homebrew on Windows, or Windows-specific channels**: Excluded because darnit's controls assume POSIX tooling. Tracked separately.
+- **macOS amd64 (Intel) binaries and Homebrew bottles**: Excluded. Apple has fully transitioned to Apple Silicon; the standalone binary, Homebrew formula, and container image cover only `macOS arm64`. Intel Mac users can install via `pip install` or run the Linux/amd64 container image under Rosetta-equivalent emulation.
 - **Other coding agents** (Cursor, Windsurf, Continue, Cline, etc.): Excluded from this feature; covered by future work once Claude Code is solid.
 - **Mirroring to additional package indexes or registries** (Anaconda, Docker Hub, Quay): Excluded for v1.
 - **Independent per-package versioning across the workspace**: Excluded; lockstep is the v1 strategy.

@@ -21,7 +21,7 @@ The packaging feature does not introduce database records or persisted applicati
                        (per artifact)
 ```
 
-`×N` indicates fan-out (e.g., 4 binaries per release: macOS arm64/amd64 + Linux arm64/amd64).
+`×N` indicates fan-out (e.g., 3 binaries per release: macOS arm64 + Linux arm64 + Linux amd64; macOS amd64 is out of scope).
 
 ---
 
@@ -104,7 +104,7 @@ A single signed, versioned output emitted by exactly one per-channel publish job
 - `pypi_wheel`: 4 (one per public package).
 - `pypi_sdist`: 4.
 - `container_image`: 1 multi-arch manifest (2 platform manifests beneath).
-- `standalone_binary`: 4 (macOS arm64/amd64, Linux arm64/amd64).
+- `standalone_binary`: 3 (macOS arm64, Linux arm64, Linux amd64). macOS amd64 is out of scope.
 - `homebrew_formula`: 1 (stable only).
 - `plugin_zip`: 1 (stable only).
 

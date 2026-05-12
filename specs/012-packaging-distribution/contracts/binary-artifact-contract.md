@@ -2,16 +2,17 @@
 
 ## Artifact set per Release
 
-Four artifacts, one per `(os, arch)`:
+Three artifacts, one per `(os, arch)`:
 
 | Filename | Platform | Built on |
 |---|---|---|
-| `darnit-<version>-macos-arm64` | macOS arm64 | `macos-14` runner |
-| `darnit-<version>-macos-amd64` | macOS amd64 | `macos-15-intel` runner |
+| `darnit-<version>-macos-arm64` | macOS arm64 (Apple Silicon) | `macos-14` runner |
 | `darnit-<version>-linux-arm64` | Linux arm64 | `ubuntu-22.04-arm` runner |
 | `darnit-<version>-linux-amd64` | Linux amd64 | `ubuntu-22.04` runner |
 
-A missing platform fails the Release (no partial binary set).
+macOS amd64 (Intel) is **out of scope** per the spec — Apple has fully transitioned to Apple Silicon. Intel Mac users install via `pip install` or run the Linux/amd64 container image under Rosetta-equivalent emulation.
+
+A missing in-scope platform fails the Release (no partial binary set).
 
 ## Builder
 

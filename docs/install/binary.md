@@ -9,9 +9,10 @@ Examples assume version `0.1.0` — substitute the version you want.
 | Platform | Asset |
 |---|---|
 | macOS arm64 (Apple Silicon) | `darnit-0.1.0-macos-arm64` |
-| macOS amd64 (Intel) | `darnit-0.1.0-macos-amd64` |
 | Linux arm64 | `darnit-0.1.0-linux-arm64` |
 | Linux amd64 | `darnit-0.1.0-linux-amd64` |
+
+> **Intel Macs are not supported.** Apple has fully transitioned to Apple Silicon; we don't build a `macos-amd64` binary. If you're on an Intel Mac, use [`pip install` / `pipx`](pypi.md) or run the [Linux amd64 container image](container.md) under emulation.
 
 ```bash
 # macOS arm64

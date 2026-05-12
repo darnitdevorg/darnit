@@ -128,7 +128,7 @@ sudo mv darnit-0.1.0-macos-arm64 /usr/local/bin/darnit
 darnit --version
 ```
 
-Available platforms: `macos-arm64`, `macos-amd64`, `linux-arm64`, `linux-amd64`.
+Available platforms: `macos-arm64`, `linux-arm64`, `linux-amd64`. Intel Macs are not supported — use `pip`/`pipx` or the Linux container image instead.
 
 ### Prerequisite
 

@@ -557,9 +557,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # macOS amd64 (Intel) is explicitly out of scope — Apple has fully
+        # transitioned to Apple Silicon and we don't support Intel Macs.
+        # See specs/012-packaging-distribution/spec.md (Out of Scope).
         include:
           - { runner: macos-14,         os: macos, arch: arm64 }
-          - { runner: macos-15-intel,   os: macos, arch: amd64 }
           - { runner: ubuntu-22.04,     os: linux, arch: amd64 }
           - { runner: ubuntu-22.04-arm, os: linux, arch: arm64 }
     steps:
@@ -735,7 +737,6 @@ jobs:
           | Platform | File |
           |---|---|
           | macOS arm64 (Apple Silicon) | \`darnit-${VERSION}-macos-arm64\` |
-          | macOS amd64 (Intel) | \`darnit-${VERSION}-macos-amd64\` |
           | Linux arm64 | \`darnit-${VERSION}-linux-arm64\` |
           | Linux amd64 | \`darnit-${VERSION}-linux-amd64\` |
 

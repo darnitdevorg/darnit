@@ -160,7 +160,7 @@ Adds the binary distribution and the Homebrew tap that consumes it. Sequenced to
 
 1. Choose binary builder: **`shiv`** (decision in research.md). Author `packaging/binary/shiv.toml`.
 2. Add a binary build matrix to `release.yml`:
-   - Runners: `macos-14` (arm64), `macos-15-intel` (amd64), `ubuntu-22.04` (amd64), `ubuntu-22.04-arm` (arm64).
+   - Runners: `macos-14` (arm64), `ubuntu-22.04` (amd64), `ubuntu-22.04-arm` (arm64). macOS amd64 (Intel) is out of scope per the spec — see `Out of Scope`.
    - Build artifact name: `darnit-<version>-<os>-<arch>` (one file per combo).
    - Sign each binary with cosign (keyless, blob signature attached as `darnit-<...>.sig` + `darnit-<...>.pem`).
    - Attach to the GitHub release as draft assets.
