@@ -71,6 +71,27 @@ See [`RECOVERY.md`](RECOVERY.md). Each channel has a documented recovery path. R
 | `.github/workflows/container-edge.yml` | `main`-branch builds tagged `:edge` (unsigned, non-release) |
 | `.github/workflows/homebrew-bump.yml` | Cross-repo dispatch to `kusari-oss/homebrew-tap` (stable tags only) |
 
+### Pinned tool versions
+
+These tools are pinned in the release workflows. **Local installations must match** so contributors catch issues before CI does. If you bump one, update all three sites (the two workflow files and this table) in the same PR.
+
+| Tool | Pinned version | Where |
+|---|---|---|
+| `actionlint` | `v1.7.12` (linux/amd64 sha256 `8aca8db9...349a3d8`) | `release.yml` preflight + `release-yml-lint.yml` |
+
+#### Local install (macOS via Homebrew)
+
+```bash
+brew install actionlint
+# Verify the version matches the CI pin
+actionlint -version
+# Expected first line: 1.7.12
+```
+
+If `brew install actionlint` gives you an older version, force the pinned version with `brew install rhysd/tap/actionlint` or download the binary directly from the [releases page](https://github.com/rhysd/actionlint/releases/tag/v1.7.12).
+
+Why bumping matters: the runner-label database is built into actionlint, so an older local copy will miss newer GitHub-hosted runners (e.g., `ubuntu-24.04-arm`). A workflow that lints clean locally on an older `actionlint` may still fail CI's pinned version, or vice-versa.
+
 ## Where things live
 
 - `packaging/pypi/` — public package list
