@@ -239,7 +239,7 @@ jobs:
     steps:
       - name: Set up QEMU (for arm64 pull on amd64 runner)
         if: matrix.platform == 'linux/arm64'
-        uses: docker/setup-qemu-action@49b3bc8e6bdd4a60e6116a5414239cba5943d3cf # v3
+        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v3
         with:
           platforms: arm64
 
