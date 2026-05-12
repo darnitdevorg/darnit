@@ -128,7 +128,13 @@ jobs:
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v4
         with:
           version: ${{ env.UV_VERSION }}
-          enable-cache: true
+          # Caching is intentionally disabled in the release pipeline.
+          # The blast radius of cache poisoning is significantly elevated
+          # here because this workflow produces and publishes signed
+          # artifacts; a poisoned cache from a prior run could inject
+          # malicious content into the published wheels. Clean builds only.
+          # Flagged by Kusari Inspector on #235.
+          enable-cache: false
 
       - name: Install dependencies
         run: uv sync --all-extras
@@ -194,7 +200,13 @@ jobs:
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v4
         with:
           version: ${{ env.UV_VERSION }}
-          enable-cache: true
+          # Caching is intentionally disabled in the release pipeline.
+          # The blast radius of cache poisoning is significantly elevated
+          # here because this workflow produces and publishes signed
+          # artifacts; a poisoned cache from a prior run could inject
+          # malicious content into the published wheels. Clean builds only.
+          # Flagged by Kusari Inspector on #235.
+          enable-cache: false
 
       - name: Build each public package into its own dist directory
         run: |
