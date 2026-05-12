@@ -163,7 +163,7 @@ After this change, that team can read a published packaging guide and a worked "
 #### Coding-agent plugin
 
 - **FR-015**: An installable coding-agent plugin MUST exist for at least one supported agent (initial target: Claude Code) that bundles the existing four skills and the MCP server configuration into a single installable unit.
-- **FR-016**: Once installed, the plugin MUST make the four skills (`darnit-audit`, `darnit-context`, `darnit-comply`, `darnit-remediate`) available in the agent without requiring the user to edit configuration files or register the MCP server by hand.
+- **FR-016**: Once installed, the plugin MUST make the four skills (`darnit-audit`, `darnit-comply`, `darnit-data`, `darnit-remediate`) available in the agent without requiring the user to edit configuration files or register the MCP server by hand. Once namespaced under the plugin they appear as `/darnit:audit`, `/darnit:comply`, `/darnit:data`, `/darnit:remediate`.
 - **FR-017**: The plugin MUST attempt to invoke the MCP server via `uvx` first, and if `uvx` is not found on PATH, MUST attempt the same invocation via `pipx run`. If neither runner is present, the plugin MUST surface a single, actionable error message naming both prerequisites and a documented install path for each, rather than failing silently.
 
 #### Third-party plugin packaging guide

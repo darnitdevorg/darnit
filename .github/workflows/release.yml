@@ -849,7 +849,77 @@ jobs:
             -d "$payload"
           echo "✓ Dispatched darnit-release for v${VERSION}"
 
+  # T053: package the Claude Code plugin and attach it to the GitHub
+  # Release. STABLE TAGS ONLY — pre-release tags do not produce a plugin
+  # artifact (per spec clarification Q2).
+  #
+  # Depends on publish-darnit-mcp (the plugin's MCP server invocation pins
+  # `darnit-mcp==<version>`, so PyPI must have that version available
+  # before users can install the plugin) and on release_attach_binaries
+  # (the GH Release must exist before we can upload the zip to it).
+  plugin_package:
+    name: Package Claude Code plugin
+    needs: [preflight, publish-darnit-mcp, release_attach_binaries]
+    if: needs.preflight.outputs.is_prerelease == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: release
+    permissions:
+      contents: write   # upload the zip to the GH Release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+        with:
+          persist-credentials: false
+
+      - name: Build plugin zip
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+          OUT_DIR: dist/claude-plugin
+        run: ./packaging/claude-plugin/build.sh
+
+      - name: Assert plugin manifest pins the release version
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          set -euo pipefail
+          zip="dist/claude-plugin/darnit-claude-plugin-${VERSION}.zip"
+          # Top-level version
+          unzip -p "$zip" darnit/.claude-plugin/plugin.json \
+            | jq -e --arg v "$VERSION" '.version == $v' > /dev/null
+          # MCP server runtime version pin
+          unzip -p "$zip" darnit/.claude-plugin/plugin.json \
+            | jq -e --arg v "$VERSION" '.mcpServers["darnit-mcp"].env.DARNIT_MCP_VERSION == $v' > /dev/null
+          echo "✓ plugin.json pins ${VERSION} on both axes"
+
+      - name: Assert bundled skill set matches contract
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          set -euo pipefail
+          zip="dist/claude-plugin/darnit-claude-plugin-${VERSION}.zip"
+          bundled=$(unzip -l "$zip" \
+            | awk '/darnit\/skills\/[a-z]+\/SKILL\.md$/ {sub("^.*skills/",""); sub("/SKILL.md$",""); print}' \
+            | sort \
+            | paste -sd, -)
+          expected="audit,comply,data,remediate"
+          if [ "$bundled" != "$expected" ]; then
+            echo "::error::Bundled skill set ($bundled) does not match contract ($expected)"
+            exit 1
+          fi
+          echo "✓ Bundled skill set matches contract: $expected"
+
+      - name: Upload plugin zip to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+          gh release upload "$tag" \
+            "dist/claude-plugin/darnit-claude-plugin-${VERSION}.zip" \
+            --repo "$GITHUB_REPOSITORY"
+          echo "✓ Uploaded darnit-claude-plugin-${VERSION}.zip to release $tag"
+
   # Channel jobs added in later phases:
-  #   Phase 6 (US4) → plugin_package
-  #   Phase 8       → finalize (with timing/SC-007 enforcement, T071/T071a)
   #   Phase 8       → finalize (with timing/SC-007 enforcement, T071/T071a)

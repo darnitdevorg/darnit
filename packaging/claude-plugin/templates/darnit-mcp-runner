@@ -1,0 +1,48 @@
+#!/bin/sh
+#
+# darnit-mcp-runner — invoked by the Claude Code plugin's mcpServers
+# entry to start the darnit MCP server. Implements the FR-017 fallback
+# chain because Claude Code plugin manifests don't support fallback
+# natively.
+#
+# DARNIT_MCP_VERSION is set by plugin.json::mcpServers["darnit-mcp"].env.
+# The version is pinned in lockstep with the parent darnit release.
+
+set -eu
+
+if [ -z "${DARNIT_MCP_VERSION:-}" ]; then
+    echo "darnit-mcp-runner: DARNIT_MCP_VERSION env var is required but not set." >&2
+    echo "If you are invoking this script directly (outside Claude Code), set it explicitly." >&2
+    exit 64
+fi
+
+try_uvx() {
+    command -v uvx >/dev/null 2>&1 || return 1
+    # exec replaces this process with uvx — Claude Code's MCP client
+    # talks to uvx's stdio directly.
+    exec uvx --from "darnit-mcp==${DARNIT_MCP_VERSION}" darnit-mcp "$@"
+}
+
+try_pipx() {
+    command -v pipx >/dev/null 2>&1 || return 1
+    exec pipx run "darnit-mcp==${DARNIT_MCP_VERSION}" "$@"
+}
+
+# Each `try_*` either exec's (replaces this process) or returns
+# non-zero. Append `|| :` so set -e doesn't abort the script when a
+# runner is missing — we want to fall through to the next attempt and
+# ultimately to the actionable-error path. The 2>/dev/null suppresses
+# any noise from the attempt itself; the user only sees the heredoc.
+try_uvx 2>/dev/null || :
+try_pipx 2>/dev/null || :
+
+cat >&2 <<EOF
+darnit plugin: neither 'uvx' nor 'pipx' is available on PATH.
+
+Install one of:
+  - uv (provides uvx):  https://docs.astral.sh/uv/getting-started/installation/
+  - pipx:               https://pipx.pypa.io/stable/installation/
+
+Then restart Claude Code or reload the plugin.
+EOF
+exit 127

@@ -4,92 +4,137 @@
 
 Publishes a Claude Code plugin artifact `darnit-claude-plugin-<version>.zip` attached to each **stable** GitHub Release. Pre-release tags do not produce a plugin artifact (per clarification Q2).
 
+The plugin name is `darnit`, which means slash commands appear as `/darnit:audit`, `/darnit:context`, `/darnit:comply`, `/darnit:remediate` once installed.
+
 ## Artifact contents
 
 ```
 darnit-claude-plugin-<version>.zip
-├── manifest.json                       # Claude Code plugin manifest
-├── README.md                            # Install instructions
+├── .claude-plugin/
+│   └── plugin.json                # Claude Code plugin manifest (auto-discovered)
+├── README.md                       # Install instructions
+├── bin/
+│   └── darnit-mcp-runner          # Wrapper script: uvx → pipx run → actionable error
 └── skills/
-    ├── darnit-audit/
-    │   └── SKILL.md
-    ├── darnit-context/
-    │   └── SKILL.md
-    ├── darnit-comply/
-    │   └── SKILL.md
-    └── darnit-remediate/
-        └── SKILL.md
+    ├── audit/
+    │   └── SKILL.md               # → /darnit:audit
+    ├── comply/
+    │   └── SKILL.md               # → /darnit:comply
+    ├── data/
+    │   └── SKILL.md               # → /darnit:data
+    └── remediate/
+        └── SKILL.md               # → /darnit:remediate
 ```
 
-The `skills/` tree is copied verbatim from the repo root `skills/` at the tagged commit. A CI check asserts the set is exactly `["darnit-audit", "darnit-context", "darnit-comply", "darnit-remediate"]`. Adding or removing skills mid-release is a deliberate change to the contract and requires updating this document.
+**Skills are auto-discovered** by Claude Code from the `skills/` directory at the plugin root. The plugin manifest does **not** enumerate them.
+
+**Skill renaming**: the source tree under `skills/` at the repo root uses prefixed names (`darnit-audit`, `darnit-context`, ...) for global slash-command invocation outside any plugin. Inside the plugin bundle, those prefixes are stripped so the plugin-namespaced commands read cleanly (`/darnit:audit`, not `/darnit:darnit-audit`). The build script enforces this rename.
+
+A CI check asserts the bundle's `skills/` directory contains exactly `{audit, comply, data, remediate}`. Adding or removing skills mid-release is a deliberate change to the contract and requires updating this document.
 
 ## Manifest shape
 
-`packaging/claude-plugin/manifest.json` (templated; `<version>` substituted by the release workflow):
+`packaging/claude-plugin/plugin.json` (templated; `<version>` substituted by the release workflow). Lives at `.claude-plugin/plugin.json` inside the bundle.
 
 ```json
 {
   "name": "darnit",
-  "displayName": "Darnit Compliance Auditor",
   "version": "<version>",
-  "description": "AI-driven compliance auditing for the OpenSSF Baseline and related frameworks.",
-  "publisher": "kusari-oss",
-  "license": "Apache-2.0",
-  "homepage": "https://github.com/kusari-oss/darnit",
-  "mcpServers": {
-    "darnit": {
-      "command": "sh",
-      "args": [
-        "-c",
-        "uvx --from darnit-mcp==<version> darnit-mcp 2>/dev/null || pipx run darnit-mcp==<version> 2>/dev/null || (echo 'darnit plugin: neither uvx nor pipx is available on PATH. Install one of: https://docs.astral.sh/uv/ or https://pipx.pypa.io/' >&2; exit 1)"
-      ]
-    }
+  "description": "AI-powered compliance auditing for the OpenSSF Baseline and related frameworks.",
+  "author": {
+    "name": "Kusari",
+    "email": "info@kusari.dev"
   },
-  "skills": [
-    {"path": "skills/darnit-audit"},
-    {"path": "skills/darnit-context"},
-    {"path": "skills/darnit-comply"},
-    {"path": "skills/darnit-remediate"}
-  ]
+  "homepage": "https://github.com/kusari-oss/darnit",
+  "repository": "https://github.com/kusari-oss/darnit",
+  "license": "Apache-2.0",
+  "keywords": ["security", "compliance", "openssf", "baseline", "audit"],
+  "mcpServers": {
+    "darnit-mcp": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/darnit-mcp-runner",
+      "args": [],
+      "env": {
+        "DARNIT_MCP_VERSION": "<version>"
+      }
+    }
+  }
 }
 ```
 
-> **Note**: The exact field names (`mcpServers`, `skills`, etc.) track the Claude Code plugin spec as published at the time of v1 implementation. If the schema names change before v1 ships, the implementation MUST update this contract and `packaging/claude-plugin/manifest.json` in lockstep.
+> **Note**: Field names track the published Claude Code plugin spec at the time of v1 implementation (`.claude-plugin/plugin.json`, `mcpServers`, skills auto-discovered from `skills/`). If the schema changes before v1 ships, the implementation MUST update this contract and `packaging/claude-plugin/plugin.json` in lockstep.
 
 ## MCP server invocation (implements FR-017)
 
-The `command`/`args` shell snippet implements the three-tier fallback resolved in clarification Q1:
+Claude Code's plugin manifest does **not** support a fallback chain natively. The contract uses a wrapper script that the manifest invokes:
 
-1. Attempt `uvx --from darnit-mcp==<version> darnit-mcp`. Suppress stderr from this attempt (it should not pollute the agent's view when the next attempt succeeds).
-2. On failure, attempt `pipx run darnit-mcp==<version>`. Same stderr suppression.
-3. On second failure, emit a single, actionable error to stderr naming both prerequisites and their install URLs, and exit non-zero.
+`packaging/claude-plugin/bin/darnit-mcp-runner`:
 
-Version pinning (`==<version>`) is **mandatory** — the plugin and the runtime must be in lockstep. A plugin v0.1.0 invoking `uvx darnit-mcp` (no version) would silently float to whatever PyPI ships next, violating spec FR-004 (version match across channels).
+```bash
+#!/bin/sh
+# Wrapper invoked by the Claude Code plugin to start darnit-mcp.
+# DARNIT_MCP_VERSION is set by plugin.json's mcpServers.env.
+set -eu
+exec_via_uvx() {
+    command -v uvx >/dev/null 2>&1 || return 1
+    exec uvx --from "darnit-mcp==${DARNIT_MCP_VERSION}" darnit-mcp
+}
+exec_via_pipx() {
+    command -v pipx >/dev/null 2>&1 || return 1
+    exec pipx run "darnit-mcp==${DARNIT_MCP_VERSION}"
+}
+exec_via_uvx 2>/dev/null
+exec_via_pipx 2>/dev/null
+echo "darnit plugin: neither 'uvx' nor 'pipx' is available on PATH." >&2
+echo "Install one of:" >&2
+echo "  - uv (provides uvx):  https://docs.astral.sh/uv/getting-started/installation/" >&2
+echo "  - pipx:               https://pipx.pypa.io/stable/installation/" >&2
+exit 127
+```
+
+The runner is `chmod +x` at build time, and `plugin.json` references it via `${CLAUDE_PLUGIN_ROOT}` so the path resolves regardless of where Claude Code installs the plugin.
+
+Version pinning (`darnit-mcp==<version>`) is **mandatory** — the plugin and the runtime must be in lockstep. A plugin v0.1.0 invoking `darnit-mcp` without a version pin would silently float to whatever PyPI ships next, violating spec FR-004 (version match across channels).
 
 ## Smoke test
 
-Runs in `release-smoke.yml` on a hermetic Claude Code test environment (mechanism TBD with Anthropic's plugin testing tooling; if no such tool is publicly available at v1, the smoke test does a structural validation only — JSON-schema check + zip integrity + exit-code check on the MCP server command — and a manual smoke-test step is added to `packaging/RECOVERY.md`).
-
-Structural smoke (always):
+### Structural smoke (always)
 
 ```bash
-unzip -t darnit-claude-plugin-<version>.zip                       # zip integrity
-jq -e '.version == "<version>"' manifest.json                     # version pin
-jq -e '.skills | length == 4' manifest.json                       # skill count
-diff <(jq -r '.skills[].path' manifest.json | sort) \
-     <(ls skills | sort | sed 's|^|skills/|')                     # skill paths match contents
+unzip -t darnit-claude-plugin-<version>.zip                                # zip integrity
+
+unzip -p darnit-claude-plugin-<version>.zip .claude-plugin/plugin.json \
+  | jq -e '.version == "<version>"'                                        # version pin
+
+unzip -p darnit-claude-plugin-<version>.zip .claude-plugin/plugin.json \
+  | jq -e '.mcpServers["darnit-mcp"].env.DARNIT_MCP_VERSION == "<version>"'  # MCP version pin
+
+# skill set matches the contract
+unzip -l darnit-claude-plugin-<version>.zip \
+  | awk '/skills\/[a-z]+\/SKILL\.md$/ {sub("^.*skills/",""); sub("/SKILL.md$",""); print}' \
+  | sort \
+  | diff - <(printf 'audit\ncomply\ndata\nremediate\n')
+
+# wrapper script is executable
+unzip -l darnit-claude-plugin-<version>.zip bin/darnit-mcp-runner \
+  | grep -q '^-rwx'
 ```
 
-Behavioral smoke (when Claude Code testing tooling is available):
+### Behavioral smoke
+
+`release-smoke.yml` extracts the bundle into a tempdir and invokes the wrapper directly:
 
 ```bash
-# pseudo-code; exact incantation depends on Anthropic's tooling
-claude-code-plugin install ./darnit-claude-plugin-<version>.zip
-claude-code-plugin list-skills | grep -c '^darnit-' | grep -q '^4$'
+# In a container with uvx installed:
+DARNIT_MCP_VERSION=<version> CLAUDE_PLUGIN_ROOT=<extracted-dir> \
+  <extracted-dir>/bin/darnit-mcp-runner --help
 ```
+
+That exercises the same fallback chain Claude Code would hit, without depending on Anthropic's plugin test harness.
+
+When (and if) Anthropic ships a publicly available plugin test harness, the behavioral smoke can be extended to install the plugin into a hermetic Claude Code instance and confirm all four `/darnit:<skill>` commands resolve.
 
 ## What this contract does not promise
 
-- **Distribution via the official Claude Code plugin marketplace** (when it exists). v1 distributes via the GitHub Release asset; marketplace submission is a follow-up.
+- **Distribution via Anthropic's plugin marketplace.** v1 distributes via the GitHub Release asset; users install with `claude --plugin-url https://github.com/kusari-oss/darnit/releases/download/v<X.Y.Z>/darnit-claude-plugin-<X.Y.Z>.zip` (or whatever incantation Claude Code currently supports). Marketplace submission is a follow-up.
 - **Cross-agent compatibility** (Cursor, Windsurf, etc.). Out of scope per spec Assumptions.
-- **Bundled standalone binary fallback**. Tracked as follow-up per clarification Q1 / Out of Scope.
+- **Bundled standalone binary fallback.** Tracked as follow-up per clarification Q1 / Out of Scope.

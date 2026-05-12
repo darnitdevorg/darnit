@@ -145,14 +145,14 @@ description: "Task list for 012-packaging-distribution"
 
 ### Implementation for User Story 4
 
-- [ ] T050 [US4] Write `packaging/claude-plugin/manifest.json` per the schema in `contracts/claude-plugin-contract.md`, with `<version>` as a placeholder. Pin the manifest schema version (`mcpServers`, `skills`) and document the pinned version inline.
-- [ ] T051 [US4] Write a small `packaging/claude-plugin/build.sh` (or inline in the workflow) that copies `skills/` from the repo root into `packaging/claude-plugin/skills/`, substitutes `<version>` in `manifest.json`, and produces `darnit-claude-plugin-<version>.zip`
-- [ ] T052 [US4] Write `packaging/claude-plugin/README.md` documenting install steps, the `uvx`/`pipx` prerequisite, and the schema-version pin
-- [ ] T053 [US4] Add a `plugin_package` job to `.github/workflows/release.yml` (stable tags only). The job depends on `pypi_publish`, runs `build.sh`, asserts skill count == 4 and skill paths match `skills/` contents, then uploads the zip to the GitHub Release via `gh release upload`
-- [ ] T054 [US4] Add a `plugin_structural_smoke` job to `release-smoke.yml`: download the zip, run the structural assertions from the contract (`unzip -t`, `jq` on manifest, skill-path diff)
-- [ ] T055 [US4] Add a `plugin_behavioral_smoke` job to `release-smoke.yml` that runs the FR-017 fallback chain shell snippet directly in a container with `uvx` available, asserting `uvx --from darnit-mcp@<version> darnit-mcp --help` succeeds. If Anthropic publishes a Claude Code plugin test harness in time for v1, extend this job to install the plugin and assert all four skills are exposed.
-- [ ] T056 [P] [US4] Write `docs/install/claude-code-plugin.md` per the quickstart's plugin section
-- [ ] T057 [P] [US4] Populate the `claude_plugin` section of `packaging/RECOVERY.md`
+- [X] T050 [US4] Write `packaging/claude-plugin/manifest.json` per the schema in `contracts/claude-plugin-contract.md`, with `<version>` as a placeholder. Pin the manifest schema version (`mcpServers`, `skills`) and document the pinned version inline.  _(Delivered as `packaging/claude-plugin/templates/plugin.json` — actual filename is `plugin.json` per the Claude Code spec, lives at `.claude-plugin/plugin.json` inside the bundle. Skills are auto-discovered from the bundle's `skills/` directory, not enumerated in the manifest.)_
+- [X] T051 [US4] Write a small `packaging/claude-plugin/build.sh` (or inline in the workflow) that copies `skills/` from the repo root into `packaging/claude-plugin/skills/`, substitutes `<version>` in `manifest.json`, and produces `darnit-claude-plugin-<version>.zip`  _(Build script also renames skills from `darnit-X` → `X` so plugin-namespaced slash commands read as `/darnit:audit` rather than `/darnit:darnit-audit`.)_
+- [X] T052 [US4] Write `packaging/claude-plugin/README.md` documenting install steps, the `uvx`/`pipx` prerequisite, and the schema-version pin
+- [X] T053 [US4] Add a `plugin_package` job to `.github/workflows/release.yml` (stable tags only). The job depends on `pypi_publish`, runs `build.sh`, asserts skill count == 4 and skill paths match `skills/` contents, then uploads the zip to the GitHub Release via `gh release upload`
+- [X] T054 [US4] Add a `plugin_structural_smoke` job to `release-smoke.yml`: download the zip, run the structural assertions from the contract (`unzip -t`, `jq` on manifest, skill-path diff)
+- [X] T055 [US4] Add a `plugin_behavioral_smoke` job to `release-smoke.yml` that runs the FR-017 fallback chain shell snippet directly in a container with `uvx` available, asserting `uvx --from darnit-mcp@<version> darnit-mcp --help` succeeds. If Anthropic publishes a Claude Code plugin test harness in time for v1, extend this job to install the plugin and assert all four skills are exposed.  _(Behavioral smoke exercises both the uvx-available happy path AND the no-runner-available actionable-error path with exit 127 verification.)_
+- [X] T056 [P] [US4] Write `docs/install/claude-code-plugin.md` per the quickstart's plugin section
+- [X] T057 [P] [US4] Populate the `claude_plugin` section of `packaging/RECOVERY.md`
 - [ ] T058 [US4] Tag a stable release and confirm the plugin smoke passes end-to-end
 
 **Checkpoint US4**: Claude Code plugin artifact ships with every stable release.

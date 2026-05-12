@@ -7,7 +7,7 @@ name: Release Smoke Tests
 #   Phase 3 (US1) → pypi_smoke ✅
 #   Phase 4 (US2) → container_smoke ✅
 #   Phase 5 (US3) → binary_smoke ✅ + homebrew_smoke ✅
-#   Phase 6 (US4) → plugin_structural_smoke + plugin_behavioral_smoke
+#   Phase 6 (US4) → plugin_structural_smoke ✅ + plugin_behavioral_smoke ✅
 #
 # A smoke failure does not unpublish — published artifacts are immutable.
 # A failed smoke surfaces a release-failure issue via release.yml's finalize job.
@@ -440,3 +440,157 @@ jobs:
           echo "darnit --version → $actual"
           echo "$actual" | grep -F "$VERSION"
           echo "✓ brew-installed darnit reports ${VERSION}"
+
+  # T054: structural smoke. Confirms the plugin zip is well-formed (valid
+  # zip, expected layout, version pinned in manifest, skill set matches
+  # the contract, runner script has the exec bit set on extraction).
+  # STABLE TAGS ONLY — pre-release tags do not produce a plugin zip.
+  plugin_structural_smoke:
+    name: plugin_structural_smoke
+    needs: parse-trigger
+    if: needs.parse-trigger.outputs.is_prerelease == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Download plugin zip from GH Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.parse-trigger.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+          mkdir -p /tmp/plugin
+          gh release download "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "darnit-claude-plugin-${VERSION}.zip" \
+            --dir /tmp/plugin
+          ls -la /tmp/plugin/
+
+      - name: Zip integrity
+        env:
+          VERSION: ${{ needs.parse-trigger.outputs.version }}
+        run: |
+          set -euo pipefail
+          unzip -t "/tmp/plugin/darnit-claude-plugin-${VERSION}.zip"
+
+      - name: Manifest pins ${{ needs.parse-trigger.outputs.version }} on both axes
+        env:
+          VERSION: ${{ needs.parse-trigger.outputs.version }}
+        run: |
+          set -euo pipefail
+          zip="/tmp/plugin/darnit-claude-plugin-${VERSION}.zip"
+          unzip -p "$zip" darnit/.claude-plugin/plugin.json \
+            | jq -e --arg v "$VERSION" '.version == $v' > /dev/null
+          unzip -p "$zip" darnit/.claude-plugin/plugin.json \
+            | jq -e --arg v "$VERSION" '.mcpServers["darnit-mcp"].env.DARNIT_MCP_VERSION == $v' > /dev/null
+          echo "✓ Manifest pins ${VERSION} on both axes"
+
+      - name: Skill set matches contract
+        env:
+          VERSION: ${{ needs.parse-trigger.outputs.version }}
+        run: |
+          set -euo pipefail
+          zip="/tmp/plugin/darnit-claude-plugin-${VERSION}.zip"
+          bundled=$(unzip -l "$zip" \
+            | awk '/darnit\/skills\/[a-z]+\/SKILL\.md$/ {sub("^.*skills/",""); sub("/SKILL.md$",""); print}' \
+            | sort | paste -sd, -)
+          expected="audit,comply,data,remediate"
+          if [ "$bundled" != "$expected" ]; then
+            echo "::error::bundled=${bundled} expected=${expected}"
+            exit 1
+          fi
+          echo "✓ Skill set: $bundled"
+
+      - name: Runner script is executable after extraction
+        env:
+          VERSION: ${{ needs.parse-trigger.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/plugin-extract
+          unzip -q "/tmp/plugin/darnit-claude-plugin-${VERSION}.zip" -d /tmp/plugin-extract
+          test -x /tmp/plugin-extract/darnit/bin/darnit-mcp-runner
+          echo "✓ Runner script is +x"
+
+  # T055: behavioral smoke. Extracts the bundle, runs the wrapper script
+  # under three conditions: (a) with uvx on PATH → should exec into uvx
+  # successfully; (b) with neither uvx nor pipx → should exit 127 with the
+  # actionable error message. The wrapper IS the FR-017 implementation, so
+  # this is the strongest behavioral check we can run without an Anthropic-
+  # provided plugin test harness.
+  plugin_behavioral_smoke:
+    name: plugin_behavioral_smoke
+    needs: [parse-trigger, plugin_structural_smoke]
+    if: needs.parse-trigger.outputs.is_prerelease == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv (provides uvx)
+        run: |
+          set -euo pipefail
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          # shellcheck disable=SC1090
+          . "$HOME/.local/bin/env" 2>/dev/null || export PATH="$HOME/.local/bin:$PATH"
+          uvx --version
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Download and extract the plugin zip
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.parse-trigger.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+          mkdir -p /tmp/plugin
+          gh release download "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "darnit-claude-plugin-${VERSION}.zip" \
+            --dir /tmp/plugin
+          mkdir -p /tmp/plugin-extract
+          unzip -q "/tmp/plugin/darnit-claude-plugin-${VERSION}.zip" -d /tmp/plugin-extract
+
+      - name: Wrapper successfully invokes darnit via uvx (--help, exits 0)
+        env:
+          VERSION: ${{ needs.parse-trigger.outputs.version }}
+        run: |
+          set -euo pipefail
+          # --help is the simplest one-shot invocation: it exercises the
+          # uvx fetch + the darnit-mcp entry-point resolution, and exits
+          # 0 without hanging on stdio MCP input.
+          DARNIT_MCP_VERSION="$VERSION" \
+          CLAUDE_PLUGIN_ROOT=/tmp/plugin-extract/darnit \
+            /tmp/plugin-extract/darnit/bin/darnit-mcp-runner --help \
+            | head -5
+          echo "✓ Wrapper exec'd uvx and darnit-mcp printed its help"
+
+      - name: Wrapper errors actionably when neither uvx nor pipx is available
+        env:
+          VERSION: ${{ needs.parse-trigger.outputs.version }}
+        run: |
+          set +e
+          # Strip uvx + pipx from PATH and confirm the wrapper exits 127
+          # with the FR-017 actionable error message naming both options.
+          out=$(env -i \
+            HOME="$HOME" \
+            PATH="/usr/bin:/bin" \
+            DARNIT_MCP_VERSION="$VERSION" \
+            CLAUDE_PLUGIN_ROOT=/tmp/plugin-extract/darnit \
+            /tmp/plugin-extract/darnit/bin/darnit-mcp-runner 2>&1)
+          code=$?
+          echo "Wrapper output:"
+          echo "$out"
+          if [ "$code" -ne 127 ]; then
+            echo "::error::Expected exit 127, got $code"
+            exit 1
+          fi
+          echo "$out" | grep -F "uvx" > /dev/null
+          echo "$out" | grep -F "pipx" > /dev/null
+          echo "✓ Wrapper actionable-error path verified (exit 127, names both prerequisites)"

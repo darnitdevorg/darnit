@@ -328,15 +328,109 @@ brew test darnit
 
 ## Claude Code plugin
 
-> _Filled by Phase 6 (User Story 4)._
+The `plugin_package` job builds the bundle locally (`packaging/claude-plugin/build.sh`), runs three sanity checks in CI (version-pin matches on both axes, skill set matches the contract, runner exec-bit preserved on extraction), and uploads `darnit-claude-plugin-<version>.zip` to the existing GH Release as a new asset.
 
-Failure modes:
+Recovery is generally simpler than for the other channels because the zip is fully reproducible from the tagged commit — `build.sh` only needs `bash`, `sed`, `zip`, and the source tree.
 
-- Plugin zip upload to the GitHub Release failed.
-- Plugin manifest version pin does not match the release version.
-- Skill bundling missed one or more skills.
+### Failure mode 1 — Zip upload to GH Release failed
 
-Repair procedure: _TBD in T057._
+**Symptom**: `plugin_package` job log shows the build succeeded but the `gh release upload` step failed (rate limit, transient API error, network blip).
+
+**Important**: The zip is fully reproducible — running `build.sh` with the same `VERSION` on the tagged commit produces a byte-equivalent bundle (modulo the build timestamp inside the zip, which the `-X` flag strips).
+
+**Procedure**:
+
+1. Locally:
+   ```bash
+   git checkout v<X.Y.Z>
+   VERSION=<X.Y.Z> ./packaging/claude-plugin/build.sh
+   ```
+   Confirm `dist/claude-plugin/darnit-claude-plugin-<X.Y.Z>.zip` exists.
+2. Upload manually:
+   ```bash
+   gh release upload v<X.Y.Z> \
+     dist/claude-plugin/darnit-claude-plugin-<X.Y.Z>.zip \
+     --repo kusari-oss/darnit
+   ```
+3. Re-run `plugin_structural_smoke` and `plugin_behavioral_smoke` from the smoke workflow.
+
+### Failure mode 2 — plugin.json version pin does not match the release version
+
+**Symptom**: `plugin_package` job's "Assert plugin manifest pins the release version" step fails. Or the zip uploaded but `plugin_structural_smoke` reports a mismatch.
+
+**Important**: This is a real bug — the `__VERSION__` substitution in `build.sh` failed, or the template was edited without the build script being updated. The plugin must not ship with a version mismatch (FR-004 lockstep).
+
+**Procedure**:
+
+1. Inspect `packaging/claude-plugin/templates/plugin.json` and `packaging/claude-plugin/build.sh`. Make sure every `__VERSION__` sentinel in the template is substituted in the script.
+2. The `build.sh` has a final guard (`grep -q '__VERSION__'`) that bails on unfilled sentinels. If the in-CI assert tripped, the in-`build.sh` guard probably did too — re-read the job log.
+3. Roll forward to `v<X.Y.Z+1>` once fixed. Do **not** patch the version inside the zip and re-upload — that breaks any user who already downloaded the bad zip.
+
+### Failure mode 3 — Bundled skill set drifted from the contract
+
+**Symptom**: `plugin_package` job's "Assert bundled skill set matches contract" step fails. Or `plugin_structural_smoke` reports `bundled=X expected=audit,comply,data,remediate`.
+
+**Common cause**: A skill was renamed, added, or removed under `packages/darnit/src/darnit/skills/` without updating either the contract or `build.sh`'s `EXPECTED_SKILLS` array.
+
+**Procedure**:
+
+1. Compare `ls packages/darnit/src/darnit/skills/` against the contract's bundled-set list.
+2. If a deliberate change: update both `EXPECTED_SKILLS` in `build.sh` AND the contract in `contracts/claude-plugin-contract.md` in the same PR.
+3. If accidental: revert the skill change.
+
+### Failure mode 4 — Runner script not executable after extraction
+
+**Symptom**: `plugin_structural_smoke` reports "Runner script is +x" failed, OR users report "permission denied" when Claude Code tries to invoke the MCP server.
+
+**Important**: The wrapper script is the FR-017 implementation. Without exec permission, the entire plugin is broken.
+
+**Procedure**:
+
+1. `build.sh` does `chmod 0755` on the runner before zipping. If the zip on the GH Release shows mode `0644`, the issue is upstream of the chmod — possibly a `zip` flag (`-X` strips Unix permissions on some platforms when combined with other flags).
+2. Rebuild locally and inspect: `unzip -l darnit-claude-plugin-<X.Y.Z>.zip darnit/bin/darnit-mcp-runner` (the `mode` column in extended unzip output should start with `-rwx`).
+3. If the mode is wrong even locally, fix `build.sh` first. The fix is most likely removing `-X` or adding `-X-` to preserve permissions.
+4. Roll forward to `v<X.Y.Z+1>` once the build produces a correct zip.
+
+### Failure mode 5 — Behavioral smoke fails (uvx path doesn't work in CI)
+
+**Symptom**: `plugin_behavioral_smoke` installs uv, extracts the plugin, then `darnit-mcp-runner --help` exits non-zero — but structural smoke passed.
+
+**Common causes**:
+- `uvx --from darnit-mcp==<version> darnit-mcp --help` failed because PyPI/TestPyPI hasn't propagated the new version yet (rare; the `container_build_push` job's PyPI-propagation wait usually fixes this for downstream jobs).
+- A change to darnit-mcp's CLI broke `--help` (very unlikely — `--help` is one of the most stable surfaces).
+
+**Procedure**:
+
+1. From a local machine: `uvx --from darnit-mcp==<X.Y.Z> darnit-mcp --help`. Does it work? If yes, the CI failure was transient — re-run.
+2. If `uvx` can't fetch the package, see [PyPI section](#pypi) recovery.
+
+### Verification after recovery
+
+```bash
+# Download the published zip
+gh release download v<X.Y.Z> \
+  --repo kusari-oss/darnit \
+  --pattern "darnit-claude-plugin-<X.Y.Z>.zip" \
+  --dir /tmp/plugin-verify
+unzip -q /tmp/plugin-verify/darnit-claude-plugin-<X.Y.Z>.zip -d /tmp/plugin-verify
+
+# Pin matches
+jq '.version, .mcpServers["darnit-mcp"].env.DARNIT_MCP_VERSION' \
+  /tmp/plugin-verify/darnit/.claude-plugin/plugin.json
+# Both lines should print "<X.Y.Z>"
+
+# Skill set
+ls /tmp/plugin-verify/darnit/skills/
+# Must be exactly: audit comply data remediate
+
+# Runner is +x and the fallback works
+test -x /tmp/plugin-verify/darnit/bin/darnit-mcp-runner
+
+DARNIT_MCP_VERSION=<X.Y.Z> \
+CLAUDE_PLUGIN_ROOT=/tmp/plugin-verify/darnit \
+  /tmp/plugin-verify/darnit/bin/darnit-mcp-runner --help | head -5
+# Should print darnit-mcp's help text.
+```
 
 ---
 
