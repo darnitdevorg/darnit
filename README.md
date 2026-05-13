@@ -16,6 +16,7 @@ This repository includes an MCP (Model Context Protocol) server for AI assistant
 ## Features
 
 - **Plugin Architecture**: Implement any compliance standard as a darnit plugin
+- **Composition**: Assemble your organization's posture as a TOML-only mix of slices from other installed implementations — no forking, no Python ([quickstart](specs/013-plugin-composition/quickstart.md))
 - **MCP Server**: Integrates with AI assistants (Claude, etc.) for interactive auditing
 - **Automated Remediation**: Generate fixes for compliance gaps with dry-run support
 - **Project Configuration**: Canonical `.project.yaml` for project metadata and documentation locations
@@ -204,6 +205,8 @@ confirm_project_context(
 To create a new compliance implementation, start with the [**third-party plugin packaging guide**](docs/packaging-plugins.md) — it walks through `pyproject.toml`, entry points, the `ComplianceImplementation` protocol, the TOML control schema, signing, and distribution end-to-end. A minimal worked example lives at [`packages/darnit-hello/`](packages/darnit-hello/); copy it as a starting point.
 
 For implementation-level details (Python control handlers, custom MCP tools, remediation patterns), see the [Implementation Development Guide](docs/getting-started/implementation-development.md) and the [step-by-step tutorial](docs/tutorials/create-new-implementation.md).
+
+**If your "implementation" is really a curated mix of existing ones** — e.g., "OpenSSF Baseline levels 1–2 + three named SLSA controls + four of our own" — see the [composition quickstart](specs/013-plugin-composition/quickstart.md). Composition is TOML-only; you don't write Python composition code, and upstream sources stay upgrade-current automatically.
 
 ## Available MCP Tools
 

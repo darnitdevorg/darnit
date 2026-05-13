@@ -287,4 +287,5 @@ The OpenSSF Baseline implementation (`packages/darnit-baseline/`) is the canonic
 - [Tutorial: Add a New Control](../tutorials/add-new-control.md) — Step-by-step walkthrough
 - [Tutorial: Create a New Implementation](../tutorials/create-new-implementation.md) — Build a plugin from scratch
 - [Testing Guide](testing.md) — Testing your implementation
+- [Composition Quickstart](../../specs/013-plugin-composition/quickstart.md) — Assemble an implementation from slices of other installed implementations in TOML, without writing Python composition code
 - Back to [Getting Started](README.md)

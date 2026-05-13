@@ -360,6 +360,19 @@ See `CLAUDE.md` "Three-Layer Architecture" for the canonical reference.
 
 ---
 
+## Composition vs forking
+
+If your goal is "OpenSSF Baseline + a few of our own controls + an override or two" rather than a wholly new compliance standard, **don't build a plugin from scratch — compose one in TOML**. A composite implementation declares which controls it pulls from already-installed sources (levels, named IDs, or tag-based slices), adds inline controls of its own, and optionally overrides specific fields without forking. The framework resolves all of that at registration time and the rest of the framework sees a normal flat control set.
+
+- [Composition quickstart](../specs/013-plugin-composition/quickstart.md) — the canonical end-to-end walkthrough
+- [Composition spec](../specs/013-plugin-composition/spec.md) — full requirements (FR-001..FR-018, user stories, edge cases)
+- [TOML schema contract](../specs/013-plugin-composition/contracts/toml-schema.md) — `[[compose]]`, `[overrides."ID"]`, `allow_conflicts`, field-by-field semantics
+- [Implementation Guide §12](IMPLEMENTATION_GUIDE.md#12-composition-assembling-implementations-from-other-implementations) — when-to-compose-vs-fork, conflict-resolution escape hatches, provenance contract
+
+Composition keeps you upgrade-current on upstream changes (their pass logic and remediation flow through automatically); a fork takes upstream code captive. Reach for a fork only if you need to fundamentally re-author pass logic or maintain semantically divergent behavior.
+
+---
+
 ## See also
 
 - [Project constitution](../.specify/memory/constitution.md) — TOML-First Architecture, Plugin Separation rules

@@ -33,6 +33,15 @@ Compliance framework plugins — TOML controls, CEL expressions, remediation, cu
 - [Add a New Control](../tutorials/add-new-control.md) — Add a control to the OpenSSF Baseline
 - [Create a New Implementation](../tutorials/create-new-implementation.md) — Build a plugin from scratch
 
+### I want to assemble an org-specific posture from existing implementations
+
+Composition — TOML-only mix of slices from already-installed implementations ("OpenSSF Baseline L1+L2 + three named SLSA controls + our internal controls"). No Python composition code; upstream sources stay upgrade-current.
+
+1. [Environment Setup](environment-setup.md) — Prerequisites, fork, clone, install
+2. [Composition Quickstart](../../specs/013-plugin-composition/quickstart.md) — End-to-end walkthrough for an `acme-baseline` composite
+3. [TOML schema contract](../../specs/013-plugin-composition/contracts/toml-schema.md) — `[[compose]]`, `[overrides."ID"]`, `allow_conflicts` semantics
+4. [Implementation Guide §12](../IMPLEMENTATION_GUIDE.md#12-composition-assembling-implementations-from-other-implementations) — When to compose vs fork, conflict-resolution escape hatches, provenance contract
+
 ## Quick Reference
 
 | Guide | What it covers |
