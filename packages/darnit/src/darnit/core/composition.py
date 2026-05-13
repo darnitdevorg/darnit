@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from darnit.config.framework_schema import (
@@ -391,6 +391,130 @@ def _check_version_constraint(
         )
 
 
+def _validate_override_fields(
+    control_id: str,
+    override,
+) -> None:
+    """Validate every field set on an ``OverrideBlock`` against ``ControlConfig``.
+
+    Raises :class:`CompositionUnknownFieldError` for any field name that
+    does NOT appear on the real ``ControlConfig.model_fields``. This is
+    the load-bearing guarantee from F-2: there are no friendly aliases —
+    ``severity`` and ``help_url`` are unknown fields, not silently mapped
+    onto ``security_severity`` / ``docs_url``.
+
+    Both the declared override fields (``model_fields_set``) and any
+    extras the author wrote (``model_extra``) are checked, because the
+    ``OverrideBlock`` model uses ``extra="allow"`` to keep the
+    "unknown field" detection here rather than in pydantic.
+    """
+    from darnit.config.framework_schema import ControlConfig
+
+    known = set(ControlConfig.model_fields.keys())
+
+    # Fields explicitly declared on OverrideBlock (e.g., `passes`,
+    # `remediation`, `security_severity`, `description`, `docs_url`,
+    # `tags`). Every declared name is checked, but a field only counts
+    # as "set" if the author actually provided it.
+    for field in override.model_fields_set:
+        if field not in known:
+            raise CompositionUnknownFieldError(
+                control_id=control_id, field=field
+            )
+
+    # Extras that the author wrote which aren't declared on OverrideBlock
+    # (because of `extra="allow"`). Any such name that isn't on
+    # ControlConfig is rejected — this is how the alias-rejection
+    # guarantee from F-2 (e.g., a user typing `severity = 8.5`) is
+    # enforced at resolution time.
+    for field in (override.model_extra or {}):
+        if field not in known:
+            raise CompositionUnknownFieldError(
+                control_id=control_id, field=field
+            )
+
+
+def _apply_override(
+    control_id: str,
+    ctrl: ControlConfig,
+    override,
+) -> ControlConfig:
+    """Layer an ``OverrideBlock`` onto a resolved ``ControlConfig``.
+
+    Fields explicitly set on ``override`` (per ``model_fields_set`` and
+    ``model_extra``) replace the corresponding fields on ``ctrl``:
+
+    - Scalar fields (``remediation``, ``security_severity``,
+      ``description``, ``docs_url``) and ``passes`` are replaced
+      wholesale (FR-006).
+    - ``tags`` is shallow-merged with the override's keys winning,
+      **except** the reserved provenance keys (``_composed_from`` and
+      ``_original_control_id``) — if the override redefines those,
+      the resolver silently drops them and emits a WARNING log.
+      Provenance is non-overridable so audit reviewers can always
+      trace results back to the originating source.
+    - Any extras the author wrote that ARE valid ``ControlConfig``
+      fields (e.g., overriding ``security_severity`` via the extras
+      route rather than the declared scalar — pydantic's ``model_extra``
+      catches anything ``OverrideBlock`` doesn't explicitly declare)
+      are also applied.
+
+    Field-name validation has already run upstream via
+    :func:`_validate_override_fields`, so this function trusts that
+    every name it iterates is a real ``ControlConfig`` field.
+    """
+    update: dict[str, Any] = {}
+
+    # Declared, set fields.
+    for field in override.model_fields_set:
+        if field == "tags":
+            # Special-cased below; handle after the loop so both declared
+            # and extras-routed tags are merged consistently.
+            continue
+        update[field] = getattr(override, field)
+
+    # Extras (e.g., an author who typed a real ControlConfig field name
+    # that OverrideBlock doesn't explicitly declare). _validate_override_fields
+    # already ruled out unknown names, so every extra here is safe.
+    for field, value in (override.model_extra or {}).items():
+        if field == "tags":
+            continue
+        update[field] = value
+
+    # Tags merge — last, so the merge result is consistent regardless of
+    # whether tags came via declared or extras routes.
+    override_tags: dict[str, Any] = {}
+    if "tags" in override.model_fields_set:
+        override_tags.update(override.tags or {})
+    if override.model_extra and "tags" in override.model_extra:
+        override_tags.update(override.model_extra["tags"] or {})
+
+    if override_tags:
+        # Provenance keys are reserved; drop any author attempts to redefine
+        # them and warn. Composite authors who want their own custom tags
+        # use ANY OTHER key; these two are framework-stamped only.
+        for reserved in (_TAG_COMPOSED_FROM, _TAG_ORIGINAL_CONTROL_ID):
+            if reserved in override_tags:
+                log.warning(
+                    "Override on %s defined a reserved tag key (%s); ignoring",
+                    control_id,
+                    reserved,
+                )
+                del override_tags[reserved]
+
+        merged_tags = {**ctrl.tags, **override_tags}
+        # Re-stamp provenance so the override's tag merge can never erase
+        # them even if the user attempted to (already filtered above, but
+        # belt-and-suspenders).
+        merged_tags[_TAG_COMPOSED_FROM] = ctrl.tags.get(_TAG_COMPOSED_FROM)
+        merged_tags[_TAG_ORIGINAL_CONTROL_ID] = ctrl.tags.get(
+            _TAG_ORIGINAL_CONTROL_ID
+        )
+        update["tags"] = merged_tags
+
+    return ctrl.model_copy(update=update)
+
+
 # =============================================================================
 # Resolver
 # =============================================================================
@@ -520,25 +644,45 @@ def resolve_composition(
             contributor[cid] = block.source
 
     # -------------------------------------------------------------------------
-    # Stage 3: override application. US2 (T032) wires this loop. For US1 we
-    # already short-circuited above when overrides are present alongside no
-    # compose blocks; if overrides come together with compose blocks the
-    # body would reach this section, so we keep the NotImplementedError
-    # placeholder until US2.
+    # Stage 3: override application. Runs AFTER all compose blocks have
+    # populated `resolved`. Per FR-011 (and the F-11 clarification), an
+    # override layers onto whatever the compose phase produced for that ID —
+    # which, by stage 2's `if cid in resolved: ... raise` placeholder until
+    # US3 lands, is the EARLIEST compose block's contribution.
+    #
+    # Three rejection paths run before any field is applied:
+    #
+    # - V2.1 / FR-007: `[overrides."ID"]` targeting an ID not in `resolved`
+    #   → CompositionOrphanOverrideError. No silent acceptance of dead
+    #   overrides.
+    # - V2.2 / FR-008: override fields that aren't on the real
+    #   `ControlConfig` schema → CompositionUnknownFieldError. This is the
+    #   "no friendly aliases" guarantee from F-2 (a user typing
+    #   `severity = 8.5` hits this, not a silent rename to
+    #   `security_severity`).
+    # - V2.4: override redefinitions of provenance keys (`_composed_from`,
+    #   `_original_control_id`) are silently dropped with a WARNING. The
+    #   compose-block recursion already established the correct ultimate
+    #   source; an override should not be able to disguise it.
     # -------------------------------------------------------------------------
-    if composite.overrides:
-        raise NotImplementedError(
-            "Override application not yet implemented (lands in US2 / T032). "
-            f"Composite {composite_slug!r} declares "
-            f"{len(composite.overrides)} [overrides.\"…\"] block(s)."
+    override_count = 0
+    for override_id, override in composite.overrides.items():
+        if override_id not in resolved:
+            raise CompositionOrphanOverrideError(orphan_id=override_id)
+        _validate_override_fields(override_id, override)
+        resolved[override_id] = _apply_override(
+            override_id, resolved[override_id], override
         )
+        override_count += 1
 
     log.debug(
-        "Resolved composite %s: %d controls (%d inline + %d composed)",
+        "Resolved composite %s: %d controls "
+        "(%d inline + %d composed, %d overrides applied)",
         composite_slug,
         len(resolved),
         len(composite.controls),
         len(resolved) - len(composite.controls),
+        override_count,
     )
 
     return composite.model_copy(

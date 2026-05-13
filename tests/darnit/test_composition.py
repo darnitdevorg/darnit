@@ -18,6 +18,8 @@ from darnit.core.composition import (
     _TAG_COMPOSED_FROM,
     _TAG_ORIGINAL_CONTROL_ID,
     CompositionMissingSourceError,
+    CompositionOrphanOverrideError,
+    CompositionUnknownFieldError,
     resolve_composition,
 )
 
@@ -314,6 +316,120 @@ def test_resolve_is_idempotent_for_non_composite():
 
 # ---------------------------------------------------------------------------
 # Self-cycle smoke (foundational — full F-1 regression lands in US4 / T046b)
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# US2 — Override application
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_overrides_replace_fields(composite_fixtures_dir, fixture_source_loader):
+    """US2 / T033: override replaces the named field only; passes untouched."""
+    result = _resolve(
+        composite_fixtures_dir, fixture_source_loader, "override-remediation"
+    )
+
+    ctrl = result.controls["MOCK-AC-01.01"]
+    # Description matches the override
+    assert ctrl.description == (
+        "ACME's internal description overrides the upstream one."
+    )
+    # Pass logic untouched — still a single file_must_exist pass with
+    # the unsatisfiable fixture path
+    assert ctrl.passes is not None
+    assert len(ctrl.passes) == 1
+    assert ctrl.passes[0].handler == "file_must_exist"
+
+
+@pytest.mark.unit
+def test_overrides_preserve_provenance(composite_fixtures_dir, fixture_source_loader):
+    """US2 / T034: provenance tags survive override unchanged.
+
+    Even if the override touches `tags` (or `docs_url` in this fixture),
+    the framework-stamped `_composed_from` and `_original_control_id`
+    must still identify the original source.
+    """
+    result = _resolve(
+        composite_fixtures_dir,
+        fixture_source_loader,
+        "override-preserves-provenance",
+    )
+
+    ctrl = result.controls["MOCK-AC-01.01"]
+    assert ctrl.tags.get(_TAG_COMPOSED_FROM) == "mock-source-a"
+    assert ctrl.tags.get(_TAG_ORIGINAL_CONTROL_ID) == "MOCK-AC-01.01"
+    # The overridden docs_url field also took effect
+    assert ctrl.docs_url == "https://internal.acme.example/runbooks/ac-01-01"
+
+
+@pytest.mark.unit
+def test_orphan_override_raises(composite_fixtures_dir, fixture_source_loader):
+    """US2 / T035: override targeting an absent ID raises with that ID."""
+    cfg = _parse_framework_only(
+        _composite_path(composite_fixtures_dir, "orphan-override")
+    )
+
+    with pytest.raises(CompositionOrphanOverrideError) as excinfo:
+        resolve_composition(cfg, source_loader=fixture_source_loader)
+
+    assert excinfo.value.orphan_id == "DOES-NOT-EXIST-99.99"
+    assert "DOES-NOT-EXIST-99.99" in str(excinfo.value)
+
+
+@pytest.mark.unit
+def test_unknown_field_override_raises(
+    composite_fixtures_dir, fixture_source_loader
+):
+    """US2 / T036: override naming an unknown ControlConfig field raises."""
+    cfg = _parse_framework_only(
+        _composite_path(composite_fixtures_dir, "unknown-field-override")
+    )
+
+    with pytest.raises(CompositionUnknownFieldError) as excinfo:
+        resolve_composition(cfg, source_loader=fixture_source_loader)
+
+    assert excinfo.value.field == "bogus_field"
+    assert excinfo.value.control_id == "MOCK-AC-01.01"
+
+
+@pytest.mark.unit
+def test_alias_field_names_rejected(composite_fixtures_dir, fixture_source_loader):
+    """US2 / T036 sub-test: the 'no friendly aliases' guarantee from F-2.
+
+    A composite author who types `severity` (rather than the real schema
+    field name `security_severity`) must hit ``CompositionUnknownFieldError``
+    — there are no silent renames.
+    """
+    cfg = _parse_framework_only(
+        _composite_path(composite_fixtures_dir, "alias-field-override")
+    )
+
+    with pytest.raises(CompositionUnknownFieldError) as excinfo:
+        resolve_composition(cfg, source_loader=fixture_source_loader)
+
+    assert excinfo.value.field == "severity"
+
+
+@pytest.mark.unit
+def test_empty_override_block_rejected(composite_fixtures_dir):
+    """US2 / T037: empty override block (no fields) rejected by V2.3."""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError) as excinfo:
+        _parse_framework_only(
+            _composite_path(composite_fixtures_dir, "empty-override")
+        )
+
+    # Error message names the at-least-one-field rule
+    assert "at least one field" in str(excinfo.value).lower() or "no fields" in str(
+        excinfo.value
+    ).lower()
+
+
+# ---------------------------------------------------------------------------
+# US1 — foundational cycle smoke
 # ---------------------------------------------------------------------------
 
 

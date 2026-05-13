@@ -1,0 +1,15 @@
+# US2 / T035: override targets a control ID that no compose block
+# contributes (and no inline control declares). Expected: registration
+# fails with CompositionOrphanOverrideError naming the orphan ID.
+
+[metadata]
+name = "test-orphan-override"
+display_name = "Test: orphan override rejected"
+version = "1.0.0"
+
+[[compose]]
+source = "mock-source-a"
+include_controls = ["MOCK-AC-01.01"]
+
+[overrides."DOES-NOT-EXIST-99.99"]
+description = "Targets a control that no compose block contributes."

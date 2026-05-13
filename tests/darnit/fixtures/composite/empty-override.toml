@@ -1,0 +1,13 @@
+# US2 / T037: override block with no fields. Expected: pydantic
+# validator V2.3 rejects at parse time.
+
+[metadata]
+name = "test-empty-override"
+display_name = "Test: empty override rejected"
+version = "1.0.0"
+
+[[compose]]
+source = "mock-source-a"
+include_controls = ["MOCK-AC-01.01"]
+
+[overrides."MOCK-AC-01.01"]
