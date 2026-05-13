@@ -1,0 +1,12 @@
+# US1 / T027: compose block with only `source` and no inclusion expressions.
+# Expected: pydantic ValidationError from ComposeBlock validator V1.1 at
+# parse time. The test loads via load_framework_config and asserts the
+# error surfaces (it does, since validation happens at parse).
+
+[metadata]
+name = "test-empty-compose-block"
+display_name = "Test: empty compose block rejected"
+version = "1.0.0"
+
+[[compose]]
+source = "mock-source-a"

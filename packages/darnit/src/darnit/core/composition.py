@@ -30,10 +30,15 @@ recursion is the resolver's exclusive responsibility so its
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    pass
+    from darnit.config.framework_schema import (
+        ComposeBlock,
+        ControlConfig,
+        FrameworkConfig,
+    )
 
 log = logging.getLogger("darnit.core.composition")
 
@@ -180,89 +185,374 @@ __all__ = [
 
 
 # =============================================================================
-# Resolver (skeleton — Foundational phase only; full body lands in US1+)
+# Internal helpers
+# =============================================================================
+
+
+# Sentinel: framework-stamped tag keys carrying provenance. UI / serializer
+# code can identify these because of the leading underscore. The override
+# application path (US2 / T031) preserves them across `tags` merges.
+_TAG_COMPOSED_FROM = "_composed_from"
+_TAG_ORIGINAL_CONTROL_ID = "_original_control_id"
+
+
+def _select_controls(
+    block: ComposeBlock,
+    source_controls: dict[str, ControlConfig],
+) -> set[str]:
+    """Apply a compose block's inclusion/exclusion filters to a source.
+
+    Semantics per R-009 (intersection of all named inclusion expressions,
+    then ``exclude_controls`` subtracted from the result):
+
+    1. If ``include_all`` is True, start with every control ID in the source.
+    2. Else start with the union of: controls matching ``include_levels``,
+       controls matching ``include_controls`` by exact ID, controls whose
+       ``tags`` satisfy every key/value pair in ``include_tags`` — but
+       evaluated as the **intersection** across the named expressions (so
+       ``include_levels = [1]`` AND ``include_controls = ["L1-X", "L3-Y"]``
+       yields only ``L1-X``).
+    3. Subtract ``exclude_controls`` from whatever set survived inclusion.
+
+    An empty result is NOT an error — it is a no-op contribution and emits
+    a DEBUG log so the composite author can spot accidental over-narrowing
+    without the framework treating it as a failure.
+    """
+    if block.include_all:
+        selected = set(source_controls.keys())
+    else:
+        # Start with "all" only if a specific filter is set; otherwise
+        # each filter contributes its own narrowing. We compute every
+        # individual filter as a set, then intersect.
+        individual_sets: list[set[str]] = []
+
+        if block.include_levels:
+            levels = set(block.include_levels)
+            individual_sets.append(
+                {
+                    cid
+                    for cid, ctrl in source_controls.items()
+                    if ctrl.level is not None and ctrl.level in levels
+                }
+            )
+
+        if block.include_controls:
+            wanted = set(block.include_controls)
+            individual_sets.append(
+                {cid for cid in source_controls if cid in wanted}
+            )
+
+        if block.include_tags:
+            tagged: set[str] = set()
+            for cid, ctrl in source_controls.items():
+                if all(
+                    ctrl.tags.get(key) == value
+                    for key, value in block.include_tags.items()
+                ):
+                    tagged.add(cid)
+            individual_sets.append(tagged)
+
+        # ComposeBlock validators (V1.1, V1.2) guarantee at least one
+        # inclusion expression is present and that include_all is exclusive
+        # with the others — so `individual_sets` is non-empty here.
+        selected = set.intersection(*individual_sets) if individual_sets else set()
+
+    if block.exclude_controls:
+        selected -= set(block.exclude_controls)
+
+    if not selected:
+        log.debug(
+            "Compose block on source %s contributed 0 controls after filtering",
+            block.source,
+        )
+
+    return selected
+
+
+def _load_source_with_cache(
+    slug: str,
+    cache: dict[str, FrameworkConfig],
+    loader: Callable[[str], FrameworkConfig | None],
+) -> FrameworkConfig | None:
+    """Memoize a parse-only source-loader call by slug.
+
+    The cache is scoped to one top-level ``resolve_composition`` invocation
+    (R-003), so diamonds (A → B → leaf and A → C → leaf) load the leaf
+    exactly once. Returns ``None`` when the loader returns ``None``; the
+    caller is responsible for raising :class:`CompositionMissingSourceError`.
+
+    IMPORTANT: ``loader`` MUST be a parse-only function (e.g.
+    ``darnit.config.merger._parse_framework_only``). The default loader
+    constructed by :func:`_default_source_loader` honors this; tests that
+    inject custom loaders MUST also honor it (see
+    ``tests/darnit/conftest.py``). Cycle detection (FR-012) is broken if
+    the loader re-enters composition with a fresh ``_resolution_stack``.
+    """
+    if slug in cache:
+        return cache[slug]
+    cfg = loader(slug)
+    if cfg is not None:
+        cache[slug] = cfg
+    return cfg
+
+
+def _clone_with_provenance(
+    ctrl: ControlConfig,
+    composed_from: str,
+    original_id: str,
+) -> ControlConfig:
+    """Return a copy of ``ctrl`` with framework-stamped provenance tags.
+
+    The two stamped tags are:
+
+    - ``_composed_from``: the slug of the source the control originated in
+      (the ULTIMATE non-composite source for recursive composition — see
+      :func:`resolve_composition`'s handling of the recursive case).
+    - ``_original_control_id``: the control's ID as it appears in the
+      originating source.
+
+    These travel inside the existing ``ControlConfig.tags`` dict, so any
+    downstream consumer that serializes ``tags`` (audit results,
+    list-controls output, SARIF formatters) inherits provenance for free.
+    """
+    new_tags = {
+        **ctrl.tags,
+        _TAG_COMPOSED_FROM: composed_from,
+        _TAG_ORIGINAL_CONTROL_ID: original_id,
+    }
+    return ctrl.model_copy(update={"tags": new_tags})
+
+
+def _default_source_loader(slug: str) -> FrameworkConfig | None:
+    """Default ``source_loader`` for :func:`resolve_composition`.
+
+    Looks up the source slug via the existing ``PluginRegistry``
+    (slug → TOML path), then loads the TOML through
+    :func:`darnit.config.merger._parse_framework_only` — NOT through
+    :func:`darnit.config.merger.load_framework_config`, which would
+    re-enter composition with a fresh ``_resolution_stack`` and break
+    cycle detection (F-1 fix; research.md R-002).
+    """
+    # Late imports keep this module free of import-time dependencies on
+    # config.merger and core.registry.
+    from darnit.config.merger import _parse_framework_only
+
+    try:
+        from darnit.core.registry import get_plugin_registry
+    except ImportError:
+        return None
+
+    registry = get_plugin_registry()
+    path = registry.get_framework_path(slug)
+    if path is None:
+        return None
+    return _parse_framework_only(path)
+
+
+def _check_version_constraint(
+    block: ComposeBlock,
+    source_config: FrameworkConfig,
+) -> None:
+    """Enforce ``[[compose]].version_constraint`` against the loaded source.
+
+    No-op when the block has no constraint (FR-014: default-floating).
+    Raises :class:`CompositionVersionMismatchError` on miss.
+
+    Specifier syntax was already validated by
+    :func:`ComposeBlock._validate_version_constraint_syntax` at TOML parse
+    time, so we can construct the ``SpecifierSet`` here without a
+    try/except for ``InvalidSpecifier``. The PEP 440 ``Version`` of the
+    source's ``metadata.version``, however, may not parse — we surface
+    that as a clear ``CompositionVersionMismatchError`` describing the
+    problem rather than letting ``InvalidVersion`` propagate.
+    """
+    if block.version_constraint is None:
+        return
+
+    from packaging.specifiers import SpecifierSet
+    from packaging.version import InvalidVersion, Version
+
+    spec = SpecifierSet(block.version_constraint)
+    installed = source_config.metadata.version
+    try:
+        installed_v = Version(installed)
+    except InvalidVersion as exc:
+        raise CompositionVersionMismatchError(
+            source=block.source,
+            constraint=block.version_constraint,
+            installed=installed,
+        ) from exc
+
+    if installed_v not in spec:
+        raise CompositionVersionMismatchError(
+            source=block.source,
+            constraint=block.version_constraint,
+            installed=installed,
+        )
+
+
+# =============================================================================
+# Resolver
 # =============================================================================
 
 
 def resolve_composition(
-    composite,
+    composite: FrameworkConfig,
     *,
-    source_loader=None,
-    _source_cache: dict | None = None,
+    source_loader: Callable[[str], FrameworkConfig | None] | None = None,
+    _source_cache: dict[str, FrameworkConfig] | None = None,
     _resolution_stack: list[str] | None = None,
-):
+) -> FrameworkConfig:
     """Resolve a composite ``FrameworkConfig`` into a flat control set.
 
     See ``specs/013-plugin-composition/contracts/resolver-api.md`` for the
-    full contract and ``specs/013-plugin-composition/data-model.md``
-    §Resolution algorithm for the canonical pseudocode.
+    full surface contract and ``specs/013-plugin-composition/data-model.md``
+    §Resolution algorithm for the canonical pseudocode this implements.
 
-    This is the Foundational-phase skeleton: idempotence (invariant I3.3),
-    cycle-stack threading (invariant feeding FR-012), and the "clear
-    composition state on return" pattern (invariant I3.2) are wired up.
-    The compose-block iteration body and the override-application body are
-    placeholders raised as :class:`NotImplementedError`; US1 fills the
-    former, US2 fills the latter.
+    US1 (this commit) fills the compose-block iteration loop, source
+    loading, memoization, and provenance stamping for both inline and
+    composed-in controls. Override application (US2 / T032) and
+    strict-conflict detection (US3 / T038) land in subsequent PRs; until
+    then the resolver raises :class:`NotImplementedError` if those
+    branches would be entered, so partial-composition is impossible.
     """
-    # Import inside to avoid an import cycle: composition.py is imported by
-    # merger.py, and merger.py defines FrameworkConfig.
-    from darnit.config.framework_schema import FrameworkConfig  # noqa: F401
-
     if _source_cache is None:
         _source_cache = {}
     if _resolution_stack is None:
         _resolution_stack = []
+    if source_loader is None:
+        source_loader = _default_source_loader
 
-    # Pure short-circuit (invariant I3.3): a non-composite config returns
-    # unchanged. This is also what makes the resolver safe to call twice on
-    # the same already-resolved config.
+    # Idempotence (invariant I3.3): a non-composite config returns unchanged.
+    # This is also what makes the resolver safe to call twice on the same
+    # already-resolved config — and what lets the recursive case below
+    # short-circuit when a source happens to have its composition cleared
+    # already.
     if not composite.compose and not composite.overrides:
         return composite
 
     composite_slug = composite.metadata.name
 
     # Cycle detection (FR-012) — check BEFORE pushing onto the stack so a
-    # self-cycle (A → A) is caught on the first repeat, not on a hypothetical
-    # second one. See R-004.
+    # self-cycle (A → A) is caught on the first repeat. See R-004.
     if composite_slug in _resolution_stack:
         raise CompositionCycleError(chain=_resolution_stack + [composite_slug])
 
-    # Recursive calls in US1 will pass `_resolution_stack + [composite_slug]`
-    # into themselves so any source that re-enters this slug raises
-    # CompositionCycleError. Stored locally below once the iteration body
-    # lands (T017); for the skeleton we just confirm the slug is not
-    # already on the stack above.
+    new_stack = _resolution_stack + [composite_slug]
 
-    # ---------------------------------------------------------------------
-    # Foundational phase body intentionally minimal. The full pseudocode
-    # from data-model.md §Resolution algorithm lands across US1 (compose
-    # iteration), US2 (override application), and US3 (conflict detection).
-    # ---------------------------------------------------------------------
-    if composite.compose:
-        # US1 (T017) replaces this with the compose-block iteration loop.
-        raise NotImplementedError(
-            "Compose-block iteration not yet implemented (lands in US1 / T017). "
-            f"Composite {composite_slug!r} declares {len(composite.compose)} "
-            f"[[compose]] block(s) but the resolver body is still the "
-            f"Foundational skeleton."
+    # -------------------------------------------------------------------------
+    # Stage 1: seed `resolved` with the composite's INLINE controls, each
+    # stamped with provenance pointing at the composite itself. They are
+    # treated as if they came from a `compose source = <composite>` block
+    # so conflict-detection tracking (US3) sees a uniform shape.
+    # -------------------------------------------------------------------------
+    resolved: dict[str, ControlConfig] = {}
+    contributor: dict[str, str] = {}
+    for cid, ctrl in composite.controls.items():
+        resolved[cid] = _clone_with_provenance(
+            ctrl,
+            composed_from=composite_slug,
+            original_id=cid,
+        )
+        contributor[cid] = composite_slug
+
+    # -------------------------------------------------------------------------
+    # Stage 2: walk `[[compose]]` blocks in TOML file order.
+    # -------------------------------------------------------------------------
+    for block in composite.compose:
+        # Source resolution. The loader is parse-only by contract, so the
+        # returned config still has its own `compose`/`overrides` set if
+        # the source is itself a composite — that gets resolved on the
+        # recursive call below, under the SHARED `_resolution_stack`.
+        raw_source = _load_source_with_cache(block.source, _source_cache, source_loader)
+        if raw_source is None:
+            raise CompositionMissingSourceError(source=block.source)
+
+        # Version-constraint check runs against the SOURCE's own metadata,
+        # not its (eventually) resolved version. This matches what the
+        # composite author can reason about — the package they installed.
+        _check_version_constraint(block, raw_source)
+
+        # Recursive composition (FR-018). If the source has composition
+        # state, recursion drives it under our shared stack; idempotence
+        # short-circuits the non-composite case so this is a cheap call.
+        source_config = resolve_composition(
+            raw_source,
+            source_loader=source_loader,
+            _source_cache=_source_cache,
+            _resolution_stack=new_stack,
         )
 
+        # Apply this block's filters against the source's RESOLVED control
+        # set (per FR-018 — composing on effective behavior, not raw config).
+        selected_ids = _select_controls(block, source_config.controls)
+
+        for cid in selected_ids:
+            src_ctrl = source_config.controls[cid]
+            # Preserve ultimate-source provenance across recursion (R-006 /
+            # FR-018): if the source's control is already stamped, those
+            # tags identify the ULTIMATE non-composite origin, so don't
+            # overwrite them. Otherwise stamp this block's source slug as
+            # the origin.
+            effective_from = src_ctrl.tags.get(_TAG_COMPOSED_FROM, block.source)
+            effective_id = src_ctrl.tags.get(_TAG_ORIGINAL_CONTROL_ID, cid)
+            new_ctrl = _clone_with_provenance(
+                src_ctrl,
+                composed_from=effective_from,
+                original_id=effective_id,
+            )
+
+            if cid in resolved:
+                # Conflict path. US3 (T038) wires the full strict/allow_conflicts
+                # decision tree here. For US1 we only support the no-conflict
+                # case; any cross-block contribution to the same ID raises
+                # NotImplementedError until US3 lands, so partial-composition
+                # is impossible.
+                raise NotImplementedError(
+                    f"Composition conflict on {cid!r} between sources "
+                    f"{contributor[cid]!r} and {block.source!r}: "
+                    f"strict/allow_conflicts handling lands in US3 (T038). "
+                    f"Until that PR merges, composites whose [[compose]] blocks "
+                    f"produce overlapping control IDs are not supported."
+                )
+
+            resolved[cid] = new_ctrl
+            contributor[cid] = block.source
+
+    # -------------------------------------------------------------------------
+    # Stage 3: override application. US2 (T032) wires this loop. For US1 we
+    # already short-circuited above when overrides are present alongside no
+    # compose blocks; if overrides come together with compose blocks the
+    # body would reach this section, so we keep the NotImplementedError
+    # placeholder until US2.
+    # -------------------------------------------------------------------------
     if composite.overrides:
-        # US2 (T032) replaces this with the override-application loop. Orphan
-        # detection (V2.1 / FR-007) catches "overrides without composes" here
-        # in the meantime once US2 lands.
         raise NotImplementedError(
             "Override application not yet implemented (lands in US2 / T032). "
             f"Composite {composite_slug!r} declares "
             f"{len(composite.overrides)} [overrides.\"…\"] block(s)."
         )
 
-    # Unreachable today because both branches above raise; left in place so
-    # the structure is obvious for the US1 / US2 fill-ins.
-    return composite.model_copy(  # pragma: no cover
+    log.debug(
+        "Resolved composite %s: %d controls (%d inline + %d composed)",
+        composite_slug,
+        len(resolved),
+        len(composite.controls),
+        len(resolved) - len(composite.controls),
+    )
+
+    return composite.model_copy(
         update={
-            "controls": dict(composite.controls),
+            "controls": resolved,
             "compose": [],
             "overrides": {},
         }
     )
+
+
+# Re-export for callers that need to introspect provenance tags by name
+# rather than hard-coding strings.
+__all__ += [
+    "_TAG_COMPOSED_FROM",
+    "_TAG_ORIGINAL_CONTROL_ID",
+]

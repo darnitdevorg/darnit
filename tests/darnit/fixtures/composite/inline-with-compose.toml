@@ -1,0 +1,22 @@
+# US1 / T025: composite with both a [[compose]] block AND an inline control.
+# Inline controls live alongside composed ones in the resolved set, and the
+# inline control's provenance points at the composite itself.
+
+[metadata]
+name = "test-inline-with-compose"
+display_name = "Test: inline controls alongside compose"
+version = "1.0.0"
+
+[[compose]]
+source = "mock-source-a"
+include_controls = ["MOCK-AC-01.01"]
+
+[controls."ACME-LOCAL-01.01"]
+name = "AcmeLocalControl"
+description = "Inline control authored directly in the composite."
+level = 1
+domain = "ACME"
+
+[[controls."ACME-LOCAL-01.01".passes]]
+handler = "file_must_exist"
+paths = ["DOES_NOT_EXIST.fixture"]

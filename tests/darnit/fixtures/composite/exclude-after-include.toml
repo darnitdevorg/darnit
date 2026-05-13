@@ -1,0 +1,11 @@
+# US1 / T023: include_all then exclude one specific control.
+
+[metadata]
+name = "test-exclude-after-include"
+display_name = "Test: exclude_controls"
+version = "1.0.0"
+
+[[compose]]
+source = "mock-source-a"
+include_all = true
+exclude_controls = ["MOCK-AC-02.01"]

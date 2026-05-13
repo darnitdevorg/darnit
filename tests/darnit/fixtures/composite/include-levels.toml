@@ -1,0 +1,11 @@
+# US1 / T021: composite that pulls only level-1 and level-2 controls
+# from mock-source-a. MOCK-VM-02.01 (L3) MUST be absent.
+
+[metadata]
+name = "test-include-levels"
+display_name = "Test: include_levels"
+version = "1.0.0"
+
+[[compose]]
+source = "mock-source-a"
+include_levels = [1, 2]

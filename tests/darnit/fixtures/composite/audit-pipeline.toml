@@ -1,0 +1,27 @@
+# US1 / T029: small composite (3 composed + 1 inline) used to verify that
+# the audit pipeline sees a composite as shape-identical to a non-composite.
+# Per F-3, the test is SHAPE-only — file_must_exist paths are unsatisfiable,
+# so audits return FAIL across the board, which is fine for shape checking.
+
+[metadata]
+name = "test-audit-pipeline"
+display_name = "Test: audit pipeline unchanged"
+version = "1.0.0"
+
+[[compose]]
+source = "mock-source-a"
+include_controls = [
+    "MOCK-AC-01.01",
+    "MOCK-VM-01.01",
+    "MOCK-QA-01.01",
+]
+
+[controls."AUDITPIPE-01.01"]
+name = "AuditPipelineInline"
+description = "Inline control to confirm audit pipeline handles composite."
+level = 1
+domain = "PIPE"
+
+[[controls."AUDITPIPE-01.01".passes]]
+handler = "file_must_exist"
+paths = ["DOES_NOT_EXIST.fixture"]
