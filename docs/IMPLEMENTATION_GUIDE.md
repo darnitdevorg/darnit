@@ -1823,3 +1823,77 @@ from darnit.core.handlers import get_handler_registry
 | Example custom handlers | `packages/darnit-example/src/darnit_example/handlers.py` |
 | Example tests | `tests/darnit_example/` |
 | Framework spec | `openspec/specs/framework-design/spec.md` |
+| Composition resolver | `packages/darnit/src/darnit/core/composition.py` |
+| Composition spec | `specs/013-plugin-composition/spec.md` |
+| Composition TOML schema contract | `specs/013-plugin-composition/contracts/toml-schema.md` |
+
+---
+
+## 12. Composition (assembling implementations from other implementations)
+
+`darnit` supports composing a new implementation as a curated mix of
+slices from already-installed implementations, all expressed in TOML.
+Think "OpenSSF Baseline levels 1+2, plus three named SLSA controls,
+plus four internal controls of our own" — without forking the upstream
+sources and without writing any composition-aware Python code.
+
+See [`specs/013-plugin-composition/quickstart.md`](../specs/013-plugin-composition/quickstart.md)
+for a full walkthrough. The short version:
+
+### When to compose vs fork
+
+- **Use composition** when your posture is "the upstream framework
+  plus a few named slices and overrides." Composition keeps you
+  upgrade-current on the upstream's pass logic and remediation —
+  upstream changes flow through automatically on next install.
+- **Use a fork** only if you need to fundamentally re-author a
+  source's pass logic, restructure its control IDs, or maintain
+  semantically divergent behavior. Forking is heavyweight; composition
+  is the additive default.
+
+### The three opt-out / escape mechanisms
+
+When two `[[compose]]` blocks contribute a control with the same ID,
+the framework's default behavior is to **refuse registration** with a
+clear `CompositionConflictError`. The composite author can resolve the
+conflict in one of three ways:
+
+| Mechanism | Effect | When to reach for it |
+|---|---|---|
+| Strict (default) | Registration fails; the error names both sources and the conflicting ID | The conservative default. If you don't know which source you want, you don't have a posture yet — fix that first. |
+| `allow_conflicts = true` at the composition root | Later `[[compose]]` block in TOML file order wins; INFO log emitted naming both sources | Use sparingly. The log line is your audit trail. |
+| `[overrides."ID"]` block | Override fields layer onto the **earliest** compose block's contribution; mode-independent (works in strict AND under `allow_conflicts`) | When you've made an explicit decision about which source's behavior wins. The override block IS your per-control acknowledgement. |
+
+### Provenance traces to the originating implementation
+
+Every control in a composite's resolved set carries two
+framework-stamped tags inside the existing `ControlConfig.tags`:
+
+| Tag key | Meaning |
+|---|---|
+| `_composed_from` | The slug of the **ultimate non-composite** source the control originated in. For recursive composition (composite-of-composite), this is the original leaf source, not the intermediate composite. |
+| `_original_control_id` | The control's ID in the originating non-composite source |
+
+Audit results, list-controls output, SARIF formatters — anything that
+already serializes `tags` — inherits provenance for free. No
+consumer-side schema change required.
+
+### What composition is NOT
+
+- **Not a registry / network fetch primitive.** Composites pull from
+  locally-installed implementations only. Cross-host composition is
+  explicitly out of scope.
+- **Not a partial-pass-override primitive.** The sieve `passes` array
+  can be wholesale-replaced via an `[overrides."ID"]` block, but you
+  cannot edit individual passes inside it — that's a fork case.
+- **Not a hot-reload primitive.** Resolution happens once at framework
+  registration. Editing a composite's TOML at runtime requires
+  restarting the host process.
+
+### Critical TOML scoping caveat
+
+`allow_conflicts` is a root-level scalar. In TOML, bare key/value
+pairs are scoped to the most recently opened `[table]` header — so
+**placing `allow_conflicts = true` after `[metadata]` would silently
+land it inside `[metadata]` and have no effect**. Put it BEFORE any
+`[table]` header. This is the most common composition footgun.

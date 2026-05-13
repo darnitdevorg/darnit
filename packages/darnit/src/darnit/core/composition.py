@@ -91,7 +91,7 @@ class CompositionConflictError(CompositionError):
             f"both {earlier!r} and {later!r}. Resolve explicitly by either "
             f"(a) adding `allow_conflicts = true` at the composition root "
             f"(later compose block wins by TOML file order; INFO log emitted), "
-            f"or (b) adding an explicit `[overrides.\"{control_id}\"]` block "
+            f'or (b) adding an explicit `[overrides."{control_id}"]` block '
             f"(overrides always win and resolve conflicts in any mode)."
         )
 
@@ -107,7 +107,7 @@ class CompositionOrphanOverrideError(CompositionError):
         self.orphan_id = orphan_id
         super().__init__(
             f"Override targets control {orphan_id!r} but no [[compose]] block "
-            f"or inline [controls.\"{orphan_id}\"] entry contributes it. "
+            f'or inline [controls."{orphan_id}"] entry contributes it. '
             f"Remove the orphan override, or add a compose block / inline "
             f"control that includes this ID."
         )
@@ -229,26 +229,17 @@ def _select_controls(
         if block.include_levels:
             levels = set(block.include_levels)
             individual_sets.append(
-                {
-                    cid
-                    for cid, ctrl in source_controls.items()
-                    if ctrl.level is not None and ctrl.level in levels
-                }
+                {cid for cid, ctrl in source_controls.items() if ctrl.level is not None and ctrl.level in levels}
             )
 
         if block.include_controls:
             wanted = set(block.include_controls)
-            individual_sets.append(
-                {cid for cid in source_controls if cid in wanted}
-            )
+            individual_sets.append({cid for cid in source_controls if cid in wanted})
 
         if block.include_tags:
             tagged: set[str] = set()
             for cid, ctrl in source_controls.items():
-                if all(
-                    ctrl.tags.get(key) == value
-                    for key, value in block.include_tags.items()
-                ):
+                if all(ctrl.tags.get(key) == value for key, value in block.include_tags.items()):
                     tagged.add(cid)
             individual_sets.append(tagged)
 
@@ -418,20 +409,16 @@ def _validate_override_fields(
     # as "set" if the author actually provided it.
     for field in override.model_fields_set:
         if field not in known:
-            raise CompositionUnknownFieldError(
-                control_id=control_id, field=field
-            )
+            raise CompositionUnknownFieldError(control_id=control_id, field=field)
 
     # Extras that the author wrote which aren't declared on OverrideBlock
     # (because of `extra="allow"`). Any such name that isn't on
     # ControlConfig is rejected — this is how the alias-rejection
     # guarantee from F-2 (e.g., a user typing `severity = 8.5`) is
     # enforced at resolution time.
-    for field in (override.model_extra or {}):
+    for field in override.model_extra or {}:
         if field not in known:
-            raise CompositionUnknownFieldError(
-                control_id=control_id, field=field
-            )
+            raise CompositionUnknownFieldError(control_id=control_id, field=field)
 
 
 def _apply_override(
@@ -507,9 +494,7 @@ def _apply_override(
         # them even if the user attempted to (already filtered above, but
         # belt-and-suspenders).
         merged_tags[_TAG_COMPOSED_FROM] = ctrl.tags.get(_TAG_COMPOSED_FROM)
-        merged_tags[_TAG_ORIGINAL_CONTROL_ID] = ctrl.tags.get(
-            _TAG_ORIGINAL_CONTROL_ID
-        )
+        merged_tags[_TAG_ORIGINAL_CONTROL_ID] = ctrl.tags.get(_TAG_ORIGINAL_CONTROL_ID)
         update["tags"] = merged_tags
 
     return ctrl.model_copy(update=update)
@@ -654,8 +639,7 @@ def resolve_composition(
 
                 if composite.allow_conflicts:
                     log.info(
-                        "Composition conflict on %s: %s overrides %s "
-                        "(allow_conflicts=true)",
+                        "Composition conflict on %s: %s overrides %s (allow_conflicts=true)",
                         cid,
                         block.source,
                         contributor[cid],
@@ -699,14 +683,11 @@ def resolve_composition(
         if override_id not in resolved:
             raise CompositionOrphanOverrideError(orphan_id=override_id)
         _validate_override_fields(override_id, override)
-        resolved[override_id] = _apply_override(
-            override_id, resolved[override_id], override
-        )
+        resolved[override_id] = _apply_override(override_id, resolved[override_id], override)
         override_count += 1
 
     log.debug(
-        "Resolved composite %s: %d controls "
-        "(%d inline + %d composed, %d overrides applied)",
+        "Resolved composite %s: %d controls (%d inline + %d composed, %d overrides applied)",
         composite_slug,
         len(resolved),
         len(composite.controls),
