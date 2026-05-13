@@ -627,17 +627,46 @@ def resolve_composition(
             )
 
             if cid in resolved:
-                # Conflict path. US3 (T038) wires the full strict/allow_conflicts
-                # decision tree here. For US1 we only support the no-conflict
-                # case; any cross-block contribution to the same ID raises
-                # NotImplementedError until US3 lands, so partial-composition
-                # is impossible.
-                raise NotImplementedError(
-                    f"Composition conflict on {cid!r} between sources "
-                    f"{contributor[cid]!r} and {block.source!r}: "
-                    f"strict/allow_conflicts handling lands in US3 (T038). "
-                    f"Until that PR merges, composites whose [[compose]] blocks "
-                    f"produce overlapping control IDs are not supported."
+                # Conflict decision tree (FR-009 / FR-010 / FR-011 + F-11
+                # clarification on mode-independence). The checks run in
+                # this order:
+                #
+                # 1. If an [overrides."ID"] block targets this ID, skip
+                #    the later compose contribution silently — the
+                #    override layers onto the EARLIEST compose block's
+                #    contribution. This rule holds in BOTH modes (strict
+                #    AND allow_conflicts) per the F-11 clarification:
+                #    the override is a per-control acknowledgement of
+                #    the conflict, so it always wins, and the base
+                #    selection is always "earliest in TOML file order".
+                # 2. Otherwise, if allow_conflicts is set on the
+                #    composition root, the LATER compose block wins
+                #    (last-wins by file order) and an INFO log is
+                #    emitted naming both sources.
+                # 3. Otherwise (strict-by-default), raise.
+                if cid in composite.overrides:
+                    # Override will replace the earliest contribution
+                    # at stage 3; skip this later compose-block
+                    # contribution entirely. No log — overrides resolve
+                    # conflicts silently because the per-control
+                    # acknowledgement is explicit.
+                    continue
+
+                if composite.allow_conflicts:
+                    log.info(
+                        "Composition conflict on %s: %s overrides %s "
+                        "(allow_conflicts=true)",
+                        cid,
+                        block.source,
+                        contributor[cid],
+                    )
+                    resolved[cid] = new_ctrl
+                    contributor[cid] = block.source
+                    continue
+
+                raise CompositionConflictError(
+                    control_id=cid,
+                    sources=(contributor[cid], block.source),
                 )
 
             resolved[cid] = new_ctrl

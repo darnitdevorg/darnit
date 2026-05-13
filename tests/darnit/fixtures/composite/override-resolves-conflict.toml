@@ -1,0 +1,25 @@
+# US3 / T042: same dual-source conflict shape but with `allow_conflicts`
+# UNSET and an explicit [overrides."MOCK-AC-01.01"] block. Expected
+# (strict mode): registration succeeds, the override's fields are
+# applied, no CompositionConflictError raised, no INFO log emitted.
+#
+# Per FR-011 + the F-11 clarification: the override layers onto the
+# EARLIEST compose block's contribution (mock-source-a), not the later
+# one. The companion test in test_composition.py asserts this base
+# selection precisely.
+
+[metadata]
+name = "test-override-resolves-conflict"
+display_name = "Test: override resolves conflict in strict mode"
+version = "1.0.0"
+
+[[compose]]
+source = "mock-source-a"
+include_controls = ["MOCK-AC-01.01"]
+
+[[compose]]
+source = "mock-source-a-variant"
+include_controls = ["MOCK-AC-01.01"]
+
+[overrides."MOCK-AC-01.01"]
+description = "OVERRIDE: the composite author's resolution of the conflict."

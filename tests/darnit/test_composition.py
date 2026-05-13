@@ -17,6 +17,7 @@ from darnit.config.merger import _parse_framework_only
 from darnit.core.composition import (
     _TAG_COMPOSED_FROM,
     _TAG_ORIGINAL_CONTROL_ID,
+    CompositionConflictError,
     CompositionMissingSourceError,
     CompositionOrphanOverrideError,
     CompositionUnknownFieldError,
@@ -426,6 +427,151 @@ def test_empty_override_block_rejected(composite_fixtures_dir):
     assert "at least one field" in str(excinfo.value).lower() or "no fields" in str(
         excinfo.value
     ).lower()
+
+
+# ---------------------------------------------------------------------------
+# US3 — Conflict resolution
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_strict_conflict_raises(composite_fixtures_dir, fixture_source_loader):
+    """US3 / T040: two compose blocks contributing the same ID raise in strict mode.
+
+    The error names both source slugs in TOML file order
+    (``(earlier, later)``), the conflicting control ID, and the message
+    surfaces the two opt-out mechanisms so the composite author knows
+    how to resolve the conflict.
+    """
+    cfg = _parse_framework_only(
+        _composite_path(composite_fixtures_dir, "strict-conflict")
+    )
+
+    with pytest.raises(CompositionConflictError) as excinfo:
+        resolve_composition(cfg, source_loader=fixture_source_loader)
+
+    err = excinfo.value
+    assert err.control_id == "MOCK-AC-01.01"
+    assert err.sources == ("mock-source-a", "mock-source-a-variant")
+
+    rendered = str(err)
+    assert "MOCK-AC-01.01" in rendered
+    assert "mock-source-a" in rendered
+    assert "mock-source-a-variant" in rendered
+    # Both opt-out mechanisms are surfaced
+    assert "allow_conflicts" in rendered
+    assert "overrides" in rendered
+
+
+@pytest.mark.unit
+def test_allow_conflicts_last_wins(
+    composite_fixtures_dir, fixture_source_loader, caplog
+):
+    """US3 / T041: ``allow_conflicts = true`` makes the later block win.
+
+    The LATER ``[[compose]]`` block (TOML file order) overwrites the
+    earlier contribution. An INFO log line names both sources and the
+    winner. Resolved control's content comes from the later source
+    (``mock-source-a-variant``).
+    """
+    import logging
+
+    caplog.set_level(logging.INFO, logger="darnit.core.composition")
+
+    result = _resolve(
+        composite_fixtures_dir, fixture_source_loader, "allow-conflicts-last-wins"
+    )
+
+    ctrl = result.controls["MOCK-AC-01.01"]
+    # The variant's content wins because it was the later compose block.
+    assert "VARIANT" in ctrl.description
+    # Provenance also reflects the later source
+    assert ctrl.tags.get(_TAG_COMPOSED_FROM) == "mock-source-a-variant"
+
+    # INFO log mentions both sources
+    info_lines = [
+        rec.message
+        for rec in caplog.records
+        if rec.levelno == logging.INFO and "MOCK-AC-01.01" in rec.message
+    ]
+    assert info_lines, "Expected INFO log line on allow_conflicts conflict"
+    assert "mock-source-a-variant" in info_lines[0]
+    assert "mock-source-a" in info_lines[0]
+
+
+@pytest.mark.unit
+def test_override_resolves_conflict_in_strict_mode(
+    composite_fixtures_dir, fixture_source_loader, caplog
+):
+    """US3 / T042: an explicit override resolves a strict-mode conflict.
+
+    In strict mode (``allow_conflicts = false``), an
+    ``[overrides."ID"]`` block targeting the conflicting ID makes
+    registration succeed. The override's fields are applied to the
+    EARLIEST compose block's contribution (FR-011 + F-11
+    clarification). No ``CompositionConflictError`` raised, no INFO log
+    emitted.
+    """
+    import logging
+
+    caplog.set_level(logging.INFO, logger="darnit.core.composition")
+
+    result = _resolve(
+        composite_fixtures_dir,
+        fixture_source_loader,
+        "override-resolves-conflict",
+    )
+
+    ctrl = result.controls["MOCK-AC-01.01"]
+    # The override's description wins
+    assert ctrl.description == (
+        "OVERRIDE: the composite author's resolution of the conflict."
+    )
+    # Provenance points at the EARLIER compose block's source
+    # (mock-source-a, the first one to write into resolved[]).
+    assert ctrl.tags.get(_TAG_COMPOSED_FROM) == "mock-source-a"
+    # The pass logic also comes from the earlier source: that's the path
+    # with `DOES_NOT_EXIST.fixture` (variant uses `DOES_NOT_EXIST.variant.fixture`).
+    assert ctrl.passes is not None and len(ctrl.passes) == 1
+    pass_paths = ctrl.passes[0].model_dump().get("paths", [])
+    assert pass_paths == ["DOES_NOT_EXIST.fixture"]
+
+    # No INFO log line on this path — overrides resolve conflicts silently
+    info_lines = [
+        rec.message
+        for rec in caplog.records
+        if rec.levelno == logging.INFO and "MOCK-AC-01.01" in rec.message
+    ]
+    assert not info_lines, (
+        f"Expected no INFO log on override-resolves path, got: {info_lines}"
+    )
+
+
+@pytest.mark.unit
+def test_override_with_allow_conflicts_still_uses_earliest_base(
+    composite_fixtures_dir, fixture_source_loader
+):
+    """US3 / T042 companion: F-11 mode-independence guarantee.
+
+    Even with ``allow_conflicts = true``, the override's earliest-base
+    rule holds. The override layers onto the FIRST compose block's
+    contribution, NOT the last-wins one. If this test fails, the
+    docs/code consistency captured in F-11 is broken.
+    """
+    result = _resolve(
+        composite_fixtures_dir,
+        fixture_source_loader,
+        "override-with-allow-conflicts",
+    )
+
+    ctrl = result.controls["MOCK-AC-01.01"]
+    assert ctrl.description == (
+        "OVERRIDE: still wins over allow_conflicts last-wins."
+    )
+    # Same as the strict-mode case: base comes from the earlier source.
+    assert ctrl.tags.get(_TAG_COMPOSED_FROM) == "mock-source-a"
+    pass_paths = ctrl.passes[0].model_dump().get("paths", [])
+    assert pass_paths == ["DOES_NOT_EXIST.fixture"]
 
 
 # ---------------------------------------------------------------------------

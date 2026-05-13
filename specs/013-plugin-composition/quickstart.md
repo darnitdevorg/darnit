@@ -77,15 +77,18 @@ class AcmeBaselineImplementation:
 `src/acme_baseline/acme-baseline.toml`:
 
 ```toml
+# Strict-by-default conflict resolution. Leave at default unless you need
+# the last-wins escape hatch. NOTE: this MUST appear before any [table]
+# header — TOML scopes bare keys to the most recently opened table, so
+# placing it after [metadata] would silently land it inside [metadata]
+# instead of at the FrameworkConfig root.
+# allow_conflicts = false
+
 [metadata]
 name = "acme-baseline"
 display_name = "Acme Baseline"
 version = "1.0.0"
 spec_version = "Acme v1"
-
-# Strict-by-default conflict resolution. Leave at default unless you need
-# the last-wins escape hatch.
-# allow_conflicts = false
 
 # Pull OpenSSF Baseline levels 1 and 2, but drop a control Acme doesn't
 # care about. Pin to the 1.x line so an upstream major bump fails loudly.

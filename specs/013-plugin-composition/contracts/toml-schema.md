@@ -11,16 +11,22 @@ A framework is treated as a composite **if and only if** it has at least one `[[
 ## 1. Anatomy of a composite TOML
 
 ```toml
+# IMPORTANT: `allow_conflicts` is a root-level scalar. In TOML, bare
+# key/value pairs are scoped to the most recently opened table — so
+# placing this AFTER `[metadata]` would put it inside that table rather
+# than at the FrameworkConfig root. Put it BEFORE any `[table]` header.
+#
+# Optional. Default: false. When true, conflicting control IDs across
+# compose blocks fall back to last-wins (by file order) with an INFO log.
+# Default behavior (false) raises CompositionConflictError at
+# registration time.
+allow_conflicts = false
+
 [metadata]
 name = "acme-baseline"
 display_name = "Acme Baseline"
 version = "1.0.0"
 spec_version = "Acme v1"
-
-# Optional. Default: false. When true, conflicting control IDs across compose
-# blocks fall back to last-wins (by file order) with an INFO log. Default
-# behavior (false) raises CompositionConflictError at registration time.
-allow_conflicts = false
 
 # ---------------------------------------------------------------------------
 # Composition: zero or more [[compose]] blocks, each pulling controls from
@@ -122,7 +128,7 @@ The key in the table header is the target control ID, quoted because control IDs
 
 | Field | Type | Required | Default | Behavior |
 |---|---|---|---|---|
-| `allow_conflicts` | `bool` | no | `false` | Top-level (sibling of `[metadata]`, NOT inside any `[[compose]]` block). Default `false` → conflicts raise. Set to `true` → conflicts last-wins by TOML file order with an INFO log. Does NOT suppress orphan-override, unknown-field, missing-source, cycle, or version-mismatch errors. |
+| `allow_conflicts` | `bool` | no | `false` | Root-level scalar — **MUST appear before any `[table]` header** (TOML scopes bare key/value pairs to the most recently opened table; placing this after `[metadata]` would put it inside that table). Default `false` → conflicts raise. Set to `true` → conflicts last-wins by TOML file order with an INFO log. Does NOT suppress orphan-override, unknown-field, missing-source, cycle, or version-mismatch errors. |
 
 ---
 
