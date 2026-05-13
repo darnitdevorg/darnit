@@ -1,0 +1,16 @@
+# US4 / T046b (F-1 regression): loader-path cycle, X side. Distinct
+# from cycle-x.toml because this fixture is exercised through the
+# PUBLIC `darnit.config.merger.load_framework_config(...)` path (with
+# the default source_loader monkey-patched to find fixtures) — NOT
+# through the injected fixture_source_loader. Before the F-1 fix this
+# would have hung indefinitely; after it, registration raises
+# CompositionCycleError in a bounded time.
+
+[metadata]
+name = "loader-cycle-x"
+display_name = "Loader Cycle X (F-1 regression)"
+version = "1.0.0"
+
+[[compose]]
+source = "loader-cycle-y"
+include_all = true

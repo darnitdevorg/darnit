@@ -1,0 +1,15 @@
+# US4 / T046: positive recursive-composition scenario. Three levels:
+# this composite → mock-source-mid-composite → mock-source-c-leaf.
+# Expected: every resolved control's _composed_from points at the
+# ULTIMATE non-composite source (mock-source-c-leaf), not at the
+# intermediate composite. This is the load-bearing FR-018 + FR-015
+# guarantee.
+
+[metadata]
+name = "test-three-level-chain"
+display_name = "Test: three-level recursive resolves"
+version = "1.0.0"
+
+[[compose]]
+source = "mock-source-mid-composite"
+include_all = true

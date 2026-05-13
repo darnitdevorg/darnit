@@ -1,0 +1,12 @@
+# US5 / T048: version pin satisfied. mock-source-a has version 1.5.0
+# which satisfies ">=1.0,<2.0".
+
+[metadata]
+name = "test-version-pin-satisfied"
+display_name = "Test: version pin satisfied"
+version = "1.0.0"
+
+[[compose]]
+source = "mock-source-a"
+include_all = true
+version_constraint = ">=1.0,<2.0"

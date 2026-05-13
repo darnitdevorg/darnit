@@ -1,0 +1,12 @@
+# US5 / T049: version pin violated. mock-source-a has version 1.5.0
+# which does NOT satisfy ">=2.0".
+
+[metadata]
+name = "test-version-pin-violated"
+display_name = "Test: version pin violated"
+version = "1.0.0"
+
+[[compose]]
+source = "mock-source-a"
+include_all = true
+version_constraint = ">=2.0"

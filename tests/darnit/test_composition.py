@@ -18,9 +18,11 @@ from darnit.core.composition import (
     _TAG_COMPOSED_FROM,
     _TAG_ORIGINAL_CONTROL_ID,
     CompositionConflictError,
+    CompositionCycleError,
     CompositionMissingSourceError,
     CompositionOrphanOverrideError,
     CompositionUnknownFieldError,
+    CompositionVersionMismatchError,
     resolve_composition,
 )
 
@@ -575,33 +577,181 @@ def test_override_with_allow_conflicts_still_uses_earliest_base(
 
 
 # ---------------------------------------------------------------------------
-# US1 — foundational cycle smoke
+# US4 — Cycle detection + recursive composition
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-def test_self_cycle_in_stack_raises():
-    """``resolve_composition`` detects when its slug is already on the stack.
+def test_self_cycle_raises(composite_fixtures_dir, fixture_source_loader):
+    """US4 / T044: a composite that composes from itself raises with the chain.
 
-    Full F-1 regression (via the public ``load_framework_config`` path)
-    lands in US4 / T046b; this is the foundational smoke that the stack
-    check itself fires.
+    The cycle chain is rendered ``cycle-a → cycle-a`` in the error
+    message; the structured ``.chain`` attribute is the same list.
     """
-    from darnit.config.framework_schema import (
-        ComposeBlock,
-        FrameworkConfig,
-        FrameworkMetadata,
+    cfg = _parse_framework_only(
+        composite_fixtures_dir / "_sources" / "cycle-a.toml"
     )
-    from darnit.core.composition import CompositionCycleError
 
-    cfg = FrameworkConfig(
-        metadata=FrameworkMetadata(name="cycle-a", display_name="A", version="0.1"),
-        compose=[ComposeBlock(source="x", include_all=True)],
-    )
     with pytest.raises(CompositionCycleError) as excinfo:
-        resolve_composition(
-            cfg,
-            source_loader=lambda _: None,
-            _resolution_stack=["cycle-a"],
-        )
+        resolve_composition(cfg, source_loader=fixture_source_loader)
+
     assert excinfo.value.chain == ["cycle-a", "cycle-a"]
+    assert "cycle-a → cycle-a" in str(excinfo.value)
+
+
+@pytest.mark.unit
+def test_two_cycle_raises(composite_fixtures_dir, fixture_source_loader):
+    """US4 / T045: A composes B which composes A — raises with the full chain.
+
+    Whichever side loads first becomes the chain root; the test asserts
+    on length and end-points rather than a fixed order so it is robust
+    against either resolution direction.
+    """
+    cfg = _parse_framework_only(
+        composite_fixtures_dir / "_sources" / "cycle-x.toml"
+    )
+
+    with pytest.raises(CompositionCycleError) as excinfo:
+        resolve_composition(cfg, source_loader=fixture_source_loader)
+
+    chain = excinfo.value.chain
+    assert len(chain) == 3, f"Expected 3-element chain, got: {chain}"
+    assert chain[0] == chain[-1], (
+        f"Chain should start+end with the same slug: {chain}"
+    )
+    assert set(chain) == {"cycle-x", "cycle-y"}
+
+
+@pytest.mark.unit
+def test_three_level_chain_resolves(composite_fixtures_dir, fixture_source_loader):
+    """US4 / T046: non-cyclic 3-level chain (A → B → leaf) resolves cleanly.
+
+    Critical assertion (FR-018 + FR-015): every resolved control's
+    ``_composed_from`` points at the ULTIMATE non-composite source
+    (``mock-source-c-leaf``), NOT at the intermediate composite
+    (``mock-source-mid-composite``). Provenance traces to the
+    originating implementation, never to a middle layer.
+    """
+    result = _resolve(
+        composite_fixtures_dir, fixture_source_loader, "three-level-chain"
+    )
+
+    # Leaf's two controls are present
+    assert set(result.controls.keys()) == {"LEAF-01.01", "LEAF-02.01"}
+
+    # Provenance traces to the ULTIMATE non-composite source (leaf),
+    # not to the intermediate composite.
+    for cid, ctrl in result.controls.items():
+        assert ctrl.tags.get(_TAG_COMPOSED_FROM) == "mock-source-c-leaf", (
+            f"{cid}: _composed_from should point at the leaf, not the "
+            f"intermediate composite; got "
+            f"{ctrl.tags.get(_TAG_COMPOSED_FROM)!r}"
+        )
+        assert ctrl.tags.get(_TAG_ORIGINAL_CONTROL_ID) == cid
+
+
+@pytest.mark.unit
+def test_loader_path_cycle_through_public_loader(
+    composite_fixtures_dir, monkeypatch
+):
+    """US4 / T046b: F-1 REGRESSION TEST.
+
+    The canonical regression for the F-1 design fix. Loads a
+    composite-of-composite cycle through the PRODUCTION
+    ``load_framework_config`` path — not through the injected
+    ``fixture_source_loader``. Before the F-1 fix this test would have
+    hung indefinitely (each recursive ``load_framework_by_name`` call
+    would have started a fresh ``_resolution_stack``); after the fix
+    the resolver owns the single shared stack and detects the cycle in
+    bounded time.
+
+    The default ``source_loader`` looks slugs up via ``PluginRegistry``,
+    which does NOT know about fixture files. We monkey-patch it to
+    point at the fixture ``_sources/`` directory so the production
+    code path can still find ``loader-cycle-{x,y}.toml``. This is
+    deliberately narrow: only ``_default_source_loader`` is patched,
+    not ``load_framework_config`` itself.
+    """
+    import time
+
+    from darnit.config.merger import _parse_framework_only, load_framework_config
+    from darnit.core import composition as comp_mod
+
+    sources_dir = composite_fixtures_dir / "_sources"
+
+    def fake_default_loader(slug):
+        path = sources_dir / f"{slug}.toml"
+        return _parse_framework_only(path) if path.exists() else None
+
+    monkeypatch.setattr(comp_mod, "_default_source_loader", fake_default_loader)
+    # ``load_framework_config`` imports the resolver lazily; the patch
+    # above is what actually gets called when the resolver's
+    # ``source_loader`` defaults at runtime, so no further patching is
+    # needed.
+
+    t0 = time.perf_counter()
+    with pytest.raises(CompositionCycleError) as excinfo:
+        load_framework_config(sources_dir / "loader-cycle-x.toml")
+    elapsed = time.perf_counter() - t0
+
+    # Bounded time guarantee — pre-F-1 this would have hung
+    assert elapsed < 1.0, f"Cycle detection took {elapsed:.3f}s (expected <1s)"
+
+    # Chain identifies both slugs and starts+ends with the same one
+    chain = excinfo.value.chain
+    assert chain[0] == chain[-1]
+    assert set(chain) == {"loader-cycle-x", "loader-cycle-y"}
+
+
+# ---------------------------------------------------------------------------
+# US5 — Version pinning
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_version_pin_satisfied(composite_fixtures_dir, fixture_source_loader):
+    """US5 / T048: a satisfied PEP 440 constraint resolves normally.
+
+    ``mock-source-a`` is at version 1.5.0; ``>=1.0,<2.0`` matches.
+    """
+    result = _resolve(
+        composite_fixtures_dir, fixture_source_loader, "version-pin-satisfied"
+    )
+
+    # The source's 5 controls are all included
+    assert len(result.controls) == 5
+
+
+@pytest.mark.unit
+def test_version_pin_violated(composite_fixtures_dir, fixture_source_loader):
+    """US5 / T049: a violated PEP 440 constraint raises with details.
+
+    ``mock-source-a`` is at version 1.5.0; ``>=2.0`` is unsatisfiable.
+    """
+    cfg = _parse_framework_only(
+        _composite_path(composite_fixtures_dir, "version-pin-violated")
+    )
+
+    with pytest.raises(CompositionVersionMismatchError) as excinfo:
+        resolve_composition(cfg, source_loader=fixture_source_loader)
+
+    err = excinfo.value
+    assert err.source == "mock-source-a"
+    assert err.constraint == ">=2.0"
+    assert err.installed == "1.5.0"
+
+
+@pytest.mark.unit
+def test_version_pin_missing_uses_floating(
+    composite_fixtures_dir, fixture_source_loader
+):
+    """US5 / T050: no ``version_constraint`` → resolves against installed version.
+
+    Reuses the ``basic-include-all`` fixture (which has no
+    ``version_constraint``) and confirms it resolves cleanly.
+    """
+    result = _resolve(
+        composite_fixtures_dir, fixture_source_loader, "basic-include-all"
+    )
+    # The source's full 5 controls are included
+    assert len(result.controls) == 5

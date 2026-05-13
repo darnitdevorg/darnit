@@ -1,0 +1,10 @@
+# US4 / T045: two-cycle, X side. X composes Y which composes X.
+
+[metadata]
+name = "cycle-x"
+display_name = "Cycle X"
+version = "1.0.0"
+
+[[compose]]
+source = "cycle-y"
+include_all = true

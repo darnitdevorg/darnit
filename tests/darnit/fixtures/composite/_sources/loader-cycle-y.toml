@@ -1,0 +1,11 @@
+# US4 / T046b (F-1 regression): loader-path cycle, Y side.
+# See loader-cycle-x.toml for the regression rationale.
+
+[metadata]
+name = "loader-cycle-y"
+display_name = "Loader Cycle Y (F-1 regression)"
+version = "1.0.0"
+
+[[compose]]
+source = "loader-cycle-x"
+include_all = true
