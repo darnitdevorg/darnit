@@ -1,0 +1,43 @@
+# Mock source-B: minimal non-composite framework with 3 level-1 controls.
+# Version 0.9.0 (for version-pin tests). Uses the same unsatisfiable
+# file_must_exist pattern as source-A.
+
+[metadata]
+name = "mock-source-b"
+display_name = "Mock Source B (test fixture)"
+version = "0.9.0"
+spec_version = "mock v1"
+
+[defaults]
+check_adapter = "builtin"
+remediation_adapter = "builtin"
+
+[controls."MOCK-B-01.01"]
+name = "MockBOne"
+description = "Mock B control at level 1."
+level = 1
+domain = "B"
+
+[[controls."MOCK-B-01.01".passes]]
+handler = "file_must_exist"
+paths = ["DOES_NOT_EXIST.fixture"]
+
+[controls."MOCK-B-02.01"]
+name = "MockBTwo"
+description = "Mock B control at level 1."
+level = 1
+domain = "B"
+
+[[controls."MOCK-B-02.01".passes]]
+handler = "file_must_exist"
+paths = ["DOES_NOT_EXIST.fixture"]
+
+[controls."MOCK-B-03.01"]
+name = "MockBThree"
+description = "Mock B control at level 1."
+level = 1
+domain = "B"
+
+[[controls."MOCK-B-03.01".passes]]
+handler = "file_must_exist"
+paths = ["DOES_NOT_EXIST.fixture"]

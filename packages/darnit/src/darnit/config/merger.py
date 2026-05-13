@@ -406,14 +406,26 @@ def merge_configs(
 # =============================================================================
 
 
-def load_framework_config(path: Path) -> FrameworkConfig:
-    """Load framework configuration from TOML file.
+def _parse_framework_only(path: Path) -> FrameworkConfig:
+    """Parse + template-validate a framework TOML — WITHOUT resolving composition.
+
+    This is the helper that the composition resolver's default
+    ``source_loader`` routes through, so recursive source loads do NOT
+    re-enter composition with a fresh ``_resolution_stack``. Cycle
+    detection (FR-012) and recursive composition (FR-018) depend on this
+    split — see ``specs/013-plugin-composition/research.md`` §R-002 for
+    the full rationale.
+
+    Callers OUTSIDE the composition resolver should generally call
+    :func:`load_framework_config` instead; this helper produces a
+    parsed-but-not-composition-resolved ``FrameworkConfig`` that is NOT
+    safe to hand to the audit pipeline if it has composition state.
 
     Args:
         path: Path to framework TOML file
 
     Returns:
-        Parsed FrameworkConfig
+        Parsed FrameworkConfig (composition state still present if any)
 
     Raises:
         FileNotFoundError: If file doesn't exist
@@ -457,6 +469,44 @@ def load_framework_config(path: Path) -> FrameworkConfig:
                     f"Template file '{template.file}' for template '{name}' "
                     f"not found relative to framework config '{path}'"
                 )
+
+    return config
+
+
+def load_framework_config(path: Path) -> FrameworkConfig:
+    """Load framework configuration from TOML file.
+
+    If the parsed config has any ``[[compose]]`` blocks or
+    ``[overrides."…"]`` blocks, this function resolves composition exactly
+    once before returning, so callers receive a flat ``FrameworkConfig``
+    that is shape-identical to a non-composite's. The resolver itself uses
+    :func:`_parse_framework_only` (NOT this function) to load source
+    frameworks recursively; that split is load-bearing for cycle
+    detection — see ``specs/013-plugin-composition/contracts/resolver-api.md``
+    §Integration contract.
+
+    Args:
+        path: Path to framework TOML file
+
+    Returns:
+        Fully-resolved FrameworkConfig (composition state cleared if any)
+
+    Raises:
+        FileNotFoundError: If file doesn't exist
+        ValueError: If file is invalid
+        CompositionError: Any composition-resolution failure (missing
+            source, cycle, conflict, orphan override, etc.).
+    """
+    config = _parse_framework_only(path)
+
+    # Composition resolution runs EXACTLY ONCE at the top of this call chain.
+    # The resolver's `source_loader` calls `_parse_framework_only` (not this
+    # function) for recursive source loads, so the resolver's per-call
+    # `_resolution_stack` is the single source of truth for cycle detection.
+    if config.compose or config.overrides:
+        from darnit.core.composition import resolve_composition
+
+        config = resolve_composition(config)
 
     return config
 
