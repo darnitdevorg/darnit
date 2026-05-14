@@ -1052,6 +1052,10 @@ help_md = """Use standard package managers and lockfiles.
 
 [[controls."OSPS-BR-05.01".passes]]
 handler = "file_exists"
+# max_depth = 2 lets us find manifests in conventional nested layouts
+# (e.g., `app-code/keys-v2/go.mod`, `backend/pyproject.toml`) without
+# walking deep into massive monorepos. Resolves issue #221.
+max_depth = 2
 files = [
     "package.json",
     "package-lock.json",
