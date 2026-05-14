@@ -463,7 +463,7 @@ command = ["gh", "api", "/orgs/$OWNER"]
 pass_exit_codes = [0]
 fail_exit_codes = [1]
 output_format = "json"
-expr = 'output.json.two_factor_requirement_enabled == true'
+expr = 'has(output.json.two_factor_requirement_enabled) && output.json.two_factor_requirement_enabled == true'
 timeout = 30
 
 [[controls."OSPS-AC-01.01".passes]]
@@ -625,7 +625,7 @@ command = ["gh", "api", "/repos/$OWNER/$REPO/branches/$BRANCH/protection"]
 pass_exit_codes = [0]
 fail_exit_codes = [1]
 output_format = "json"
-expr = 'output.json.allow_deletions.enabled == false'
+expr = 'has(output.json.allow_deletions) && has(output.json.allow_deletions.enabled) && output.json.allow_deletions.enabled == false'
 timeout = 30
 
 [[controls."OSPS-AC-03.02".passes]]

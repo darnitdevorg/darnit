@@ -580,3 +580,68 @@ class TestWarnControlCELExpressions:
         result = evaluator.evaluate(program, context)
         assert result.success is True
         assert result.value is False
+
+
+class TestIssue220HasGuards:
+    """Regression tests for issue #220.
+
+    The openssf-baseline.toml CEL expressions for
+    ``two_factor_requirement_enabled`` (OSPS-AC-01.01) and
+    ``allow_deletions.enabled`` (OSPS-AC-03.02) used to crash with KeyError
+    whenever the ``gh api`` response omitted those fields — which happens
+    routinely for non-admin tokens or orgs that hide 2FA settings. The fix
+    wraps each access with ``has()`` so missing fields cleanly evaluate
+    to ``false`` (INCONCLUSIVE → fall through to the next pass) rather than
+    raising.
+    """
+
+    # OSPS-AC-01.01 — two_factor_requirement_enabled
+    OSPS_AC_01_01_EXPR = (
+        "has(output.json.two_factor_requirement_enabled) && "
+        "output.json.two_factor_requirement_enabled == true"
+    )
+
+    # OSPS-AC-03.02 — allow_deletions.enabled. Chained has() because the
+    # outer key (`allow_deletions`) may itself be missing.
+    OSPS_AC_03_02_EXPR = (
+        "has(output.json.allow_deletions) && "
+        "has(output.json.allow_deletions.enabled) && "
+        "output.json.allow_deletions.enabled == false"
+    )
+
+    def _eval(self, expr: str, context: dict) -> object:
+        evaluator = CELEvaluator()
+        result = evaluator.evaluate(evaluator.compile(expr), context)
+        assert result.success is True, f"CEL failed: {result.error}"
+        return result.value
+
+    def test_ac_01_01_2fa_enabled_passes(self) -> None:
+        ctx = {"output": {"json": {"two_factor_requirement_enabled": True}}}
+        assert self._eval(self.OSPS_AC_01_01_EXPR, ctx) is True
+
+    def test_ac_01_01_2fa_disabled_fails(self) -> None:
+        ctx = {"output": {"json": {"two_factor_requirement_enabled": False}}}
+        assert self._eval(self.OSPS_AC_01_01_EXPR, ctx) is False
+
+    def test_ac_01_01_2fa_missing_does_not_crash(self) -> None:
+        """The original bug: missing key used to raise KeyError. Now → false."""
+        ctx = {"output": {"json": {}}}
+        assert self._eval(self.OSPS_AC_01_01_EXPR, ctx) is False
+
+    def test_ac_03_02_deletions_locked_passes(self) -> None:
+        ctx = {"output": {"json": {"allow_deletions": {"enabled": False}}}}
+        assert self._eval(self.OSPS_AC_03_02_EXPR, ctx) is True
+
+    def test_ac_03_02_deletions_allowed_fails(self) -> None:
+        ctx = {"output": {"json": {"allow_deletions": {"enabled": True}}}}
+        assert self._eval(self.OSPS_AC_03_02_EXPR, ctx) is False
+
+    def test_ac_03_02_outer_key_missing_does_not_crash(self) -> None:
+        """The original bug, outer key form: API omits `allow_deletions`."""
+        ctx = {"output": {"json": {}}}
+        assert self._eval(self.OSPS_AC_03_02_EXPR, ctx) is False
+
+    def test_ac_03_02_inner_key_missing_does_not_crash(self) -> None:
+        """The chained-has() case: outer present, leaf missing."""
+        ctx = {"output": {"json": {"allow_deletions": {}}}}
+        assert self._eval(self.OSPS_AC_03_02_EXPR, ctx) is False
