@@ -40,7 +40,7 @@ jobs:
 
       - name: Build packages
         run: |
-          uv build --package darnit
+          uv build --package darnit-core
           uv build --package darnit-baseline
 
       - name: Upload build artifacts
@@ -49,8 +49,8 @@ jobs:
           name: dist
           path: dist/
 
-  publish-darnit:
-    name: Publish darnit
+  publish-darnit-core:
+    name: Publish darnit-core
     needs: build
     runs-on: ubuntu-latest
     environment: pypi
@@ -66,7 +66,7 @@ jobs:
           name: dist
           path: dist/
 
-      - name: Publish darnit to PyPI
+      - name: Publish darnit-core to PyPI
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
         with:
           packages-dir: dist/
@@ -75,7 +75,7 @@ jobs:
 
   publish-darnit-baseline:
     name: Publish darnit-baseline
-    needs: publish-darnit
+    needs: publish-darnit-core
     runs-on: ubuntu-latest
     environment: pypi
     permissions:

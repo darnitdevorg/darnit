@@ -237,11 +237,12 @@ jobs:
 
   # T013 + T014: per-package publish. Sequenced via `needs:` because
   # `darnit-baseline`, `darnit-gittuf`, and `darnit-mcp` declare
-  # `darnit>=...` runtime dependencies — publishing them before darnit
-  # is on the target index would briefly produce unresolvable wheels.
-  # `darnit-mcp` depends on all three other packages, so it publishes last.
-  publish-darnit:
-    name: Publish darnit to ${{ needs.preflight.outputs.is_prerelease == 'true' && 'TestPyPI' || 'PyPI' }}
+  # `darnit-core>=...` runtime dependencies — publishing them before
+  # darnit-core is on the target index would briefly produce unresolvable
+  # wheels. `darnit-mcp` depends on all three other packages, so it
+  # publishes last.
+  publish-darnit-core:
+    name: Publish darnit-core to ${{ needs.preflight.outputs.is_prerelease == 'true' && 'TestPyPI' || 'PyPI' }}
     needs: [preflight, build]
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -257,10 +258,10 @@ jobs:
           name: dist
           path: dist/
 
-      - name: Publish darnit
+      - name: Publish darnit-core
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
         with:
-          packages-dir: dist/darnit/
+          packages-dir: dist/darnit-core/
           repository-url: ${{ needs.preflight.outputs.is_prerelease == 'true' && 'https://test.pypi.org/legacy/' || 'https://upload.pypi.org/legacy/' }}
           attestations: true
           # We refuse to overwrite published artifacts. If a re-attempt is
@@ -269,7 +270,7 @@ jobs:
 
   publish-darnit-baseline:
     name: Publish darnit-baseline to ${{ needs.preflight.outputs.is_prerelease == 'true' && 'TestPyPI' || 'PyPI' }}
-    needs: [preflight, build, publish-darnit]
+    needs: [preflight, build, publish-darnit-core]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: release
@@ -294,7 +295,7 @@ jobs:
 
   publish-darnit-gittuf:
     name: Publish darnit-gittuf to ${{ needs.preflight.outputs.is_prerelease == 'true' && 'TestPyPI' || 'PyPI' }}
-    needs: [preflight, build, publish-darnit]
+    needs: [preflight, build, publish-darnit-core]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: release
@@ -948,7 +949,7 @@ jobs:
     if: always()
     needs:
       - preflight
-      - publish-darnit
+      - publish-darnit-core
       - publish-darnit-baseline
       - publish-darnit-gittuf
       - publish-darnit-mcp
@@ -974,7 +975,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IS_PRERELEASE: ${{ needs.preflight.outputs.is_prerelease }}
           VERSION: ${{ needs.preflight.outputs.version }}
-          PYPI_DARNIT: ${{ needs.publish-darnit.result }}
+          PYPI_DARNIT: ${{ needs.publish-darnit-core.result }}
           PYPI_BASELINE: ${{ needs.publish-darnit-baseline.result }}
           PYPI_GITTUF: ${{ needs.publish-darnit-gittuf.result }}
           PYPI_MCP: ${{ needs.publish-darnit-mcp.result }}

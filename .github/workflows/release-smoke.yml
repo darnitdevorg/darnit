@@ -132,13 +132,14 @@ jobs:
           case "$PKG" in
             "darnit-mcp")
               # darnit-mcp installs the `darnit` console script via its
-              # darnit dependency. Confirm the CLI is reachable and reports
-              # the expected version.
+              # darnit-core dependency. Confirm the CLI is reachable and
+              # reports the expected version.
               actual=$("$venv/bin/darnit" --version 2>&1 | tail -n1)
               echo "darnit --version → $actual"
               echo "$actual" | grep -F "$VERSION"
               ;;
-            "darnit")
+            "darnit-core")
+              # Distribution is darnit-core; import name is still `darnit`.
               "$venv/bin/python" -c "import darnit; print('darnit imports OK')"
               ;;
             "darnit-baseline")

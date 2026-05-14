@@ -181,7 +181,7 @@ jobs:
 
       - name: Build packages
         run: |
-          uv build --package darnit
+          uv build --package darnit-core
           uv build --package darnit-baseline
 
       - name: Verify package contents
