@@ -1,4 +1,4 @@
-darnit
+darnit-core
 darnit-baseline
 darnit-gittuf
 darnit-mcp

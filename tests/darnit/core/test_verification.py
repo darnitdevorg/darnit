@@ -379,11 +379,16 @@ class TestVerificationIntegration:
         assert result.verified is True
 
     def test_verify_darnit_core(self) -> None:
-        """Test verifying darnit core package."""
+        """Test verifying darnit core package.
+
+        The PyPI distribution name is `darnit-core`; the import name and
+        CLI command stay `darnit`. PluginVerifier looks up the
+        distribution name to find package metadata.
+        """
         config = VerificationConfig(allow_unsigned=True, verify_online=False)
         verifier = PluginVerifier(config)
 
-        result = verifier.verify_plugin("darnit")
+        result = verifier.verify_plugin("darnit-core")
 
         assert result.verified is True
 

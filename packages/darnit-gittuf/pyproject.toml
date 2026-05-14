@@ -21,7 +21,7 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
 ]
 dependencies = [
-    "darnit>=0.1.0",
+    "darnit-core>=0.1.0",
 ]
 
 [project.urls]

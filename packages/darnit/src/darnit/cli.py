@@ -35,6 +35,23 @@ from darnit.core.logging import configure_logging, get_logger
 logger = get_logger("cli")
 
 
+def _resolve_version() -> str:
+    """Return the installed `darnit-core` version, or `"dev"` if unresolved.
+
+    The PyPI distribution name is `darnit-core` (the import name and CLI
+    command both remain `darnit`). When darnit is run from a source
+    checkout without an editable install — or when a stale binary on
+    PATH outside the workspace venv is invoked — the distribution
+    metadata isn't on the import path. Fall back to `"dev"` so
+    `darnit --version` never crashes on what is effectively a "no
+    metadata available" condition.
+    """
+    try:
+        return importlib.metadata.version("darnit-core")
+    except importlib.metadata.PackageNotFoundError:
+        return "dev"
+
+
 # Output Formatters
 
 
@@ -671,7 +688,11 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-V", "--version",
         action="version",
-        version=f"%(prog)s {importlib.metadata.version('darnit')}",
+        # PyPI distribution name is `darnit-core` (the CLI command stays `darnit`).
+        # Fall back to "dev" when running from a non-installed source checkout
+        # so the CLI never crashes on `--version` just because the package
+        # metadata isn't on the import path.
+        version=f"%(prog)s {_resolve_version()}",
     )
     parser.add_argument(
         "-v", "--verbose",

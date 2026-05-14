@@ -15,7 +15,7 @@ authors = [
 keywords = [
     "compliance",
     "testing",
-    "darnit",
+    "darnit-core",
     "framework",
 ]
 classifiers = [
@@ -30,7 +30,7 @@ classifiers = [
     "Topic :: Software Development :: Testing",
 ]
 dependencies = [
-    "darnit>=0.1.0",
+    "darnit-core>=0.1.0",
 ]
 
 [project.optional-dependencies]

@@ -15,7 +15,7 @@ authors = [
 keywords = [
     "compliance",
     "security",
-    "darnit",
+    "darnit-core",
     "plugins",
     "adapters",
 ]
@@ -32,7 +32,7 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
 ]
 dependencies = [
-    "darnit>=0.1.0",
+    "darnit-core>=0.1.0",
 ]
 
 [project.optional-dependencies]

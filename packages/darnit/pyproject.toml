@@ -1,5 +1,9 @@
 [project]
-name = "darnit"
+# PyPI distribution name. The Python import path is still `darnit` (under
+# packages/darnit/src/darnit/) and the CLI command is still `darnit`. Only
+# the PyPI distribution name is `darnit-core`, to avoid a conflict with a
+# similarly-named project on PyPI.
+name = "darnit-core"
 version = "0.1.0"
 description = "Generic compliance audit framework with plugin architecture"
 readme = "README.md"

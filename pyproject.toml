@@ -18,7 +18,7 @@ classifiers = [
     "Topic :: Security",
 ]
 dependencies = [
-    "darnit",
+    "darnit-core",
     "darnit-baseline",
     "darnit-gittuf",
 ]
@@ -30,7 +30,7 @@ Issues = "https://github.com/kusari-oss/darnit/issues"
 
 [project.optional-dependencies]
 attestation = [
-    "darnit[attestation]",
+    "darnit-core[attestation]",
 ]
 dev = [
     "pytest>=8.0.0",
@@ -44,7 +44,7 @@ dev = [
 members = ["packages/*"]
 
 [tool.uv.sources]
-darnit = { workspace = true }
+darnit-core = { workspace = true }
 darnit-baseline = { workspace = true }
 darnit-example = { workspace = true }
 darnit-gittuf = { workspace = true }
