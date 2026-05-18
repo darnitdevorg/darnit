@@ -119,25 +119,16 @@ def _enhance_architecture(content: str, local_path: str, *, llm_fn: object | Non
         "Return the enhanced ARCHITECTURE.md content."
     )
 
-    if llm_fn is not None:
-        try:
-            result = llm_fn(prompt)
-            if isinstance(result, str) and result.strip():
-                return result
-        except Exception as e:
-            logger.warning("LLM enhancement failed: %s", e)
-            return None
-    else:
-        # Try using the framework's LLM evaluation
-        try:
-            from darnit.sieve.builtin_handlers import _call_llm
+    if llm_fn is None:
+        logger.debug("No LLM callable provided for enhancement")
+        return None
 
-            result = _call_llm(prompt)
-            if isinstance(result, str) and result.strip():
-                return result
-        except Exception:
-            logger.debug("No LLM available for enhancement")
-            return None
+    try:
+        result = llm_fn(prompt)
+        if isinstance(result, str) and result.strip():
+            return result
+    except Exception as e:
+        logger.warning("LLM enhancement failed: %s", e)
 
     return None
 
