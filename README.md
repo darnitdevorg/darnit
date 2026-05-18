@@ -21,7 +21,7 @@ This repository includes an MCP (Model Context Protocol) server for AI assistant
 - **Automated Remediation**: Generate fixes for compliance gaps with dry-run support
 - **Project Configuration**: Canonical `.project.yaml` for project metadata and documentation locations
 - **Attestation Generation**: Create cryptographically signed in-toto attestations
-- **STRIDE Threat Modeling**: (Alpha) Built-in security threat analysis. To be only used for basic drafting.
+- **STRIDE Threat Modeling**: (Alpha) Built-in security threat analysis — works best on Python web services (Flask, FastAPI, Django, MCP servers); Go/JavaScript and CLI tools have limited coverage today. See [Coverage scope](#threat-model-coverage-scope) below. To be used for basic drafting only.
 - **CEL Expressions**: Flexible pass logic using Common Expression Language
 - **Plugin Verification**: Sigstore-based plugin signing and verification
 
@@ -80,6 +80,22 @@ curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/main/install.sh |
 # Verify
 opengrep --version
 ```
+
+### Threat-model coverage scope
+
+The tree-sitter discovery pipeline is tuned for **web-service shapes**. What works well today:
+
+| Project shape | Coverage |
+|---|---|
+| Python web service (Flask, FastAPI, Django, MCP server) | Best path — full STRIDE: routes, data stores, sinks, info-disclosure, elevation-of-privilege |
+| JavaScript/Node service (Express-style) | Moderate — route registration + basic sink set |
+| Go HTTP service (`net/http`, chi, gorilla) | Thin — HTTP route registration + `sql.Open` only |
+| YAML / GitHub Actions workflows | Some — overly-broad permissions and similar config issues |
+| CLI tools (cobra, click, argparse, urfave/cli) | Not modeled — produces structurally complete but empty output |
+| Crypto/signing **client** libraries (sigstore-python, in-toto) | Out of scope — these call out rather than receive; entry-point queries don't fire |
+| Systems software, daemons, libraries, ML pipelines | Not modeled |
+
+If your project doesn't match a supported shape, the generator will still write a report — but it will likely show "Total findings: 0" because no entry points were discovered. That's a coverage gap on our side, not a clean bill of health. Expanding the query set is [tracked in our issue tracker](https://github.com/kusari-oss/darnit/issues?q=is%3Aissue+threat-model+coverage).
 
 ## Quick Start
 
