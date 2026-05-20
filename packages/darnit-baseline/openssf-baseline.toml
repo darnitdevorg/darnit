@@ -558,13 +558,25 @@ when = { platform = "github" }
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-AC-03.01"
 help_md = """Enable branch protection to require pull requests.
 
-**Remediation:**
+**Auto-remediation (recommended):**
+Darnit can configure this for you via the GitHub Branch Protection API.
+
+- MCP tool: `enable_branch_protection` — accepts `owner`, `repo`, `branch`,
+  `required_approvals`, `enforce_admins`, and related flags. The defaults
+  satisfy OSPS-AC-03.01 + OSPS-AC-03.02 + OSPS-QA-07.01 in a single call.
+- TOML remediation: the control's `[remediation]` block uses an `api_call`
+  handler against `PUT /repos/{owner}/{repo}/branches/{branch}/protection`.
+
+Requires the `gh` CLI to be authenticated with a token holding `repo` scope.
+
+**Manual fallback:**
 1. Go to Repository Settings → Branches
-2. Add branch protection rule for main/master
+2. Add a branch protection rule for main/master
 3. Enable 'Require a pull request before merging'
 
 **References:**
-- [GitHub Branch Protection](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)
+- [GitHub Branch Protection (UI)](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)
+- [REST API: branch protection](https://docs.github.com/en/rest/branches/branch-protection)
 """
 
 # ExecPass: Use gh CLI to check branch protection
@@ -610,13 +622,25 @@ docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-AC-03.02"
 location_hint = ".github/settings.yml"
 help_md = """Protect primary branch from deletion.
 
-**Remediation:**
+**Auto-remediation (recommended):**
+Darnit can configure this for you via the GitHub Branch Protection API.
+A protected branch automatically disallows deletion.
+
+- MCP tool: `enable_branch_protection` (same tool that satisfies
+  OSPS-AC-03.01; the API call sets `allow_deletions=false` by default).
+- TOML remediation: the control's `[remediation]` block uses an `api_call`
+  handler against `PUT /repos/{owner}/{repo}/branches/{branch}/protection`.
+
+Requires the `gh` CLI to be authenticated with a token holding `repo` scope.
+
+**Manual fallback:**
 1. Go to Repository Settings → Branches
-2. Add branch protection rule for main/master
-3. The rule automatically prevents branch deletion
+2. Add a branch protection rule for main/master
+3. Confirm 'Allow deletions' is unchecked (default for new rules)
 
 **References:**
-- [GitHub Branch Protection](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)
+- [GitHub Branch Protection (UI)](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)
+- [REST API: branch protection](https://docs.github.com/en/rest/branches/branch-protection)
 """
 
 [[controls."OSPS-AC-03.02".passes]]
