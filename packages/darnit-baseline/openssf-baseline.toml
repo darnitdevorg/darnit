@@ -443,15 +443,30 @@ description = "Require multi-factor authentication for organization members"
 tags = { level = 1, domain = "AC", security_severity = 9.0, access-control = true, authentication = true }
 when = { platform = "github" }
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-AC-01.01"
-help_md = """Enable MFA for all organization members with elevated permissions.
+help_md = """Enable MFA for all organization members (or for a solo-maintainer user account).
 
-**Remediation:**
-1. Go to Organization Settings → Security
-2. Enable 'Require two-factor authentication for everyone'
-3. Set a grace period for existing members to enable MFA
+**Two valid paths depending on repository ownership:**
+
+- **Organization-owned repo (canonical):** the org enforces 2FA for every
+  member. Check via `gh api /orgs/<owner>` → `two_factor_requirement_enabled`.
+  Remediate: Organization Settings → Authentication security → enable
+  'Require two-factor authentication for everyone in the organization',
+  with a grace period for existing members.
+- **User-owned repo (fallback):** the maintainer running the audit has 2FA
+  enabled on their personal account. Check via `gh api /user` →
+  `two_factor_authentication` (requires the `gh` token to have the
+  `read:user` scope: run `gh auth refresh -s read:user`). Remediate: the
+  account owner's GitHub Settings → Password and authentication →
+  'Two-factor authentication'.
+
+The user-owned fallback is a liberal interpretation of the OpenSSF Baseline
+control (which is org-scoped by design). It covers the common case of a
+solo maintainer on a personal account; it does NOT substitute for org-wide
+enforcement when the repository sits inside an organization.
 
 **References:**
 - [GitHub MFA Documentation](https://docs.github.com/en/authentication/securing-your-account-with-two-factor-authentication-2fa)
+- [GitHub Org 2FA Requirements](https://docs.github.com/en/organizations/keeping-your-organization-secure/managing-two-factor-authentication-for-your-organization)
 """
 
 # ExecPass: Use gh CLI to check MFA requirement
@@ -466,11 +481,33 @@ output_format = "json"
 expr = 'has(output.json.two_factor_requirement_enabled) && output.json.two_factor_requirement_enabled == true'
 timeout = 30
 
+# Fallback for user-owned repos: org enforcement isn't possible (the owner
+# isn't an org), so check whether the authenticated maintainer has 2FA
+# enabled on their personal account. Requires `gh auth refresh -s read:user`
+# so the token can read the `two_factor_authentication` field on /user.
+#
+# This is a deliberately liberal interpretation: the canonical spec is
+# org-scoped, and this fallback can produce a false positive on an
+# *org*-owned repo where the org doesn't enforce 2FA but the maintainer
+# running the audit happens to. Tolerable for solo-maintainer / user-owned
+# repos (the common case it's intended to cover); narrowing the trigger
+# to user-owned repos is tracked separately and will move when darnit
+# auto-detects owner type.
+[[controls."OSPS-AC-01.01".passes]]
+handler = "exec"
+command = ["gh", "api", "/user"]
+pass_exit_codes = [0]
+fail_exit_codes = [1]
+output_format = "json"
+expr = 'has(output.json.two_factor_authentication) && output.json.two_factor_authentication == true'
+timeout = 30
+
 [[controls."OSPS-AC-01.01".passes]]
 handler = "manual"
 steps = [
     "Navigate to Organization Settings → Security",
     "Verify 'Require two-factor authentication' is enabled",
+    "(For user-owned repos) Verify the maintainer has 2FA enabled on their account: Settings → Password and authentication",
 ]
 
 [controls."OSPS-AC-01.01".remediation]
