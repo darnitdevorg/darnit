@@ -476,7 +476,13 @@ location_hint = ".github/settings.yml"
 handler = "exec"
 command = ["gh", "api", "/orgs/$OWNER"]
 pass_exit_codes = [0]
-fail_exit_codes = [1]
+# Intentionally NOT setting fail_exit_codes: when the repo owner isn't an
+# org (user-owned repos), `gh api /orgs/<user>` returns 404 and gh exits
+# non-zero. We want that case to be INCONCLUSIVE so the sieve falls
+# through to the /user pass below, not a definitive FAIL. The CEL expr
+# below evaluates only when the command succeeded (exit 0); a real org
+# without 2FA enforcement returns exit 0 with the field present-and-false,
+# which still flips this pass to FAIL via the expr.
 output_format = "json"
 expr = 'has(output.json.two_factor_requirement_enabled) && output.json.two_factor_requirement_enabled == true'
 timeout = 30
@@ -493,11 +499,14 @@ timeout = 30
 # repos (the common case it's intended to cover); narrowing the trigger
 # to user-owned repos is tracked separately and will move when darnit
 # auto-detects owner type.
+#
+# Same fail_exit_codes omission as above: if /user fails (no read:user
+# scope, auth error), fall through to the manual handler instead of
+# marking the control FAIL outright.
 [[controls."OSPS-AC-01.01".passes]]
 handler = "exec"
 command = ["gh", "api", "/user"]
 pass_exit_codes = [0]
-fail_exit_codes = [1]
 output_format = "json"
 expr = 'has(output.json.two_factor_authentication) && output.json.two_factor_authentication == true'
 timeout = 30
