@@ -2749,8 +2749,16 @@ handler = "pattern"
 files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
 pass_if_any = false
 
+# Accept any of the following least-privilege forms:
+#   1. `permissions: read-all`            — top-level shorthand, all read-only
+#   2. `permissions: {}`                  — explicit no-permissions
+#   3. Indented block keys (`contents: read`, `issues: write`, …)
+#
+# Explicitly NOT accepted: `permissions: write-all` (broad write access, the
+# anti-pattern this control exists to catch) and workflows that omit
+# `permissions` entirely (would inherit GITHUB_TOKEN's repo-wide default).
 [controls."OSPS-AC-04.02".passes.pattern.patterns]
-scoped_permission = '^\s+(contents|issues|pull-requests|packages|actions|security-events|id-token|attestations|deployments|statuses|checks):\s*(read|write|none)'
+scoped_permission = '^\s*permissions:\s*(read-all|\{\s*\})\s*$|^\s+(contents|issues|pull-requests|packages|actions|security-events|id-token|attestations|deployments|statuses|checks):\s*(read|write|none)'
 
 [[controls."OSPS-AC-04.02".passes]]
 handler = "manual"
