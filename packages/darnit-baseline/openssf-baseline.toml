@@ -2794,11 +2794,21 @@ help_md = """Ensure release assets are properly versioned.
 3. Use consistent naming conventions
 """
 
+# `gh release list --json …` only exposes list-level metadata fields
+# (tagName, name, publishedAt, …); it does NOT expose per-release `assets`.
+# An earlier version of this pass invoked `gh release list --json tagName,assets`,
+# which always exited 1 with "Unknown JSON field: assets" — meaning the
+# control could never PASS on any repo. The right shape uses the underlying
+# REST endpoint, which DOES return per-release `assets` on each item.
 [[controls."OSPS-BR-02.02".passes]]
 handler = "exec"
-command = ["gh", "release", "list", "--json", "tagName,assets", "--limit", "5"]
+command = ["gh", "api", "/repos/$OWNER/$REPO/releases?per_page=5"]
 pass_exit_codes = [0]
 output_format = "json"
+# Each release in the response array has an `assets` array (objects with
+# name, browser_download_url, …). The control's intent is "release assets
+# are clearly associated with release IDs" — satisfied when at least one
+# release has ≥1 asset listed beneath its tag.
 expr = 'output.json.exists(r, size(r.assets) > 0)'
 timeout = 30
 
