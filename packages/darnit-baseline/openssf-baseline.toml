@@ -2744,6 +2744,26 @@ help_md = """Minimize CI/CD job permissions.
 4. Avoid using `write-all` or `admin` permissions
 """
 
+# Primary: zizmor's `excessive-permissions` deep audit. zizmor models per-step
+# action requirements and flags workflow- or job-level grants broader than the
+# steps actually exercise — the semantic least-privilege check a regex can't do.
+# Matches BR-01.01's zizmor invocation shape: pass_exit_codes covers zizmor's
+# severity-banded codes (0=clean, 10-14=findings of varying severity). When
+# zizmor isn't installed the exec exits 127 (not in pass_exit_codes) →
+# INCONCLUSIVE → the pipeline falls through to the structural pattern check.
+[[controls."OSPS-AC-04.02".passes]]
+handler = "exec"
+command = ["zizmor", "--format", "json", "--offline", "$PATH"]
+pass_exit_codes = [0, 10, 11, 12, 13, 14]
+output_format = "json"
+expr = '!output.json.exists(f, f.ident == "excessive-permissions")'
+timeout = 60
+
+# Fallback: structural pattern check. Confirms each workflow has SOME form
+# of explicit least-privilege permissions (block form, `read-all`, or `{}`).
+# Less precise than zizmor — can't tell if the declared permissions are
+# *minimal* for what the workflow does — but catches the obvious anti-pattern
+# of omitting permissions entirely or using `write-all`.
 [[controls."OSPS-AC-04.02".passes]]
 handler = "pattern"
 files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
@@ -2758,6 +2778,7 @@ steps = [
     "Review workflow permissions in .github/workflows/",
     "Verify permissions are scoped to specific resources (contents, issues, etc.)",
     "Confirm read-only access is used where write access isn't needed",
+    "(Optional) Install zizmor and run `zizmor .github/workflows/` for a deep audit",
 ]
 
 [controls."OSPS-AC-04.02".remediation]
