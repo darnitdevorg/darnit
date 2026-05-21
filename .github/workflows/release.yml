@@ -766,8 +766,11 @@ jobs:
   # GH Release's binary assets by URL + SHA-256; the assets must exist on
   # the release before we compute hashes and dispatch.
   #
-  # Authentication: HOMEBREW_TAP_TOKEN is a GitHub App installation token
-  # scoped to `contents: write` on kusari-oss/homebrew-tap ONLY. See
+  # Authentication: HOMEBREW_TAP_TOKEN is a fine-grained PAT scoped to
+  # kusari-oss/homebrew-tap ONLY, with `contents: write` permission. A
+  # GitHub App installation token works identically at the HTTP layer
+  # (both pass as `Authorization: Bearer <token>` against the dispatches
+  # endpoint) — swap to an App at any time without code changes. See
   # packaging/README.md "External setup" for the maintainer-side steps.
   homebrew_dispatch:
     name: Dispatch formula bump to kusari-oss/homebrew-tap

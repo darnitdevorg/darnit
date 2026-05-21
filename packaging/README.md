@@ -45,9 +45,17 @@ Mirror the four configurations above on `test.pypi.org`. Used for pre-release (`
 
 ### Homebrew tap (T040–T041)
 
-1. Create `kusari-oss/homebrew-tap` as a public repo with the default branch `main` and a stub README.
-2. Create a GitHub App (or reuse the org's release App) with `contents: write` on `kusari-oss/homebrew-tap` only.
-3. Store the App's installation token as the `HOMEBREW_TAP_TOKEN` secret on `kusari-oss/darnit`.
+1. Create `kusari-oss/homebrew-tap` as a public repo with the default branch `main` and a stub README. Copy `packaging/homebrew/tap-workflows/{bump-formula.yml,ci.yml}` into the tap repo's `.github/workflows/`.
+2. Provide a credential the release pipeline can use to fire a `repository_dispatch` against the tap repo. Two options, simplest first:
+   - **Fine-grained PAT** (recommended for low-cadence projects). Create at https://github.com/settings/personal-access-tokens/new with **Repository access → Only select repositories → `kusari-oss/homebrew-tap`** and **Repository permissions → Contents: Read and write**. Trade-off: tied to your user account; rotates when you re-issue the PAT.
+   - **GitHub App** (recommended once release cadence justifies the polish). Create an App with `contents: write` on `kusari-oss/homebrew-tap` only; install on the tap repo; store the App-issued installation token (or app-id + private-key pair the workflow exchanges for one) as the secret. Trade-off: more setup; rotatable; not tied to a user account.
+
+   The dispatch step in `release.yml` uses bearer auth (`Authorization: Bearer ${HOMEBREW_TAP_TOKEN}`), which works identically for both options. Swap between them at any time without touching the workflow.
+
+3. Store the credential as the `HOMEBREW_TAP_TOKEN` secret on the `release` environment of `kusari-oss/darnit`:
+   ```bash
+   gh secret set HOMEBREW_TAP_TOKEN --repo kusari-oss/darnit --env release
+   ```
 
 ## Doing a release
 
