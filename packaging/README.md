@@ -1,6 +1,6 @@
 # Packaging & Release Runbook
 
-Maintainer-facing documentation for the darnit release pipeline. End-user install instructions live in [`docs/install/`](../docs/install/).
+Maintainer-facing documentation for the darnit release pipeline. End-user install instructions live in [`docs/install/`](../docs/install/), including [from-source.md](../docs/install/from-source.md) for users wanting to try unreleased features before they're cut into a published release.
 
 > **Canonical repository home**: `https://github.com/kusari-oss/darnit`
 >

@@ -73,13 +73,23 @@ The threat model generator can use [Opengrep](https://github.com/opengrep/opengr
 findings with data-flow traces. Without it, the generator uses tree-sitter structural
 analysis only — accurate but without taint confirmation.
 
-```bash
-# Install Opengrep (optional)
-curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/main/install.sh | bash
+Install via your platform's package manager (recommended — gets you a signed,
+checksummed artifact rather than piping an unverified script into your shell):
 
-# Verify
+```bash
+# macOS / Linux with Homebrew
+brew install opengrep
+
+# Or pin a specific release directly from GitHub:
+#   https://github.com/opengrep/opengrep/releases
+# Download, verify the SHA-256 against the release notes, then place
+# the binary on your PATH.
+
+# Verify the install succeeded
 opengrep --version
 ```
+
+If you'd rather use Semgrep (also supported by darnit): `pipx install semgrep`.
 
 ### Threat-model coverage scope
 

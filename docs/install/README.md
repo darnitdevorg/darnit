@@ -11,6 +11,7 @@ darnit ships through five channels. Pick the one that matches your situation; ea
 | On macOS arm64 or Linux with Homebrew | **Homebrew** | [homebrew.md](homebrew.md) |
 | Want a self-contained binary, no package manager | **Standalone binary** | [binary.md](binary.md) |
 | A Claude Code user who wants `/darnit:darnit-audit` and the MCP server in one install | **Claude Code plugin** | [claude-code-plugin.md](claude-code-plugin.md) |
+| Want to try an unreleased feature, contribute, or run a specific branch | **From source** (clone + `uv tool install --editable`) | [from-source.md](from-source.md) |
 | Building your own darnit-compatible compliance plugin | (not an install path — see [`docs/packaging-plugins.md`](../packaging-plugins.md)) | — |
 
 If you're not sure: **`pipx install darnit-mcp`** works for most users and is the simplest path. The other channels exist because real-world environments have constraints (no Python, locked-down CI runners, brew-only macOS workflows, agent-first usage).
