@@ -111,6 +111,14 @@ def parse_source(language_name: str, content: bytes) -> Any:
     with ``ERROR`` nodes for the broken portions. Callers can inspect
     ``tree.root_node.has_error`` for diagnostic logging but the remaining
     captures are still valid.
+
+    Compatibility: the ``parser.parse()`` argument type changed between
+    ``tree-sitter-language-pack`` releases — 1.5.x accepts ``bytes``,
+    1.8.x accepts only ``str``. We try ``bytes`` first (the historical
+    contract and what the rest of darnit's pipeline carries around) and
+    fall back to a UTF-8 decode on TypeError. Bytes that aren't valid
+    UTF-8 are decoded with ``errors="replace"`` so a single odd file
+    doesn't sink the whole audit.
     """
 
     if not isinstance(content, (bytes, bytearray)):
@@ -118,7 +126,12 @@ def parse_source(language_name: str, content: bytes) -> Any:
             f"parse_source expected bytes, got {type(content).__name__}"
         )
     parser = get_tree_sitter_parser(language_name)
-    tree = parser.parse(bytes(content))
+    try:
+        tree = parser.parse(bytes(content))
+    except TypeError:
+        # tree-sitter-language-pack >= 1.8 binding wants str, not bytes.
+        # Decode and retry.
+        tree = parser.parse(bytes(content).decode("utf-8", errors="replace"))
     if tree.root_node.has_error:
         logger.debug(
             "tree-sitter reported parse errors for %s (recoverable)", language_name

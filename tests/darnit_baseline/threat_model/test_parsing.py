@@ -100,3 +100,70 @@ def test_parse_source_recovers_from_syntax_errors() -> None:
 def test_unsupported_language_raises() -> None:
     with pytest.raises(ValueError, match="Unsupported language"):
         parse_source("rust", b"fn main() {}")
+
+
+def test_parse_source_handles_both_language_pack_apis(monkeypatch) -> None:
+    """Regression: tree-sitter-language-pack changed parser.parse() arg
+    type between releases — 1.5.x took bytes, 1.8.x takes str only.
+    parse_source() must work against either by trying bytes first and
+    falling back to a UTF-8 decode on TypeError.
+
+    Simulates the 1.8.x binding by monkeypatching the parser to reject
+    bytes and only accept str.
+    """
+    from darnit_baseline.threat_model import parsing
+
+    real_parser = parsing.get_tree_sitter_parser("python")
+
+    class StrOnlyParserWrapper:
+        """Mimics the tree-sitter-language-pack 1.8 binding's parse()
+        which raises TypeError unless given a str."""
+
+        def parse(self, source):
+            if not isinstance(source, str):
+                raise TypeError(
+                    "argument 'source': 'bytes' object is not an instance of 'str'"
+                )
+            return real_parser.parse(source.encode("utf-8"))
+
+    monkeypatch.setattr(
+        parsing, "get_tree_sitter_parser", lambda _lang: StrOnlyParserWrapper()
+    )
+
+    # Even though the underlying parser rejects bytes, parse_source must
+    # still succeed by transparently falling back to the str path.
+    tree = parse_source("python", b"def foo(): pass\n")
+    assert tree is not None
+    query = make_query("python", "(identifier) @id")
+    matches = list(run_query(query, tree.root_node))
+    assert any(
+        match[1].get("id", []) and parsing.node_text(match[1]["id"][0], b"def foo(): pass\n") == "foo"
+        if isinstance(match, tuple) and len(match) >= 2
+        else False
+        for match in matches
+    ) or len(matches) >= 1  # at least one identifier captured
+
+
+def test_parse_source_handles_non_utf8_bytes_under_str_binding(monkeypatch) -> None:
+    """Regression: when the binding requires str, parse_source must decode
+    bytes safely even if they contain invalid UTF-8 sequences. The decode
+    uses errors='replace' so a single bad byte doesn't tank the audit.
+    """
+    from darnit_baseline.threat_model import parsing
+
+    real_parser = parsing.get_tree_sitter_parser("python")
+
+    class StrOnlyParserWrapper:
+        def parse(self, source):
+            if not isinstance(source, str):
+                raise TypeError("source must be str")
+            return real_parser.parse(source.encode("utf-8"))
+
+    monkeypatch.setattr(
+        parsing, "get_tree_sitter_parser", lambda _lang: StrOnlyParserWrapper()
+    )
+
+    # Embed a bare 0xFF byte (invalid UTF-8 start) into otherwise-valid Python.
+    naughty = b"def foo():\n    return '\xff'\n"
+    tree = parse_source("python", naughty)
+    assert tree is not None  # didn't raise UnicodeDecodeError

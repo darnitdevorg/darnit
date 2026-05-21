@@ -23,7 +23,13 @@ classifiers = [
 dependencies = [
     "darnit-core>=0.1.0",
     "tree-sitter>=0.25",
-    "tree-sitter-language-pack>=1.5",
+    # tree-sitter-language-pack 1.8+ changed two APIs the threat-model
+    # pipeline depends on:
+    #   1. parser.parse() now wants str only (not bytes) and exposes a
+    #      separate parse_bytes() for the old contract.
+    #   2. tree.root_node became a callable method instead of a property.
+    # Cap at <1.8 until darnit's parsing layer supports both shapes. See #268.
+    "tree-sitter-language-pack>=1.5,<1.8",
 ]
 
 [project.urls]
