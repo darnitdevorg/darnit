@@ -441,6 +441,62 @@ class TestWarnControlCELExpressions:
     that replace weak "existence-only" checks with meaningful validation.
     """
 
+    # -- OSPS-LE-02.02 / LE-03.02: GH license endpoint (primary pass) --
+
+    def test_gh_license_endpoint_pass_with_spdx(self) -> None:
+        """GitHub returns a recognized SPDX id → PASS."""
+        evaluator = CELEvaluator()
+        expr = (
+            'has(output.json.license) && output.json.license.spdx_id != ""'
+            ' && output.json.license.spdx_id != "NOASSERTION"'
+        )
+        program = evaluator.compile(expr)
+        context = {
+            "output": {
+                "json": {
+                    "name": "LICENSE",
+                    "path": "LICENSE",
+                    "license": {"spdx_id": "Apache-2.0", "key": "apache-2.0"},
+                }
+            }
+        }
+        result = evaluator.evaluate(program, context)
+        assert result.success is True
+        assert result.value is True
+
+    def test_gh_license_endpoint_fail_noassertion(self) -> None:
+        """GitHub found a LICENSE file but couldn't classify it → not a PASS."""
+        evaluator = CELEvaluator()
+        expr = (
+            'has(output.json.license) && output.json.license.spdx_id != ""'
+            ' && output.json.license.spdx_id != "NOASSERTION"'
+        )
+        program = evaluator.compile(expr)
+        context = {
+            "output": {
+                "json": {
+                    "name": "LICENSE",
+                    "license": {"spdx_id": "NOASSERTION", "key": "other"},
+                }
+            }
+        }
+        result = evaluator.evaluate(program, context)
+        assert result.success is True
+        assert result.value is False
+
+    def test_gh_license_endpoint_fail_no_license_field(self) -> None:
+        """Response missing the license field → not a PASS (handled by has() guard)."""
+        evaluator = CELEvaluator()
+        expr = (
+            'has(output.json.license) && output.json.license.spdx_id != ""'
+            ' && output.json.license.spdx_id != "NOASSERTION"'
+        )
+        program = evaluator.compile(expr)
+        context = {"output": {"json": {"name": "LICENSE"}}}
+        result = evaluator.evaluate(program, context)
+        assert result.success is True
+        assert result.value is False
+
     # -- OSPS-LE-02.02: ReleaseLicense --
 
     def test_release_license_pass_body_keyword(self) -> None:

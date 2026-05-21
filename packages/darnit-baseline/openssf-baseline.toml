@@ -1682,6 +1682,7 @@ name = "ReleaseLicense"
 description = "Releases include license information"
 tags = { level = 1, domain = "LE", legal = true, license = true }
 when = { platform = "github" }
+inferred_from = "OSPS-LE-03.01"  # GitHub auto-generates source archives that include the repo's LICENSE for every release; if LE-03.01 passes, the release contains license info by construction.
 
 # Check that releases have license info (via release notes or included files)
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-LE-02.02"
@@ -1693,6 +1694,16 @@ help_md = """Include OSI-approved license with releases.
 2. Ensure license is compatible with dependencies
 3. Document license in package metadata
 """
+
+# Primary: GitHub's own license detector (licensee server-side) returns an SPDX id.
+# Nonzero exit falls through to the next pass so auth/network failures don't masquerade as FAIL.
+[[controls."OSPS-LE-02.02".passes]]
+handler = "exec"
+command = ["gh", "api", "/repos/$OWNER/$REPO/license"]
+pass_exit_codes = [0]
+output_format = "json"
+expr = 'has(output.json.license) && output.json.license.spdx_id != "" && output.json.license.spdx_id != "NOASSERTION"'
+timeout = 30
 
 [[controls."OSPS-LE-02.02".passes]]
 handler = "exec"
@@ -1791,6 +1802,17 @@ help_md = """Include license file in release artifacts.
 2. Include license in package metadata
 3. Automate license inclusion in release workflow
 """
+
+# Primary: GitHub's own license detector. A PASS here means GitHub has identified a
+# recognized SPDX license in the repo, and every auto-generated source archive for a
+# release therefore includes it. Falls through on nonzero exit (auth/network/no-detection).
+[[controls."OSPS-LE-03.02".passes]]
+handler = "exec"
+command = ["gh", "api", "/repos/$OWNER/$REPO/license"]
+pass_exit_codes = [0]
+output_format = "json"
+expr = 'has(output.json.license) && output.json.license.spdx_id != "" && output.json.license.spdx_id != "NOASSERTION"'
+timeout = 30
 
 [[controls."OSPS-LE-03.02".passes]]
 handler = "exec"
