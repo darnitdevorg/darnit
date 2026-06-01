@@ -83,6 +83,35 @@ HTTP_ROUTE_IMPERATIVE = make_query(
 )
 
 # ---------------------------------------------------------------------------
+# ML Pipeline queries
+# ---------------------------------------------------------------------------
+
+#: ML module imports
+ML_MODULE_IMPORT = make_query(
+    "python",
+    """
+(import_statement
+  name: (dotted_name) @name
+  (#match? @name "^(torch|transformers|onnx|safetensors)$"))
+(import_from_statement
+  module_name: (dotted_name) @module
+  (#match? @module "^(torch|transformers|onnx|safetensors)$"))
+""",
+)
+
+#: ML model loading execution blocks
+ML_MODEL_LOADER = make_query(
+    "python",
+    """
+(call
+  function: (attribute
+    object: (identifier) @obj
+    attribute: (identifier) @method)
+  (#match? @method "^(load|load_state_dict|from_pretrained|safe_open|load_file|load_weights|load_model)$")) @call
+""",
+)
+
+# ---------------------------------------------------------------------------
 # Subprocess / dangerous-call queries
 # ---------------------------------------------------------------------------
 
@@ -324,6 +353,16 @@ QUERY_REGISTRY: dict[str, PythonQuery] = {
         query=HTTP_ROUTE_IMPERATIVE,
         intent="constructor_call",
     ),
+    "python.entry.ml_import": PythonQuery(
+        id="python.entry.ml_import",
+        query=ML_MODULE_IMPORT,
+        intent="import",
+    ),
+    "python.entry.ml_loader": PythonQuery(
+        id="python.entry.ml_loader",
+        query=ML_MODEL_LOADER,
+        intent="bare_call",
+    ),
     "python.sink.dangerous_attr": PythonQuery(
         id="python.sink.dangerous_attr",
         query=DANGEROUS_ATTRIBUTE_CALL,
@@ -399,6 +438,8 @@ __all__ = [
     "MCP_TOOL_DECORATOR",
     "MCP_TOOL_IMPERATIVE",
     "HTTP_ROUTE_IMPERATIVE",
+    "ML_MODULE_IMPORT",
+    "ML_MODEL_LOADER",
     "DANGEROUS_ATTRIBUTE_CALL",
     "DANGEROUS_BARE_CALL",
     "DATASTORE_ATTRIBUTE_CALL",

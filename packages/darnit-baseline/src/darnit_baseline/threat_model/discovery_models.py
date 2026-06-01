@@ -75,6 +75,7 @@ class EntryPointKind(str, Enum):
     MCP_TOOL = "mcp_tool"
     CLI_COMMAND = "cli_command"
     MESSAGE_HANDLER = "message_handler"
+    ML_PIPELINE = "ml_pipeline"
 
 
 class DataStoreKind(str, Enum):
