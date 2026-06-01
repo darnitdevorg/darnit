@@ -440,7 +440,7 @@ dependencies = [
 requires-dist = [
     { name = "darnit-core", editable = "packages/darnit" },
     { name = "tree-sitter", specifier = ">=0.25" },
-    { name = "tree-sitter-language-pack", specifier = ">=1.5" },
+    { name = "tree-sitter-language-pack", specifier = ">=1.5,<1.8" },
 ]
 
 [[package]]

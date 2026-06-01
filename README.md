@@ -103,7 +103,8 @@ The tree-sitter discovery pipeline is tuned for **web-service shapes**. What wor
 | YAML / GitHub Actions workflows | Some — overly-broad permissions and similar config issues |
 | CLI tools (cobra, click, argparse, urfave/cli) | Not modeled — produces structurally complete but empty output |
 | Crypto/signing **client** libraries (sigstore-python, in-toto) | Out of scope — these call out rather than receive; entry-point queries don't fire |
-| Systems software, daemons, libraries, ML pipelines | Not modeled |
+| ML pipelines (PyTorch, Transformers, ONNX, Safetensors) | Modeled — mapped to TAMPERING and ELEVATION_OF_PRIVILEGE |
+| Systems software, daemons, libraries | Not modeled |
 
 If your project doesn't match a supported shape, the generator will still write a report — but it will likely show "Total findings: 0" because no entry points were discovered. That's a coverage gap on our side, not a clean bill of health. Expanding the query set is [tracked in our issue tracker](https://github.com/kusari-oss/darnit/issues?q=is%3Aissue+threat-model+coverage).
 
