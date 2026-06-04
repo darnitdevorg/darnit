@@ -29,7 +29,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v4
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v4
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
@@ -57,7 +57,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v4
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v4
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
@@ -97,7 +97,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v4
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v4
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
@@ -138,7 +138,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v4
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v4
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
@@ -174,14 +174,14 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v4
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v4
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
 
       - name: Build packages
         run: |
-          uv build --package darnit
+          uv build --package darnit-core
           uv build --package darnit-baseline
 
       - name: Verify package contents
@@ -203,7 +203,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v4
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v4
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
@@ -228,7 +228,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v4
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v4
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
@@ -247,3 +247,79 @@ jobs:
             echo "Generated docs would change - please run 'python scripts/generate_docs.py' and commit"
             exit 1
           fi
+
+  # T065: integration check for the third-party plugin packaging story.
+  # darnit-hello is the worked example referenced by docs/packaging-plugins.md;
+  # if this job ever fails, the documented packaging path is broken.
+  plugin_discovery_smoke:
+    name: Plugin discovery smoke (darnit-hello)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v4
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Install workspace (includes darnit-hello)
+        run: uv sync --all-extras
+
+      - name: darnit-hello is discoverable on the darnit.implementations entry point
+        run: |
+          uv run python <<'PY'
+          import sys
+          from importlib.metadata import entry_points
+          eps = list(entry_points(group="darnit.implementations"))
+          names = sorted(ep.name for ep in eps)
+          print(f"Discovered implementations: {names}")
+          assert "hello" in names, (
+              "darnit-hello is not discoverable — the third-party plugin "
+              "packaging guide (docs/packaging-plugins.md) is broken. "
+              f"Found: {names}"
+          )
+          PY
+
+      - name: HelloImplementation satisfies the ComplianceImplementation protocol
+        run: |
+          uv run python <<'PY'
+          from darnit.core.plugin import ComplianceImplementation
+          from darnit_hello import register, get_framework_path
+
+          impl = register()
+          assert isinstance(impl, ComplianceImplementation), (
+              "HelloImplementation does not satisfy the ComplianceImplementation "
+              "protocol — the packaging guide's protocol example is wrong."
+          )
+          assert impl.name == "hello", f"impl.name = {impl.name!r}, expected 'hello'"
+          assert impl.version == "0.1.0"
+          assert impl.get_framework_config_path() == get_framework_path()
+          assert impl.get_framework_config_path().exists(), (
+              f"TOML config not found at {impl.get_framework_config_path()}"
+          )
+          print(f"✓ {impl.display_name} {impl.version} — protocol-conforming")
+          PY
+
+      - name: TOML config defines exactly the documented controls
+        run: |
+          uv run python <<'PY'
+          import tomllib
+          from darnit_hello import get_framework_path
+
+          with open(get_framework_path(), "rb") as f:
+              config = tomllib.load(f)
+          controls = list((config.get("controls") or {}).keys())
+          print(f"Defined controls: {controls}")
+          assert controls == ["HELLO-01.01"], (
+              f"darnit-hello drifted: expected exactly [HELLO-01.01], got {controls}. "
+              "Update the worked example AND docs/packaging-plugins.md together."
+          )
+          PY

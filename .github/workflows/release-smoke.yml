@@ -1,0 +1,599 @@
+name: Release Smoke Tests
+
+# Per-channel smoke tests that exercise the PUBLISHED artifact end-to-end.
+# Triggered after .github/workflows/release.yml completes; channel jobs are
+# added phase-by-phase as their channels go live.
+#
+#   Phase 3 (US1) → pypi_smoke ✅
+#   Phase 4 (US2) → container_smoke ✅
+#   Phase 5 (US3) → binary_smoke ✅ + homebrew_smoke ✅
+#   Phase 6 (US4) → plugin_structural_smoke ✅ + plugin_behavioral_smoke ✅
+#
+# A smoke failure does not unpublish — published artifacts are immutable.
+# A failed smoke surfaces a release-failure issue via release.yml's finalize job.
+
+on:
+  workflow_run:
+    workflows: ["Release"]
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+jobs:
+  # Parse the tag that triggered the Release workflow. workflow_run carries the
+  # triggering ref in github.event.workflow_run.head_branch (for tag triggers,
+  # this is the tag name).
+  parse-trigger:
+    name: Parse triggering tag
+    if: ${{ github.event.workflow_run.event == 'push' && startsWith(github.event.workflow_run.head_branch, 'v') && github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      version: ${{ steps.parse.outputs.version }}
+      is_prerelease: ${{ steps.parse.outputs.is_prerelease }}
+      index_url: ${{ steps.parse.outputs.index_url }}
+    steps:
+      - name: Parse
+        id: parse
+        env:
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+          tag="$HEAD_BRANCH"
+          if [[ "$tag" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            version="${BASH_REMATCH[1]}"
+            is_prerelease="false"
+            index_url="https://pypi.org/simple/"
+          elif [[ "$tag" =~ ^v([0-9]+\.[0-9]+\.[0-9]+rc[0-9]+)$ ]]; then
+            version="${BASH_REMATCH[1]}"
+            is_prerelease="true"
+            index_url="https://test.pypi.org/simple/"
+          else
+            echo "::error::Trigger ref '$tag' is not a release tag — smoke skipped"
+            exit 1
+          fi
+          {
+            echo "version=$version"
+            echo "is_prerelease=$is_prerelease"
+            echo "index_url=$index_url"
+          } >> "$GITHUB_OUTPUT"
+          echo "Parsed: tag=$tag version=$version is_prerelease=$is_prerelease index=$index_url"
+
+  # T015: install each public package from the selected index in a clean venv,
+  # then run a per-package smoke check (CLI version for darnit-mcp, import for
+  # the others).
+  # T016: verify each package's Sigstore attestation against the release
+  # workflow's OIDC identity.
+  pypi_smoke:
+    name: pypi_smoke (${{ matrix.package }})
+    needs: parse-trigger
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [darnit, darnit-baseline, darnit-gittuf, darnit-mcp]
+    steps:
+      - name: Checkout (for public-packages.txt sanity check)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+        with:
+          persist-credentials: false
+
+      - name: Verify package is in the public set
+        env:
+          PKG: ${{ matrix.package }}
+        run: |
+          set -euo pipefail
+          if ! grep -Fxq "$PKG" packaging/pypi/public-packages.txt; then
+            echo "::error::Matrix package '$PKG' is not in packaging/pypi/public-packages.txt"
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Install sigstore CLI (T016)
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install 'sigstore>=3.0.0,<4'
+
+      - name: Install ${{ matrix.package }} from ${{ needs.parse-trigger.outputs.is_prerelease == 'true' && 'TestPyPI' || 'PyPI' }}
+        env:
+          PKG: ${{ matrix.package }}
+          VERSION: ${{ needs.parse-trigger.outputs.version }}
+          INDEX_URL: ${{ needs.parse-trigger.outputs.index_url }}
+        run: |
+          set -euo pipefail
+          python -m venv "/tmp/smoke-$PKG"
+          # --extra-index-url falls back to PyPI for transitive deps that
+          # only exist there (e.g., tree-sitter for darnit-baseline). The
+          # primary --index-url is the index we just published to.
+          "/tmp/smoke-$PKG/bin/pip" install --upgrade pip
+          "/tmp/smoke-$PKG/bin/pip" install \
+            --index-url "$INDEX_URL" \
+            --extra-index-url https://pypi.org/simple/ \
+            --pre \
+            "${PKG}==${VERSION}"
+
+      - name: Per-package smoke check (T015)
+        env:
+          PKG: ${{ matrix.package }}
+          VERSION: ${{ needs.parse-trigger.outputs.version }}
+        run: |
+          set -euo pipefail
+          venv="/tmp/smoke-$PKG"
+          case "$PKG" in
+            "darnit-mcp")
+              # darnit-mcp installs the `darnit` console script via its
+              # darnit-core dependency. Confirm the CLI is reachable and
+              # reports the expected version.
+              actual=$("$venv/bin/darnit" --version 2>&1 | tail -n1)
+              echo "darnit --version → $actual"
+              echo "$actual" | grep -F "$VERSION"
+              ;;
+            "darnit-core")
+              # Distribution is darnit-core; import name is still `darnit`.
+              "$venv/bin/python" -c "import darnit; print('darnit imports OK')"
+              ;;
+            "darnit-baseline")
+              "$venv/bin/python" -c "import darnit_baseline; print('darnit_baseline imports OK')"
+              ;;
+            "darnit-gittuf")
+              "$venv/bin/python" -c "import darnit_gittuf; print('darnit_gittuf imports OK')"
+              ;;
+            *)
+              echo "::error::No smoke recipe defined for package '$PKG'"
+              exit 1
+              ;;
+          esac
+
+      - name: Verify Sigstore attestation (T016)
+        env:
+          PKG: ${{ matrix.package }}
+          VERSION: ${{ needs.parse-trigger.outputs.version }}
+          IS_PRERELEASE: ${{ needs.parse-trigger.outputs.is_prerelease }}
+          INDEX_URL: ${{ needs.parse-trigger.outputs.index_url }}
+        run: |
+          set -euo pipefail
+          # Download the wheel directly so we can verify the attestation
+          # against the actual artifact bytes.
+          mkdir -p /tmp/dl
+          "/tmp/smoke-$PKG/bin/pip" download \
+            --no-deps \
+            --dest /tmp/dl \
+            --index-url "$INDEX_URL" \
+            --extra-index-url https://pypi.org/simple/ \
+            --pre \
+            "${PKG}==${VERSION}"
+
+          # Find the .whl. PyPI normalizes hyphens to underscores in wheel
+          # filenames, so we match by version rather than exact package name.
+          wheel=$(find /tmp/dl -maxdepth 1 -type f -name "*-${VERSION}*.whl" | head -n1)
+          if [ -z "$wheel" ]; then
+            echo "::error::No wheel for $PKG $VERSION found in /tmp/dl"
+            exit 1
+          fi
+          echo "Verifying $wheel"
+
+          # PyPI exposes attestations via its provenance API. Fetch the
+          # provenance bundle and verify it. Same path on test.pypi.org.
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            pypi_host="test.pypi.org"
+          else
+            pypi_host="pypi.org"
+          fi
+          wheel_basename=$(basename "$wheel")
+          provenance_url="https://${pypi_host}/integrity/${PKG}/${VERSION}/${wheel_basename}/provenance"
+          echo "Fetching $provenance_url"
+          if ! curl -fsSLo /tmp/provenance.json "$provenance_url"; then
+            echo "::error::Could not fetch provenance for $PKG $VERSION at $provenance_url. PEP 740 attestation is required for FR-003."
+            exit 1
+          fi
+
+          # The provenance response contains attestation_bundles[].attestations[].
+          # Extract the first attestation as a sigstore-readable bundle file.
+          python <<'PY'
+          import json, sys
+          with open('/tmp/provenance.json') as f:
+              data = json.load(f)
+          bundles = data.get('attestation_bundles') or []
+          if not bundles:
+              print('::error::No attestation bundles in provenance response')
+              sys.exit(1)
+          attestations = bundles[0].get('attestations') or []
+          if not attestations:
+              print('::error::Attestation bundle is empty')
+              sys.exit(1)
+          with open('/tmp/attestation.sigstore.json', 'w') as out:
+              json.dump(attestations[0], out)
+          print('Extracted attestation to /tmp/attestation.sigstore.json')
+          PY
+
+          python -m sigstore verify identity \
+            --bundle /tmp/attestation.sigstore.json \
+            --cert-identity-regexp '^https://github\.com/kusari-oss/darnit/\.github/workflows/release\.yml@' \
+            --cert-oidc-issuer https://token.actions.githubusercontent.com \
+            "$wheel"
+          echo "✓ Sigstore identity verified for $PKG $VERSION"
+
+  # T028: pull the published image, run --version, then cosign-verify the
+  # image's signing identity against the canonical release.yml workflow URI.
+  container_smoke:
+    name: container_smoke (${{ matrix.platform }})
+    needs: parse-trigger
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+    steps:
+      - name: Set up QEMU (for arm64 pull on amd64 runner)
+        if: matrix.platform == 'linux/arm64'
+        uses: docker/setup-qemu-action@49b3bc8e6bdd4a60e6116a5414239cba5943d3cf # v3
+        with:
+          platforms: arm64
+
+      - name: Compute image reference
+        id: image
+        env:
+          VERSION: ${{ needs.parse-trigger.outputs.version }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')/darnit"
+          tag="v${VERSION}"
+          {
+            echo "image=$image"
+            echo "tag=$tag"
+            echo "ref=${image}:${tag}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Pull image for ${{ matrix.platform }}
+        env:
+          REF: ${{ steps.image.outputs.ref }}
+          PLAT: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          docker pull --platform "$PLAT" "$REF"
+
+      - name: Run --version
+        env:
+          REF: ${{ steps.image.outputs.ref }}
+          PLAT: ${{ matrix.platform }}
+          VERSION: ${{ needs.parse-trigger.outputs.version }}
+        run: |
+          set -euo pipefail
+          actual=$(docker run --rm --platform "$PLAT" "$REF" --version 2>&1 | tail -n1)
+          echo "darnit --version → $actual"
+          echo "$actual" | grep -F "$VERSION"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@0d05a4e36810cebf0e25e51fb1a4ee45ac1b75e2 # v3.10.1
+
+      - name: cosign verify image signature
+        env:
+          REF: ${{ steps.image.outputs.ref }}
+        run: |
+          set -euo pipefail
+          cosign verify "$REF" \
+            --certificate-identity-regexp '^https://github\.com/kusari-oss/darnit/\.github/workflows/release\.yml@' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            > /tmp/cosign-verify.json
+          echo "✓ cosign verified $REF"
+
+      - name: cosign verify SBOM attestation
+        env:
+          REF: ${{ steps.image.outputs.ref }}
+        run: |
+          set -euo pipefail
+          cosign verify-attestation "$REF" \
+            --type spdx \
+            --certificate-identity-regexp '^https://github\.com/kusari-oss/darnit/\.github/workflows/release\.yml@' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            > /tmp/cosign-verify-attestation.json
+          echo "✓ cosign verified SBOM attestation on $REF"
+
+  # T037: download each platform's binary from the GH Release, run it on the
+  # matching native runner, and cosign-verify the detached blob signature.
+  binary_smoke:
+    name: binary_smoke (${{ matrix.os }}-${{ matrix.arch }})
+    needs: parse-trigger
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS amd64 (Intel) is intentionally absent — out of scope per spec.
+        include:
+          - { runner: macos-14,         os: macos, arch: arm64 }
+          - { runner: ubuntu-22.04,     os: linux, arch: amd64 }
+          - { runner: ubuntu-22.04-arm, os: linux, arch: arm64 }
+    steps:
+      - name: Set up Python 3.11 (required by the shiv shebang at runtime)
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v5
+        with:
+          python-version: "3.11"
+
+      - name: Download binary + signature for ${{ matrix.os }}-${{ matrix.arch }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.parse-trigger.outputs.version }}
+          OS: ${{ matrix.os }}
+          ARCH: ${{ matrix.arch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/dl
+          tag="v${VERSION}"
+          for asset in "darnit-${VERSION}-${OS}-${ARCH}" "darnit-${VERSION}-${OS}-${ARCH}.sigstore"; do
+            gh release download "$tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --pattern "$asset" \
+              --dir /tmp/dl
+          done
+          chmod +x "/tmp/dl/darnit-${VERSION}-${OS}-${ARCH}"
+          ls -la /tmp/dl
+
+      - name: Run --version
+        env:
+          VERSION: ${{ needs.parse-trigger.outputs.version }}
+          OS: ${{ matrix.os }}
+          ARCH: ${{ matrix.arch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="/tmp/dl/darnit-${VERSION}-${OS}-${ARCH}"
+          out=$("$bin" --version 2>&1 | tail -n1)
+          echo "$bin --version → $out"
+          echo "$out" | grep -F "$VERSION"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@0d05a4e36810cebf0e25e51fb1a4ee45ac1b75e2 # v3.10.1
+
+      - name: cosign verify-blob
+        env:
+          VERSION: ${{ needs.parse-trigger.outputs.version }}
+          OS: ${{ matrix.os }}
+          ARCH: ${{ matrix.arch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="/tmp/dl/darnit-${VERSION}-${OS}-${ARCH}"
+          cosign verify-blob \
+            --bundle "${bin}.sigstore" \
+            --certificate-identity-regexp '^https://github\.com/kusari-oss/darnit/\.github/workflows/release\.yml@' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "$bin"
+          echo "✓ cosign verified blob signature for ${OS}-${ARCH}"
+
+  # T046: poll the tap repo for the bump PR's auto-merge (SC-007: 30 min
+  # budget), then `brew install kusari-oss/tap/darnit` on a fresh runner and
+  # confirm `darnit --version` reports the release version.
+  # STABLE TAGS ONLY — pre-release tags do not touch the formula.
+  homebrew_smoke:
+    name: homebrew_smoke (${{ matrix.runner }})
+    needs: parse-trigger
+    if: needs.parse-trigger.outputs.is_prerelease == 'false'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35   # 30-min poll + 5-min install/smoke
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-14, ubuntu-22.04]
+    steps:
+      - name: "Wait for darnit-tap PR to merge (SC-007: 30 minutes)"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.parse-trigger.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 1800))   # 30 min from now
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            # Look for a merged PR titled exactly "darnit <version>" in the tap repo.
+            merged=$(gh pr list --repo kusari-oss/homebrew-tap \
+              --state merged \
+              --search "darnit ${VERSION} in:title" \
+              --json title \
+              --jq 'length')
+            if [ "$merged" -ge 1 ]; then
+              echo "✓ Tap PR for darnit ${VERSION} is merged"
+              exit 0
+            fi
+            echo "Waiting for tap PR for darnit ${VERSION} to merge (elapsed: ${SECONDS}s)..."
+            sleep 30
+          done
+          echo "::error::Tap PR for darnit ${VERSION} did not merge within 30 minutes (SC-007 violation)"
+          exit 1
+
+      - name: Install via brew
+        env:
+          VERSION: ${{ needs.parse-trigger.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Linux runners typically don't have brew preinstalled.
+          if ! command -v brew >/dev/null 2>&1; then
+            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+            # shellcheck disable=SC2016
+            eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)" || true
+            # shellcheck disable=SC2016
+            echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> "$HOME/.bashrc"
+          fi
+          brew tap kusari-oss/tap
+          brew install darnit
+
+          actual=$(darnit --version 2>&1 | tail -n1)
+          echo "darnit --version → $actual"
+          echo "$actual" | grep -F "$VERSION"
+          echo "✓ brew-installed darnit reports ${VERSION}"
+
+  # T054: structural smoke. Confirms the plugin zip is well-formed (valid
+  # zip, expected layout, version pinned in manifest, skill set matches
+  # the contract, runner script has the exec bit set on extraction).
+  # STABLE TAGS ONLY — pre-release tags do not produce a plugin zip.
+  plugin_structural_smoke:
+    name: plugin_structural_smoke
+    needs: parse-trigger
+    if: needs.parse-trigger.outputs.is_prerelease == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Download plugin zip from GH Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.parse-trigger.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+          mkdir -p /tmp/plugin
+          gh release download "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "darnit-claude-plugin-${VERSION}.zip" \
+            --dir /tmp/plugin
+          ls -la /tmp/plugin/
+
+      - name: Zip integrity
+        env:
+          VERSION: ${{ needs.parse-trigger.outputs.version }}
+        run: |
+          set -euo pipefail
+          unzip -t "/tmp/plugin/darnit-claude-plugin-${VERSION}.zip"
+
+      - name: Manifest pins ${{ needs.parse-trigger.outputs.version }} on both axes
+        env:
+          VERSION: ${{ needs.parse-trigger.outputs.version }}
+        run: |
+          set -euo pipefail
+          zip="/tmp/plugin/darnit-claude-plugin-${VERSION}.zip"
+          unzip -p "$zip" darnit/.claude-plugin/plugin.json \
+            | jq -e --arg v "$VERSION" '.version == $v' > /dev/null
+          unzip -p "$zip" darnit/.claude-plugin/plugin.json \
+            | jq -e --arg v "$VERSION" '.mcpServers["darnit-mcp"].env.DARNIT_MCP_VERSION == $v' > /dev/null
+          echo "✓ Manifest pins ${VERSION} on both axes"
+
+      - name: Skill set matches contract
+        env:
+          VERSION: ${{ needs.parse-trigger.outputs.version }}
+        run: |
+          set -euo pipefail
+          zip="/tmp/plugin/darnit-claude-plugin-${VERSION}.zip"
+          # [a-z0-9-]+ per Agent Skills name rules (lowercase letters,
+          # digits, hyphens). [a-z]+ alone would miss every hyphenated name.
+          bundled=$(unzip -l "$zip" \
+            | awk '/darnit\/skills\/[a-z0-9-]+\/SKILL\.md$/ {sub("^.*skills/",""); sub("/SKILL.md$",""); print}' \
+            | sort | paste -sd, -)
+          expected="darnit-audit,darnit-comply,darnit-data,darnit-remediate"
+          if [ "$bundled" != "$expected" ]; then
+            echo "::error::bundled=${bundled} expected=${expected}"
+            exit 1
+          fi
+          echo "✓ Skill set: $bundled"
+
+      - name: Runner script is executable after extraction
+        env:
+          VERSION: ${{ needs.parse-trigger.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/plugin-extract
+          unzip -q "/tmp/plugin/darnit-claude-plugin-${VERSION}.zip" -d /tmp/plugin-extract
+          test -x /tmp/plugin-extract/darnit/bin/darnit-mcp-runner
+          echo "✓ Runner script is +x"
+
+  # T055: behavioral smoke. Extracts the bundle, runs the wrapper script
+  # under three conditions: (a) with uvx on PATH → should exec into uvx
+  # successfully; (b) with neither uvx nor pipx → should exit 127 with the
+  # actionable error message. The wrapper IS the FR-017 implementation, so
+  # this is the strongest behavioral check we can run without an Anthropic-
+  # provided plugin test harness.
+  plugin_behavioral_smoke:
+    name: plugin_behavioral_smoke
+    needs: [parse-trigger, plugin_structural_smoke]
+    if: needs.parse-trigger.outputs.is_prerelease == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv (provides uvx)
+        run: |
+          set -euo pipefail
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          # shellcheck disable=SC1090
+          . "$HOME/.local/bin/env" 2>/dev/null || export PATH="$HOME/.local/bin:$PATH"
+          uvx --version
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Download and extract the plugin zip
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.parse-trigger.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+          mkdir -p /tmp/plugin
+          gh release download "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "darnit-claude-plugin-${VERSION}.zip" \
+            --dir /tmp/plugin
+          mkdir -p /tmp/plugin-extract
+          unzip -q "/tmp/plugin/darnit-claude-plugin-${VERSION}.zip" -d /tmp/plugin-extract
+
+      - name: Wrapper successfully invokes darnit via uvx (--help, exits 0)
+        env:
+          VERSION: ${{ needs.parse-trigger.outputs.version }}
+        run: |
+          set -euo pipefail
+          # --help is the simplest one-shot invocation: it exercises the
+          # uvx fetch + the darnit-mcp entry-point resolution, and exits
+          # 0 without hanging on stdio MCP input.
+          DARNIT_MCP_VERSION="$VERSION" \
+          CLAUDE_PLUGIN_ROOT=/tmp/plugin-extract/darnit \
+            /tmp/plugin-extract/darnit/bin/darnit-mcp-runner --help \
+            | head -5
+          echo "✓ Wrapper exec'd uvx and darnit-mcp printed its help"
+
+      - name: Wrapper errors actionably when neither uvx nor pipx is available
+        env:
+          VERSION: ${{ needs.parse-trigger.outputs.version }}
+        run: |
+          set +e
+          # Strip uvx + pipx from PATH and confirm the wrapper exits 127
+          # with the FR-017 actionable error message naming both options.
+          out=$(env -i \
+            HOME="$HOME" \
+            PATH="/usr/bin:/bin" \
+            DARNIT_MCP_VERSION="$VERSION" \
+            CLAUDE_PLUGIN_ROOT=/tmp/plugin-extract/darnit \
+            /tmp/plugin-extract/darnit/bin/darnit-mcp-runner 2>&1)
+          code=$?
+          echo "Wrapper output:"
+          echo "$out"
+          if [ "$code" -ne 127 ]; then
+            echo "::error::Expected exit 127, got $code"
+            exit 1
+          fi
+          echo "$out" | grep -F "uvx" > /dev/null
+          echo "$out" | grep -F "pipx" > /dev/null
+          echo "✓ Wrapper actionable-error path verified (exit 127, names both prerequisites)"

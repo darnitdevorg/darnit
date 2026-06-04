@@ -1,0 +1,86 @@
+# =============================================================================
+# darnit-hello — minimal example TOML config
+# =============================================================================
+#
+# This file is the source of truth for the plugin's controls. The framework
+# discovers it via `HelloImplementation.get_framework_config_path()` and
+# reads control definitions, metadata, and pass logic directly from here.
+#
+# Every block below is documented inline so you can copy this file as a
+# starting point for your own implementation.
+
+# -----------------------------------------------------------------------------
+# Framework identity. Mirrors what HelloImplementation reports via its
+# `name`, `display_name`, `version`, and `spec_version` properties.
+# -----------------------------------------------------------------------------
+[framework]
+name = "hello"
+display_name = "Hello — Minimal Darnit Plugin"
+version = "0.1.0"
+spec_version = "hello v0.1"
+description = "A single-control plugin that exists to document the packaging path."
+
+# -----------------------------------------------------------------------------
+# (Optional) MCP integration. The framework wires up an audit tool per
+# `[mcp.tools.<name>]` block. Built-in `audit`/`remediate`/`list_controls`
+# tools are enough for most plugins.
+# -----------------------------------------------------------------------------
+[mcp]
+name = "hello"
+description = "Run the hello plugin's single example control."
+
+[mcp.tools.audit_hello]
+builtin = "audit"
+description = "Run the hello plugin's compliance audit."
+
+# -----------------------------------------------------------------------------
+# Controls. Each control is identified by an ID (any string; convention is
+# `<DOMAIN>-<NN>.<NN>` to mirror the OpenSSF Baseline naming).
+#
+# Pass logic uses the 4-phase sieve pipeline (file_must_exist → exec/regex
+# → llm_eval → manual). Each pass is tried in order; the first conclusive
+# result determines the control's status. See `docs/packaging-plugins.md`
+# for the full sieve reference.
+# -----------------------------------------------------------------------------
+
+[controls."HELLO-01.01"]
+name = "ReadmeExists"
+description = "Repository must have a top-level README documenting the project."
+tags = { level = 1, domain = "HELLO" }
+
+# Pass 1: cheapest possible check — does the file exist?
+# `file_must_exist` is a built-in sieve handler that returns PASS if any of
+# the listed paths is present, FAIL otherwise.
+[[controls."HELLO-01.01".passes]]
+handler = "file_must_exist"
+paths = ["README.md", "README.rst", "README"]
+description = "A README file is present at the repo root."
+
+# Pass 2 (fallback if pass 1 returns INCONCLUSIVE for any reason): the
+# human-readable manual fallback. Used as evidence in the audit output;
+# the manual handler never auto-PASSES — it surfaces steps for a reviewer.
+[[controls."HELLO-01.01".passes]]
+handler = "manual"
+steps = [
+    "Confirm a README file exists at the repository root.",
+    "If missing, create one summarising the project's purpose and how to use it.",
+]
+
+# Optional: remediation block. Tells the framework how to auto-fix when the
+# control fails. `safe = true` means the framework will run it without
+# prompting; `dry_run_supported = true` means the user can preview the fix.
+[controls."HELLO-01.01".remediation]
+safe = true
+dry_run_supported = true
+
+[[controls."HELLO-01.01".remediation.handlers]]
+handler = "file_create"
+path = "README.md"
+content = """
+# My Project
+
+(Replace this stub with a real description of what this project does and
+how to use it. This file was auto-created by darnit-hello's
+HELLO-01.01 remediation.)
+"""
+description = "Create a minimal README stub at the repo root."

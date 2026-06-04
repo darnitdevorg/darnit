@@ -1,0 +1,11 @@
+# US1 / T026: composite references an uninstalled source slug.
+# Expected: CompositionMissingSourceError naming the missing slug.
+
+[metadata]
+name = "test-missing-source"
+display_name = "Test: missing source"
+version = "1.0.0"
+
+[[compose]]
+source = "does-not-exist-impl"
+include_all = true

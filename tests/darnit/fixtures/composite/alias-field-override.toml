@@ -1,0 +1,16 @@
+# US2 / T036 sub-test: ensures the "no friendly aliases" guarantee from
+# F-2 — a composite author who types `severity` (instead of the real
+# schema field name `security_severity`) gets a clear unknown-field
+# error rather than a silent rename.
+
+[metadata]
+name = "test-alias-field-override"
+display_name = "Test: alias rejected"
+version = "1.0.0"
+
+[[compose]]
+source = "mock-source-a"
+include_controls = ["MOCK-AC-01.01"]
+
+[overrides."MOCK-AC-01.01"]
+severity = 8.5

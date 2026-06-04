@@ -1,9 +1,29 @@
 [project]
-name = "darnit"
+# PyPI distribution name. The Python import path is still `darnit` (under
+# packages/darnit/src/darnit/) and the CLI command is still `darnit`. Only
+# the PyPI distribution name is `darnit-core`, to avoid a conflict with a
+# similarly-named project on PyPI.
+name = "darnit-core"
 version = "0.1.0"
 description = "Generic compliance audit framework with plugin architecture"
 readme = "README.md"
 requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [
+    { name = "Kusari", email = "info@kusari.dev" },
+]
+keywords = ["security", "compliance", "audit", "framework", "mcp"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: Software Development :: Quality Assurance",
+]
 dependencies = [
     "mcp>=1.23.0,<2",  # CVE-2025-66416 DNS rebinding fix; cap at next major
     "pydantic>=2.0.0",
@@ -15,6 +35,11 @@ dependencies = [
     "tomli>=2.0.0;python_version<'3.11'",
     "tomllib-stubs>=0.1.0;python_version<'3.11'",
 ]
+
+[project.urls]
+Homepage = "https://github.com/kusari-oss/darnit"
+Repository = "https://github.com/kusari-oss/darnit"
+Issues = "https://github.com/kusari-oss/darnit/issues"
 
 [project.scripts]
 darnit = "darnit.cli:main"

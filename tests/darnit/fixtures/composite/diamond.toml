@@ -1,0 +1,29 @@
+# US1 / T028: diamond — composite pulls from mock-source-mid-composite
+# AND directly from mock-source-c-leaf. The leaf's controls must appear
+# exactly once (deduplicated through memoization) and the loader must
+# observe exactly one call per unique slug.
+#
+# NOTE: This is also our first conflict-adjacent fixture — both compose
+# blocks contribute LEAF-01.01 and LEAF-02.01. US3 (T038–T042) will turn
+# this into a CompositionConflictError under strict mode. Until US3 lands,
+# the resolver raises NotImplementedError here; the T028 test asserts the
+# memoization side-channel separately rather than hitting the conflict
+# branch. See test_diamond_resolves_once for the precise approach.
+
+[metadata]
+name = "test-diamond"
+display_name = "Test: diamond resolves once"
+version = "1.0.0"
+
+# Two distinct slices that DO NOT overlap (so we exercise diamond
+# memoization without hitting US3's NotImplementedError yet). The
+# mid-composite includes LEAF-01.01 + LEAF-02.01; we exclude one of
+# them and directly pull the other.
+[[compose]]
+source = "mock-source-mid-composite"
+include_all = true
+exclude_controls = ["LEAF-02.01"]
+
+[[compose]]
+source = "mock-source-c-leaf"
+include_controls = ["LEAF-02.01"]

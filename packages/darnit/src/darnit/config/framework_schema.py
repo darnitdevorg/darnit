@@ -1205,6 +1205,148 @@ class AuditProfileConfig(BaseModel):
 
 
 # =============================================================================
+# Composition Primitives (feature 013-plugin-composition)
+# =============================================================================
+
+
+class ComposeBlock(BaseModel):
+    """One ``[[compose]]`` table-array entry in a composite framework TOML.
+
+    Names a source implementation plus the inclusion/exclusion filters that
+    select controls from it. See
+    ``specs/013-plugin-composition/contracts/toml-schema.md`` §2 for the
+    user-visible contract and ``data-model.md`` §Entity 1 for validation
+    rules (V1.1–V1.4).
+
+    Field semantics (intersection, not union — R-009):
+
+    - If ``include_all`` is True, start with the source's full control set;
+      the other ``include_*`` fields MUST be empty.
+    - Otherwise the result is the **intersection** of every named
+      ``include_*`` filter, then ``exclude_controls`` is subtracted.
+    """
+
+    source: str
+    include_all: bool = False
+    include_levels: list[int] = Field(default_factory=list)
+    include_controls: list[str] = Field(default_factory=list)
+    include_tags: dict[str, Any] = Field(default_factory=dict)
+    exclude_controls: list[str] = Field(default_factory=list)
+    version_constraint: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def _validate_inclusion_present(self) -> "ComposeBlock":
+        """V1.1: at least one inclusion expression must be set.
+
+        ``exclude_controls`` alone does not satisfy this requirement — a
+        block with only excludes is a no-op and almost certainly an
+        authoring mistake.
+        """
+        has_any_include = (
+            self.include_all
+            or bool(self.include_levels)
+            or bool(self.include_controls)
+            or bool(self.include_tags)
+        )
+        if not has_any_include:
+            raise ValueError(
+                f"[[compose]] block for source {self.source!r} declares no "
+                f"inclusion expression. Set one of `include_all = true`, "
+                f"`include_levels = [...]`, `include_controls = [...]`, or "
+                f"`include_tags = {{...}}`. `exclude_controls` alone is not "
+                f"a valid selector."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_include_all_exclusivity(self) -> "ComposeBlock":
+        """V1.2: ``include_all`` is mutually exclusive with other includes."""
+        if self.include_all and (
+            self.include_levels or self.include_controls or self.include_tags
+        ):
+            raise ValueError(
+                f"[[compose]] block for source {self.source!r}: "
+                f"`include_all = true` MUST NOT be combined with "
+                f"`include_levels`, `include_controls`, or `include_tags`. "
+                f"Pick one of the inclusion expressions."
+            )
+        return self
+
+    @field_validator("version_constraint")
+    @classmethod
+    def _validate_version_constraint_syntax(cls, v: str | None) -> str | None:
+        """V1.3: ``version_constraint``, if present, must parse as PEP 440."""
+        if v is None:
+            return v
+        try:
+            # Imported lazily; `packaging` is a transitive dep via setuptools
+            # and is already part of every Python install with pip available.
+            from packaging.specifiers import SpecifierSet
+
+            SpecifierSet(v)
+        except Exception as exc:  # noqa: BLE001 — surface any parser error.
+            raise ValueError(
+                f"Invalid PEP 440 `version_constraint` {v!r}: {exc}"
+            ) from exc
+        return v
+
+
+class OverrideBlock(BaseModel):
+    """One ``[overrides."CONTROL-ID"]`` block in a composite framework TOML.
+
+    Replaces specific fields of a control already present in the resolved
+    set (whether composed-in or inline). Field names match the real
+    ``ControlConfig`` schema exactly — there are no friendly aliases (so
+    ``severity`` and ``help_url`` are not valid; use ``security_severity``
+    and ``docs_url``). See
+    ``specs/013-plugin-composition/contracts/toml-schema.md`` §3 for the
+    user-visible contract and ``data-model.md`` §Entity 2 for validation
+    rules (V2.1–V2.4).
+
+    The actual field-name validation against ``ControlConfig.model_fields``
+    happens in the composition resolver (T030 / FR-008), not here, because
+    we only know the target ``ControlConfig`` once resolution is in motion.
+    This model accepts ``extra="allow"`` so authors can name any field they
+    expect to override; the resolver rejects unknown ones with a clear
+    ``CompositionUnknownFieldError`` naming the offending field.
+    """
+
+    # Known override-able scalar fields, declared explicitly so authors
+    # get autocomplete and type checks on the common case.
+    passes: list[Any] | None = None
+    remediation: Any | None = None
+    security_severity: float | None = None
+    description: str | None = None
+    docs_url: str | None = None
+    tags: dict[str, Any] = Field(default_factory=dict)
+
+    # extra="allow" lets the resolver inspect `model_extra` for fields the
+    # author named that are NOT in this declared set, and either accept
+    # them (if they match ControlConfig.model_fields) or raise
+    # CompositionUnknownFieldError. The strict "no aliases" guarantee
+    # comes from the resolver's validation pass, not from this model.
+    model_config = ConfigDict(extra="allow")
+
+    @model_validator(mode="after")
+    def _validate_at_least_one_field(self) -> "OverrideBlock":
+        """V2.3: an override block must define at least one field."""
+        declared_set = self.model_fields_set
+        # `tags` defaulting to {} doesn't count as "set" unless the author
+        # actually provided it; pydantic v2's `model_fields_set` tracks that.
+        extras = self.model_extra or {}
+        if not declared_set and not extras:
+            raise ValueError(
+                "[overrides.\"…\"] block declares no fields. Remove the "
+                "empty override or add at least one field to replace "
+                "(e.g., `remediation`, `security_severity`, `description`, "
+                "`docs_url`, or a key under `tags`)."
+            )
+        return self
+
+
+# =============================================================================
 # Main Framework Configuration
 # =============================================================================
 
@@ -1271,6 +1413,19 @@ class FrameworkConfig(BaseModel):
 
     # Named audit profiles (optional, for multi-scenario implementations)
     audit_profiles: dict[str, AuditProfileConfig] = Field(default_factory=dict)
+
+    # ---------------------------------------------------------------------
+    # Composition primitives (feature 013-plugin-composition).
+    #
+    # A framework is treated as a composite IFF `compose` is non-empty.
+    # After `resolve_composition` runs, both `compose` and `overrides` are
+    # cleared on the returned config (invariant I3.2), and `controls`
+    # contains the resolved flat dict. Downstream consumers do not need
+    # to know whether composition happened.
+    # ---------------------------------------------------------------------
+    compose: list[ComposeBlock] = Field(default_factory=list)
+    overrides: dict[str, OverrideBlock] = Field(default_factory=dict)
+    allow_conflicts: bool = False
 
     model_config = ConfigDict(extra="allow")
 

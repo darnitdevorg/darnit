@@ -36,7 +36,24 @@ This single call creates the branch, applies all remediations, and commits. Do N
 
 ### 3. Review generated files (quality check)
 
-Read the generated files. The templates are designed to produce correct output — trust them.
+Most generated files are template-based and finished as-emitted — trust them and apply only mechanical fixes. A small set is intentionally a DRAFT that asks for human/agent triage; those carry an explicit marker.
+
+#### 3a. Files that contain `<!-- darnit:verification-prompt-block -->`
+
+These are review-required drafts (today: `THREAT_MODEL.md` / `docs/threatmodel/SUMMARY.md` produced by `generate_threat_model`). The marker block embeds the canonical instructions for triaging the file's findings — open the marker block, follow what it says.
+
+**Workflow:**
+
+1. Read the marker block and surface its instructions to the user along with a quick tally (how many findings, of what kinds, in which files).
+2. **Ask the user before any extensive triage.** Large outputs (10+ findings) imply a long edit pass; the user should opt in. Offer to: (a) triage everything per the embedded prompt, (b) triage just a specific subset (e.g., one finding class), or (c) leave the draft as-emitted.
+3. With consent: read each finding, judge true-positive vs false-positive against the actual source, and either enrich it with project-specific reasoning or remove it. Collapse repetitive same-cause findings into a single explanatory entry where it improves the document.
+4. Preserve the marker block itself — its presence signals that the draft has gone through review. (You may remove the CLI-specific paragraph inside the block once you've triaged the CLI section per its own instructions.)
+
+This is the ONE category of generated file where the rules in §3b about not enhancing do NOT apply.
+
+#### 3b. All other generated files (templates)
+
+Read them. The templates are designed to produce correct output — trust them.
 
 **Fix ONLY these issues:**
 - Broken syntax (malformed YAML, unclosed brackets, invalid workflow expressions)
@@ -70,6 +87,7 @@ Show: branch name, controls fixed, files changed, PR URL (if created), and remai
 - If `remediate_audit_findings` fails mid-way, report which files were already changed so the user can review.
 - The tool respects the `safe` flag on remediations — only safe remediations are auto-applied. Unsafe ones are listed but excluded.
 - If there are unresolved data questions, the remediation tool will block and tell you. Suggest running `/darnit-data` first.
+- The §3a verification-prompt-block files (today: `THREAT_MODEL.md` / `docs/threatmodel/SUMMARY.md`) are the ONE exception to §3b's "trust the template" stance. Always ask the user before doing a large triage pass on these — don't silently rewrite dozens of findings, and don't silently skip them either. The default "skip enhancement" rule from §3b is wrong for these files.
 
 ## Error handling
 

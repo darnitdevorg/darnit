@@ -1,0 +1,25 @@
+# US3 / T041: same dual-source conflict shape as strict-conflict but
+# with `allow_conflicts = true` at the composition root. The LATER
+# compose block wins (last-wins by TOML file order); an INFO log is
+# emitted naming both sources.
+#
+# NOTE: `allow_conflicts` MUST appear BEFORE any [table] header — TOML
+# scopes bare key/value pairs to the most recently opened table, so
+# placing this after [metadata] would put it inside that table rather
+# than at the FrameworkConfig root.
+
+allow_conflicts = true
+
+[metadata]
+name = "test-allow-conflicts-last-wins"
+display_name = "Test: allow_conflicts last-wins"
+version = "1.0.0"
+
+[[compose]]
+source = "mock-source-a"
+include_controls = ["MOCK-AC-01.01"]
+
+# This block is LATER in TOML file order and wins under allow_conflicts.
+[[compose]]
+source = "mock-source-a-variant"
+include_controls = ["MOCK-AC-01.01"]

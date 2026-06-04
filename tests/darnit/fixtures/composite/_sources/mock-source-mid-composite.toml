@@ -1,0 +1,17 @@
+# Mock source-mid-composite: a composite source that pulls every control
+# from mock-source-c-leaf. Used as the middle layer in the three-level
+# recursive-composition scenario (FR-018).
+
+[metadata]
+name = "mock-source-mid-composite"
+display_name = "Mock Mid Composite (test fixture)"
+version = "1.0.0"
+spec_version = "mock v1"
+
+[defaults]
+check_adapter = "builtin"
+remediation_adapter = "builtin"
+
+[[compose]]
+source = "mock-source-c-leaf"
+include_all = true

@@ -443,15 +443,30 @@ description = "Require multi-factor authentication for organization members"
 tags = { level = 1, domain = "AC", security_severity = 9.0, access-control = true, authentication = true }
 when = { platform = "github" }
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-AC-01.01"
-help_md = """Enable MFA for all organization members with elevated permissions.
+help_md = """Enable MFA for all organization members (or for a solo-maintainer user account).
 
-**Remediation:**
-1. Go to Organization Settings → Security
-2. Enable 'Require two-factor authentication for everyone'
-3. Set a grace period for existing members to enable MFA
+**Two valid paths depending on repository ownership:**
+
+- **Organization-owned repo (canonical):** the org enforces 2FA for every
+  member. Check via `gh api /orgs/<owner>` → `two_factor_requirement_enabled`.
+  Remediate: Organization Settings → Authentication security → enable
+  'Require two-factor authentication for everyone in the organization',
+  with a grace period for existing members.
+- **User-owned repo (fallback):** the maintainer running the audit has 2FA
+  enabled on their personal account. Check via `gh api /user` →
+  `two_factor_authentication` (requires the `gh` token to have the
+  `read:user` scope: run `gh auth refresh -s read:user`). Remediate: the
+  account owner's GitHub Settings → Password and authentication →
+  'Two-factor authentication'.
+
+The user-owned fallback is a liberal interpretation of the OpenSSF Baseline
+control (which is org-scoped by design). It covers the common case of a
+solo maintainer on a personal account; it does NOT substitute for org-wide
+enforcement when the repository sits inside an organization.
 
 **References:**
 - [GitHub MFA Documentation](https://docs.github.com/en/authentication/securing-your-account-with-two-factor-authentication-2fa)
+- [GitHub Org 2FA Requirements](https://docs.github.com/en/organizations/keeping-your-organization-secure/managing-two-factor-authentication-for-your-organization)
 """
 
 # ExecPass: Use gh CLI to check MFA requirement
@@ -461,9 +476,39 @@ location_hint = ".github/settings.yml"
 handler = "exec"
 command = ["gh", "api", "/orgs/$OWNER"]
 pass_exit_codes = [0]
-fail_exit_codes = [1]
+# Intentionally NOT setting fail_exit_codes: when the repo owner isn't an
+# org (user-owned repos), `gh api /orgs/<user>` returns 404 and gh exits
+# non-zero. We want that case to be INCONCLUSIVE so the sieve falls
+# through to the /user pass below, not a definitive FAIL. The CEL expr
+# below evaluates only when the command succeeded (exit 0); a real org
+# without 2FA enforcement returns exit 0 with the field present-and-false,
+# which still flips this pass to FAIL via the expr.
 output_format = "json"
-expr = 'output.json.two_factor_requirement_enabled == true'
+expr = 'has(output.json.two_factor_requirement_enabled) && output.json.two_factor_requirement_enabled == true'
+timeout = 30
+
+# Fallback for user-owned repos: org enforcement isn't possible (the owner
+# isn't an org), so check whether the authenticated maintainer has 2FA
+# enabled on their personal account. Requires `gh auth refresh -s read:user`
+# so the token can read the `two_factor_authentication` field on /user.
+#
+# This is a deliberately liberal interpretation: the canonical spec is
+# org-scoped, and this fallback can produce a false positive on an
+# *org*-owned repo where the org doesn't enforce 2FA but the maintainer
+# running the audit happens to. Tolerable for solo-maintainer / user-owned
+# repos (the common case it's intended to cover); narrowing the trigger
+# to user-owned repos is tracked separately and will move when darnit
+# auto-detects owner type.
+#
+# Same fail_exit_codes omission as above: if /user fails (no read:user
+# scope, auth error), fall through to the manual handler instead of
+# marking the control FAIL outright.
+[[controls."OSPS-AC-01.01".passes]]
+handler = "exec"
+command = ["gh", "api", "/user"]
+pass_exit_codes = [0]
+output_format = "json"
+expr = 'has(output.json.two_factor_authentication) && output.json.two_factor_authentication == true'
 timeout = 30
 
 [[controls."OSPS-AC-01.01".passes]]
@@ -471,6 +516,7 @@ handler = "manual"
 steps = [
     "Navigate to Organization Settings → Security",
     "Verify 'Require two-factor authentication' is enabled",
+    "(For user-owned repos) Verify the maintainer has 2FA enabled on their account: Settings → Password and authentication",
 ]
 
 [controls."OSPS-AC-01.01".remediation]
@@ -558,13 +604,25 @@ when = { platform = "github" }
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-AC-03.01"
 help_md = """Enable branch protection to require pull requests.
 
-**Remediation:**
+**Auto-remediation (recommended):**
+Darnit can configure this for you via the GitHub Branch Protection API.
+
+- MCP tool: `enable_branch_protection` — accepts `owner`, `repo`, `branch`,
+  `required_approvals`, `enforce_admins`, and related flags. The defaults
+  satisfy OSPS-AC-03.01 + OSPS-AC-03.02 + OSPS-QA-07.01 in a single call.
+- TOML remediation: the control's `[remediation]` block uses an `api_call`
+  handler against `PUT /repos/{owner}/{repo}/branches/{branch}/protection`.
+
+Requires the `gh` CLI to be authenticated with a token holding `repo` scope.
+
+**Manual fallback:**
 1. Go to Repository Settings → Branches
-2. Add branch protection rule for main/master
+2. Add a branch protection rule for main/master
 3. Enable 'Require a pull request before merging'
 
 **References:**
-- [GitHub Branch Protection](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)
+- [GitHub Branch Protection (UI)](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)
+- [REST API: branch protection](https://docs.github.com/en/rest/branches/branch-protection)
 """
 
 # ExecPass: Use gh CLI to check branch protection
@@ -610,13 +668,25 @@ docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-AC-03.02"
 location_hint = ".github/settings.yml"
 help_md = """Protect primary branch from deletion.
 
-**Remediation:**
+**Auto-remediation (recommended):**
+Darnit can configure this for you via the GitHub Branch Protection API.
+A protected branch automatically disallows deletion.
+
+- MCP tool: `enable_branch_protection` (same tool that satisfies
+  OSPS-AC-03.01; the API call sets `allow_deletions=false` by default).
+- TOML remediation: the control's `[remediation]` block uses an `api_call`
+  handler against `PUT /repos/{owner}/{repo}/branches/{branch}/protection`.
+
+Requires the `gh` CLI to be authenticated with a token holding `repo` scope.
+
+**Manual fallback:**
 1. Go to Repository Settings → Branches
-2. Add branch protection rule for main/master
-3. The rule automatically prevents branch deletion
+2. Add a branch protection rule for main/master
+3. Confirm 'Allow deletions' is unchecked (default for new rules)
 
 **References:**
-- [GitHub Branch Protection](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)
+- [GitHub Branch Protection (UI)](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)
+- [REST API: branch protection](https://docs.github.com/en/rest/branches/branch-protection)
 """
 
 [[controls."OSPS-AC-03.02".passes]]
@@ -625,7 +695,7 @@ command = ["gh", "api", "/repos/$OWNER/$REPO/branches/$BRANCH/protection"]
 pass_exit_codes = [0]
 fail_exit_codes = [1]
 output_format = "json"
-expr = 'output.json.allow_deletions.enabled == false'
+expr = 'has(output.json.allow_deletions) && has(output.json.allow_deletions.enabled) && output.json.allow_deletions.enabled == false'
 timeout = 30
 
 [[controls."OSPS-AC-03.02".passes]]
@@ -1052,6 +1122,10 @@ help_md = """Use standard package managers and lockfiles.
 
 [[controls."OSPS-BR-05.01".passes]]
 handler = "file_exists"
+# max_depth = 2 lets us find manifests in conventional nested layouts
+# (e.g., `app-code/keys-v2/go.mod`, `backend/pyproject.toml`) without
+# walking deep into massive monorepos. Resolves issue #221.
+max_depth = 2
 files = [
     "package.json",
     "package-lock.json",
@@ -1242,7 +1316,12 @@ help_md = """Create a guide for reporting bugs and defects.
 
 [controls."OSPS-DO-02.01".locator]
 project_path = "security.policy"
-discover = [".github/ISSUE_TEMPLATE/bug_report.md", ".github/ISSUE_TEMPLATE/bug_report.yml", ".github/ISSUE_TEMPLATE.md"]
+discover = [
+  ".github/ISSUE_TEMPLATE/bug*.md",
+  ".github/ISSUE_TEMPLATE/bug*.yml",
+  ".github/ISSUE_TEMPLATE/bug*.yaml",
+  ".github/ISSUE_TEMPLATE.md",
+]
 kind = "file"
 
 [controls."OSPS-DO-02.01".locator.llm_hints]
@@ -1256,7 +1335,14 @@ use_locator = true
 
 [[controls."OSPS-DO-02.01".passes]]
 handler = "pattern"
-files = [".github/ISSUE_TEMPLATE/bug_report.md", ".github/ISSUE_TEMPLATE/bug_report.yml", ".github/ISSUE_TEMPLATE.md", "README.md", "CONTRIBUTING.md"]
+files = [
+  ".github/ISSUE_TEMPLATE/bug*.md",
+  ".github/ISSUE_TEMPLATE/bug*.yml",
+  ".github/ISSUE_TEMPLATE/bug*.yaml",
+  ".github/ISSUE_TEMPLATE.md",
+  "README.md",
+  "CONTRIBUTING.md",
+]
 pass_if_any = true
 
 [controls."OSPS-DO-02.01".passes.pattern.patterns]
@@ -1596,6 +1682,7 @@ name = "ReleaseLicense"
 description = "Releases include license information"
 tags = { level = 1, domain = "LE", legal = true, license = true }
 when = { platform = "github" }
+inferred_from = "OSPS-LE-03.01"  # GitHub auto-generates source archives that include the repo's LICENSE for every release; if LE-03.01 passes, the release contains license info by construction.
 
 # Check that releases have license info (via release notes or included files)
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-LE-02.02"
@@ -1607,6 +1694,16 @@ help_md = """Include OSI-approved license with releases.
 2. Ensure license is compatible with dependencies
 3. Document license in package metadata
 """
+
+# Primary: GitHub's own license detector (licensee server-side) returns an SPDX id.
+# Nonzero exit falls through to the next pass so auth/network failures don't masquerade as FAIL.
+[[controls."OSPS-LE-02.02".passes]]
+handler = "exec"
+command = ["gh", "api", "/repos/$OWNER/$REPO/license"]
+pass_exit_codes = [0]
+output_format = "json"
+expr = 'has(output.json.license) && output.json.license.spdx_id != "" && output.json.license.spdx_id != "NOASSERTION"'
+timeout = 30
 
 [[controls."OSPS-LE-02.02".passes]]
 handler = "exec"
@@ -1705,6 +1802,17 @@ help_md = """Include license file in release artifacts.
 2. Include license in package metadata
 3. Automate license inclusion in release workflow
 """
+
+# Primary: GitHub's own license detector. A PASS here means GitHub has identified a
+# recognized SPDX license in the repo, and every auto-generated source archive for a
+# release therefore includes it. Falls through on nonzero exit (auth/network/no-detection).
+[[controls."OSPS-LE-03.02".passes]]
+handler = "exec"
+command = ["gh", "api", "/repos/$OWNER/$REPO/license"]
+pass_exit_codes = [0]
+output_format = "json"
+expr = 'has(output.json.license) && output.json.license.spdx_id != "" && output.json.license.spdx_id != "NOASSERTION"'
+timeout = 30
 
 [[controls."OSPS-LE-03.02".passes]]
 handler = "exec"
@@ -2658,13 +2766,41 @@ help_md = """Minimize CI/CD job permissions.
 4. Avoid using `write-all` or `admin` permissions
 """
 
+# Primary: zizmor's `excessive-permissions` deep audit. zizmor models per-step
+# action requirements and flags workflow- or job-level grants broader than the
+# steps actually exercise — the semantic least-privilege check a regex can't do.
+# Matches BR-01.01's zizmor invocation shape: pass_exit_codes covers zizmor's
+# severity-banded codes (0=clean, 10-14=findings of varying severity). When
+# zizmor isn't installed the exec exits 127 (not in pass_exit_codes) →
+# INCONCLUSIVE → the pipeline falls through to the structural pattern check.
+[[controls."OSPS-AC-04.02".passes]]
+handler = "exec"
+command = ["zizmor", "--format", "json", "--offline", "$PATH"]
+pass_exit_codes = [0, 10, 11, 12, 13, 14]
+output_format = "json"
+expr = '!output.json.exists(f, f.ident == "excessive-permissions")'
+timeout = 60
+
+# Fallback: structural pattern check. Confirms each workflow has SOME form
+# of explicit least-privilege permissions (block form, `read-all`, or `{}`).
+# Less precise than zizmor — can't tell if the declared permissions are
+# *minimal* for what the workflow does — but catches the obvious anti-pattern
+# of omitting permissions entirely or using `write-all`.
 [[controls."OSPS-AC-04.02".passes]]
 handler = "pattern"
 files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
 pass_if_any = false
 
+# Accept any of the following least-privilege forms:
+#   1. `permissions: read-all`            — top-level shorthand, all read-only
+#   2. `permissions: {}`                  — explicit no-permissions
+#   3. Indented block keys (`contents: read`, `issues: write`, …)
+#
+# Explicitly NOT accepted: `permissions: write-all` (broad write access, the
+# anti-pattern this control exists to catch) and workflows that omit
+# `permissions` entirely (would inherit GITHUB_TOKEN's repo-wide default).
 [controls."OSPS-AC-04.02".passes.pattern.patterns]
-scoped_permission = '^\s+(contents|issues|pull-requests|packages|actions|security-events|id-token|attestations|deployments|statuses|checks):\s*(read|write|none)'
+scoped_permission = '^\s*permissions:\s*(read-all|\{\s*\})\s*$|^\s+(contents|issues|pull-requests|packages|actions|security-events|id-token|attestations|deployments|statuses|checks):\s*(read|write|none)'
 
 [[controls."OSPS-AC-04.02".passes]]
 handler = "manual"
@@ -2672,6 +2808,7 @@ steps = [
     "Review workflow permissions in .github/workflows/",
     "Verify permissions are scoped to specific resources (contents, issues, etc.)",
     "Confirm read-only access is used where write access isn't needed",
+    "(Optional) Install zizmor and run `zizmor .github/workflows/` for a deep audit",
 ]
 
 [controls."OSPS-AC-04.02".remediation]
@@ -2708,11 +2845,21 @@ help_md = """Ensure release assets are properly versioned.
 3. Use consistent naming conventions
 """
 
+# `gh release list --json …` only exposes list-level metadata fields
+# (tagName, name, publishedAt, …); it does NOT expose per-release `assets`.
+# An earlier version of this pass invoked `gh release list --json tagName,assets`,
+# which always exited 1 with "Unknown JSON field: assets" — meaning the
+# control could never PASS on any repo. The right shape uses the underlying
+# REST endpoint, which DOES return per-release `assets` on each item.
 [[controls."OSPS-BR-02.02".passes]]
 handler = "exec"
-command = ["gh", "release", "list", "--json", "tagName,assets", "--limit", "5"]
+command = ["gh", "api", "/repos/$OWNER/$REPO/releases?per_page=5"]
 pass_exit_codes = [0]
 output_format = "json"
+# Each release in the response array has an `assets` array (objects with
+# name, browser_download_url, …). The control's intent is "release assets
+# are clearly associated with release IDs" — satisfied when at least one
+# release has ≥1 asset listed beneath its tag.
 expr = 'output.json.exists(r, size(r.assets) > 0)'
 timeout = 30
 

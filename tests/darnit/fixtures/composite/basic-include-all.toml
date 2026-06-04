@@ -1,0 +1,10 @@
+# US1 / T020: composite that pulls every control from mock-source-a.
+
+[metadata]
+name = "test-basic-include-all"
+display_name = "Test: basic include_all"
+version = "1.0.0"
+
+[[compose]]
+source = "mock-source-a"
+include_all = true

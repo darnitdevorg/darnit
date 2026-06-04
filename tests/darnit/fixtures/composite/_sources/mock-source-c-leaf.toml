@@ -1,0 +1,32 @@
+# Mock source-C-leaf: the ultimate non-composite source for the three-level
+# recursive scenario (mock-source-mid-composite → this).
+
+[metadata]
+name = "mock-source-c-leaf"
+display_name = "Mock Source C (leaf, test fixture)"
+version = "1.0.0"
+spec_version = "mock v1"
+
+[defaults]
+check_adapter = "builtin"
+remediation_adapter = "builtin"
+
+[controls."LEAF-01.01"]
+name = "MockLeafOne"
+description = "Leaf control 1 — the ultimate non-composite origin."
+level = 1
+domain = "LEAF"
+
+[[controls."LEAF-01.01".passes]]
+handler = "file_must_exist"
+paths = ["DOES_NOT_EXIST.fixture"]
+
+[controls."LEAF-02.01"]
+name = "MockLeafTwo"
+description = "Leaf control 2."
+level = 1
+domain = "LEAF"
+
+[[controls."LEAF-02.01".passes]]
+handler = "file_must_exist"
+paths = ["DOES_NOT_EXIST.fixture"]

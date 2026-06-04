@@ -1,0 +1,21 @@
+# US2 / T033: override only the `description` field of an inherited
+# control. Pass logic stays untouched; the description matches the
+# override.
+#
+# Note: we override `description` rather than `remediation` here because
+# constructing a valid RemediationConfig TOML inline would couple this
+# fixture to remediation-schema details that aren't load-bearing for the
+# override semantics being tested. `description` is a simple scalar
+# field that demonstrates the same wholesale-replacement behavior.
+
+[metadata]
+name = "test-override-description"
+display_name = "Test: override replaces description only"
+version = "1.0.0"
+
+[[compose]]
+source = "mock-source-a"
+include_controls = ["MOCK-AC-01.01"]
+
+[overrides."MOCK-AC-01.01"]
+description = "ACME's internal description overrides the upstream one."

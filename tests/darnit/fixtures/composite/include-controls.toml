@@ -1,0 +1,10 @@
+# US1 / T022: composite that pulls two named controls by ID.
+
+[metadata]
+name = "test-include-controls"
+display_name = "Test: include_controls"
+version = "1.0.0"
+
+[[compose]]
+source = "mock-source-a"
+include_controls = ["MOCK-AC-01.01", "MOCK-QA-01.01"]

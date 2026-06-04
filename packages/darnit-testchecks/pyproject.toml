@@ -15,7 +15,7 @@ authors = [
 keywords = [
     "compliance",
     "testing",
-    "darnit",
+    "darnit-core",
     "framework",
 ]
 classifiers = [
@@ -30,7 +30,7 @@ classifiers = [
     "Topic :: Software Development :: Testing",
 ]
 dependencies = [
-    "darnit>=0.1.0",
+    "darnit-core>=0.1.0",
 ]
 
 [project.optional-dependencies]
@@ -40,8 +40,8 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/kusaridev/baseline-mcp"
-Repository = "https://github.com/kusaridev/baseline-mcp"
+Homepage = "https://github.com/kusari-oss/darnit"
+Repository = "https://github.com/kusari-oss/darnit"
 
 # Entry points for darnit plugin discovery
 [project.entry-points."darnit.frameworks"]

@@ -1,0 +1,24 @@
+# US3 / T042 companion: same shape as override-resolves-conflict but
+# WITH `allow_conflicts = true` added. Per the F-11 clarification, the
+# earliest-base rule is mode-independent — the override still layers
+# onto the EARLIER compose block's contribution (mock-source-a), not
+# the later one, even though allow_conflicts would normally let the
+# later block win.
+
+allow_conflicts = true
+
+[metadata]
+name = "test-override-with-allow-conflicts"
+display_name = "Test: override + allow_conflicts still uses earliest base"
+version = "1.0.0"
+
+[[compose]]
+source = "mock-source-a"
+include_controls = ["MOCK-AC-01.01"]
+
+[[compose]]
+source = "mock-source-a-variant"
+include_controls = ["MOCK-AC-01.01"]
+
+[overrides."MOCK-AC-01.01"]
+description = "OVERRIDE: still wins over allow_conflicts last-wins."

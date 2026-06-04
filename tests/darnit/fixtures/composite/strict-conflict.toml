@@ -1,0 +1,17 @@
+# US3 / T040: two compose blocks each contribute MOCK-AC-01.01 from
+# different sources. Expected (strict mode, default): registration
+# fails with CompositionConflictError naming both sources, the
+# conflicting control ID, and both opt-out mechanisms.
+
+[metadata]
+name = "test-strict-conflict"
+display_name = "Test: strict conflict raises"
+version = "1.0.0"
+
+[[compose]]
+source = "mock-source-a"
+include_controls = ["MOCK-AC-01.01"]
+
+[[compose]]
+source = "mock-source-a-variant"
+include_controls = ["MOCK-AC-01.01"]

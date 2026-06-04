@@ -39,12 +39,60 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 
+_FILE_DISCOVERY_PRUNE_DIRS = frozenset(
+    {
+        # VCS
+        ".git", ".hg", ".svn",
+        # Python
+        "__pycache__", ".venv", "venv", ".tox", ".mypy_cache",
+        ".pytest_cache", ".ruff_cache", "site-packages",
+        # JS/TS
+        "node_modules",
+        # Rust / Go / Java build outputs
+        "target", "build", "dist", "out",
+        # IDE / OS
+        ".idea", ".vscode", ".DS_Store",
+    }
+)
+
+
+def _walk_depth_limited(root: str, max_depth: int):
+    """Yield directories under ``root`` up to ``max_depth`` levels deep.
+
+    Skips well-known noise directories (``.git``, ``node_modules``,
+    ``__pycache__``, build outputs, etc.) so performance stays sane on
+    real monorepos. ``max_depth=0`` yields only ``root`` itself; ``=1``
+    yields root + its immediate subdirs; etc.
+    """
+    root_abs = os.path.abspath(root)
+    yield root_abs, 0
+    if max_depth <= 0:
+        return
+    for dirpath, dirnames, _files in os.walk(root_abs):
+        depth = dirpath[len(root_abs):].count(os.sep)
+        # Prune in-place so os.walk skips them (matches os.walk's contract)
+        dirnames[:] = [d for d in dirnames if d not in _FILE_DISCOVERY_PRUNE_DIRS]
+        if depth >= max_depth:
+            # Don't descend further; stop yielding deeper dirs
+            dirnames.clear()
+            continue
+        for d in dirnames:
+            yield os.path.join(dirpath, d), depth + 1
+
+
 def file_exists_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResult:
     """Check if any file from a list of paths exists.
 
     Config fields:
         files: list[str] - File paths/patterns to check (any match = pass)
         use_locator: bool - If true, files are populated from locator.discover at load time
+        max_depth: int - When > 0, search subdirectories up to this many levels
+            deep for any non-glob pattern in ``files``. Default 0 (root only,
+            backward-compatible). Glob patterns containing ``*`` are NOT
+            depth-walked — they're still evaluated by ``glob.glob`` exactly as
+            before. Well-known noise directories (``.git``, ``node_modules``,
+            ``__pycache__``, build outputs, etc.) are pruned during the walk
+            so monorepo performance stays bounded. Resolves issue #221.
     """
     files = config.get("files", [])
     if not files:
@@ -52,6 +100,8 @@ def file_exists_handler(config: dict[str, Any], context: HandlerContext) -> Hand
             status=HandlerResultStatus.INCONCLUSIVE,
             message="No files specified for existence check",
         )
+
+    max_depth = int(config.get("max_depth", 0) or 0)
 
     for pattern in files:
         if "*" in pattern:
@@ -67,6 +117,27 @@ def file_exists_handler(config: dict[str, Any], context: HandlerContext) -> Hand
                     confidence=1.0,
                     evidence={"found_file": found, "relative_path": rel_path, "files_checked": files},
                 )
+        elif max_depth > 0:
+            # Depth-limited search for nested manifests (issue #221). Walks up
+            # to `max_depth` levels under `context.local_path`, pruning noise
+            # directories. First hit wins; we report its relative path so
+            # downstream consumers (and audit reviewers) can see where it
+            # actually lives.
+            for dirpath, _depth in _walk_depth_limited(context.local_path, max_depth):
+                candidate = os.path.join(dirpath, pattern)
+                if os.path.exists(candidate):
+                    rel_path = os.path.relpath(candidate, context.local_path)
+                    return HandlerResult(
+                        status=HandlerResultStatus.PASS,
+                        message=f"Required file found: {rel_path}",
+                        confidence=1.0,
+                        evidence={
+                            "found_file": candidate,
+                            "relative_path": rel_path,
+                            "files_checked": files,
+                            "max_depth": max_depth,
+                        },
+                    )
         else:
             path = os.path.join(context.local_path, pattern)
             if os.path.exists(path):
@@ -81,7 +152,7 @@ def file_exists_handler(config: dict[str, Any], context: HandlerContext) -> Hand
         status=HandlerResultStatus.FAIL,
         message=f"None of the required files found: {files}",
         confidence=1.0,
-        evidence={"files_checked": files},
+        evidence={"files_checked": files, "max_depth": max_depth},
     )
 
 

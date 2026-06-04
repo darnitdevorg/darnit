@@ -15,7 +15,7 @@ authors = [
 keywords = [
     "compliance",
     "security",
-    "darnit",
+    "darnit-core",
     "plugins",
     "adapters",
 ]
@@ -32,7 +32,7 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
 ]
 dependencies = [
-    "darnit>=0.1.0",
+    "darnit-core>=0.1.0",
 ]
 
 [project.optional-dependencies]
@@ -42,8 +42,8 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/kusaridev/baseline-mcp"
-Repository = "https://github.com/kusaridev/baseline-mcp"
+Homepage = "https://github.com/kusari-oss/darnit"
+Repository = "https://github.com/kusari-oss/darnit"
 
 # =============================================================================
 # Entry Points for Plugin Discovery

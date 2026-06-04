@@ -7,7 +7,7 @@ import pytest
 from darnit.cli import create_parser, format_result_text, format_results_json, main
 
 
-def test_install_claude_creates_settings(tmp_path, monkeypatch, capsys, caplog):
+def test_install_claude_creates_settings(tmp_path, monkeypatch, caplog):
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
 
     exit_code = main(["install"])
@@ -23,8 +23,15 @@ def test_install_claude_creates_settings(tmp_path, monkeypatch, capsys, caplog):
     assert data["mcpServers"]["darnit"]["command"] == "uvx"
     assert data["mcpServers"]["darnit"]["args"] == ["--from", "darnit", "darnit", "serve"]
 
-    captured = capsys.readouterr()
-    assert "Installed darnit MCP server config" in captured.err
+    # The install function emits via logger.info(...), so we need pytest's
+    # logging-record capture (caplog), not its stderr-FD capture (capsys).
+    # When another test installs a logging handler that intercepts records
+    # before they reach the stderr FD, capsys sees nothing while caplog
+    # still captures every record. See issue #248 for the full post-mortem.
+    assert any(
+        "Installed darnit MCP server config" in record.message
+        for record in caplog.records
+    ), "expected install confirmation log message was not emitted"
 
 def test_install_cursor_creates_settings(tmp_path, monkeypatch):
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)

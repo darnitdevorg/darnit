@@ -1,0 +1,12 @@
+# US4 / T044: self-cycle source. Composes from itself.
+# Expected: CompositionCycleError with chain == ["cycle-a", "cycle-a"]
+# rendered as "cycle-a → cycle-a".
+
+[metadata]
+name = "cycle-a"
+display_name = "Cycle A (self)"
+version = "1.0.0"
+
+[[compose]]
+source = "cycle-a"
+include_all = true

@@ -425,7 +425,7 @@ This guide explains how to use the Darnit framework for compliance auditing.
 
 1. Install darnit and a compliance framework:
    ```bash
-   pip install darnit darnit-baseline
+   pip install darnit-core darnit-baseline
    ```
 
 2. Run an audit:

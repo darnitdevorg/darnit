@@ -1,0 +1,66 @@
+# Mock source-A: a minimal non-composite framework used as the primary
+# source in composition tests. 5 controls across levels 1/2/3 and domains
+# AC/VM/QA, version 1.5.0. Pass logic is intentionally unsatisfiable
+# (DOES_NOT_EXIST.fixture) so any audit always returns FAIL — tests are
+# SHAPE-only per F-3, not status-dependent.
+
+[metadata]
+name = "mock-source-a"
+display_name = "Mock Source A (test fixture)"
+version = "1.5.0"
+spec_version = "mock v1"
+
+[defaults]
+check_adapter = "builtin"
+remediation_adapter = "builtin"
+
+[controls."MOCK-AC-01.01"]
+name = "MockAccessControlOne"
+description = "Mock AC control at level 1, domain AC. Sources tests."
+level = 1
+domain = "AC"
+
+[[controls."MOCK-AC-01.01".passes]]
+handler = "file_must_exist"
+paths = ["DOES_NOT_EXIST.fixture"]
+description = "Unsatisfiable by design — fixture only."
+
+[controls."MOCK-AC-02.01"]
+name = "MockAccessControlTwo"
+description = "Mock AC control at level 1, domain AC."
+level = 1
+domain = "AC"
+
+[[controls."MOCK-AC-02.01".passes]]
+handler = "file_must_exist"
+paths = ["DOES_NOT_EXIST.fixture"]
+
+[controls."MOCK-VM-01.01"]
+name = "MockVulnMgmtOne"
+description = "Mock VM control at level 2, domain VM."
+level = 2
+domain = "VM"
+
+[[controls."MOCK-VM-01.01".passes]]
+handler = "file_must_exist"
+paths = ["DOES_NOT_EXIST.fixture"]
+
+[controls."MOCK-VM-02.01"]
+name = "MockVulnMgmtTwo"
+description = "Mock VM control at level 3, domain VM."
+level = 3
+domain = "VM"
+
+[[controls."MOCK-VM-02.01".passes]]
+handler = "file_must_exist"
+paths = ["DOES_NOT_EXIST.fixture"]
+
+[controls."MOCK-QA-01.01"]
+name = "MockQualityOne"
+description = "Mock QA control at level 2, domain QA."
+level = 2
+domain = "QA"
+
+[[controls."MOCK-QA-01.01".passes]]
+handler = "file_must_exist"
+paths = ["DOES_NOT_EXIST.fixture"]

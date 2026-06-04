@@ -1,0 +1,64 @@
+# Homebrew formula template for darnit.
+#
+# Rendered by .github/workflows/bump-formula.yml in the kusari-oss/homebrew-tap
+# repository when this repo's homebrew_dispatch job fires. The dispatch payload
+# carries `version` + per-platform SHA-256s + the GitHub Release binary URL
+# template; the tap workflow substitutes the {{ ... }} placeholders and opens
+# an auto-merging PR.
+#
+# Placeholders:
+#   {{ version }}                 — release version (e.g., "0.1.0")
+#   {{ url_macos_arm64 }}         — full URL to the macOS arm64 binary
+#   {{ sha256_macos_arm64 }}      — its SHA-256
+#   {{ url_linux_arm64 }}         — full URL to the Linux arm64 binary
+#   {{ sha256_linux_arm64 }}      — its SHA-256
+#   {{ url_linux_amd64 }}         — full URL to the Linux amd64 binary
+#   {{ sha256_linux_amd64 }}      — its SHA-256
+#
+# macOS amd64 (Intel) is intentionally absent — out of scope per
+# specs/012-packaging-distribution/spec.md. Intel Mac users install via
+# pipx, Python pip, or the Linux/amd64 container under Rosetta.
+
+class Darnit < Formula
+  desc "AI-powered compliance auditing framework"
+  homepage "https://github.com/kusari-oss/darnit"
+  version "{{ version }}"
+  license "Apache-2.0"
+
+  on_macos do
+    on_arm do
+      url "{{ url_macos_arm64 }}"
+      sha256 "{{ sha256_macos_arm64 }}"
+    end
+    # No on_intel block: macOS amd64 binaries are not produced. Brew users
+    # on Intel Macs should `pip install darnit-mcp` or run the Linux/amd64
+    # container under emulation.
+  end
+
+  on_linux do
+    on_arm do
+      url "{{ url_linux_arm64 }}"
+      sha256 "{{ sha256_linux_arm64 }}"
+    end
+    on_intel do
+      url "{{ url_linux_amd64 }}"
+      sha256 "{{ sha256_linux_amd64 }}"
+    end
+  end
+
+  # The shiv zipapp shebangs `#!/usr/bin/env python3.11`. The user must have
+  # Python 3.11+ on PATH at first run for shiv to extract its bundled site-
+  # packages. Homebrew's python@3.12 is forward-compatible.
+  depends_on "python@3.12"
+
+  def install
+    # Each release ships a single binary per (os, arch). The Homebrew brew
+    # cache contains one downloaded asset; copy it into the formula's bin
+    # as plain `darnit`.
+    bin.install Dir["darnit-#{version}-*"].first => "darnit"
+  end
+
+  test do
+    assert_match version.to_s, shell_output("#{bin}/darnit --version")
+  end
+end

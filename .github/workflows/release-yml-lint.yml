@@ -1,0 +1,55 @@
+name: Release workflow lint
+
+# T010: run actionlint over release.yml and release-smoke.yml on every PR that
+# touches them. Cheap static check; catches schema errors, undefined matrix
+# keys, deprecated action versions, etc. before a release attempt would fail.
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/release.yml'
+      - '.github/workflows/release-smoke.yml'
+      - '.github/workflows/release-yml-lint.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release.yml'
+      - '.github/workflows/release-smoke.yml'
+      - '.github/workflows/release-yml-lint.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+        with:
+          persist-credentials: false
+
+      - name: Install actionlint
+        # Version pin must match .github/workflows/release.yml's inline copy
+        # and the version documented in packaging/README.md (the
+        # contributor-runs-locally version). Bumping requires updating all
+        # three call sites in lockstep.
+        env:
+          ACTIONLINT_VERSION: "1.7.12"
+          ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+        run: |
+          set -euo pipefail
+          url="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLo /tmp/actionlint.tar.gz "$url"
+          echo "${ACTIONLINT_SHA256}  /tmp/actionlint.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
+          sudo mv /tmp/actionlint /usr/local/bin/actionlint
+          actionlint -version
+
+      - name: Lint release workflows
+        run: |
+          set -euo pipefail
+          actionlint .github/workflows/release.yml
+          actionlint .github/workflows/release-smoke.yml

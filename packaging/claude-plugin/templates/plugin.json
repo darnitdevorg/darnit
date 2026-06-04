@@ -1,0 +1,22 @@
+{
+  "name": "darnit",
+  "version": "__VERSION__",
+  "description": "AI-powered compliance auditing for the OpenSSF Baseline and related frameworks.",
+  "author": {
+    "name": "Kusari",
+    "email": "info@kusari.dev"
+  },
+  "homepage": "https://github.com/kusari-oss/darnit",
+  "repository": "https://github.com/kusari-oss/darnit",
+  "license": "Apache-2.0",
+  "keywords": ["security", "compliance", "openssf", "baseline", "audit"],
+  "mcpServers": {
+    "darnit-mcp": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/darnit-mcp-runner",
+      "args": [],
+      "env": {
+        "DARNIT_MCP_VERSION": "__VERSION__"
+      }
+    }
+  }
+}

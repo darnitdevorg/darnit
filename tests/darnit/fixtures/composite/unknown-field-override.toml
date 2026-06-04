@@ -1,0 +1,20 @@
+# US2 / T036: override names a field that is not on the real
+# ControlConfig schema. Expected: CompositionUnknownFieldError with
+# .field == "bogus_field" and the offending control ID.
+#
+# OverrideBlock uses extra="allow" precisely so the resolver can be the
+# one to surface unknown fields with a clear F-2 / FR-008 error rather
+# than a generic pydantic ValidationError.
+
+[metadata]
+name = "test-unknown-field-override"
+display_name = "Test: unknown field rejected"
+version = "1.0.0"
+
+[[compose]]
+source = "mock-source-a"
+include_controls = ["MOCK-AC-01.01"]
+
+[overrides."MOCK-AC-01.01"]
+description = "A valid field alongside an invalid one."
+bogus_field = "the resolver should reject this with a clear error"

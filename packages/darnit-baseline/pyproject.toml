@@ -4,11 +4,38 @@ version = "0.1.0"
 description = "OpenSSF Baseline (OSPS v2025.10.10) compliance checks for darnit"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = [
-    "darnit>=0.1.0",
-    "tree-sitter>=0.25",
-    "tree-sitter-language-pack>=1.5",
+license = "Apache-2.0"
+authors = [
+    { name = "Kusari", email = "info@kusari.dev" },
 ]
+keywords = ["security", "compliance", "openssf", "baseline", "osps"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = [
+    "darnit-core>=0.1.0",
+    "tree-sitter>=0.25",
+    # tree-sitter-language-pack 1.8+ changed two APIs the threat-model
+    # pipeline depends on:
+    #   1. parser.parse() now wants str only (not bytes) and exposes a
+    #      separate parse_bytes() for the old contract.
+    #   2. tree.root_node became a callable method instead of a property.
+    # Cap at <1.8 until darnit's parsing layer supports both shapes. See #268.
+    "tree-sitter-language-pack>=1.5,<1.8",
+]
+
+[project.urls]
+Homepage = "https://github.com/kusari-oss/darnit"
+Repository = "https://github.com/kusari-oss/darnit"
+Issues = "https://github.com/kusari-oss/darnit/issues"
 
 [project.entry-points."darnit.implementations"]
 openssf-baseline = "darnit_baseline:register"

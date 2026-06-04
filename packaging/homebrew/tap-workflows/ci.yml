@@ -1,0 +1,75 @@
+# Drop this file into `.github/workflows/ci.yml` of the
+# `kusari-oss/homebrew-tap` repository. This is a reference copy from the
+# darnit source tree.
+#
+# Lint + build-from-source test on every PR that touches a formula. Gates
+# the auto-merge that bump-formula.yml requests.
+
+name: CI
+
+on:
+  pull_request:
+    paths:
+      - 'Formula/**'
+      - '.github/workflows/**'
+  push:
+    branches: [main]
+    paths:
+      - 'Formula/**'
+
+permissions:
+  contents: read
+
+jobs:
+  style:
+    name: brew style
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+
+      - name: Set up Homebrew
+        uses: Homebrew/actions/setup-homebrew@a07d8e07cef6f3185a64da81e1167d8d52f7a39a # master
+        with:
+          test-bot: false
+
+      - name: brew style
+        run: brew style Formula/*.rb
+
+  install:
+    name: brew install --build-from-source (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS-15 = Apple Silicon. ubuntu-22.04 covers the Linux amd64 path
+        # of every formula in the tap. Ubuntu arm64 install is exercised by
+        # release-smoke in the darnit repo, not here.
+        os: [macos-14, ubuntu-22.04]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+
+      - name: Set up Homebrew
+        uses: Homebrew/actions/setup-homebrew@a07d8e07cef6f3185a64da81e1167d8d52f7a39a # master
+        with:
+          test-bot: false
+
+      - name: Install every formula in the tap
+        run: |
+          set -euo pipefail
+          for f in Formula/*.rb; do
+            echo "::group::Installing $f"
+            brew install --build-from-source "$f"
+            echo "::endgroup::"
+          done
+
+      - name: Smoke test darnit
+        run: |
+          set -euo pipefail
+          # The version label is embedded in the formula; grepping for
+          # darnit's --version output proves the binary launched and reported
+          # something coherent.
+          darnit --version

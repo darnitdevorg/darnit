@@ -342,7 +342,7 @@ class PluginVerifier:
         except ImportError:
             self._sigstore_available = False
             logger.info(
-                "Sigstore not available. Install with: pip install darnit[attestation]"
+                "Sigstore not available. Install with: pip install darnit-core[attestation]"
             )
 
         return self._sigstore_available

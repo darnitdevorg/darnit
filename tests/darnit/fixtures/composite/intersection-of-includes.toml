@@ -1,0 +1,13 @@
+# US1 / T024: include_levels=[1] intersected with include_controls
+# containing one L1 ID and one L3 ID. The L3 ID drops out (intersection
+# semantics — R-009).
+
+[metadata]
+name = "test-intersection-of-includes"
+display_name = "Test: intersection of inclusion expressions"
+version = "1.0.0"
+
+[[compose]]
+source = "mock-source-a"
+include_levels = [1]
+include_controls = ["MOCK-AC-01.01", "MOCK-VM-02.01"]

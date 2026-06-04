@@ -97,6 +97,125 @@ class TestFileExistsHandler:
         assert result.status == HandlerResultStatus.FAIL
 
 
+class TestFileExistsHandlerDepthLimited:
+    """Regression tests for issue #221 — depth-limited file discovery.
+
+    The ``max_depth`` config field lets a pass walk subdirectories looking
+    for non-glob patterns, so projects with nested manifests (e.g.,
+    ``app-code/keys-v2/go.mod`` or ``backend/pyproject.toml``) are
+    detected by controls like OSPS-BR-05.01 rather than failing. Default
+    behavior (``max_depth=0``) is unchanged for backward compatibility.
+    """
+
+    def test_default_max_depth_root_only(self, tmp_path, ctx):
+        """Without max_depth, only the repo root is checked (regression: bug)."""
+        nested = tmp_path / "app-code" / "keys-v2"
+        nested.mkdir(parents=True)
+        (nested / "go.mod").write_text("module example")
+
+        result = file_exists_handler({"files": ["go.mod"]}, ctx)
+
+        # This is the bug from issue #221: file is present but not at root,
+        # so the default-depth check misses it.
+        assert result.status == HandlerResultStatus.FAIL
+
+    def test_max_depth_2_finds_nested_manifest(self, tmp_path, ctx):
+        """With max_depth=2, a manifest 2 levels deep is found."""
+        nested = tmp_path / "app-code" / "keys-v2"
+        nested.mkdir(parents=True)
+        (nested / "go.mod").write_text("module example")
+
+        result = file_exists_handler(
+            {"files": ["go.mod"], "max_depth": 2}, ctx
+        )
+
+        assert result.status == HandlerResultStatus.PASS
+        assert result.evidence["relative_path"] == "app-code/keys-v2/go.mod"
+        assert result.evidence["max_depth"] == 2
+
+    def test_max_depth_finds_root_first(self, tmp_path, ctx):
+        """Root match is preferred over nested when max_depth is set."""
+        (tmp_path / "go.mod").write_text("root")
+        nested = tmp_path / "app-code" / "keys-v2"
+        nested.mkdir(parents=True)
+        (nested / "go.mod").write_text("nested")
+
+        result = file_exists_handler(
+            {"files": ["go.mod"], "max_depth": 3}, ctx
+        )
+
+        assert result.status == HandlerResultStatus.PASS
+        assert result.evidence["relative_path"] == "go.mod"
+
+    def test_max_depth_skips_noise_directories(self, tmp_path, ctx):
+        """node_modules / __pycache__ / .git etc. are pruned during the walk.
+
+        Without pruning, a deeply nested package.json inside node_modules
+        would yield false positives.
+        """
+        # Set up: package.json buried inside node_modules at depth 1+
+        nm = tmp_path / "node_modules" / "some-pkg"
+        nm.mkdir(parents=True)
+        (nm / "package.json").write_text('{"name": "noise"}')
+
+        # Real app package.json one level deep but NOT inside node_modules
+        app = tmp_path / "app"
+        app.mkdir()
+        (app / "package.json").write_text('{"name": "real"}')
+
+        result = file_exists_handler(
+            {"files": ["package.json"], "max_depth": 5}, ctx
+        )
+
+        assert result.status == HandlerResultStatus.PASS
+        # The "real" app/ match wins; node_modules/some-pkg/ was pruned
+        assert result.evidence["relative_path"] == "app/package.json"
+
+    def test_max_depth_respects_limit(self, tmp_path, ctx):
+        """A file 3 levels deep is NOT found when max_depth=2."""
+        # depth 3: tmp_path / a / b / c / go.mod
+        deep = tmp_path / "a" / "b" / "c"
+        deep.mkdir(parents=True)
+        (deep / "go.mod").write_text("too deep")
+
+        result = file_exists_handler(
+            {"files": ["go.mod"], "max_depth": 2}, ctx
+        )
+
+        # max_depth=2 means root + 2 subdirs (a, a/b). a/b/c is beyond.
+        assert result.status == HandlerResultStatus.FAIL
+
+    def test_max_depth_zero_explicit_is_root_only(self, tmp_path, ctx):
+        """max_depth=0 explicitly is equivalent to omitting the field."""
+        nested = tmp_path / "sub"
+        nested.mkdir()
+        (nested / "pyproject.toml").write_text("")
+
+        result = file_exists_handler(
+            {"files": ["pyproject.toml"], "max_depth": 0}, ctx
+        )
+
+        assert result.status == HandlerResultStatus.FAIL
+
+    def test_max_depth_with_glob_pattern_unchanged(self, tmp_path, ctx):
+        """Glob patterns are NOT depth-walked; their behavior is unchanged.
+
+        max_depth only affects non-glob patterns. Authors who want
+        recursive glob behavior should use ``**`` in the pattern itself.
+        """
+        nested = tmp_path / "docs" / "subdir"
+        nested.mkdir(parents=True)
+        (nested / "SECURITY.md").write_text("policy")
+
+        # max_depth=5 set but pattern is a glob — depth-walk is skipped
+        result = file_exists_handler(
+            {"files": ["*.md"], "max_depth": 5}, ctx
+        )
+
+        # No top-level *.md files → FAIL (glob doesn't recurse without **)
+        assert result.status == HandlerResultStatus.FAIL
+
+
 # =============================================================================
 # exec_handler
 # =============================================================================

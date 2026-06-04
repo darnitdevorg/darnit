@@ -1,0 +1,14 @@
+# US2 / T034: same shape as override-remediation but the test asserts
+# that provenance survives the override unchanged.
+
+[metadata]
+name = "test-override-preserves-provenance"
+display_name = "Test: provenance survives override"
+version = "1.0.0"
+
+[[compose]]
+source = "mock-source-a"
+include_controls = ["MOCK-AC-01.01"]
+
+[overrides."MOCK-AC-01.01"]
+docs_url = "https://internal.acme.example/runbooks/ac-01-01"

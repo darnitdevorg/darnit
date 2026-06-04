@@ -1,0 +1,23 @@
+# Mock source-a-variant: a distinct non-composite framework that
+# intentionally redefines MOCK-AC-01.01 with different content. Used
+# alongside mock-source-a to exercise multi-source conflict paths.
+
+[metadata]
+name = "mock-source-a-variant"
+display_name = "Mock Source A Variant (test fixture)"
+version = "1.0.0"
+spec_version = "mock-variant v1"
+
+[defaults]
+check_adapter = "builtin"
+remediation_adapter = "builtin"
+
+[controls."MOCK-AC-01.01"]
+name = "MockAccessControlOne_Variant"
+description = "VARIANT: a-variant's redefinition of MOCK-AC-01.01."
+level = 1
+domain = "AC"
+
+[[controls."MOCK-AC-01.01".passes]]
+handler = "file_must_exist"
+paths = ["DOES_NOT_EXIST.variant.fixture"]
