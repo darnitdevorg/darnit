@@ -35,6 +35,34 @@ OSPS_REMEDIATION_MAP: dict = {
 }
 
 
+def _build_audit_result(
+    owner: str,
+    repo: str,
+    repo_path: Path,
+    level: int,
+    default_branch: str,
+    results: list[dict],
+    summary: dict[str, int],
+    level_compliance: dict[int, bool],
+):
+    """Assemble an AuditResult from sieve audit output for SARIF/attestation."""
+    from darnit.core.models import AuditResult
+    from darnit_baseline.attestation import get_git_commit, get_git_ref
+
+    return AuditResult(
+        owner=owner,
+        repo=repo,
+        local_path=str(repo_path),
+        level=level,
+        default_branch=default_branch,
+        all_results=results,
+        summary=summary,
+        level_compliance=level_compliance,
+        commit=get_git_commit(str(repo_path)),
+        ref=get_git_ref(str(repo_path)),
+    )
+
+
 def audit_openssf_baseline(
     owner: str | None = None,
     repo: str | None = None,
@@ -172,7 +200,7 @@ def audit_openssf_baseline(
             }
             for r in results
         ]
-        return json.dumps({
+        output = json.dumps({
             "owner": owner,
             "repo": repo,
             "level": level,
@@ -180,16 +208,25 @@ def audit_openssf_baseline(
             "results": compact_results,
         }, indent=2)
     elif output_format == "json":
-        return json.dumps({
+        output = json.dumps({
             "owner": owner,
             "repo": repo,
             "level": level,
             "summary": summary,
             "results": results,
         }, indent=2)
+    elif output_format == "sarif":
+        from darnit_baseline.formatters.sarif import generate_sarif_audit
+
+        compliance = calculate_compliance(results, level)
+        audit_result = _build_audit_result(
+            owner or "", repo or "", repo_path, level,
+            default_branch, results, summary, compliance,
+        )
+        output = json.dumps(generate_sarif_audit(audit_result), indent=2)
     else:
         compliance = calculate_compliance(results, level)
-        return format_results_markdown(
+        output = format_results_markdown(
             owner=owner,
             repo=repo,
             results=results,
@@ -200,6 +237,55 @@ def audit_openssf_baseline(
             report_title="OpenSSF Baseline Audit Report",
             remediation_map=OSPS_REMEDIATION_MAP,
         )
+
+    if attest:
+        attest_note = _attest_audit(
+            owner, repo, repo_path, level, default_branch,
+            results, summary, sign=sign_attestation, staging=staging,
+        )
+        # Only markdown output can carry the note without breaking the
+        # format; for JSON/SARIF the attestation file is still written.
+        if output_format not in ("summary", "json", "sarif"):
+            output += f"\n\n## Attestation\n\n{attest_note}\n"
+
+    return output
+
+
+def _attest_audit(
+    owner: str | None,
+    repo: str | None,
+    repo_path: Path,
+    level: int,
+    default_branch: str,
+    results: list[dict],
+    summary: dict[str, int],
+    *,
+    sign: bool,
+    staging: bool,
+) -> str:
+    """Generate an attestation from completed audit results.
+
+    Returns a one-line status message suitable for embedding in a report.
+    """
+    if not owner or not repo:
+        return "❌ Attestation skipped: owner/repo could not be determined."
+
+    try:
+        from darnit.tools.audit import calculate_compliance
+        from darnit_baseline.attestation import generate_attestation_from_results
+
+        compliance = calculate_compliance(results, level)
+        audit_result = _build_audit_result(
+            owner, repo, repo_path, level, default_branch,
+            results, summary, compliance,
+        )
+        message = generate_attestation_from_results(
+            audit_result, sign=sign, staging=staging,
+        )
+        first_line = message.splitlines()[0] if message else ""
+        return first_line if first_line.startswith("✅") else message
+    except Exception as e:
+        return f"❌ Attestation failed: {e}"
 
 
 def list_available_checks(profile: str | None = None) -> str:
@@ -1006,8 +1092,6 @@ def generate_attestation(
     Returns:
         JSON attestation and path to saved file
     """
-    from darnit_baseline.attestation import generate_attestation as _generate
-
     repo_path = Path(local_path).resolve()
     if not repo_path.exists():
         return f"❌ Error: Repository path not found: {repo_path}"
@@ -1018,18 +1102,34 @@ def generate_attestation(
     owner = owner or detected_owner
     repo = repo or detected_repo
 
+    if not owner or not repo:
+        return "❌ Error: owner/repo could not be determined. Pass them explicitly."
+
     try:
-        result = _generate(
+        from darnit.tools.audit import calculate_compliance, run_sieve_audit
+        from darnit_baseline.attestation import generate_attestation_from_results
+
+        default_branch = _detect_default_branch(repo_path)
+        results, summary = run_sieve_audit(
             owner=owner,
             repo=repo,
             local_path=str(repo_path),
+            default_branch=default_branch,
             level=level,
+            framework_name="openssf-baseline",
+        )
+        compliance = calculate_compliance(results, level)
+        audit_result = _build_audit_result(
+            owner, repo, repo_path, level, default_branch,
+            results, summary, compliance,
+        )
+        return generate_attestation_from_results(
+            audit_result,
             sign=sign,
             staging=staging,
             output_path=output_path,
             output_dir=output_dir,
         )
-        return result
     except Exception as e:
         return f"❌ Error generating attestation: {e}"
 
