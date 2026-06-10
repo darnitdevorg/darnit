@@ -140,6 +140,7 @@ async def builtin_audit(
         level=level,
         local_path=str(repo_path),
         report_title=report_title,
+        framework_name=_framework_name,
     )
 
 

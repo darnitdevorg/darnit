@@ -199,6 +199,7 @@ def audit_openssf_baseline(
             local_path=str(repo_path),
             report_title="OpenSSF Baseline Audit Report",
             remediation_map=OSPS_REMEDIATION_MAP,
+            framework_name="openssf-baseline",
         )
 
 
@@ -1437,6 +1438,7 @@ def audit_org(
         summary=summary,
         compliance=compliance,
         level=level,
+        framework_name="openssf-baseline",
     )
 
 

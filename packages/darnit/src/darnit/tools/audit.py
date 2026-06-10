@@ -22,7 +22,7 @@ logger = get_logger("tools.audit")
 
 # Sieve system imports - lazy loaded
 _sieve_components = None
-_toml_controls_registered = False
+_toml_controls_registered: set[Path] = set()
 
 
 def _get_sieve_components():
@@ -59,13 +59,13 @@ def _register_toml_controls(framework_name: str | None = None) -> int:
     Returns:
         Number of controls registered from TOML
     """
-    global _toml_controls_registered
-    if _toml_controls_registered:
-        return 0
-
     framework_path = _get_framework_config_path(framework_name)
     if not framework_path:
         logger.debug("No framework TOML found, skipping TOML control registration")
+        return 0
+
+    resolved_path = framework_path.resolve()
+    if resolved_path in _toml_controls_registered:
         return 0
 
     try:
@@ -85,7 +85,7 @@ def _register_toml_controls(framework_name: str | None = None) -> int:
                 registered += 1
                 logger.debug(f"Registered TOML control: {control.control_id}")
 
-        _toml_controls_registered = True
+        _toml_controls_registered.add(resolved_path)
         if registered > 0:
             logger.info(f"Registered {registered} controls from {framework_path.name}")
         return registered
@@ -101,8 +101,6 @@ def _register_toml_controls(framework_name: str | None = None) -> int:
 # =============================================================================
 # User Configuration Loading
 # =============================================================================
-
-_effective_config_cache: dict[str, Any] = {}
 
 
 def _get_framework_config_path(framework_name: str | None = None) -> Path | None:
@@ -159,28 +157,14 @@ def load_effective_audit_config(local_path: str, framework_name: str | None = No
     Returns:
         EffectiveConfig if successful, None otherwise
     """
-    # Check cache first
-    abs_path = str(Path(local_path).resolve())
-    if abs_path in _effective_config_cache:
-        return _effective_config_cache[abs_path]
-
     try:
         from darnit.config import load_effective_config_auto
 
-        effective = load_effective_config_auto(Path(local_path), framework_name=framework_name)
-
-        # Cache the result
-        _effective_config_cache[abs_path] = effective
-        return effective
+        return load_effective_config_auto(Path(local_path), framework_name=framework_name)
 
     except Exception as e:
         logger.warning(f"Error loading effective config: {e}")
         return None
-
-
-def clear_effective_config_cache():
-    """Clear the effective config cache."""
-    _effective_config_cache.clear()
 
 
 def get_excluded_control_ids(local_path: str) -> dict[str, str]:
@@ -652,6 +636,7 @@ def format_results_markdown(
     local_path: str | None = None,
     report_title: str = "Compliance Audit Report",
     remediation_map: dict[str, Any] | None = None,
+    framework_name: str | None = None,
 ) -> str:
     """Format audit results as Markdown.
 
@@ -664,6 +649,8 @@ def format_results_markdown(
         level: Maximum level checked
         local_path: Path to the repository (for pending context)
         report_title: Title for the report H1 heading.
+        framework_name: Framework name used to resolve the framework TOML
+            for per-control help text on failures.
         remediation_map: Implementation-provided mapping of control IDs to
             remediation tools. Structure:
             {
@@ -802,7 +789,7 @@ def format_results_markdown(
 
                 # Include help_md for failed controls to explain remediation options
                 if status == "FAIL":
-                    help_md = _get_control_help(control_id)
+                    help_md = _get_control_help(control_id, framework_name)
                     if help_md:
                         # Indent help text and add as a sub-item
                         help_lines = help_md.strip().split("\n")
@@ -1168,7 +1155,6 @@ __all__ = [
     "load_effective_audit_config",
     "get_excluded_control_ids",
     "get_adapter_for_control",
-    "clear_effective_config_cache",
     # TOML framework support
     "_register_toml_controls",  # Internal but useful for testing
 ]

@@ -473,8 +473,20 @@ def _parse_framework_only(path: Path) -> FrameworkConfig:
     return config
 
 
+# Parsed framework configs are large (the baseline TOML is 4000+ lines) and
+# were previously re-parsed several times per audit. Keyed by resolved path,
+# invalidated on mtime change so .toml edits are picked up even in a
+# long-running MCP server. Composed frameworks are keyed on the top-level
+# file's mtime only; editing a composition *source* without touching the
+# top file serves stale until the next mtime change.
+_framework_config_cache: dict[Path, tuple[int, FrameworkConfig]] = {}
+
+
 def load_framework_config(path: Path) -> FrameworkConfig:
     """Load framework configuration from TOML file.
+
+    Results are cached per resolved path and invalidated when the file's
+    mtime changes. Callers MUST treat the returned config as read-only.
 
     If the parsed config has any ``[[compose]]`` blocks or
     ``[overrides."…"]`` blocks, this function resolves composition exactly
@@ -497,6 +509,16 @@ def load_framework_config(path: Path) -> FrameworkConfig:
         CompositionError: Any composition-resolution failure (missing
             source, cycle, conflict, orphan override, etc.).
     """
+    resolved = path.resolve()
+    try:
+        mtime_ns = resolved.stat().st_mtime_ns
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Framework config not found: {path}") from None
+
+    cached = _framework_config_cache.get(resolved)
+    if cached is not None and cached[0] == mtime_ns:
+        return cached[1]
+
     config = _parse_framework_only(path)
 
     # Composition resolution runs EXACTLY ONCE at the top of this call chain.
@@ -508,6 +530,7 @@ def load_framework_config(path: Path) -> FrameworkConfig:
 
         config = resolve_composition(config)
 
+    _framework_config_cache[resolved] = (mtime_ns, config)
     return config
 
 
