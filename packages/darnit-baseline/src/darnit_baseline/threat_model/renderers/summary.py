@@ -207,7 +207,7 @@ def _render_recommendations(
     return md
 
 
-def _render_verification_prompts() -> list[str]:
+def _render_verification_prompts(has_cli_families: bool = False) -> list[str]:
     md: list[str] = ["## Verification Prompts", ""]
     md.append(VERIFICATION_PROMPT_OPEN)
     md.append("")
@@ -228,6 +228,18 @@ def _render_verification_prompts() -> list[str]:
         "4. Preserve this `darnit:verification-prompt-block` section — it "
         "marks the draft as having gone through review."
     )
+    if has_cli_families:
+        md.append("")
+        md.append(
+            "**For the CLI Entry Points section:** this section was produced "
+            "by an import-based heuristic, not a STRIDE analysis. Open each "
+            "family's representative file. For each STRIDE category listed: "
+            "does the file's actual behaviour match? If not, replace the "
+            "category and remove this paragraph's note. If the family was "
+            "over- or under-grouped (subcommands missing, or unrelated "
+            "commands lumped together), restructure the table and edit the "
+            "`family_key` identifier in `raw-findings.json` to match."
+        )
     md.append("")
     md.append(VERIFICATION_PROMPT_CLOSE)
     md.append("")
@@ -258,6 +270,29 @@ def _render_limitations(
     if result.opengrep_degraded_reason:
         md.append(f"  - Reason: {result.opengrep_degraded_reason}")
 
+    # Feature 014-cobra-threat-model: surface cobra-specific scan counters
+    # per FR-007 — total Go files scanned, count that imported cobra,
+    # count of cobra-importing files where no query matched.
+    cobra_stats = getattr(result, "cobra_stats", None) or {}
+    if cobra_stats.get("cobra_files", 0) > 0:
+        md.append(
+            f"- Scanned **{cobra_stats.get('go_files_scanned', 0)}** Go files; "
+            f"**{cobra_stats['cobra_files']}** imported "
+            f"`github.com/spf13/cobra`."
+        )
+        unmatched = cobra_stats.get("cobra_files_unmatched", 0)
+        if unmatched > 0:
+            examples = cobra_stats.get("unmatched_examples", []) or []
+            examples_str = (
+                "; example: `" + examples[0] + "`" if examples else ""
+            )
+            md.append(
+                f"  - **{unmatched}** cobra-importing file(s) matched no "
+                f"recognised pattern (builder-style or factory-returned-via-"
+                f"indirection construction){examples_str}. Surfaced commands "
+                f"may be incomplete."
+            )
+
     if overflow_hint is not None and overflow_hint.total > 0:
         md.append("")
         md.append(f"- **{overflow_hint.total}** additional candidate findings were trimmed to fit the finding cap.")
@@ -277,6 +312,67 @@ def _render_limitations(
 # ---------------------------------------------------------------------------
 
 
+def _render_cli_entry_points(
+    families: list[Any],
+    command_metadata: dict[str, dict[str, str]] | None = None,
+) -> list[str]:
+    """Render the ``## Entry Points`` / ``### CLI Entry Points`` section.
+
+    Feature 014-cobra-threat-model. See
+    ``specs/014-cobra-threat-model/contracts/output-document-contract.md``
+    for the contract.
+
+    Returns the empty list when ``families`` is empty — no placeholder
+    is emitted per FR-014. Families are pre-sorted by
+    ``group_by_cli_family`` for deterministic output. Each family
+    becomes one ``#### Family: <display_name>`` block with source root,
+    subcommand list, STRIDE categories, confidence line, location
+    table, and a refinement-note paragraph that flags the categories
+    as heuristic.
+
+    Args:
+        families: Pre-grouped + STRIDE-categorised CommandFamily list.
+        command_metadata: Optional dict mapping ``f"{file}:{line}"`` →
+            ``{"short": ..., "long": ...}`` for populating the Notes
+            column with each command's Short: text. Missing entries get
+            an empty Notes cell.
+    """
+    if not families:
+        return []
+    md_keys = command_metadata or {}
+    md: list[str] = ["## Entry Points", "", "### CLI Entry Points", ""]
+    for family in families:
+        md.append(f"#### Family: {family.display_name}")
+        md.append("")
+        md.append(f"**Source root**: `{family.source_root}`")
+        sub_names = [m.name for m in family.members]
+        md.append(
+            f"**Subcommands**: {len(family.members)} ({', '.join(sub_names)})"
+        )
+        md.append(
+            f"**STRIDE categories**: {', '.join(family.stride_categories)}"
+        )
+        md.append("**Confidence**: heuristic — needs reviewer attention")
+        md.append("")
+        md.append("| Subcommand | Location | Notes |")
+        md.append("|---|---|---|")
+        for member in family.members:
+            loc = f"`{member.location.file}:{member.location.line}`"
+            key = f"{member.location.file}:{member.location.line}"
+            note = md_keys.get(key, {}).get("short", "")
+            # Escape pipes in note text so markdown table parsing stays sane.
+            safe_note = note.replace("|", "\\|") if note else ""
+            md.append(f"| {member.name} | {loc} | {safe_note} |")
+        md.append("")
+        md.append(
+            "_Refinement notes: This family was categorised by "
+            "import-based heuristic; categories may need recategorisation "
+            "per the project's threat model._"
+        )
+        md.append("")
+    return md
+
+
 def render_summary(
     groups: list[FindingGroup],
     sidecar_matches: dict[str, Any],
@@ -284,6 +380,7 @@ def render_summary(
     options: GeneratorOptions,
     overflow_hint: TrimmedOverflow | None = None,
     repo_path: str = ".",
+    cli_families: list[Any] | None = None,
 ) -> str:
     """Render the top-level ``SUMMARY.md`` for the multi-file threat model.
 
@@ -302,6 +399,12 @@ def render_summary(
         Optional overflow data describing findings trimmed by the cap.
     repo_path:
         Path to the repository root (used for display name derivation).
+    cli_families:
+        Optional list of :class:`CommandFamily` instances produced by the
+        cobra extractor + grouping + STRIDE assignment (feature
+        014-cobra-threat-model). When non-empty, surfaces a ``## Entry
+        Points`` / ``### CLI Entry Points`` section in the rendered
+        document. When ``None`` or empty, no CLI section is emitted (FR-014).
 
     Returns
     -------
@@ -317,8 +420,14 @@ def render_summary(
     md.extend(_render_executive_summary(result, all_findings, repo_path))
     md.extend(_render_top_risks(groups, sidecar_matches, options, overflow_hint))
     md.extend(_render_unmitigated(groups, sidecar_matches))
+    md.extend(
+        _render_cli_entry_points(
+            cli_families or [],
+            command_metadata=getattr(result, "cobra_command_metadata", None),
+        )
+    )
     md.extend(_render_companion_links())
     md.extend(_render_recommendations(groups, sidecar_matches))
-    md.extend(_render_verification_prompts())
+    md.extend(_render_verification_prompts(has_cli_families=bool(cli_families)))
     md.extend(_render_limitations(result, overflow_hint))
     return "\n".join(md) + "\n"

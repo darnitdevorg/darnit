@@ -9,7 +9,7 @@ falls back to the static template content (pre-resolved by the executor).
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -21,8 +21,8 @@ from darnit.sieve.handler_registry import (
 )
 
 from .discovery_models import CandidateFinding, FileScanStats, FindingGroup
-from .grouping import group_by_query_id
-from .ranking import apply_cap
+from .grouping import group_by_cli_family, group_by_query_id
+from .ranking import apply_cap, assign_stride_for_cli_families
 from .renderers.common import GeneratorOptions, severity_band
 from .renderers.data_flow import render_data_flow
 from .renderers.group_file import render_group_file
@@ -65,6 +65,9 @@ class _TsRunOutput:
     groups: list[FindingGroup]
     evidence: dict[str, Any]
     failure_reason: str | None
+    # Feature 014-cobra-threat-model: CLI command families with STRIDE
+    # categories pre-assigned. Empty list for non-cobra projects.
+    cli_families: list[Any] = field(default_factory=list)
 
 
 def _run_ts_pipeline(
@@ -122,12 +125,21 @@ def _run_ts_pipeline(
     # Group by query ID for multi-file output.
     groups = group_by_query_id(ranked)
 
+    # Feature 014-cobra-threat-model: build CLI command families from
+    # CLI_COMMAND entry points and assign STRIDE categories via the
+    # import-based heuristic. Empty list for non-cobra projects.
+    cli_families = group_by_cli_family(result.entry_points)
+    if cli_families:
+        assign_stride_for_cli_families(cli_families, result.cobra_file_imports)
+        evidence["cli_family_count"] = len(cli_families)
+
     return _TsRunOutput(
         result=result,
         ranked=ranked,
         groups=groups,
         evidence=evidence,
         failure_reason=None,
+        cli_families=cli_families,
     )
 
 
@@ -381,6 +393,7 @@ def generate_threat_model_handler(
             options=options,
             overflow_hint=overflow_hint,
             repo_path=local_path,
+            cli_families=ts_output.cli_families,
         )
         with open(full_path, "w", encoding="utf-8") as f:
             f.write(summary_content)

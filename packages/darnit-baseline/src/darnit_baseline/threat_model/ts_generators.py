@@ -29,6 +29,7 @@ from typing import Any
 
 from .discovery_models import (
     CandidateFinding,
+    CommandFamily,
     DiscoveredDataStore,
     DiscoveredEntryPoint,
     DiscoveryResult,
@@ -574,22 +575,82 @@ def _render_limitations(result: DiscoveryResult, overflow: TrimmedOverflow | Non
 # ---------------------------------------------------------------------------
 
 
+def _render_cli_entry_points(families: list[CommandFamily]) -> list[str]:
+    """Render the ``## Entry Points`` / ``### CLI Entry Points`` section.
+
+    Returns the empty list when ``families`` is empty (no placeholder is
+    emitted; see FR-014 and the output contract). Otherwise produces:
+
+    - ``## Entry Points`` parent heading
+    - ``### CLI Entry Points`` subsection
+    - One ``#### Family: <display_name>`` block per family with source
+      root, subcommand list, STRIDE categories, confidence line,
+      location table, and refinement-note paragraph.
+
+    Families are pre-sorted by ``group_by_cli_family`` (members count
+    desc, family_key asc) for deterministic snapshot output.
+
+    Note: this is a localised additive section. Existing HTTP rendering
+    in ``_render_asset_inventory`` is unchanged; a follow-up will also
+    move HTTP entry points under ``## Entry Points``.
+    """
+    if not families:
+        return []
+    md: list[str] = ["## Entry Points", "", "### CLI Entry Points", ""]
+    for family in families:
+        md.append(f"#### Family: {family.display_name}")
+        md.append("")
+        md.append(f"**Source root**: `{family.source_root}`")
+        sub_names = [m.name for m in family.members]
+        md.append(
+            f"**Subcommands**: {len(family.members)} ({', '.join(sub_names)})"
+        )
+        md.append(
+            f"**STRIDE categories**: {', '.join(family.stride_categories)}"
+        )
+        md.append("**Confidence**: heuristic — needs reviewer attention")
+        md.append("")
+        md.append("| Subcommand | Location | Notes |")
+        md.append("|---|---|---|")
+        for member in family.members:
+            loc = f"`{member.location.file}:{member.location.line}`"
+            md.append(f"| {member.name} | {loc} |  |")
+        md.append("")
+        md.append(
+            "_Refinement notes: This family was categorised by "
+            "import-based heuristic; categories may need recategorisation "
+            "per the project's threat model._"
+        )
+        md.append("")
+    return md
+
+
 def generate_markdown_threat_model(
     repo_path: str,
     result: DiscoveryResult,
     capped_findings: list[CandidateFinding],
     overflow: TrimmedOverflow | None,
     options: GeneratorOptions | None = None,
+    cli_families: list[CommandFamily] | None = None,
 ) -> str:
     """Render the full Markdown draft from a DiscoveryResult.
 
     Primary markdown generator for the threat model handler.
+
+    Args:
+        cli_families: Optional pre-grouped + STRIDE-categorised CLI
+            command families (feature 014-cobra-threat-model). When
+            provided and non-empty, the rendered document includes a
+            ``## Entry Points`` / ``### CLI Entry Points`` section.
+            When ``None`` or empty, no CLI section is emitted (FR-014:
+            no empty placeholder).
     """
     options = options or GeneratorOptions()
     md: list[str] = ["# Threat Model Report", ""]
     md.extend(_render_executive_summary(repo_path, result, capped_findings))
     md.extend(_render_asset_inventory(result))
     md.extend(_render_dfd(result, options))
+    md.extend(_render_cli_entry_points(cli_families or []))
     md.extend(_render_stride_threats(capped_findings))
     md.extend(_render_attack_chains(result))
     md.extend(_render_recommendations(capped_findings))

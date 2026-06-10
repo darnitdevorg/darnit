@@ -299,3 +299,139 @@ class TestSubprocessTieredScoring:
         top3_ids = {f.query_id for f in emitted[:3]}
         assert "static" not in top3_ids
         assert overflow.total == 1
+
+
+# ---------------------------------------------------------------------------
+# Feature 014-cobra-threat-model: STRIDE heuristic mapping tests
+# ---------------------------------------------------------------------------
+
+
+class TestAssignCliStrideCategories:
+    """T020 — verify each row of the import-based heuristic table maps correctly."""
+
+    def test_os_exec_imports_map_to_elevation_of_privilege(self) -> None:
+        from darnit_baseline.threat_model.ranking import assign_cli_stride_categories
+
+        assert assign_cli_stride_categories({"os/exec"}) == ["Elevation of Privilege"]
+        assert assign_cli_stride_categories({"syscall"}) == ["Elevation of Privilege"]
+
+    def test_net_http_maps_to_spoofing_and_info_disclosure(self) -> None:
+        from darnit_baseline.threat_model.ranking import assign_cli_stride_categories
+
+        cats = assign_cli_stride_categories({"net/http"})
+        assert "Spoofing" in cats
+        assert "Information Disclosure" in cats
+
+    def test_crypto_prefix_maps_to_repudiation(self) -> None:
+        from darnit_baseline.threat_model.ranking import assign_cli_stride_categories
+
+        assert assign_cli_stride_categories({"crypto/sha256"}) == ["Repudiation"]
+        assert assign_cli_stride_categories({"crypto/ed25519"}) == ["Repudiation"]
+
+    def test_sigstore_imports_map_to_repudiation(self) -> None:
+        from darnit_baseline.threat_model.ranking import assign_cli_stride_categories
+
+        assert assign_cli_stride_categories({"github.com/sigstore/cosign"}) == ["Repudiation"]
+
+    def test_intoto_imports_map_to_repudiation(self) -> None:
+        from darnit_baseline.threat_model.ranking import assign_cli_stride_categories
+
+        assert assign_cli_stride_categories({"github.com/in-toto/in-toto-golang"}) == ["Repudiation"]
+
+    def test_file_writer_imports_map_to_tampering(self) -> None:
+        from darnit_baseline.threat_model.ranking import assign_cli_stride_categories
+
+        assert assign_cli_stride_categories({"os.WriteFile"}) == ["Tampering"]
+
+    def test_unknown_imports_fall_back_to_tampering(self) -> None:
+        from darnit_baseline.threat_model.ranking import (
+            CLI_STRIDE_FALLBACK,
+            assign_cli_stride_categories,
+        )
+
+        result = assign_cli_stride_categories({"fmt", "strings", "context"})
+        assert result == CLI_STRIDE_FALLBACK
+        assert result == ["Tampering"]
+
+    def test_empty_import_set_falls_back_to_tampering(self) -> None:
+        from darnit_baseline.threat_model.ranking import assign_cli_stride_categories
+
+        assert assign_cli_stride_categories(set()) == ["Tampering"]
+
+    def test_first_matching_rule_wins(self) -> None:
+        """When multiple rules could match, the first (most-specific) one wins."""
+        from darnit_baseline.threat_model.ranking import assign_cli_stride_categories
+
+        # os/exec (EoP) comes before net/http (Spoofing+InfoDisc) in the table —
+        # so a file with both should categorise as EoP.
+        result = assign_cli_stride_categories({"os/exec", "net/http"})
+        assert result == ["Elevation of Privilege"]
+
+    def test_never_returns_empty_list(self) -> None:
+        """SC-005 / FR-005: every cobra finding gets at least one category."""
+        from darnit_baseline.threat_model.ranking import assign_cli_stride_categories
+
+        for imps in [set(), {"x"}, {"fmt"}, {"os.WriteFile"}, {"net/http"}]:
+            assert len(assign_cli_stride_categories(imps)) >= 1
+
+
+class TestAssignStrideForCliFamilies:
+    """T020 — verify family-level assignment populates both fields correctly."""
+
+    def _make_family(self, name: str, file_paths: list[str]):
+        from darnit_baseline.threat_model.discovery_models import (
+            CommandFamily,
+            DiscoveredEntryPoint,
+            EntryPointKind,
+            Location,
+        )
+
+        members = [
+            DiscoveredEntryPoint(
+                kind=EntryPointKind.CLI_COMMAND,
+                name=p.rsplit("/", 1)[-1].removesuffix(".go"),
+                location=Location(p, 10, 1, 12, 1),
+                language="go",
+                framework="cobra",
+                route_path=None,
+                http_method=None,
+                has_auth_decorator=False,
+                source_query="go.entry.cobra_command_literal",
+            )
+            for p in file_paths
+        ]
+        return CommandFamily(
+            family_key=name,
+            source_root=f"internal/cmd/{name}/",
+            display_name=name,
+            members=members,
+            import_signatures=set(),
+            stride_categories=[],
+            needs_reviewer_attention=True,
+        )
+
+    def test_family_imports_union_drives_category(self) -> None:
+        from darnit_baseline.threat_model.ranking import assign_stride_for_cli_families
+
+        family = self._make_family("cache", ["internal/cmd/cache/cache.go"])
+        imports = {"internal/cmd/cache/cache.go": {"os/exec", "fmt"}}
+        assign_stride_for_cli_families([family], imports)
+        assert family.import_signatures == {"os/exec", "fmt"}
+        assert family.stride_categories == ["Elevation of Privilege"]
+
+    def test_family_with_no_matching_imports_falls_back(self) -> None:
+        from darnit_baseline.threat_model.ranking import assign_stride_for_cli_families
+
+        family = self._make_family("simple", ["internal/cmd/simple/simple.go"])
+        imports = {"internal/cmd/simple/simple.go": {"fmt", "strings"}}
+        assign_stride_for_cli_families([family], imports)
+        assert family.stride_categories == ["Tampering"]
+
+    def test_missing_import_data_still_assigns_fallback(self) -> None:
+        """Family whose members aren't in file_imports gets Tampering fallback."""
+        from darnit_baseline.threat_model.ranking import assign_stride_for_cli_families
+
+        family = self._make_family("orphan", ["internal/cmd/orphan/orphan.go"])
+        assign_stride_for_cli_families([family], {})  # empty imports map
+        assert family.stride_categories == ["Tampering"]
+        assert family.needs_reviewer_attention is True

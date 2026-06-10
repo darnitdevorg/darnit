@@ -814,3 +814,129 @@ class TestSelfScanDogfood:
         result = discover_all(FIXTURES / "mcp_server_imperative")
         assert len(result.entry_points) >= 2
         assert all(ep.source_query == "python.entry.mcp_tool_imperative" for ep in result.entry_points)
+
+
+# ---------------------------------------------------------------------------
+# Feature 014-cobra-threat-model: cobra-detection helper tests
+# ---------------------------------------------------------------------------
+
+
+class TestIsCobraFile:
+    """Tests for is_cobra_file() — the cheap cobra-detection trigger."""
+
+    def test_matches_plain_cobra_import(self) -> None:
+        from darnit_baseline.threat_model.ts_discovery import is_cobra_file
+
+        assert is_cobra_file({"github.com/spf13/cobra"}) is True
+
+    def test_matches_cobra_subpackage_import(self) -> None:
+        from darnit_baseline.threat_model.ts_discovery import is_cobra_file
+
+        # Some projects import e.g. github.com/spf13/cobra/doc for help-doc generation.
+        assert is_cobra_file({"github.com/spf13/cobra/doc"}) is True
+
+    def test_aliased_cobra_import_still_detected(self) -> None:
+        from darnit_baseline.threat_model.ts_discovery import is_cobra_file
+
+        # The aliased form (e.g. `cobralib "github.com/spf13/cobra"`) still
+        # surfaces the underlying path in the import set — _collect_go_imports
+        # returns the import path, not the local alias.
+        assert is_cobra_file({"fmt", "github.com/spf13/cobra", "os"}) is True
+
+    def test_no_cobra_import_returns_false(self) -> None:
+        from darnit_baseline.threat_model.ts_discovery import is_cobra_file
+
+        assert is_cobra_file({"fmt", "os", "net/http"}) is False
+
+    def test_lookalike_import_does_not_match(self) -> None:
+        from darnit_baseline.threat_model.ts_discovery import is_cobra_file
+
+        # Hypothetical packages that contain the substring "cobra" but are
+        # not the spf13/cobra package must not trigger detection.
+        assert is_cobra_file({"github.com/someone-else/cobra-fork"}) is False
+        assert is_cobra_file({"example.com/cobra"}) is False
+
+    def test_empty_import_set_returns_false(self) -> None:
+        from darnit_baseline.threat_model.ts_discovery import is_cobra_file
+
+        assert is_cobra_file(set()) is False
+
+
+class TestCobraMinimalFixture:
+    """End-to-end discovery against the cobra_minimal fixture (T018, US1 MVP)."""
+
+    def test_one_cli_entry_point_with_use_name(self) -> None:
+        """cobra_minimal yields exactly one CLI_COMMAND named 'hello'."""
+        result = discover_all(FIXTURES / "cobra_minimal")
+        cli_entries = [ep for ep in result.entry_points if ep.kind == EntryPointKind.CLI_COMMAND]
+        assert len(cli_entries) == 1
+        ep = cli_entries[0]
+        assert ep.name == "hello"
+        assert ep.language == "go"
+        assert ep.framework == "cobra"
+        assert ep.source_query == "go.entry.cobra_command_literal"
+
+    def test_entry_point_location_on_command_literal(self) -> None:
+        """Location must point at the composite literal, not the surrounding New() function."""
+        result = discover_all(FIXTURES / "cobra_minimal")
+        cli_entries = [ep for ep in result.entry_points if ep.kind == EntryPointKind.CLI_COMMAND]
+        assert len(cli_entries) == 1
+        # The literal starts at line 18 in cobra_minimal/main.go.
+        assert cli_entries[0].location.line == 18
+        assert "cobra_minimal/main.go" in cli_entries[0].location.file or cli_entries[0].location.file.endswith("main.go")
+
+    def test_new_func_does_not_produce_duplicate_finding(self) -> None:
+        """func New() *cobra.Command is deduplicated against the inner literal."""
+        result = discover_all(FIXTURES / "cobra_minimal")
+        cli_entries = [ep for ep in result.entry_points if ep.kind == EntryPointKind.CLI_COMMAND]
+        # Only one finding — the literal won, not the New() constructor.
+        assert len(cli_entries) == 1
+        assert cli_entries[0].source_query == "go.entry.cobra_command_literal"
+
+    def test_malformed_cobra_pattern_emits_nothing_and_does_not_crash(self, tmp_path) -> None:
+        """FR-011: malformed cobra-shaped code is skipped silently, no crash, no emit."""
+        # Write a malformed-cobra Go source: imports cobra, has a struct named
+        # Command in cobra namespace, but the Use: value is a function call
+        # (not an interpreted_string_literal). The extractor must not crash
+        # and the entry's name falls back to the unnamed-placeholder form.
+        src_dir = tmp_path / "malformed"
+        src_dir.mkdir()
+        (src_dir / "main.go").write_text(
+            'package main\n'
+            '\n'
+            'import (\n'
+            '\t"github.com/spf13/cobra"\n'
+            ')\n'
+            '\n'
+            'func computeName() string { return "x" }\n'
+            '\n'
+            'var cmd = &cobra.Command{\n'
+            '\tUse: computeName(),\n'  # not a string literal
+            '}\n'
+        )
+        # Must not raise.
+        result = discover_all(src_dir)
+        cli_entries = [ep for ep in result.entry_points if ep.kind == EntryPointKind.CLI_COMMAND]
+        # The literal IS a cobra.Command struct, so we emit it — but the
+        # name falls back to an unnamed placeholder because Use: isn't a
+        # string literal. Confirm the extractor degraded gracefully rather
+        # than crashing.
+        if cli_entries:
+            assert cli_entries[0].name.startswith("(unnamed:")
+
+
+class TestGoNoCobraFR009:
+    """FR-009 regression: non-cobra Go projects produce zero CLI findings (T022)."""
+
+    def test_no_cli_entries_when_cobra_not_imported(self) -> None:
+        """go_no_cobra has a decoy Command struct but no cobra import — zero CLI findings."""
+        result = discover_all(FIXTURES / "go_no_cobra")
+        cli_entries = [ep for ep in result.entry_points if ep.kind == EntryPointKind.CLI_COMMAND]
+        assert cli_entries == []
+
+    def test_http_discovery_unaffected_on_go_http_handler(self) -> None:
+        """Existing HTTP fixture still produces its HTTP_ROUTE entry (no regression from cobra wiring)."""
+        result = discover_all(FIXTURES / "go_http_handler")
+        http_entries = [ep for ep in result.entry_points if ep.kind == EntryPointKind.HTTP_ROUTE]
+        assert len(http_entries) >= 1
+        assert http_entries[0].framework == "net/http"

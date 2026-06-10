@@ -1412,6 +1412,188 @@ def _collect_go_imports(source: bytes, tree: Any) -> set[str]:
     return imports
 
 
+def is_cobra_file(imports: set[str]) -> bool:
+    """Detect whether a Go file participates in a cobra command tree.
+
+    Triggers cobra extraction when the file imports any module under
+    ``github.com/spf13/cobra``. Aliased imports (e.g. ``cobra "github.com/spf13/cobra"``)
+    still surface in the import set as the underlying path, so this single
+    check covers both forms. Look-alike packages that merely contain the
+    substring ``cobra`` (e.g., a hypothetical ``cobra-fork/something``) do
+    not match.
+
+    Used by ``_extract_go_cli_commands`` (feature 014-cobra-threat-model) to
+    cheaply skip query evaluation on Go files that have no chance of
+    containing cobra command definitions.
+    """
+    prefix = "github.com/spf13/cobra"
+    for imp in imports:
+        if imp == prefix or imp.startswith(prefix + "/"):
+            return True
+    return False
+
+
+def _extract_cobra_command_fields(
+    body_node: Any, source: bytes
+) -> dict[str, str]:
+    """Walk a cobra.Command literal's body to extract scalar field values.
+
+    Captures ``Use:``, ``Short:``, and ``Long:`` where each is a string
+    literal. Non-string-literal values (variable references, function
+    calls) are silently skipped — the caller treats missing entries as
+    "unavailable" rather than malformed.
+
+    Returns a dict like ``{"Use": "cache", "Short": "Manage the cache"}``.
+    Fields not present in the literal are omitted from the returned dict.
+    """
+    out: dict[str, str] = {}
+    if body_node is None:
+        return out
+    # The body has children: '{' keyed_element ',' keyed_element '}' etc.
+    # We iterate named children only, which skips the punctuation.
+    for child in body_node.named_children:
+        if child.type != "keyed_element":
+            continue
+        # keyed_element shape varies across tree-sitter-go versions. The key
+        # node is the first named child; the value node is the second.
+        # Sometimes both are wrapped in literal_element nodes; sometimes
+        # the identifier appears directly. Handle both.
+        key_node = child.named_children[0] if child.named_children else None
+        value_node = child.named_children[1] if len(child.named_children) > 1 else None
+        if key_node is None or value_node is None:
+            continue
+        # Unwrap literal_element if present.
+        if key_node.type == "literal_element" and key_node.named_children:
+            key_node = key_node.named_children[0]
+        if value_node.type == "literal_element" and value_node.named_children:
+            value_node = value_node.named_children[0]
+        if key_node.type != "identifier":
+            continue
+        field_name = _text(key_node, source)
+        if field_name not in ("Use", "Short", "Long"):
+            continue
+        if value_node.type == "interpreted_string_literal":
+            out[field_name] = _strip_quotes(_text(value_node, source))
+    return out
+
+
+def _extract_cobra_use_string(body_node: Any, source: bytes) -> str | None:
+    """Convenience: extract just the ``Use:`` string. Kept for clarity."""
+    fields = _extract_cobra_command_fields(body_node, source)
+    return fields.get("Use")
+
+
+def _extract_go_cli_commands(
+    file: ScannedFile, source: bytes, tree: Any, imports: set[str],
+    metadata_sink: dict[str, dict[str, str]] | None = None,
+) -> list[DiscoveredEntryPoint]:
+    """Extract cobra-based Go CLI command entry points from a single file.
+
+    Runs two queries:
+
+    1. ``go.entry.cobra_command_literal`` for ``&cobra.Command{...}`` and
+       ``cobra.Command{...}`` composite literals — the primary signal.
+    2. ``go.entry.cobra_new_func`` for ``func New() *cobra.Command``-style
+       constructor declarations — a coarser fallback for projects that
+       wrap each command in a New-style factory.
+
+    Findings from the two queries are deduplicated by (file, line). When
+    both match the same source line (because the literal lives one line
+    below the function declaration in idiomatic code), the literal wins
+    because it carries the ``Use:`` text.
+
+    Skips files whose import set fails :func:`is_cobra_file`. Unrecognised
+    patterns (composite literals whose Use: value isn't a string literal,
+    or whose body parses unexpectedly) are silently skipped per FR-011 —
+    the extractor never raises on malformed input.
+
+    Args:
+        metadata_sink: Optional dict the caller passes in to receive
+            per-command field captures (``Short:``, ``Long:``) keyed by
+            ``f"{relpath}:{line}"``. Used by the rendering layer to
+            populate the Notes column. When ``None`` no metadata is
+            collected.
+    """
+    if not is_cobra_file(imports):
+        return []
+
+    entries: list[DiscoveredEntryPoint] = []
+
+    # Pass 1: composite literals — primary, carries the Use: text.
+    query = go_queries.QUERY_REGISTRY["go.entry.cobra_command_literal"].query
+    for caps in run_query(query, tree.root_node):
+        try:
+            pkg_node = caps["pkg"][0]
+            typename_node = caps["typename"][0]
+            body_node = caps["body"][0] if "body" in caps else None
+            whole = caps["whole"][0]
+        except (KeyError, IndexError):
+            continue  # Malformed match — skip silently (FR-011).
+        if _text(pkg_node, source) != "cobra" or _text(typename_node, source) != "Command":
+            continue  # Not actually a cobra.Command literal — skip.
+        fields = _extract_cobra_command_fields(body_node, source)
+        use_string = fields.get("Use")
+        # If Use: is missing or not a string literal, we still emit an
+        # entry point but with a fallback name derived from the file.
+        name = use_string if use_string else f"(unnamed: {file.relpath})"
+        line_no = whole.start_point[0] + 1
+        if metadata_sink is not None:
+            md: dict[str, str] = {}
+            if "Short" in fields:
+                md["short"] = fields["Short"]
+            if "Long" in fields:
+                md["long"] = fields["Long"]
+            if md:
+                metadata_sink[f"{file.relpath}:{line_no}"] = md
+        entries.append(
+            DiscoveredEntryPoint(
+                kind=EntryPointKind.CLI_COMMAND,
+                name=name,
+                location=_build_location(whole, file.relpath),
+                language="go",
+                framework="cobra",
+                route_path=None,
+                http_method=None,
+                has_auth_decorator=False,
+                source_query="go.entry.cobra_command_literal",
+            )
+        )
+
+    # Pass 2: ``func New() *cobra.Command`` constructors — only meaningful
+    # as a coarse fallback when Pass 1 found NOTHING in this file. The
+    # typical idiom is ``func New() *cobra.Command { return &cobra.Command{...} }``
+    # where Pass 1 already captured the literal; surfacing the New() too
+    # would duplicate every command in the rendered output.
+    if not entries:
+        query = go_queries.QUERY_REGISTRY["go.entry.cobra_new_func"].query
+        for caps in run_query(query, tree.root_node):
+            try:
+                pkg_node = caps["pkg"][0]
+                typename_node = caps["typename"][0]
+                func_name_node = caps["func_name"][0]
+                whole = caps["whole"][0]
+            except (KeyError, IndexError):
+                continue  # Malformed match — skip silently (FR-011).
+            if _text(pkg_node, source) != "cobra" or _text(typename_node, source) != "Command":
+                continue
+            name = f"{_text(func_name_node, source)}()"
+            entries.append(
+                DiscoveredEntryPoint(
+                    kind=EntryPointKind.CLI_COMMAND,
+                    name=name,
+                    location=_build_location(whole, file.relpath),
+                    language="go",
+                    framework="cobra",
+                    route_path=None,
+                    http_method=None,
+                    has_auth_decorator=False,
+                    source_query="go.entry.cobra_new_func",
+                )
+            )
+
+    return entries
+
+
 # ---------------------------------------------------------------------------
 # JavaScript / TypeScript extractors (minimal v1)
 # ---------------------------------------------------------------------------
@@ -1936,6 +2118,17 @@ def discover_all(
     data_stores: list[DiscoveredDataStore] = []
     call_graph: list[CallGraphNode] = []
     findings: list[CandidateFinding] = []
+    # Feature 014-cobra-threat-model: per-cobra-file imports for STRIDE
+    # heuristic at rendering time. Populated only when the cobra extractor
+    # emits at least one entry for the file.
+    cobra_file_imports: dict[str, set[str]] = {}
+    # Feature 014-cobra-threat-model: per-command metadata captures (Short,
+    # Long) keyed by f"{file_relpath}:{line}" for the Notes column.
+    cobra_command_metadata: dict[str, dict[str, str]] = {}
+    # Feature 014-cobra-threat-model: tallies for the Limitations section
+    # (FR-007). Total Go files scanned, how many imported cobra, how many
+    # cobra-importing files where no query matched (i.e., unrecognised pattern).
+    cobra_stats = {"go_files_scanned": 0, "cobra_files": 0, "cobra_files_unmatched": 0, "unmatched_examples": []}
 
     for file in scanned_files:
         try:
@@ -1980,6 +2173,29 @@ def discover_all(
             data_stores.extend(
                 _extract_go_data_stores(file, source, tree, dependency_names)
             )
+            # Feature 014-cobra-threat-model: cobra CLI commands as entry points.
+            # Cheap import-filtered extractor — no-op on Go files that don't
+            # import github.com/spf13/cobra (FR-009).
+            go_imports = _collect_go_imports(source, tree)
+            cobra_stats["go_files_scanned"] += 1
+            cobra_entries = _extract_go_cli_commands(
+                file, source, tree, go_imports, metadata_sink=cobra_command_metadata
+            )
+            entry_points.extend(cobra_entries)
+            if is_cobra_file(go_imports):
+                cobra_stats["cobra_files"] += 1
+                if not cobra_entries:
+                    # File imports cobra but no query matched — unrecognised
+                    # pattern (builder-style, factory-returned-through-indirection,
+                    # etc.). Surfaced in the Limitations section per FR-007.
+                    cobra_stats["cobra_files_unmatched"] += 1
+                    if len(cobra_stats["unmatched_examples"]) < 5:
+                        cobra_stats["unmatched_examples"].append(file.relpath)
+            # Stash the cobra file's import set for the STRIDE heuristic
+            # at rendering time. Keyed by relpath so it's stable across
+            # the pipeline.
+            if cobra_entries:
+                cobra_file_imports[file.relpath] = go_imports
         elif lang in ("javascript", "typescript", "tsx"):
             entry_points.extend(_extract_js_entry_points(file, source, tree))
         elif lang == "yaml":
@@ -2038,6 +2254,9 @@ def discover_all(
         file_scan_stats=scan_stats,
         opengrep_available=opengrep_available,
         opengrep_degraded_reason=opengrep_degraded_reason,
+        cobra_file_imports=cobra_file_imports,
+        cobra_command_metadata=cobra_command_metadata,
+        cobra_stats=cobra_stats,
     )
 
 

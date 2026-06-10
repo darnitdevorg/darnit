@@ -16,6 +16,10 @@ from __future__ import annotations
 
 import logging
 from collections import Counter
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .discovery_models import CommandFamily  # noqa: F401  (typing only)
 
 from .discovery_models import (
     CandidateFinding,
@@ -213,10 +217,109 @@ def build_rank_key_for_tests(finding: CandidateFinding) -> tuple[float, int, str
     return _rank_key(finding)
 
 
+# ---------------------------------------------------------------------------
+# STRIDE heuristic for CLI command families (feature 014-cobra-threat-model)
+# ---------------------------------------------------------------------------
+
+
+#: Ordered import-prefix → STRIDE-category mapping. First matching rule wins.
+#: Multi-category outcomes (e.g., HTTP → Spoofing + Information Disclosure)
+#: are kept as lists so downstream rendering can preserve them.
+#:
+#: Conformance with the spec's clarification Q2 (see
+#: ``specs/014-cobra-threat-model/research.md`` R3): the file's import set
+#: drives the category. The fallback "Tampering" applies to opaque commands
+#: where no rule matches — every cobra finding still gets at least one
+#: category, and every cobra finding is rendered as
+#: ``needs reviewer attention`` regardless of which rule fired.
+CLI_STRIDE_HEURISTIC: list[tuple[tuple[str, ...], list[str]]] = [
+    # Process spawning + privileged syscalls → EoP. Checked first because
+    # ``os.exec`` is a privileged-action signal stronger than mere file I/O.
+    (
+        ("os/exec", "syscall", "golang.org/x/sys/unix"),
+        ["Elevation of Privilege"],
+    ),
+    # HTTP / gRPC client or server surfaces — both Spoofing and
+    # Information Disclosure surfaces typically.
+    (
+        ("net/http", "golang.org/x/net/http2", "google.golang.org/grpc"),
+        ["Spoofing", "Information Disclosure"],
+    ),
+    # Cryptographic operations, signature primitives, attestation libs.
+    (
+        ("crypto/", "github.com/sigstore/", "github.com/in-toto/"),
+        ["Repudiation"],
+    ),
+    # File writers / filesystem mutation. Broad catch for state-mutating
+    # commands.
+    (
+        ("os.WriteFile", "os.Create", "path/filepath.Walk", "io.Copy"),
+        ["Tampering"],
+    ),
+]
+
+#: Final fallback when no heuristic rule matches the file's import set.
+#: Most CLI operations involve some form of state mutation, so Tampering
+#: is the broadest plausible default.
+CLI_STRIDE_FALLBACK: list[str] = ["Tampering"]
+
+
+def assign_cli_stride_categories(import_signatures: set[str]) -> list[str]:
+    """Map a file's import set to a STRIDE-category list per R3 heuristic.
+
+    Args:
+        import_signatures: Imports (typed module paths or symbol-like
+            descriptors such as ``os.WriteFile``) collected across the
+            family's member files.
+
+    Returns:
+        Ordered list of one or more STRIDE labels. Order matches the
+        first matching heuristic rule; multi-category outcomes preserve
+        the rule's list. Falls back to ``CLI_STRIDE_FALLBACK`` when no
+        rule matches — never returns an empty list.
+    """
+    for prefixes, categories in CLI_STRIDE_HEURISTIC:
+        for sig in import_signatures:
+            for prefix in prefixes:
+                if sig == prefix or sig.startswith(prefix):
+                    return list(categories)
+    return list(CLI_STRIDE_FALLBACK)
+
+
+def assign_stride_for_cli_families(
+    families: list[CommandFamily], file_imports: dict[str, set[str]]
+) -> None:
+    """Populate ``import_signatures`` and ``stride_categories`` on each family.
+
+    For each family, takes the union of imports across its member files
+    (looked up by relpath in ``file_imports``) and runs that union through
+    :func:`assign_cli_stride_categories`. Mutates families in place.
+
+    Args:
+        families: list of :class:`CommandFamily` to enrich.
+        file_imports: dict from relative file path to that file's import
+            set, as produced by the discovery layer (see
+            ``DiscoveryResult.cobra_file_imports``).
+    """
+    for family in families:
+        union: set[str] = set()
+        for member in family.members:
+            file_path = member.location.file
+            file_imps = file_imports.get(file_path)
+            if file_imps:
+                union.update(file_imps)
+        family.import_signatures = union
+        family.stride_categories = assign_cli_stride_categories(union)
+
+
 __all__ = [
     "severity_for",
     "confidence_for",
     "rank_findings",
     "apply_cap",
     "build_rank_key_for_tests",
+    "CLI_STRIDE_HEURISTIC",
+    "CLI_STRIDE_FALLBACK",
+    "assign_cli_stride_categories",
+    "assign_stride_for_cli_families",
 ]

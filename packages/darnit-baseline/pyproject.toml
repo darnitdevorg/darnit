@@ -52,4 +52,6 @@ packages = ["src/darnit_baseline"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "templates" = "darnit_baseline/templates"
-"src/darnit_baseline/threat_model/opengrep_rules" = "darnit_baseline/threat_model/opengrep_rules"
+# opengrep_rules/ lives under src/darnit_baseline/threat_model/ and is already
+# packaged by the `packages` entry above. Re-adding it here caused hatch to fail
+# with "A second file is being added to the wheel archive at the same path".

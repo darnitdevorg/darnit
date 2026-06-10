@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any
 
 from .models import StrideCategory  # reuse the existing enum values
 
@@ -337,6 +338,21 @@ class DiscoveryResult:
     file_scan_stats: FileScanStats | None = None
     opengrep_available: bool = False
     opengrep_degraded_reason: str | None = None
+    # Feature 014-cobra-threat-model: per-file import sets for cobra-importing
+    # Go files, collected during discovery for the STRIDE heuristic at
+    # rendering time. Keyed by ScannedFile.relpath. Empty for non-cobra
+    # files / non-Go projects.
+    cobra_file_imports: dict[str, set[str]] = field(default_factory=dict)
+    # Feature 014-cobra-threat-model: per-command metadata captured from
+    # the cobra.Command composite literal — currently the Short: text used
+    # to populate the per-subcommand Notes column in the rendered output.
+    # Keyed by ``f"{file_relpath}:{line}"`` matching the discovered entry
+    # point's location.
+    cobra_command_metadata: dict[str, dict[str, str]] = field(default_factory=dict)
+    # Feature 014-cobra-threat-model: tallies for the Limitations section
+    # (FR-007). Keys: go_files_scanned, cobra_files, cobra_files_unmatched,
+    # unmatched_examples (list of relpaths, capped at 5).
+    cobra_stats: dict[str, Any] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -414,6 +430,47 @@ class MitigationSidecar:
     entries: list[MitigationEntry] = field(default_factory=list)
 
 
+# ---------------------------------------------------------------------------
+# CLI command families (feature 014-cobra-threat-model)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class CommandFamily:
+    """A coalesced group of sibling CLI commands sharing a source-tree root.
+
+    Produced by grouping.group_by_cli_family() from a flat list of
+    DiscoveredEntryPoint instances with kind=CLI_COMMAND. In-memory only;
+    not persisted as part of the audit's output structure (the rendered
+    Markdown / SARIF / JSON files carry the same information in their own
+    schemas — see specs/014-cobra-threat-model/contracts/).
+
+    Terminology: ``command_root`` is project-scoped (one per audit run, the
+    inferred top-level prefix above all CLI command files). ``source_root``
+    is family-scoped (one per CommandFamily, the per-family directory shown
+    to reviewers in the rendered output). The two relate as
+    ``source_root == command_root + "/" + family_key``.
+    """
+
+    family_key: str
+    source_root: str
+    display_name: str
+    members: list[DiscoveredEntryPoint] = field(default_factory=list)
+    import_signatures: set[str] = field(default_factory=set)
+    stride_categories: list[str] = field(default_factory=list)
+    needs_reviewer_attention: bool = True
+
+    def __post_init__(self) -> None:
+        if "/" in self.family_key or "\\" in self.family_key:
+            raise ValueError(
+                f"CommandFamily.family_key {self.family_key!r} must not contain path separators"
+            )
+        if not self.members:
+            raise ValueError(
+                f"CommandFamily {self.family_key!r} must contain at least one member"
+            )
+
+
 __all__ = [
     "Location",
     "CodeSnippet",
@@ -433,4 +490,5 @@ __all__ = [
     "MitigationStatus",
     "MitigationEntry",
     "MitigationSidecar",
+    "CommandFamily",
 ]
