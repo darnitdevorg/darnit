@@ -940,3 +940,54 @@ class TestGoNoCobraFR009:
         http_entries = [ep for ep in result.entry_points if ep.kind == EntryPointKind.HTTP_ROUTE]
         assert len(http_entries) >= 1
         assert http_entries[0].framework == "net/http"
+
+
+class TestVendoredCobraExcluded:
+    """T038a — vendored cobra files under `vendor/` are not discovered.
+
+    `cobra_subcommand/vendor/cobra-thirdparty/cobra.go` declares cobra
+    commands with `Use: "vendored-fake"` and `Use: "vendored-sub"`. The
+    pipeline's `BASELINE_EXCLUDED_DIRS` includes `vendor/`, so those files
+    MUST NOT be scanned. If discovery surfaces either name the exclusion
+    has regressed (covers the spec.md "Generated or vendored cobra code"
+    edge case).
+    """
+
+    def test_vendored_cobra_names_absent_from_entry_points(self) -> None:
+        result = discover_all(FIXTURES / "cobra_subcommand")
+        cli_names = {
+            ep.name
+            for ep in result.entry_points
+            if ep.kind == EntryPointKind.CLI_COMMAND
+        }
+        assert "vendored-fake" not in cli_names
+        assert "vendored-sub" not in cli_names
+
+    def test_vendored_files_absent_from_member_paths(self) -> None:
+        """Defence-in-depth: even if a name happened to collide, no member
+        should reference a path under `vendor/`."""
+        result = discover_all(FIXTURES / "cobra_subcommand")
+        vendor_members = [
+            ep
+            for ep in result.entry_points
+            if ep.kind == EntryPointKind.CLI_COMMAND
+            and "vendor/" in ep.location.file.replace("\\", "/")
+        ]
+        assert vendor_members == [], (
+            f"vendor/ files leaked into CLI discovery: {[m.location.file for m in vendor_members]}"
+        )
+
+    def test_real_subcommand_families_still_discovered(self) -> None:
+        """Sanity: the legitimate cache/sign/verify families still appear,
+        so we know the test is exercising real discovery rather than a
+        broken pipeline."""
+        result = discover_all(FIXTURES / "cobra_subcommand")
+        cli_names = {
+            ep.name
+            for ep in result.entry_points
+            if ep.kind == EntryPointKind.CLI_COMMAND
+        }
+        # cache, sign, verify, init, delete plus the root command 'demo'
+        assert "cache" in cli_names
+        assert "sign" in cli_names
+        assert "verify" in cli_names

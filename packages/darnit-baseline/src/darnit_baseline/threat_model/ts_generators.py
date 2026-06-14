@@ -33,6 +33,7 @@ from .discovery_models import (
     DiscoveredDataStore,
     DiscoveredEntryPoint,
     DiscoveryResult,
+    EntryPointKind,
     TrimmedOverflow,
 )
 from .models import StrideCategory
@@ -575,28 +576,17 @@ def _render_limitations(result: DiscoveryResult, overflow: TrimmedOverflow | Non
 # ---------------------------------------------------------------------------
 
 
-def _render_cli_entry_points(families: list[CommandFamily]) -> list[str]:
-    """Render the ``## Entry Points`` / ``### CLI Entry Points`` section.
+def _render_cli_subsection(families: list[CommandFamily]) -> list[str]:
+    """Render only the ``### CLI Entry Points`` subsection (no parent heading).
 
-    Returns the empty list when ``families`` is empty (no placeholder is
-    emitted; see FR-014 and the output contract). Otherwise produces:
-
-    - ``## Entry Points`` parent heading
-    - ``### CLI Entry Points`` subsection
-    - One ``#### Family: <display_name>`` block per family with source
-      root, subcommand list, STRIDE categories, confidence line,
-      location table, and refinement-note paragraph.
-
-    Families are pre-sorted by ``group_by_cli_family`` (members count
-    desc, family_key asc) for deterministic snapshot output.
-
-    Note: this is a localised additive section. Existing HTTP rendering
-    in ``_render_asset_inventory`` is unchanged; a follow-up will also
-    move HTTP entry points under ``## Entry Points``.
+    Returns ``[]`` when ``families`` is empty so the caller can decide whether
+    to emit the ``## Entry Points`` parent. Families are pre-sorted by
+    ``group_by_cli_family`` (members count desc, family_key asc) for
+    deterministic snapshot output.
     """
     if not families:
         return []
-    md: list[str] = ["## Entry Points", "", "### CLI Entry Points", ""]
+    md: list[str] = ["### CLI Entry Points", ""]
     for family in families:
         md.append(f"#### Family: {family.display_name}")
         md.append("")
@@ -625,6 +615,68 @@ def _render_cli_entry_points(families: list[CommandFamily]) -> list[str]:
     return md
 
 
+def _render_http_subsection(result: DiscoveryResult) -> list[str]:
+    """Render only the ``### HTTP Entry Points`` subsection (no parent heading).
+
+    Returns ``[]`` when no HTTP routes were discovered. Renders a compact
+    table of every HTTP_ROUTE entry point (framework + method + path +
+    location), capped at 30 rows with an overflow marker (matching the
+    existing Asset Inventory cap).
+    """
+    http_eps = [
+        ep for ep in result.entry_points if ep.kind == EntryPointKind.HTTP_ROUTE
+    ]
+    if not http_eps:
+        return []
+    md: list[str] = ["### HTTP Entry Points", ""]
+    md.append("| Framework | Method | Path | Location |")
+    md.append("|-----------|--------|------|----------|")
+    for ep in http_eps[:30]:
+        path_or_name = ep.route_path or ep.name
+        md.append(
+            f"| {ep.framework or '—'} | {ep.http_method or '—'} | "
+            f"`{path_or_name}` | `{ep.location.file}:{ep.location.line}` |"
+        )
+    if len(http_eps) > 30:
+        md.append(f"| | | | *{len(http_eps) - 30} more entries not shown* |")
+    md.append("")
+    return md
+
+
+def _render_entry_points_section(
+    result: DiscoveryResult, cli_families: list[CommandFamily] | None
+) -> list[str]:
+    """Render the combined ``## Entry Points`` section per FR-014.
+
+    Emits ``## Entry Points`` with ``### HTTP Entry Points`` and/or
+    ``### CLI Entry Points`` underneath. Each subsection is included only
+    when its source data is non-empty; if both are empty, the whole
+    ``## Entry Points`` parent is omitted (no empty placeholder).
+    """
+    http_block = _render_http_subsection(result)
+    cli_block = _render_cli_subsection(cli_families or [])
+    if not http_block and not cli_block:
+        return []
+    md: list[str] = ["## Entry Points", ""]
+    md.extend(http_block)
+    md.extend(cli_block)
+    return md
+
+
+def _render_cli_entry_points(families: list[CommandFamily]) -> list[str]:
+    """[Compat] Render ``## Entry Points`` + ``### CLI Entry Points`` together.
+
+    Kept so direct callers and tests that only have CLI families can produce
+    the legacy parent+subsection shape without going through the combined
+    HTTP/CLI section. New code should prefer
+    :func:`_render_entry_points_section`, which also handles HTTP routes.
+    """
+    sub = _render_cli_subsection(families)
+    if not sub:
+        return []
+    return ["## Entry Points", ""] + sub
+
+
 def generate_markdown_threat_model(
     repo_path: str,
     result: DiscoveryResult,
@@ -650,7 +702,7 @@ def generate_markdown_threat_model(
     md.extend(_render_executive_summary(repo_path, result, capped_findings))
     md.extend(_render_asset_inventory(result))
     md.extend(_render_dfd(result, options))
-    md.extend(_render_cli_entry_points(cli_families or []))
+    md.extend(_render_entry_points_section(result, cli_families))
     md.extend(_render_stride_threats(capped_findings))
     md.extend(_render_attack_chains(result))
     md.extend(_render_recommendations(capped_findings))
@@ -659,11 +711,24 @@ def generate_markdown_threat_model(
     return "\n".join(md) + "\n"
 
 
+#: Synthetic SARIF ruleId for cobra CLI command families.
+_CLI_FAMILY_RULE_ID = "cobra.cli_family"
+
+
 def generate_sarif_threat_model(
     result: DiscoveryResult,
     capped_findings: list[CandidateFinding],
+    cli_families: list[CommandFamily] | None = None,
 ) -> str:
-    """Produce a SARIF 2.1.0 document describing the capped findings."""
+    """Produce a SARIF 2.1.0 document describing the capped findings.
+
+    Args:
+        cli_families: Pre-grouped + STRIDE-categorised CommandFamily list
+            (feature 014-cobra-threat-model, T033). When non-empty, one
+            SARIF ``result`` is emitted per family with ``level: "note"``
+            per the output contract. Per-subcommand emission is avoided
+            on purpose — the family is the unit of finding.
+    """
 
     rules_index: dict[str, int] = {}
     rules: list[dict[str, Any]] = []
@@ -733,6 +798,92 @@ def generate_sarif_threat_model(
             }
         results.append(entry)
 
+    # Feature 014-cobra-threat-model (T033): one SARIF result per CommandFamily.
+    # SARIF level is always "note" — heuristic CLI findings should not trip
+    # strict-mode consumers that gate on warning/error.
+    for family in cli_families or []:
+        if _CLI_FAMILY_RULE_ID not in rules_index:
+            rules_index[_CLI_FAMILY_RULE_ID] = len(rules)
+            rules.append(
+                {
+                    "id": _CLI_FAMILY_RULE_ID,
+                    "name": _CLI_FAMILY_RULE_ID,
+                    "shortDescription": {
+                        "text": "CLI command family (cobra)"
+                    },
+                    "fullDescription": {
+                        "text": (
+                            "A group of sibling cobra commands sharing a "
+                            "source-tree root. STRIDE categories are assigned "
+                            "by an import-based heuristic; reviewers must "
+                            "confirm or recategorise each family."
+                        )
+                    },
+                    "defaultConfiguration": {"level": "note"},
+                }
+            )
+        rule_idx = rules_index[_CLI_FAMILY_RULE_ID]
+
+        # Pick the primary location: the parent literal's file if a member
+        # lives directly at the family's source_root, otherwise the first
+        # member by sort order for determinism.
+        target_dir = family.source_root.rstrip("/")
+        members_sorted = sorted(
+            family.members, key=lambda m: (m.location.file, m.location.line)
+        )
+        primary = next(
+            (
+                m
+                for m in members_sorted
+                if m.location.file.replace("\\", "/").rsplit("/", 1)[0]
+                == target_dir
+            ),
+            members_sorted[0],
+        )
+        related = [m for m in members_sorted if m is not primary]
+
+        message = (
+            f"CLI command family `{family.display_name}` "
+            f"({len(family.members)} subcommand"
+            f"{'s' if len(family.members) != 1 else ''}, "
+            f"STRIDE: {', '.join(family.stride_categories) or '—'})"
+        )
+        entry = {
+            "ruleId": _CLI_FAMILY_RULE_ID,
+            "ruleIndex": rule_idx,
+            "level": "note",
+            "message": {"text": message},
+            "locations": [
+                {
+                    "physicalLocation": {
+                        "artifactLocation": {"uri": primary.location.file},
+                        "region": {"startLine": primary.location.line},
+                    }
+                }
+            ],
+            "properties": {
+                "kind": "cli_command",
+                "family_key": family.family_key,
+                "display_name": family.display_name,
+                "source_root": family.source_root,
+                "stride_categories": list(family.stride_categories),
+                "import_signatures": sorted(family.import_signatures),
+                "needs_reviewer_attention": family.needs_reviewer_attention,
+                "source_query": "go.entry.cobra_command_literal",
+            },
+        }
+        if related:
+            entry["relatedLocations"] = [
+                {
+                    "physicalLocation": {
+                        "artifactLocation": {"uri": m.location.file},
+                        "region": {"startLine": m.location.line},
+                    }
+                }
+                for m in related
+            ]
+        results.append(entry)
+
     sarif = {
         "version": "2.1.0",
         "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
@@ -770,8 +921,19 @@ def generate_json_summary(
     result: DiscoveryResult,
     capped_findings: list[CandidateFinding],
     overflow: TrimmedOverflow | None,
+    cli_families: list[CommandFamily] | None = None,
 ) -> str:
-    """Produce a JSON serialization of the full discovery result."""
+    """Produce a JSON serialization of the full discovery result.
+
+    Args:
+        cli_families: Pre-grouped + STRIDE-categorised CommandFamily list
+            (feature 014-cobra-threat-model, T034). When non-empty, each
+            family is appended to the ``findings`` array as a structured
+            entry with ``kind: "cli_command"`` per the output contract.
+            Consumers that only want vulnerability findings can filter
+            by absence of ``kind`` (or presence of ``category``); CLI
+            families intentionally omit the vulnerability-finding fields.
+    """
     payload: dict[str, Any] = {
         "entry_points": [
             {
@@ -823,6 +985,33 @@ def generate_json_summary(
                 "has_data_flow": f.data_flow is not None,
             }
             for f in capped_findings
+        ]
+        + [
+            # T034: cobra CLI families are emitted as structured entries in
+            # the same array per the output contract. The shape is disjoint
+            # from vulnerability findings (no severity/confidence/category);
+            # consumers disambiguate via the `kind` field.
+            {
+                "kind": "cli_command",
+                "family_key": family.family_key,
+                "display_name": family.display_name,
+                "source_root": family.source_root,
+                "members": [
+                    {
+                        "name": m.name,
+                        "location": {
+                            "file": m.location.file,
+                            "line": m.location.line,
+                        },
+                    }
+                    for m in family.members
+                ],
+                "stride_categories": list(family.stride_categories),
+                "import_signatures": sorted(family.import_signatures),
+                "needs_reviewer_attention": family.needs_reviewer_attention,
+                "source_query": "go.entry.cobra_command_literal",
+            }
+            for family in (cli_families or [])
         ],
         "file_scan_stats": _stats_to_dict(result),
         "trimmed_overflow": (

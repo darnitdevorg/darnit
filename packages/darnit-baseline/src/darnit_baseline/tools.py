@@ -996,7 +996,12 @@ def generate_threat_model(
         Threat model report with identified threats and recommendations,
         or a confirmation message if output_path is provided.
     """
-    from darnit_baseline.threat_model.ranking import apply_cap, rank_findings
+    from darnit_baseline.threat_model.grouping import group_by_cli_family
+    from darnit_baseline.threat_model.ranking import (
+        apply_cap,
+        assign_stride_for_cli_families,
+        rank_findings,
+    )
     from darnit_baseline.threat_model.ts_discovery import discover_all
     from darnit_baseline.threat_model.ts_generators import (
         GeneratorOptions,
@@ -1014,10 +1019,24 @@ def generate_threat_model(
         ranked = rank_findings(result.findings)
         emitted, overflow = apply_cap(ranked, max_findings=50)
 
+        # Feature 014-cobra-threat-model: build CLI command families once
+        # and pass to all three generators (Markdown / SARIF / JSON) so the
+        # single-file output path emits the same cobra section as the
+        # multi-file pipeline (threat_model/remediation.py).
+        cli_families = group_by_cli_family(result.entry_points)
+        if cli_families:
+            assign_stride_for_cli_families(
+                cli_families, result.cobra_file_imports
+            )
+
         if output_format == "sarif":
-            content = generate_sarif_threat_model(result, emitted)
+            content = generate_sarif_threat_model(
+                result, emitted, cli_families=cli_families
+            )
         elif output_format == "json":
-            content = generate_json_summary(result, emitted, overflow)
+            content = generate_json_summary(
+                result, emitted, overflow, cli_families=cli_families
+            )
         else:
             options = GeneratorOptions(detail_level=detail_level)
             content = generate_markdown_threat_model(
@@ -1026,6 +1045,7 @@ def generate_threat_model(
                 capped_findings=emitted,
                 overflow=overflow,
                 options=options,
+                cli_families=cli_families,
             )
 
         if output_path:

@@ -801,3 +801,319 @@ class TestLimitationsCobraCounters:
         )
         out = "\n".join(_render_limitations(result, None))
         assert "imported `github.com/spf13/cobra`" not in out
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 — US3 demo polish (T035–T038): cobra_mixed_http end-to-end
+# ---------------------------------------------------------------------------
+
+
+def _render_cobra_mixed_http() -> tuple[str, str, str, list]:
+    """Run the full pipeline on the cobra_mixed_http fixture.
+
+    Helper for the Phase 5 tests; returns ``(markdown, sarif_json, raw_json,
+    cli_families)`` so each test can assert against the shape it cares about
+    without re-running discovery.
+    """
+    from darnit_baseline.threat_model.grouping import group_by_cli_family
+    from darnit_baseline.threat_model.ranking import (
+        apply_cap,
+        assign_stride_for_cli_families,
+        rank_findings,
+    )
+    from darnit_baseline.threat_model.ts_discovery import discover_all
+    from darnit_baseline.threat_model.ts_generators import (
+        GeneratorOptions,
+        generate_json_summary,
+        generate_markdown_threat_model,
+        generate_sarif_threat_model,
+    )
+
+    root = FIXTURES / "cobra_mixed_http"
+    result = discover_all(root)
+    ranked = rank_findings(result.findings)
+    emitted, overflow = apply_cap(ranked, max_findings=50)
+    fams = group_by_cli_family(result.entry_points)
+    if fams:
+        assign_stride_for_cli_families(fams, result.cobra_file_imports)
+    md = generate_markdown_threat_model(
+        repo_path=str(root),
+        result=result,
+        capped_findings=emitted,
+        overflow=overflow,
+        options=GeneratorOptions(),
+        cli_families=fams,
+    )
+    sarif = generate_sarif_threat_model(result, emitted, cli_families=fams)
+    raw = generate_json_summary(result, emitted, overflow, cli_families=fams)
+    return md, sarif, raw, fams
+
+
+class TestCobraMixedHttpDocument:
+    """T035 — structural snapshot of the rendered cobra_mixed_http document.
+
+    Asserts the contract-required shape (`## Entry Points` parent with both
+    `### HTTP Entry Points` and `### CLI Entry Points` subsections, in the
+    documented order) rather than freezing the entire document — matches the
+    US2 pattern from TestCliNotesColumn.
+    """
+
+    def test_parent_section_contains_both_subsections_in_order(self) -> None:
+        md, _, _, _ = _render_cobra_mixed_http()
+        # Anchor on the leading newline so `## Entry Points` doesn't false-match
+        # the unrelated `### Entry Points` heading inside Asset Inventory.
+        assert md.count("\n## Entry Points\n") == 1
+        assert "### HTTP Entry Points" in md
+        assert "### CLI Entry Points" in md
+        # HTTP precedes CLI per the contract's documented section order
+        assert md.index("### HTTP Entry Points") < md.index("### CLI Entry Points")
+        # Both subsections come under the single `## Entry Points` parent
+        ep_parent = md.index("\n## Entry Points\n")
+        assert ep_parent < md.index("### HTTP Entry Points")
+
+    def test_http_subsection_lists_healthz_route(self) -> None:
+        md, _, _, _ = _render_cobra_mixed_http()
+        http_start = md.index("### HTTP Entry Points")
+        cli_start = md.index("### CLI Entry Points")
+        http_block = md[http_start:cli_start]
+        assert "`/healthz`" in http_block
+        assert "cmd/serve/serve.go" in http_block
+        assert "net/http" in http_block
+
+    def test_cli_subsection_lists_four_families(self) -> None:
+        md, _, _, _ = _render_cobra_mixed_http()
+        cli_block = md[md.index("### CLI Entry Points"):]
+        # mixed (root), serve, status, version — four families
+        assert "#### Family: mixed" in cli_block
+        assert "#### Family: serve" in cli_block
+        assert "#### Family: status" in cli_block
+        assert "#### Family: version" in cli_block
+
+    def test_serve_family_has_http_stride_categories(self) -> None:
+        """The serve family's import set includes net/http → Spoofing +
+        Information Disclosure per the heuristic table."""
+        md, _, _, _ = _render_cobra_mixed_http()
+        # Find the serve family block (from its heading to the next heading)
+        serve_idx = md.index("#### Family: serve")
+        next_idx = md.index("####", serve_idx + 1)
+        serve_block = md[serve_idx:next_idx]
+        assert "Spoofing" in serve_block
+        assert "Information Disclosure" in serve_block
+
+
+class TestEntryPointSubsectionSuppression:
+    """T036 — assert empty subsections are suppressed per FR-014.
+
+    `cobra_minimal` has no HTTP route → no `### HTTP Entry Points`.
+    `go_http_handler` has no cobra commands → no `### CLI Entry Points`.
+    """
+
+    def test_cobra_only_omits_http_subsection(self) -> None:
+        from darnit_baseline.threat_model.grouping import group_by_cli_family
+        from darnit_baseline.threat_model.ranking import (
+            apply_cap,
+            assign_stride_for_cli_families,
+            rank_findings,
+        )
+        from darnit_baseline.threat_model.ts_discovery import discover_all
+        from darnit_baseline.threat_model.ts_generators import (
+            GeneratorOptions,
+            generate_markdown_threat_model,
+        )
+
+        root = FIXTURES / "cobra_minimal"
+        result = discover_all(root)
+        ranked = rank_findings(result.findings)
+        emitted, overflow = apply_cap(ranked, max_findings=50)
+        fams = group_by_cli_family(result.entry_points)
+        if fams:
+            assign_stride_for_cli_families(fams, result.cobra_file_imports)
+        md = generate_markdown_threat_model(
+            repo_path=str(root),
+            result=result,
+            capped_findings=emitted,
+            overflow=overflow,
+            options=GeneratorOptions(),
+            cli_families=fams,
+        )
+        assert "### CLI Entry Points" in md  # cobra present
+        assert "### HTTP Entry Points" not in md  # no HTTP — must be omitted
+
+    def test_http_only_omits_cli_subsection(self) -> None:
+        from darnit_baseline.threat_model.grouping import group_by_cli_family
+        from darnit_baseline.threat_model.ranking import (
+            apply_cap,
+            assign_stride_for_cli_families,
+            rank_findings,
+        )
+        from darnit_baseline.threat_model.ts_discovery import discover_all
+        from darnit_baseline.threat_model.ts_generators import (
+            GeneratorOptions,
+            generate_markdown_threat_model,
+        )
+
+        root = FIXTURES / "go_http_handler"
+        result = discover_all(root)
+        ranked = rank_findings(result.findings)
+        emitted, overflow = apply_cap(ranked, max_findings=50)
+        fams = group_by_cli_family(result.entry_points)
+        if fams:
+            assign_stride_for_cli_families(fams, result.cobra_file_imports)
+        md = generate_markdown_threat_model(
+            repo_path=str(root),
+            result=result,
+            capped_findings=emitted,
+            overflow=overflow,
+            options=GeneratorOptions(),
+            cli_families=fams,
+        )
+        assert "### HTTP Entry Points" in md  # HTTP present
+        assert "### CLI Entry Points" not in md  # no cobra — must be omitted
+
+    def test_parent_section_omitted_when_both_subsections_empty(self) -> None:
+        """If neither HTTP routes nor CLI families exist, the entire
+        `## Entry Points` parent is omitted (no empty placeholder)."""
+        from darnit_baseline.threat_model.discovery_models import (
+            DiscoveryResult,
+            FileScanStats,
+        )
+        from darnit_baseline.threat_model.ts_generators import (
+            GeneratorOptions,
+            generate_markdown_threat_model,
+        )
+
+        empty_result = DiscoveryResult(
+            entry_points=[],
+            data_stores=[],
+            call_graph=[],
+            findings=[],
+            file_scan_stats=FileScanStats(
+                total_files_seen=0,
+                excluded_dir_count=0,
+                unsupported_file_count=0,
+                in_scope_files=0,
+                by_language={},
+                shallow_mode=False,
+                shallow_threshold=500,
+            ),
+            opengrep_available=False,
+        )
+        md = generate_markdown_threat_model(
+            repo_path=".",
+            result=empty_result,
+            capped_findings=[],
+            overflow=None,
+            options=GeneratorOptions(),
+            cli_families=None,
+        )
+        # Anchor on the leading newline so the asset-inventory `### Entry Points`
+        # heading (which renders even when empty) doesn't false-match.
+        assert "\n## Entry Points\n" not in md
+        assert "### HTTP Entry Points" not in md
+        assert "### CLI Entry Points" not in md
+
+
+class TestSarifCobraFamilies:
+    """T037 — one SARIF result per CommandFamily, level: note."""
+
+    def test_one_result_per_family(self) -> None:
+        _, sarif_text, _, fams = _render_cobra_mixed_http()
+        sarif = json.loads(sarif_text)
+        cli_results = [
+            r
+            for r in sarif["runs"][0]["results"]
+            if r["ruleId"] == "cobra.cli_family"
+        ]
+        assert len(cli_results) == len(fams) == 4
+
+    def test_all_cli_results_level_note(self) -> None:
+        _, sarif_text, _, _ = _render_cobra_mixed_http()
+        sarif = json.loads(sarif_text)
+        cli_results = [
+            r
+            for r in sarif["runs"][0]["results"]
+            if r["ruleId"] == "cobra.cli_family"
+        ]
+        assert cli_results, "fixture must produce at least one cobra.cli_family result"
+        assert all(r["level"] == "note" for r in cli_results), (
+            "heuristic findings must not warning/error to avoid tripping "
+            "strict-mode SARIF consumers"
+        )
+
+    def test_rule_registered_once_with_note_default(self) -> None:
+        _, sarif_text, _, _ = _render_cobra_mixed_http()
+        sarif = json.loads(sarif_text)
+        rules = sarif["runs"][0]["tool"]["driver"]["rules"]
+        cli_rules = [r for r in rules if r["id"] == "cobra.cli_family"]
+        assert len(cli_rules) == 1, "rule must be registered exactly once"
+        assert cli_rules[0]["defaultConfiguration"]["level"] == "note"
+
+    def test_result_carries_family_metadata_in_properties(self) -> None:
+        _, sarif_text, _, _ = _render_cobra_mixed_http()
+        sarif = json.loads(sarif_text)
+        serve = next(
+            r
+            for r in sarif["runs"][0]["results"]
+            if r["ruleId"] == "cobra.cli_family"
+            and r["properties"]["family_key"] == "serve"
+        )
+        props = serve["properties"]
+        assert props["kind"] == "cli_command"
+        assert props["display_name"] == "serve"
+        assert props["source_root"] == "cmd/serve/"
+        assert "Spoofing" in props["stride_categories"]
+        assert "Information Disclosure" in props["stride_categories"]
+        assert props["needs_reviewer_attention"] is True
+        assert props["source_query"] == "go.entry.cobra_command_literal"
+
+
+class TestJsonCobraFamilies:
+    """T038 — JSON `findings` array carries cobra families per the contract."""
+
+    def test_cli_command_entries_match_family_count(self) -> None:
+        _, _, raw, fams = _render_cobra_mixed_http()
+        payload = json.loads(raw)
+        cli_entries = [f for f in payload["findings"] if f.get("kind") == "cli_command"]
+        assert len(cli_entries) == len(fams) == 4
+
+    def test_cli_entry_schema_matches_contract(self) -> None:
+        _, _, raw, _ = _render_cobra_mixed_http()
+        payload = json.loads(raw)
+        serve = next(
+            f
+            for f in payload["findings"]
+            if f.get("kind") == "cli_command" and f["family_key"] == "serve"
+        )
+        # Required keys per output-document-contract.md
+        for key in (
+            "kind",
+            "family_key",
+            "display_name",
+            "source_root",
+            "members",
+            "stride_categories",
+            "import_signatures",
+            "needs_reviewer_attention",
+            "source_query",
+        ):
+            assert key in serve, f"contract field missing: {key}"
+        # Members carry name + location.{file,line}
+        assert serve["members"], "serve family must have ≥1 member"
+        m0 = serve["members"][0]
+        assert m0["name"] == "serve"
+        assert m0["location"]["file"] == "cmd/serve/serve.go"
+        assert isinstance(m0["location"]["line"], int)
+
+    def test_vulnerability_findings_disjoint_from_cli_entries(self) -> None:
+        """Vulnerability findings (category-bearing) and cobra families
+        (kind-bearing) coexist in `findings` but never overlap in shape."""
+        _, _, raw, _ = _render_cobra_mixed_http()
+        payload = json.loads(raw)
+        for entry in payload["findings"]:
+            if entry.get("kind") == "cli_command":
+                assert "category" not in entry
+                assert "severity" not in entry
+            else:
+                # Vulnerability findings carry the original schema
+                assert "category" in entry
+                assert "severity" in entry
