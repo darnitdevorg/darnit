@@ -39,7 +39,7 @@ jobs:
       is_prerelease: ${{ steps.parse-tag.outputs.is_prerelease }}
     steps:
       - name: Checkout repository at tagged commit
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v4
         with:
           # Tag refs check out the tagged commit directly; no extra history
           # needed.
@@ -195,7 +195,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v4
         with:
           persist-credentials: false
 
@@ -365,7 +365,7 @@ jobs:
       compressed_size_bytes: ${{ steps.size.outputs.compressed_size_bytes }}
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v4
         with:
           persist-credentials: false
 
@@ -575,7 +575,7 @@ jobs:
           - { runner: ubuntu-22.04-arm, os: linux, arch: arm64 }
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v4
         with:
           persist-credentials: false
 
@@ -872,7 +872,7 @@ jobs:
       contents: write   # upload the zip to the GH Release
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v4
         with:
           persist-credentials: false
 
@@ -968,7 +968,7 @@ jobs:
       issues: write     # create release-failure issue
     steps:
       - name: Checkout (for RECOVERY.md links)
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v4
         with:
           persist-credentials: false
 
