@@ -774,6 +774,9 @@ class TestSelfScanDogfood:
         mcp_tools = [ep for ep in result.entry_points if ep.kind == EntryPointKind.MCP_TOOL]
         assert len(mcp_tools) >= 2, f"Expected at least 2 MCP_TOOL entry points; got {len(mcp_tools)}"
 
+        ml_pipelines = [ep for ep in result.entry_points if ep.kind == EntryPointKind.ML_PIPELINE]
+        assert len(ml_pipelines) >= 1, f"Expected at least 1 ML_PIPELINE entry point; got {len(ml_pipelines)}"
+
     def test_subprocess_scores_differentiated_sc001b(self, result) -> None:
         """SC-001b: subprocess findings must NOT all have identical scores.
 
@@ -807,6 +810,9 @@ class TestSelfScanDogfood:
             f"Expected findings in at least 2 STRIDE categories; "
             f"got {len(categories_with_findings)}: "
             f"{[c.value for c in categories_with_findings]}"
+        )
+        assert StrideCategory.ELEVATION_OF_PRIVILEGE in categories_with_findings, (
+            "Expected ELEVATION_OF_PRIVILEGE findings from ML pipeline deserialization"
         )
 
     def test_imperative_fixture_in_curated_suite_sc002a(self) -> None:

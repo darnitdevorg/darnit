@@ -47,34 +47,34 @@ def _make_finding(
 
 class TestComputeFingerprint:
     def test_deterministic(self, tmp_path: Path) -> None:
-        f = _make_finding()
+        f = _make_finding(file=str(tmp_path / "src/app.py"))
         fp1 = compute_fingerprint(f, tmp_path)
         fp2 = compute_fingerprint(f, tmp_path)
         assert fp1 == fp2
 
     def test_starts_with_sha256_prefix(self, tmp_path: Path) -> None:
-        fp = compute_fingerprint(_make_finding(), tmp_path)
+        fp = compute_fingerprint(_make_finding(file=str(tmp_path / "src/app.py")), tmp_path)
         assert fp.startswith("sha256:")
         assert len(fp) == len("sha256:") + 16
 
     def test_changes_with_file_path(self, tmp_path: Path) -> None:
-        f1 = _make_finding(file="src/a.py")
-        f2 = _make_finding(file="src/b.py")
+        f1 = _make_finding(file=str(tmp_path / "src/a.py"))
+        f2 = _make_finding(file=str(tmp_path / "src/b.py"))
         assert compute_fingerprint(f1, tmp_path) != compute_fingerprint(f2, tmp_path)
 
     def test_changes_with_snippet(self, tmp_path: Path) -> None:
-        f1 = _make_finding(snippet_lines=("x = foo()",))
-        f2 = _make_finding(snippet_lines=("x = bar()",))
+        f1 = _make_finding(file=str(tmp_path / "src/app.py"), snippet_lines=("x = foo()",))
+        f2 = _make_finding(file=str(tmp_path / "src/app.py"), snippet_lines=("x = bar()",))
         assert compute_fingerprint(f1, tmp_path) != compute_fingerprint(f2, tmp_path)
 
     def test_stable_across_whitespace_reformatting(self, tmp_path: Path) -> None:
-        f1 = _make_finding(snippet_lines=("  x = foo()",))
-        f2 = _make_finding(snippet_lines=("x = foo()",))
+        f1 = _make_finding(file=str(tmp_path / "src/app.py"), snippet_lines=("  x = foo()",))
+        f2 = _make_finding(file=str(tmp_path / "src/app.py"), snippet_lines=("x = foo()",))
         assert compute_fingerprint(f1, tmp_path) == compute_fingerprint(f2, tmp_path)
 
     def test_changes_with_query_id(self, tmp_path: Path) -> None:
-        f1 = _make_finding(query_id="python.sink.a")
-        f2 = _make_finding(query_id="python.sink.b")
+        f1 = _make_finding(file=str(tmp_path / "src/app.py"), query_id="python.sink.a")
+        f2 = _make_finding(file=str(tmp_path / "src/app.py"), query_id="python.sink.b")
         assert compute_fingerprint(f1, tmp_path) != compute_fingerprint(f2, tmp_path)
 
 

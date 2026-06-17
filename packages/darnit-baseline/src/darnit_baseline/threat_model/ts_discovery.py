@@ -1882,7 +1882,7 @@ def _tampering_findings_from_ml_pipelines(
         severity_tamp = severity_for(StrideCategory.TAMPERING, has_taint_trace=False)
         confidence = confidence_for(FindingSource.TREE_SITTER_STRUCTURAL, query_intent="bare_call")
         snippet = _build_snippet(source, ep.location.line)
-        
+
         findings.append(
             CandidateFinding(
                 category=StrideCategory.TAMPERING,
