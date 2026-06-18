@@ -15,12 +15,12 @@ A practical guide for the four most common governance actions once the charter a
 ## Removing a TSC member (voluntary resignation)
 
 1. The departing member opens a PR removing their row from `TECHNICAL-STEERING-COMMITTEE.md`.
-2. A non-departing TSC member approves the PR (acknowledgment, not a vote — voluntary resignations need no vote).
+2. A non-departing TSC member approves the PR (acknowledgment, not a vote -- voluntary resignations need no vote).
 3. The departing member or any TSC member merges.
 
 ## Removing a TSC member (for cause)
 
-1. Any TSC member opens a public GitHub Issue titled `TSC: remove <Name> for cause` describing the reason (inactivity, conduct, etc.). Per D7, "inactivity" is not a fixed numeric threshold — it's a discretionary judgment captured in the issue body.
+1. Any TSC member opens a public GitHub Issue titled `TSC: remove <Name> for cause` describing the reason (inactivity, conduct, etc.). Per D7, "inactivity" is not a fixed numeric threshold -- it's a discretionary judgment captured in the issue body.
 2. The same member (or another) opens a PR removing the affected member's row from `TECHNICAL-STEERING-COMMITTEE.md`, linking the issue.
 3. **Approval threshold**: majority of the *other* current TSC members (the member under review does not vote on their own removal), per FR-006.
 4. Once the threshold is met, merge. The merge commit + the linked issue form the audit trail.
@@ -32,7 +32,7 @@ A practical guide for the four most common governance actions once the charter a
 1. Open a PR modifying `CHARTER.md` (or `TECHNICAL-STEERING-COMMITTEE.md` for roster format changes, though those typically don't require an amendment vote).
 2. Open a companion GitHub Issue titled `Charter amendment: <one-line summary>` with the rationale and a link to the PR. Announce the proposal on community channels (mailing list, Slack) per the LF template's transparency obligation.
 3. **Approval threshold**: two-thirds of the *entire* TSC (not just attendees), per FR-004 and FR-010. Recorded as PR approvals on `CHARTER.md`.
-4. After the threshold is met, allow a brief comment window (≥ a few days is typical; the LF template does not mandate an exact length) before merging, so the community has time to weigh in.
+4. After the threshold is met, allow a brief comment window (>= a few days is typical; the LF template does not mandate an exact length) before merging, so the community has time to weigh in.
 5. Merge.
 
 ## Recording a TSC decision that doesn't modify a file

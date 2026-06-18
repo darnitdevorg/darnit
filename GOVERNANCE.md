@@ -48,7 +48,7 @@ A specialized contributor role for those who:
 
 ## Day-to-Day PR Process
 
-The following thresholds apply to routine PR activity. Changes to *governance itself* — this document, the [Charter](./CHARTER.md), or the [TSC roster](./TECHNICAL-STEERING-COMMITTEE.md) — follow the TSC voting rules in the Charter instead.
+The following thresholds apply to routine PR activity. Changes to *governance itself* -- this document, the [Charter](./CHARTER.md), or the [TSC roster](./TECHNICAL-STEERING-COMMITTEE.md) -- follow the TSC voting rules in the Charter instead.
 
 ### Minor Changes
 

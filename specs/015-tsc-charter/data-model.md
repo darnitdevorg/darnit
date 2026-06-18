@@ -2,9 +2,9 @@
 
 **Feature**: 015-tsc-charter | **Date**: 2026-06-17
 
-This feature ships no runtime data — the "data model" here describes the Markdown document shapes the charter and roster files MUST conform to. Each shape is testable against the spec's success criteria.
+This feature ships no runtime data -- the "data model" here describes the Markdown document shapes the charter and roster files MUST conform to. Each shape is testable against the spec's success criteria.
 
-## Entity 1 — Charter document (`CHARTER.md`)
+## Entity 1 -- Charter document (`CHARTER.md`)
 
 The charter follows the LF Projects Technical Charter template structure, mirroring GUAC and gittuf.
 
@@ -36,7 +36,7 @@ The charter follows the LF Projects Technical Charter template structure, mirror
 | Voting thresholds consistent | Every numeric threshold in narrative text matches the Voting section (SC-005). |
 | License notice present | Document contains "CC-BY-4.0" verbatim once. |
 
-## Entity 2 — Roster (`TECHNICAL-STEERING-COMMITTEE.md`)
+## Entity 2 -- Roster (`TECHNICAL-STEERING-COMMITTEE.md`)
 
 The roster is a parseable list. Each member is exactly one row in a Markdown table; adding or removing a member is a one-line edit (FR-011).
 
@@ -75,24 +75,24 @@ For the rules that govern membership, voting, and amendments, see
 | All four required columns populated for every row | No empty cells in `Name`, `Affiliation`, `Category`, `GitHub` (SC-003). |
 | `Category` is one of the enum values | Each row's `Category` matches `industry\|academia\|independent`. |
 | `GitHub` handle prefixed with `@` | Regex `^@[A-Za-z0-9-]+$` per row. |
-| At most one chair | `grep -c "| chair " TECHNICAL-STEERING-COMMITTEE.md` ≤ 1. |
+| At most one chair | `grep -c "| chair " TECHNICAL-STEERING-COMMITTEE.md` <= 1. |
 | Initial roster matches user input | Row 1: Michael Lieberman / Kusari / industry / @mlieberman85; Row 2: Justin Cappos / New York University / academia / @JustinCappos. |
 
 ### State transitions
 
 ```text
               propose                       majority of TSC               edit roster row
-[Candidate] ────────────► [Pending] ────────────────────────► [Accepted] ─────────────────► [Member]
-                                            (PR approvals or                    │
-                                             issue/discussion                   │ resign / removed-for-cause
-                                             vote per FR-013)                   │ (majority of other TSC members)
-                                                                                ▼
+[Candidate] ------------> [Pending] ------------------------> [Accepted] -----------------> [Member]
+                                            (PR approvals or                    |
+                                             issue/discussion                   | resign / removed-for-cause
+                                             vote per FR-013)                   | (majority of other TSC members)
+                                                                                v
                                                                           [Departed]
 ```
 
 State transitions are recorded by edits to the roster file plus the corresponding PR/issue thread. No separate state-tracking artifact is required.
 
-## Entity 3 — Governance index (`GOVERNANCE.md`)
+## Entity 3 -- Governance index (`GOVERNANCE.md`)
 
 A short discoverability index pointing to the two documents above. Not a substitute for either.
 
@@ -108,13 +108,13 @@ A short discoverability index pointing to the two documents above. Not a substit
 | Rule | Check |
 |---|---|
 | Both target documents exist | The two links resolve to files in the same directory. |
-| File is short | ≤30 lines of Markdown (it is an index, not content). |
+| File is short | <=30 lines of Markdown (it is an index, not content). |
 
 ## Cross-document invariants
 
 | Invariant | Documents involved | Check |
 |---|---|---|
-| Roster cited in charter matches actual roster file | `CHARTER.md` ↔ `TECHNICAL-STEERING-COMMITTEE.md` | The charter's Section 2 names the roster file by path; it does not duplicate member rows. |
+| Roster cited in charter matches actual roster file | `CHARTER.md` <-> `TECHNICAL-STEERING-COMMITTEE.md` | The charter's Section 2 names the roster file by path; it does not duplicate member rows. |
 | License posture consistent | All three new files | Each contains "CC-BY-4.0" notice in a comment, footer, or stated license line. |
 | Vote-recording mechanism cited once | `CHARTER.md` only | FR-013's mechanism is stated in the Voting section of the charter; not duplicated elsewhere. |
-| No member's name appears outside the roster | `CHARTER.md` ↔ `TECHNICAL-STEERING-COMMITTEE.md` | A search for a member's GitHub handle in `CHARTER.md` returns zero matches (the charter refers to "the TSC", not to individuals — so a future member change requires editing one file, satisfying FR-011 and SC-004). |
+| No member's name appears outside the roster | `CHARTER.md` <-> `TECHNICAL-STEERING-COMMITTEE.md` | A search for a member's GitHub handle in `CHARTER.md` returns zero matches (the charter refers to "the TSC", not to individuals -- so a future member change requires editing one file, satisfying FR-011 and SC-004). |

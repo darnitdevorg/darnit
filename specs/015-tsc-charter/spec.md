@@ -12,8 +12,8 @@
 
 ### Session 2026-06-17
 
-- Q: How are TSC votes mechanically recorded and made auditable? → A: GitHub PR approvals on the affected file (roster, charter, policy) are the canonical vote record; for decisions without a file artifact, a GitHub Issue/Discussion with explicit "+1/-1" approval comments from TSC members serves the same role. Mirrors gittuf's pattern.
-- Q: What is the threshold for removal-for-cause, and how is "inactivity" defined? → A: Apply gittuf's defaults for both. Removal-for-cause requires majority approval of the *other* TSC members (the member under review does not vote on their own removal), at the same level as ordinary decisions rather than a supermajority. Inactivity is NOT defined by a fixed numeric threshold; it is a discretionary judgment by the remaining TSC members, initiated via a public issue or PR and resolved by the removal-for-cause threshold above.
+- Q: How are TSC votes mechanically recorded and made auditable? -> A: GitHub PR approvals on the affected file (roster, charter, policy) are the canonical vote record; for decisions without a file artifact, a GitHub Issue/Discussion with explicit "+1/-1" approval comments from TSC members serves the same role. Mirrors gittuf's pattern.
+- Q: What is the threshold for removal-for-cause, and how is "inactivity" defined? -> A: Apply gittuf's defaults for both. Removal-for-cause requires majority approval of the *other* TSC members (the member under review does not vote on their own removal), at the same level as ordinary decisions rather than a supermajority. Inactivity is NOT defined by a fixed numeric threshold; it is a discretionary judgment by the remaining TSC members, initiated via a public issue or PR and resolved by the removal-for-cause threshold above.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -21,7 +21,7 @@
 
 A new contributor, downstream consumer, or OpenSSF/LF representative needs to know who is empowered to make binding technical decisions for the darnit project, how they got there, and how they can be removed. They open the charter in the repo and find a clear, self-contained document modeled on the LF Projects Technical Charter pattern used by GUAC and gittuf.
 
-**Why this priority**: Without a published charter, the project has no documented authority structure. This is the minimum viable artifact — even with no other governance scaffolding (working groups, sub-projects, meeting cadence), a charter + roster lets the project make binding decisions, accept upstream/foundation engagement, and demonstrate that maintenance is not a single person.
+**Why this priority**: Without a published charter, the project has no documented authority structure. This is the minimum viable artifact -- even with no other governance scaffolding (working groups, sub-projects, meeting cadence), a charter + roster lets the project make binding decisions, accept upstream/foundation engagement, and demonstrate that maintenance is not a single person.
 
 **Independent Test**: A reader unfamiliar with the project can answer, from the charter alone, the following questions: Who is on the TSC today? What is the TSC's scope? How are decisions made? How are members added and removed? What is the escalation path?
 
@@ -51,7 +51,7 @@ The community and foundation reviewers need to see that the TSC is not single-ve
 
 A maintainer wants to propose adding a new TSC member, or a member wants to step down. The charter spells out the mechanism (who initiates, who votes, what threshold, what notification window) so the change can be made via a PR with a clear approval path rather than ad-hoc decision-making.
 
-**Why this priority**: Without this, the founding roster ossifies and every membership change becomes a one-off debate. It is not P1 because the charter is still useful at v1 with just the addition/removal rules from the LF template — but documenting it explicitly is what makes the governance actually run.
+**Why this priority**: Without this, the founding roster ossifies and every membership change becomes a one-off debate. It is not P1 because the charter is still useful at v1 with just the addition/removal rules from the LF template -- but documenting it explicitly is what makes the governance actually run.
 
 **Independent Test**: Given the charter, a maintainer can write a PR that adds or removes a TSC member and point to the exact charter clauses that authorize the change.
 
@@ -67,7 +67,7 @@ A maintainer wants to propose adding a new TSC member, or a member wants to step
 - **Two-member quorum**: With only two founding members, a 50% quorum / majority rule means a single member can carry a vote. The charter should either (a) accept this as a transitional posture until the TSC grows, or (b) require unanimity from the founding members until a third member joins. The default chosen here is (a) with an explicit assumption that the TSC will recruit a third member promptly; see Assumptions.
 - **Affiliation drift**: If a member's employer changes such that the industry/academia balance flips, the roster must be updated, but the charter does not force resignation. The roster's affiliation column is the source of truth.
 - **Tie votes**: With an even number of members and no chair tiebreaker, a tie on a non-amendment vote means the motion fails. Amendments and license exceptions already require a two-thirds supermajority, which is unaffected.
-- **Removal-for-cause in a two-member TSC**: Under FR-006, the member under review does not vote on their own removal, so a majority of the *other* members means a majority of one — i.e., the remaining member alone can effect a removal. This is a known concentration risk of the gittuf-aligned threshold while the TSC has only two members and is one of several reasons the spec assumes a third member will be recruited promptly. The risk is accepted at v1 as a transitional posture rather than mitigated with a bespoke two-member supermajority rule.
+- **Removal-for-cause in a two-member TSC**: Under FR-006, the member under review does not vote on their own removal, so a majority of the *other* members means a majority of one -- i.e., the remaining member alone can effect a removal. This is a known concentration risk of the gittuf-aligned threshold while the TSC has only two members and is one of several reasons the spec assumes a third member will be recruited promptly. The risk is accepted at v1 as a transitional posture rather than mitigated with a bespoke two-member supermajority rule.
 - **Chair vacancy**: The charter permits but does not require a chair. If no chair is elected, the TSC operates without one; foundation liaison falls to any member designated by simple majority on an ad-hoc basis.
 - **External escalation**: If the TSC deadlocks or quorum cannot be reached for an extended period, the LF Projects Series Manager / OpenSSF TAC is the escalation path, per the LF template.
 
@@ -86,7 +86,7 @@ A maintainer wants to propose adding a new TSC member, or a member wants to step
 - **FR-009**: The charter MUST be licensed under CC-BY-4.0 and that license MUST be stated in or alongside the document itself.
 - **FR-010**: The charter MUST describe how it is amended, with the amendment threshold matching the two-thirds supermajority of the entire TSC defined in FR-004.
 - **FR-011**: The roster MUST be structured so that adding or removing a member is a single localized edit (one row added/removed) requiring no restructuring of surrounding prose.
-- **FR-012**: The charter MUST be discoverable from the repository root — either by living at a conventional top-level path (e.g., `CHARTER.md`, `GOVERNANCE.md`) or by being linked from the README and/or a top-level `GOVERNANCE.md` pointer.
+- **FR-012**: The charter MUST be discoverable from the repository root -- either by living at a conventional top-level path (e.g., `CHARTER.md`, `GOVERNANCE.md`) or by being linked from the README and/or a top-level `GOVERNANCE.md` pointer.
 - **FR-013**: The charter MUST identify the canonical record of a TSC vote. For decisions that modify a tracked file (the roster, the charter itself, or any other policy file in the repository), the GitHub Pull Request approvals on that file ARE the vote record and MUST satisfy the thresholds in FR-004. For decisions that do not modify a file (e.g., approving a representative, endorsing an external statement), a GitHub Issue or Discussion thread containing explicit `+1` / `-1` / `+0` comments from TSC members serves the same role and MUST be linked from any subsequent artifact that depends on the decision.
 
 ### Key Entities

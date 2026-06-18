@@ -16,7 +16,7 @@ The Project is governed by a Technical Steering Committee (the "TSC"). The TSC o
 
 The current voting members of the TSC are listed in [TECHNICAL-STEERING-COMMITTEE.md](./TECHNICAL-STEERING-COMMITTEE.md), with affiliation and industry-or-academia category disclosed for each member.
 
-The TSC has no fixed maximum size. Membership is not time-bounded — members serve until resignation or removal under Section 2.5.
+The TSC has no fixed maximum size. Membership is not time-bounded -- members serve until resignation or removal under Section 2.5.
 
 ### 2.2 Responsibilities
 
@@ -30,7 +30,7 @@ The TSC is responsible for oversight of the Project, including:
 - Voting on cross-Project technical matters; and
 - Amending this Charter under Section 8.
 
-The TSC MAY delegate operational responsibilities — such as day-to-day Pull Request review and release execution — to maintainers under separate community documentation. Such delegation does not transfer the TSC's authority; the TSC remains the source of policy.
+The TSC MAY delegate operational responsibilities -- such as day-to-day Pull Request review and release execution -- to maintainers under separate community documentation. Such delegation does not transfer the TSC's authority; the TSC remains the source of policy.
 
 ### 2.3 Chair
 
@@ -46,13 +46,13 @@ Existing TSC members vote on the nomination by approving or declining the Pull R
 
 A TSC member MAY resign at any time by opening a Pull Request that removes their row from [TECHNICAL-STEERING-COMMITTEE.md](./TECHNICAL-STEERING-COMMITTEE.md). A resignation Pull Request does not require a vote; acknowledgment by another TSC member who merges the Pull Request suffices.
 
-A TSC member MAY be removed for cause — including, but not limited to, inactivity or a serious violation of the Project's Code of Conduct — by a vote of the *other* current TSC members. The member under review MUST NOT vote on their own removal. Removal for cause requires the approval of a majority of the other current TSC members, at the same level as ordinary TSC decisions.
+A TSC member MAY be removed for cause -- including, but not limited to, inactivity or a serious violation of the Project's Code of Conduct -- by a vote of the *other* current TSC members. The member under review MUST NOT vote on their own removal. Removal for cause requires the approval of a majority of the other current TSC members, at the same level as ordinary TSC decisions.
 
 For the purposes of this Section, "inactivity" is not defined by a fixed numeric threshold (such as a specific number of months without contribution). Inactivity is a discretionary judgment by the remaining TSC members, initiated by a public GitHub Issue or Pull Request describing the basis for the proposed removal and resolved by the removal-for-cause threshold above.
 
 ### 2.6 Transitional Note on a Two-Member TSC
 
-While the TSC has only two voting members, "a majority of the other current TSC members" arithmetically resolves to a majority of one — meaning that a single remaining member may effect a removal under Section 2.5. The TSC recognizes this as a known concentration risk of the rule in Section 2.5 and intends to recruit a third member promptly to restore meaningful pluralism in removal decisions. This Section is informational; it does not modify the threshold in Section 2.5.
+While the TSC has only two voting members, "a majority of the other current TSC members" arithmetically resolves to a majority of one -- meaning that a single remaining member may effect a removal under Section 2.5. The TSC recognizes this as a known concentration risk of the rule in Section 2.5 and intends to recruit a third member promptly to restore meaningful pluralism in removal decisions. This Section is informational; it does not modify the threshold in Section 2.5.
 
 ## 3. TSC Voting
 
@@ -68,7 +68,7 @@ The TSC's goal is to operate as a consensus-based community. When a decision can
 
 ### 3.2 Recording Votes
 
-Votes on decisions that modify a tracked file — the roster, this Charter, or any other policy file in the repository — are recorded by GitHub Pull Request approvals on the affected file. The Pull Request review state and the resulting merge commit constitute the canonical vote record.
+Votes on decisions that modify a tracked file -- the roster, this Charter, or any other policy file in the repository -- are recorded by GitHub Pull Request approvals on the affected file. The Pull Request review state and the resulting merge commit constitute the canonical vote record.
 
 Votes on decisions that do not modify a file (for example, approving a representative to an external community, or endorsing an external statement on the Project's behalf) are recorded in a GitHub Issue or Discussion thread. Each TSC member casts a vote as an explicit comment of `+1`, `-1`, or `+0` on a single comment line, so that the tally is unambiguous to a casual reader and parseable by tooling. Subsequent artifacts that depend on the decision MUST link to the recording Issue or Discussion.
 
@@ -99,7 +99,7 @@ The Project maintains the following community assets:
 - **Discussions**: <https://github.com/kusari-oss/darnit/discussions>
 - **Security reports**: see [SECURITY.md](./SECURITY.md)
 
-Additional assets — for example, mailing lists, chat channels, or meeting venues — MAY be added by TSC decision and announced through the Project's existing channels.
+Additional assets -- for example, mailing lists, chat channels, or meeting venues -- MAY be added by TSC decision and announced through the Project's existing channels.
 
 ## 6. General Rules and Operations
 
@@ -115,7 +115,7 @@ The Project ships the following classes of work under the following licenses:
 
 - **Source code** is licensed under the Apache License, version 2.0.
 - **Documentation**, including this Charter, is licensed under the Creative Commons Attribution 4.0 International License (CC-BY-4.0).
-- **Data** distributed by the Project is licensed under the Community Data License Agreement — Permissive, version 2.0 (CDLA-Permissive-2.0).
+- **Data** distributed by the Project is licensed under the Community Data License Agreement -- Permissive, version 2.0 (CDLA-Permissive-2.0).
 
 Contributions to the Project MUST be made under terms compatible with these licenses. Exceptions to the license stack require a vote of the TSC under Section 3.1 with the two-thirds threshold.
 
