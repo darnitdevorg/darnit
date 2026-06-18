@@ -63,6 +63,8 @@ The current voting members of the darnit Technical Steering Committee are:
 |------|-------------|----------|--------|------|
 | Michael Lieberman | Kusari | industry | @mlieberman85 | member |
 | Justin Cappos | New York University | academia | @JustinCappos | member |
+| Stephen Augustus | Bloomberg | industry | @justaugustus | member |
+| Adolfo Garcia Veytia | Carabiner | industry | @puerco | member |
 
 For the rules that govern membership, voting, and amendments, see
 [CHARTER.md](./CHARTER.md).
@@ -76,7 +78,7 @@ For the rules that govern membership, voting, and amendments, see
 | `Category` is one of the enum values | Each row's `Category` matches `industry\|academia\|independent`. |
 | `GitHub` handle prefixed with `@` | Regex `^@[A-Za-z0-9-]+$` per row. |
 | At most one chair | `grep -c "| chair " TECHNICAL-STEERING-COMMITTEE.md` <= 1. |
-| Initial roster matches user input | Row 1: Michael Lieberman / Kusari / industry / @mlieberman85; Row 2: Justin Cappos / New York University / academia / @JustinCappos. |
+| Initial roster matches user input | Four founding rows in joining order: Michael Lieberman / Kusari / industry / @mlieberman85; Justin Cappos / New York University / academia / @JustinCappos; Stephen Augustus / Bloomberg / industry / @justaugustus; Adolfo Garcia Veytia / Carabiner / industry / @puerco. |
 
 ### State transitions
 

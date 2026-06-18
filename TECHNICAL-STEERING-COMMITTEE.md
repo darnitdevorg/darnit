@@ -8,5 +8,7 @@ The current voting members of the darnit Technical Steering Committee are:
 |------|-------------|----------|--------|------|
 | Michael Lieberman | Kusari | industry | @mlieberman85 | member |
 | Justin Cappos | New York University | academia | @JustinCappos | member |
+| Stephen Augustus | Bloomberg | industry | @justaugustus | member |
+| Adolfo Garcia Veytia | Carabiner | industry | @puerco | member |
 
 For the rules that govern membership, voting, and amendments, see [CHARTER.md](./CHARTER.md).

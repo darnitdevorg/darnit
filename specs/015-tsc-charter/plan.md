@@ -32,10 +32,10 @@ Vote recording follows gittuf's pattern (clarified in spec session 2026-06-17): 
 - Charter document content licensed under CC-BY-4.0 (per FR-009).
 - Charter MUST be discoverable from the repository root (per FR-012) -- a top-level `GOVERNANCE.md` index is the chosen entry point.
 - Roster format MUST be parseable as a single edit per member change (per FR-011).
-- No bespoke two-member quorum rule (per spec Assumptions); the transitional posture is accepted.
+- No bespoke two-member quorum rule (per spec Assumptions); the transitional two-member posture was accepted at initial draft time and rendered moot on 2026-06-18 when the founding TSC was expanded to four members before adoption.
 
 **Scale/Scope**:
-- Two founding members; expected near-term growth to >=3.
+- Four founding members (Lieberman, Cappos, Augustus, Garcia Veytia) as of 2026-06-18. Initial draft posited two founding members; the founding roster was expanded before adoption.
 - One charter document, one roster file, one governance index.
 - ~600-1200 lines of Markdown total expected.
 

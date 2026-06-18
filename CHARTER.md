@@ -50,10 +50,6 @@ A TSC member MAY be removed for cause -- including, but not limited to, inactivi
 
 For the purposes of this Section, "inactivity" is not defined by a fixed numeric threshold (such as a specific number of months without contribution). Inactivity is a discretionary judgment by the remaining TSC members, initiated by a public GitHub Issue or Pull Request describing the basis for the proposed removal and resolved by the removal-for-cause threshold above.
 
-### 2.6 Transitional Note on a Two-Member TSC
-
-While the TSC has only two voting members, "a majority of the other current TSC members" arithmetically resolves to a majority of one -- meaning that a single remaining member may effect a removal under Section 2.5. The TSC recognizes this as a known concentration risk of the rule in Section 2.5 and intends to recruit a third member promptly to restore meaningful pluralism in removal decisions. This Section is informational; it does not modify the threshold in Section 2.5.
-
 ## 3. TSC Voting
 
 The TSC's goal is to operate as a consensus-based community. When a decision cannot be reached by consensus, the TSC MAY decide the matter by a vote conducted in accordance with this Section.

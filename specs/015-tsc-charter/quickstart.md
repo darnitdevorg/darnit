@@ -25,7 +25,7 @@ A practical guide for the four most common governance actions once the charter a
 3. **Approval threshold**: majority of the *other* current TSC members (the member under review does not vote on their own removal), per FR-006.
 4. Once the threshold is met, merge. The merge commit + the linked issue form the audit trail.
 
-**Note on the two-member regime**: while the TSC has only two members, "majority of the other members" means a majority of one. The remaining member alone can effect a removal. This is a known transitional posture (see spec edge case "Removal-for-cause in a two-member TSC") and is one reason to prioritize recruiting a third member.
+**Note**: an earlier draft of this guide warned that with only two TSC members, "majority of the other members" collapses to a majority of one. That concentration risk was specific to a two-member regime and became moot when the founding TSC was expanded to four members before adoption (see `spec.md` Clarifications, Session 2026-06-18). With four members, "majority of the other members" means at least two of three.
 
 ## Amending the charter
 
