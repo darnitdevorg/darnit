@@ -214,7 +214,7 @@ uv run ruff format .
 ## Spec-Implementation Synchronization
 
 The framework design is governed by the authoritative specification at:
-`openspec/specs/framework-design/spec.md`
+`docs/architecture/framework-design.md`
 
 ### Sync Enforcement Rules
 
@@ -223,28 +223,18 @@ The framework design is governed by the authoritative specification at:
 2. **Spec Changes Require Validation**: When modifying framework behavior:
    - Update the spec first
    - Run `uv run python scripts/validate_sync.py --verbose`
-   - Ensure pass types in code match spec definitions
+   - Ensure handler names in code match `docs/architecture/framework-design.md`
 
-3. **Generated Docs Must Stay Fresh**: After spec changes:
-   - Run `uv run python scripts/generate_docs.py`
-   - Commit any changes to `docs/generated/`
-
-4. **CI Enforces Sync**: PRs are blocked if:
+3. **CI Enforces Sync**: PRs are blocked if:
    - TOML configs don't validate against framework schema
-   - Pass types in spec don't match implementation
-   - Generated docs would change
+   - Handler names in code don't match those documented in `docs/architecture/framework-design.md`
+   - The SARIF formatter references the catalog (it should read from TOML only)
 
 ### Validation Commands
 
 ```bash
-# Validate spec-implementation sync
+# Validate spec-implementation sync (TOML schema, handler-name registry, SARIF source)
 uv run python scripts/validate_sync.py --verbose
-
-# Regenerate docs from spec
-uv run python scripts/generate_docs.py
-
-# Check if docs are stale
-git diff docs/generated/
 ```
 
 ### TOML-First Architecture
@@ -372,3 +362,9 @@ else:
 
 ## Recent Changes
 - 012-packaging-distribution: Added Python 3.11/3.12 (workspace targets) plus bash for release scripts and GitHub Actions YAML + `shiv` (binary builder), `cosign` (image + binary signing), `syft` (SBOM generation), `docker buildx` (multi-arch images), `gh` CLI (release creation), Sigstore-action (PyPI wheel signing via `pypa/gh-action-pypi-publish`). No new runtime dependencies in any darnit Python package.
+
+<!-- SPECKIT START -->
+For additional context about technologies to be used, project structure,
+shell commands, and other important information, read the current plan:
+[`specs/016-openspec-migration/plan.md`](specs/016-openspec-migration/plan.md)
+<!-- SPECKIT END -->

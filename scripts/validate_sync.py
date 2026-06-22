@@ -3,8 +3,9 @@
 
 This script validates that:
 1. TOML configs validate against the framework schema
-2. Framework code matches the specification
-3. Generated docs are up to date
+2. Built-in handler names declared in docs/architecture/framework-design.md
+   match handler registrations in packages/darnit/src/darnit/sieve/builtin_handlers.py
+3. The SARIF formatter loads from the TOML framework config (no catalog references)
 
 Exit Codes:
     0 = All validations pass
@@ -30,12 +31,9 @@ from typing import NamedTuple
 
 # Project paths
 PROJECT_ROOT = Path(__file__).parent.parent
-SPEC_PATH = PROJECT_ROOT / "openspec" / "specs" / "framework-design" / "spec.md"
+SPEC_PATH = PROJECT_ROOT / "docs" / "architecture" / "framework-design.md"
 TOML_PATH = PROJECT_ROOT / "packages" / "darnit-baseline" / "openssf-baseline.toml"
-FRAMEWORK_SCHEMA_PATH = (
-    PROJECT_ROOT / "packages" / "darnit" / "src" / "darnit" / "config" / "framework_schema.py"
-)
-GENERATED_DOCS_DIR = PROJECT_ROOT / "docs" / "generated"
+FRAMEWORK_SCHEMA_PATH = PROJECT_ROOT / "packages" / "darnit" / "src" / "darnit" / "config" / "framework_schema.py"
 
 
 class ValidationResult(NamedTuple):
@@ -110,46 +108,6 @@ def validate_toml_schema() -> ValidationResult:
         )
 
 
-def validate_spec_exists() -> ValidationResult:
-    """Validate that the framework spec exists.
-
-    Returns:
-        ValidationResult with pass/fail status
-    """
-    if not SPEC_PATH.exists():
-        return ValidationResult(
-            passed=False,
-            message="Framework spec not found",
-            details=f"Expected at: {SPEC_PATH}",
-        )
-
-    # Check spec has required sections
-    content = SPEC_PATH.read_text()
-
-    required_sections = [
-        "TOML Schema",
-        "Built-in Pass Types",
-        "Sieve Orchestrator",
-    ]
-
-    missing = []
-    for section in required_sections:
-        if section not in content:
-            missing.append(section)
-
-    if missing:
-        return ValidationResult(
-            passed=False,
-            message="Spec missing required sections",
-            details="\n".join(f"  - {s}" for s in missing),
-        )
-
-    return ValidationResult(
-        passed=True,
-        message="Framework spec exists and has required sections",
-    )
-
-
 def validate_pass_types_sync() -> ValidationResult:
     """Validate that built-in handler names in spec match handler registrations.
 
@@ -200,60 +158,13 @@ def validate_pass_types_sync() -> ValidationResult:
     )
 
 
-def validate_docs_freshness() -> ValidationResult:
-    """Validate that generated docs are up to date.
-
-    Returns:
-        ValidationResult (warning level, not blocking)
-    """
-    if not GENERATED_DOCS_DIR.exists():
-        return ValidationResult(
-            passed=False,
-            message="Generated docs directory not found",
-            details="Run: python scripts/generate_docs.py",
-            is_warning=True,
-        )
-
-    expected_files = ["ARCHITECTURE.md", "SCHEMA_REFERENCE.md", "USAGE_GUIDE.md"]
-    missing = []
-
-    for filename in expected_files:
-        if not (GENERATED_DOCS_DIR / filename).exists():
-            missing.append(filename)
-
-    if missing:
-        return ValidationResult(
-            passed=False,
-            message="Generated docs incomplete",
-            details="\n".join(f"  - Missing: {f}" for f in missing),
-            is_warning=True,
-        )
-
-    # Note: We don't check timestamps here because git doesn't preserve mtime.
-    # The CI doc-generation job handles staleness by regenerating and checking
-    # for git diff, which is more reliable.
-
-    return ValidationResult(
-        passed=True,
-        message="Generated docs are present",
-    )
-
-
 def validate_sarif_reads_from_toml() -> ValidationResult:
     """Validate that SARIF formatter reads from TOML, not catalog.
 
     Returns:
         ValidationResult with pass/fail status
     """
-    sarif_path = (
-        PROJECT_ROOT
-        / "packages"
-        / "darnit-baseline"
-        / "src"
-        / "darnit_baseline"
-        / "formatters"
-        / "sarif.py"
-    )
+    sarif_path = PROJECT_ROOT / "packages" / "darnit-baseline" / "src" / "darnit_baseline" / "formatters" / "sarif.py"
 
     if not sarif_path.exists():
         return ValidationResult(
@@ -297,10 +208,8 @@ def run_validations(verbose: bool = False) -> int:
     """
     validations = [
         ("TOML Schema", validate_toml_schema),
-        ("Spec Exists", validate_spec_exists),
         ("Pass Types Sync", validate_pass_types_sync),
         ("SARIF Source", validate_sarif_reads_from_toml),
-        ("Docs Freshness", validate_docs_freshness),
     ]
 
     results = []
@@ -352,9 +261,7 @@ def main():
         action="store_true",
         help="Only validate changed files (for pre-commit)",
     )
-    parser.add_argument(
-        "--verbose", "-v", action="store_true", help="Show detailed output"
-    )
+    parser.add_argument("--verbose", "-v", action="store_true", help="Show detailed output")
     args = parser.parse_args()
 
     exit_code = run_validations(verbose=args.verbose)

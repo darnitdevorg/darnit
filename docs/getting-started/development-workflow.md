@@ -66,21 +66,7 @@ uv run python scripts/validate_sync.py --verbose
 
 This checks that the framework-design spec matches the implementation. If you've changed framework behavior, update the spec first.
 
-### 4. Regenerate docs
-
-```bash
-uv run python scripts/generate_docs.py
-```
-
-Check if docs changed:
-
-```bash
-git diff docs/generated/
-```
-
-If they did, include the changes in your commit.
-
-### 5. Rebase from upstream
+### 4. Rebase from upstream
 
 ```bash
 git fetch upstream
@@ -130,11 +116,10 @@ docs: Add getting started guide for contributors
 
 If you're modifying framework behavior (sieve pipeline, plugin protocol, configuration), follow this order:
 
-1. **Update the spec first**: Edit `openspec/specs/framework-design/spec.md`
+1. **Update the spec first**: Edit `docs/architecture/framework-design.md`
 2. **Validate sync**: `uv run python scripts/validate_sync.py --verbose`
 3. **Implement the change**: Modify the code to match the spec
-4. **Regenerate docs**: `uv run python scripts/generate_docs.py`
-5. **Commit spec, code, and docs together**
+4. **Commit spec and code together**
 
 ## Code Style
 

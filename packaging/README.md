@@ -79,8 +79,6 @@ Mirror the four configurations above on `test.pypi.org`. Used for pre-release (`
    uv run ruff check .
    uv run pytest tests/ --ignore=tests/integration/ -q
    uv run python scripts/validate_sync.py --verbose
-   uv run python scripts/generate_docs.py
-   git diff --exit-code docs/generated/   # no diff allowed
    ```
 5. **Commit and push the version bump:**
    ```bash

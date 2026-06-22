@@ -1,7 +1,35 @@
 <!--
 Sync Impact Report
 ==================
-Version change: 1.0.0 → 1.1.0
+Version change: 1.1.0 -> 1.2.0
+Modified sections:
+  - Development Workflow: item 3 (Spec sync) reworded to match the
+    narrower scope of the trimmed validate_sync.py (TOML schema,
+    handler-name registry, SARIF source); item 4 (Generated docs)
+    removed entirely (scripts/generate_docs.py and docs/generated/
+    were deleted in feature 016-openspec-migration); item 5
+    (Upstream rebase) renumbered to item 4. Closing sentence
+    "regenerate docs" clause removed.
+Modified principles: none (the five Core Principles I-V are
+  unchanged in substance).
+Added sections: none
+Removed sections: none
+Authoritative spec relocation: framework-design spec moved from
+  openspec/specs/framework-design/spec.md to
+  docs/architecture/framework-design.md. The constitution did not
+  cite the openspec path by name in narrative text; the implicit
+  reference in Workflow item 3 ("framework-design spec") now resolves
+  to the new path automatically.
+Templates requiring updates:
+  - .specify/templates/plan-template.md -- no changes needed
+  - .specify/templates/spec-template.md -- no changes needed
+  - .specify/templates/tasks-template.md -- no changes needed
+Follow-up TODOs: none
+==================
+
+Sync Impact Report
+==================
+Version change: 1.0.0 -> 1.1.0
 Modified principles:
   - IV. Never Guess User Values: expanded to explicitly permit
     confidence-based auto-acceptance when configured in TOML.
@@ -11,10 +39,10 @@ Modified principles:
 Added sections: none
 Removed sections: none
 Templates requiring updates:
-  - .specify/templates/plan-template.md ✅ no changes needed
-  - .specify/templates/spec-template.md ✅ no changes needed
-  - .specify/templates/tasks-template.md ✅ no changes needed
-  - specs/001-tiered-control-automation/ ✅ FR-004 already aligned
+  - .specify/templates/plan-template.md -- no changes needed
+  - .specify/templates/spec-template.md -- no changes needed
+  - .specify/templates/tasks-template.md -- no changes needed
+  - specs/001-tiered-control-automation/ -- FR-004 already aligned
 Follow-up TODOs: none
 ==================
 -->
@@ -130,14 +158,14 @@ All changes MUST pass the following before merge:
 2. **Tests**: `uv run pytest tests/ --ignore=tests/integration/ -q`
    — all pass.
 3. **Spec sync**: `uv run python scripts/validate_sync.py --verbose`
-   — framework-design spec matches implementation.
-4. **Generated docs**: `uv run python scripts/generate_docs.py` then
-   check `git diff docs/generated/` — commit any changes.
-5. **Upstream rebase**: `git fetch upstream && git rebase upstream/main`
+   -- validates TOML schema, handler-name registry consistency
+   against `docs/architecture/framework-design.md`, and that the
+   SARIF formatter reads from TOML (not from a deprecated catalog).
+4. **Upstream rebase**: `git fetch upstream && git rebase upstream/main`
    before pushing (fork-based workflow).
 
-Spec changes MUST update the spec first, then validate sync, then
-regenerate docs.
+Spec changes MUST update `docs/architecture/framework-design.md`
+first, then validate sync.
 
 ## Governance
 
@@ -156,4 +184,4 @@ Compliance with these principles MUST be verified during code review.
 The CLAUDE.md project instructions serve as the runtime development
 guidance and MUST remain consistent with this constitution.
 
-**Version**: 1.1.0 | **Ratified**: 2026-03-08 | **Last Amended**: 2026-03-08
+**Version**: 1.2.0 | **Ratified**: 2026-03-08 | **Last Amended**: 2026-06-21

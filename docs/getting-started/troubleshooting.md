@@ -50,14 +50,14 @@ uv sync --python 3.12
 
 **Symptom**: `uv run python scripts/validate_sync.py --verbose` reports sync errors after modifying framework behavior.
 
-**Cause**: The framework-design spec (`openspec/specs/framework-design/spec.md`) is out of sync with the code. The validator checks that the spec contains sections matching the implementation.
+**Cause**: The framework-design spec (`docs/architecture/framework-design.md`) is out of sync with the code. The validator checks that handler names declared in the spec match the registrations in `packages/darnit/src/darnit/sieve/builtin_handlers.py`.
 
 **Solution**:
 
 1. Update the spec first:
    ```bash
    # Edit the spec to reflect your changes
-   $EDITOR openspec/specs/framework-design/spec.md
+   $EDITOR docs/architecture/framework-design.md
    ```
 
 2. Re-run validation:
@@ -65,12 +65,7 @@ uv sync --python 3.12
    uv run python scripts/validate_sync.py --verbose
    ```
 
-3. Regenerate docs:
-   ```bash
-   uv run python scripts/generate_docs.py
-   ```
-
-The validator checks for three required sections: "TOML Schema", "Built-in Pass Types", and "Sieve Orchestrator".
+The validator checks that handler names declared in `docs/architecture/framework-design.md` match the registrations in `packages/darnit/src/darnit/sieve/builtin_handlers.py`. Add or update the handler name in the spec to match the registry.
 
 ---
 
@@ -197,23 +192,6 @@ Use `--force-with-lease` (not `--force`) to safely update your fork's branch.
    ```
 
 See the [CEL Reference](cel-reference.md) for complete syntax documentation.
-
----
-
-## 8. Generated Docs Are Stale
-
-**Symptom**: `git diff docs/generated/` shows unexpected changes, or CI fails with "docs would change".
-
-**Cause**: The generated documentation is out of sync with the spec.
-
-**Solution**:
-```bash
-uv run python scripts/generate_docs.py
-git add docs/generated/
-git commit -m "docs: Regenerate docs from spec"
-```
-
-Always regenerate docs after spec changes and include them in your commit.
 
 ---
 

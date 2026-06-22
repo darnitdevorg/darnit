@@ -43,7 +43,7 @@ repos:
         name: Validate spec-implementation sync
         entry: uv run python scripts/validate_sync.py --changed-files
         language: system
-        files: ^(packages/darnit/|openspec/specs/framework-design/)
+        files: ^(packages/darnit/|docs/architecture/framework-design\.md)
         pass_filenames: false
         stages: [pre-commit]
 

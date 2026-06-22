@@ -125,12 +125,9 @@ baseline-mcp/
 ├── docs/
 │   ├── WORKFLOW.md                  # Mermaid diagrams (audit, remediation, context, startup)
 │   ├── IMPLEMENTATION_GUIDE.md      # Plugin authoring guide (the how-to companion to this doc)
-│   └── generated/
-│       ├── SCHEMA_REFERENCE.md      # TOML schema reference (auto-generated)
-│       └── USAGE_GUIDE.md           # Usage guide (auto-generated)
-│
-├── openspec/specs/
-│   └── framework-design/spec.md     # Authoritative framework specification
+│   └── architecture/
+│       ├── framework-design.md      # Authoritative framework specification
+│       └── ...                      # 24 more architectural reference docs
 │
 ├── tests/
 │   ├── darnit/                      # Framework unit tests
@@ -138,8 +135,7 @@ baseline-mcp/
 │   └── integration/                 # End-to-end tests
 │
 ├── scripts/
-│   ├── validate_sync.py             # Spec-implementation sync checker
-│   └── generate_docs.py             # Regenerate docs/generated/
+│   └── validate_sync.py             # TOML schema + handler-name + SARIF checks
 │
 ├── CLAUDE.md                        # Development guidelines and rules
 └── pyproject.toml                   # Workspace root (uv workspace)
@@ -530,9 +526,8 @@ For detailed mermaid diagrams of audit internals, remediation flow, context life
 |----------|---------------|
 | [docs/WORKFLOW.md](docs/WORKFLOW.md) | Mermaid diagrams: audit internals, remediation flow, context lifecycle, server startup |
 | [docs/IMPLEMENTATION_GUIDE.md](docs/IMPLEMENTATION_GUIDE.md) | Step-by-step guide to building a darnit plugin (package setup, TOML config, sieve handlers, testing) |
-| [docs/generated/SCHEMA_REFERENCE.md](docs/generated/SCHEMA_REFERENCE.md) | Auto-generated TOML schema reference |
-| [docs/generated/USAGE_GUIDE.md](docs/generated/USAGE_GUIDE.md) | Auto-generated usage guide |
-| [openspec/specs/framework-design/spec.md](openspec/specs/framework-design/spec.md) | Authoritative framework specification |
+| [docs/architecture/framework-design.md](docs/architecture/framework-design.md) | Authoritative framework specification |
+| [docs/architecture/](docs/architecture/) | Full architectural reference (25 documents) |
 | [CLAUDE.md](CLAUDE.md) | Development guidelines, separation rules, testing commands |
 | [OpenSSF Baseline Specification](https://baseline.openssf.org/) | The compliance standard that `darnit-baseline` implements |
 | [MCP Protocol](https://modelcontextprotocol.io/) | Model Context Protocol specification |

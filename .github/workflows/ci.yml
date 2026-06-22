@@ -214,40 +214,6 @@ jobs:
       - name: Validate spec-implementation sync
         run: uv run python scripts/validate_sync.py --verbose
 
-  doc-generation:
-    name: Verify Generated Docs
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v4
-
-      - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v4
-        with:
-          version: ${{ env.UV_VERSION }}
-          enable-cache: true
-
-      - name: Install dependencies
-        run: uv sync --all-extras
-
-      - name: Generate docs
-        run: uv run python scripts/generate_docs.py
-
-      - name: Check for uncommitted changes
-        run: |
-          if git diff --exit-code docs/generated/; then
-            echo "Generated docs are up to date"
-          else
-            echo "Generated docs would change - please run 'python scripts/generate_docs.py' and commit"
-            exit 1
-          fi
-
   # T065: integration check for the third-party plugin packaging story.
   # darnit-hello is the worked example referenced by docs/packaging-plugins.md;
   # if this job ever fails, the documented packaging path is broken.

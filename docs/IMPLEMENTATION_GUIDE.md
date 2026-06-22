@@ -814,7 +814,7 @@ The sieve `ControlSpec` includes a `passes` field (list of pass objects) and val
 that passes are in the correct phase order (DETERMINISTIC → PATTERN → LLM → MANUAL).
 
 > **Reference**: See `packages/darnit/src/darnit/sieve/models.py` for all data types
-> and `openspec/specs/framework-design/spec.md` for the authoritative specification.
+> and `docs/architecture/framework-design.md` for the authoritative specification.
 
 ---
 
@@ -1822,7 +1822,7 @@ from darnit.core.handlers import get_handler_registry
 | Example TOML config | `packages/darnit-example/example-hygiene.toml` |
 | Example custom handlers | `packages/darnit-example/src/darnit_example/handlers.py` |
 | Example tests | `tests/darnit_example/` |
-| Framework spec | `openspec/specs/framework-design/spec.md` |
+| Framework spec | `docs/architecture/framework-design.md` |
 | Composition resolver | `packages/darnit/src/darnit/core/composition.py` |
 | Composition spec | `specs/013-plugin-composition/spec.md` |
 | Composition TOML schema contract | `specs/013-plugin-composition/contracts/toml-schema.md` |

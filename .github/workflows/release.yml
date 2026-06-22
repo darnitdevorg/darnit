@@ -148,15 +148,6 @@ jobs:
       - name: Spec sync (Constitution §Development Workflow item 3)
         run: uv run python scripts/validate_sync.py --verbose
 
-      - name: Generated docs are up to date (Constitution §Development Workflow item 4)
-        run: |
-          set -euo pipefail
-          uv run python scripts/generate_docs.py
-          if ! git diff --exit-code docs/generated/; then
-            echo "::error::docs/generated/ is stale. Run scripts/generate_docs.py and commit the changes."
-            exit 1
-          fi
-
       # T008a: actionlint over the release workflow files. Catches static issues
       # (typos, undefined matrices) before publishing anything.
       # Version pin must match .github/workflows/release-yml-lint.yml and the

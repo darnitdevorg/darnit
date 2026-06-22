@@ -165,7 +165,7 @@ Built-in sieve handlers live in `packages/darnit/src/darnit/sieve/builtin_handle
 1. Find the handler function (e.g., `exec_handler`, `pattern_handler`)
 2. Modify the logic
 3. Update/add tests in `tests/darnit/sieve/`
-4. If the change affects pass behavior, update `openspec/specs/framework-design/spec.md`
+4. If the change affects pass behavior, update `docs/architecture/framework-design.md`
 5. Run the [pre-commit checklist](development-workflow.md#pre-commit-validation-checklist)
 
 ### Adding a New Protocol Method
@@ -213,7 +213,7 @@ Configuration loading lives in `packages/darnit/src/darnit/config/`. The framewo
 | `packages/darnit/src/darnit/core/handlers.py` | MCP tool handler registry (Layer 3) |
 | `packages/darnit/src/darnit/config/` | Configuration loading |
 | `packages/darnit/src/darnit/server/` | MCP server setup |
-| `openspec/specs/framework-design/spec.md` | Authoritative framework specification |
+| `docs/architecture/framework-design.md` | Authoritative framework specification |
 
 ## Next Steps
 

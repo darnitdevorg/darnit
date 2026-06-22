@@ -164,10 +164,6 @@ uv run pytest tests/ --ignore=tests/integration/ -q
 
 # Spec sync
 uv run python scripts/validate_sync.py --verbose
-
-# Regenerate docs
-uv run python scripts/generate_docs.py
-git diff docs/generated/
 ```
 
 ## Summary
