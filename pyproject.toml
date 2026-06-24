@@ -163,3 +163,10 @@ known-first-party = ["darnit", "darnit_baseline", "darnit_example"]
 [tool.bandit]
 exclude_dirs = ["tests", "docs/examples"]
 skips = ["B101"]  # Allow assert statements
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+bypass-selection = true
