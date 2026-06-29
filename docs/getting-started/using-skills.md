@@ -5,17 +5,34 @@ Darnit ships with four skills that provide structured compliance workflows direc
 ## Installation
 
 ```bash
-# Install MCP server config + skills globally
+# Install MCP server config + skills globally (Claude Code)
 darnit install
 
-# Install skills per-project (checked into git, shared with team)
+# Same, but explicit client flag
+darnit install --client claude-code
+
+# Install per-project: skills in .claude/skills/ and MCP in .mcp.json
 darnit install --project
 
 # MCP config only, no skills
 darnit install --mcp-only
+
+# Claude Desktop (GUI app) — different config file than Claude Code
+darnit install --client claude-desktop
 ```
 
 After installation, restart Claude Code. The skills appear as slash commands.
+
+### Where MCP config is written
+
+| Client | Scope | MCP config file |
+|--------|-------|-----------------|
+| Claude Code (default) | Global | `~/.claude.json` |
+| Claude Code | Project (`--project`) | `.mcp.json` in repo root |
+| Claude Desktop | Global | `~/.claude/settings.json` |
+| Cursor | Global | `~/.cursor/mcp.json` |
+
+> **Note:** `--client claude` still works but is deprecated. Use `claude-code` or `claude-desktop`.
 
 ## Available Skills
 
@@ -116,6 +133,8 @@ Skills are an orchestration layer over the MCP tools — not a replacement. You 
 | Global | `~/.claude/skills/` | `darnit install` (default) |
 | Project | `.claude/skills/` | `darnit install --project` |
 | Package | `darnit_baseline/skills/` | Bundled in the Python package |
+
+Global MCP config for Claude Code is written to `~/.claude.json`; with `--project`, MCP config goes in `.mcp.json` at the repo root.
 
 ## Multiple Modules
 

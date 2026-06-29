@@ -16,11 +16,11 @@ from darnit.cli import (
 def test_install_claude_creates_settings(tmp_path, monkeypatch, caplog):
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
 
-    exit_code = main(["install"])
+    exit_code = main(["install", "--client", "claude-code"])
 
     assert exit_code == 0
 
-    settings_path = tmp_path / ".claude" / "settings.json"
+    settings_path = tmp_path / ".claude.json"
     assert settings_path.exists()
 
     data = json.loads(settings_path.read_text())
@@ -28,6 +28,11 @@ def test_install_claude_creates_settings(tmp_path, monkeypatch, caplog):
     assert "darnit" in data["mcpServers"]
     assert data["mcpServers"]["darnit"]["command"] == "uvx"
     assert data["mcpServers"]["darnit"]["args"] == ["--from", "darnit", "darnit", "serve"]
+
+    assert not any(
+        record.levelname == "WARNING" and "deprecated" in record.message.lower()
+        for record in caplog.records
+    )
 
     # The install function emits via logger.info(...), so we need pytest's
     # logging-record capture (caplog), not its stderr-FD capture (capsys).
@@ -38,6 +43,46 @@ def test_install_claude_creates_settings(tmp_path, monkeypatch, caplog):
         "Installed darnit MCP server config" in record.message
         for record in caplog.records
     ), "expected install confirmation log message was not emitted"
+
+
+def test_install_claude_alias_emits_deprecation_warning(tmp_path, monkeypatch, caplog):
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+
+    exit_code = main(["install", "--client", "claude", "--mcp-only"])
+
+    assert exit_code == 0
+    assert (tmp_path / ".claude.json").exists()
+    assert any(
+        record.levelname == "WARNING" and "deprecated" in record.message.lower()
+        for record in caplog.records
+    )
+
+
+def test_install_claude_desktop_uses_settings_json(tmp_path, monkeypatch):
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+
+    exit_code = main(["install", "--client", "claude-desktop", "--mcp-only"])
+
+    assert exit_code == 0
+
+    settings_path = tmp_path / ".claude" / "settings.json"
+    assert settings_path.exists()
+    data = json.loads(settings_path.read_text())
+    assert "darnit" in data["mcpServers"]
+
+
+def test_install_claude_code_project_writes_mcp_json(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+
+    exit_code = main(["install", "--client", "claude-code", "--project", "--mcp-only"])
+
+    assert exit_code == 0
+
+    mcp_path = tmp_path / ".mcp.json"
+    assert mcp_path.exists()
+    data = json.loads(mcp_path.read_text())
+    assert "darnit" in data["mcpServers"]
 
 def test_install_cursor_creates_settings(tmp_path, monkeypatch):
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
@@ -55,8 +100,7 @@ def test_install_cursor_creates_settings(tmp_path, monkeypatch):
 def test_install_preserves_existing_settings(tmp_path, monkeypatch):
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
 
-    settings_path = tmp_path / ".claude" / "settings.json"
-    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    settings_path = tmp_path / ".claude.json"
     settings_path.write_text(
         json.dumps(
             {
@@ -71,7 +115,7 @@ def test_install_preserves_existing_settings(tmp_path, monkeypatch):
         )
     )
 
-    exit_code = main(["install", "--force"])
+    exit_code = main(["install", "--client", "claude-code", "--force"])
 
     assert exit_code == 0
 

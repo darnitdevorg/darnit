@@ -54,10 +54,14 @@ darnit serve --framework openssf-baseline
 Or configure it as an MCP server in Claude Code:
 
 ```bash
+# Recommended: use darnit's install command (writes ~/.claude.json)
+darnit install --client claude-code
+
+# Or register manually with the Claude Code CLI
 claude mcp add --scope user darnit -- "$(which darnit)" serve --framework openssf-baseline
 ```
 
-(The `darnit install` command also writes MCP config, but it writes to Claude Desktop's settings file, not Claude Code's — see [#270](https://github.com/kusari-oss/darnit/issues/270). The direct `claude mcp add` command works around that until the install command is fixed.)
+For a project-local MCP config, run `darnit install --project` from the repo root (writes `.mcp.json`).
 
 ## Switching branches
 
