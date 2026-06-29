@@ -139,6 +139,7 @@ class ComplianceImplementation(Protocol):
     # def get_audit_profiles(self) -> dict[str, Any] | None: ...
     # -------------------------------------------------------------------------
 
+
 __all__ = [
     "ControlSpec",
     "ComplianceImplementation",

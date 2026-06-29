@@ -1,4 +1,5 @@
 """Tests for darnit_baseline implementation."""
+import importlib
 
 import pytest
 
@@ -98,6 +99,10 @@ class TestHandlerRegistration:
         yield
         registry.clear()
 
+    @pytest.mark.skipif(
+        importlib.util.find_spec("tree_sitter_language_pack") is None,
+        reason="tree-sitter-language-pack not installed",
+    )
     @pytest.mark.unit
     def test_register_handlers_adds_tools(self):
         """Test register_handlers adds tool handlers to registry."""
@@ -118,6 +123,10 @@ class TestHandlerRegistration:
         assert "create_security_policy" in handler_names
         assert "enable_branch_protection" in handler_names
 
+    @pytest.mark.skipif(
+        importlib.util.find_spec("tree_sitter_language_pack") is None,
+        reason="tree-sitter-language-pack not installed",
+    )
     @pytest.mark.unit
     def test_handlers_have_plugin_context(self):
         """Test registered handlers have correct plugin context."""

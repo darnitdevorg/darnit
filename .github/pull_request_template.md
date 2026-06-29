@@ -14,9 +14,8 @@
 
 If this PR modifies the darnit framework (`packages/darnit/`):
 
-- [ ] Updated framework spec (`openspec/specs/framework-design/spec.md`) if behavior changed
+- [ ] Updated framework spec (`docs/architecture/framework-design.md`) if behavior changed
 - [ ] Ran `uv run python scripts/validate_sync.py --verbose` and it passes
-- [ ] Ran `uv run python scripts/generate_docs.py` and committed any doc changes
 
 ## Control/TOML Changes Checklist
 

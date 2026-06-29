@@ -74,7 +74,7 @@ def format_result_text(result: dict) -> str:
     return f"  {icon} {control_id}: {status} - {details}"
 
 
-def format_results_text(results: list[dict], framework_name: str) -> str:
+def format_results_text(results: list[dict], framework_name: str, show_all: bool = False) -> str:
     """Format all results for text output."""
     lines = [f"\n=== {framework_name} Audit Results ===\n"]
 
@@ -105,13 +105,27 @@ def format_results_text(results: list[dict], framework_name: str) -> str:
         for r in by_status["WARN"]:
             lines.append(format_result_text(r))
 
-    # Show passes (optional, can be verbose)
+    # Show passes
     if "PASS" in by_status:
         lines.append(f"\n--- Passed ({len(by_status['PASS'])}) ---")
-        for r in by_status["PASS"][:10]:  # Limit to 10
+        passes = by_status["PASS"] if show_all else by_status["PASS"][:10]
+        for r in passes:
             lines.append(format_result_text(r))
-        if len(by_status["PASS"]) > 10:
-            lines.append(f"  ... and {len(by_status['PASS']) - 10} more")
+        if not show_all and len(by_status["PASS"]) > 10:
+            lines.append(
+                f"  ... and {len(by_status['PASS']) - 10} more "
+                "(use --show-all to list every check)"
+            )
+
+    # With --show-all, list every remaining status (e.g. N/A) so the output
+    # documents every check for conformance evidence.
+    if show_all:
+        for status, group in by_status.items():
+            if status in ("FAIL", "WARN", "PASS"):
+                continue
+            lines.append(f"\n--- {status} ({len(group)}) ---")
+            for r in group:
+                lines.append(format_result_text(r))
 
     return "\n".join(lines)
 
@@ -221,7 +235,9 @@ def cmd_audit(args: argparse.Namespace) -> int:
     if args.output == "json":
         sys.stdout.write(format_results_json(results, config.framework_name) + "\n")
     else:
-        sys.stdout.write(format_results_text(results, config.framework_name) + "\n")
+        sys.stdout.write(
+            format_results_text(results, config.framework_name, show_all=args.show_all) + "\n"
+        )
 
     # Return non-zero if any failures
     failures = [r for r in results if r.get("status") == "FAIL"]
@@ -441,6 +457,38 @@ def cmd_list(args: argparse.Namespace) -> int:
 
     return 0
 
+def cmd_profiles(args: argparse.Namespace) -> int:
+    """List available audit profiles defined by loaded implementations."""
+    from darnit.core.discovery import discover_implementations
+
+    impls = discover_implementations()
+    if not impls:
+        logger.info("No implementations found.")
+        return 0
+
+    filter_impl = getattr(args, "impl", None)
+    found_any = False
+
+    for name, impl in impls.items():
+        if filter_impl and name != filter_impl:
+            continue
+        get_profiles = getattr(impl, "get_audit_profiles", None)
+        if not callable(get_profiles):
+            continue
+        profiles = get_profiles()
+        if not profiles:
+            continue
+        found_any = True
+        logger.info(f"{name}:")
+        for profile_name, profile in profiles.items():
+            ctrl_count = len(profile.controls) if profile.controls else "tag-based"
+            logger.info(f"  {profile_name:<25} {profile.description} ({ctrl_count} controls)")
+
+    if not found_any:
+        logger.info("No audit profiles defined by any implementation.")
+
+    return 0
+
 def _find_skills_dir() -> Path | None:
     """Find the skills directory from the darnit package."""
     skills_dir = Path(__file__).parent / "skills"
@@ -552,38 +600,110 @@ def cmd_install(args: argparse.Namespace) -> int:
     logger.info("Skills available: /darnit-audit, /darnit-data, /darnit-comply, /darnit-remediate")
     return 0
 
-def cmd_profiles(args: argparse.Namespace) -> int:
-    """List available audit profiles across all implementations."""
-    from darnit.core.discovery import discover_implementations
+# Safety ceiling on audit<->collect_context rounds. Each iteration resolves ALL
+# pending questions in one batch (the answers comprehension in cmd_run), so this
+# bounds re-audit rounds, not the number of controls.
+MAX_AGENT_ITERATIONS = 10
 
-    impls = discover_implementations()
-    if not impls:
-        logger.info("No implementations found.")
-        return 0
 
-    impl_filter = getattr(args, "impl", None)
-    found_any = False
+def cmd_run(args: argparse.Namespace) -> int:
+    """Run the audit workflow with human feedback.
 
-    for name, impl in impls.items():
-        if impl_filter and name != impl_filter:
-            continue
-        if not hasattr(impl, "get_audit_profiles"):
-            continue
-        profiles = impl.get_audit_profiles()
-        if not profiles:
-            continue
+    Runs the audit -> collect_context -> remediate pipeline. Checks that
+    require LLM judgement halt for an external agent (e.g. Claude Code);
+    questions needing a human are handled per --feedback mode. Automated
+    in-process LLM backends are not wired into this command yet.
+    """
+    from darnit.agent.feedback import get_feedback_handler
+    from darnit.agent.graph import audit, collect_context, remediate, route
+    from darnit.agent.state import AuditState
 
-        found_any = True
-        logger.info(f"{name}:")
-        for profile_name, profile in profiles.items():
-            ctrl_count = len(profile.controls) if profile.controls else "tag-based"
-            logger.info(f"  {profile_name:<25} {profile.description} ({ctrl_count} controls)")
+    repo_path = str(Path(args.repo_path).resolve())
 
-    if not found_any:
-        logger.info("No audit profiles defined by any implementation.")
+    # Feedback mode — default to interactive if terminal, noninteractive if not
+    feedback_mode = args.feedback_mode
+    if feedback_mode == "auto":
+        feedback_mode = "interactive" if sys.stdin.isatty() else "noninteractive"
 
-    return 0
+    print("\nDarnit run")
+    print(f"  Repository : {repo_path}")
+    print(f"  Feedback   : {feedback_mode}")
+    print()
 
+    # framework_name=None auto-resolves from .baseline.toml inside audit().
+    state = AuditState(
+        local_path=repo_path,
+        framework_name=getattr(args, "framework", None),
+        level=getattr(args, "level", 3),
+    )
+
+    feedback = get_feedback_handler(feedback_mode)
+
+    # Inline orchestration (replaces LangGraph): audit, then route() decides the
+    # next node ("audit" | "collect_context" | "remediate" | "end"). A re-audit
+    # is only meaningful right after collect_context (which clears audit_results
+    # to request one), so we re-audit inside that branch. A bare "audit" from
+    # route here means the audit produced no results — stop rather than spin.
+    try:
+        state = audit(state)
+        for _ in range(MAX_AGENT_ITERATIONS):
+            if state.error:
+                break
+            step = route(state)
+            if step == "collect_context":
+                # Noninteractive ask() always returns None -> answers ends up
+                # empty -> we break below with questions left queued for the
+                # summary. Interactive prompts the user.
+                answers = {
+                    q.context_key: (feedback.ask(q.control_id, q.question) or "")
+                    for q in state.feedback_questions
+                    if not q.answered
+                }
+                answers = {k: v for k, v in answers.items() if v}
+                if not answers:
+                    break  # nothing answered — avoid re-routing forever
+                state = collect_context(state, answers)
+                state = audit(state)  # re-audit with confirmed context
+            elif step == "remediate":
+                state = remediate(state, dry_run=getattr(args, "dry_run", False))
+                break
+            else:  # "audit" (no results) or "end"
+                break
+    except Exception as e:
+        logger.error(f"Agent run failed: {e}")
+        return 1
+
+    final_state = state
+
+    # AuditState is a dataclass — attribute access, real field names.
+    check_results = final_state.audit_results or []
+    error = final_state.error
+
+    total = len(check_results)
+    passed = len([r for r in check_results if r.get("status") == "PASS"])
+    failed = len([r for r in check_results if r.get("status") == "FAIL"])
+    warned = len([r for r in check_results if r.get("status") == "WARN"])
+
+    print("Run complete.")
+    print(f"  Total  : {total}")
+    print(f"  Passed : {passed}")
+    print(f"  Failed : {failed}")
+    print(f"  Warned : {warned}")
+
+    # Pending human feedback — FeedbackQuestion is a dataclass, not a dict.
+    pending = [q for q in final_state.feedback_questions if not q.answered]
+    if pending:
+        print(f"\nPending human feedback ({len(pending)} unanswered):")
+        for q in pending:
+            print(f"  Control : {q.control_id}")
+            print(f"  Question: {q.question}")
+            print()
+
+    if error:
+        print(f"\nError: {error}")
+        return 1
+
+    return 1 if failed else 0
 
 def cmd_serve(args: argparse.Namespace) -> int:
     """Start the MCP server.
@@ -775,6 +895,12 @@ def create_parser() -> argparse.ArgumentParser:
         help="Don't exit with error code on failures",
     )
     audit_parser.add_argument(
+        "--show-all",
+        action="store_true",
+        help="List every check in text output: show all passed checks (no truncation) "
+             "and include N/A checks. Useful for documenting full OSPS Baseline conformance.",
+    )
+    audit_parser.add_argument(
         "--profile", "-p",
         dest="profile",
         default=None,
@@ -864,6 +990,31 @@ def create_parser() -> argparse.ArgumentParser:
     # list command
     list_parser = subparsers.add_parser("list", help="List available frameworks")
     list_parser.set_defaults(func=cmd_list)
+
+    # run command (agentic)
+    run_parser = subparsers.add_parser(
+        "run",
+        help="Run full agentic workflow (LLM-powered)",
+        description="Run the full autonomous compliance pipeline. "
+                    "Loads project context, runs all checks, collects context, "
+                    "and remediates failures. Requires an LLM API key.",
+    )
+    run_parser.add_argument(
+        "repo_path",
+        nargs="?",
+        default=".",
+        help="Path to repository (default: current directory)",
+    )
+    run_parser.add_argument(
+        "--feedback",
+        dest="feedback_mode",
+        choices=["interactive", "noninteractive", "auto"],
+        default="auto",
+        help="Human feedback mode: interactive (prompts in terminal), "
+             "noninteractive (collects questions for later), "
+             "auto (interactive if terminal, noninteractive in CI)",
+    )
+    run_parser.set_defaults(func=cmd_run)
 
     # install command
     install_parser = subparsers.add_parser(

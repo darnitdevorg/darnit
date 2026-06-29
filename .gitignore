@@ -45,3 +45,5 @@ project.toml
 .claude/
 baseline-test-repo/
 .doc-cache/
+
+.darnit/

@@ -1,0 +1,142 @@
+[metadata]
+schema_version = "0.1.0-alpha"
+name = "reproducibility"
+display_name = "Scientific Reproducibility Checks"
+version = "0.1.0"
+spec_version = "0.1.0"
+description = "Checks that builds are reproducible and verifiable"
+
+[mcp]
+name = "reproducibility"
+description = "Run scientific reproducibility checks on a repository"
+
+[mcp.tools.audit_reproducibility]
+builtin = "audit"
+description = "Run reproducibility checks"
+
+# =============================================================================
+# Control: Are dependencies pinned to exact versions?
+# Unpinned deps mean two builds on different days can produce different results.
+# =============================================================================
+
+[controls."RE-01.01"]
+name = "DependenciesPinned"
+description = "Dependencies are pinned to exact versions with checksums"
+tags = { level = 1, domain = "RE" }
+
+[[controls."RE-01.01".passes]]
+handler = "repro_deps_pinned"
+
+[[controls."RE-01.01".passes]]
+handler = "manual"
+steps = [
+    "Check that dependency files pin exact versions (not ranges like >=1.0)",
+    "For Python: verify uv.lock or requirements.txt has exact versions",
+    "For Node: verify package-lock.json or yarn.lock exists",
+    "For Rust: verify Cargo.lock is committed",
+    "For Go: verify go.sum exists and is committed",
+]
+
+[controls."RE-01.01".remediation]
+safe = true
+dry_run_supported = true
+
+# `uv lock` is Python-specific, so the remediation is gated to Python projects
+# via `when = { detected_ecosystem = "python" }`; on non-Python projects it is
+# simply not applicable, keeping the safe = true claim accurate where it runs.
+# TODO: add per-language remediations (cargo update, go mod tidy, ...).
+[[controls."RE-01.01".remediation.handlers]]
+handler = "exec"
+when = { detected_ecosystem = "python" }
+command = ["uv", "lock"]
+dry_run_command = ["uv", "lock", "--dry-run"]
+
+# =============================================================================
+# Control: Is the build environment declared?
+# A build that works on "my machine" but nowhere else is not reproducible.
+# =============================================================================
+
+[controls."RE-01.02"]
+name = "BuildEnvDeclared"
+description = "Build environment is explicitly declared"
+tags = { level = 1, domain = "RE" }
+
+[[controls."RE-01.02".passes]]
+handler = "repro_build_env_declared"
+
+[[controls."RE-01.02".passes]]
+handler = "manual"
+steps = [
+    "Check for one of: Dockerfile, flake.nix, .devcontainer/, Vagrantfile",
+    "Verify it pins the base OS and tool versions",
+    "Confirm the declared environment is actually used in CI",
+]
+
+# =============================================================================
+# Control: Does the build avoid network access?
+# A hermetic build fetches nothing at build time — all deps come from the
+# lock file. Network access during build = non-reproducible.
+# =============================================================================
+
+# v0.1 heuristic: greps .github/workflows for network-fetch commands only.
+# Misses Makefile/setup.py/composite actions/Dockerfile and does not verify
+# true build isolation. Roadmap: https://github.com/kusari-oss/darnit/issues/227
+[controls."RE-02.01"]
+name = "HermeticBuild"
+description = "Build does not fetch dependencies at build time"
+tags = { level = 2, domain = "RE" }
+
+[[controls."RE-02.01".passes]]
+handler = "repro_hermetic_build"
+
+[[controls."RE-02.01".passes]]
+handler = "manual"
+steps = [
+    "Review CI workflow files for network fetch commands during build",
+    "Check for curl, wget, pip install (without --no-index) in build steps",
+    "Verify dependencies come from the lock file, not fetched live",
+]
+
+# =============================================================================
+# Control: Does a provenance attestation exist?
+# Provenance = a signed record of what went into the build.
+# SLSA level 2+ requires this.
+# =============================================================================
+
+[controls."RE-02.02"]
+name = "ProvenanceExists"
+description = "Build produces a signed provenance attestation"
+tags = { level = 2, domain = "RE" }
+
+[[controls."RE-02.02".passes]]
+handler = "repro_provenance_exists"
+
+[[controls."RE-02.02".passes]]
+handler = "manual"
+steps = [
+    "Check CI workflow for sigstore/cosign signing steps",
+    "Look for .intoto.jsonl or attestation files in releases",
+    "Verify SLSA provenance is generated (slsa-github-generator or equivalent)",
+]
+
+# =============================================================================
+# Control: Is the build byte-for-byte reproducible?
+# Two independent builds of the same commit should produce identical output.
+# =============================================================================
+
+[controls."RE-03.01"]
+name = "BitForBitReproducible"
+description = "Build output is identical across independent builds"
+tags = { level = 3, domain = "RE" }
+
+[[controls."RE-03.01".passes]]
+handler = "repro_bit_for_bit"
+
+[[controls."RE-03.01".passes]]
+handler = "manual"
+steps = [
+    "Run the build twice and compare checksums of output artifacts",
+    "Check reprotest or diffoscope output if available",
+    "Look for timestamps or random seeds embedded in build output",
+    "Verify SOURCE_DATE_EPOCH is set in CI to normalize timestamps",
+]

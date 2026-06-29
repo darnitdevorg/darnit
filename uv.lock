@@ -15,6 +15,7 @@ members = [
     "darnit-hello",
     "darnit-mcp",
     "darnit-plugins",
+    "darnit-reproducibility",
     "darnit-testchecks",
 ]
 
@@ -523,6 +524,7 @@ dependencies = [
     { name = "darnit-baseline" },
     { name = "darnit-core" },
     { name = "darnit-gittuf" },
+    { name = "darnit-reproducibility" },
 ]
 
 [package.optional-dependencies]
@@ -555,6 +557,7 @@ requires-dist = [
     { name = "darnit-core", editable = "packages/darnit" },
     { name = "darnit-core", extras = ["attestation"], marker = "extra == 'attestation'", editable = "packages/darnit" },
     { name = "darnit-gittuf", editable = "packages/darnit-gittuf" },
+    { name = "darnit-reproducibility", editable = "packages/darnit-reproducibility" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.0.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0.0" },
@@ -596,6 +599,17 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0.0" },
 ]
 provides-extras = ["dev"]
+
+[[package]]
+name = "darnit-reproducibility"
+version = "0.1.0"
+source = { editable = "packages/darnit-reproducibility" }
+dependencies = [
+    { name = "darnit-core" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "darnit-core", editable = "packages/darnit" }]
 
 [[package]]
 name = "darnit-testchecks"

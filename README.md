@@ -37,35 +37,26 @@ The Baseline isn't just about security—it covers testing requirements, build p
 
 ## Installation
 
-The quickest path for most users is `pipx install darnit-mcp`. Five channels are supported (PyPI, container image, Homebrew, standalone binary, Claude Code plugin) — see [`docs/install/README.md`](docs/install/README.md) for a decision tree and per-channel walkthroughs with verification recipes.
-
-```bash
-# pipx — isolated install, recommended for end users
-pipx install darnit-mcp
-
-# Or use uv tool install for the fastest path:
-uv tool install darnit-mcp
-
-# Then:
-darnit audit /path/to/repo
-darnit serve --framework openssf-baseline   # MCP server mode
-```
-
-For development against this repository, clone and use the workspace:
+> [!NOTE]
+> PyPI, pipx, `uv tool install`, container, Homebrew, and standalone-binary
+> channels are not published yet - tracked in
+> [#229](https://github.com/kusari-oss/darnit/issues/229) (which depends on
+> PyPI publishing, [#228](https://github.com/kusari-oss/darnit/issues/228)).
+> Until those land, install from source with [`uv`](https://docs.astral.sh/uv/):
 
 ```bash
 git clone https://github.com/kusari-oss/darnit
 cd darnit
 uv sync
+
 uv run darnit audit /path/to/repo
+uv run darnit serve --framework openssf-baseline   # MCP server mode
 ```
 
-Other install paths:
-- **Container (CI)** → `docker run --rm -v "$PWD:/repo" ghcr.io/kusari-oss/darnit:latest audit` ([docs](docs/install/container.md))
-- **Homebrew** → `brew install kusari-oss/tap/darnit` ([docs](docs/install/homebrew.md))
-- **Standalone binary** → download from a [GitHub release](https://github.com/kusari-oss/darnit/releases) ([docs](docs/install/binary.md))
-- **Claude Code plugin** → see [docs/install/claude-code-plugin.md](docs/install/claude-code-plugin.md)
-
+Once [#229](https://github.com/kusari-oss/darnit/issues/229) lands, `pipx install darnit-mcp`
+and `uv tool install darnit-mcp` will become the recommended end-user paths, with
+container, Homebrew, standalone-binary, and Claude Code plugin channels documented in
+[`docs/install/README.md`](docs/install/README.md).
 ### Optional: Opengrep for taint analysis
 
 The threat model generator can use [Opengrep](https://github.com/opengrep/opengrep)
@@ -100,8 +91,10 @@ The tree-sitter discovery pipeline is tuned for **web-service shapes**. What wor
 | Python web service (Flask, FastAPI, Django, MCP server) | Best path — full STRIDE: routes, data stores, sinks, info-disclosure, elevation-of-privilege |
 | JavaScript/Node service (Express-style) | Moderate — route registration + basic sink set |
 | Go HTTP service (`net/http`, chi, gorilla) | Thin — HTTP route registration + `sql.Open` only |
+| Go CLI built on [`spf13/cobra`](https://github.com/spf13/cobra) | Moderate — command families discovered, STRIDE assigned heuristically by import set; `needs reviewer attention` marker on every finding ([feature 014](specs/014-cobra-threat-model/spec.md)) |
 | YAML / GitHub Actions workflows | Some — overly-broad permissions and similar config issues |
-| CLI tools (cobra, click, argparse, urfave/cli) | Not modeled — produces structurally complete but empty output |
+| Python CLI frameworks (argparse, click, typer) | Not modeled — sibling to the Go cobra work ([#264](https://github.com/kusari-oss/darnit/issues/264)) |
+| Other Go CLI frameworks (urfave/cli, kingpin) / message handlers / gRPC | Not modeled — out of scope for the cobra pass ([#262](https://github.com/kusari-oss/darnit/issues/262)) |
 | Crypto/signing **client** libraries (sigstore-python, in-toto) | Out of scope — these call out rather than receive; entry-point queries don't fire |
 | Systems software, daemons, libraries, ML pipelines | Not modeled |
 

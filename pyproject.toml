@@ -21,6 +21,7 @@ dependencies = [
     "darnit-core",
     "darnit-baseline",
     "darnit-gittuf",
+    "darnit-reproducibility",
 ]
 
 [project.urls]
@@ -48,6 +49,7 @@ darnit-core = { workspace = true }
 darnit-baseline = { workspace = true }
 darnit-example = { workspace = true }
 darnit-gittuf = { workspace = true }
+darnit-reproducibility = { workspace = true }
 darnit-hello = { workspace = true }
 
 [tool.pytest.ini_options]

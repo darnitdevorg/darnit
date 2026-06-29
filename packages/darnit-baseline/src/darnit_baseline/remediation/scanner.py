@@ -208,7 +208,6 @@ _EXCLUDED_DIRS: set[str] = {
     "venv",
     "env",
     "specs",
-    "openspec",
 }
 
 #: Conventional source directories to descend one level into.
@@ -249,9 +248,7 @@ def scan_repository(local_path: str) -> RepoScanContext:
     ctx.directory_tree = _scan_directory_structure(local_path)
 
     # Phase 5 (US1): _scan_languages_and_commands
-    langs, test_cmds, lint_cmds, build_cmds = _scan_languages_and_commands(
-        local_path
-    )
+    langs, test_cmds, lint_cmds, build_cmds = _scan_languages_and_commands(local_path)
     ctx.languages = langs
     ctx.primary_language = langs[0] if langs else None
     ctx.test_commands = test_cmds
@@ -293,6 +290,7 @@ def scan_repository(local_path: str) -> RepoScanContext:
     # Phase 10: GitHub Apps detection
     try:
         from darnit.core.utils import detect_repo_from_git
+
         detected = detect_repo_from_git(local_path)
         owner = detected.get("owner") if detected else None
         repo_name = detected.get("repo") if detected else None
@@ -300,8 +298,11 @@ def scan_repository(local_path: str) -> RepoScanContext:
         owner = repo_name = None
     ctx.github_apps = _scan_github_apps(local_path, owner=owner, repo=repo_name)
 
-    logger.debug("Repo scan complete: %d languages, %d CI tools detected",
-                 len(ctx.languages), sum(len(v) for v in ctx.ci_tools.values()))
+    logger.debug(
+        "Repo scan complete: %d languages, %d CI tools detected",
+        len(ctx.languages),
+        sum(len(v) for v in ctx.ci_tools.values()),
+    )
     return ctx
 
 
@@ -336,9 +337,7 @@ def _scan_directory_structure(local_path: str) -> DirectoryTree:
                 subdirs = [
                     f"{sub}/"
                     for sub in sorted(os.listdir(full))
-                    if os.path.isdir(os.path.join(full, sub))
-                    and not sub.startswith(".")
-                    and sub not in _EXCLUDED_DIRS
+                    if os.path.isdir(os.path.join(full, sub)) and not sub.startswith(".") and sub not in _EXCLUDED_DIRS
                 ]
                 if subdirs:
                     tree.source_dirs[f"{entry}/"] = subdirs
@@ -360,6 +359,7 @@ def _scan_languages_and_commands(
     """
     try:
         from darnit.context.auto_detect import detect_languages
+
         languages = detect_languages(local_path)
     except Exception:
         languages = []
@@ -377,17 +377,13 @@ def _scan_languages_and_commands(
         build_cmds[lang] = defaults["build"]
 
     # Refine Python commands when uv is the package manager
-    if "python" in test_cmds and os.path.isfile(
-        os.path.join(local_path, "uv.lock")
-    ):
+    if "python" in test_cmds and os.path.isfile(os.path.join(local_path, "uv.lock")):
         test_cmds["python"] = "uv run pytest"
         lint_cmds["python"] = "uv run ruff check ."
         build_cmds["python"] = "uv build"
 
     # Refine Python commands when poetry is the package manager
-    if "python" in test_cmds and os.path.isfile(
-        os.path.join(local_path, "poetry.lock")
-    ):
+    if "python" in test_cmds and os.path.isfile(os.path.join(local_path, "poetry.lock")):
         test_cmds["python"] = "poetry run pytest"
         lint_cmds["python"] = "poetry run ruff check ."
         build_cmds["python"] = "poetry build"
@@ -463,6 +459,7 @@ def _scan_github_apps(local_path: str, owner: str | None = None, repo: str | Non
         # Try to detect owner from git remote
         try:
             from darnit.core.utils import detect_repo_from_git
+
             detected = detect_repo_from_git(local_path)
             if detected:
                 owner = detected.get("owner")
@@ -550,9 +547,9 @@ def _scan_existing_docs(local_path: str) -> dict[str, DocInfo]:
 
         info.exists = True
         try:
-            content = Path(doc_path).read_text(
-                encoding="utf-8", errors="replace"
-            )[:10000]  # Cap at 10KB to avoid huge files
+            content = Path(doc_path).read_text(encoding="utf-8", errors="replace")[
+                :10000
+            ]  # Cap at 10KB to avoid huge files
         except OSError:
             results[doc_name] = info
             continue
@@ -612,6 +609,7 @@ def _scan_inconsistencies(local_path: str) -> list[str]:
     # Detect license type from LICENSE file
     try:
         from darnit.context.auto_detect import detect_license_type
+
         file_license = detect_license_type(local_path)
     except Exception:
         file_license = None
@@ -625,9 +623,7 @@ def _scan_inconsistencies(local_path: str) -> list[str]:
         try:
             content = Path(pyproject_path).read_text(encoding="utf-8", errors="replace")
             # Simple pattern match for license field
-            license_match = re.search(
-                r'license\s*=\s*[{"]([^"}\n]+)', content, re.IGNORECASE
-            )
+            license_match = re.search(r'license\s*=\s*[{"]([^"}\n]+)', content, re.IGNORECASE)
             if license_match:
                 manifest_license = license_match.group(1).strip().lower()
                 # Normalize for comparison
@@ -705,13 +701,9 @@ def flatten_scan_context(ctx: RepoScanContext) -> dict[str, str]:
         result["scan.governance_context"] = ctx.governance_context
 
     if ctx.code_of_conduct_path:
-        result["scan.code_of_conduct_link"] = (
-            f"[Code of Conduct]({ctx.code_of_conduct_path})"
-        )
+        result["scan.code_of_conduct_link"] = f"[Code of Conduct]({ctx.code_of_conduct_path})"
     if ctx.security_policy_path:
-        result["scan.security_policy_link"] = (
-            f"[Security Policy]({ctx.security_policy_path})"
-        )
+        result["scan.security_policy_link"] = f"[Security Policy]({ctx.security_policy_path})"
 
     if ctx.inconsistencies:
         formatted = "\n".join(f"- ⚠️ {issue}" for issue in ctx.inconsistencies)

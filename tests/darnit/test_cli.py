@@ -4,7 +4,13 @@ import json
 
 import pytest
 
-from darnit.cli import create_parser, format_result_text, format_results_json, main
+from darnit.cli import (
+    create_parser,
+    format_result_text,
+    format_results_json,
+    format_results_text,
+    main,
+)
 
 
 def test_install_claude_creates_settings(tmp_path, monkeypatch, caplog):
@@ -223,3 +229,39 @@ class TestFormatting:
             "warn": 1,
             "na": 1,
         }
+
+
+@pytest.mark.unit
+def test_audit_command_parses_show_all():
+    """The audit command accepts --show-all."""
+    args = create_parser().parse_args(["audit", "--show-all", "."])
+    assert args.command == "audit"
+    assert args.show_all is True
+
+
+@pytest.mark.unit
+def test_audit_show_all_defaults_false():
+    """--show-all defaults to False."""
+    args = create_parser().parse_args(["audit", "."])
+    assert args.show_all is False
+
+
+@pytest.mark.unit
+def test_format_results_text_truncates_passes_by_default():
+    """By default the passed section truncates past 10 with a hint."""
+    results = [{"id": f"OSPS-X-{i:02d}", "status": "PASS", "details": "ok"} for i in range(15)]
+    rendered = format_results_text(results, "openssf-baseline")
+    assert "... and 5 more" in rendered
+    assert "--show-all" in rendered
+
+
+@pytest.mark.unit
+def test_format_results_text_show_all_lists_every_check():
+    """--show-all lists all passes (no truncation) and includes N/A checks."""
+    results = [{"id": f"OSPS-X-{i:02d}", "status": "PASS", "details": "ok"} for i in range(15)]
+    results.append({"id": "OSPS-NA-01.01", "status": "NA", "details": "not applicable"})
+    rendered = format_results_text(results, "openssf-baseline", show_all=True)
+    assert "... and" not in rendered
+    for i in range(15):
+        assert f"OSPS-X-{i:02d}" in rendered
+    assert "OSPS-NA-01.01" in rendered

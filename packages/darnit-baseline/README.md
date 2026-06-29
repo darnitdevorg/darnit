@@ -179,7 +179,7 @@ Five templates have `llm_enhance` prompts (marked with \*) that request LLM-base
 | DO-05.01 | `SUPPORT.md` | Production | End-of-support variant (no-op if DO-03.01 ran first) |
 | SA-01.01 | `ARCHITECTURE.md` | Scaffold\* | Components/actors/data flow — all example data. `llm_enhance` |
 | SA-02.01 | `API.md` | Scaffold\* | Interface tables, usage examples — all placeholder. `llm_enhance` |
-| SA-03.02 | `THREAT_MODEL.md` | Production\* | Full STRIDE on Python web services; thin or empty on Go/CLI/library projects. See [coverage scope](../../README.md#threat-model-coverage-scope). `llm_enhance`, `project_update` |
+| SA-03.02 | `THREAT_MODEL.md` | Production\* | Full STRIDE on Python web services and Go cobra-based CLIs; thin on non-cobra Go CLIs and other library projects. See [coverage scope](../../README.md#threat-model-coverage-scope). `llm_enhance`, `project_update` |
 
 #### CI Workflows (`.github/workflows/`)
 

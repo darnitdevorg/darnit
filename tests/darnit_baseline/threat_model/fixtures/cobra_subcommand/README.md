@@ -27,3 +27,12 @@ Expected discovery (feature [`014-cobra-threat-model`](../../../../../specs/014-
 The root command in `main.go` is also a cobra literal — its family will land in
 a degenerate family (file at the inferred command_root level, not under a family
 subdirectory). That's expected behaviour for "root-level" commands.
+
+## Vendored regression (T038a)
+
+`vendor/cobra-thirdparty/cobra.go` contains cobra command literals with
+`Use: "vendored-fake"` and `Use: "vendored-sub"`. Because `vendor/` is in
+`BASELINE_EXCLUDED_DIRS`, discovery MUST NOT surface those names. The
+`test_vendored_cobra_files_excluded` test in `test_ts_discovery.py` asserts
+this — if either name appears in the discovery output the exclusion has
+regressed.

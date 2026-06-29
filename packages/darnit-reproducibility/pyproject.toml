@@ -1,0 +1,22 @@
+[project]
+name = "darnit-reproducibility"
+version = "0.1.0"
+description = "Scientific reproducibility checks plugin for darnit"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "darnit-core>=0.1.0",
+]
+
+[project.entry-points."darnit.implementations"]
+reproducibility = "darnit_reproducibility:register"
+
+[project.entry-points."darnit.frameworks"]
+reproducibility = "darnit_reproducibility:get_framework_path"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/darnit_reproducibility"]
