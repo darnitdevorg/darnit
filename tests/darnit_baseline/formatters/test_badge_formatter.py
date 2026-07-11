@@ -8,15 +8,24 @@ Tests cover:
 - Long justification truncation
 """
 
-import pytest
-
+from darnit_baseline.formatters import (
+    BADGE_BASE_URL as _BADGE_BASE_URL,
+)
+from darnit_baseline.formatters import (
+    control_id_to_key as _ctk,
+)
+from darnit_baseline.formatters import (
+    generate_badge_url as _gbu,
+)
+from darnit_baseline.formatters import (
+    status_to_badge_status as _stbs,
+)
 from darnit_baseline.formatters.badge import (
     BADGE_BASE_URL,
     control_id_to_key,
     generate_badge_url,
     status_to_badge_status,
 )
-
 
 # ---------------------------------------------------------------------------
 # control_id_to_key
@@ -203,13 +212,6 @@ class TestGenerateBadgeUrl:
 
 def test_badge_exports_available_from_formatters_package():
     """Ensure the badge symbols are re-exported from the formatters package."""
-    from darnit_baseline.formatters import (
-        BADGE_BASE_URL as _BADGE_BASE_URL,
-        control_id_to_key as _ctk,
-        generate_badge_url as _gbu,
-        status_to_badge_status as _stbs,
-    )
-
     assert callable(_gbu)
     assert callable(_ctk)
     assert callable(_stbs)
