@@ -48,6 +48,7 @@ def audit_openssf_baseline(
     staging: bool = False,
     prefer_upstream: bool = True,
     profile: str | None = None,
+    project_url: str | None = None,
 ) -> str:
     """
     Run a comprehensive OpenSSF Baseline audit on a repository.
@@ -64,8 +65,10 @@ def audit_openssf_baseline(
               - Different fields use AND logic: domain=AC AND level=1
               - Same field repeated uses OR logic: priority=low OR priority=high
               - Bare values match against control tags dict keys
-        output_format: Output format - "markdown", "json", "summary", or "sarif". Default: "markdown".
+        output_format: Output format - "markdown", "json", "summary", "sarif", or "badge".
+              Default: "markdown".
               Use "summary" for compact JSON (id/status/level/details only, no evidence).
+              Use "badge" to generate an OpenSSF Best Practices Badge automation-proposal URL.
         auto_init_config: Create .project.yaml if missing. Default: True
         attest: Generate in-toto attestation after audit. Default: False
         sign_attestation: Sign attestation with Sigstore. Default: True
@@ -74,6 +77,9 @@ def audit_openssf_baseline(
                          Useful for auditing forks against their upstream repository. Default: True
         profile: Optional audit profile name to filter controls. Short name (e.g., "level1_quick")
                  or qualified name (e.g., "openssf-baseline:level1_quick"). Default: None (all controls)
+        project_url: Canonical repository URL for the Best Practices Badge submission
+                     (e.g. "https://github.com/curl/curl"). Auto-detected from git when omitted.
+                     Only used when output_format="badge".
 
     Returns:
         Formatted audit report with compliance status and remediation instructions
@@ -160,7 +166,16 @@ def audit_openssf_baseline(
     )
 
     # Format output
-    if output_format == "summary":
+    if output_format == "badge":
+        from .formatters.badge import generate_badge_url
+
+        # Resolve project URL: explicit arg > auto-detected from git remote
+        resolved_project_url = project_url or ""
+        if not resolved_project_url and owner and repo:
+            resolved_project_url = f"https://github.com/{owner}/{repo}"
+
+        return generate_badge_url(results, resolved_project_url)
+    elif output_format == "summary":
         # Compact JSON: only id/status/level/details — no evidence or pass_history.
         # ~5-8K vs ~164K for full JSON with 62 controls.
         compact_results = [
