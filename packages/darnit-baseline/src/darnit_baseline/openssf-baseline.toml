@@ -2122,6 +2122,9 @@ kind = "file"
 [[controls."OSPS-QA-02.01".passes]]
 handler = "file_exists"
 use_locator = true
+# max_depth = 3 lets us discover manifests nested in conventional layouts
+# (e.g. src/app/package.json) without incurring full recursive-glob cost
+max_depth = 3
 
 # Content validation: dependency manifest should contain dependency declarations
 [[controls."OSPS-QA-02.01".passes]]

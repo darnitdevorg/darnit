@@ -576,6 +576,112 @@ class TestRegexHandler:
 
 
 # =============================================================================
+# regex_handler — depth-limited file discovery
+# =============================================================================
+
+
+class TestRegexHandlerDepthLimited:
+    """Regression tests for opt-in depth-limited file discovery in regex_handler.
+
+    The ``max_depth`` config field lets a regex pass walk subdirectories
+    looking for non-glob ``files`` entries, so patterns inside nested manifests
+    (e.g., ``backend/pyproject.toml``) are matched even without a ``**`` glob.
+    Default behavior (no ``max_depth``) is root-only, unchanged for backward
+    compatibility.
+    """
+
+    def test_default_no_max_depth_root_only(self, tmp_path, ctx):
+        """Without max_depth, only the repo root is searched for plain filenames."""
+        nested = tmp_path / "backend" / "app"
+        nested.mkdir(parents=True)
+        (nested / "pyproject.toml").write_text("[project]\nname = \"example\"\n")
+
+        # No max_depth → root only → file not found → INCONCLUSIVE (no files resolved)
+        result = regex_handler(
+            {
+                "files": ["pyproject.toml"],
+                "pattern": {"patterns": {"name_field": r"\[project\]"}},
+            },
+            ctx,
+        )
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
+
+    def test_max_depth_finds_nested_files(self, tmp_path, ctx):
+        """With max_depth set, plain filenames are found in nested directories."""
+        nested = tmp_path / "backend" / "app"
+        nested.mkdir(parents=True)
+        (nested / "pyproject.toml").write_text("[project]\nname = \"example\"\n")
+
+        result = regex_handler(
+            {
+                "files": ["pyproject.toml"],
+                "pattern": {"patterns": {"name_field": r"\[project\]"}},
+                "max_depth": 3,
+            },
+            ctx,
+        )
+        assert result.status == HandlerResultStatus.PASS
+        assert result.evidence["any_match"] is True
+
+    def test_max_depth_respects_limit(self, tmp_path, ctx):
+        """A file too deep is NOT found when max_depth is insufficient."""
+        deep = tmp_path / "a" / "b" / "c"
+        deep.mkdir(parents=True)
+        (deep / "go.mod").write_text("module example\n")
+
+        # max_depth=2 → root + a + a/b; a/b/c is one level beyond the limit
+        result = regex_handler(
+            {
+                "files": ["go.mod"],
+                "pattern": {"patterns": {"module": r"^module\s+"}},
+                "max_depth": 2,
+            },
+            ctx,
+        )
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
+
+    def test_max_depth_skips_noise_directories(self, tmp_path, ctx):
+        """node_modules / __pycache__ / .git etc. are pruned during the walk."""
+        nm = tmp_path / "node_modules" / "some-pkg"
+        nm.mkdir(parents=True)
+        (nm / "package.json").write_text('{"name": "noise"}\n')
+
+        app = tmp_path / "app"
+        app.mkdir()
+        (app / "package.json").write_text('{"name": "real", "version": "1.0.0"}\n')
+
+        result = regex_handler(
+            {
+                "files": ["package.json"],
+                "pattern": {"patterns": {"version": r'"version"'}},
+                "max_depth": 5,
+            },
+            ctx,
+        )
+        assert result.status == HandlerResultStatus.PASS
+        # Only the real app/package.json should be scanned; node_modules was pruned
+        assert result.evidence["any_match"] is True
+
+    def test_max_depth_glob_patterns_unaffected(self, tmp_path, ctx):
+        """Glob patterns (containing * or ?) are NOT depth-walked; behavior unchanged."""
+        nested = tmp_path / "docs" / "subdir"
+        nested.mkdir(parents=True)
+        (nested / "SECURITY.md").write_text("security@example.com\n")
+
+        # max_depth=5 but the pattern is a glob → depth-walk is skipped
+        result = regex_handler(
+            {
+                "files": ["*.md"],
+                "pattern": {"patterns": {"email": r"@example\.com"}},
+                "max_depth": 5,
+            },
+            ctx,
+        )
+        # No top-level *.md files → INCONCLUSIVE (glob without ** doesn't recurse)
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
+
+
+# =============================================================================
 # _apply_cel_expr (universal post-handler CEL evaluation)
 # =============================================================================
 

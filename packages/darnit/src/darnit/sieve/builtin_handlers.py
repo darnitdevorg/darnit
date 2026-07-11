@@ -288,6 +288,14 @@ def regex_handler(config: dict[str, Any], context: HandlerContext) -> HandlerRes
 
     Common fields:
         min_matches: int - Minimum matches per pattern per file (default: 1)
+        max_depth: int - When > 0, walk subdirectories up to this many levels
+            deep when resolving non-glob ``files`` entries or ``exclude_files``
+            patterns that contain no wildcards. Default 0 (root only,
+            backward-compatible). Glob patterns containing ``*`` are still
+            evaluated by ``glob.glob`` exactly as before. Well-known noise
+            directories (``.git``, ``node_modules``, ``__pycache__``, build
+            outputs, etc.) are pruned during the walk so monorepo performance
+            stays bounded.
 
     Evidence shape (available in orchestrator ``expr`` as ``output.*``):
         any_match: bool - True if any pattern matched in any file
@@ -298,12 +306,13 @@ def regex_handler(config: dict[str, Any], context: HandlerContext) -> HandlerRes
         found_files: list[str] - (exclude mode) matched file paths
     """
     # --- Exclude mode: glob files and return evidence (CEL does pass/fail) ---
+    max_depth = int(config.get("max_depth", 0) or 0)
     exclude_files = config.get("exclude_files", [])
     if exclude_files:
-        return _regex_exclude_evidence(exclude_files, context)
+        return _regex_exclude_evidence(exclude_files, context, max_depth)
 
     # --- Resolve file list ---
-    file_paths = _resolve_regex_files(config, context)
+    file_paths = _resolve_regex_files(config, context, max_depth)
     if file_paths is None:
         # Error result already determined
         return _regex_no_files_result(config, context)
@@ -326,17 +335,38 @@ def regex_handler(config: dict[str, Any], context: HandlerContext) -> HandlerRes
 
 
 def _regex_exclude_evidence(
-    exclude_globs: list[str], context: HandlerContext,
+    exclude_globs: list[str],
+    context: HandlerContext,
+    max_depth: int = 0,
 ) -> HandlerResult:
-    """Glob for excluded files and return evidence. CEL ``expr`` decides pass/fail."""
+    """Glob for excluded files and return evidence. CEL ``expr`` decides pass/fail.
+
+    When ``max_depth > 0``, plain filename patterns (no ``*``/``?``) are
+    resolved with a depth-bounded walk instead of only checking the root.
+    Glob patterns are always passed to ``glob.glob`` unchanged.
+    """
     import glob as globmod
 
     found: list[str] = []
     for pattern in exclude_globs:
-        matches = globmod.glob(
-            os.path.join(context.local_path, pattern), recursive=True,
-        )
-        found.extend(matches)
+        if "*" in pattern or "?" in pattern:
+            matches = globmod.glob(
+                os.path.join(context.local_path, pattern), recursive=True,
+            )
+            found.extend(matches)
+        elif max_depth > 0:
+            # Depth-limited walk for plain filenames (no wildcards).
+            # dirs.clear() at the boundary depth means directory entries AT
+            # that depth are no longer descended into; only files at each
+            # visited dir are matched here.
+            for dirpath, _d in _walk_depth_limited(context.local_path, max_depth):
+                candidate = os.path.join(dirpath, pattern)
+                if os.path.exists(candidate):
+                    found.append(candidate)
+        else:
+            candidate = os.path.join(context.local_path, pattern)
+            if os.path.exists(candidate):
+                found.append(candidate)
 
     rel_paths = [os.path.relpath(f, context.local_path) for f in found[:10]]
     evidence = {
@@ -363,11 +393,19 @@ def _regex_exclude_evidence(
 
 
 def _resolve_regex_files(
-    config: dict[str, Any], context: HandlerContext,
+    config: dict[str, Any],
+    context: HandlerContext,
+    max_depth: int = 0,
 ) -> list[str] | None:
     """Resolve the list of absolute file paths to search.
 
     Returns a list of absolute paths, or None if no files could be resolved.
+
+    When ``max_depth > 0``, plain filename entries in ``files`` (those without
+    ``*`` or ``?``) are resolved with a depth-bounded walk via
+    ``_walk_depth_limited`` so nested manifests like ``src/app/config.yml``
+    are discovered. Glob patterns are always passed to ``glob.glob`` unchanged
+    to preserve existing behavior bit-for-bit for non-opt-in controls.
     """
     import glob as globmod
 
@@ -377,11 +415,20 @@ def _resolve_regex_files(
         resolved: list[str] = []
         for file_pattern in files_list:
             if "*" in file_pattern or "?" in file_pattern:
+                # Glob patterns: always use glob.glob; max_depth does not apply.
                 matches = globmod.glob(
                     os.path.join(context.local_path, file_pattern),
                     recursive=True,
                 )
                 resolved.extend(m for m in matches if os.path.isfile(m))
+            elif max_depth > 0:
+                # Depth-limited walk for plain filenames (no wildcards).
+                # Only files are collected; dirs.clear() at the depth boundary
+                # prevents descending further without skipping files at that depth.
+                for dirpath, _d in _walk_depth_limited(context.local_path, max_depth):
+                    candidate = os.path.join(dirpath, file_pattern)
+                    if os.path.isfile(candidate):
+                        resolved.append(candidate)
             else:
                 full = os.path.join(context.local_path, file_pattern)
                 if os.path.isfile(full):
