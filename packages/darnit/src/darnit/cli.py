@@ -203,15 +203,6 @@ def cmd_audit(args: argparse.Namespace) -> int:
     # Output results
     if args.output == "json":
         sys.stdout.write(format_results_json(results, config.framework_name) + "\n")
-    elif args.output == "badge":
-        from darnit_baseline.formatters.badge import generate_badge_url
-
-        # Resolve project URL from --project-url flag or auto-detect from owner/repo
-        project_url = getattr(args, "project_url", None) or ""
-        if not project_url and owner and repo:
-            project_url = f"https://github.com/{owner}/{repo}"
-
-        sys.stdout.write(generate_badge_url(results, project_url) + "\n")
     else:
         sys.stdout.write(format_results_text(results, config.framework_name) + "\n")
 
@@ -753,17 +744,9 @@ def create_parser() -> argparse.ArgumentParser:
     )
     audit_parser.add_argument(
         "-o", "--output",
-        choices=["text", "json", "badge"],
+        choices=["text", "json"],
         default="text",
-        help="Output format (default: text). Use 'badge' to generate a Best Practices Badge URL.",
-    )
-    audit_parser.add_argument(
-        "--project-url",
-        dest="project_url",
-        default=None,
-        help="Canonical repository URL for Best Practices Badge submission "
-             "(e.g. https://github.com/ORG/REPO). Auto-detected from git when omitted. "
-             "Only used with -o badge.",
+        help="Output format (default: text)",
     )
     audit_parser.add_argument(
         "--no-fail",

@@ -5,7 +5,8 @@ Tests cover:
 - Status mapping for all known statuses
 - URL generation structure and params
 - Auto-detection fallback (no project URL)
-- Long justification truncation
+- No justification for inconclusive / N/A results
+- Total URL budget cap
 """
 
 from darnit_baseline.formatters import (
@@ -120,7 +121,6 @@ class TestGenerateBadgeUrl:
 
     def test_url_contains_encoded_project_url(self):
         output = generate_badge_url(self._SIMPLE_RESULTS, "https://github.com/example/repo")
-        # URL-encoded form of the project URL must appear
         assert "github.com" in output
         assert "example" in output
 
@@ -129,20 +129,66 @@ class TestGenerateBadgeUrl:
         assert "osps_ac_01_01_status=Met" in output
         assert "osps_ac_03_01_status=Unmet" in output
 
-    def test_url_contains_justification_params(self):
+    def test_url_contains_justification_for_pass(self):
         output = generate_badge_url(self._SIMPLE_RESULTS, "https://github.com/example/repo")
         assert "osps_ac_01_01_justification=" in output
+
+    def test_url_contains_justification_for_fail(self):
+        output = generate_badge_url(self._SIMPLE_RESULTS, "https://github.com/example/repo")
         assert "osps_ac_03_01_justification=" in output
 
-    def test_url_with_warn_result(self):
+    # --- Justification policy: only Met/Unmet get justification -------------
+
+    def test_warn_result_has_no_justification(self):
+        """WARN maps to ? and must never include a justification param."""
         results = [{"id": "OSPS-VM-01.01", "status": "WARN", "details": "Could not verify"}]
         output = generate_badge_url(results, "https://github.com/example/repo")
         assert "osps_vm_01_01_status=%3F" in output or "osps_vm_01_01_status=?" in output
+        assert "osps_vm_01_01_justification" not in output
 
-    def test_url_with_na_result(self):
+    def test_na_result_has_no_justification(self):
+        """NA maps to N/A and must never include a justification param."""
         results = [{"id": "OSPS-BR-04.01", "status": "NA", "details": "Not applicable"}]
         output = generate_badge_url(results, "https://github.com/example/repo")
-        assert "osps_br_04_01_status=N%2FA" in output or "N/A" in output
+        assert "osps_br_04_01_justification" not in output
+
+    def test_warn_status_string_na_has_no_justification(self):
+        """N/A status also suppresses justification."""
+        results = [{"id": "OSPS-BR-04.01", "status": "N/A", "details": "Not applicable"}]
+        output = generate_badge_url(results, "https://github.com/example/repo")
+        assert "osps_br_04_01_justification" not in output
+
+    # --- URL budget cap ------------------------------------------------------
+
+    def test_url_within_6kb_budget(self):
+        """Total URL must never exceed the 6 KB budget."""
+        many_results = [
+            {
+                "id": f"OSPS-AC-{i:02d}.01",
+                "status": "FAIL",
+                "details": "X" * 600,  # each detail is 600 chars before truncation
+            }
+            for i in range(1, 30)
+        ]
+        output = generate_badge_url(many_results, "https://github.com/example/repo")
+        url_line = [line for line in output.splitlines() if line.startswith("https://")][-1]
+        assert len(url_line.encode()) <= 6 * 1024
+
+    def test_all_status_params_present_even_when_budget_exhausted(self):
+        """Even when the budget is exhausted, every _status param must appear."""
+        many_results = [
+            {
+                "id": f"OSPS-AC-{i:02d}.01",
+                "status": "FAIL",
+                "details": "X" * 600,
+            }
+            for i in range(1, 30)
+        ]
+        output = generate_badge_url(many_results, "https://github.com/example/repo")
+        for i in range(1, 30):
+            assert f"osps_ac_{i:02d}_01_status=Unmet" in output
+
+    # --- Other edge cases ----------------------------------------------------
 
     def test_empty_results_still_returns_url(self):
         output = generate_badge_url([], "https://github.com/example/repo")
@@ -152,14 +198,11 @@ class TestGenerateBadgeUrl:
     def test_no_project_url_shows_warning(self):
         output = generate_badge_url(self._SIMPLE_RESULTS, "")
         assert "⚠️" in output
-        assert "url=" not in output.split("\n")[-1].split("?")[1].split("&")[0]  # no url= param
 
     def test_no_project_url_no_url_param(self):
         """When project_url is empty, the url= query param should be absent."""
         output = generate_badge_url([], "")
-        # The URL line is the last non-empty line
         url_line = [line for line in output.splitlines() if line.startswith("https://")][-1]
-        # Should have as=edit but no url= since none was provided
         assert "as=edit" in url_line
         assert "url=" not in url_line
 
@@ -167,7 +210,6 @@ class TestGenerateBadgeUrl:
         long_details = "A" * 600
         results = [{"id": "OSPS-AC-01.01", "status": "PASS", "details": long_details}]
         output = generate_badge_url(results, "https://github.com/example/repo")
-        # After URL-encoding "A" stays as "A" so we can check the truncation char appears
         assert "…" in output or "%E2%80%A6" in output  # ellipsis or its URL-encoded form
 
     def test_result_missing_details_no_justification_param(self):
@@ -187,18 +229,17 @@ class TestGenerateBadgeUrl:
 
     def test_result_with_missing_id_skipped(self):
         results = [
-            {"status": "PASS", "details": "No ID"},            # skipped
-            {"id": "OSPS-AC-01.01", "status": "PASS", "details": "Has ID"},  # included
+            {"status": "PASS", "details": "No ID"},
+            {"id": "OSPS-AC-01.01", "status": "PASS", "details": "Has ID"},
         ]
         output = generate_badge_url(results, "https://github.com/example/repo")
         assert "osps_ac_01_01_status=Met" in output
-        # Only one status param expected
         assert output.count("_status=") == 1
 
     def test_result_with_missing_status_skipped(self):
         results = [
-            {"id": "OSPS-AC-01.01", "details": "No status"},   # skipped
-            {"id": "OSPS-AC-03.01", "status": "FAIL"},          # included
+            {"id": "OSPS-AC-01.01", "details": "No status"},
+            {"id": "OSPS-AC-03.01", "status": "FAIL"},
         ]
         output = generate_badge_url(results, "https://github.com/example/repo")
         assert "osps_ac_03_01_status=Unmet" in output

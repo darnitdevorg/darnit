@@ -15,6 +15,16 @@ Example:
 
 Key transform:  OSPS-AC-01.01 → osps_ac_01_01
 Status mapping: PASS → Met | FAIL → Unmet | WARN → ? | NA/N/A → N/A
+
+Justification policy:
+    Only Met (PASS) and Unmet (FAIL) results include a justification.
+    Inconclusive (WARN → ?) and N/A results never include one, to avoid
+    surfacing error messages or command-not-found noise in badge submissions.
+
+URL budget:
+    Total URL is capped at _URL_BUDGET_BYTES (6 KB). All _status params are
+    always included. Justifications are appended only while the running total
+    stays within budget.
 """
 
 import re
@@ -22,15 +32,21 @@ from urllib.parse import quote, urlencode
 
 BADGE_BASE_URL = "https://www.bestpractices.dev/projects"
 
-# Maximum justification length (characters) before truncation.
-# Keeps URLs within practical browser/server limits.
+# Maximum per-justification length (characters) before truncation.
 _MAX_JUSTIFICATION_LEN = 500
+
+# Total URL budget in bytes. Common server/proxy limits are 8 KB; we leave
+# headroom so the URL reliably works everywhere.
+_URL_BUDGET_BYTES = 6 * 1024  # 6 KB
+
+# Only these badge statuses warrant a justification in the URL.
+_JUSTIFICATION_STATUSES = {"Met", "Unmet"}
 
 # Status mapping from darnit audit statuses to badge site values.
 _STATUS_MAP: dict[str, str] = {
     "PASS": "Met",
     "FAIL": "Unmet",
-    "WARN": "?",      # inconclusive — cannot assert Met or Unmet
+    "WARN": "?",   # inconclusive — cannot assert Met or Unmet
     "NA": "N/A",
     "N/A": "N/A",
 }
@@ -84,10 +100,22 @@ def generate_badge_url(
 ) -> str:
     """Generate an OpenSSF Best Practices Badge automation-proposal URL.
 
-    Builds a long URL that pre-fills the badge entry form at
-    https://www.bestpractices.dev with the status and justification for each
-    OSPS control in the audit results.  The maintainer can follow the link,
-    review the pre-filled fields, and submit to earn their badge.
+    Builds a URL that pre-fills the badge entry form at
+    https://www.bestpractices.dev with the status and (where appropriate) the
+    justification for each OSPS control in the audit results. The maintainer
+    can follow the link, review the pre-filled fields, and submit to earn
+    their badge.
+
+    Rules applied to keep the URL safe and clean:
+
+    * Every control gets a ``_status`` parameter (always included).
+    * Justifications are only added for **Met** (PASS) and **Unmet** (FAIL)
+      results. Inconclusive (``?``) and N/A results never get a justification,
+      preventing error messages or command-not-found text from reaching a real
+      badge submission.
+    * The total URL is capped at 6 KB. Justifications are added in result
+      order until the budget is exhausted; the remaining status params are
+      still included without justification.
 
     Args:
         results:     List of audit result dicts, each containing at minimum
@@ -96,18 +124,17 @@ def generate_badge_url(
         project_url: The project's canonical repository URL
                      (e.g. ``"https://github.com/curl/curl"``).
                      Required for a valid badge submission but the URL is
-                     still generated without it (with a warning comment).
+                     still generated without it (with a warning).
 
     Returns:
-        A fully-formed URL string ready to open in a browser.
+        A formatted string containing a header and the automation-proposal URL.
     """
-    # Collect query parameters in insertion order
-    # Start with the fixed preamble
-    params: list[tuple[str, str]] = [("as", "edit")]
-
+    # --- Pass 1: build all _status params (always included) -----------------
+    status_params: list[tuple[str, str]] = [("as", "edit")]
     if project_url:
-        params.append(("url", project_url))
+        status_params.append(("url", project_url))
 
+    valid_results: list[tuple[str, str, str]] = []  # (key_prefix, badge_status, details)
     for result in results:
         control_id: str = result.get("id", "")
         status: str = result.get("status", "")
@@ -118,19 +145,47 @@ def generate_badge_url(
 
         key_prefix = control_id_to_key(control_id)
         badge_status = status_to_badge_status(status)
+        status_params.append((f"{key_prefix}_status", badge_status))
+        valid_results.append((key_prefix, badge_status, details))
 
-        params.append((f"{key_prefix}_status", badge_status))
+    # --- Pass 2: add justifications within the URL budget -------------------
+    # Calculate the base URL length with all status params but no justifications.
+    base_query = urlencode(status_params, quote_via=quote)
+    base_url = f"{BADGE_BASE_URL}?{base_query}"
+    remaining_budget = _URL_BUDGET_BYTES - len(base_url.encode())
 
-        # Include justification when available; truncate to keep URL practical
+    # Build final params: status params first, then interleave justifications.
+    final_params: list[tuple[str, str]] = list(status_params)
+    justification_pairs: list[tuple[str, str]] = []
+
+    for key_prefix, badge_status, details in valid_results:
+        # Only Met/Unmet warrant justification text
+        if badge_status not in _JUSTIFICATION_STATUSES:
+            continue
+
         justification = details.strip()
-        if justification:
-            if len(justification) > _MAX_JUSTIFICATION_LEN:
-                justification = justification[:_MAX_JUSTIFICATION_LEN] + "…"
-            params.append((f"{key_prefix}_justification", justification))
+        if not justification:
+            continue
 
-    # urlencode uses + for spaces (application/x-www-form-urlencoded),
-    # which the badge site accepts and which keeps URLs shorter than %20.
-    query = urlencode(params, quote_via=quote)
+        if len(justification) > _MAX_JUSTIFICATION_LEN:
+            justification = justification[:_MAX_JUSTIFICATION_LEN] + "…"
+
+        # Estimate the encoded cost of adding this param
+        encoded_pair = urlencode(
+            [(f"{key_prefix}_justification", justification)], quote_via=quote
+        )
+        cost = len(f"&{encoded_pair}".encode())
+
+        if remaining_budget < cost:
+            # Budget exhausted — skip remaining justifications
+            break
+
+        remaining_budget -= cost
+        justification_pairs.append((f"{key_prefix}_justification", justification))
+
+    final_params.extend(justification_pairs)
+
+    query = urlencode(final_params, quote_via=quote)
     url = f"{BADGE_BASE_URL}?{query}"
 
     header_lines = [
@@ -144,8 +199,8 @@ def generate_badge_url(
     if not project_url:
         header_lines += [
             "> ⚠️  No project URL detected.  The link above is missing the `url=` parameter.",
-            "> Pass `--project-url https://github.com/ORG/REPO` (CLI) or `project_url=` (MCP)",
-            "> to include it, which is required for a valid badge submission.",
+            "> Pass `project_url=` to `audit_openssf_baseline` to include it,",
+            "> which is required for a valid badge submission.",
             "",
         ]
 
