@@ -13,12 +13,12 @@ Example:
     osps_ac_01_01_status=Met&
     osps_ac_01_01_justification=GitHub+org+enforces+2FA
 
-Key transform:  OSPS-AC-01.01 → osps_ac_01_01
-Status mapping: PASS → Met | FAIL → Unmet | WARN → ? | NA/N/A → N/A
+Key transform:  OSPS-AC-01.01 -> osps_ac_01_01
+Status mapping: PASS -> Met | FAIL -> Unmet | WARN -> ? | NA/N/A -> N/A
 
 Justification policy:
     Only Met (PASS) and Unmet (FAIL) results include a justification.
-    Inconclusive (WARN → ?) and N/A results never include one, to avoid
+    Inconclusive (WARN -> ?) and N/A results never include one, to avoid
     surfacing error messages or command-not-found noise in badge submissions.
 
 URL budget:
@@ -27,13 +27,14 @@ URL budget:
     stays within budget.
 """
 
-import re
 from urllib.parse import quote, urlencode
 
 BADGE_BASE_URL = "https://www.bestpractices.dev/projects"
 
 # Maximum per-justification length (characters) before truncation.
-_MAX_JUSTIFICATION_LEN = 500
+# Short justifications keep URLs well within browser and server limits
+# and match the badge form's expectation of human-readable notes.
+_MAX_JUSTIFICATION_LEN = 200
 
 # Total URL budget in bytes. Common server/proxy limits are 8 KB; we leave
 # headroom so the URL reliably works everywhere.
@@ -67,8 +68,8 @@ def control_id_to_key(control_id: str) -> str:
         >>> control_id_to_key("OSPS-VM-03.02")
         'osps_vm_03_02'
     """
-    # Replace hyphens and dots with underscores, then lowercase
-    key = re.sub(r"[-.]", "_", control_id).lower()
+    # Replace hyphens and dots with underscores, then lowercase.
+    key = control_id.replace("-", "_").replace(".", "_").lower()
     return key
 
 
@@ -168,7 +169,7 @@ def generate_badge_url(
             continue
 
         if len(justification) > _MAX_JUSTIFICATION_LEN:
-            justification = justification[:_MAX_JUSTIFICATION_LEN] + "…"
+            justification = justification[:_MAX_JUSTIFICATION_LEN] + "..."
 
         # Estimate the encoded cost of adding this param
         encoded_pair = urlencode(
@@ -198,7 +199,7 @@ def generate_badge_url(
 
     if not project_url:
         header_lines += [
-            "> ⚠️  No project URL detected.  The link above is missing the `url=` parameter.",
+            "> WARNING: No project URL detected.  The link above is missing the `url=` parameter.",
             "> Pass `project_url=` to `audit_openssf_baseline` to include it,",
             "> which is required for a valid badge submission.",
             "",

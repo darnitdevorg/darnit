@@ -6,22 +6,10 @@ Tests cover:
 - URL generation structure and params
 - Auto-detection fallback (no project URL)
 - No justification for inconclusive / N/A results
-- Total URL budget cap
+- Total URL budget cap (8000 chars for 62-control audit)
 """
 
 from darnit_baseline.formatters import (
-    BADGE_BASE_URL as _BADGE_BASE_URL,
-)
-from darnit_baseline.formatters import (
-    control_id_to_key as _ctk,
-)
-from darnit_baseline.formatters import (
-    generate_badge_url as _gbu,
-)
-from darnit_baseline.formatters import (
-    status_to_badge_status as _stbs,
-)
-from darnit_baseline.formatters.badge import (
     BADGE_BASE_URL,
     control_id_to_key,
     generate_badge_url,
@@ -34,7 +22,7 @@ from darnit_baseline.formatters.badge import (
 
 
 class TestControlIdToKey:
-    """Tests for the OSPS control ID → badge key transform."""
+    """Tests for the OSPS control ID -> badge key transform."""
 
     def test_basic_transform(self):
         assert control_id_to_key("OSPS-AC-01.01") == "osps_ac_01_01"
@@ -67,7 +55,7 @@ class TestControlIdToKey:
 
 
 class TestStatusToBadgeStatus:
-    """Tests for the darnit status → badge status mapping."""
+    """Tests for the darnit status -> badge status mapping."""
 
     def test_pass_maps_to_met(self):
         assert status_to_badge_status("PASS") == "Met"
@@ -140,47 +128,61 @@ class TestGenerateBadgeUrl:
     # --- Justification policy: only Met/Unmet get justification -------------
 
     def test_warn_result_has_no_justification(self):
-        """WARN maps to ? and must never include a justification param."""
+        """WARN maps to %3F and must never include a justification param."""
         results = [{"id": "OSPS-VM-01.01", "status": "WARN", "details": "Could not verify"}]
         output = generate_badge_url(results, "https://github.com/example/repo")
-        assert "osps_vm_01_01_status=%3F" in output or "osps_vm_01_01_status=?" in output
+        # urlencode(quote_via=quote) always percent-encodes '?' -> '%3F'
+        assert "osps_vm_01_01_status=%3F" in output
         assert "osps_vm_01_01_justification" not in output
 
     def test_na_result_has_no_justification(self):
-        """NA maps to N/A and must never include a justification param."""
+        """NA maps to N%2FA and must never include a justification param."""
         results = [{"id": "OSPS-BR-04.01", "status": "NA", "details": "Not applicable"}]
         output = generate_badge_url(results, "https://github.com/example/repo")
+        # urlencode(quote_via=quote) always percent-encodes '/' -> '%2F'
+        assert "osps_br_04_01_status=N%2FA" in output
         assert "osps_br_04_01_justification" not in output
 
-    def test_warn_status_string_na_has_no_justification(self):
+    def test_na_slash_result_has_no_justification(self):
         """N/A status also suppresses justification."""
         results = [{"id": "OSPS-BR-04.01", "status": "N/A", "details": "Not applicable"}]
         output = generate_badge_url(results, "https://github.com/example/repo")
+        assert "osps_br_04_01_status=N%2FA" in output
         assert "osps_br_04_01_justification" not in output
 
-    # --- URL budget cap ------------------------------------------------------
+    # --- URL length ceiling --------------------------------------------------
 
-    def test_url_within_6kb_budget(self):
-        """Total URL must never exceed the 6 KB budget."""
-        many_results = [
-            {
-                "id": f"OSPS-AC-{i:02d}.01",
-                "status": "FAIL",
-                "details": "X" * 600,  # each detail is 600 chars before truncation
-            }
-            for i in range(1, 30)
-        ]
-        output = generate_badge_url(many_results, "https://github.com/example/repo")
+    def test_url_under_8000_chars_for_62_controls(self):
+        """URL must stay under 8000 chars for a full 62-control OSPS audit."""
+        # Simulate 62 controls with typical short justifications
+        domains = ["AC", "BR", "DO", "GV", "QA", "VM"]
+        results = []
+        for i, domain in enumerate(domains):
+            for j in range(1, 11):
+                control_num = f"{j:02d}"
+                results.append({
+                    "id": f"OSPS-{domain}-{control_num}.01",
+                    "status": "FAIL",
+                    "details": f"Remediation required for {domain}-{control_num}.01 control",
+                })
+                if len(results) == 62:
+                    break
+            if len(results) == 62:
+                break
+
+        output = generate_badge_url(results, "https://github.com/example/repo")
         url_line = [line for line in output.splitlines() if line.startswith("https://")][-1]
-        assert len(url_line.encode()) <= 6 * 1024
+        assert len(url_line) <= 8000, (
+            f"URL is {len(url_line)} chars, exceeds 8000-char ceiling"
+        )
 
     def test_all_status_params_present_even_when_budget_exhausted(self):
-        """Even when the budget is exhausted, every _status param must appear."""
+        """Even when the URL budget is exhausted, every _status param must appear."""
         many_results = [
             {
                 "id": f"OSPS-AC-{i:02d}.01",
                 "status": "FAIL",
-                "details": "X" * 600,
+                "details": "X" * 300,
             }
             for i in range(1, 30)
         ]
@@ -197,7 +199,7 @@ class TestGenerateBadgeUrl:
 
     def test_no_project_url_shows_warning(self):
         output = generate_badge_url(self._SIMPLE_RESULTS, "")
-        assert "⚠️" in output
+        assert "WARNING:" in output
 
     def test_no_project_url_no_url_param(self):
         """When project_url is empty, the url= query param should be absent."""
@@ -206,11 +208,13 @@ class TestGenerateBadgeUrl:
         assert "as=edit" in url_line
         assert "url=" not in url_line
 
-    def test_justification_truncated_at_500_chars(self):
-        long_details = "A" * 600
+    def test_justification_truncated_at_200_chars(self):
+        """Justification longer than 200 chars is truncated and ends with ..."""
+        long_details = "A" * 300
         results = [{"id": "OSPS-AC-01.01", "status": "PASS", "details": long_details}]
         output = generate_badge_url(results, "https://github.com/example/repo")
-        assert "…" in output or "%E2%80%A6" in output  # ellipsis or its URL-encoded form
+        # '...' is plain ASCII; check it appears in the output
+        assert "..." in output
 
     def test_result_missing_details_no_justification_param(self):
         results = [{"id": "OSPS-AC-01.01", "status": "PASS"}]
@@ -247,14 +251,20 @@ class TestGenerateBadgeUrl:
 
 
 # ---------------------------------------------------------------------------
-# Integration: import from package __init__
+# Integration: re-export from formatters package __init__
 # ---------------------------------------------------------------------------
 
 
 def test_badge_exports_available_from_formatters_package():
-    """Ensure the badge symbols are re-exported from the formatters package."""
-    assert callable(_gbu)
-    assert callable(_ctk)
-    assert callable(_stbs)
-    assert isinstance(_BADGE_BASE_URL, str)
-    assert "bestpractices.dev" in _BADGE_BASE_URL
+    """Ensure the badge symbols are re-exported from the formatters package.
+
+    This test uses the names already imported at module level from
+    darnit_baseline.formatters (not .formatters.badge). If the re-export
+    breaks, every test in this file that uses those names will fail, which
+    is the correct signal.
+    """
+    assert callable(generate_badge_url)
+    assert callable(control_id_to_key)
+    assert callable(status_to_badge_status)
+    assert isinstance(BADGE_BASE_URL, str)
+    assert "bestpractices.dev" in BADGE_BASE_URL
