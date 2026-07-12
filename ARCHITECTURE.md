@@ -488,6 +488,8 @@ For detailed mermaid diagrams of audit internals, remediation flow, context life
 | **Core** | `core/plugin.py` | `ComplianceImplementation` protocol definition |
 | | `core/discovery.py` | Plugin discovery via entry points |
 | | `core/handlers.py` | MCP tool handler registry (Layer 3) |
+| **Agent** | `agent/graph.py` | Node functions: `audit`, `collect_context`, `remediate`, `route` |
+| | `agent/state.py` | `AuditState` and `FeedbackQuestion` dataclasses |
 | **Sieve** | `sieve/models.py` | `CheckContext`, `PassResult`, `SieveResult`, `ControlSpec` |
 | | `sieve/orchestrator.py` | Runs passes in phase order, stops on conclusion |
 | | `sieve/registry.py` | Global `ControlRegistry` for registered controls |
@@ -528,6 +530,7 @@ For detailed mermaid diagrams of audit internals, remediation flow, context life
 
 | Document | What it covers |
 |----------|---------------|
+| [docs/agent-graph.md](docs/agent-graph.md) | Agent graph: `audit → collect_context → remediate` state machine, `AuditState` fields, `route()` logic, MCP skill integration |
 | [docs/WORKFLOW.md](docs/WORKFLOW.md) | Mermaid diagrams: audit internals, remediation flow, context lifecycle, server startup |
 | [docs/IMPLEMENTATION_GUIDE.md](docs/IMPLEMENTATION_GUIDE.md) | Step-by-step guide to building a darnit plugin (package setup, TOML config, sieve handlers, testing) |
 | [docs/generated/SCHEMA_REFERENCE.md](docs/generated/SCHEMA_REFERENCE.md) | Auto-generated TOML schema reference |
