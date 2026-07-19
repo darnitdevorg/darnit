@@ -47,7 +47,7 @@ _JUSTIFICATION_STATUSES = {"Met", "Unmet"}
 _STATUS_MAP: dict[str, str] = {
     "PASS": "Met",
     "FAIL": "Unmet",
-    "WARN": "?",   # inconclusive — cannot assert Met or Unmet
+    "WARN": "?",   # inconclusive -- cannot assert Met or Unmet
     "NA": "N/A",
     "N/A": "N/A",
 }
@@ -178,7 +178,7 @@ def generate_badge_url(
         cost = len(f"&{encoded_pair}".encode())
 
         if remaining_budget < cost:
-            # Budget exhausted — skip remaining justifications
+            # Budget exhausted -- skip remaining justifications
             break
 
         remaining_budget -= cost
@@ -190,7 +190,7 @@ def generate_badge_url(
     url = f"{BADGE_BASE_URL}?{query}"
 
     header_lines = [
-        "## OpenSSF Best Practices Badge — Automation Proposal",
+        "## OpenSSF Best Practices Badge -- Automation Proposal",
         "",
         "Follow this link to pre-fill your badge entry with the audit results.",
         "Review each field, then submit to claim your badge.",
