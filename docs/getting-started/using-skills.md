@@ -29,7 +29,7 @@ After installation, restart Claude Code. The skills appear as slash commands.
 |--------|-------|-----------------|
 | Claude Code (default) | Global | `~/.claude.json` |
 | Claude Code | Project (`--project`) | `.mcp.json` in repo root |
-| Claude Desktop | Global | `~/.claude/settings.json` |
+| Claude Desktop | Global | `claude_desktop_config.json` (macOS: `~/Library/Application Support/Claude/`, Windows: `%APPDATA%\Claude\`, Linux: `~/.config/Claude/`) |
 | Cursor | Global | `~/.cursor/mcp.json` |
 
 > **Note:** `--client claude` still works but is deprecated. Use `claude-code` or `claude-desktop`.

@@ -1,6 +1,7 @@
 """Tests for darnit.cli module."""
 
 import json
+import sys
 
 import pytest
 
@@ -16,7 +17,7 @@ from darnit.cli import (
 def test_install_claude_creates_settings(tmp_path, monkeypatch, caplog):
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
 
-    exit_code = main(["install", "--client", "claude-code"])
+    exit_code = main(["install"])
 
     assert exit_code == 0
 
@@ -30,8 +31,7 @@ def test_install_claude_creates_settings(tmp_path, monkeypatch, caplog):
     assert data["mcpServers"]["darnit"]["args"] == ["--from", "darnit", "darnit", "serve"]
 
     assert not any(
-        record.levelname == "WARNING" and "deprecated" in record.message.lower()
-        for record in caplog.records
+        record.levelname == "WARNING" and "deprecated" in record.message.lower() for record in caplog.records
     )
 
     # The install function emits via logger.info(...), so we need pytest's
@@ -39,10 +39,9 @@ def test_install_claude_creates_settings(tmp_path, monkeypatch, caplog):
     # When another test installs a logging handler that intercepts records
     # before they reach the stderr FD, capsys sees nothing while caplog
     # still captures every record. See issue #248 for the full post-mortem.
-    assert any(
-        "Installed darnit MCP server config" in record.message
-        for record in caplog.records
-    ), "expected install confirmation log message was not emitted"
+    assert any("Installed darnit MCP server config" in record.message for record in caplog.records), (
+        "expected install confirmation log message was not emitted"
+    )
 
 
 def test_install_claude_alias_emits_deprecation_warning(tmp_path, monkeypatch, caplog):
@@ -52,20 +51,19 @@ def test_install_claude_alias_emits_deprecation_warning(tmp_path, monkeypatch, c
 
     assert exit_code == 0
     assert (tmp_path / ".claude.json").exists()
-    assert any(
-        record.levelname == "WARNING" and "deprecated" in record.message.lower()
-        for record in caplog.records
-    )
+    assert any(record.levelname == "WARNING" and "deprecated" in record.message.lower() for record in caplog.records)
 
 
-def test_install_claude_desktop_uses_settings_json(tmp_path, monkeypatch):
+def test_install_claude_desktop_uses_desktop_config(tmp_path, monkeypatch):
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
+    monkeypatch.setattr(sys, "platform", "win32")
 
-    exit_code = main(["install", "--client", "claude-desktop", "--mcp-only"])
+    exit_code = main(["install", "--client", "claude-desktop", "--mcp-only", "--force"])
 
     assert exit_code == 0
 
-    settings_path = tmp_path / ".claude" / "settings.json"
+    settings_path = tmp_path / "AppData" / "Roaming" / "Claude" / "claude_desktop_config.json"
     assert settings_path.exists()
     data = json.loads(settings_path.read_text())
     assert "darnit" in data["mcpServers"]
@@ -84,6 +82,17 @@ def test_install_claude_code_project_writes_mcp_json(tmp_path, monkeypatch):
     data = json.loads(mcp_path.read_text())
     assert "darnit" in data["mcpServers"]
 
+
+def test_install_project_warns_for_non_claude_code(tmp_path, monkeypatch, caplog):
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+
+    exit_code = main(["install", "--client", "cursor", "--project", "--mcp-only", "--force"])
+
+    assert exit_code == 0
+    assert (tmp_path / ".cursor" / "mcp.json").exists()
+    assert any(record.levelname == "WARNING" and "--project" in record.message for record in caplog.records)
+
+
 def test_install_cursor_creates_settings(tmp_path, monkeypatch):
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
 
@@ -96,6 +105,7 @@ def test_install_cursor_creates_settings(tmp_path, monkeypatch):
 
     data = json.loads(settings_path.read_text())
     assert "darnit" in data["mcpServers"]
+
 
 def test_install_preserves_existing_settings(tmp_path, monkeypatch):
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
@@ -156,9 +166,7 @@ class TestCreateParser:
     @pytest.mark.unit
     def test_audit_command_parses_flags(self):
         """The audit command keeps framework, tag, and output flags."""
-        args = create_parser().parse_args(
-            ["audit", "-f", "openssf-baseline", "-t", "level:1", "-o", "json", "."]
-        )
+        args = create_parser().parse_args(["audit", "-f", "openssf-baseline", "-t", "level:1", "-o", "json", "."])
 
         assert args.command == "audit"
         assert args.framework == "openssf-baseline"
@@ -169,9 +177,7 @@ class TestCreateParser:
     @pytest.mark.unit
     def test_plan_command_parses_include_and_exclude(self):
         """The plan command keeps include/exclude filter arguments."""
-        args = create_parser().parse_args(
-            ["plan", "--include", "AC", "--exclude", "VM", "."]
-        )
+        args = create_parser().parse_args(["plan", "--include", "AC", "--exclude", "VM", "."])
 
         assert args.command == "plan"
         assert args.include == "AC"
@@ -191,7 +197,6 @@ class TestCreateParser:
         assert exit_code == 0
         assert "usage:" in captured.out
         assert "Declarative compliance auditing for software projects" in captured.out
-
 
     @pytest.mark.unit
     def test_audit_command_parses_profile_flag(self):

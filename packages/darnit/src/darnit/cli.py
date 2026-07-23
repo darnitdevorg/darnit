@@ -27,6 +27,7 @@ Examples:
 import argparse
 import importlib.metadata
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -112,7 +113,10 @@ def format_results_text(results: list[dict], framework_name: str, show_all: bool
         for r in passes:
             lines.append(format_result_text(r))
         if not show_all and len(by_status["PASS"]) > 10:
-            lines.append(f"  ... and {len(by_status['PASS']) - 10} more (use --show-all to list every check)")
+            lines.append(
+                f"  ... and {len(by_status['PASS']) - 10} more "
+                "(use --show-all to list every check)"
+            )
 
     # With --show-all, list every remaining status (e.g. N/A) so the output
     # documents every check for conformance evidence.
@@ -163,7 +167,8 @@ def cmd_audit(args: argparse.Namespace) -> int:
 
     # Warn about limited functionality in terminal mode
     logger.warning(
-        "Running in terminal mode (no LLM consultation). For full capabilities, use 'darnit serve' with an MCP client."
+        "Running in terminal mode (no LLM consultation). "
+        "For full capabilities, use 'darnit serve' with an MCP client."
     )
 
     repo_path = Path(args.repo_path).resolve()
@@ -231,7 +236,9 @@ def cmd_audit(args: argparse.Namespace) -> int:
     if args.output == "json":
         sys.stdout.write(format_results_json(results, config.framework_name) + "\n")
     else:
-        sys.stdout.write(format_results_text(results, config.framework_name, show_all=args.show_all) + "\n")
+        sys.stdout.write(
+            format_results_text(results, config.framework_name, show_all=args.show_all) + "\n"
+        )
 
     # Return non-zero if any failures
     failures = [r for r in results if r.get("status") == "FAIL"]
@@ -389,7 +396,6 @@ def cmd_init(args: argparse.Namespace) -> int:
         framework = args.framework
     else:
         from darnit.core.discovery import discover_implementations
-
         impls = discover_implementations()
         if len(impls) == 1:
             framework = next(iter(impls))
@@ -452,7 +458,6 @@ def cmd_list(args: argparse.Namespace) -> int:
 
     return 0
 
-
 def cmd_profiles(args: argparse.Namespace) -> int:
     """List available audit profiles defined by loaded implementations."""
     from darnit.core.discovery import discover_implementations
@@ -485,12 +490,13 @@ def cmd_profiles(args: argparse.Namespace) -> int:
 
     return 0
 
-
 def _find_skills_dir() -> Path | None:
     """Find the skills directory from the darnit package."""
     skills_dir = Path(__file__).parent / "skills"
     if skills_dir.is_dir():
-        has_skills = any((d / "SKILL.md").exists() for d in skills_dir.iterdir() if d.is_dir())
+        has_skills = any(
+            (d / "SKILL.md").exists() for d in skills_dir.iterdir() if d.is_dir()
+        )
         if has_skills:
             return skills_dir
     return None
@@ -536,6 +542,11 @@ def cmd_install(args: argparse.Namespace) -> int:
             "`--client claude` is deprecated; use `--client claude-code` for Claude Code "
             "or `--client claude-desktop` for Claude Desktop."
         )
+    if args.project and args.client not in ("claude", "claude-code"):
+        logger.warning(
+            "`--project` only applies to Claude Code (writes .mcp.json). "
+            f"Ignoring --project for --client {args.client}."
+        )
 
     if args.client in ("claude", "claude-code"):
         if args.project:
@@ -543,7 +554,13 @@ def cmd_install(args: argparse.Namespace) -> int:
         else:
             settings_path = Path.home() / ".claude.json"
     elif args.client == "claude-desktop":
-        settings_path = Path.home() / ".claude" / "settings.json"
+        if sys.platform == "darwin":
+            base = Path.home() / "Library" / "Application Support" / "Claude"
+        elif sys.platform == "win32":
+            base = Path(os.environ.get("APPDATA", str(Path.home() / "AppData" / "Roaming"))) / "Claude"
+        else:
+            base = Path.home() / ".config" / "Claude"
+        settings_path = base / "claude_desktop_config.json"
     else:  # cursor
         settings_path = Path.home() / ".cursor" / "mcp.json"
 
@@ -603,7 +620,6 @@ def cmd_install(args: argparse.Namespace) -> int:
     logger.info("Next step: restart your AI client and use the configured MCP server.")
     logger.info("Skills available: /darnit-audit, /darnit-data, /darnit-comply, /darnit-remediate")
     return 0
-
 
 # Safety ceiling on audit<->collect_context rounds. Each iteration resolves ALL
 # pending questions in one batch (the answers comprehension in cmd_run), so this
@@ -710,7 +726,6 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     return 1 if failed else 0
 
-
 def cmd_serve(args: argparse.Namespace) -> int:
     """Start the MCP server.
 
@@ -777,6 +792,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
 # Helpers
 
 
+
 def _detect_default_branch(repo_path: Path) -> str:
     """Detect the default branch name."""
     import subprocess
@@ -811,8 +827,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "-V",
-        "--version",
+        "-V", "--version",
         action="version",
         # PyPI distribution name is `darnit-core` (the CLI command stays `darnit`).
         # Fall back to "dev" when running from a non-installed source checkout
@@ -821,14 +836,12 @@ def create_parser() -> argparse.ArgumentParser:
         version=f"%(prog)s {_resolve_version()}",
     )
     parser.add_argument(
-        "-v",
-        "--verbose",
+        "-v", "--verbose",
         action="store_true",
         help="Enable verbose output",
     )
     parser.add_argument(
-        "-q",
-        "--quiet",
+        "-q", "--quiet",
         action="store_true",
         help="Suppress non-essential output",
     )
@@ -840,11 +853,11 @@ def create_parser() -> argparse.ArgumentParser:
         "serve",
         help="Start MCP server (recommended)",
         description="Start darnit as an MCP server. This is the recommended way to use darnit "
-        "as it enables full LLM consultation capabilities for intelligent analysis.\n\n"
-        "Usage:\n"
-        "  darnit serve config.toml      # Use TOML config file\n"
-        "  darnit serve --framework NAME # Use named framework\n"
-        "  darnit serve                  # Auto-detect framework",
+                    "as it enables full LLM consultation capabilities for intelligent analysis.\n\n"
+                    "Usage:\n"
+                    "  darnit serve config.toml      # Use TOML config file\n"
+                    "  darnit serve --framework NAME # Use named framework\n"
+                    "  darnit serve                  # Auto-detect framework",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     serve_parser.add_argument(
@@ -853,8 +866,7 @@ def create_parser() -> argparse.ArgumentParser:
         help="Path to TOML config file (e.g., my-framework.toml)",
     )
     serve_parser.add_argument(
-        "-f",
-        "--framework",
+        "-f", "--framework",
         help="Framework to use (default: auto-detect). Ignored if config file is provided.",
     )
     serve_parser.set_defaults(func=cmd_serve)
@@ -864,8 +876,8 @@ def create_parser() -> argparse.ArgumentParser:
         "audit",
         help="[Debug] Run audit without LLM",
         description="Run compliance audit in terminal mode. NOTE: This runs without LLM "
-        "consultation - checks requiring analysis will return WARN/inconclusive. "
-        "For full capabilities, use 'darnit serve' with an MCP client.",
+                    "consultation - checks requiring analysis will return WARN/inconclusive. "
+                    "For full capabilities, use 'darnit serve' with an MCP client.",
     )
     audit_parser.add_argument(
         "repo_path",
@@ -874,17 +886,15 @@ def create_parser() -> argparse.ArgumentParser:
         help="Path to repository (default: current directory)",
     )
     audit_parser.add_argument(
-        "-f",
-        "--framework",
+        "-f", "--framework",
         help="Framework to use (name or path to .toml file)",
     )
     audit_parser.add_argument(
-        "-t",
-        "--tags",
+        "-t", "--tags",
         action="append",
         default=[],
         help="Filter controls by attributes (e.g., level=1, domain=VM, security). "
-        "Multiple filters use AND logic. Bare values match tags list.",
+             "Multiple filters use AND logic. Bare values match tags list.",
     )
     audit_parser.add_argument(
         "--include",
@@ -895,8 +905,7 @@ def create_parser() -> argparse.ArgumentParser:
         help="Exclude these control IDs (comma-separated)",
     )
     audit_parser.add_argument(
-        "-o",
-        "--output",
+        "-o", "--output",
         choices=["text", "json"],
         default="text",
         help="Output format (default: text)",
@@ -910,11 +919,10 @@ def create_parser() -> argparse.ArgumentParser:
         "--show-all",
         action="store_true",
         help="List every check in text output: show all passed checks (no truncation) "
-        "and include N/A checks. Useful for documenting full OSPS Baseline conformance.",
+             "and include N/A checks. Useful for documenting full OSPS Baseline conformance.",
     )
     audit_parser.add_argument(
-        "--profile",
-        "-p",
+        "--profile", "-p",
         dest="profile",
         default=None,
         help="Audit profile name to filter controls (e.g., 'level1_quick' or 'openssf-baseline:level1_quick')",
@@ -934,17 +942,15 @@ def create_parser() -> argparse.ArgumentParser:
         help="Path to repository",
     )
     plan_parser.add_argument(
-        "-f",
-        "--framework",
+        "-f", "--framework",
         help="Framework to use",
     )
     plan_parser.add_argument(
-        "-t",
-        "--tags",
+        "-t", "--tags",
         action="append",
         default=[],
         help="Filter controls by attributes (e.g., level=1, domain=VM, security). "
-        "Multiple filters use AND logic. Bare values match tags list.",
+             "Multiple filters use AND logic. Bare values match tags list.",
     )
     plan_parser.add_argument(
         "--include",
@@ -955,8 +961,7 @@ def create_parser() -> argparse.ArgumentParser:
         help="Exclude these control IDs (comma-separated)",
     )
     plan_parser.add_argument(
-        "--profile",
-        "-p",
+        "--profile", "-p",
         dest="profile",
         default=None,
         help="Audit profile name to filter controls",
@@ -993,8 +998,7 @@ def create_parser() -> argparse.ArgumentParser:
         help="Path to repository",
     )
     init_parser.add_argument(
-        "-f",
-        "--framework",
+        "-f", "--framework",
         help="Framework to extend (default: auto-detect)",
     )
     init_parser.add_argument(
@@ -1013,8 +1017,8 @@ def create_parser() -> argparse.ArgumentParser:
         "run",
         help="Run full agentic workflow (LLM-powered)",
         description="Run the full autonomous compliance pipeline. "
-        "Loads project context, runs all checks, collects context, "
-        "and remediates failures. Requires an LLM API key.",
+                    "Loads project context, runs all checks, collects context, "
+                    "and remediates failures. Requires an LLM API key.",
     )
     run_parser.add_argument(
         "repo_path",
@@ -1028,8 +1032,8 @@ def create_parser() -> argparse.ArgumentParser:
         choices=["interactive", "noninteractive", "auto"],
         default="auto",
         help="Human feedback mode: interactive (prompts in terminal), "
-        "noninteractive (collects questions for later), "
-        "auto (interactive if terminal, noninteractive in CI)",
+             "noninteractive (collects questions for later), "
+             "auto (interactive if terminal, noninteractive in CI)",
     )
     run_parser.set_defaults(func=cmd_run)
 
@@ -1042,8 +1046,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--client",
         choices=["claude-code", "claude-desktop", "claude", "cursor"],
         default="claude-code",
-        help="Client to configure (default: claude-code). "
-             "'claude' is deprecated — use claude-code or claude-desktop.",
+        help="Client to configure (default: claude-code). 'claude' is deprecated — use claude-code or claude-desktop." ,
     )
     install_parser.add_argument(
         "--force",
@@ -1058,8 +1061,7 @@ def create_parser() -> argparse.ArgumentParser:
     install_parser.add_argument(
         "--project",
         action="store_true",
-        help="Install skills into .claude/skills/ and MCP config into .mcp.json "
-             "(per-project) instead of global paths",
+        help="Install skills into .claude/skills/ and MCP config into .mcp.json (per-project) instead of global paths",
     )
     install_parser.set_defaults(func=cmd_install)
 
