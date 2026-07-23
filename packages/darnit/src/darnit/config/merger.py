@@ -127,6 +127,12 @@ class EffectiveControl:
     security_severity: float | None = None
     docs_url: str | None = None
 
+    # New fields needed for Sieve metadata
+    when: dict[str, Any] | None = None
+    depends_on: list[str] | None = None
+    inferred_from: str | None = None
+    on_pass: dict[str, Any] | None = None
+
     def is_applicable(self) -> bool:
         """Check if control should be evaluated."""
         return self.status not in (ControlStatus.NA, ControlStatus.DISABLED)
@@ -264,6 +270,10 @@ def merge_control(
             tags=tags,
             security_severity=framework_control.security_severity,
             docs_url=framework_control.docs_url,
+            when=framework_control.when,
+            depends_on=framework_control.depends_on,
+            inferred_from=framework_control.inferred_from,
+            on_pass=framework_control.on_pass.model_dump() if framework_control.on_pass else None,
         )
 
         # Apply framework check config

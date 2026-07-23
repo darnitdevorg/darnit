@@ -244,6 +244,15 @@ def control_from_effective(
         "remediation_adapter": effective.remediation_adapter,
     }
 
+    if effective.when:
+        metadata["when"] = effective.when
+    if effective.depends_on:
+        metadata["depends_on"] = effective.depends_on
+    if effective.inferred_from:
+        metadata["inferred_from"] = effective.inferred_from
+    if effective.on_pass:
+        metadata["on_pass"] = effective.on_pass
+
     # Transfer handler invocations from effective passes_config to metadata
     if effective.passes_config:
         from darnit.config.framework_schema import HandlerInvocation

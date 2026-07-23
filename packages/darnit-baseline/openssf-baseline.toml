@@ -1332,6 +1332,7 @@ look_for_urls = false
 [[controls."OSPS-DO-02.01".passes]]
 handler = "file_exists"
 use_locator = true
+expr = 'has(output.found_file)'
 
 [[controls."OSPS-DO-02.01".passes]]
 handler = "pattern"
@@ -1344,11 +1345,19 @@ files = [
   "CONTRIBUTING.md",
 ]
 pass_if_any = true
+expr = 'output.any_match'
 
 [controls."OSPS-DO-02.01".passes.pattern.patterns]
 template_structure = '(?si)(describe.*bug|steps.*reproduce|expected.*behav|actual.*behav)'
 bug_reporting_link = '(?i)(report|submit|file).{0,30}(bug|issue|defect).{0,30}(http|github|tracker|template)'
 issue_template_yaml = '(?i)^name:\s+.*(bug|defect|issue)'
+
+[[controls."OSPS-DO-02.01".passes]]
+handler = "manual"
+steps = [
+    "Check if project documentation clearly explains how to report defects",
+    "Verify the contributing guide sets expectations for how defects will be triaged and resolved",
+]
 
 [controls."OSPS-DO-02.01".remediation]
 safe = true

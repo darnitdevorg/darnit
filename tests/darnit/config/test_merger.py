@@ -5,12 +5,14 @@ This module tests the framework + user config merging system.
 
 import pytest
 
+from darnit.config.control_loader import control_from_effective
 from darnit.config.framework_schema import (
     CheckConfig,
     ControlConfig,
     FrameworkConfig,
     FrameworkDefaults,
     FrameworkMetadata,
+    OnPassConfig,
 )
 from darnit.config.merger import (
     EffectiveConfig,
@@ -370,8 +372,105 @@ class TestUserSettings:
         assert settings.timeout == 60
 
 
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestSieveGatingMetadataPreservation:
+    """Regression tests for sieve gating metadata surviving the effective-config pipeline.
+
+    The effective-config path (merge_control → control_from_effective) was silently
+    dropping ``when``, ``depends_on``, ``inferred_from``, and ``on_pass`` from ALL
+    controls, so every when-gate and inferred_from auto-pass was dead in production.
+    These tests guard against that regression.
+    """
+
+    def _make_framework_control_with_gating(self) -> ControlConfig:
+        """Build a FrameworkControl carrying all four gating metadata fields."""
+        return ControlConfig(
+            name="GatedControl",
+            level=1,
+            domain="QA",
+            description="A control with all sieve gating fields set",
+            when={"has_releases": True},
+            depends_on=["OSPS-AC-01.01"],
+            inferred_from="OSPS-AC-02.01",
+            on_pass=OnPassConfig(project_update={"security.policy.path": "$EVIDENCE.relative_path"}),
+        )
+
+    def test_merge_control_preserves_gating_metadata(self):
+        """All four gating fields must survive merge_control into EffectiveControl."""
+        framework_control = self._make_framework_control_with_gating()
+        defaults = FrameworkDefaults()
+
+        effective = merge_control("OSPS-QA-02.01", framework_control, None, defaults)
+
+        assert effective.when == {"has_releases": True}, (
+            "merge_control dropped 'when' — when-gates will be silently ignored"
+        )
+        assert effective.depends_on == ["OSPS-AC-01.01"], (
+            "merge_control dropped 'depends_on' — control ordering will be wrong"
+        )
+        assert effective.inferred_from == "OSPS-AC-02.01", (
+            "merge_control dropped 'inferred_from' — auto-pass will never trigger"
+        )
+        assert effective.on_pass is not None, (
+            "merge_control dropped 'on_pass' — project context will not be updated on pass"
+        )
+        assert effective.on_pass.get("project_update", {}).get("security.policy.path") == "$EVIDENCE.relative_path"
+
+    def test_control_from_effective_preserves_gating_metadata(self):
+        """All four gating fields must survive control_from_effective into ControlSpec.metadata."""
+        framework_control = self._make_framework_control_with_gating()
+        defaults = FrameworkDefaults()
+
+        effective = merge_control("OSPS-QA-02.01", framework_control, None, defaults)
+        spec = control_from_effective("OSPS-QA-02.01", effective)
+
+        assert "when" in spec.metadata, (
+            "control_from_effective dropped 'when' from ControlSpec.metadata"
+        )
+        assert spec.metadata["when"] == {"has_releases": True}
+
+        assert "depends_on" in spec.metadata, (
+            "control_from_effective dropped 'depends_on' from ControlSpec.metadata"
+        )
+        assert spec.metadata["depends_on"] == ["OSPS-AC-01.01"]
+
+        assert "inferred_from" in spec.metadata, (
+            "control_from_effective dropped 'inferred_from' from ControlSpec.metadata"
+        )
+        assert spec.metadata["inferred_from"] == "OSPS-AC-02.01"
+
+        assert "on_pass" in spec.metadata, (
+            "control_from_effective dropped 'on_pass' from ControlSpec.metadata"
+        )
+        assert spec.metadata["on_pass"].get("project_update", {}).get("security.policy.path") == "$EVIDENCE.relative_path"
+
+    def test_control_without_gating_metadata_is_unaffected(self):
+        """Controls without optional gating fields must continue to work normally."""
+        framework_control = ControlConfig(
+            name="PlainControl",
+            level=2,
+            domain="BR",
+            description="A control with no optional gating fields",
+        )
+        defaults = FrameworkDefaults()
+
+        effective = merge_control("OSPS-BR-01.01", framework_control, None, defaults)
+        spec = control_from_effective("OSPS-BR-01.01", effective)
+
+        # Optional fields default to None — must not appear in metadata
+        assert effective.when is None
+        assert effective.depends_on is None
+        assert effective.inferred_from is None
+        assert effective.on_pass is None
+        assert "when" not in spec.metadata
+        assert "depends_on" not in spec.metadata
+        assert "inferred_from" not in spec.metadata
+        assert "on_pass" not in spec.metadata
+
 
 class TestLoadFrameworkConfig:
     def test_load_framework_config_success(self, tmp_path):

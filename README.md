@@ -436,6 +436,10 @@ To report security vulnerabilities, see [SECURITY.md](SECURITY.md).
 
 For contributor setup and development workflow, see the [Getting Started Guide](GETTING_STARTED.md).
 
+## Governance
+
+The darnit Project is governed by a Technical Steering Committee (TSC). See the [Charter](CHARTER.md) for the binding governance rules, the [TSC roster](TECHNICAL-STEERING-COMMITTEE.md) for current voting members, and [GOVERNANCE.md](GOVERNANCE.md) for operational guidance (roles, release process, contact).
+
 ## License
 
 Apache-2.0

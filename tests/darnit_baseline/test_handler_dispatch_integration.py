@@ -549,8 +549,8 @@ body:
         assert result.evidence.get("relative_path") == f".github/ISSUE_TEMPLATE/{template_filename}"
 
     @pytest.mark.unit
-    def test_osps_do_02_01_fails_for_feature_only_template(self, tmp_path):
-        """OSPS-DO-02.01 should fail when only a feature template exists."""
+    def test_osps_do_02_01_warns_for_feature_only_template(self, tmp_path):
+        """OSPS-DO-02.01 should warn (manual fallback) when only a feature template exists."""
         from pathlib import Path
 
         from darnit.config import load_controls_from_effective, load_effective_config_by_name
@@ -585,4 +585,39 @@ body:
         )
         result = orchestrator.verify(control, context)
 
-        assert result.status == "FAIL"
+        assert result.status == "WARN"
+
+    @pytest.mark.unit
+    def test_osps_do_02_01_passes_for_contributing_md_with_bug_link(self, tmp_path):
+        """OSPS-DO-02.01 should pass when CONTRIBUTING.md contains a defect-reporting link.
+
+        Covers the pattern handler path: a project whose contributing guide
+        tells users to 'report a bug, file an issue at https://github.com/x/y/issues'
+        satisfies the control even without a .github/ISSUE_TEMPLATE/bug* file.
+        """
+        from pathlib import Path
+
+        from darnit.config import load_controls_from_effective, load_effective_config_by_name
+
+        contributing = tmp_path / "CONTRIBUTING.md"
+        contributing.write_text(
+            "# Contributing\n\n"
+            "To report a bug, file an issue at https://github.com/x/y/issues\n"
+        )
+
+        config = load_effective_config_by_name("openssf-baseline", Path("."))
+        controls = load_controls_from_effective(config)
+        control = next(ctrl for ctrl in controls if ctrl.control_id == "OSPS-DO-02.01")
+
+        orchestrator = SieveOrchestrator()
+        context = CheckContext(
+            owner="testorg",
+            repo="testrepo",
+            local_path=str(tmp_path),
+            default_branch="main",
+            control_id="OSPS-DO-02.01",
+            project_context={},
+        )
+        result = orchestrator.verify(control, context)
+
+        assert result.status == "PASS"
