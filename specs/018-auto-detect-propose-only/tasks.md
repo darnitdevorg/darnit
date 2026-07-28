@@ -144,7 +144,7 @@ contains a statement that detection must not run for user-judgment keys.
 - [X] T028 [P] Grep all prose for surviving statements of the old rule (`grep -rn "must not run" --include="*.md" .`) and confirm only historical spec records under `specs/001-*` and `specs/003-*` remain, satisfying SC-002
 - [X] T029 [P] Confirm every file touched is ASCII-only per the project writing rule
 - [X] T030 Read the amended Principle IV cold and confirm a sentence can be cited for each of the five consumption paths, satisfying SC-003
-- [ ] T031 Open the PR against `darnitdevorg/darnit` from the fork, describing the change as reconciling the constitution with shipped behavior (research.md Finding 1) rather than as loosening a safety rule
+- [X] T031 Open the PR against `darnitdevorg/darnit` from the fork, describing the change as reconciling the constitution with shipped behavior (research.md Finding 1) rather than as loosening a safety rule
 - [ ] T032 Request TSC review under the Charter's voting rules, on the grounds that the constitution is a governing artifact in substance even though `GOVERNANCE.md:51` lists only that document, the Charter, and the roster
 - [ ] T033 File a follow-up issue to add the constitution to the `GOVERNANCE.md:51` enumeration, so the next amendment does not have to relitigate which track applies
 
