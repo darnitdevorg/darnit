@@ -257,16 +257,27 @@ identical, because this feature changes documents only.
   by the amended text; a reader can cite the sentence that covers each.
 - **SC-004**: An audit of a fixed sample project produces identical results
   before and after the change, confirming zero behavior drift.
-- **SC-005**: 100% of the inventory entries from FR-010 are resolved as either
-  updated or explicitly unaffected, with no entry left undetermined.
+- **SC-005**: 100% of the inventory entries from FR-010 carry a disposition of
+  updated, deferred, or explicitly unaffected, with no entry left undetermined.
+  Deferred entries additionally carry a stated reason.
 - **SC-006**: RFC-0001's Stage 0 gate is satisfied: the change is merged as its
   own pull request and referenced from the RFC.
 
 ## Assumptions
 
-- The amendment follows the project's existing governance process for
-  architecture-affecting changes, including the comment period and maintainer
-  consensus described in GOVERNANCE.md.
+- The amendment is treated as a governance change and follows the Charter's TSC
+  voting rules, even though GOVERNANCE.md:51 enumerates only GOVERNANCE.md
+  itself, the Charter, and the TSC roster as governance artifacts. The
+  constitution is a governing document in substance, and RFC-0001 treats Stage 0
+  as requiring sign-off. The alternative reading -- that this is a routine Minor
+  Change needing one maintainer approval -- is defensible on the letter of both
+  documents, which is itself the reason the enumeration should be corrected.
+- If the amendment is not adopted, the contradiction identified in research.md
+  Finding 1 does not disappear; it inverts. The remedy would become a code change
+  gating `hint_sources` behind the user-judgment flag, disabling the propose-only
+  behavior currently enabled for maintainer lists and security contacts. That
+  path contradicts FR-013 and is out of scope here, but it is the alternative and
+  should be stated when the amendment is presented.
 - This feature delivers document changes only. Implementing the permitted
   behavior is a separate, later effort (RFC-0001 Stage 1) and is out of scope
   here. This is why FR-013 requires zero behavior change.

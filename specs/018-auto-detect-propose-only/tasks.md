@@ -105,7 +105,8 @@ paragraph, and it is why T004 exists.
 - [ ] T015 [US2] Add the FR-006 clause requiring a confirmation to record when it was made, by whom, and what it was based on, and permitting expiry after a configurable period without naming the period
 - [ ] T016 [US2] Verify the existing prohibition on guessed values in executable snippets survives the rewrite at `.specify/memory/constitution.md:114-115`, per FR-007; this clause must not be lost while its neighbours change
 - [ ] T017 [US2] Add the FR-015 clause explaining that `auto_detect` gates concluding and `allow_sieve_hints` gates proposing, and that the safety property is enforced by the pair rather than by a ban on detection
-- [ ] T018 [US2] Mirror T012 through T017 into the Conservative-by-Default section of `CLAUDE.md` at the level of detail appropriate to runtime guidance, keeping substance identical per FR-008
+- [ ] T018 [US2] Add the FR-003 clause to `.specify/memory/constitution.md` Principle IV requiring that a candidate shown to a person is labelled as unconfirmed and carries its origin, so a reader can judge whether to trust it; this is the clause that makes US2 acceptance scenario 5 checkable
+- [ ] T019 [US2] Mirror T012 through T018 into the Conservative-by-Default section of `CLAUDE.md` at the level of detail appropriate to runtime guidance, keeping substance identical per FR-008
 
 **Checkpoint**: The rule is now precise enough to implement against. US1 plus
 US2 together are the complete governance change.
@@ -122,11 +123,11 @@ contains a statement that detection must not run for user-judgment keys.
 
 ### Implementation for User Story 3
 
-- [ ] T019 [P] [US3] Extend `ARCHITECTURE.md:441` ("Values with `auto_detect = false` require explicit user confirmation") to mention that a candidate may be proposed, per FR-011
-- [ ] T020 [P] [US3] Clarify the schema table entry at `docs/design/CONTEXT_PROMPTS.md:201` from "Whether value can be auto-detected" to language distinguishing concluding from proposing, per FR-011
-- [ ] T021 [P] [US3] Add a sentence near the `auto_detect = false` example at `docs/IMPLEMENTATION_GUIDE.md:707` explaining what the flag now means, per FR-011
-- [ ] T022 [US3] Confirm every entry in the research.md inventory carries a disposition of updated, deferred, or unaffected, with none left undetermined, per FR-010 and SC-005
-- [ ] T023 [US3] Verify no file under `packages/` was modified (`git diff --name-only | grep packages/` returns nothing), enforcing the FR-011 deferral and the FR-013 boundary
+- [ ] T020 [P] [US3] Extend `ARCHITECTURE.md:441` ("Values with `auto_detect = false` require explicit user confirmation") to mention that a candidate may be proposed, per FR-011
+- [ ] T021 [P] [US3] Clarify the schema table entry at `docs/design/CONTEXT_PROMPTS.md:201` from "Whether value can be auto-detected" to language distinguishing concluding from proposing, per FR-011
+- [ ] T022 [P] [US3] Add a sentence near the `auto_detect = false` example at `docs/IMPLEMENTATION_GUIDE.md:707` explaining what the flag now means, per FR-011
+- [ ] T023 [US3] Confirm every entry in the research.md inventory carries a disposition of updated, deferred, or unaffected, with none left undetermined, per FR-010 and SC-005
+- [ ] T024 [US3] Verify no file under `packages/` was modified (`git diff --name-only | grep packages/` returns nothing), enforcing the FR-011 deferral and the FR-013 boundary
 
 **Checkpoint**: Documentation tree is internally consistent. Nothing in
 `packages/` moved.
@@ -137,14 +138,15 @@ contains a statement that detection must not run for user-judgment keys.
 
 **Purpose**: Prove the success criteria and get the change in front of the TSC.
 
-- [ ] T024 Re-run `uv run pytest tests/ --ignore=tests/integration/ -q` and confirm the pass count matches the T001 baseline exactly; any test needing modification disproves FR-013
-- [ ] T025 [P] Re-run `uv run ruff check .` and `uv run python scripts/validate_sync.py --verbose`, both must pass
-- [ ] T026 [P] Re-run the T003 audit, diff against `/tmp/018-audit-before.txt`, and confirm no substantive difference, satisfying SC-004
-- [ ] T027 [P] Grep all prose for surviving statements of the old rule (`grep -rn "must not run" --include="*.md" .`) and confirm only historical spec records under `specs/001-*` and `specs/003-*` remain, satisfying SC-002
-- [ ] T028 [P] Confirm every file touched is ASCII-only per the project writing rule
-- [ ] T029 Read the amended Principle IV cold and confirm a sentence can be cited for each of the five consumption paths, satisfying SC-003
-- [ ] T030 Open the PR against `darnitdevorg/darnit` from the fork, describing the change as reconciling the constitution with shipped behavior (research.md Finding 1) rather than as loosening a safety rule
-- [ ] T031 Start the GOVERNANCE.md comment period and request TSC review; the amendment cannot merge on a single approval
+- [ ] T025 Re-run `uv run pytest tests/ --ignore=tests/integration/ -q` and confirm the pass count matches the T001 baseline exactly; any test needing modification disproves FR-013
+- [ ] T026 [P] Re-run `uv run ruff check .` and `uv run python scripts/validate_sync.py --verbose`, both must pass
+- [ ] T027 [P] Re-run the T003 audit, diff against `/tmp/018-audit-before.txt`, and confirm the only differences are timestamps and absolute paths; any difference in control status, level outcome, or finding count disproves SC-004
+- [ ] T028 [P] Grep all prose for surviving statements of the old rule (`grep -rn "must not run" --include="*.md" .`) and confirm only historical spec records under `specs/001-*` and `specs/003-*` remain, satisfying SC-002
+- [ ] T029 [P] Confirm every file touched is ASCII-only per the project writing rule
+- [ ] T030 Read the amended Principle IV cold and confirm a sentence can be cited for each of the five consumption paths, satisfying SC-003
+- [ ] T031 Open the PR against `darnitdevorg/darnit` from the fork, describing the change as reconciling the constitution with shipped behavior (research.md Finding 1) rather than as loosening a safety rule
+- [ ] T032 Request TSC review under the Charter's voting rules, on the grounds that the constitution is a governing artifact in substance even though `GOVERNANCE.md:51` lists only that document, the Charter, and the roster
+- [ ] T033 File a follow-up issue to add the constitution to the `GOVERNANCE.md:51` enumeration, so the next amendment does not have to relitigate which track applies
 
 ---
 
@@ -170,9 +172,9 @@ genuinely separable, and only in the sense that it could follow in a second PR.
 ### Parallel Opportunities
 
 - T002 and T003 in Setup
-- T007, T008, T011 in US1 (constitution, CLAUDE.md, ARCHITECTURE.md, RFC are four different files)
-- T019, T020, T021 in US3 (three different files)
-- T025, T026, T027, T028 in Polish
+- T007, T008, T011 in US1 (CLAUDE.md, ARCHITECTURE.md, and the RFC are three different files)
+- T020, T021, T022 in US3 (three different files)
+- T026, T027, T028, T029 in Polish
 - Nothing in US2 is parallel; every task edits the same Principle IV block
 
 ---
@@ -195,7 +197,7 @@ Task: "Mark the Stage 0 row satisfied at docs/rfcs/0001-core-rearchitecture.md:2
 1. Phase 1 Setup, Phase 2 Foundational
 2. Phase 3 (US1) and Phase 4 (US2) together
 3. Phase 5 (US3) in the same PR if the diff stays readable
-4. Phase 6 verification, then open the PR and start the comment period
+4. Phase 6 verification, then open the PR and request TSC review
 
 RFC-0001 Stage 0 requires this land as its own PR, so the temptation to bundle
 it with Stage 1 groundwork should be resisted (FR-012, SC-006).

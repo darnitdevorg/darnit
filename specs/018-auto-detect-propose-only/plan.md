@@ -49,8 +49,9 @@ Python monorepo.
 configuration, or test file may be modified (FR-011, FR-013). The constitution
 bump is fixed at one MINOR increment (FR-009, 1.2.0 -> 1.3.0).
 
-**Scale/Scope**: Six prose files, one of which is the constitution. Fifteen
-inventory entries total, nine of which are deferred rather than changed.
+**Scale/Scope**: Six prose files, one of which is the constitution. Nineteen
+inventory entries: ten updated, five deferred, and four historical records left
+alone.
 
 ## Constitution Check
 
@@ -61,7 +62,7 @@ inventory entries total, nine of which are deferred rather than changed.
 | I. Plugin Separation | N/A | No code changes; no imports added in either direction. |
 | II. Conservative-by-Default | PASS | The amendment preserves every clause: unverified is not compliant, WARN counts as FAIL, false negatives are preferred. It narrows only the separate question of whether a candidate may be computed and shown. |
 | III. TOML-First Architecture | N/A | No control metadata moves. Configuration files are explicitly out of scope (FR-011). |
-| IV. Never Guess User Values | PASS (this is the principle under amendment) | The core requirement -- the framework MUST NOT silently apply values requiring user judgment -- survives verbatim. FR-002 through FR-007 exist to hold that line while the surrounding bullets change. FR-004 additionally closes a latent hole by scoping the confidence-threshold provision away from user-judgment keys, which today reads as unscoped. |
+| IV. Never Guess User Values | VIOLATED TODAY; this amendment is the remedy | The shipped system already breaches this principle as literally written: `collection.py:264-271` resolves `hint_sources` with no `auto_detect` gate, and `openssf-baseline.toml:287-289,300-301` enables it for `maintainers` and `security_contact` (research.md Finding 1). The breach is of the wording, not of the intent -- nothing concludes a user-judgment key. The core requirement -- the framework MUST NOT silently apply values requiring user judgment -- survives the amendment verbatim. FR-002 through FR-007 hold that line while the surrounding bullets change, and FR-004 closes a latent hole by scoping the confidence-threshold provision away from user-judgment keys, which today reads as unscoped. |
 | V. Sieve Pipeline Integrity | PASS | Phase ordering, INCONCLUSIVE semantics, and the no-short-circuit-to-PASS rule are untouched. |
 | Development Workflow | PASS | Lint, tests, and `validate_sync.py` all run and must pass. No spec-sync implication, since `docs/architecture/framework-design.md` already documents the propose mechanism (research.md, Finding 1) and needs no change. |
 
