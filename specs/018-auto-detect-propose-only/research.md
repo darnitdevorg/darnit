@@ -112,6 +112,8 @@ are left alone.
 | `docs/design/CONTEXT_PROMPTS.md:201` | schema table: "Whether value can be auto-detected" | Clarify to "whether a value may be concluded without confirmation" |
 | `docs/IMPLEMENTATION_GUIDE.md:707` | `auto_detect = false` example with no surrounding rule text | Add a sentence on what the flag now means |
 | `docs/rfcs/0001-core-rearchitecture.md:247` | Stage 0 row | Mark satisfied and link the PR (FR-012) |
+| `docs/rfcs/0001-core-rearchitecture.md:153` | "The project's current rule is absolute: the sieve MUST NOT run..." | Found during implementation, not Phase 0. Present-tense assertion of the old rule that the amendment falsifies. Rewritten to past tense. |
+| `docs/rfcs/0001-core-rearchitecture.md:280` | Governance dependency: "Recommend landing that as its own small PR through the TSC before Stage 1 begins" | Found during implementation. Dependency is discharged by this change; rewritten to record that, and to carry Finding 1 forward for Stage 1. |
 
 ### Deferred (recorded, not changed)
 

@@ -150,7 +150,7 @@ Two rules keep the ratchet honest:
 1. **Persistence does not launder authority.** A confirmed value retains authority `asserted` forever, along with the evidence it was based on -- including whether an LLM proposed it. Writing a guess into a file does not make it ground truth, and a later run must not report it as though a tool observed it.
 2. **Confirmations age.** Each stored value records `confirmed_at`, `confirmed_by`, and its basis. Past a configurable period it downgrades back to a candidate requiring re-confirmation. This gives staleness handling without requiring a bespoke drift signal per key. Proposed default: per-key, 180 days, with facts that rarely change (governance model) configured longer than facts that rot (security contact).
 
-**Change to `auto_detect = false`.** The project's current rule is absolute: the sieve MUST NOT run for a key marked `auto_detect = false`, "no exceptions." This RFC narrows it to **propose-only**: steps may run and produce a candidate for human confirmation, but may never conclude the key on their own. The safety property is preserved in full -- no guessed value is ever *used* unconfirmed -- while the user gets a pre-filled answer to accept instead of a blank field to research. This is a governance change to CLAUDE.md and the project constitution, not merely an RFC decision; see "Governance dependency."
+**Change to `auto_detect = false`.** The project's rule was absolute until constitution 1.3.0: the sieve MUST NOT run for a key marked `auto_detect = false`, "no exceptions." That amendment, the Stage 0 gate below, narrowed it to **propose-only**: steps may run and produce a candidate for human confirmation, but may never conclude the key on their own. The safety property is preserved in full -- no guessed value is ever *used* unconfirmed -- while the user gets a pre-filled answer to accept instead of a blank field to research. This is a governance change to CLAUDE.md and the project constitution, not merely an RFC decision; see "Governance dependency."
 
 ### Remediation trust boundary
 
@@ -244,7 +244,7 @@ Each stage lands as its own scoped spec/PR series with an executable acceptance 
 
 | Stage | Work | Acceptance gate |
 |---|---|---|
-| 0 | Governance: narrow `auto_detect = false` to propose-only in CLAUDE.md and the constitution | Change merged as its own PR, referenced by this RFC |
+| 0 | Governance: narrow `auto_detect = false` to propose-only in CLAUDE.md and the constitution | **Satisfied** by constitution 1.3.0 (spec `018-auto-detect-propose-only`), landed as its own PR. Principle IV now permits proposing a candidate for a user-judgment key and forbids concluding one without human confirmation. Phase 0 research for that feature also established that the mechanism already ships via `allow_sieve_hints`, so Stage 1 inherits a rule that matches the code rather than one it must first argue around. |
 | 1 | Add `authority` to results and handlers; implement the per-phase execution rule; extract `route()` from `cmd_run` into the public ActionPlan protocol; expose the pipeline loop over MCP | One reference control (SECURITY.md) runs the full Check/Collect/Remediate loop through the same protocol from both `darnit run` and a coding agent over MCP, with an LLM step demonstrably unable to produce a PASS |
 | 2 | Carve down `darnit-core`: Integration contract, `NormalizedFindings` + Scorecard/SARIF importers, derived cache keys, strategy-list runner, cost/safety invariant split; re-express existing controls over normalized findings | One full standard's controls run identically under both drivers; a control whose only evidence is suggestive reports inconclusive rather than pass; legacy phase-keyed TOML loads through the compatibility path with a lossless-translation test |
 | 3 | `darnit-agent` packaging (MCP + skill); `darnit-harness` driver with the deduped manual queue; confirmation persistence and expiry; remediation gating incl. denylist and prior-state capture | Reference suite green under both drivers; fitness test below passes; an injection-attempt fixture in repo content fails to influence an auto-merge decision |
@@ -277,7 +277,9 @@ Still open:
 
 ## Governance dependency
 
-Narrowing `auto_detect = false` from "the sieve MUST NOT run" to "steps may propose, never conclude" changes a rule the project constitution states with "no exceptions." The safety property is preserved -- no unconfirmed guess is ever used -- but the wording is absolute today and this RFC depends on it changing. Recommend landing that as its own small PR through the TSC before Stage 1 begins, with this RFC referencing it rather than assuming it.
+Narrowing `auto_detect = false` from "the sieve MUST NOT run" to "steps may propose, never conclude" changed a rule the project constitution stated with "no exceptions." The safety property is preserved in full -- no unconfirmed guess is ever used. **This dependency is now discharged**: the amendment landed as its own PR (constitution 1.3.0, spec `018-auto-detect-propose-only`) before Stage 1 begins, as recommended here.
+
+Phase 0 research for that amendment turned up something that strengthens the rest of this RFC: propose-only was already implemented. `allow_sieve_hints` and `hint_sources` exist in the framework schema and are enabled for `maintainers` and `security_contact` in the OpenSSF Baseline configuration, with `hint_sources` resolution running un-gated by `auto_detect`. The constitution had been describing a system the project no longer had. Stage 1 therefore inherits a written rule that matches the code, rather than one it must argue around.
 
 ## How to Participate
 

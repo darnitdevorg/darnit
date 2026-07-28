@@ -26,7 +26,7 @@ Darnit is a plugin-based compliance auditing framework. It exposes compliance ch
 This is a compliance auditing tool. Incorrect results are worse than incomplete results:
 
 - **Never assume compliance.** A control that hasn't been explicitly verified as passing is NOT compliant. WARN means "we don't know" and is treated the same as FAIL for compliance calculations.
-- **Never guess user-specific values.** Maintainers, security contacts, governance models require explicit user confirmation. When `auto_detect = false` in TOML, the sieve must not run for that key.
+- **Never guess user-specific values.** Maintainers, security contacts, governance models require explicit user confirmation. When `auto_detect = false` in TOML, the sieve may propose a candidate for that key but must never conclude it; the value stays unverified until a person confirms it.
 - **Err on the side of caution.** When in doubt, return WARN (needs verification), not PASS.
 
 ### How a Typical Session Works
@@ -438,7 +438,7 @@ At audit time, the framework merges Layer 1 + Layer 2 into an "effective config"
 
 The framework TOML defines `[context.*]` sections that describe what project-specific information improves audit accuracy. Each context key has a type, prompt, hint, and list of affected controls. The `get_pending_context()` MCP tool returns unanswered prompts; the `confirm_project_context()` tool saves answers to `.project/project.yaml`.
 
-Context values with `auto_detect = true` can be discovered by sieve passes (e.g., detecting CI provider from `.github/workflows/` existence). Values with `auto_detect = false` require explicit user confirmation.
+Context values with `auto_detect = true` can be discovered by sieve passes (e.g., detecting CI provider from `.github/workflows/` existence). Values with `auto_detect = false` require explicit user confirmation. A candidate may still be proposed for such a key when `allow_sieve_hints = true`, in which case it is shown labelled as unconfirmed, alongside its origin, for the user to accept or correct; it is never applied on its own.
 
 ---
 

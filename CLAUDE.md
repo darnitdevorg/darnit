@@ -166,16 +166,20 @@ This is a compliance auditing tool. Incorrect results are worse than incomplete 
 
 ### Never Guess User-Specific Values
 
-- Do NOT auto-detect and auto-apply values like maintainers, security contacts, or governance models. These require explicit user confirmation.
-- The TOML `auto_detect = false` flag means the sieve MUST NOT run for that key. No exceptions.
+- Do NOT auto-apply values like maintainers, security contacts, or governance models. These require explicit user confirmation.
+- The TOML `auto_detect = false` flag marks a **user-judgment key**. Detection MAY run for such a key to *propose* a candidate, but MUST NOT *conclude* the value. Producing a candidate is not applying it.
+- A candidate must never be consumed as the key's value by control verification results, compliance calculations, remediation inputs, generated attestations, or persisted project context. Until confirmed, the key is unverified, and unverified counts as FAIL.
+- A candidate shown to a person must be labelled as unconfirmed and carry its origin (how it was produced). Origin is not confidence: a high-confidence guess is still a guess.
+- Human confirmation is the only thing that makes a value usable. Writing a candidate to disk does not confirm it, and a stored candidate must still read as a candidate later.
 - When a tool returns "Context Confirmation Required," that is a hard stop — ask the user. Do not fill in values from git history, repo owner, or any heuristic source.
-- Sieve auto-detection is acceptable only for keys where `auto_detect = true` in the TOML definition.
+- Two flags, two axes: `auto_detect` governs whether a value may be concluded without a person; `allow_sieve_hints` governs whether a detected value may be proposed. Both default to false. The safety property comes from the pair, not from banning detection.
+- Confidence thresholds apply only to keys that do NOT require user judgment. No threshold, at any value, authorizes concluding a user-judgment key.
 
 ### Err on the Side of Caution
 
 - When in doubt about a control's status, return WARN (needs verification), not PASS.
 - When in doubt about a user's intent, ask. Do not proceed with assumptions.
-- When designing prompts that an LLM will see, assume the LLM will blindly execute any suggested command. Never put guessed values in executable code snippets.
+- When designing prompts that an LLM will see, assume the LLM will blindly execute any suggested command. Never put guessed values or unconfirmed candidates in executable code snippets.
 
 ## Development Guidelines
 

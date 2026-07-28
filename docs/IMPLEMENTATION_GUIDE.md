@@ -699,6 +699,11 @@ presents questions to users:
   (which is used for validation). Useful when the display options differ from the
   validation set.
 
+`auto_detect = false` marks a user-judgment key: the framework may still
+propose a candidate for it (see `allow_sieve_hints` and `hint_sources`), but
+may never conclude the value on its own. The key stays unverified until a
+person confirms it.
+
 ```toml
 [context.governance_model]
 type = "enum"

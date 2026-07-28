@@ -198,7 +198,7 @@ Each `[context.key]` section supports these fields:
 | `values` | list | Valid values for `enum` type |
 | `affects` | list | Control IDs that depend on this context |
 | `store_as` | string | Path in .project/ where value is stored (e.g., `governance.maintainers`) |
-| `auto_detect` | bool | Whether value can be auto-detected (default: false) |
+| `auto_detect` | bool | Whether the value may be **concluded** without user confirmation (default: false). This does not govern whether a candidate may be **proposed** -- see `allow_sieve_hints`. |
 | `auto_detect_method` | string | Method name for auto-detection (e.g., `github_collaborators`) |
 | `required` | bool | Whether this context is required (default: false) |
 | `hint_sources` | list | **Files to check for authoritative values** (e.g., `["CODEOWNERS", "MAINTAINERS.md"]`) |

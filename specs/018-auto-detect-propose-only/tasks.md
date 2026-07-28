@@ -35,9 +35,9 @@ under `docs/` and `.specify/`. See plan.md "Files changed" for the full set.
 **Purpose**: Record the before-state that SC-004 compares against. This must
 happen before any file is edited, or the comparison is worthless.
 
-- [ ] T001 Run `uv run pytest tests/ --ignore=tests/integration/ -q` and record the pass count in a scratch note; this is the FR-013 baseline
-- [ ] T002 [P] Run `uv run ruff check .` and confirm zero errors before any edit
-- [ ] T003 [P] Run an audit against a fixed sample project that has `maintainers` unset and save the output to `/tmp/018-audit-before.txt` for the SC-004 comparison
+- [X] T001 Run `uv run pytest tests/ --ignore=tests/integration/ -q` and record the pass count in a scratch note; this is the FR-013 baseline
+- [X] T002 [P] Run `uv run ruff check .` and confirm zero errors before any edit
+- [X] T003 [P] Run an audit against a fixed sample project that has `maintainers` unset and save the output to `/tmp/018-audit-before.txt` for the SC-004 comparison
 
 **Checkpoint**: Before-state captured. Editing can begin.
 
@@ -52,7 +52,7 @@ even though every individual edit looks correct.
 
 **CRITICAL**: No story work can begin until T004 is done.
 
-- [ ] T004 Draft the replacement text for Principle IV as one coherent block in a scratch file, using only the six terms fixed in `specs/018-auto-detect-propose-only/data-model.md` ("user-judgment key", "candidate", "confirmation", "propose", "conclude", "origin"), covering every clause required by FR-001 through FR-007 and FR-015
+- [X] T004 Draft the replacement text for Principle IV as one coherent block in a scratch file, using only the six terms fixed in `specs/018-auto-detect-propose-only/data-model.md` ("user-judgment key", "candidate", "confirmation", "propose", "conclude", "origin"), covering every clause required by FR-001 through FR-007 and FR-015
 
 **Checkpoint**: One agreed block of normative text exists. Stories now place it.
 
@@ -70,13 +70,13 @@ human confirmation is forbidden. No code needs to exist.
 
 ### Implementation for User Story 1
 
-- [ ] T005 [US1] Replace the absolute prohibition at `.specify/memory/constitution.md:102-103` ("the sieve MUST NOT run for that key. No exceptions.") with the propose-only rule from T004, satisfying FR-001
-- [ ] T006 [US1] Replace `.specify/memory/constitution.md:106-107` ("Sieve auto-detection is acceptable ONLY for keys where `auto_detect = true`"), which is the sentence that actually forbids proposing, per FR-001
-- [ ] T007 [P] [US1] Rewrite `CLAUDE.md:170` and `CLAUDE.md:172` to match the amended constitution exactly in substance, per FR-008
-- [ ] T008 [P] [US1] Rewrite the normative restatement at `ARCHITECTURE.md:29` ("the sieve must not run for that key"), found during Phase 0 research and absent from the original spec; see research.md Finding 3
-- [ ] T009 [US1] Bump the constitution version from 1.2.0 to 1.3.0 at `.specify/memory/constitution.md:186` and add a new Sync Impact Report block at the top recording the change, per FR-009
-- [ ] T010 [US1] In the Sync Impact Report, justify MINOR by citing the 1.0.0 -> 1.1.0 precedent where this same principle was widened while its core requirement stayed intact, per FR-009
-- [ ] T011 [P] [US1] Mark the Stage 0 row at `docs/rfcs/0001-core-rearchitecture.md:247` as satisfied and reference this PR, per FR-012
+- [X] T005 [US1] Replace the absolute prohibition at `.specify/memory/constitution.md:102-103` ("the sieve MUST NOT run for that key. No exceptions.") with the propose-only rule from T004, satisfying FR-001
+- [X] T006 [US1] Replace `.specify/memory/constitution.md:106-107` ("Sieve auto-detection is acceptable ONLY for keys where `auto_detect = true`"), which is the sentence that actually forbids proposing, per FR-001
+- [X] T007 [P] [US1] Rewrite `CLAUDE.md:170` and `CLAUDE.md:172` to match the amended constitution exactly in substance, per FR-008
+- [X] T008 [P] [US1] Rewrite the normative restatement at `ARCHITECTURE.md:29` ("the sieve must not run for that key"), found during Phase 0 research and absent from the original spec; see research.md Finding 3
+- [X] T009 [US1] Bump the constitution version from 1.2.0 to 1.3.0 at `.specify/memory/constitution.md:186` and add a new Sync Impact Report block at the top recording the change, per FR-009
+- [X] T010 [US1] In the Sync Impact Report, justify MINOR by citing the 1.0.0 -> 1.1.0 precedent where this same principle was widened while its core requirement stayed intact, per FR-009
+- [X] T011 [P] [US1] Mark the Stage 0 row at `docs/rfcs/0001-core-rearchitecture.md:247` as satisfied and reference this PR, per FR-012
 
 **Checkpoint**: The rule has changed. A reader of the constitution alone now
 gets the right answer to "may darnit show me a detected maintainer list?"
@@ -99,14 +99,14 @@ paragraph, and it is why T004 exists.
 
 ### Implementation for User Story 2
 
-- [ ] T012 [US2] Add the FR-002 clause to `.specify/memory/constitution.md` Principle IV naming all five consumption paths explicitly (verification result, compliance calculation, remediation input, generated attestation, persisted context), so SC-003 can cite a sentence per path
-- [ ] T013 [US2] Scope the existing confidence-threshold provision at `.specify/memory/constitution.md:108-113` to keys that do NOT require human judgment, closing the hole where it currently reads as unscoped, per FR-004
-- [ ] T014 [US2] Add the FR-005 clause stating that human confirmation is the only transition that makes a value usable, and that storing a candidate does not constitute confirming it
-- [ ] T015 [US2] Add the FR-006 clause requiring a confirmation to record when it was made, by whom, and what it was based on, and permitting expiry after a configurable period without naming the period
-- [ ] T016 [US2] Verify the existing prohibition on guessed values in executable snippets survives the rewrite at `.specify/memory/constitution.md:114-115`, per FR-007; this clause must not be lost while its neighbours change
-- [ ] T017 [US2] Add the FR-015 clause explaining that `auto_detect` gates concluding and `allow_sieve_hints` gates proposing, and that the safety property is enforced by the pair rather than by a ban on detection
-- [ ] T018 [US2] Add the FR-003 clause to `.specify/memory/constitution.md` Principle IV requiring that a candidate shown to a person is labelled as unconfirmed and carries its origin, so a reader can judge whether to trust it; this is the clause that makes US2 acceptance scenario 5 checkable
-- [ ] T019 [US2] Mirror T012 through T018 into the Conservative-by-Default section of `CLAUDE.md` at the level of detail appropriate to runtime guidance, keeping substance identical per FR-008
+- [X] T012 [US2] Add the FR-002 clause to `.specify/memory/constitution.md` Principle IV naming all five consumption paths explicitly (verification result, compliance calculation, remediation input, generated attestation, persisted context), so SC-003 can cite a sentence per path
+- [X] T013 [US2] Scope the existing confidence-threshold provision at `.specify/memory/constitution.md:108-113` to keys that do NOT require human judgment, closing the hole where it currently reads as unscoped, per FR-004
+- [X] T014 [US2] Add the FR-005 clause stating that human confirmation is the only transition that makes a value usable, and that storing a candidate does not constitute confirming it
+- [X] T015 [US2] Add the FR-006 clause requiring a confirmation to record when it was made, by whom, and what it was based on, and permitting expiry after a configurable period without naming the period
+- [X] T016 [US2] Verify the existing prohibition on guessed values in executable snippets survives the rewrite at `.specify/memory/constitution.md:114-115`, per FR-007; this clause must not be lost while its neighbours change
+- [X] T017 [US2] Add the FR-015 clause explaining that `auto_detect` gates concluding and `allow_sieve_hints` gates proposing, and that the safety property is enforced by the pair rather than by a ban on detection
+- [X] T018 [US2] Add the FR-003 clause to `.specify/memory/constitution.md` Principle IV requiring that a candidate shown to a person is labelled as unconfirmed and carries its origin, so a reader can judge whether to trust it; this is the clause that makes US2 acceptance scenario 5 checkable
+- [X] T019 [US2] Mirror T012 through T018 into the Conservative-by-Default section of `CLAUDE.md` at the level of detail appropriate to runtime guidance, keeping substance identical per FR-008
 
 **Checkpoint**: The rule is now precise enough to implement against. US1 plus
 US2 together are the complete governance change.
@@ -123,11 +123,11 @@ contains a statement that detection must not run for user-judgment keys.
 
 ### Implementation for User Story 3
 
-- [ ] T020 [P] [US3] Extend `ARCHITECTURE.md:441` ("Values with `auto_detect = false` require explicit user confirmation") to mention that a candidate may be proposed, per FR-011
-- [ ] T021 [P] [US3] Clarify the schema table entry at `docs/design/CONTEXT_PROMPTS.md:201` from "Whether value can be auto-detected" to language distinguishing concluding from proposing, per FR-011
-- [ ] T022 [P] [US3] Add a sentence near the `auto_detect = false` example at `docs/IMPLEMENTATION_GUIDE.md:707` explaining what the flag now means, per FR-011
-- [ ] T023 [US3] Confirm every entry in the research.md inventory carries a disposition of updated, deferred, or unaffected, with none left undetermined, per FR-010 and SC-005
-- [ ] T024 [US3] Verify no file under `packages/` was modified (`git diff --name-only | grep packages/` returns nothing), enforcing the FR-011 deferral and the FR-013 boundary
+- [X] T020 [P] [US3] Extend `ARCHITECTURE.md:441` ("Values with `auto_detect = false` require explicit user confirmation") to mention that a candidate may be proposed, per FR-011
+- [X] T021 [P] [US3] Clarify the schema table entry at `docs/design/CONTEXT_PROMPTS.md:201` from "Whether value can be auto-detected" to language distinguishing concluding from proposing, per FR-011
+- [X] T022 [P] [US3] Add a sentence near the `auto_detect = false` example at `docs/IMPLEMENTATION_GUIDE.md:707` explaining what the flag now means, per FR-011
+- [X] T023 [US3] Confirm every entry in the research.md inventory carries a disposition of updated, deferred, or unaffected, with none left undetermined, per FR-010 and SC-005
+- [X] T024 [US3] Verify no file under `packages/` was modified (`git diff --name-only | grep packages/` returns nothing), enforcing the FR-011 deferral and the FR-013 boundary
 
 **Checkpoint**: Documentation tree is internally consistent. Nothing in
 `packages/` moved.
@@ -138,12 +138,12 @@ contains a statement that detection must not run for user-judgment keys.
 
 **Purpose**: Prove the success criteria and get the change in front of the TSC.
 
-- [ ] T025 Re-run `uv run pytest tests/ --ignore=tests/integration/ -q` and confirm the pass count matches the T001 baseline exactly; any test needing modification disproves FR-013
-- [ ] T026 [P] Re-run `uv run ruff check .` and `uv run python scripts/validate_sync.py --verbose`, both must pass
-- [ ] T027 [P] Re-run the T003 audit, diff against `/tmp/018-audit-before.txt`, and confirm the only differences are timestamps and absolute paths; any difference in control status, level outcome, or finding count disproves SC-004
-- [ ] T028 [P] Grep all prose for surviving statements of the old rule (`grep -rn "must not run" --include="*.md" .`) and confirm only historical spec records under `specs/001-*` and `specs/003-*` remain, satisfying SC-002
-- [ ] T029 [P] Confirm every file touched is ASCII-only per the project writing rule
-- [ ] T030 Read the amended Principle IV cold and confirm a sentence can be cited for each of the five consumption paths, satisfying SC-003
+- [X] T025 Re-run `uv run pytest tests/ --ignore=tests/integration/ -q` and confirm the pass count matches the T001 baseline exactly; any test needing modification disproves FR-013
+- [X] T026 [P] Re-run `uv run ruff check .` and `uv run python scripts/validate_sync.py --verbose`, both must pass
+- [X] T027 [P] Re-run the T003 audit, diff against `/tmp/018-audit-before.txt`, and confirm the only differences are timestamps and absolute paths; any difference in control status, level outcome, or finding count disproves SC-004
+- [X] T028 [P] Grep all prose for surviving statements of the old rule (`grep -rn "must not run" --include="*.md" .`) and confirm only historical spec records under `specs/001-*` and `specs/003-*` remain, satisfying SC-002
+- [X] T029 [P] Confirm every file touched is ASCII-only per the project writing rule
+- [X] T030 Read the amended Principle IV cold and confirm a sentence can be cited for each of the five consumption paths, satisfying SC-003
 - [ ] T031 Open the PR against `darnitdevorg/darnit` from the fork, describing the change as reconciling the constitution with shipped behavior (research.md Finding 1) rather than as loosening a safety rule
 - [ ] T032 Request TSC review under the Charter's voting rules, on the grounds that the constitution is a governing artifact in substance even though `GOVERNANCE.md:51` lists only that document, the Charter, and the roster
 - [ ] T033 File a follow-up issue to add the constitution to the `GOVERNANCE.md:51` enumeration, so the next amendment does not have to relitigate which track applies
