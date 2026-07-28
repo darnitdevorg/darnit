@@ -72,23 +72,18 @@ requirement rather than adding a violation.
 
 ### Deviations from clarified answers
 
-One clarified answer needs the user's confirmation before tasks are generated.
-
-**Q3 (flag naming).** The answer was to keep the `auto_detect` name and record
-the mismatch between name and meaning as known debt, which FR-014 now requires.
-Phase 0 found that the mismatch may not exist. The project already has two
-flags covering the two axes: `auto_detect` gates whether a value may be
-concluded automatically, and `allow_sieve_hints` gates whether a detected value
+**Q3 (flag naming) -- resolved 2026-07-28.** The original answer was to keep the
+`auto_detect` name and record the mismatch between name and meaning as known
+debt. Phase 0 found the mismatch does not exist: the project already has two
+flags covering the two axes, where `auto_detect` gates whether a value may be
+concluded automatically and `allow_sieve_hints` gates whether a detected value
 may be shown as a suggestion. Under that reading `auto_detect = false` is an
-accurate name for "may not conclude," and the debt clause in FR-014 would
-record a problem the codebase does not have.
+accurate name for "may not conclude."
 
-Recommended resolution: keep FR-014's first sentence (the flag keeps its name
-and accepted values) and replace the debt clause with a requirement that the
-amendment describe the relationship between the two flags, since that
-relationship is the mechanism that makes propose-only safe and is currently
-documented nowhere near the rule it implements. Flagged for the user rather
-than applied unilaterally, because it edits a clarified answer.
+The user confirmed dropping the debt clause. FR-014 keeps the compatibility
+requirement, and the new FR-015 requires the amendment to explain the flag pair
+instead, since that relationship is the mechanism that makes propose-only safe
+and is currently documented nowhere near the rule it implements.
 
 ## Project Structure
 

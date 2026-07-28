@@ -23,9 +23,10 @@
   justified by the precedent set at 1.0.0 -> 1.1.0, where the same principle
   was widened while its core requirement stayed intact.
 - Q: Does the configuration flag keep its name? -> A: Yes. The amendment
-  redefines the meaning of the existing flag only. Its name no longer describes
-  what it does, and that mismatch is recorded as known debt for a later stage
-  rather than fixed here.
+  redefines the meaning of the existing flag only. Revised after Phase 0
+  research: the project already separates the two axes across two flags, so
+  there is no naming debt to record. Instead the amendment explains the flag
+  pair, which is the mechanism that makes propose-only safe.
 - Q: How far does the amendment reach beyond the two governing documents? ->
   A: It also updates every prose document that restates the old rule, so that
   nothing in the documentation tree contradicts the amended rule on merge.
@@ -219,9 +220,12 @@ identical, because this feature changes documents only.
   or context-collection behavior.
 - **FR-014**: The existing configuration flag that marks user-judgment keys
   MUST keep its current name and accepted values, so that existing project
-  configuration continues to load unchanged. The amendment MUST record that the
-  flag's name no longer describes its narrowed meaning, as known debt to be
-  addressed in a later effort.
+  configuration continues to load unchanged.
+- **FR-015**: The governing documents MUST explain that proposing and
+  concluding are governed by two separate configuration flags, and that the
+  safety property is enforced by the pair rather than by a prohibition on
+  detection. A reader of the amended rule MUST be able to tell which flag
+  controls which behavior.
 
 ### Key Entities
 
