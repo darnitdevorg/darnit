@@ -4,7 +4,9 @@ This module provides Sigstore-based verification for darnit plugins,
 supporting both signed and unsigned plugins with configurable policies.
 
 Default Trusted Publishers:
-    By default, plugins from kusari-oss and kusaridev are trusted.
+    By default, plugins from darnitdevorg, kusari-oss, and kusaridev are trusted.
+    darnitdevorg is the current publishing identity; kusari-oss and kusaridev
+    are retained so artifacts signed before the org migration still verify.
     Users can add additional trusted publishers in their configuration.
 
 Example:
@@ -16,7 +18,8 @@ Example:
         trusted_publishers=[
             "https://github.com/my-org",  # Add your org
         ],
-        # use_default_publishers=True (default) includes kusari-oss, kusaridev
+        # use_default_publishers=True (default) includes darnitdevorg,
+        # kusari-oss, kusaridev
     )
     verifier = PluginVerifier(config)
 
@@ -72,8 +75,10 @@ PYPI_JSON_API_URL = "https://pypi.org/pypi/{package}/{version}/json"
 # Default trusted publishers for darnit ecosystem
 # These are always trusted unless explicitly overridden
 DEFAULT_TRUSTED_PUBLISHERS = (
+    "https://github.com/darnitdevorg",
     "https://github.com/kusari-oss",
     "https://github.com/kusaridev",
+    "darnitdevorg",
     "kusari-oss",
     "kusaridev",
 )

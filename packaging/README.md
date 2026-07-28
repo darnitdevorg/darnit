@@ -2,9 +2,13 @@
 
 Maintainer-facing documentation for the darnit release pipeline. End-user install instructions live in [`docs/install/`](../docs/install/), including [from-source.md](../docs/install/from-source.md) for users wanting to try unreleased features before they're cut into a published release.
 
-> **Canonical repository home**: `https://github.com/kusari-oss/darnit`
+> **Canonical repository home**: `https://github.com/darnitdevorg/darnit`
 >
-> Earlier metadata referenced `kusaridev/darnit-mcp` and `kusaridev/baseline-mcp`. Those names are deprecated. All package URLs, workflow identities, and Sigstore signing certificates resolve against `kusari-oss/darnit`.
+> The repository moved from `kusari-oss/darnit` to `darnitdevorg/darnit`. GitHub redirects the old path, so stale URLs appear to work -- but Sigstore certificate identities do not redirect. Workflow identities and signing certificates for releases cut after the move resolve against `darnitdevorg/darnit`; artifacts published before it remain signed under `kusari-oss/darnit` and must be verified against that identity.
+>
+> Two things deliberately stay under the old org: the Homebrew tap (`kusari-oss/homebrew-tap`) and, for backward compatibility, the `kusari-oss` entry in `DEFAULT_TRUSTED_PUBLISHERS`.
+>
+> Earlier metadata referenced `kusaridev/darnit-mcp` and `kusaridev/baseline-mcp`. Those names are deprecated.
 
 ## Overview
 
@@ -13,7 +17,7 @@ darnit is released through five user-facing channels from a single tag-driven pi
 | Channel | Surface | Stable | Pre-release | Contract |
 |---|---|---|---|---|
 | PyPI | `pypi.org/project/darnit-*` | ✅ | TestPyPI | [pypi-publish-contract.md](../specs/012-packaging-distribution/contracts/pypi-publish-contract.md) |
-| Container | `ghcr.io/kusari-oss/darnit` | ✅ | ✅ (`-rc` tags) | [container-image-contract.md](../specs/012-packaging-distribution/contracts/container-image-contract.md) |
+| Container | `ghcr.io/darnitdevorg/darnit` | ✅ | ✅ (`-rc` tags) | [container-image-contract.md](../specs/012-packaging-distribution/contracts/container-image-contract.md) |
 | Binary | GitHub Release assets | ✅ | ✅ (marked pre-release) | [binary-artifact-contract.md](../specs/012-packaging-distribution/contracts/binary-artifact-contract.md) |
 | Homebrew | `kusari-oss/homebrew-tap` | ✅ | ❌ (stable only) | [homebrew-formula-contract.md](../specs/012-packaging-distribution/contracts/homebrew-formula-contract.md) |
 | Claude Code plugin | GitHub Release asset | ✅ | ❌ (stable only) | [claude-plugin-contract.md](../specs/012-packaging-distribution/contracts/claude-plugin-contract.md) |

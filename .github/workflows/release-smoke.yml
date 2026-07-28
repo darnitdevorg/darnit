@@ -218,7 +218,7 @@ jobs:
 
           python -m sigstore verify identity \
             --bundle /tmp/attestation.sigstore.json \
-            --cert-identity-regexp '^https://github\.com/kusari-oss/darnit/\.github/workflows/release\.yml@' \
+            --cert-identity-regexp "^https://github\.com/${{ github.repository }}/\.github/workflows/release\.yml@" \
             --cert-oidc-issuer https://token.actions.githubusercontent.com \
             "$wheel"
           echo "✓ Sigstore identity verified for $PKG $VERSION"
@@ -286,7 +286,7 @@ jobs:
         run: |
           set -euo pipefail
           cosign verify "$REF" \
-            --certificate-identity-regexp '^https://github\.com/kusari-oss/darnit/\.github/workflows/release\.yml@' \
+            --certificate-identity-regexp "^https://github\.com/${{ github.repository }}/\.github/workflows/release\.yml@" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             > /tmp/cosign-verify.json
           echo "✓ cosign verified $REF"
@@ -298,7 +298,7 @@ jobs:
           set -euo pipefail
           cosign verify-attestation "$REF" \
             --type spdx \
-            --certificate-identity-regexp '^https://github\.com/kusari-oss/darnit/\.github/workflows/release\.yml@' \
+            --certificate-identity-regexp "^https://github\.com/${{ github.repository }}/\.github/workflows/release\.yml@" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             > /tmp/cosign-verify-attestation.json
           echo "✓ cosign verified SBOM attestation on $REF"
@@ -373,7 +373,7 @@ jobs:
           bin="/tmp/dl/darnit-${VERSION}-${OS}-${ARCH}"
           cosign verify-blob \
             --bundle "${bin}.sigstore" \
-            --certificate-identity-regexp '^https://github\.com/kusari-oss/darnit/\.github/workflows/release\.yml@' \
+            --certificate-identity-regexp "^https://github\.com/${{ github.repository }}/\.github/workflows/release\.yml@" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "$bin"
           echo "✓ cosign verified blob signature for ${OS}-${ARCH}"
