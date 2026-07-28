@@ -136,7 +136,7 @@ contains a statement that detection must not run for user-judgment keys.
 
 ## Phase 6: Polish & Verification
 
-**Purpose**: Prove the success criteria and get the change in front of the TSC.
+**Purpose**: Prove the success criteria and land the change.
 
 - [X] T025 Re-run `uv run pytest tests/ --ignore=tests/integration/ -q` and confirm the pass count matches the T001 baseline exactly; any test needing modification disproves FR-013
 - [X] T026 [P] Re-run `uv run ruff check .` and `uv run python scripts/validate_sync.py --verbose`, both must pass
@@ -145,8 +145,8 @@ contains a statement that detection must not run for user-judgment keys.
 - [X] T029 [P] Confirm every file touched is ASCII-only per the project writing rule
 - [X] T030 Read the amended Principle IV cold and confirm a sentence can be cited for each of the five consumption paths, satisfying SC-003
 - [X] T031 Open the PR against `darnitdevorg/darnit` from the fork, describing the change as reconciling the constitution with shipped behavior (research.md Finding 1) rather than as loosening a safety rule
-- [ ] T032 Request TSC review under the Charter's voting rules, on the grounds that the constitution is a governing artifact in substance even though `GOVERNANCE.md:51` lists only that document, the Charter, and the roster
-- [ ] T033 File a follow-up issue to add the constitution to the `GOVERNANCE.md:51` enumeration, so the next amendment does not have to relitigate which track applies
+- [X] T032 Merge as a Minor Change under the constitution's own Governance section. No TSC review: the TSC is an oversight body and does not take a day-to-day role, so `GOVERNANCE.md:51` omits the constitution deliberately
+- [X] T033 Dropped. Follows from T032 -- the `GOVERNANCE.md:51` enumeration is correct as written and needs no amendment
 
 ---
 
@@ -197,7 +197,7 @@ Task: "Mark the Stage 0 row satisfied at docs/rfcs/0001-core-rearchitecture.md:2
 1. Phase 1 Setup, Phase 2 Foundational
 2. Phase 3 (US1) and Phase 4 (US2) together
 3. Phase 5 (US3) in the same PR if the diff stays readable
-4. Phase 6 verification, then open the PR and request TSC review
+4. Phase 6 verification, then open the PR for maintainer approval
 
 RFC-0001 Stage 0 requires this land as its own PR, so the temptation to bundle
 it with Stage 1 groundwork should be resisted (FR-012, SC-006).

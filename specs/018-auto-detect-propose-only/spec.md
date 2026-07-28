@@ -265,13 +265,13 @@ identical, because this feature changes documents only.
 
 ## Assumptions
 
-- The amendment is treated as a governance change and follows the Charter's TSC
-  voting rules, even though GOVERNANCE.md:51 enumerates only GOVERNANCE.md
-  itself, the Charter, and the TSC roster as governance artifacts. The
-  constitution is a governing document in substance, and RFC-0001 treats Stage 0
-  as requiring sign-off. The alternative reading -- that this is a routine Minor
-  Change needing one maintainer approval -- is defensible on the letter of both
-  documents, which is itself the reason the enumeration should be corrected.
+- The amendment follows this constitution's own Governance section: a described
+  change, a version bump, and a consistency check, approved as a Minor Change.
+  It does not go to the TSC. GOVERNANCE.md:51 omits the constitution from the
+  artifacts requiring a Charter vote deliberately -- the TSC is an oversight
+  body that does not take a day-to-day role -- so the omission is correct and
+  needs no follow-up. RFC-0001's Stage 0 sign-off is satisfied by maintainer
+  approval of this PR.
 - If the amendment is not adopted, the contradiction identified in research.md
   Finding 1 does not disappear; it inverts. The remedy would become a code change
   gating `hint_sources` behind the user-judgment flag, disabling the propose-only

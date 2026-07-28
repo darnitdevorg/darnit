@@ -55,11 +55,13 @@ Deliberately not updated:
   - packages/ code, configuration, and their comments. Changing them
     would change behavior, which this amendment does not do. They are
     enumerated in specs/018-auto-detect-propose-only/research.md.
-Follow-up TODOs:
-  - GOVERNANCE.md:51 enumerates only GOVERNANCE.md, the Charter, and
-    the TSC roster as governance artifacts requiring a Charter vote.
-    The constitution is not listed. Add it, so the track for the next
-    amendment is not ambiguous.
+Amendment track:
+  - Merged under this document's own Governance section: description,
+    version bump, consistency validation. No Charter vote.
+    GOVERNANCE.md:51 omits the constitution from the artifacts
+    requiring a TSC vote deliberately. The TSC is an oversight body
+    and does not take a day-to-day role, so routine amendments that
+    preserve a principle's core requirement do not go to it.
 ==================
 
 Sync Impact Report
