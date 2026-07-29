@@ -580,7 +580,7 @@ def cmd_install(args: argparse.Namespace) -> int:
     mcp_servers = config.setdefault("mcpServers", {})
     darnit_entry = {
         "command": "uvx",
-        "args": ["--from", "darnit", "darnit", "serve"],
+        "args": ["--from", "darnit-mcp", "darnit", "serve"],
     }
 
     if "darnit" in mcp_servers and not args.force:

@@ -28,7 +28,7 @@ def test_install_claude_creates_settings(tmp_path, monkeypatch, caplog):
     assert "mcpServers" in data
     assert "darnit" in data["mcpServers"]
     assert data["mcpServers"]["darnit"]["command"] == "uvx"
-    assert data["mcpServers"]["darnit"]["args"] == ["--from", "darnit", "darnit", "serve"]
+    assert data["mcpServers"]["darnit"]["args"] == ["--from", "darnit-mcp", "darnit", "serve"]
 
     assert not any(
         record.levelname == "WARNING" and "deprecated" in record.message.lower() for record in caplog.records
