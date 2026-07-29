@@ -55,7 +55,7 @@ The workflow authenticates every `publish-*` job with the `PYPI_API_TOKEN` repo 
    ```
 4. After the first release lands and the five projects exist on PyPI, replace with per-project tokens for scope reduction (optional; not required for correctness).
 
-To sanity-check the token without cutting a real tag, run the `verify-pypi-token` workflow (Actions tab -> Verify PyPI Token -> Run workflow). It attempts to upload a throwaway wheel to a project you do not own; the log distinguishes "auth failed" from "auth passed, ownership denied" (the desired outcome).
+If the token is bad, the first `publish-*` job in `release.yml` fails immediately with a 403 and no packages are published. Fix the secret and re-trigger via `workflow_dispatch` on the same tag; no need to bump the version.
 
 ### PyPI Trusted Publishing *(deferred)*
 
