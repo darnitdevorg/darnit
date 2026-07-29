@@ -165,7 +165,11 @@ jobs:
         run: uv run ruff check .
 
       - name: Tests
-        run: uv run pytest tests/ --ignore=tests/integration/ -q
+        # Match ci.yml's mark exclusion. The `upstream` mark is on the CNCF
+        # .project/ spec-drift check, which is designed to be informational
+        # (docstring: "does NOT block PRs") and runs on a nightly schedule
+        # elsewhere. Preflight should not be stricter than the merge gate.
+        run: uv run pytest tests/ --ignore=tests/integration/ -m "not upstream" -q
 
       - name: Spec sync
         run: uv run python scripts/validate_sync.py --verbose
