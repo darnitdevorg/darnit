@@ -29,6 +29,17 @@ Homepage = "https://github.com/kusari-oss/darnit"
 Repository = "https://github.com/kusari-oss/darnit"
 Issues = "https://github.com/kusari-oss/darnit/issues"
 
+# darnit-mcp is a metadata-only meta-package: no source, only dependencies
+# that pull in darnit-core, darnit-baseline, darnit-gittuf, and
+# darnit-reproducibility. hatchling matches the backend the sibling packages
+# use; bypass-selection tells it to produce a wheel with no code payload.
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+bypass-selection = true
+
 [project.optional-dependencies]
 attestation = [
     "darnit-core[attestation]",
