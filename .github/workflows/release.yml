@@ -1,20 +1,42 @@
 name: Release
 
-# Tag-driven release orchestrator. Fans out per-channel publishes from a single
-# tag. See specs/012-packaging-distribution/ for the spec, plan, and contracts.
+# Tag-driven release. See specs/012-packaging-distribution/ for the original
+# spec; this workflow ships the first-cut subset while later channels
+# (standalone binaries, Homebrew, Claude Code plugin) get wired up per waybill's
+# incremental pattern.
 #
-# Stable tags trigger publication to all channels.
-# Pre-release tags (rcN suffix) trigger PyPI/TestPyPI, container, and binary
-# only — Homebrew formula and Claude Code plugin are stable-only.
+# What this workflow does today:
+#   1. preflight    - tag/version parity, clean tree, tests, lint, sync
+#   2. build        - per-package wheels + sdists to a shared artifact
+#   3. publish-*    - upload each public package to PyPI via API token
+#   4. container    - build + push + cosign-sign the multi-arch container image
+#   5. release      - create the GitHub Release with install instructions
+#   6. finalize     - summary line to the run's step summary
 #
-# Re-running this workflow on an already-published tag is REJECTED in preflight.
-# Recovery from partial failures is per-channel; see packaging/RECOVERY.md.
+# Auth model: PyPI publishes use the `PYPI_API_TOKEN` repo secret (account-
+# scoped). Trusted-publisher setup is nicer long-term but requires per-project
+# UI config in PyPI, which was blocking. Container signing uses cosign keyless
+# OIDC as before; that path does not depend on PyPI auth.
+#
+# Version format: `vX.Y.Z` or `vX.Y.ZrcN` (no dash before rc; matches PEP 440
+# canonical form and the preflight parse-tag regex). Pre-release tags are
+# marked as GitHub prereleases; stable tags are marked `--latest`.
+#
+# Re-running against an already-tagged commit: use the workflow_dispatch entry
+# point with the tag as input. Push-triggered runs on a tag that already has a
+# GitHub Release are rejected in preflight.
 
 on:
   push:
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'         # stable: vX.Y.Z
-      - 'v[0-9]+.[0-9]+.[0-9]+rc[0-9]+' # pre-release: vX.Y.Zrc<N>
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+rc[0-9]+'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to release (e.g., v0.1.0). Must already exist on the repo.'
+        required: true
+        type: string
 
 # Minimum permissions at the workflow level; per-job permissions narrow further.
 permissions:
@@ -23,14 +45,14 @@ permissions:
 env:
   PYTHON_VERSION: "3.12"
   UV_VERSION: "0.5.0"
+  # Single source of truth for the release ref. workflow_dispatch passes the
+  # tag as input; push-tag runs get it from github.ref_name.
+  TAG_NAME: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   preflight:
     name: Preflight gates
     runs-on: ubuntu-latest
-    # SC-007: synchronous channels must complete within 30 minutes total for
-    # stable tags. Workflow-level timeout is set in a sibling job (see T071a);
-    # preflight itself is a small fraction of that budget.
     timeout-minutes: 10
     permissions:
       contents: read
@@ -38,58 +60,55 @@ jobs:
       version: ${{ steps.parse-tag.outputs.version }}
       is_prerelease: ${{ steps.parse-tag.outputs.is_prerelease }}
     steps:
-      - name: Checkout repository at tagged commit
+      - name: Checkout at tag
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4
         with:
-          # Tag refs check out the tagged commit directly; no extra history
-          # needed.
+          ref: ${{ env.TAG_NAME }}
           persist-credentials: false
           fetch-depth: 0
 
       - name: Parse tag
         id: parse-tag
+        env:
+          TAG: ${{ env.TAG_NAME }}
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF#refs/tags/}"
-          if [[ "$tag" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+          if [[ "$TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
             version="${BASH_REMATCH[1]}"
             is_prerelease="false"
-          elif [[ "$tag" =~ ^v([0-9]+\.[0-9]+\.[0-9]+rc[0-9]+)$ ]]; then
+          elif [[ "$TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+rc[0-9]+)$ ]]; then
             version="${BASH_REMATCH[1]}"
             is_prerelease="true"
           else
-            echo "::error::Tag '$tag' does not match release pattern v<X.Y.Z> or v<X.Y.Z>rc<N>"
+            echo "::error::Tag '$TAG' does not match release pattern v<X.Y.Z> or v<X.Y.Z>rc<N>"
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "is_prerelease=$is_prerelease" >> "$GITHUB_OUTPUT"
-          echo "Parsed: tag=$tag version=$version is_prerelease=$is_prerelease"
+          echo "Parsed: tag=$TAG version=$version is_prerelease=$is_prerelease"
 
-      - name: Reject re-tag (no existing GitHub Release for this tag)
+      - name: Reject re-tag when a GitHub Release already exists
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ env.TAG_NAME }}
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF#refs/tags/}"
-          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "::error::A GitHub Release already exists for tag $tag. Re-running the release pipeline on an already-published tag is rejected by design (FR-002). See packaging/RECOVERY.md for per-channel repair procedures."
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::A GitHub Release already exists for tag $TAG. Re-runs on an already-published tag are rejected by design."
             exit 1
           fi
 
-      - name: Verify version consistency across all public packages (FR-004 lockstep)
+      - name: Verify version parity across all public packages
+        env:
+          EXPECTED: ${{ steps.parse-tag.outputs.version }}
         run: |
           set -euo pipefail
-          expected="${{ steps.parse-tag.outputs.version }}"
           fail=0
           while IFS= read -r pkg; do
             [ -z "$pkg" ] && continue
             case "$pkg" in
-              "darnit-mcp")
-                pyproject="pyproject.toml"
-                ;;
-              *)
-                pyproject="packages/$pkg/pyproject.toml"
-                ;;
+              "darnit-mcp") pyproject="pyproject.toml" ;;
+              *)            pyproject="packages/$pkg/pyproject.toml" ;;
             esac
             if [ ! -f "$pyproject" ]; then
               echo "::error::Public package $pkg has no pyproject.toml at $pyproject"
@@ -97,8 +116,8 @@ jobs:
               continue
             fi
             actual=$(awk -F'"' '/^version[[:space:]]*=/{print $2; exit}' "$pyproject")
-            if [ "$actual" != "$expected" ]; then
-              echo "::error::Version mismatch in $pyproject: expected $expected, found $actual"
+            if [ "$actual" != "$EXPECTED" ]; then
+              echo "::error::Version mismatch in $pyproject: expected $EXPECTED, found $actual"
               fail=1
             else
               echo "OK: $pkg pyproject.toml version=$actual matches tag"
@@ -106,16 +125,15 @@ jobs:
           done < packaging/pypi/public-packages.txt
           exit $fail
 
-      # T008a: FR-002 enforcement — no out-of-band inputs.
-      - name: Assert working tree clean against tagged commit
+      - name: Assert clean working tree at tagged commit
         run: |
           set -euo pipefail
           if ! git diff --exit-code; then
-            echo "::error::Working tree has uncommitted changes against the tagged commit. FR-002 requires every release artifact to be derivable solely from the tagged source commit."
+            echo "::error::Working tree has uncommitted changes against the tagged commit."
             exit 1
           fi
           if ! git diff --cached --exit-code; then
-            echo "::error::Index has staged changes against the tagged commit. FR-002 requires every release artifact to be derivable solely from the tagged source commit."
+            echo "::error::Index has staged changes against the tagged commit."
             exit 1
           fi
 
@@ -130,53 +148,23 @@ jobs:
           version: ${{ env.UV_VERSION }}
           # Caching is intentionally disabled in the release pipeline.
           # The blast radius of cache poisoning is significantly elevated
-          # here because this workflow produces and publishes signed
-          # artifacts; a poisoned cache from a prior run could inject
-          # malicious content into the published wheels. Clean builds only.
-          # Flagged by Kusari Inspector on #235.
+          # here because this workflow produces and publishes artifacts;
+          # a poisoned cache from a prior run could inject content into
+          # the published wheels. Clean builds only.
           enable-cache: false
 
       - name: Install dependencies
         run: uv sync --all-extras
 
-      - name: Lint (Constitution §Development Workflow item 1)
+      - name: Lint
         run: uv run ruff check .
 
-      - name: Tests (Constitution §Development Workflow item 2)
+      - name: Tests
         run: uv run pytest tests/ --ignore=tests/integration/ -q
 
-      - name: Spec sync (Constitution §Development Workflow item 3)
+      - name: Spec sync
         run: uv run python scripts/validate_sync.py --verbose
 
-      # T008a: actionlint over the release workflow files. Catches static issues
-      # (typos, undefined matrices) before publishing anything.
-      # Version pin must match .github/workflows/release-yml-lint.yml and the
-      # version documented in packaging/README.md (the contributor-runs-locally
-      # version). Bumping requires updating both call sites + the docs.
-      - name: Install actionlint
-        env:
-          ACTIONLINT_VERSION: "1.7.12"
-          ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
-        run: |
-          set -euo pipefail
-          url="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
-          curl -fsSLo /tmp/actionlint.tar.gz "$url"
-          echo "${ACTIONLINT_SHA256}  /tmp/actionlint.tar.gz" | sha256sum -c -
-          tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
-          sudo mv /tmp/actionlint /usr/local/bin/actionlint
-
-      - name: Lint release workflows (T008a)
-        run: |
-          set -euo pipefail
-          actionlint .github/workflows/release.yml
-          if [ -f .github/workflows/release-smoke.yml ]; then
-            actionlint .github/workflows/release-smoke.yml
-          fi
-
-  # T013: build all public packages once; per-package publish jobs consume the
-  # uploaded artifacts. Splitting build from publish keeps the build cache hot
-  # across the four publish jobs and isolates a build failure from any partial
-  # PyPI state.
   build:
     name: Build public packages
     needs: preflight
@@ -185,9 +173,10 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Checkout
+      - name: Checkout at tag
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4
         with:
+          ref: ${{ env.TAG_NAME }}
           persist-credentials: false
 
       - name: Set up Python
@@ -199,12 +188,6 @@ jobs:
         uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v4
         with:
           version: ${{ env.UV_VERSION }}
-          # Caching is intentionally disabled in the release pipeline.
-          # The blast radius of cache poisoning is significantly elevated
-          # here because this workflow produces and publishes signed
-          # artifacts; a poisoned cache from a prior run could inject
-          # malicious content into the published wheels. Clean builds only.
-          # Flagged by Kusari Inspector on #235.
           enable-cache: false
 
       - name: Build each public package into its own dist directory
@@ -226,21 +209,20 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # T013 + T014: per-package publish. Sequenced via `needs:` because
-  # `darnit-baseline`, `darnit-gittuf`, and `darnit-mcp` declare
-  # `darnit-core>=...` runtime dependencies — publishing them before
-  # darnit-core is on the target index would briefly produce unresolvable
-  # wheels. `darnit-mcp` depends on all three other packages, so it
-  # publishes last.
+  # Publish jobs use `password: ${{ secrets.PYPI_API_TOKEN }}` (account-scoped
+  # token). Migrate to project-scoped tokens once the projects exist on PyPI.
+  #
+  # Sequenced via `needs:` because darnit-baseline, darnit-gittuf,
+  # darnit-reproducibility, and darnit-mcp declare `darnit-core>=...` runtime
+  # deps; darnit-mcp additionally depends on the other four. Publishing them
+  # before the deps are on the index briefly produces unresolvable wheels.
+
   publish-darnit-core:
-    name: Publish darnit-core to ${{ needs.preflight.outputs.is_prerelease == 'true' && 'TestPyPI' || 'PyPI' }}
+    name: Publish darnit-core to PyPI
     needs: [preflight, build]
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    environment: release
     permissions:
-      id-token: write       # OIDC for Trusted Publishing + Sigstore signing
-      attestations: write   # PEP 740 attestations
       contents: read
     steps:
       - name: Download dist artifacts
@@ -253,21 +235,15 @@ jobs:
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
         with:
           packages-dir: dist/darnit-core/
-          repository-url: ${{ needs.preflight.outputs.is_prerelease == 'true' && 'https://test.pypi.org/legacy/' || 'https://upload.pypi.org/legacy/' }}
-          attestations: true
-          # We refuse to overwrite published artifacts. If a re-attempt is
-          # needed, the failure path is per-channel recovery, not retry.
+          password: ${{ secrets.PYPI_API_TOKEN }}
           skip-existing: false
 
   publish-darnit-baseline:
-    name: Publish darnit-baseline to ${{ needs.preflight.outputs.is_prerelease == 'true' && 'TestPyPI' || 'PyPI' }}
+    name: Publish darnit-baseline to PyPI
     needs: [preflight, build, publish-darnit-core]
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    environment: release
     permissions:
-      id-token: write
-      attestations: write
       contents: read
     steps:
       - name: Download dist artifacts
@@ -280,19 +256,15 @@ jobs:
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
         with:
           packages-dir: dist/darnit-baseline/
-          repository-url: ${{ needs.preflight.outputs.is_prerelease == 'true' && 'https://test.pypi.org/legacy/' || 'https://upload.pypi.org/legacy/' }}
-          attestations: true
+          password: ${{ secrets.PYPI_API_TOKEN }}
           skip-existing: false
 
   publish-darnit-gittuf:
-    name: Publish darnit-gittuf to ${{ needs.preflight.outputs.is_prerelease == 'true' && 'TestPyPI' || 'PyPI' }}
+    name: Publish darnit-gittuf to PyPI
     needs: [preflight, build, publish-darnit-core]
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    environment: release
     permissions:
-      id-token: write
-      attestations: write
       contents: read
     steps:
       - name: Download dist artifacts
@@ -305,19 +277,41 @@ jobs:
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
         with:
           packages-dir: dist/darnit-gittuf/
-          repository-url: ${{ needs.preflight.outputs.is_prerelease == 'true' && 'https://test.pypi.org/legacy/' || 'https://upload.pypi.org/legacy/' }}
-          attestations: true
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          skip-existing: false
+
+  publish-darnit-reproducibility:
+    name: Publish darnit-reproducibility to PyPI
+    needs: [preflight, build, publish-darnit-core]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Download dist artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish darnit-reproducibility
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
+        with:
+          packages-dir: dist/darnit-reproducibility/
+          password: ${{ secrets.PYPI_API_TOKEN }}
           skip-existing: false
 
   publish-darnit-mcp:
-    name: Publish darnit-mcp to ${{ needs.preflight.outputs.is_prerelease == 'true' && 'TestPyPI' || 'PyPI' }}
-    needs: [preflight, build, publish-darnit-baseline, publish-darnit-gittuf]
+    name: Publish darnit-mcp to PyPI
+    needs:
+      - preflight
+      - build
+      - publish-darnit-baseline
+      - publish-darnit-gittuf
+      - publish-darnit-reproducibility
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    environment: release
     permissions:
-      id-token: write
-      attestations: write
       contents: read
     steps:
       - name: Download dist artifacts
@@ -330,14 +324,13 @@ jobs:
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
         with:
           packages-dir: dist/darnit-mcp/
-          repository-url: ${{ needs.preflight.outputs.is_prerelease == 'true' && 'https://test.pypi.org/legacy/' || 'https://upload.pypi.org/legacy/' }}
-          attestations: true
+          password: ${{ secrets.PYPI_API_TOKEN }}
           skip-existing: false
 
-  # T023 + T024 + T025 + T026: container build, push, sign, SBOM, size report.
-  # Depends on publish-darnit-mcp because the Dockerfile installs darnit-mcp
-  # from PyPI at the tagged version — the package must be live before the
-  # image build can resolve it.
+  # Build + push + cosign-sign the multi-arch container image. Depends on
+  # publish-darnit-mcp because the Dockerfile does `pip install
+  # darnit-mcp==<version>` at build time - the package must be live before
+  # the image build can resolve it.
   container_build_push:
     name: Build, push, and sign container image
     needs:
@@ -345,19 +338,17 @@ jobs:
       - publish-darnit-mcp
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    environment: release
     permissions:
-      contents: write       # for OCI image labels referenced from release notes
+      contents: read
       packages: write       # push to ghcr.io
       id-token: write       # cosign keyless signing via OIDC
-      attestations: write   # SBOM attestation via cosign
     outputs:
       image_digest: ${{ steps.build_push.outputs.digest }}
-      compressed_size_bytes: ${{ steps.size.outputs.compressed_size_bytes }}
     steps:
-      - name: Checkout
+      - name: Checkout at tag
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4
         with:
+          ref: ${{ env.TAG_NAME }}
           persist-credentials: false
 
       - name: Set up QEMU (multi-arch emulation for arm64 build on amd64 runner)
@@ -380,16 +371,16 @@ jobs:
         env:
           VERSION: ${{ needs.preflight.outputs.version }}
           IS_PRERELEASE: ${{ needs.preflight.outputs.is_prerelease }}
+          REPO_OWNER: ${{ github.repository_owner }}
         run: |
           set -euo pipefail
-          image="ghcr.io/${GITHUB_REPOSITORY_OWNER}/darnit"
-          # Lowercase the owner name — GHCR rejects uppercase in repos.
+          image="ghcr.io/${REPO_OWNER}/darnit"
+          # Lowercase the owner name; GHCR rejects uppercase in repo paths.
           image=$(echo "$image" | tr '[:upper:]' '[:lower:]')
           if [ "$IS_PRERELEASE" = "true" ]; then
-            # Pre-release: only the immutable version tag. NEVER move :latest.
+            # Pre-release: only the immutable version tag. Never move :latest.
             tags="${image}:v${VERSION}"
           else
-            # Stable: immutable version + move :latest.
             tags="${image}:v${VERSION},${image}:latest"
           fi
           {
@@ -398,30 +389,24 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "Tagging: $tags"
 
-      - name: Wait briefly for PyPI to propagate ${{ needs.preflight.outputs.version }}
+      - name: Wait for darnit-mcp on PyPI
         env:
           VERSION: ${{ needs.preflight.outputs.version }}
-          IS_PRERELEASE: ${{ needs.preflight.outputs.is_prerelease }}
         run: |
           set -euo pipefail
-          # PyPI's CDN typically caches the index for ~minutes after a new
-          # upload. The Dockerfile's `pip install darnit-mcp==<version>` step
-          # will fail until the version is visible. Poll up to 2 minutes
-          # before giving up so the image build is not racing publication.
-          if [ "$IS_PRERELEASE" = "true" ]; then
-            base_url="https://test.pypi.org/pypi/darnit-mcp/${VERSION}/json"
-          else
-            base_url="https://pypi.org/pypi/darnit-mcp/${VERSION}/json"
-          fi
+          # PyPI's CDN typically caches the index for a few minutes after a
+          # new upload. Poll up to 2 minutes so the image build is not racing
+          # publication.
+          url="https://pypi.org/pypi/darnit-mcp/${VERSION}/json"
           for attempt in $(seq 1 24); do
-            if curl -fsSL "$base_url" >/dev/null 2>&1; then
-              echo "darnit-mcp ${VERSION} is visible on the index (attempt $attempt)"
+            if curl -fsSL "$url" >/dev/null 2>&1; then
+              echo "darnit-mcp ${VERSION} is visible on PyPI (attempt $attempt)"
               exit 0
             fi
-            echo "Waiting for darnit-mcp ${VERSION} on the index (attempt $attempt/24)..."
+            echo "Waiting for darnit-mcp ${VERSION} on PyPI (attempt $attempt/24)..."
             sleep 5
           done
-          echo "::error::darnit-mcp ${VERSION} did not appear on the index within 2 minutes"
+          echo "::error::darnit-mcp ${VERSION} did not appear on PyPI within 2 minutes"
           exit 1
 
       - name: Build and push multi-arch image
@@ -436,7 +421,7 @@ jobs:
           build-args: |
             VERSION=${{ needs.preflight.outputs.version }}
           provenance: true
-          sbom: false  # we generate our own with syft below, scoped to runtime
+          sbom: false
 
       - name: Install cosign
         uses: sigstore/cosign-installer@0d05a4e36810cebf0e25e51fb1a4ee45ac1b75e2 # v3.10.1
@@ -449,263 +434,29 @@ jobs:
           set -euo pipefail
           cosign sign --yes "${IMAGE}@${DIGEST}"
 
-      - name: Install syft
-        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
-
-      - name: Generate SBOM (T025)
-        env:
-          DIGEST: ${{ steps.build_push.outputs.digest }}
-          IMAGE: ${{ steps.tags.outputs.image }}
-        run: |
-          set -euo pipefail
-          syft "${IMAGE}@${DIGEST}" -o spdx-json > /tmp/sbom.spdx.json
-          echo "SBOM has $(jq '.packages | length' /tmp/sbom.spdx.json) packages"
-
-      - name: Attach SBOM as cosign attestation (T025)
-        env:
-          DIGEST: ${{ steps.build_push.outputs.digest }}
-          IMAGE: ${{ steps.tags.outputs.image }}
-        run: |
-          set -euo pipefail
-          cosign attest --yes \
-            --predicate /tmp/sbom.spdx.json \
-            --type spdx \
-            "${IMAGE}@${DIGEST}"
-
-      - name: Measure compressed size and warn on growth (T026)
-        id: size
-        env:
-          DIGEST: ${{ steps.build_push.outputs.digest }}
-          IMAGE: ${{ steps.tags.outputs.image }}
-          VERSION: ${{ needs.preflight.outputs.version }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          # docker manifest inspect returns the multi-arch list; sum per-arch
-          # compressed sizes from the layer descriptors.
-          manifest=$(docker manifest inspect "${IMAGE}@${DIGEST}")
-          total=$(echo "$manifest" | jq '[ .manifests[].size? // 0, ( .layers[].size? // 0 ) ] | add // 0')
-          # For the multi-arch list above, manifests[].size is the platform
-          # manifest's content size, not its decompressed image. To capture
-          # the actual layer compressed sizes we need to inspect each
-          # platform manifest.
-          per_arch_total=0
-          for plat_digest in $(echo "$manifest" | jq -r '.manifests[].digest'); do
-            arch_manifest=$(docker manifest inspect "${IMAGE}@${plat_digest}")
-            arch_size=$(echo "$arch_manifest" | jq '[ .layers[].size? // 0 ] | add // 0')
-            per_arch_total=$(( per_arch_total + arch_size ))
-          done
-          if [ "$per_arch_total" -gt 0 ]; then
-            total="$per_arch_total"
-          fi
-          target_bytes=$((300 * 1024 * 1024))
-          mib=$(awk -v t="$total" 'BEGIN{printf "%.1f", t/1024/1024}')
-          echo "compressed_size_bytes=$total" >> "$GITHUB_OUTPUT"
-          {
-            echo "### Container image size"
-            echo ""
-            echo "- Compressed (sum across linux/amd64 + linux/arm64 layers): **${mib} MiB**"
-            echo "- Soft target: 300 MiB"
-            if [ "$total" -gt "$target_bytes" ]; then
-              echo "- ⚠️ Exceeds soft target by $(( total - target_bytes )) bytes — confirm justification in release notes."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          # Compare to the previous release (best-effort). Look up the most
-          # recent release before this one and parse the size out of its
-          # body if we recorded it.
-          prev_tag=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 20 \
-            --json tagName,isPrerelease \
-            | jq -r '[ .[] | select(.isPrerelease == false) ] | .[0].tagName // ""')
-          if [ -n "$prev_tag" ] && [ "$prev_tag" != "v${VERSION}" ]; then
-            prev_body=$(gh release view "$prev_tag" --repo "$GITHUB_REPOSITORY" --json body | jq -r '.body // ""')
-            prev_size=$(echo "$prev_body" | grep -oE 'compressed-size: [0-9]+' | awk '{print $2}' | head -n1 || true)
-            if [ -n "$prev_size" ] && [ "$prev_size" -gt 0 ]; then
-              growth=$(( (total - prev_size) * 100 / prev_size ))
-              if [ "$growth" -gt 15 ]; then
-                echo "::warning::Container image grew ${growth}% vs ${prev_tag} (was ${prev_size} bytes, now ${total}). Justify in release notes."
-              else
-                echo "Image size change vs ${prev_tag}: ${growth}% (within +15% budget)"
-              fi
-            fi
-          else
-            echo "No previous stable release with recorded size; recording baseline."
-          fi
-          # Note: the actual `compressed-size: N` line is embedded in the
-          # release notes by the finalize job (T071) for future comparison.
-
-  # T033–T036: build a shiv standalone binary on each native runner, sign
-  # the blob with cosign, generate an SBOM, attach a GH attestation, and
-  # upload the artifact for the release_attach_binaries job to collect.
-  #
-  # Each matrix entry runs on a NATIVE runner for its target platform so
-  # the platform-specific wheels (especially tree-sitter) resolve correctly.
-  # Cross-compilation is intentionally not used — it would require us to
-  # maintain platform-tag manifests by hand.
-  binary_matrix:
-    name: Build binary (${{ matrix.os }}-${{ matrix.arch }})
+  # Create the GitHub Release with install instructions. Simple version of what
+  # waybill does - no binary asset upload yet (that channel comes later).
+  release:
+    name: Create GitHub Release
     needs:
       - preflight
       - publish-darnit-mcp
-    timeout-minutes: 20
-    runs-on: ${{ matrix.runner }}
-    environment: release
-    permissions:
-      contents: read
-      id-token: write       # cosign keyless + GH artifact attestations
-      attestations: write   # GH artifact attestations
-    strategy:
-      fail-fast: false
-      matrix:
-        # macOS amd64 (Intel) is explicitly out of scope — Apple has fully
-        # transitioned to Apple Silicon and we don't support Intel Macs.
-        # See specs/012-packaging-distribution/spec.md (Out of Scope).
-        include:
-          - { runner: macos-14,         os: macos, arch: arm64 }
-          - { runner: ubuntu-22.04,     os: linux, arch: amd64 }
-          - { runner: ubuntu-22.04-arm, os: linux, arch: arm64 }
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4
-        with:
-          persist-credentials: false
-
-      - name: Set up Python 3.11 (matches shiv shebang)
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v5
-        with:
-          python-version: "3.11"
-
-      - name: Install shiv
-        run: |
-          set -euo pipefail
-          python -m pip install --upgrade pip
-          pip install 'shiv>=1.0.4'
-
-      - name: Wait for darnit-mcp ${{ needs.preflight.outputs.version }} on the index
-        env:
-          VERSION: ${{ needs.preflight.outputs.version }}
-          IS_PRERELEASE: ${{ needs.preflight.outputs.is_prerelease }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ "$IS_PRERELEASE" = "true" ]; then
-            url="https://test.pypi.org/pypi/darnit-mcp/${VERSION}/json"
-          else
-            url="https://pypi.org/pypi/darnit-mcp/${VERSION}/json"
-          fi
-          for attempt in $(seq 1 24); do
-            if curl -fsSL "$url" >/dev/null 2>&1; then
-              echo "darnit-mcp ${VERSION} is visible on the index (attempt $attempt)"
-              exit 0
-            fi
-            sleep 5
-          done
-          echo "::error::darnit-mcp ${VERSION} did not appear on the index within 2 minutes"
-          exit 1
-
-      - name: Build binary (T032 script)
-        env:
-          VERSION: ${{ needs.preflight.outputs.version }}
-          OS: ${{ matrix.os }}
-          ARCH: ${{ matrix.arch }}
-          INDEX: ${{ needs.preflight.outputs.is_prerelease == 'true' && 'https://test.pypi.org/simple/' || 'https://pypi.org/simple/' }}
-          EXTRA_INDEX: https://pypi.org/simple/
-          OUT_DIR: dist/binary
-        shell: bash
-        run: ./packaging/binary/build-binary.sh
-
-      - name: Sanity check — binary reports the expected version
-        env:
-          VERSION: ${{ needs.preflight.outputs.version }}
-          OS: ${{ matrix.os }}
-          ARCH: ${{ matrix.arch }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          bin="dist/binary/darnit-${VERSION}-${OS}-${ARCH}"
-          out=$("$bin" --version 2>&1 | tail -n1)
-          echo "$bin --version → $out"
-          echo "$out" | grep -F "$VERSION"
-
-      - name: Install cosign
-        uses: sigstore/cosign-installer@0d05a4e36810cebf0e25e51fb1a4ee45ac1b75e2 # v3.10.1
-
-      - name: Sign binary blob (T034)
-        env:
-          VERSION: ${{ needs.preflight.outputs.version }}
-          OS: ${{ matrix.os }}
-          ARCH: ${{ matrix.arch }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          bin="dist/binary/darnit-${VERSION}-${OS}-${ARCH}"
-          cosign sign-blob --yes \
-            --bundle "${bin}.sigstore" \
-            "$bin"
-          ls -la "${bin}" "${bin}.sigstore"
-
-      - name: Install syft
-        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
-
-      - name: Generate SBOM (T035)
-        env:
-          VERSION: ${{ needs.preflight.outputs.version }}
-          OS: ${{ matrix.os }}
-          ARCH: ${{ matrix.arch }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          bin="dist/binary/darnit-${VERSION}-${OS}-${ARCH}"
-          syft "$bin" -o spdx-json > "${bin}.sbom.spdx.json"
-          echo "SBOM has $(jq '.packages | length' "${bin}.sbom.spdx.json") packages"
-
-      - name: Attach GitHub Artifact Attestation for the SBOM (T035)
-        uses: actions/attest@d36e3e88017bf07c79c1b8af5b22a3893e29d1cf # v3
-        with:
-          subject-path: dist/binary/darnit-${{ needs.preflight.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}
-          predicate-type: https://spdx.dev/Document
-          predicate-path: dist/binary/darnit-${{ needs.preflight.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}.sbom.spdx.json
-
-      - name: Upload built binary + signature + SBOM as workflow artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
-        with:
-          name: binary-${{ matrix.os }}-${{ matrix.arch }}
-          path: |
-            dist/binary/darnit-${{ needs.preflight.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}
-            dist/binary/darnit-${{ needs.preflight.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}.sigstore
-            dist/binary/darnit-${{ needs.preflight.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}.sbom.spdx.json
-          if-no-files-found: error
-          retention-days: 7
-
-  # T036: collect all four binaries + signatures + SBOMs, then create the
-  # GitHub Release and attach them as assets. Pre-release tags create a
-  # release marked as pre-release; stable tags mark the release as `latest`.
-  release_attach_binaries:
-    name: Attach binaries to GitHub Release
-    needs: [preflight, binary_matrix]
+      - container_build_push
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     permissions:
       contents: write
     steps:
-      - name: Download all binary artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          pattern: binary-*
-          path: dist/binary
-          merge-multiple: true
-
-      - name: List collected files
-        run: ls -la dist/binary/
-
-      - name: Create GitHub Release and attach binaries
+      - name: Create release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.preflight.outputs.version }}
           IS_PRERELEASE: ${{ needs.preflight.outputs.is_prerelease }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          TAG: ${{ env.TAG_NAME }}
         run: |
           set -euo pipefail
-          tag="v${VERSION}"
+          owner_lc=$(echo "$REPO_OWNER" | tr '[:upper:]' '[:lower:]')
           if [ "$IS_PRERELEASE" = "true" ]; then
             flags="--prerelease"
             title="darnit ${VERSION} (pre-release)"
@@ -713,429 +464,74 @@ jobs:
             flags="--latest"
             title="darnit ${VERSION}"
           fi
-          # Initial release body; finalize job (T071) will extend with the
-          # full per-channel timing summary.
           body_file=$(mktemp)
           cat > "$body_file" <<EOF
           # darnit ${VERSION}
 
-          Released by [\`release.yml\`](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}) on $(date -u +%Y-%m-%dT%H:%M:%SZ).
+          First-cut release. See CHANGELOG or the tag diff for what's in it.
 
           ## Install
 
-          - **PyPI**: \`pip install darnit-mcp==${VERSION}\`
-          - **Container**: \`docker pull ghcr.io/$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')/darnit:v${VERSION}\`
-          - **Standalone binary**: download the platform-matching asset below.
-          - **Homebrew** (stable only): \`brew install kusari-oss/tap/darnit\`
+          - **MCP (Claude Code / Claude Desktop):** \`darnit install\` writes an \`uvx --from darnit-mcp\` config for you. See [docs/install/](https://github.com/${GITHUB_REPOSITORY}/tree/${TAG}/docs/install).
+          - **PyPI:** \`pip install darnit-mcp==${VERSION}\` (installs the meta-package plus \`darnit-core\`, \`darnit-baseline\`, \`darnit-gittuf\`, \`darnit-reproducibility\`).
+          - **Container:** \`docker pull ghcr.io/${owner_lc}/darnit:${TAG}\`.
+          - **Standalone binary / Homebrew:** not yet in this release. Tracked for follow-ups.
 
-          ## Verify
+          ## Verify (container image)
 
-          See [\`docs/install/\`](https://github.com/${GITHUB_REPOSITORY}/tree/v${VERSION}/docs/install) for per-channel verification recipes.
-
-          ## Binary assets
-
-          | Platform | File |
-          |---|---|
-          | macOS arm64 (Apple Silicon) | \`darnit-${VERSION}-macos-arm64\` |
-          | Linux arm64 | \`darnit-${VERSION}-linux-arm64\` |
-          | Linux amd64 | \`darnit-${VERSION}-linux-amd64\` |
-
-          Each binary ships with a matching \`.sigstore\` bundle (cosign
-          blob signature) and an \`.sbom.spdx.json\` SBOM.
+          \`\`\`sh
+          cosign verify \\
+            --certificate-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${TAG}" \\
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \\
+            ghcr.io/${owner_lc}/darnit:${TAG}
+          \`\`\`
           EOF
 
-          gh release create "$tag" \
+          # shellcheck disable=SC2086
+          gh release create "$TAG" \
             --title "$title" \
             --notes-file "$body_file" \
-            $flags \
-            dist/binary/*
+            $flags
 
-  # T043: Homebrew tap formula bump. STABLE TAGS ONLY — pre-release tags do
-  # not touch the formula (per spec clarification Q2).
-  #
-  # Depends on release_attach_binaries because the formula references the
-  # GH Release's binary assets by URL + SHA-256; the assets must exist on
-  # the release before we compute hashes and dispatch.
-  #
-  # Authentication: HOMEBREW_TAP_TOKEN is a fine-grained PAT scoped to
-  # kusari-oss/homebrew-tap ONLY, with `contents: write` permission. A
-  # GitHub App installation token works identically at the HTTP layer
-  # (both pass as `Authorization: Bearer <token>` against the dispatches
-  # endpoint) — swap to an App at any time without code changes. See
-  # packaging/README.md "External setup" for the maintainer-side steps.
-  homebrew_dispatch:
-    name: Dispatch formula bump to kusari-oss/homebrew-tap
-    needs: [preflight, release_attach_binaries]
-    if: needs.preflight.outputs.is_prerelease == 'false'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    environment: release
-    permissions:
-      contents: read
-    steps:
-      - name: Compute per-platform SHA-256s from the GH Release
-        id: sha
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ needs.preflight.outputs.version }}
-        run: |
-          set -euo pipefail
-          tag="v${VERSION}"
-          # Download just the binaries (not signatures or SBOMs) into a
-          # scratch directory and sha256sum each.
-          mkdir -p /tmp/sha-dl
-          for plat in macos-arm64 linux-arm64 linux-amd64; do
-            asset="darnit-${VERSION}-${plat}"
-            gh release download "$tag" \
-              --repo "$GITHUB_REPOSITORY" \
-              --pattern "$asset" \
-              --dir /tmp/sha-dl
-            sha=$(sha256sum "/tmp/sha-dl/$asset" | awk '{print $1}')
-            echo "${plat}: ${sha}"
-            # Normalize key name for the dispatch payload
-            key=$(echo "$plat" | tr '-' '_')
-            echo "sha256_${key}=${sha}" >> "$GITHUB_OUTPUT"
-          done
-
-      - name: Dispatch darnit-release to kusari-oss/homebrew-tap
-        env:
-          # GitHub App installation token, scoped to contents:write on the
-          # tap repo only. Configured one-time per packaging/README.md.
-          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          VERSION: ${{ needs.preflight.outputs.version }}
-          SHA_MACOS_ARM64: ${{ steps.sha.outputs.sha256_macos_arm64 }}
-          SHA_LINUX_ARM64: ${{ steps.sha.outputs.sha256_linux_arm64 }}
-          SHA_LINUX_AMD64: ${{ steps.sha.outputs.sha256_linux_amd64 }}
-        run: |
-          set -euo pipefail
-          base="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}"
-          payload=$(jq -n \
-            --arg version "$VERSION" \
-            --arg darnit_repo "$GITHUB_REPOSITORY" \
-            --arg release_url "https://github.com/${GITHUB_REPOSITORY}/releases/tag/v${VERSION}" \
-            --arg url_macos_arm64 "${base}/darnit-${VERSION}-macos-arm64" \
-            --arg url_linux_arm64 "${base}/darnit-${VERSION}-linux-arm64" \
-            --arg url_linux_amd64 "${base}/darnit-${VERSION}-linux-amd64" \
-            --arg sha_macos_arm64 "$SHA_MACOS_ARM64" \
-            --arg sha_linux_arm64 "$SHA_LINUX_ARM64" \
-            --arg sha_linux_amd64 "$SHA_LINUX_AMD64" \
-            '{
-              event_type: "darnit-release",
-              client_payload: {
-                version: $version,
-                darnit_repo: $darnit_repo,
-                release_url: $release_url,
-                url_macos_arm64: $url_macos_arm64,
-                url_linux_arm64: $url_linux_arm64,
-                url_linux_amd64: $url_linux_amd64,
-                sha256_macos_arm64: $sha_macos_arm64,
-                sha256_linux_arm64: $sha_linux_arm64,
-                sha256_linux_amd64: $sha_linux_amd64
-              }
-            }')
-          echo "Dispatching to kusari-oss/homebrew-tap"
-          echo "$payload" | jq -c '.client_payload | del(.url_macos_arm64, .url_linux_arm64, .url_linux_amd64)'
-          curl --fail-with-body -sSL \
-            -X POST \
-            -H "Authorization: Bearer ${TAP_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            https://api.github.com/repos/kusari-oss/homebrew-tap/dispatches \
-            -d "$payload"
-          echo "✓ Dispatched darnit-release for v${VERSION}"
-
-  # T053: package the Claude Code plugin and attach it to the GitHub
-  # Release. STABLE TAGS ONLY — pre-release tags do not produce a plugin
-  # artifact (per spec clarification Q2).
-  #
-  # Depends on publish-darnit-mcp (the plugin's MCP server invocation pins
-  # `darnit-mcp==<version>`, so PyPI must have that version available
-  # before users can install the plugin) and on release_attach_binaries
-  # (the GH Release must exist before we can upload the zip to it).
-  plugin_package:
-    name: Package Claude Code plugin
-    needs: [preflight, publish-darnit-mcp, release_attach_binaries]
-    if: needs.preflight.outputs.is_prerelease == 'false'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    environment: release
-    permissions:
-      contents: write   # upload the zip to the GH Release
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4
-        with:
-          persist-credentials: false
-
-      - name: Build plugin zip
-        env:
-          VERSION: ${{ needs.preflight.outputs.version }}
-          OUT_DIR: dist/claude-plugin
-        run: ./packaging/claude-plugin/build.sh
-
-      - name: Assert plugin manifest pins the release version
-        env:
-          VERSION: ${{ needs.preflight.outputs.version }}
-        run: |
-          set -euo pipefail
-          zip="dist/claude-plugin/darnit-claude-plugin-${VERSION}.zip"
-          # Top-level version
-          unzip -p "$zip" darnit/.claude-plugin/plugin.json \
-            | jq -e --arg v "$VERSION" '.version == $v' > /dev/null
-          # MCP server runtime version pin
-          unzip -p "$zip" darnit/.claude-plugin/plugin.json \
-            | jq -e --arg v "$VERSION" '.mcpServers["darnit-mcp"].env.DARNIT_MCP_VERSION == $v' > /dev/null
-          echo "✓ plugin.json pins ${VERSION} on both axes"
-
-      - name: Assert bundled skill set matches contract
-        env:
-          VERSION: ${{ needs.preflight.outputs.version }}
-        run: |
-          set -euo pipefail
-          zip="dist/claude-plugin/darnit-claude-plugin-${VERSION}.zip"
-          # Match skill directory names per the Agent Skills spec:
-          # lowercase letters, digits, and hyphens.
-          # ([a-z]+ alone would silently miss every hyphenated name.)
-          bundled=$(unzip -l "$zip" \
-            | awk '/darnit\/skills\/[a-z0-9-]+\/SKILL\.md$/ {sub("^.*skills/",""); sub("/SKILL.md$",""); print}' \
-            | sort \
-            | paste -sd, -)
-          expected="darnit-audit,darnit-comply,darnit-data,darnit-remediate"
-          if [ "$bundled" != "$expected" ]; then
-            echo "::error::Bundled skill set ($bundled) does not match contract ($expected)"
-            exit 1
-          fi
-          echo "✓ Bundled skill set matches contract: $expected"
-
-      - name: Upload plugin zip to GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ needs.preflight.outputs.version }}
-        run: |
-          set -euo pipefail
-          tag="v${VERSION}"
-          gh release upload "$tag" \
-            "dist/claude-plugin/darnit-claude-plugin-${VERSION}.zip" \
-            --repo "$GITHUB_REPOSITORY"
-          echo "✓ Uploaded darnit-claude-plugin-${VERSION}.zip to release $tag"
-
-  # T071 + T071a: finalize + SC-007 enforcement.
-  #
-  # Runs unconditionally (`if: always()`) after every channel job — success,
-  # failure, or skipped. Aggregates per-channel results and timing into a
-  # markdown summary, appends it to the GitHub Release notes, and (for
-  # stable tags only) creates a `release-failure` GitHub issue when:
-  #   - any channel that was supposed to run failed, OR
-  #   - the workflow's total elapsed exceeded the SC-007 30-minute budget.
-  #
-  # Workflow-level timeout: GitHub Actions does not support `timeout-minutes`
-  # at the workflow level for push-triggered runs (only at job + step
-  # levels). The SC-007 30-minute budget for stable releases is therefore
-  # enforced HERE by computing total elapsed and surfacing as a
-  # release-failure issue if exceeded. Per-job `timeout-minutes` caps keep
-  # any single job bounded (preflight 10, container 20, binary matrix 20,
-  # homebrew 5, plugin 5, finalize 5).
-  #
-  # Channels' own `if:` guards make pre-release jobs (homebrew_dispatch,
-  # plugin_package) report `skipped` on rc tags — those are not failures.
+  # Post-run summary. Never fails the workflow itself.
   finalize:
-    name: Finalize release
+    name: Finalize
     if: always()
     needs:
       - preflight
       - publish-darnit-core
       - publish-darnit-baseline
       - publish-darnit-gittuf
+      - publish-darnit-reproducibility
       - publish-darnit-mcp
       - container_build_push
-      - binary_matrix
-      - release_attach_binaries
-      - homebrew_dispatch
-      - plugin_package
+      - release
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
-      contents: write   # append to release notes
-      issues: write     # create release-failure issue
+      contents: read
     steps:
-      - name: Checkout (for RECOVERY.md links)
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4
-        with:
-          persist-credentials: false
-
-      - name: Aggregate per-channel results and timing
-        id: aggregate
+      - name: Per-channel summary
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          IS_PRERELEASE: ${{ needs.preflight.outputs.is_prerelease }}
           VERSION: ${{ needs.preflight.outputs.version }}
-          PYPI_DARNIT: ${{ needs.publish-darnit-core.result }}
+          PYPI_CORE: ${{ needs.publish-darnit-core.result }}
           PYPI_BASELINE: ${{ needs.publish-darnit-baseline.result }}
           PYPI_GITTUF: ${{ needs.publish-darnit-gittuf.result }}
+          PYPI_REPRO: ${{ needs.publish-darnit-reproducibility.result }}
           PYPI_MCP: ${{ needs.publish-darnit-mcp.result }}
           CONTAINER: ${{ needs.container_build_push.result }}
-          BINARY: ${{ needs.binary_matrix.result }}
-          RELEASE_ATTACH: ${{ needs.release_attach_binaries.result }}
-          HOMEBREW: ${{ needs.homebrew_dispatch.result }}
-          PLUGIN: ${{ needs.plugin_package.result }}
+          RELEASE: ${{ needs.release.result }}
         run: |
-          set -euo pipefail
-
-          # Fetch the run's start time to compute total elapsed.
-          run_data=$(gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}")
-          workflow_started=$(echo "$run_data" | jq -r '.run_started_at')
-          started_epoch=$(date -u -d "$workflow_started" +%s 2>/dev/null \
-                          || date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "$workflow_started" +%s)
-          now_epoch=$(date -u +%s)
-          elapsed_seconds=$(( now_epoch - started_epoch ))
-          elapsed_minutes=$(awk -v s="$elapsed_seconds" 'BEGIN{printf "%.1f", s/60}')
-
-          # SC-007 budget: 30 minutes for stable tags. Pre-releases are
-          # uncapped (per spec clarification).
-          budget_seconds=1800
-          over_budget="false"
-          if [ "$IS_PRERELEASE" = "false" ] && [ "$elapsed_seconds" -gt "$budget_seconds" ]; then
-            over_budget="true"
-          fi
-
-          # Tally failures and timeouts. `cancelled` counts as failure
-          # because it usually means we hit a job-level timeout.
-          # `skipped` is NOT a failure (pre-release jobs intentionally skip).
-          failures=""
-          check_channel() {
-              local name="$1" result="$2"
-              case "$result" in
-                  success|skipped) ;;
-                  failure|cancelled|timed_out)
-                      if [ -n "$failures" ]; then
-                          failures="${failures}, ${name}"
-                      else
-                          failures="$name"
-                      fi
-                      ;;
-                  *)
-                      # Unknown state — treat as failure to fail-closed.
-                      if [ -n "$failures" ]; then
-                          failures="${failures}, ${name}(${result})"
-                      else
-                          failures="${name}(${result})"
-                      fi
-                      ;;
-              esac
-          }
-          check_channel pypi-darnit         "$PYPI_DARNIT"
-          check_channel pypi-darnit-baseline "$PYPI_BASELINE"
-          check_channel pypi-darnit-gittuf  "$PYPI_GITTUF"
-          check_channel pypi-darnit-mcp     "$PYPI_MCP"
-          check_channel container           "$CONTAINER"
-          check_channel binary              "$BINARY"
-          check_channel release-attach      "$RELEASE_ATTACH"
-          check_channel homebrew            "$HOMEBREW"
-          check_channel plugin              "$PLUGIN"
-
           {
-            echo "elapsed_seconds=$elapsed_seconds"
-            echo "elapsed_minutes=$elapsed_minutes"
-            echo "over_budget=$over_budget"
-            echo "failures=$failures"
-            echo "is_prerelease=$IS_PRERELEASE"
-            echo "version=$VERSION"
-          } >> "$GITHUB_OUTPUT"
-
-          # Build the markdown timing table for the step summary AND the
-          # release notes appendix.
-          {
-            echo "## Release ${VERSION} — per-channel summary"
-            echo ""
-            echo "| Channel | Result | Notes |"
-            echo "|---|---|---|"
-            echo "| pypi-darnit | $PYPI_DARNIT | |"
-            echo "| pypi-darnit-baseline | $PYPI_BASELINE | |"
-            echo "| pypi-darnit-gittuf | $PYPI_GITTUF | |"
-            echo "| pypi-darnit-mcp | $PYPI_MCP | |"
-            echo "| container | $CONTAINER | |"
-            echo "| binary | $BINARY | matrix across macOS arm64 + Linux arm64/amd64 |"
-            echo "| release-attach | $RELEASE_ATTACH | GitHub Release asset upload |"
-            echo "| homebrew | $HOMEBREW | $([ "$IS_PRERELEASE" = "true" ] && echo "skipped — pre-release" || echo "stable only") |"
-            echo "| plugin | $PLUGIN | $([ "$IS_PRERELEASE" = "true" ] && echo "skipped — pre-release" || echo "stable only") |"
-            echo ""
-            echo "**Total elapsed:** ${elapsed_minutes} min ($elapsed_seconds s)"
-            if [ "$IS_PRERELEASE" = "false" ]; then
-              echo "**SC-007 budget:** 30 min (stable releases)"
-              if [ "$over_budget" = "true" ]; then
-                echo "⚠️ **Exceeded SC-007 budget** by $(( elapsed_seconds - budget_seconds )) seconds."
-              fi
-            else
-              echo "**SC-007 budget:** N/A (pre-releases are uncapped)"
-            fi
-            if [ -n "$failures" ]; then
-              echo ""
-              echo "**Failed channels:** $failures"
-            fi
-          } > /tmp/release-summary.md
-
-          # Mirror to the GH Actions job summary.
-          cat /tmp/release-summary.md >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Append summary to the GitHub Release notes
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ needs.preflight.outputs.version }}
-          RELEASE_ATTACH: ${{ needs.release_attach_binaries.result }}
-        run: |
-          set -euo pipefail
-          tag="v${VERSION}"
-          if [ "$RELEASE_ATTACH" != "success" ]; then
-            echo "release_attach_binaries did not succeed — no GitHub Release exists yet, skipping notes append."
-            exit 0
-          fi
-          # Read existing notes, append the summary, write back.
-          existing=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json body --jq '.body')
-          appended_file=$(mktemp)
-          {
-            printf '%s\n\n---\n\n' "$existing"
-            cat /tmp/release-summary.md
-          } > "$appended_file"
-          gh release edit "$tag" \
-            --repo "$GITHUB_REPOSITORY" \
-            --notes-file "$appended_file"
-
-      - name: Create release-failure issue (stable + failure or over-budget)
-        if: needs.preflight.outputs.is_prerelease == 'false' && (steps.aggregate.outputs.failures != '' || steps.aggregate.outputs.over_budget == 'true')
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ needs.preflight.outputs.version }}
-          FAILURES: ${{ steps.aggregate.outputs.failures }}
-          ELAPSED_MIN: ${{ steps.aggregate.outputs.elapsed_minutes }}
-          OVER_BUDGET: ${{ steps.aggregate.outputs.over_budget }}
-        run: |
-          set -euo pipefail
-          tag="v${VERSION}"
-          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          body_file=$(mktemp)
-          {
-            echo "## Release-failure — ${tag}"
-            echo ""
-            if [ -n "${FAILURES:-}" ]; then
-              echo "**Failed channels:** ${FAILURES}"
-            fi
-            if [ "${OVER_BUDGET:-false}" = "true" ]; then
-              echo "**SC-007 budget exceeded:** workflow took ${ELAPSED_MIN} min (budget is 30 min)."
-            fi
-            echo ""
-            echo "**Workflow run:** ${run_url}"
-            echo ""
-            echo "## Recovery"
-            echo ""
-            echo "See [packaging/RECOVERY.md](../blob/main/packaging/RECOVERY.md) for the per-channel repair procedure. The release.yml workflow MUST NOT be re-run on this tag — recovery is per-channel."
-            echo ""
-            echo "Successful channels remain published. Failed channels must be either roll-forwarded to a new patch release (v$(echo "${VERSION}" | awk -F. '{print $1"."$2"."$3+1}')), or in a few cases manually repaired against the same tag — see RECOVERY.md for which mode applies per channel."
-            echo ""
-            echo "_Auto-created by .github/workflows/release.yml::finalize._"
-          } > "$body_file"
-
-          gh issue create \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "release-failure: ${tag}" \
-            --body-file "$body_file" \
-            --label "release-failure"
+            echo "## Release ${VERSION} - per-channel summary"
+            echo
+            echo "| Channel | Result |"
+            echo "|---|---|"
+            echo "| pypi-darnit-core | $PYPI_CORE |"
+            echo "| pypi-darnit-baseline | $PYPI_BASELINE |"
+            echo "| pypi-darnit-gittuf | $PYPI_GITTUF |"
+            echo "| pypi-darnit-reproducibility | $PYPI_REPRO |"
+            echo "| pypi-darnit-mcp | $PYPI_MCP |"
+            echo "| container | $CONTAINER |"
+            echo "| github-release | $RELEASE |"
+          } >> "$GITHUB_STEP_SUMMARY"
