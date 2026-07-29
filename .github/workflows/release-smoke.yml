@@ -94,7 +94,7 @@ jobs:
           fi
 
       - name: Set up Python
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v5
         with:
           python-version: "3.12"
 
@@ -322,7 +322,7 @@ jobs:
           - { runner: ubuntu-22.04-arm, os: linux, arch: arm64 }
     steps:
       - name: Set up Python 3.11 (required by the shiv shebang at runtime)
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v5
         with:
           python-version: "3.11"
 
@@ -532,7 +532,7 @@ jobs:
       contents: read
     steps:
       - name: Set up Python
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v5
         with:
           python-version: "3.12"
 
