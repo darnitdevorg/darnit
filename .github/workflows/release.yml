@@ -106,9 +106,14 @@ jobs:
           fail=0
           while IFS= read -r pkg; do
             [ -z "$pkg" ] && continue
+            # PyPI name → filesystem path. Two special cases: darnit-mcp
+            # lives at the repo root, and darnit-core lives at packages/darnit/
+            # (its directory name differs from its PyPI name for historical
+            # reasons). Every other package has directory == PyPI name.
             case "$pkg" in
-              "darnit-mcp") pyproject="pyproject.toml" ;;
-              *)            pyproject="packages/$pkg/pyproject.toml" ;;
+              "darnit-mcp")  pyproject="pyproject.toml" ;;
+              "darnit-core") pyproject="packages/darnit/pyproject.toml" ;;
+              *)             pyproject="packages/$pkg/pyproject.toml" ;;
             esac
             if [ ! -f "$pyproject" ]; then
               echo "::error::Public package $pkg has no pyproject.toml at $pyproject"
