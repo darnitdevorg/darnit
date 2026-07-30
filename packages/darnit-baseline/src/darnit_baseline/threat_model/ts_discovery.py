@@ -548,6 +548,54 @@ def _extract_python_entry_points(
             )
         )
 
+    # ML Pipelines - Imports
+    query = py_queries.QUERY_REGISTRY["python.entry.ml_import"].query
+    for caps in run_query(query, tree.root_node):
+        module_name = ""
+        whole = None
+        if "name" in caps:
+            name_node = caps["name"][0]
+            module_name = _text(name_node, source).split(".", 1)[0]
+            whole = name_node.parent
+        elif "module" in caps:
+            module_node = caps["module"][0]
+            module_name = _text(module_node, source).split(".", 1)[0]
+            whole = module_node.parent
+        if module_name and whole:
+            entries.append(
+                DiscoveredEntryPoint(
+                    kind=EntryPointKind.ML_PIPELINE,
+                    name=f"ML Import ({module_name})",
+                    location=_build_location(whole, file.relpath),
+                    language="python",
+                    framework=module_name,
+                    route_path=None,
+                    http_method=None,
+                    has_auth_decorator=False,
+                    source_query="python.entry.ml_import",
+                )
+            )
+
+    # ML Pipelines - Loaders
+    query = py_queries.QUERY_REGISTRY["python.entry.ml_loader"].query
+    for caps in run_query(query, tree.root_node):
+        call_node = caps["call"][0]
+        obj = _text(caps["obj"][0], source)
+        method = _text(caps["method"][0], source)
+        entries.append(
+            DiscoveredEntryPoint(
+                kind=EntryPointKind.ML_PIPELINE,
+                name=f"ML Loader ({obj}.{method})",
+                location=_build_location(call_node, file.relpath),
+                language="python",
+                framework=obj,
+                route_path=None,
+                http_method=None,
+                has_auth_decorator=False,
+                source_query="python.entry.ml_loader",
+            )
+        )
+
     return entries
 
 
@@ -1908,6 +1956,8 @@ def _spoofing_findings_from_entry_points(
     findings: list[CandidateFinding] = []
 
     for ep in entry_points:
+        if ep.kind == EntryPointKind.ML_PIPELINE:
+            continue
         if ep.has_auth_decorator:
             continue  # decorated with auth — no spoofing concern
         source = _get_source_for(ep.location.file, scanned_files, file_content_cache)
@@ -1985,6 +2035,72 @@ def _info_disclosure_findings_from_data_stores(
                     "secrets, additional controls may be needed."
                 ),
                 query_id=ds.source_query,
+            )
+        )
+    return findings
+
+
+def _tampering_findings_from_ml_pipelines(
+    entry_points: list[DiscoveredEntryPoint],
+    scanned_files: list[ScannedFile],
+) -> list[CandidateFinding]:
+    """Emit Tampering and Elevation of Privilege findings for ML pipelines.
+
+    ML models and data pipelines load untrusted formats (like pickles) which
+    are prone to arbitrary code execution, and unverified data loads allow
+    model poisoning.
+    """
+    file_content_cache: dict[str, bytes] = {}
+    findings: list[CandidateFinding] = []
+
+    for ep in entry_points:
+        if ep.kind != EntryPointKind.ML_PIPELINE:
+            continue
+
+        source = _get_source_for(ep.location.file, scanned_files, file_content_cache)
+        if source is None:
+            continue
+
+        severity_tamp = severity_for(StrideCategory.TAMPERING, has_taint_trace=False)
+        confidence = confidence_for(FindingSource.TREE_SITTER_STRUCTURAL, query_intent="bare_call")
+        snippet = _build_snippet(source, ep.location.line)
+
+        findings.append(
+            CandidateFinding(
+                category=StrideCategory.TAMPERING,
+                title=f"Potential ML Model Poisoning via {ep.name}",
+                source=FindingSource.TREE_SITTER_STRUCTURAL,
+                primary_location=ep.location,
+                related_assets=(ep.id,),
+                code_snippet=snippet,
+                severity=severity_tamp,
+                confidence=confidence,
+                rationale=(
+                    f"A Machine Learning pipeline using {ep.framework} was detected. "
+                    "If the model or data is loaded from an untrusted source, attackers "
+                    "can manipulate the model outputs (Model Poisoning / Adversarial Tampering)."
+                ),
+                query_id=ep.source_query,
+            )
+        )
+
+        severity_eop = severity_for(StrideCategory.ELEVATION_OF_PRIVILEGE, has_taint_trace=False)
+        findings.append(
+            CandidateFinding(
+                category=StrideCategory.ELEVATION_OF_PRIVILEGE,
+                title=f"Potential Arbitrary Code Execution in ML loader {ep.name}",
+                source=FindingSource.TREE_SITTER_STRUCTURAL,
+                primary_location=ep.location,
+                related_assets=(ep.id,),
+                code_snippet=snippet,
+                severity=severity_eop,
+                confidence=confidence,
+                rationale=(
+                    f"Loading models via {ep.framework} (e.g. {ep.name}) often relies on "
+                    "insecure deserialization (like Python's pickle module). Loading untrusted "
+                    "files can lead to arbitrary code execution."
+                ),
+                query_id=ep.source_query,
             )
         )
     return findings
@@ -2207,6 +2323,7 @@ def discover_all(
     # would otherwise be empty when only subprocess/eval findings exist.
     findings.extend(_spoofing_findings_from_entry_points(entry_points, scanned_files))
     findings.extend(_info_disclosure_findings_from_data_stores(data_stores, scanned_files))
+    findings.extend(_tampering_findings_from_ml_pipelines(entry_points, scanned_files))
 
     # Opengrep enrichment: run bundled rules for taint analysis + structural
     # pattern matching when the binary is available. On absence or failure,

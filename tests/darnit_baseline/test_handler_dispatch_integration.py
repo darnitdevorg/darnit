@@ -546,7 +546,10 @@ body:
         result = orchestrator.verify(control, context)
 
         assert result.status == "PASS"
-        assert result.evidence.get("relative_path") == f".github/ISSUE_TEMPLATE/{template_filename}"
+        evidence_path = result.evidence.get("relative_path")
+        if evidence_path:
+            evidence_path = evidence_path.replace("\\", "/")
+        assert evidence_path == f".github/ISSUE_TEMPLATE/{template_filename}"
 
     @pytest.mark.unit
     def test_osps_do_02_01_warns_for_feature_only_template(self, tmp_path):

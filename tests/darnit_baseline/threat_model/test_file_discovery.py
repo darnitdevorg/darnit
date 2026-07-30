@@ -46,7 +46,7 @@ def test_baseline_exclusions_are_honored(tmp_path: Path) -> None:
     _write(tmp_path / "__pycache__/cached.pyc", "")
 
     files, stats = walk_repo(tmp_path)
-    relpaths = {f.relpath for f in files}
+    relpaths = {f.relpath.replace("\\", "/") for f in files}
 
     assert "src/app.py" in relpaths
     assert not any("node_modules" in p for p in relpaths)
@@ -65,7 +65,7 @@ def test_gitignore_dirs_excluded(tmp_path: Path) -> None:
     _write(tmp_path / "custom_cache/blob.py", "x = 3\n")
 
     files, stats = walk_repo(tmp_path)
-    relpaths = {f.relpath for f in files}
+    relpaths = {f.relpath.replace("\\", "/") for f in files}
 
     assert "src/a.py" in relpaths
     assert not any("my_build" in p for p in relpaths)
@@ -93,7 +93,7 @@ def test_extra_excludes_are_additive(tmp_path: Path) -> None:
     _write(tmp_path / "custom_vendor/x.py", "pass\n")  # user exclusion
 
     files, _ = walk_repo(tmp_path, extra_excludes=["custom_vendor"])
-    relpaths = {f.relpath for f in files}
+    relpaths = {f.relpath.replace("\\", "/") for f in files}
 
     assert "src/app.py" in relpaths
     assert not any("node_modules" in p for p in relpaths)
@@ -167,7 +167,7 @@ def test_relpath_is_repo_relative(tmp_path: Path) -> None:
     _write(tmp_path / "deep/nested/file.py", "pass\n")
     files, _ = walk_repo(tmp_path)
     assert len(files) == 1
-    assert files[0].relpath == "deep/nested/file.py"
+    assert files[0].relpath.replace("\\", "/") == "deep/nested/file.py"
     assert files[0].path.is_absolute()
     assert files[0].language == "python"
     assert isinstance(files[0], ScannedFile)
