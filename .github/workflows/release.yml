@@ -245,7 +245,7 @@ jobs:
         with:
           packages-dir: dist/darnit-core/
           password: ${{ secrets.PYPI_API_TOKEN }}
-          skip-existing: false
+          skip-existing: true
 
   publish-darnit-baseline:
     name: Publish darnit-baseline to PyPI
@@ -266,7 +266,7 @@ jobs:
         with:
           packages-dir: dist/darnit-baseline/
           password: ${{ secrets.PYPI_API_TOKEN }}
-          skip-existing: false
+          skip-existing: true
 
   publish-darnit-gittuf:
     name: Publish darnit-gittuf to PyPI
@@ -287,7 +287,7 @@ jobs:
         with:
           packages-dir: dist/darnit-gittuf/
           password: ${{ secrets.PYPI_API_TOKEN }}
-          skip-existing: false
+          skip-existing: true
 
   publish-darnit-reproducibility:
     name: Publish darnit-reproducibility to PyPI
@@ -308,7 +308,7 @@ jobs:
         with:
           packages-dir: dist/darnit-reproducibility/
           password: ${{ secrets.PYPI_API_TOKEN }}
-          skip-existing: false
+          skip-existing: true
 
   publish-darnit-mcp:
     name: Publish darnit-mcp to PyPI
@@ -334,7 +334,7 @@ jobs:
         with:
           packages-dir: dist/darnit-mcp/
           password: ${{ secrets.PYPI_API_TOKEN }}
-          skip-existing: false
+          skip-existing: true
 
   # Build + push + cosign-sign the multi-arch container image. Depends on
   # publish-darnit-mcp because the Dockerfile does `pip install
