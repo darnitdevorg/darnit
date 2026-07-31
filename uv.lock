@@ -519,7 +519,7 @@ requires-dist = [{ name = "darnit-core", editable = "packages/darnit" }]
 [[package]]
 name = "darnit-mcp"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "darnit-baseline" },
     { name = "darnit-core" },
