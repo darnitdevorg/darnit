@@ -22,7 +22,7 @@ class TestOSPSBaselineImplementation:
         assert impl.name == "openssf-baseline"
         assert impl.display_name == "OpenSSF Baseline"
         assert impl.version == "0.1.0"
-        assert impl.spec_version == "OSPS v2025.10.10"
+        assert impl.spec_version == "OSPS v2026.02.19"
 
     @pytest.mark.unit
     def test_is_compliance_implementation(self, impl):

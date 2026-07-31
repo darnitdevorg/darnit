@@ -5,10 +5,10 @@
 
 ## What is This?
 
-**OpenSSF Baseline MCP Server** is an AI-powered compliance audit tool that checks repositories against the [OpenSSF Baseline](https://baseline.openssf.org) security standard (OSPS v2025.10.10).
+**OpenSSF Baseline MCP Server** is an AI-powered compliance audit tool that checks repositories against the [OpenSSF Baseline](https://baseline.openssf.org) security standard (OSPS v2026.02.19).
 
 ### Key Features
-- 🔍 **62 security controls** across 3 maturity levels
+- 🔍 **65 security controls** across 3 maturity levels
 - 🤖 **MCP integration** - works with Claude, Cursor, and other AI tools
 - 🔧 **Auto-remediation** - fix common issues automatically
 - 📊 **Multiple output formats** - Markdown, JSON, SARIF
@@ -86,7 +86,7 @@ Add to your MCP settings with the same configuration.
 | Tool | Purpose |
 |------|---------|
 | `audit_openssf_baseline` | Run compliance audit |
-| `list_available_checks` | Show all 62 controls |
+| `list_available_checks` | Show all 65 controls |
 | `get_project_config` | View project.toml config |
 | `init_project_config` | Create project.toml |
 | `generate_threat_model` | STRIDE threat analysis |
@@ -134,9 +134,11 @@ audit_openssf_baseline(
 | 🔴 | ERROR | Check couldn't run |
 
 ### Maturity Levels
-- **Level 1** (24 controls) - Basic security hygiene
-- **Level 2** (18 controls) - Enhanced security practices
-- **Level 3** (20 controls) - Advanced security maturity
+- **Level 1** (25 controls) - Basic security hygiene (includes 1 upstream-retired control retained for backward compatibility)
+- **Level 2** (19 controls) - Enhanced security practices
+- **Level 3** (21 controls) - Advanced security maturity
+
+Upstream OSPS Baseline v2026.02.19 defines 64 controls (24 / 19 / 21). Darnit ships one additional Level 1 control (`OSPS-BR-01.02`) that upstream retired in [ossf/security-baseline#443](https://github.com/ossf/security-baseline/pull/443); it is retained because the underlying "sanitize `github.head_ref`" concern is still valid, and it is included in Level 1 audits.
 
 ---
 

@@ -33,7 +33,7 @@ class OSPSBaselineImplementation:
 
     @property
     def spec_version(self) -> str:
-        return "OSPS v2025.10.10"
+        return "OSPS v2026.02.19"
 
     def get_all_controls(self) -> list[ControlSpec]:
         """Get all OSPS controls."""

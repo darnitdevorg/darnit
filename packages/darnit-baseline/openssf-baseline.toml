@@ -809,10 +809,15 @@ steps = [
 docs_url = "https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#understanding-the-risk-of-script-injections"
 context_hints = ["ci.provider"]
 
+# OSPS-BR-01.02 was retired upstream in ossf/security-baseline#443. Darnit
+# retains this check because the underlying "sanitize `github.head_ref`"
+# concern is still valid, but it is no longer part of the OSPS Baseline at
+# any maturity level. The `deprecated` tag excludes it from per-level
+# regression comparisons against upstream.
 [controls."OSPS-BR-01.02"]
 name = "SecureBranchNames"
 description = "Branch names are handled safely in workflows"
-tags = { level = 1, domain = "BR", build = true, security = true }
+tags = { level = 1, domain = "BR", build = true, security = true, deprecated = true }
 when = { ci_provider = "github" }
 
 # Exec: grep for unsafe ${{ github.head_ref }} — exit code 1 (no matches) = PASS
@@ -870,6 +875,102 @@ steps = [
 ]
 docs_url = "https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions"
 context_hints = ["ci.provider"]
+
+# Added in OSPS Baseline v2026.02.19. Applies at L1, L2, L3. Requires
+# reasoning about workflow triggers (pull_request vs pull_request_target),
+# job-level permissions, and use of secrets in workflows that build or run
+# untrusted code. This is not straightforwardly automatable without workflow
+# parsing; the initial implementation ships with a manual pass only. See
+# https://github.com/darnitdevorg/darnit/issues (follow-up for auto-verification).
+[controls."OSPS-BR-01.03"]
+name = "IsolateUntrustedCIInputs"
+description = "CI/CD pipelines isolate untrusted code from privileged credentials"
+tags = { level = 1, domain = "BR", build = true, security = true, ci-cd = true }
+when = { ci_provider = "github" }
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#OSPS-BR-01.03"
+location_hint = ".github/workflows"
+help_md = """CI/CD pipelines that operate on untrusted code snapshots MUST prevent access to privileged credentials and assets.
+
+**Why:** workflows triggered on `pull_request_target` (or that check out fork code and then run it before review) have access to repository secrets by default. Untrusted contributor code can exfiltrate those secrets.
+
+**Remediation guidance:**
+1. Use the `pull_request` trigger (not `pull_request_target`) whenever running fork-authored code.
+2. If `pull_request_target` is required, minimize `secrets:` and `permissions:` at the workflow and job level; check out only trusted refs before the fork's code runs.
+3. Split jobs: a low-privilege job runs the fork code; a separate, gated job accepts artifacts and uses privileged credentials.
+4. Set explicit `permissions:` blocks on workflows; default to `contents: read` and grant more only where needed.
+
+**References:**
+- [GitHub docs: Security hardening for GitHub Actions](https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions)
+- [GitHub blog: Preventing pwn requests](https://securitylab.github.com/research/github-actions-preventing-pwn-requests/)
+"""
+
+[[controls."OSPS-BR-01.03".passes]]
+handler = "manual"
+steps = [
+    "Enumerate workflows in .github/workflows/",
+    "For each workflow, check the `on:` triggers. Any use of `pull_request_target` requires audit.",
+    "For workflows using `pull_request_target`, verify: (a) they do not check out the fork's HEAD and execute it, or (b) they use a minimum-privilege job model.",
+    "Verify workflow-level and job-level `permissions:` blocks are set explicitly and follow least-privilege.",
+    "Verify that steps executing untrusted code (fork PRs, contributor input) do not have `secrets:` or write-level tokens in scope.",
+]
+
+[controls."OSPS-BR-01.03".remediation]
+safe = false
+dry_run_supported = false
+
+[[controls."OSPS-BR-01.03".remediation.handlers]]
+handler = "manual"
+steps = [
+    "Review each workflow trigger; replace `pull_request_target` with `pull_request` where the workflow does not need write access to the repository.",
+    "Add an explicit `permissions:` block at the workflow level with the minimum required scopes.",
+    "For workflows that must use `pull_request_target`, split the fork-code execution into an isolated job with no `secrets:` and no elevated permissions.",
+]
+docs_url = "https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions"
+
+# Added in OSPS Baseline v2026.02.19. Applies at L3 only. Also requires
+# workflow parsing (identifying input parameters and how they are consumed
+# in shell/scripts). Ships with a manual pass only for the same reasons as
+# BR-01.03.
+[controls."OSPS-BR-01.04"]
+name = "SanitizeCollaboratorInput"
+description = "CI/CD pipelines sanitize collaborator input before use"
+tags = { level = 3, domain = "BR", build = true, security = true, ci-cd = true }
+when = { ci_provider = "github" }
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#OSPS-BR-01.04"
+location_hint = ".github/workflows"
+help_md = """CI/CD pipelines that accept trusted collaborator input MUST sanitize and validate that input before use.
+
+**Why:** manual workflow inputs (`workflow_dispatch` parameters) and `issue_comment` triggers accept text that flows directly into shell commands. Even from trusted collaborators, unsanitized input is a shell-injection risk if a collaborator account is compromised.
+
+**Remediation guidance:**
+1. Assign collaborator inputs to environment variables and reference them via `"$VAR"` rather than direct `${{ ... }}` interpolation into `run:` blocks.
+2. Validate inputs against an allowlist or a strict regex before use.
+3. Prefer typed inputs (`type: choice`, `type: environment`) where the shape is enumerable.
+
+**References:**
+- [GitHub docs: Understanding the risk of script injections](https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#understanding-the-risk-of-script-injections)
+"""
+
+[[controls."OSPS-BR-01.04".passes]]
+handler = "manual"
+steps = [
+    "Enumerate workflows in .github/workflows/ that accept collaborator input (workflow_dispatch inputs, issue_comment, discussion, etc.).",
+    "For each such workflow, inspect run: blocks for direct interpolation of ${{ inputs.* }} or ${{ github.event.* }} into shell commands.",
+    "Verify inputs are routed through env: variables and referenced as $VAR (quoted) inside shell, or validated against an allowlist before use.",
+]
+
+[controls."OSPS-BR-01.04".remediation]
+safe = false
+dry_run_supported = false
+
+[[controls."OSPS-BR-01.04".remediation.handlers]]
+handler = "manual"
+steps = [
+    "For each interpolated input, add an env: mapping and reference it via double-quoted $VAR in the shell.",
+    "Where an input has a fixed set of expected values, convert the workflow input to `type: choice` with an explicit options list.",
+    "Where an input is free-form, add a validation step that exits nonzero if the value does not match the expected pattern.",
+]
+docs_url = "https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#understanding-the-risk-of-script-injections"
 
 [controls."OSPS-BR-03.01"]
 name = "SecureRepositoryURL"
@@ -1435,6 +1536,55 @@ steps = [
     "Describe tools used for dependency management (Dependabot, Renovate, etc.)",
 ]
 
+# Added in OSPS Baseline v2026.02.19. Applies at L2 and L3, lowest = L2.
+# The check searches common build-instruction locations for a recognizable
+# build/install/setup section header. Regex is intentionally broad to admit
+# BUILD.md, INSTALL.md, and common README headings.
+[controls."OSPS-DO-07.01"]
+name = "BuildInstructions"
+description = "Documentation includes instructions to build the software"
+tags = { level = 2, domain = "DO", documentation = true }
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#OSPS-DO-07.01"
+location_hint = "README.md"
+help_md = """Project documentation MUST include instructions on how to build the software, including required libraries, frameworks, SDKs, and dependencies.
+
+**Where to document:** typically the README.md, CONTRIBUTING.md, or a dedicated BUILD.md / INSTALL.md. Automation configurations (Makefile targets, uv/npm/cargo scripts) can also satisfy this when they are documented.
+
+**Remediation:**
+1. Add a `## Building` or `## Installation` section to your README.
+2. List required toolchains (compiler versions, package managers, SDKs).
+3. Show the minimum command(s) to produce a working build.
+"""
+
+[[controls."OSPS-DO-07.01".passes]]
+handler = "pattern"
+files = ["README.md", "README.rst", "BUILD.md", "INSTALL.md", "CONTRIBUTING.md", "docs/build.md", "docs/install.md"]
+
+[controls."OSPS-DO-07.01".passes.pattern.patterns]
+build_section_header = "(?im)^#+\\s*(building|build|install|installation|getting\\s+started|setup|compile|compiling)\\b"
+
+[[controls."OSPS-DO-07.01".passes]]
+handler = "manual"
+steps = [
+    "Open README.md (or the project's main documentation entry point).",
+    "Verify there is a section describing how to build the software.",
+    "Verify required toolchains, SDKs, and dependencies are listed.",
+    "Verify at least one command shows how to produce a working build.",
+]
+
+[controls."OSPS-DO-07.01".remediation]
+safe = true
+dry_run_supported = true
+
+[[controls."OSPS-DO-07.01".remediation.handlers]]
+handler = "manual"
+steps = [
+    "Add a Building / Installation section to README.md",
+    "List required toolchains and their minimum versions",
+    "Include the minimum command(s) needed to produce a working build",
+    "Link to any Makefile targets or scripts the build depends on",
+]
+
 # =============================================================================
 # Level 1 Controls - Governance (GV)
 # =============================================================================
@@ -1540,7 +1690,7 @@ create_dirs = false
 [controls."OSPS-LE-01.01"]
 name = "HasLicense"
 description = "Repository has a license file"
-tags = { level = 1, domain = "LE", legal = true, license = true }
+tags = { level = 2, domain = "LE", legal = true, license = true }
 
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-LE-01.01"
 location_hint = "CONTRIBUTING.md"
