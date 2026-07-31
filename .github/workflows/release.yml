@@ -498,6 +498,7 @@ jobs:
 
           # shellcheck disable=SC2086
           gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
             --title "$title" \
             --notes-file "$body_file" \
             $flags
