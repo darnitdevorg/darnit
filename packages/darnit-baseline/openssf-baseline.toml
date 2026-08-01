@@ -1,7 +1,7 @@
 # OpenSSF Baseline Framework Definition
-# Declarative configuration for OSPS v2025.10.10 compliance controls
+# Declarative configuration for OSPS v2026.02.19 compliance controls
 #
-# This file defines all 62 controls across 3 maturity levels.
+# This file defines all 65 controls across 3 maturity levels.
 # Users can override settings via .baseline.toml in their repository.
 
 [metadata]
@@ -9,7 +9,7 @@ name = "openssf-baseline"
 display_name = "OpenSSF Baseline"
 version = "0.1.0"
 schema_version = "0.1.0-alpha"  # TOML config format version - expect breaking changes
-spec_version = "OSPS v2025.10.10"
+spec_version = "OSPS v2026.02.19"
 description = "OpenSSF Baseline security controls for open source projects"
 url = "https://baseline.openssf.org/"
 
