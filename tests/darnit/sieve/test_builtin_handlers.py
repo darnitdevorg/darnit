@@ -303,7 +303,7 @@ class TestExecHandler:
         handler_result = exec_handler(config, ctx)
         result = _apply_cel_expr(config, handler_result)
         assert result.status == HandlerResultStatus.INCONCLUSIVE
-        assert "false" in result.message.lower()
+        assert "disagree" in result.message.lower() or "inconclusive" in result.message.lower()
 
     def test_stdout_truncated_in_evidence(self, ctx):
         """Long stdout is truncated to 2000 chars in evidence."""
@@ -350,13 +350,22 @@ class TestRegexHandler:
         )
         assert result.status == HandlerResultStatus.FAIL
 
-    def test_cel_not_any_match_pass_when_absent(self, tmp_path, ctx):
-        """expr = '!(output.any_match)' → PASS when pattern not found."""
+    def test_cel_not_any_match_inconclusive_when_absent(self, tmp_path, ctx):
+        """expr = '!(output.any_match)' with handler FAIL -> INCONCLUSIVE.
+
+        Feature 020 (issue #343) narrowed CEL semantics: handler and CEL
+        must agree for a conclusive verdict. Handler FAIL + CEL truthy is
+        now INCONCLUSIVE (was PASS). Controls that used this idiom to
+        express "PASS when the bad thing is absent" should be rewritten
+        to have the handler produce PASS directly (see BR-01.01's
+        inverted-grep exec pattern in openssf-baseline.toml). See
+        specs/020-definitive-fail-verdict/contracts/cel-post-step.md.
+        """
         (tmp_path / "clean.py").write_text("print('hello')\n")
         config = {"file": "clean.py", "pattern": r"TODO|FIXME|HACK", "expr": "!(output.any_match)"}
         handler_result = regex_handler(config, ctx)
         result = _apply_cel_expr(config, handler_result)
-        assert result.status == HandlerResultStatus.PASS
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
 
     def test_cel_not_any_match_inconclusive_when_present(self, tmp_path, ctx):
         """expr = '!(output.any_match)' → INCONCLUSIVE when pattern found (handler PASS overridden)."""
@@ -530,8 +539,15 @@ class TestRegexHandler:
         assert result.status == HandlerResultStatus.PASS
         assert result.evidence["files_found"] == 0
 
-    def test_exclude_inconclusive_when_files_found(self, tmp_path, ctx):
-        """exclude_files + expr: INCONCLUSIVE when excluded files exist."""
+    def test_exclude_fail_when_files_found(self, tmp_path, ctx):
+        """exclude_files + expr: FAIL when excluded files exist.
+
+        Feature 020 (issue #343): when the handler returns FAIL and the
+        CEL expression also evaluates falsy, the pair agrees on non-
+        compliance and the verdict is preserved as FAIL (was INCONCLUSIVE
+        pre-020, which fell through to manual and reported WARN). See
+        specs/020-definitive-fail-verdict/contracts/cel-post-step.md.
+        """
         (tmp_path / "binary.exe").write_bytes(b"\x00\x01")
         config = {
             "exclude_files": ["**/*.exe"],
@@ -539,7 +555,7 @@ class TestRegexHandler:
         }
         handler_result = regex_handler(config, ctx)
         result = _apply_cel_expr(config, handler_result)
-        assert result.status == HandlerResultStatus.INCONCLUSIVE
+        assert result.status == HandlerResultStatus.FAIL
         assert handler_result.evidence["files_found"] >= 1
 
     # --- Recursive glob support ---
@@ -608,15 +624,21 @@ class TestApplyCelExpr:
         result = _apply_cel_expr({"expr": "true"}, original)
         assert result is original
 
-    def test_cel_true_overrides_fail_to_pass(self):
-        """CEL true + handler FAIL → result is PASS."""
+    def test_cel_true_with_handler_fail_becomes_inconclusive(self):
+        """CEL true + handler FAIL -> INCONCLUSIVE (feature 020, issue #343).
+
+        Was PASS in the pre-feature-020 orchestrator. The new semantics
+        require handler and CEL to agree for a conclusive verdict;
+        disagreement defers to the next pass. See
+        specs/020-definitive-fail-verdict/contracts/cel-post-step.md.
+        """
         original = HandlerResult(
             status=HandlerResultStatus.FAIL,
             message="Pattern not found",
             evidence={"any_match": False, "files_checked": 1},
         )
         result = _apply_cel_expr({"expr": "!(output.any_match)"}, original)
-        assert result.status == HandlerResultStatus.PASS
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
 
     def test_cel_false_overrides_pass_to_inconclusive(self):
         """CEL false + handler PASS → result is INCONCLUSIVE."""

@@ -30,15 +30,29 @@ def _apply_cel_expr(
     handler_config: dict[str, Any],
     handler_result: "HandlerResult",
 ) -> "HandlerResult":
-    """Evaluate a CEL ``expr`` against handler evidence, overriding the verdict.
+    """Evaluate a CEL ``expr`` against handler evidence, refining the verdict.
 
     Only runs when ``handler_config`` contains ``expr`` and the handler returned
-    PASS or FAIL.  Returns the original result unchanged if no ``expr`` is
+    PASS or FAIL. Returns the original result unchanged if no ``expr`` is
     present, the handler returned ERROR/INCONCLUSIVE, or CEL evaluation fails.
 
-    CEL true  → PASS
-    CEL false → INCONCLUSIVE (pipeline continues)
-    CEL error → fall through to handler's own verdict
+    Transition table (handler status x CEL result -> post-step status):
+
+    +-----------+----------+----------------------------------------------+
+    | Handler   | CEL true | CEL false                                    |
+    +===========+==========+==============================================+
+    | PASS      | PASS     | INCONCLUSIVE (handler and CEL disagree)      |
+    +-----------+----------+----------------------------------------------+
+    | FAIL      | INCONC.  | FAIL (both agree; conclusive non-compliance) |
+    +-----------+----------+----------------------------------------------+
+
+    Rationale: when the handler and CEL agree, keep the conclusion. When
+    they disagree, defer to INCONCLUSIVE so the pipeline continues to the
+    next pass. This restores the constitution's Principle V ("orchestrator
+    stops at first conclusive result") and closes issue #343 (definitive
+    "Branch not protected" API responses now resolve FAIL instead of WARN).
+
+    See ``specs/020-definitive-fail-verdict/contracts/cel-post-step.md``.
     """
     expr = handler_config.get("expr")
     if not expr:
@@ -57,25 +71,38 @@ def _apply_cel_expr(
         cel_context = {"output": handler_result.evidence or {}}
         cel_result = evaluate_cel(expr, cel_context)
 
-        if cel_result.success:
-            evidence = dict(handler_result.evidence or {})
-            evidence["expr"] = expr
-            if cel_result.value:
+        if not cel_result.success:
+            logger.warning("CEL evaluation failed for expr=%r: %s", expr, cel_result.error)
+            return handler_result
+
+        evidence = dict(handler_result.evidence or {})
+        evidence["expr"] = expr
+        agreement = (
+            (handler_result.status == HandlerResultStatus.PASS and bool(cel_result.value))
+            or (handler_result.status == HandlerResultStatus.FAIL and not cel_result.value)
+        )
+        if agreement:
+            # Both handler and CEL point at the same verdict — preserve it.
+            if handler_result.status == HandlerResultStatus.PASS:
                 return HandlerResult(
                     status=HandlerResultStatus.PASS,
-                    message="CEL expression passed",
+                    message="Handler and CEL agree: pass",
                     confidence=1.0,
                     evidence=evidence,
                 )
-            else:
-                return HandlerResult(
-                    status=HandlerResultStatus.INCONCLUSIVE,
-                    message="CEL expression evaluated to false",
-                    evidence=evidence,
-                )
-        else:
-            logger.warning("CEL evaluation failed for expr=%r: %s", expr, cel_result.error)
-            return handler_result
+            # Handler FAIL + CEL false: definitive non-compliance (issue #343).
+            return HandlerResult(
+                status=HandlerResultStatus.FAIL,
+                message="Handler and CEL agree: fail",
+                confidence=1.0,
+                evidence=evidence,
+            )
+        # Disagreement (PASS+false or FAIL+true) -> defer to next pass.
+        return HandlerResult(
+            status=HandlerResultStatus.INCONCLUSIVE,
+            message="Handler and CEL disagree, evaluation inconclusive",
+            evidence=evidence,
+        )
     except Exception as e:
         logger.warning("CEL evaluator unavailable for expr=%r: %s: %s", expr, type(e).__name__, e)
         return handler_result

@@ -768,15 +768,21 @@ output_format = "json"
 expr = '!output.json.exists(f, f.ident == "template-injection")'
 timeout = 60
 
-# Fallback: regex scan for common injection patterns (if zizmor not installed)
+# Fallback: grep scan for common injection patterns (used when zizmor is
+# not installed). We use `sh -c '! grep ...'` so the exec handler's exit
+# code directly encodes compliance: 0 means grep found no injection
+# patterns (clean, PASS); 1 means grep found at least one (unsafe, FAIL).
+# This avoids the CEL-inversion idiom (handler FAIL + CEL negation -> PASS)
+# that feature 020 no longer supports; see contracts/cel-post-step.md.
 [[controls."OSPS-BR-01.01".passes]]
-handler = "pattern"
-files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
-pass_if_any = false
-expr = '!(output.any_match)'
-
-[controls."OSPS-BR-01.01".passes.pattern.patterns]
-injection_risk = "\\$\\{\\{\\s*github\\.(event\\.issue|event\\.pull_request|head_ref)"
+handler = "exec"
+command = [
+    "sh", "-c",
+    "! grep -rEq --include='*.yml' --include='*.yaml' '\\$\\{\\{\\s*github\\.(event\\.issue|event\\.pull_request|head_ref)' .github/workflows 2>/dev/null",
+]
+pass_exit_codes = [0]
+fail_exit_codes = [1]
+timeout = 10
 
 [[controls."OSPS-BR-01.01".passes]]
 handler = "manual"
@@ -1430,11 +1436,13 @@ search_for = "bug report, issue template, report bugs"
 check_files = ["README.md", "CONTRIBUTING.md"]
 look_for_urls = false
 
-[[controls."OSPS-DO-02.01".passes]]
-handler = "file_exists"
-use_locator = true
-expr = 'has(output.found_file)'
-
+# Pass 1 (formerly file_exists + expr='has(output.found_file)') was removed
+# in feature 020: its FAIL-then-CEL-false chain relied on the pre-020
+# orchestrator behavior that demoted handler FAIL to INCONCLUSIVE on CEL
+# disagreement. That's no longer legal, and the file_exists pass was
+# redundant with the pattern pass below (which already scans the same
+# bug*.md/bug*.yml/bug*.yaml/ISSUE_TEMPLATE.md files, plus README and
+# CONTRIBUTING). See specs/020-definitive-fail-verdict/contracts/cel-post-step.md.
 [[controls."OSPS-DO-02.01".passes]]
 handler = "pattern"
 files = [

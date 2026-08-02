@@ -461,7 +461,13 @@ class TestUseLocatorEffectivePath:
 
     @pytest.mark.unit
     def test_osps_do_02_01_effective_config_uses_bug_globs(self):
-        """OSPS-DO-02.01 should resolve explicit bug-template glob patterns."""
+        """OSPS-DO-02.01's pattern pass resolves explicit bug-template glob patterns.
+
+        Feature 020 removed the file_exists pass that was previously present
+        at the head of this control (see openssf-baseline.toml). The pattern
+        pass now carries the full glob list including the bug*.* variants
+        that used to be split between file_exists and pattern.
+        """
         from pathlib import Path
 
         from darnit.config import load_controls_from_effective, load_effective_config_by_name
@@ -470,15 +476,6 @@ class TestUseLocatorEffectivePath:
         controls = load_controls_from_effective(config)
         control = next(ctrl for ctrl in controls if ctrl.control_id == "OSPS-DO-02.01")
         invocations = control.metadata["handler_invocations"]
-
-        file_exists_inv = next((inv for inv in invocations if inv.handler == "file_exists"), None)
-        assert file_exists_inv is not None
-        assert file_exists_inv.files == [
-            ".github/ISSUE_TEMPLATE/bug*.md",
-            ".github/ISSUE_TEMPLATE/bug*.yml",
-            ".github/ISSUE_TEMPLATE/bug*.yaml",
-            ".github/ISSUE_TEMPLATE.md",
-        ]
 
         pattern_inv = next((inv for inv in invocations if inv.handler == "pattern"), None)
         assert pattern_inv is not None
@@ -546,11 +543,28 @@ body:
         result = orchestrator.verify(control, context)
 
         assert result.status == "PASS"
-        assert result.evidence.get("relative_path") == f".github/ISSUE_TEMPLATE/{template_filename}"
+        # After feature 020, DO-02.01's file_exists pass was removed as
+        # redundant with the pattern pass (see openssf-baseline.toml
+        # comment above the DO-02.01 pattern pass). Evidence is now
+        # pattern-handler shape: results[].file rather than relative_path.
+        matched_files = [r["file"] for r in result.evidence.get("results", []) if r.get("matched")]
+        assert any(f.endswith(f".github/ISSUE_TEMPLATE/{template_filename}") for f in matched_files), (
+            f"Expected {template_filename} to be among matched files, got {matched_files}"
+        )
 
     @pytest.mark.unit
     def test_osps_do_02_01_warns_for_feature_only_template(self, tmp_path):
-        """OSPS-DO-02.01 should warn (manual fallback) when only a feature template exists."""
+        """OSPS-DO-02.01 should warn when only a feature template exists.
+
+        End-to-end result is unchanged by feature 020 (still WARN), but the
+        internal path differs: pre-020 pass 1 (file_exists) returned FAIL,
+        the buggy orchestrator demoted it to INCONCLUSIVE, then pass 2
+        (pattern) returned INCONCLUSIVE (no files matched), then pass 3
+        (manual) returned WARN. Post-020 pass 1 was removed (it relied on
+        the demote-FAIL-to-INCONCLUSIVE idiom); pass 2 still returns
+        INCONCLUSIVE for the no-matching-files case, and pass 3 still
+        returns WARN. See specs/020-definitive-fail-verdict/.
+        """
         from pathlib import Path
 
         from darnit.config import load_controls_from_effective, load_effective_config_by_name

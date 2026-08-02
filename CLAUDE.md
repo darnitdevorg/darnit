@@ -370,5 +370,5 @@ else:
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
-[`specs/019-verdict-correctness/plan.md`](specs/019-verdict-correctness/plan.md)
+[`specs/020-definitive-fail-verdict/plan.md`](specs/020-definitive-fail-verdict/plan.md)
 <!-- SPECKIT END -->

@@ -68,6 +68,12 @@ description: "Task list for feature 019: verdict correctness fixes (issues #342 
 
 ## Phase 4: User Story 2 - Definitive "not protected" is reported as failing (Priority: P1) MVP-B
 
+> **Superseded by feature 020.** US2 was lifted into its own feature
+> (`specs/020-definitive-fail-verdict/`) after US1 shipped as PR #349,
+> per the "one PR per feature" pattern that emerged during US1
+> implementation. See feature 020's spec/plan/tasks for the current work
+> plan; the tasks below are retained for historical context only.
+
 **Goal**: Branch-protection controls report FAIL (not WARN) when the GitHub API returns HTTP 404 with body "Branch not protected". The fix modifies the sieve orchestrator's CEL post-step so a handler-conclusive FAIL is preserved when the CEL expression also evaluates falsy (see `contracts/cel-post-step.md`).
 
 **Independent Test**: `uv run pytest tests/darnit_baseline/controls/test_branch_protection.py -v` passes; all four named controls (`OSPS-AC-03.01`, `OSPS-AC-03.02`, `OSPS-QA-03.01`, `OSPS-QA-07.01`) resolve to FAIL against a stubbed 404 response (from `quickstart.md` US2 path b).
