@@ -5,6 +5,10 @@
 - **Discussion:** (link to GitHub Discussion / issue)
 - **Target:** pre-1.0; staged landing beginning after 0.1
 
+## Revision history
+
+- **2026-08-02**: Added "Harness as a class abstraction" section under "One core, two drivers." Named Pydantic AI as the default `LLMStep` implementation while keeping the loop hand-rolled. Expanded the "Returning to LangGraph" alternative with concrete reasoning against LangGraph 1.x's specific differentiators for this driver, and added two new alternatives entries (LangChain vs Pydantic AI for LLM invocation; hand-roll fallback). Substance derives from the research summarized in `docs/design/DRAFT-harness-orchestrator.md`, which becomes obsolete once this revision is accepted.
+
 ## Summary
 
 Darnit helps code projects adopt best practices and meet published criteria (OpenSSF Baseline, SLSA, reproducible builds) through a three-phase pipeline: **Check** (verify against a standard's rules), **Collect** (gather the project-specific data needed to close gaps), and **Remediate** (apply fixes). Fully deterministic automation is impossible in practice -- real projects have quirks (docs under `docs/` vs `documentation/`, bespoke build layouts) that make purely rule-based remediation a combinatorial dead end -- so Darnit escalates from deterministic techniques through heuristics to LLM assistance and, finally, explicit human input.
@@ -218,7 +222,47 @@ Mitigations, stated as requirements rather than guidance:
 
 **Agent trust boundary.** ActionPlan reveals one step at a time. The calling agent may decide *whether* to proceed and may supply *user input*. It may not choose ordering, skip steps, or fabricate results. Enforcement is mechanical: core validates that the result submitted for step N matches step N's declared schema and refuses out-of-order submission. The agent is therefore trusted with pacing and human interaction, and with nothing else.
 
-**On orchestration libraries.** The previous draft named LangGraph. The codebase has already been there: `cmd_run` carries the comment "Inline orchestration (replaces LangGraph)." This RFC does **not** propose returning to it. The harness driver owns a loop whose shape is now specified by the ActionPlan protocol; whether that loop is hand-rolled or library-backed is an implementation choice for the driver, and the current inline implementation is evidence that hand-rolled is sufficient. A durable-execution backend (Temporal-style: crash-safe resumption, long-running remediation such as open-PR, await-CI, verify) remains an anticipated evolution, to be proposed separately when fleet-scale demand is concrete.
+### Harness as a class abstraction
+
+The harness is a class hierarchy, not just a loop. The core package exposes:
+
+```python
+class LLMStep(Protocol):
+    """Contract for invoking an LLM with structured output, validation, and retry.
+    Any implementation (Pydantic AI default, LangChain, hand-roll, mock-for-tests)
+    that satisfies this Protocol can be injected into a Harness instance."""
+    async def evaluate(self, request: ConsultationRequest) -> LLMJudgment: ...
+
+class Harness(ABC):
+    """Owns the ActionPlan loop, evidence-authority flow, and step dispatch.
+    Concrete subclasses specialize per-mode; the shape of the loop is invariant."""
+
+    def __init__(self, llm_step: LLMStep | None = None):
+        self.llm_step = llm_step or PydanticAILLMStep()
+
+    @abstractmethod
+    def run(self, initial_state: HarnessState) -> HarnessResult: ...
+
+    @abstractmethod
+    def next_action(self, state: HarnessState) -> ActionPlan | None:
+        """Return the next ActionPlan step, or None if done. Callable
+        externally so an agent can walk the plan step-by-step."""
+
+    @abstractmethod
+    def submit_result(self, state: HarnessState, step_id: str, result: dict) -> HarnessState:
+        """Mechanically validate result-N against step-N's declared schema and
+        refuse out-of-order submission. See 'Agent trust boundary' above."""
+```
+
+Concrete subclasses (initial cut): `LocalHarness` (developer machine; feedback via stdin/stdout), `FleetHarness` (many repos; feedback via deduped review queue per RFC "Fleet mode and the manual queue"). The MCP server layer of `darnit-agent` wraps a Harness instance so a coding agent consumes the same `next_action` / `submit_result` interface external clients would.
+
+The class abstraction serves three purposes: it makes the ActionPlan protocol boundaries concrete (typed methods, not conventions); it makes the LLM step swappable (Protocol injection, one file to change if Pydantic AI has to be replaced); and it lets fleet-mode extensions (dedup queue, org-scoped persistence) subclass without forking core loop logic.
+
+**On orchestration libraries.** The previous draft named LangGraph. The codebase has already been there: `cmd_run` carries the comment "Inline orchestration (replaces LangGraph)." This RFC does **not** propose returning to it. The harness loop stays hand-rolled: the four-node state machine is genuinely small (~200 LOC in the Harness subclass), and LangGraph 1.x's differentiators for darnit specifically are either deferred (durable execution, see below), agent-driver rather than harness-driver concerns (HITL interrupts, since the manual queue is post-run batching per "Fleet mode"), or trivially expressed without a framework (typed state channels, conditional edges over four nodes).
+
+**On LLM invocation.** The `LLMStep` slot in the Harness class is where library value is concentrated. The default implementation uses **Pydantic AI** (`pydantic-ai-slim[anthropic]`) for the LLM step: it provides first-class Claude support (prompt caching, structured output via JSON mode or tool use, context compaction), reflection-based retry on validation failure, and lands the ergonomics with minimal transitive dependency weight. Because the choice is scoped behind the `LLMStep` Protocol, replacing Pydantic AI later with LangChain, direct SDK, or a different library is a single-file change. This is a considered library choice for the LLM step specifically; the loop itself remains free of orchestration-framework dependencies.
+
+**On durability.** A durable-execution backend (Temporal-style: crash-safe resumption, long-running remediation such as open-PR, await-CI, verify) remains an anticipated evolution, to be proposed separately when fleet-scale demand is concrete. The current Harness class does not persist mid-run state to a durable store; that layer can be added by a `DurableHarness` subclass or delegation later.
 
 ### Fleet mode and the manual queue
 
@@ -259,8 +303,10 @@ Each stage lands as its own scoped spec/PR series with an executable acceptance 
 - **Keeping the `VerificationPhase` enum as the escalation model:** simpler to explain and already implemented, but it conflates cost with authority, which means no configuration of it can express "deterministic but unauthoritative" -- the exact case that produces false compliance claims. Rejected on safety grounds, not ergonomics.
 - **A single confidence scalar as the decision lever** (the previous draft's `confirm_threshold`): one dial operators understand, but a number cannot distinguish "I observed this" from "I am confident I guessed correctly," and it is the one input an attacker can influence. Retained only as a presentation filter in Collect and as one gate among mechanical ones in Remediate.
 - **Adopting a third-party findings schema (SARIF/OSV) as the internal model:** avoids an importer layer but binds core semantics to formats that do not cover all sources (Scorecard probes are not SARIF) and do not carry the authority and provenance fields the strategy runner needs.
-- **Returning to LangGraph for the harness:** already tried and reverted in `cmd_run`. The ActionPlan protocol specifies the loop's shape; the library choice is a driver implementation detail.
-- **Durable execution (Temporal) as the immediate harness:** strongest determinism and scale story, but a heavy operational dependency to impose on a pre-0.1 community project. Deferred to a follow-up RFC gated on demonstrated fleet-scale need.
+- **Returning to LangGraph for the harness loop:** already tried and reverted in `cmd_run` on dependency-weight grounds. Reconsidered against LangGraph 1.x (materially lighter than the 0.2.x that was pulled) and rejected again for a different reason: LangGraph's differentiators (typed state channels, conditional edges, HITL interrupts, checkpointing) do not fit this driver's needs. The state graph is four nodes; typed state is a Pydantic dataclass; conditional edges are `if/elif` in `route()`; HITL interrupts serve the coding-agent driver's mid-run pausing, whereas the harness's manual queue is post-run batched (see "Fleet mode"); checkpointing addresses the durability concern this RFC explicitly defers. Retained as a viable choice for a future `AgentHarness` or `InterruptibleHarness` subclass, but not the default.
+- **LangChain for LLM invocation instead of Pydantic AI:** proven library with mature Anthropic integration, but Claude-specific features (prompt caching, JSON mode, tool use, context compaction) are exposed less directly than in Pydantic AI, and the library carries LangGraph's transitive dependencies as a hard requirement. Rejected on ergonomics for the specific `LLMStep` slot; the Protocol keeps this reversible.
+- **Hand-rolling the LLM step with anthropic + tenacity + pydantic:** possible and lightest-weight, but ~50% more boilerplate per step (manual schema derivation, manual `cache_control`, manual `tool_choice` ceremony) with no ergonomics dividend. Kept as the fallback if Pydantic AI's API churn (see below) turns out to be prohibitive.
+- **Durable execution (Temporal) as the immediate harness:** strongest determinism and scale story, but a heavy operational dependency to impose on a pre-0.1 community project. Deferred to a follow-up RFC gated on demonstrated fleet-scale need. When it lands, expressed as a `DurableHarness` subclass or delegation layer, not a replacement for the core Harness abstraction.
 
 ## Open Questions (feedback requested)
 
