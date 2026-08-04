@@ -156,6 +156,6 @@ def extract_templates(toml_path: str) -> None:
 
 
 if __name__ == "__main__":
-    default = "packages/darnit-baseline/openssf-baseline.toml"
+    default = "packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml"
     path = sys.argv[1] if len(sys.argv) > 1 else default
     extract_templates(path)

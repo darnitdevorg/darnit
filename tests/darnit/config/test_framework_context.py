@@ -210,7 +210,7 @@ class TestFrameworkContextIntegration:
 
         from darnit.config import load_framework_config
 
-        toml_path = Path("packages/darnit-baseline/openssf-baseline.toml")
+        toml_path = Path("packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml")
         if not toml_path.exists():
             pytest.skip("TOML file not found")
 
@@ -232,7 +232,7 @@ class TestFrameworkContextIntegration:
 
         from darnit.config import load_framework_config
 
-        toml_path = Path("packages/darnit-baseline/openssf-baseline.toml")
+        toml_path = Path("packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml")
         if not toml_path.exists():
             pytest.skip("TOML file not found")
 
@@ -251,7 +251,7 @@ class TestFrameworkContextIntegration:
 
         from darnit.config import load_framework_config
 
-        toml_path = Path("packages/darnit-baseline/openssf-baseline.toml")
+        toml_path = Path("packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml")
         if not toml_path.exists():
             pytest.skip("TOML file not found")
 

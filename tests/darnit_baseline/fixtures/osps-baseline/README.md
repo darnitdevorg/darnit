@@ -17,7 +17,7 @@ darnit-baseline implementation.
 3. Update the tag reference in this README.
 4. Run `uv run pytest tests/darnit_baseline/test_level_counts.py -v`. If it
    fails, the diff will list the specific control-level drift; reconcile
-   `packages/darnit-baseline/openssf-baseline.toml` accordingly.
+   `packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml` accordingly.
 5. Update the counts in `docs/USAGE_GUIDE.md`.
 
 ## Vendored at

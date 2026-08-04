@@ -684,7 +684,7 @@ def format_audit_markdown(results, pending_context):
 | `packages/darnit/src/darnit/config/framework_schema.py` | Add ContextDefinition, ContextConfig |
 | `packages/darnit/src/darnit/config/context_storage.py` | NEW: Read/write .project/ with CNCF format |
 | `packages/darnit/src/darnit/sieve/project_context.py` | Update to use new storage, add migration |
-| `packages/darnit-baseline/openssf-baseline.toml` | Add [context] section |
+| `packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml` | Add [context] section |
 | `packages/darnit-baseline/src/darnit_baseline/tools.py` | Extend confirm_project_context |
 | `packages/darnit/src/darnit/tools/audit.py` | Add context prompts to output |
 

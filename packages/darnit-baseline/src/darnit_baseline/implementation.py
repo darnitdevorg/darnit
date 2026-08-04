@@ -122,12 +122,22 @@ class OSPSBaselineImplementation:
     def get_framework_config_path(self) -> Path | None:
         """Get path to the OpenSSF Baseline framework TOML file.
 
-        Returns:
-            Path to openssf-baseline.toml in the package root.
+        Resolved via ``importlib.resources`` so it works under both editable
+        installs (``uv sync``) and wheel installs (``uv tool install`` / ``pip
+        install``). The TOML is placed inside the installed package by the
+        ``force-include`` entry in ``pyproject.toml``.
         """
-        # Navigate from implementation.py to package root:
-        # implementation.py -> darnit_baseline -> src -> darnit-baseline -> openssf-baseline.toml
-        return Path(__file__).parent.parent.parent / "openssf-baseline.toml"
+        from importlib.resources import files
+
+        resource = files(__package__) / "openssf-baseline.toml"
+        path = Path(str(resource))
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"openssf-baseline.toml not found in installed darnit_baseline "
+                f"package at {path}. This indicates a broken build; check the "
+                f"wheel's force-include configuration."
+            )
+        return path
 
     def get_audit_profiles(self) -> dict | None:
         """Return named audit profiles from TOML config.

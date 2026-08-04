@@ -140,6 +140,10 @@ def register():
 my-framework = "my_framework:register"
 ```
 
+### Framework config resolution (feature 021)
+
+`get_framework_config_path()` MUST use `importlib.resources.files(__package__) / "<framework>.toml"` -- never `Path(__file__).parent.parent...`. The framework TOML MUST live INSIDE `src/<module>/` (alongside `implementation.py`), not sibling to `src/`, so hatchling's default `packages = ["src/<module>"]` includes it in the wheel and `importlib.resources` finds it under both editable and wheel installs. See `packages/darnit-baseline`, `packages/darnit-gittuf`, `packages/darnit-reproducibility` for reference layouts; `packages/darnit-hello` is the minimal template.
+
 ## Sieve Pattern
 
 The verification pipeline follows a 4-phase pattern using built-in handlers:
@@ -365,10 +369,11 @@ else:
 - Filesystem only. Composition is resolved in-memory at framework-config load time; no new persistent state. (013-plugin-composition)
 
 ## Recent Changes
+- 021-fix-config-path: framework TOMLs (openssf-baseline.toml, gittuf.toml, reproducibility.toml) moved into `src/<module>/`; `get_framework_config_path()` uses `importlib.resources`. Wheel installs now find the TOML; editable installs unchanged.
 - 012-packaging-distribution: Added Python 3.11/3.12 (workspace targets) plus bash for release scripts and GitHub Actions YAML + `shiv` (binary builder), `cosign` (image + binary signing), `syft` (SBOM generation), `docker buildx` (multi-arch images), `gh` CLI (release creation), Sigstore-action (PyPI wheel signing via `pypa/gh-action-pypi-publish`). No new runtime dependencies in any darnit Python package.
 
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
-[`specs/020-definitive-fail-verdict/plan.md`](specs/020-definitive-fail-verdict/plan.md)
+[`specs/021-fix-config-path/plan.md`](specs/021-fix-config-path/plan.md)
 <!-- SPECKIT END -->

@@ -50,8 +50,8 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/darnit_baseline"]
 
-[tool.hatch.build.targets.wheel.force-include]
-"templates" = "darnit_baseline/templates"
-# opengrep_rules/ lives under src/darnit_baseline/threat_model/ and is already
-# packaged by the `packages` entry above. Re-adding it here caused hatch to fail
-# with "A second file is being added to the wheel archive at the same path".
+# Feature 021 moved openssf-baseline.toml and templates/ into src/darnit_baseline/
+# so importlib.resources works for both editable and wheel installs. Everything
+# under src/darnit_baseline/ is packaged automatically by the `packages` entry
+# above; no force-include entries are needed. (opengrep_rules/ under
+# src/darnit_baseline/threat_model/ is likewise covered.)

@@ -32,7 +32,7 @@ from typing import NamedTuple
 # Project paths
 PROJECT_ROOT = Path(__file__).parent.parent
 SPEC_PATH = PROJECT_ROOT / "docs" / "architecture" / "framework-design.md"
-TOML_PATH = PROJECT_ROOT / "packages" / "darnit-baseline" / "openssf-baseline.toml"
+TOML_PATH = PROJECT_ROOT / "packages" / "darnit-baseline" / "src" / "darnit_baseline" / "openssf-baseline.toml"
 FRAMEWORK_SCHEMA_PATH = PROJECT_ROOT / "packages" / "darnit" / "src" / "darnit" / "config" / "framework_schema.py"
 
 

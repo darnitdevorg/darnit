@@ -41,3 +41,5 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/darnit_gittuf"]
+# gittuf.toml lives at src/darnit_gittuf/gittuf.toml (feature 021) and is
+# packaged automatically by the entry above; no force-include needed.

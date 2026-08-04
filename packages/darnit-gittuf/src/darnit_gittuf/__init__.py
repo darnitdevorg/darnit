@@ -14,8 +14,14 @@ def register() -> GittufImplementation:
 
 
 def get_framework_path() -> Path:
-    """Entry point for framework TOML discovery."""
-    return Path(__file__).parent.parent.parent / "gittuf.toml"
+    """Entry point for framework TOML discovery.
+
+    Delegates to ``GittufImplementation.get_framework_config_path()`` so both
+    the ``darnit.frameworks`` and ``darnit.implementations`` entry points
+    resolve the TOML via ``importlib.resources`` (works under wheel installs,
+    not just editable checkouts).
+    """
+    return GittufImplementation().get_framework_config_path()
 
 
 __all__ = ["GittufImplementation", "register", "get_framework_path"]

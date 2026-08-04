@@ -491,7 +491,7 @@ If a key is missing from the project context, the condition is treated as **not 
 and the control is skipped. This avoids false failures for controls that are
 inapplicable to the project.
 
-> **Reference**: See `packages/darnit-baseline/openssf-baseline.toml` for real-world
+> **Reference**: See `packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml` for real-world
 > `when` clauses used across 30+ controls.
 
 ### Built-in pass types
@@ -720,7 +720,7 @@ auto_detect = true
 presentation_hint = "[y/N]"
 ```
 
-> **Reference**: See `packages/darnit-baseline/openssf-baseline.toml` for a full
+> **Reference**: See `packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml` for a full
 > TOML configuration with 62 controls, templates, and context definitions.
 
 ---
@@ -1821,7 +1821,7 @@ from darnit.core.handlers import get_handler_registry
 | Built-in sieve handlers | `packages/darnit/src/darnit/sieve/builtin_handlers.py` |
 | MCP tool handler registry | `packages/darnit/src/darnit/core/handlers.py` |
 | Reference implementation | `packages/darnit-baseline/src/darnit_baseline/implementation.py` |
-| Reference TOML | `packages/darnit-baseline/openssf-baseline.toml` |
+| Reference TOML | `packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml` |
 | Reference remediation | `packages/darnit-baseline/src/darnit_baseline/remediation/registry.py` |
 | Example implementation | `packages/darnit-example/src/darnit_example/implementation.py` |
 | Example TOML config | `packages/darnit-example/example-hygiene.toml` |

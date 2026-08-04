@@ -11,7 +11,7 @@ We'll add a hypothetical control `OSPS-DO-99.01` that checks whether a project h
 
 ## Step 1: Understand the TOML Structure
 
-Open `packages/darnit-baseline/openssf-baseline.toml`. This is the source of truth for all controls. You'll see sections for:
+Open `packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml`. This is the source of truth for all controls. You'll see sections for:
 
 - `[metadata]` — Framework metadata
 - `[templates.*]` — Content templates for remediation

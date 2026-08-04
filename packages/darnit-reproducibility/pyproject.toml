@@ -20,3 +20,5 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/darnit_reproducibility"]
+# reproducibility.toml lives at src/darnit_reproducibility/reproducibility.toml
+# (feature 021) and is packaged automatically by the entry above.

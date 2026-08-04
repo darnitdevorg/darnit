@@ -73,7 +73,17 @@ class GittufImplementation:
         return {}
 
     def get_framework_config_path(self) -> Path | None:
-        return Path(__file__).parent.parent.parent / "gittuf.toml"
+        from importlib.resources import files
+
+        resource = files(__package__) / "gittuf.toml"
+        path = Path(str(resource))
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"gittuf.toml not found in installed darnit_gittuf package at "
+                f"{path}. This indicates a broken build; check the wheel's "
+                f"force-include configuration."
+            )
+        return path
 
     def register_controls(self) -> None:
         pass

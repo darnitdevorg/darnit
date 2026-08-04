@@ -29,7 +29,7 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "osps-baseline"
-BASELINE_TOML = REPO_ROOT / "packages" / "darnit-baseline" / "openssf-baseline.toml"
+BASELINE_TOML = REPO_ROOT / "packages" / "darnit-baseline" / "src" / "darnit_baseline" / "openssf-baseline.toml"
 
 # Bump alongside the vendored fixture files and the spec_version in
 # packages/darnit-baseline/src/darnit_baseline/implementation.py.

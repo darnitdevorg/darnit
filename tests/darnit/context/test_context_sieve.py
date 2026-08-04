@@ -368,7 +368,7 @@ class TestIntegrationWithValidator:
         from darnit.remediation.context_validator import check_context_requirements
 
         # Load the framework config to get hint_sources from TOML
-        framework_path = Path(__file__).parent.parent.parent.parent / "packages" / "darnit-baseline" / "openssf-baseline.toml"
+        framework_path = Path(__file__).parent.parent.parent.parent / "packages" / "darnit-baseline" / "src" / "darnit_baseline" / "openssf-baseline.toml"
         framework = load_framework_config(framework_path)
 
         requirements = [

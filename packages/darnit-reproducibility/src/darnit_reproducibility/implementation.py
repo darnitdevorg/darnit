@@ -91,7 +91,17 @@ class ReproducibilityImplementation:
         return {}
 
     def get_framework_config_path(self) -> Path | None:
-        return Path(__file__).parent.parent.parent / "reproducibility.toml"
+        from importlib.resources import files
+
+        resource = files(__package__) / "reproducibility.toml"
+        path = Path(str(resource))
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"reproducibility.toml not found in installed darnit_reproducibility "
+                f"package at {path}. This indicates a broken build; check the "
+                f"wheel's force-include configuration."
+            )
+        return path
 
     def register_controls(self) -> None:
         pass
