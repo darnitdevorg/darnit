@@ -1,6 +1,6 @@
 # Proposal: Wire OpenSSF Scorecard to `ExecutionContext.get_or_run_tool` (evidence-only, via scorecard-mcp)
 
-**Feature Branch**: `021-scorecard-execution-context` (proposed)
+**Feature Branch**: `023-scorecard-execution-context` (proposed)
 
 **Created**: 2026-08-02
 
