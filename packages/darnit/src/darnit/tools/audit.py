@@ -17,6 +17,7 @@ from darnit.core.utils import (
     detect_repo_from_git,
     validate_local_path,
 )
+from darnit.sieve.models import CheckResult
 
 logger = get_logger("tools.audit")
 
@@ -266,7 +267,7 @@ def run_checks(
     stop_on_llm: bool = True,
     apply_user_config: bool = True,
     framework_name: str | None = None,
-) -> tuple[list[dict[str, Any]], dict[str, str]]:
+) -> tuple[list[CheckResult], dict[str, str]]:
     """Run OSPS baseline checks at the specified level.
 
     Thin wrapper around run_sieve_audit() that returns the
@@ -316,8 +317,8 @@ def run_sieve_audit(
     apply_user_config: bool = True,
     stop_on_llm: bool = True,
     framework_name: str | None = None,
-) -> tuple[list[dict[str, Any]], dict[str, int]]:
-    """Run a sieve-based compliance audit — the canonical audit pipeline.
+) -> tuple[list[CheckResult], dict[str, int]]:
+    """Run a sieve-based compliance audit -- the canonical audit pipeline.
 
     All code paths that run audits MUST delegate to this function.
     No other module SHALL reimplement the sieve verification loop.
@@ -426,7 +427,7 @@ def run_sieve_audit(
         repo=repo,
         local_path=local_path,
     )
-    all_results = []
+    all_results: list[CheckResult] = []
 
     # Build project_context once for all controls.
     # Auto-detected values (platform, ci_provider, language) are overridden
@@ -571,7 +572,7 @@ def calculate_compliance(results: list[dict[str, Any]], level: int = 3) -> dict[
     return compliance
 
 
-def summarize_results(results: list[dict[str, Any]]) -> dict[str, int]:
+def summarize_results(results: list[CheckResult]) -> dict[str, int]:
     """Summarize check results by status.
 
     Args:

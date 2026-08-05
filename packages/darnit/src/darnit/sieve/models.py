@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Literal, NotRequired, Optional, TypedDict
 
 if TYPE_CHECKING:
     from darnit.config.framework_schema import LocatorConfig
@@ -87,12 +87,74 @@ class LLMConsultationResponse:
     evidence_cited: list[str] = field(default_factory=list)
 
 
+# The six string labels used across the sieve orchestrator, tools/audit.py, and
+# the JSON/MCP/SARIF wire formats. "N/A" (with slash) is the excluded-control
+# label emitted by tools/audit.py:495.
+CheckStatus = Literal["PASS", "FAIL", "WARN", "N/A", "ERROR", "PENDING_LLM"]
+
+
+class PassHistoryResult(TypedDict):
+    """Nested `result` field inside a PassHistoryEntry.
+
+    Mirrors the dict shape emitted by SieveResult.to_legacy_dict() at models.py:137-141.
+    """
+
+    outcome: str
+    message: str
+    confidence: float | None
+
+
+class PassHistoryEntry(TypedDict):
+    """One phase attempt inside a CheckResult's pass_history list.
+
+    Mirrors the dict shape emitted by SieveResult.to_legacy_dict() at models.py:133-145.
+    """
+
+    phase: str
+    checks_performed: list[str]
+    result: PassHistoryResult
+    duration_ms: int | None
+
+
+class CheckResult(TypedDict):
+    """The wire shape of one entry in AuditState.audit_results.
+
+    Producers:
+        - SieveResult.to_legacy_dict() at models.py:111 (primary path).
+        - The excluded-control fallback at tools/audit.py:492 (sparse: only the
+          four required keys).
+        - Post-hoc mutation at tools/audit.py:530 attaches the optional `when`
+          key; grandfathered by feature 022.
+
+    Consumers include AuditState.audit_results (agent/state.py:61) and any
+    downstream driver step that iterates check results.
+    """
+
+    # Required (present in every producer path).
+    id: str
+    status: CheckStatus
+    details: str
+    level: int
+
+    # Optional (present when the corresponding SieveResult field was set).
+    sieve_phase: NotRequired[str]
+    confidence: NotRequired[float]
+    verification_steps: NotRequired[list[str]]
+    evidence: NotRequired[dict[str, Any]]
+    resolving_pass_index: NotRequired[int]
+    resolving_pass_handler: NotRequired[str]
+    pass_history: NotRequired[list[PassHistoryEntry]]
+
+    # Attached post-hoc at tools/audit.py:530.
+    when: NotRequired[str]
+
+
 @dataclass
 class SieveResult:
     """Complete result from sieve verification."""
 
     control_id: str
-    status: str  # PASS, FAIL, WARN, NA, ERROR, PENDING_LLM
+    status: CheckStatus  # PASS, FAIL, WARN, N/A, ERROR, PENDING_LLM
     message: str
     level: int
 
@@ -108,9 +170,14 @@ class SieveResult:
     resolving_pass_index: int | None = None
     resolving_pass_handler: str | None = None
 
-    def to_legacy_dict(self) -> dict[str, Any]:
-        """Convert to legacy result format for backward compatibility."""
-        result = {
+    def to_legacy_dict(self) -> CheckResult:
+        """Convert to legacy result format for backward compatibility.
+
+        Returns a CheckResult TypedDict; runtime shape is a plain dict, so
+        existing consumers that expect a bare dict are unaffected. See
+        specs/022-type-audit-results/contracts/check-result.md.
+        """
+        result: CheckResult = {
             "id": self.control_id,
             "status": self.status,
             "details": self.message,

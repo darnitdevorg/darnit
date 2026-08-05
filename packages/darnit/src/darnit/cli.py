@@ -32,6 +32,7 @@ import sys
 from pathlib import Path
 
 from darnit.core.logging import configure_logging, get_logger
+from darnit.sieve.models import CheckResult
 
 logger = get_logger("cli")
 
@@ -68,14 +69,14 @@ def format_result_text(result: dict) -> str:
         "FAIL": "✗",
         "WARN": "⚠",
         "ERROR": "!",
-        "NA": "-",
+        "N/A": "-",
     }
     icon = status_icons.get(status, "?")
 
     return f"  {icon} {control_id}: {status} - {details}"
 
 
-def format_results_text(results: list[dict], framework_name: str, show_all: bool = False) -> str:
+def format_results_text(results: list[CheckResult], framework_name: str, show_all: bool = False) -> str:
     """Format all results for text output."""
     lines = [f"\n=== {framework_name} Audit Results ===\n"]
 
@@ -90,7 +91,7 @@ def format_results_text(results: list[dict], framework_name: str, show_all: bool
     passed = len(by_status.get("PASS", []))
     failed = len(by_status.get("FAIL", []))
     warned = len(by_status.get("WARN", []))
-    na = len(by_status.get("NA", []))
+    na = len(by_status.get("N/A", []))
 
     lines.append(f"Total: {total} | Pass: {passed} | Fail: {failed} | Warn: {warned} | N/A: {na}\n")
 
@@ -131,7 +132,7 @@ def format_results_text(results: list[dict], framework_name: str, show_all: bool
     return "\n".join(lines)
 
 
-def format_results_json(results: list[dict], framework_name: str) -> str:
+def format_results_json(results: list[CheckResult], framework_name: str) -> str:
     """Format results as JSON."""
     output = {
         "framework": framework_name,
@@ -141,7 +142,7 @@ def format_results_json(results: list[dict], framework_name: str) -> str:
             "pass": len([r for r in results if r.get("status") == "PASS"]),
             "fail": len([r for r in results if r.get("status") == "FAIL"]),
             "warn": len([r for r in results if r.get("status") == "WARN"]),
-            "na": len([r for r in results if r.get("status") == "NA"]),
+            "na": len([r for r in results if r.get("status") == "N/A"]),
         },
     }
     return json.dumps(output, indent=2)

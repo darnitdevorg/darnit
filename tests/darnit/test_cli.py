@@ -257,13 +257,19 @@ class TestFormatting:
 
     @pytest.mark.unit
     def test_format_results_json_returns_valid_json(self):
-        """format_results_json returns a valid payload with summary counts."""
+        """format_results_json returns a valid payload with summary counts.
+
+        Note: the audit pipeline emits ``"N/A"`` (with slash) for excluded
+        controls; the pre-feature-022 code compared against ``"NA"`` (typo)
+        and the ``na`` count was always 0. Feature 022's CheckStatus Literal
+        surfaced the typo; the test now uses the correct wire value.
+        """
         rendered = format_results_json(
             [
-                {"id": "PASS-01", "status": "PASS"},
-                {"id": "FAIL-01", "status": "FAIL"},
-                {"id": "WARN-01", "status": "WARN"},
-                {"id": "NA-01", "status": "NA"},
+                {"id": "PASS-01", "status": "PASS", "details": "", "level": 1},
+                {"id": "FAIL-01", "status": "FAIL", "details": "", "level": 1},
+                {"id": "WARN-01", "status": "WARN", "details": "", "level": 1},
+                {"id": "NA-01", "status": "N/A", "details": "", "level": 1},
             ],
             "openssf-baseline",
         )
@@ -308,7 +314,7 @@ def test_format_results_text_truncates_passes_by_default():
 def test_format_results_text_show_all_lists_every_check():
     """--show-all lists all passes (no truncation) and includes N/A checks."""
     results = [{"id": f"OSPS-X-{i:02d}", "status": "PASS", "details": "ok"} for i in range(15)]
-    results.append({"id": "OSPS-NA-01.01", "status": "NA", "details": "not applicable"})
+    results.append({"id": "OSPS-NA-01.01", "status": "N/A", "details": "not applicable"})
     rendered = format_results_text(results, "openssf-baseline", show_all=True)
     assert "... and" not in rendered
     for i in range(15):

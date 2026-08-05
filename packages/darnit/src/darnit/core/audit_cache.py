@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from darnit.core.logging import get_logger
+from darnit.sieve.models import CheckResult
 
 logger = get_logger("core.audit_cache")
 
@@ -98,7 +99,7 @@ def _is_working_tree_dirty(local_path: str) -> bool:
 
 def write_audit_cache(
     local_path: str,
-    results: list[dict[str, Any]],
+    results: list[CheckResult],
     summary: dict[str, int],
     level: int,
     framework: str,

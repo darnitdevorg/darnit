@@ -14,6 +14,7 @@ from .handler_registry import (
 )
 from .models import (
     CheckContext,
+    CheckStatus,
     ControlSpec,
     LLMConsultationResponse,
     PassAttempt,
@@ -524,7 +525,7 @@ class SieveOrchestrator:
         # Determine outcome based on confidence
         if llm_response.status in (PassOutcome.PASS, PassOutcome.FAIL):
             if llm_response.confidence >= confidence_threshold:
-                status = "PASS" if llm_response.status == PassOutcome.PASS else "FAIL"
+                status: CheckStatus = "PASS" if llm_response.status == PassOutcome.PASS else "FAIL"
                 return SieveResult(
                     control_id=control_spec.control_id,
                     status=status,

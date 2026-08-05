@@ -11,6 +11,8 @@ and provides helpers so every node can consume collected feedback.
 from dataclasses import dataclass, field
 from typing import Any
 
+from darnit.sieve.models import CheckResult
+
 
 @dataclass
 class FeedbackQuestion:
@@ -40,7 +42,7 @@ class AuditState:
         default_branch: Default branch of the repository.
         framework_name: Compliance framework to use (e.g. "openssf-baseline").
         level: Maximum maturity level to audit (1, 2, or 3).
-        audit_results: Raw result dicts from the latest audit run.
+        audit_results: Typed check results (CheckResult) from the latest audit run.
         feedback_questions: Context questions for unresolvable WARN controls.
             Written by collect_context; READ by remediate and the re-audit pass
             so answers feed into ${context.*} variable substitution.
@@ -57,8 +59,11 @@ class AuditState:
     framework_name: str | None = None
     level: int = 3
 
-    # Populated by the audit node
-    audit_results: list[dict[str, Any]] = field(default_factory=list)
+    # Populated by the audit node.
+    # Feature 022: typed as list[CheckResult] (TypedDict). Runtime shape is
+    # unchanged; producers are SieveResult.to_legacy_dict() and the sparse
+    # excluded-control path in tools/audit.py.
+    audit_results: list[CheckResult] = field(default_factory=list)
 
     # Issue #146 fix: feedback_questions are written AND read.
     # collect_context writes the answers; remediate reads them via
