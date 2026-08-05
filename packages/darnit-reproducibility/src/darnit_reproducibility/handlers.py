@@ -6,7 +6,7 @@ rather than falsely passing or failing.
 """
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from darnit.core.logging import get_logger
 from darnit.sieve.handler_registry import HandlerContext, HandlerResult, HandlerResultStatus
@@ -133,91 +133,368 @@ def repro_build_env_declared_handler(
     )
 
 
+def _strip_comment(line: str) -> str:
+    """Strip # comments from a shell/YAML/Makefile line (best-effort).
+
+    Handles full-line comments (``# …``) and inline suffixes (`` # …``).
+    Not quote-aware, but accurate enough for the suspicious-pattern heuristic.
+    """
+    stripped = line.strip()
+    if stripped.startswith("#"):
+        return ""
+    idx = line.find(" #")
+    if idx != -1:
+        return line[:idx]
+    return line
+
+
+# Patterns that suggest live network fetches during a build step
+_SUSPICIOUS_PATTERNS: tuple[str, ...] = (
+    "curl ",
+    "wget ",
+    "pip install ",
+    "npm install",
+    "yarn install",
+    "apt-get install",
+    "brew install",
+)
+
+# Known-safe: lock-file-based installs that do not fetch live deps
+_SAFE_PATTERNS: tuple[str, ...] = (
+    "uv sync",
+    "uv pip install",
+    "pip install --no-index",
+    "pip install -e ",  # editable install of local source
+    "npm ci",  # uses package-lock.json
+    "yarn --frozen-lockfile",
+    "pnpm install --frozen-lockfile",
+)
+
+# Inside a Dockerfile/Containerfile, system-package installs build the *image*
+# environment (not the software artifact), so they are DEFERRED rather than
+# violations.
+_DOCKERFILE_DEFERRED_PATTERNS: tuple[str, ...] = (
+    "apt-get install",
+    "apt install",
+    "apk add",
+    "yum install",
+    "dnf install",
+    "zypper install",
+)
+
+
+_ScanKind = Literal["safe", "deferred", "violation"]
+
+
+def _scan_line(line: str, *, is_dockerfile: bool = False) -> tuple[str | None, _ScanKind]:
+    """Classify one line for hermeticity-relevant patterns.
+
+    Strips comments first, then returns ``(pattern, kind)`` where *kind* is:
+
+    - ``"safe"``      — known-good pattern, blank line, or comment; ignore
+    - ``"deferred"``  — acceptable in this file type (e.g. apt-get in Dockerfile)
+    - ``"violation"`` — suspicious live network fetch
+    """
+    clean = _strip_comment(line)
+    if not clean.strip():
+        return None, "safe"
+
+    if any(s in clean for s in _SAFE_PATTERNS):
+        return None, "safe"
+
+    if is_dockerfile:
+        for pat in _DOCKERFILE_DEFERRED_PATTERNS:
+            if pat in clean:
+                return pat.strip(), "deferred"
+
+    for pat in _SUSPICIOUS_PATTERNS:
+        if pat in clean:
+            return pat.strip(), "violation"
+
+    return None, "safe"
+
+
+# Directories whose contents must never be scanned (vendored / generated code)
+_SKIP_DIRS: frozenset[str] = frozenset(
+    {
+        "vendor",
+        "node_modules",
+        ".venv",
+        "venv",
+        ".git",
+        "__pycache__",
+        ".tox",
+        "dist",
+        "build",
+    }
+)
+
+# Bounds per-repo scan cost — monorepos can have hundreds of Makefiles/Dockerfiles.
+_FILE_SCAN_LIMIT = 30
+
+
+def _iter_workflow_files(path: Path) -> list[Path]:
+    """GitHub Actions workflow files under .github/workflows/."""
+    wf_dir = path / ".github" / "workflows"
+    if not wf_dir.exists():
+        return []
+    return list(wf_dir.glob("*.yml")) + list(wf_dir.glob("*.yaml"))
+
+
+def _iter_composite_action_files(path: Path) -> list[Path]:
+    """Composite action.yml files under .github/actions/*/."""
+    actions_dir = path / ".github" / "actions"
+    if not actions_dir.exists():
+        return []
+    results: list[Path] = []
+    for entry in actions_dir.iterdir():
+        if not entry.is_dir():
+            continue
+        for name in ("action.yml", "action.yaml"):
+            f = entry / name
+            if f.exists():
+                results.append(f)
+    return results
+
+
+def _iter_other_ci_files(path: Path) -> list[Path]:
+    """CI config files from non-GitHub systems."""
+    candidates = [
+        ".gitlab-ci.yml",
+        ".circleci/config.yml",
+        ".circleci/config.yaml",
+        "Jenkinsfile",
+        "azure-pipelines.yml",
+        "azure-pipelines.yaml",
+        ".drone.yml",
+        ".drone.yaml",
+        ".buildkite/pipeline.yml",
+        ".buildkite/pipeline.yaml",
+    ]
+    return [path / c for c in candidates if (path / c).exists()]
+
+
+def _iter_build_files(path: Path) -> list[Path]:
+    """Makefiles, build scripts, and setup.py (limited-depth scan)."""
+    results: list[Path] = []
+
+    for name in ("Makefile", "GNUmakefile", "makefile", "setup.py"):
+        p = path / name
+        if p.exists():
+            results.append(p)
+
+    def _find_nested(directory: Path, depth: int) -> None:
+        if depth > 3 or len(results) >= _FILE_SCAN_LIMIT:
+            return
+        try:
+            for entry in directory.iterdir():
+                if entry.name in _SKIP_DIRS:
+                    continue
+                if entry.is_dir():
+                    _find_nested(entry, depth + 1)
+                elif entry.name in ("Makefile", "GNUmakefile", "makefile") and entry not in results:
+                    results.append(entry)
+        except PermissionError:
+            pass
+
+    _find_nested(path, 0)
+
+    for scripts_dir in (path / "scripts", path / "script"):
+        if not scripts_dir.is_dir():
+            continue
+        for f in scripts_dir.iterdir():
+            if not f.is_file():
+                continue
+            lower = f.name.lower()
+            if any(lower.startswith(pfx) for pfx in ("build", "install", "setup", "deps", "bootstrap")):
+                results.append(f)
+
+    return results[:_FILE_SCAN_LIMIT]
+
+
+def _iter_container_files(path: Path) -> list[Path]:
+    """Dockerfile and Containerfile paths, including common subdirectories."""
+    results: list[Path] = []
+    for name in ("Dockerfile", "Containerfile"):
+        p = path / name
+        if p.exists():
+            results.append(p)
+    for subdir in ("docker", "containers", ".docker"):
+        d = path / subdir
+        if not d.is_dir():
+            continue
+        for f in d.iterdir():
+            if f.is_file() and (f.name.startswith("Dockerfile") or f.name.startswith("Containerfile")):
+                results.append(f)
+    return results[:_FILE_SCAN_LIMIT]
+
+
+def _detect_strong_hermeticity_signal(path: Path, ci_files: list[Path]) -> str | None:
+    """Return a description of a build-system-enforced hermeticity signal, or None.
+
+    Checks in priority order:
+    1. Witness runtime attestation — records what the build actually did at runtime
+    2. Nix flake used in CI — fixed-output derivations run network-isolated by default
+    3. Bazel with explicit network sandbox — Bazel allows network by default, so the
+       blocking flag must be present to count as a strong signal
+
+    Comments are stripped before matching (same as ``_scan_line``) so a
+    commented-out reference (e.g. ``# TODO: add witness run``) can't be
+    mistaken for the real thing.
+    """
+    ci_content: dict[str, str] = {}
+    for f in ci_files:
+        try:
+            raw = f.read_text(encoding="utf-8")
+        except Exception:
+            continue
+        ci_content[f.name] = "\n".join(_strip_comment(line) for line in raw.splitlines())
+
+    witness_hits = sorted(
+        name
+        for name, content in ci_content.items()
+        if "witness run" in content or "testifysec/witness" in content or "in-toto/witness" in content
+    )
+    if witness_hits:
+        return f"Witness runtime attestation in CI ({', '.join(witness_hits)})"
+
+    if (path / "flake.nix").exists():
+        nix_hits = sorted(
+            name
+            for name, content in ci_content.items()
+            if any(cmd in content for cmd in ("nix build", "nix develop", "nix run", "nix flake"))
+        )
+        if nix_hits:
+            return f"Nix flake build in CI ({', '.join(nix_hits)})"
+
+    has_bazel = any((path / f).exists() for f in ("WORKSPACE", "WORKSPACE.bazel", "MODULE.bazel", "BUILD.bazel"))
+    if has_bazel:
+        bazel_hits = sorted(
+            name
+            for name, content in ci_content.items()
+            if "bazel" in content.lower()
+            and ("--sandbox_default_allow_network=false" in content or "--sandbox_network=block" in content)
+        )
+        if bazel_hits:
+            return f"Bazel with network sandbox in CI ({', '.join(bazel_hits)})"
+
+    return None
+
+
 def repro_hermetic_build_handler(
     config: dict[str, Any],
     ctx: HandlerContext,
 ) -> HandlerResult:
-    """Check that CI workflows do not fetch dependencies at build time.
+    """Check that CI and build files do not fetch dependencies at build time.
 
-    Scans GitHub Actions workflow files for patterns that indicate
-    live network fetches during the build step.
-    PASS if no fetches found, FAIL if suspicious patterns found,
-    INCONCLUSIVE if no CI files to check.
+    v0.2: Scans GitHub Actions workflows, composite actions, non-GitHub CI
+    files (GitLab CI, CircleCI, Jenkins, Azure Pipelines, Drone, Buildkite),
+    Makefiles, build scripts, and Dockerfiles/Containerfiles.  Strips comments
+    before pattern matching to reduce false positives.  System-package installs
+    inside Dockerfiles are DEFERRED — building the image environment is fine;
+    fetching application dependencies at build time is not.
 
-    v0.1 limitation: only .github/workflows/*.{yml,yaml} are scanned; network
-    fetches from Makefile, setup.py, composite actions or Dockerfile are not
-    detected. See https://github.com/kusari-oss/darnit/issues/227 for the roadmap.
+    Result semantics (conservative-by-default):
+    - PASS:           strong hermeticity signal (Witness, Nix flake CI, Bazel sandbox)
+    - FAIL:           suspicious live network-fetch pattern in any scanned file
+    - INCONCLUSIVE:   files scanned, no violations, no strong signal
+                      (grep absence ≠ proof of hermeticity)
+    - INCONCLUSIVE
+      (confidence 0): no CI or build files found at all
+
+    Roadmap: https://github.com/kusari-oss/darnit/issues/227
     """
     path = Path(ctx.local_path)
-    workflows_dir = path / ".github" / "workflows"
 
-    if not workflows_dir.exists():
+    workflow_files = _iter_workflow_files(path)
+    composite_files = _iter_composite_action_files(path)
+    other_ci_files = _iter_other_ci_files(path)
+    build_files = _iter_build_files(path)
+    container_files = _iter_container_files(path)
+
+    all_ci_files = workflow_files + composite_files + other_ci_files
+    all_files = all_ci_files + build_files + container_files
+
+    if not all_files:
         return HandlerResult(
             status=HandlerResultStatus.INCONCLUSIVE,
-            message="No GitHub Actions workflows found to check",
+            message="No CI or build files found to check",
             confidence=0.0,
-            evidence={"workflows_checked": [], "violations_found": []},
+            evidence={
+                "files_scanned": [],
+                "violations_found": [],
+                "deferred_found": [],
+                "strong_signal": None,
+            },
         )
 
-    # Patterns that suggest live network fetches during build
-    suspicious_patterns = [
-        "curl ",
-        "wget ",
-        "pip install ",
-        "npm install",
-        "yarn install",
-        "apt-get install",
-        "brew install",
-    ]
+    strong_signal = _detect_strong_hermeticity_signal(path, all_ci_files)
+    if strong_signal:
+        return HandlerResult(
+            status=HandlerResultStatus.PASS,
+            message=f"Strong hermeticity signal detected: {strong_signal}",
+            confidence=0.9,
+            evidence={
+                "files_scanned": [str(f.relative_to(path)) for f in all_files],
+                "violations_found": [],
+                "deferred_found": [],
+                "strong_signal": strong_signal,
+            },
+        )
 
-    # Patterns that are fine — these are using the lock file
-    safe_patterns = [
-        "uv sync",
-        "uv pip install",
-        "pip install --no-index",
-        "pip install -e ",  # editable install of local source, not a network fetch
-        "npm ci",         # npm ci uses lock file
-        "yarn --frozen-lockfile",
-    ]
+    container_file_set = set(container_files)
+    violations: list[str] = []
+    deferred: list[str] = []
+    files_scanned: list[str] = []
 
-    violations = []
-    workflow_files = list(workflows_dir.glob("*.yml")) + list(workflows_dir.glob("*.yaml"))
-
-    for wf_file in workflow_files:
+    for f in all_files:
+        is_dockerfile = f in container_file_set
         try:
-            lines = wf_file.read_text(encoding="utf-8").splitlines()
-            for line in lines:
-                # Skip if this line contains a known-safe pattern
-                if any(safe in line for safe in safe_patterns):
-                    continue
-                # Check if this line contains a suspicious pattern
-                for pattern in suspicious_patterns:
-                    if pattern in line:
-                        violations.append(
-                            f"{wf_file.name}: contains '{pattern.strip()}'"
-                        )
-                        break  # one violation per line is enough
+            lines = f.read_text(encoding="utf-8").splitlines()
+            rel = str(f.relative_to(path))
         except Exception as exc:
-            logger.debug("skipped workflow %s: %s", wf_file.name, exc)
+            logger.debug("skipped %s: %s", f, exc)
             continue
 
+        files_scanned.append(rel)
+        file_violation: str | None = None
+        for line in lines:
+            pattern, kind = _scan_line(line, is_dockerfile=is_dockerfile)
+            if kind == "violation":
+                file_violation = f"{rel}: '{pattern}'"
+                break  # one violation per file is enough to flag it
+            elif kind == "deferred" and pattern:
+                deferred.append(f"{rel}: '{pattern}' (image build context)")
+
+        if file_violation:
+            violations.append(file_violation)
+
     evidence = {
-        "workflows_checked": [f.name for f in workflow_files],
+        "files_scanned": files_scanned,
         "violations_found": violations,
+        "deferred_found": deferred,
+        "strong_signal": None,
     }
 
     if violations:
         return HandlerResult(
             status=HandlerResultStatus.FAIL,
-            message=f"Possible live network fetches in CI: {'; '.join(violations)}",
+            message=f"Possible live network fetches in build files: {'; '.join(violations)}",
             confidence=0.7,
             evidence=evidence,
         )
 
+    # Clean scan but no strong signal. Per the conservative-by-default principle,
+    # grep absence is not proof of hermeticity — INCONCLUSIVE until a strong signal
+    # or manual review confirms the build is hermetic.
     return HandlerResult(
-        status=HandlerResultStatus.PASS,
-        message=f"No suspicious network fetches found in {len(workflow_files)} workflow(s)",
-        confidence=0.75,
+        status=HandlerResultStatus.INCONCLUSIVE,
+        message=(
+            f"No suspicious patterns found in {len(files_scanned)} scanned file(s) — "
+            "grep absence alone cannot confirm hermeticity; "
+            "a strong signal (Witness, Nix, Bazel sandbox) or manual review is needed"
+        ),
+        confidence=0.4,
         evidence=evidence,
     )
 
@@ -301,9 +578,9 @@ def repro_bit_for_bit_handler(
     # workflow-only scan can't attribute to build artifacts — they only ever
     # produced false signals.)
     good_signals = [
-        "SOURCE_DATE_EPOCH",   # Normalizes timestamps — required for repro builds
-        "reprotest",           # Tool that builds twice and compares
-        "diffoscope",          # Tool that diffs build artifacts
+        "SOURCE_DATE_EPOCH",  # Normalizes timestamps — required for repro builds
+        "reprotest",  # Tool that builds twice and compares
+        "diffoscope",  # Tool that diffs build artifacts
     ]
 
     found_good = []

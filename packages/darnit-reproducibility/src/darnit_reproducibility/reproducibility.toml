@@ -78,9 +78,15 @@ steps = [
 # lock file. Network access during build = non-reproducible.
 # =============================================================================
 
-# v0.1 heuristic: greps .github/workflows for network-fetch commands only.
-# Misses Makefile/setup.py/composite actions/Dockerfile and does not verify
-# true build isolation. Roadmap: https://github.com/kusari-oss/darnit/issues/227
+# v0.2 heuristic: scans .github/workflows, composite actions (.github/actions/*/),
+# non-GitHub CI (GitLab CI, CircleCI, Jenkins, Azure Pipelines, Drone, Buildkite),
+# Makefiles, build scripts (scripts/build*, scripts/install*, etc.), and
+# Dockerfiles/Containerfiles.  Strips comments before pattern matching to cut FPs.
+# System-package installs (apt-get, apk, yum) inside Dockerfiles are DEFERRED —
+# building the image environment is acceptable; app-dep fetches at build time are not.
+# Strong signals (Witness runtime attestation, Nix flake CI, Bazel network sandbox)
+# short-circuit to PASS.  A clean grep alone returns INCONCLUSIVE — grep absence is
+# not proof of hermeticity.  Roadmap: https://github.com/kusari-oss/darnit/issues/227
 [controls."RE-02.01"]
 name = "HermeticBuild"
 description = "Build does not fetch dependencies at build time"
@@ -92,9 +98,11 @@ handler = "repro_hermetic_build"
 [[controls."RE-02.01".passes]]
 handler = "manual"
 steps = [
-    "Review CI workflow files for network fetch commands during build",
-    "Check for curl, wget, pip install (without --no-index) in build steps",
-    "Verify dependencies come from the lock file, not fetched live",
+    "Review all CI files (GitHub Actions, GitLab CI, CircleCI, Jenkinsfile, etc.) for network-fetch commands during build",
+    "Review Makefiles, build scripts (scripts/build*, scripts/install*), and Dockerfiles for the same",
+    "Check for curl, wget, pip install (without --no-index), npm install (without --ci), brew install in build steps",
+    "Verify all dependencies come from the lock file, not fetched live at build time",
+    "For a PASS without a strong signal, confirm via Witness attestation, Nix flake build, or Bazel network sandbox",
 ]
 
 # =============================================================================
