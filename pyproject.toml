@@ -62,6 +62,7 @@ darnit-example = { workspace = true }
 darnit-gittuf = { workspace = true }
 darnit-reproducibility = { workspace = true }
 darnit-hello = { workspace = true }
+darnit-testchecks = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -101,11 +102,12 @@ dev = [
     "skills-ref>=0.1.1",
     "jsonschema>=4.26.0",
     "syrupy>=4.0.0",  # snapshot testing for threat-model rendering (014-cobra-threat-model R8)
-    # Internal/test-only workspace packages — not published to PyPI. Pinned here
+    # Internal/test-only workspace packages -- not published to PyPI. Pinned here
     # so they install for development and tests via `uv sync`, but do not become
     # runtime dependencies of any published wheel.
     "darnit-example",
     "darnit-hello",
+    "darnit-testchecks",  # framework used by tests/darnit/cli/ (feature 024)
 ]
 
 [tool.mypy]

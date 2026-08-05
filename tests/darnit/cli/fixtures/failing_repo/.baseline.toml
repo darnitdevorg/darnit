@@ -1,0 +1,11 @@
+extends = "testchecks"
+
+# Same disables as minimal_repo (testchecks pass_if_any=false semantics).
+[controls."TEST-QA-01"]
+status = "disabled"
+
+[controls."TEST-QA-02"]
+status = "disabled"
+
+[controls."TEST-SEC-01"]
+status = "disabled"

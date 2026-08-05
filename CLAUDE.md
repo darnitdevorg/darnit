@@ -375,5 +375,5 @@ else:
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
-[`specs/022-type-audit-results/plan.md`](specs/022-type-audit-results/plan.md)
+[`specs/024-cmd-run-e2e-tests/plan.md`](specs/024-cmd-run-e2e-tests/plan.md)
 <!-- SPECKIT END -->
