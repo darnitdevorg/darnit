@@ -547,7 +547,15 @@ class TestSharedHandlerCache:
                 evidence={"found": True},
             )
 
-        registry.register("shared_check", "deterministic", counting_handler)
+        # Register with default_authority="dispositive" so counting_handler's
+        # PASS can conclude the control under RFC-0001 Stage 1's authority
+        # rule (feature 025). Without this, the default "suggestive" would
+        # downgrade to WARN and the shared-cache test would fail for reasons
+        # unrelated to caching behavior.
+        registry.register(
+            "shared_check", "deterministic", counting_handler,
+            default_authority="dispositive",
+        )
 
         orchestrator = SieveOrchestrator()
         invocations = [
@@ -940,16 +948,21 @@ class TestEndToEndIntegration:
 
         registry = get_sieve_handler_registry()
 
-        # Register test handlers
+        # Register test handlers with default_authority="dispositive" so
+        # their PASS/FAIL outcomes conclude the control under RFC-0001
+        # Stage 1's authority rule (feature 025). Without this the default
+        # "suggestive" would downgrade to WARN.
         registry.register(
             "always_pass",
             "deterministic",
             _make_handler(HandlerResultStatus.PASS, "Always passes", {"found": True}),
+            default_authority="dispositive",
         )
         registry.register(
             "always_fail",
             "deterministic",
             _make_handler(HandlerResultStatus.FAIL, "Always fails"),
+            default_authority="dispositive",
         )
 
         orchestrator = SieveOrchestrator()

@@ -55,7 +55,15 @@ class TestVerifyWithLlmResponse:
         assert result.status == "WARN"
 
     def test_default_confidence_threshold(self):
-        """Default confidence_threshold of 0.8 when no llm_eval handler."""
+        """LLM response cannot conclude under RFC-0001 Stage 1 (feature 025).
+
+        This test previously asserted that a confidence-above-threshold LLM
+        response converts to PASS. Under Stage 1's authority model
+        (FR-001/FR-004), LLM output is `suggestive` and cannot conclude
+        regardless of confidence. The confidence threshold remains a
+        presentation filter but is no longer a decision input. Test
+        preserved with updated assertion to lock the safe behavior.
+        """
         orchestrator = SieveOrchestrator(stop_on_llm=True)
 
         spec = ControlSpec(
@@ -71,7 +79,8 @@ class TestVerifyWithLlmResponse:
             },
         )
 
-        # Confidence 0.85 is above default 0.8 threshold → should PASS
+        # Confidence 0.85 is above the historical 0.8 threshold, but Stage 1
+        # rejects any LLM conclusion. Result MUST be WARN.
         response = LLMConsultationResponse(
             status=PassOutcome.PASS,
             confidence=0.85,
@@ -79,7 +88,7 @@ class TestVerifyWithLlmResponse:
         )
 
         result = orchestrator.verify_with_llm_response(spec, _make_context(), response)
-        assert result.status == "PASS"
+        assert result.status == "WARN"
 
     def test_verification_steps_from_manual_handler(self):
         """verification_steps are read from the manual handler invocation."""
@@ -137,7 +146,17 @@ class TestVerifyWithLlmResponse:
         assert "Review LLM analysis above" in result.verification_steps[0]
 
     def test_high_confidence_pass(self):
-        """High confidence above threshold returns PASS."""
+        """High confidence LLM PASS is DOWNGRADED to WARN under RFC-0001 Stage 1.
+
+        Feature 025 (Slice A): `llm_eval` registers with default_authority =
+        "suggestive". `is_terminal_authority("suggestive")` is False, so
+        `resolve_step_result` refuses to CONCLUDE_PASS regardless of the
+        LLM's confidence. The LLM's output is preserved as evidence but the
+        control status is WARN (inconclusive) -- the SAFETY property FR-001
+        establishes. This test previously pinned the OLD unsafe behavior
+        (high-confidence LLM concluding PASS); it now pins the NEW safe
+        behavior. See specs/025-rfc0001-stage1/spec.md SC-001.
+        """
         orchestrator = SieveOrchestrator(stop_on_llm=True)
 
         spec = ControlSpec(
@@ -160,11 +179,19 @@ class TestVerifyWithLlmResponse:
         )
 
         result = orchestrator.verify_with_llm_response(spec, _make_context(), response)
-        assert result.status == "PASS"
-        assert result.confidence == 0.95
+        # Under Stage 1, an LLM step (suggestive) can never conclude.
+        assert result.status == "WARN", (
+            "LLM authority is suggestive; suggestive results cannot conclude PASS "
+            "(feature 025 FR-001 / SC-001 safety property)"
+        )
+        # LLM reasoning is preserved as evidence for human review.
+        assert "Verified" in result.message or "confidence" in result.message.lower()
 
     def test_high_confidence_fail(self):
-        """High confidence FAIL above threshold returns FAIL."""
+        """High confidence LLM FAIL is DOWNGRADED to WARN under RFC-0001 Stage 1.
+
+        Same safety property as test_high_confidence_pass, symmetric side.
+        """
         orchestrator = SieveOrchestrator(stop_on_llm=True)
 
         spec = ControlSpec(
@@ -187,7 +214,8 @@ class TestVerifyWithLlmResponse:
         )
 
         result = orchestrator.verify_with_llm_response(spec, _make_context(), response)
-        assert result.status == "FAIL"
+        # Under Stage 1, an LLM step (suggestive) can never conclude.
+        assert result.status == "WARN"
 
 
 class TestHandlerWhenClause:
@@ -366,7 +394,16 @@ class TestExecutionContextPropagation:
             return HandlerResult(status=HandlerResultStatus.PASS, message="Spy done")
 
         registry = get_sieve_handler_registry()
-        registry.register("spy_tool", phase="deterministic", handler_fn=spy_handler)
+        # Register with default_authority="dispositive" so the spy's PASS
+        # concludes the control. Under RFC-0001 Stage 1 (feature 025), a
+        # handler that omits default_authority defaults to "suggestive" and
+        # its PASS is downgraded to WARN. This test cares about
+        # ExecutionContext propagation, not the verdict rule, so dispositive
+        # is the honest label for a spy that observes ground truth.
+        registry.register(
+            "spy_tool", phase="deterministic", handler_fn=spy_handler,
+            default_authority="dispositive",
+        )
 
         # Inject our spy handler into the control spec
         spec = ControlSpec(

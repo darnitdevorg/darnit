@@ -145,6 +145,12 @@ class CheckResult(TypedDict):
     resolving_pass_handler: NotRequired[str]
     pass_history: NotRequired[list[PassHistoryEntry]]
 
+    # RFC-0001 Stage 1 (feature 025 T010). Authority of the step that
+    # concluded the control. `NotRequired` for back-compat with pre-Stage-1
+    # serialized results, but per FR-001 the runner MUST treat any
+    # authority-less result as suggestive (cannot conclude PASS/FAIL).
+    authority: NotRequired[str]  # values in {"dispositive", "suggestive", "asserted"}
+
     # Attached post-hoc at tools/audit.py:530.
     when: NotRequired[str]
 
@@ -169,6 +175,12 @@ class SieveResult:
     # Resolving pass metadata (which pass produced the conclusive result)
     resolving_pass_index: int | None = None
     resolving_pass_handler: str | None = None
+
+    # RFC-0001 Stage 1 (feature 025 T010). Authority of the step that
+    # concluded the control (dispositive / suggestive / asserted). None
+    # means "unknown / not migrated"; the runner treats absence as
+    # suggestive-equivalent for disposition purposes.
+    authority: str | None = None
 
     def to_legacy_dict(self) -> CheckResult:
         """Convert to legacy result format for backward compatibility.
@@ -196,6 +208,8 @@ class SieveResult:
             result["resolving_pass_index"] = self.resolving_pass_index
         if self.resolving_pass_handler is not None:
             result["resolving_pass_handler"] = self.resolving_pass_handler
+        if self.authority is not None:
+            result["authority"] = self.authority
         if self.pass_history:
             result["pass_history"] = [
                 {

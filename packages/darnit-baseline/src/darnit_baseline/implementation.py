@@ -56,17 +56,25 @@ class OSPSBaselineImplementation:
                 domain = control.domain
                 if domain is None and control.tags:
                     domain = control.tags.get("domain", "")
-                controls.append(ControlSpec(
-                    control_id=control_id,
-                    name=control.name,
-                    description=control.description or "",
-                    level=level,
-                    domain=domain or (control_id.split("-")[1] if "-" in control_id else "UNKNOWN"),
-                    metadata={
-                        "full": control.description or "",
-                        "help_uri": control.docs_url or f"https://baseline.openssf.org/versions/2025-10-10#{control_id}",
-                    }
-                ))
+                controls.append(
+                    ControlSpec(
+                        control_id=control_id,
+                        name=control.name,
+                        description=control.description or "",
+                        level=level,
+                        domain=domain or (control_id.split("-")[1] if "-" in control_id else "UNKNOWN"),
+                        # Preserve TOML tags on the ControlSpec so downstream
+                        # consumers (e.g., tag-based filtering, feature 025's
+                        # STAGE1-REF-* opt-out from OSPS-format tests) can see
+                        # them. ControlSpec.__post_init__ still adds level/domain.
+                        tags=dict(control.tags) if control.tags else {},
+                        metadata={
+                            "full": control.description or "",
+                            "help_uri": control.docs_url
+                            or f"https://baseline.openssf.org/versions/2025-10-10#{control_id}",
+                        },
+                    )
+                )
         return controls
 
     def get_rules_catalog(self) -> dict[str, Any]:

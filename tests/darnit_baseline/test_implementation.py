@@ -62,11 +62,23 @@ class TestOSPSBaselineImplementation:
 
     @pytest.mark.unit
     def test_control_ids_are_osps_format(self, impl):
-        """Test control IDs follow OSPS format."""
+        """Test control IDs follow OSPS format.
+
+        RFC-0001 Stage 1 (feature 025 T044) added STAGE1-REF-* controls as
+        acceptance-gate reference controls. They are TAGGED and coexist
+        with the OSPS-* set; the format check applies only to controls
+        that are not explicitly marked as stage-reference fixtures.
+        """
         controls = impl.get_all_controls()
         for control in controls:
+            # Skip stage-reference controls; they use STAGE1-REF-* naming.
+            tags = control.tags or {}
+            if "stage1-ref" in tags:
+                continue
             # Format: OSPS-XX-NN.NN
-            assert control.control_id.startswith("OSPS-")
+            assert control.control_id.startswith("OSPS-"), (
+                f"Non-OSPS control id {control.control_id!r} not marked with stage1-ref tag"
+            )
             parts = control.control_id.split("-")
             assert len(parts) >= 3  # OSPS, domain, number
 

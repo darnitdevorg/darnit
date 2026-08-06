@@ -157,7 +157,9 @@ class TestToolRegistryBuiltin:
 
         # Call the handler - it will fail because the framework doesn't exist,
         # but we can verify it received the framework name from the error message
-        result = asyncio.get_event_loop().run_until_complete(
-            handler(local_path="/nonexistent")
+        # Use new_event_loop so this composes with other tests that also
+        # spin loops (avoids the closed-loop propagation across test files).
+        result = asyncio.new_event_loop().run_until_complete(
+            handler(local_path="/nonexistent"),
         )
         assert "my-framework" in result or "Error" in result

@@ -243,8 +243,13 @@ class TestFlatListOrdering:
                 confidence=1.0,
             )
 
-        registry.register("h_first", "deterministic", first_handler)
-        registry.register("h_second", "manual", second_handler)
+        # RFC-0001 Stage 1 (feature 025): handlers default to
+        # authority="suggestive" if unspecified, which would downgrade PASS
+        # to WARN. These integration tests are about orchestrator ordering,
+        # not authority semantics, so we register with "dispositive" so the
+        # ordering assertion is not obscured by the authority downgrade.
+        registry.register("h_first", "deterministic", first_handler, default_authority="dispositive")
+        registry.register("h_second", "manual", second_handler, default_authority="dispositive")
 
         orchestrator = SieveOrchestrator()
         invocations = [
@@ -278,8 +283,8 @@ class TestFlatListOrdering:
                 confidence=0.8,
             )
 
-        registry.register("h_inconclusive", "deterministic", inconclusive_handler)
-        registry.register("h_pass", "pattern", pass_handler)
+        registry.register("h_inconclusive", "deterministic", inconclusive_handler, default_authority="dispositive")
+        registry.register("h_pass", "pattern", pass_handler, default_authority="dispositive")
 
         orchestrator = SieveOrchestrator()
         invocations = [
@@ -313,8 +318,8 @@ class TestFlatListOrdering:
                 message="Manual steps",
             )
 
-        registry.register("h_fail", "deterministic", fail_handler)
-        registry.register("h_manual", "manual", manual_handler)
+        registry.register("h_fail", "deterministic", fail_handler, default_authority="dispositive")
+        registry.register("h_manual", "manual", manual_handler, default_authority="asserted")
 
         orchestrator = SieveOrchestrator()
         invocations = [
@@ -395,8 +400,8 @@ class TestFlatListOrdering:
                 evidence={"checked_file": found},
             )
 
-        registry.register("h_file", "deterministic", file_handler)
-        registry.register("h_pattern", "pattern", pattern_handler)
+        registry.register("h_file", "deterministic", file_handler, default_authority="dispositive")
+        registry.register("h_pattern", "pattern", pattern_handler, default_authority="dispositive")
 
         orchestrator = SieveOrchestrator()
         invocations = [

@@ -251,6 +251,15 @@ class HandlerInvocation(BaseModel):
     # Consumed by orchestrator/executor before dispatch; NOT passed to the handler
     when: dict[str, Any] | None = None
 
+    # RFC-0001 Stage 1 (feature 025 T014). Optional per-step authority override.
+    # When None, the orchestrator uses the handler's registered default_authority.
+    # Values: "dispositive" | "suggestive" | "asserted". A step may TIGHTEN
+    # (e.g., mark a handler that defaults to dispositive as suggestive in a
+    # specific control's list) but MUST NOT LOOSEN (a handler defaulting to
+    # suggestive cannot be marked dispositive at the TOML level). Load-time
+    # validation in control_loader enforces the direction.
+    authority: str | None = None
+
     # All other fields pass through to the handler
     model_config = ConfigDict(extra="allow")
 

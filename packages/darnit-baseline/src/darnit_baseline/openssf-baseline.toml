@@ -4360,6 +4360,41 @@ overwrite = false
 set = { "security.threat_model.path" = "docs/threatmodel/SUMMARY.md" }
 
 # =============================================================================
+# RFC-0001 Stage 1 Reference Control (feature 025 T044)
+# =============================================================================
+# STAGE1-REF-SECURITY-01 exercises the full Check/Collect/Remediate flow
+# with all three authority levels: dispositive file_exists, suggestive
+# llm_extract, asserted manual confirmation. See
+# specs/025-rfc0001-stage1/research.md R5 for the design rationale.
+#
+# Kept as a distinct STAGE1-REF-* id (rather than adapting an existing
+# OSPS-* control) so the Stage 1 acceptance gate is decoupled from
+# baseline evolution and can be removed cleanly if Stage 2 replaces it.
+
+[controls."STAGE1-REF-SECURITY-01"]
+name = "SecurityPolicyReference"
+level = 1
+domain = "VM"
+description = "RFC-0001 Stage 1 reference control: SECURITY.md discovery + LLM-suggested contact + confirmation"
+tags = { level = 1, domain = "VM", "stage1-ref" = true }
+
+# Suggestive step FIRST so it can attach a candidate contact as evidence
+# even when the dispositive file_exists step ultimately concludes FAIL.
+# Under Stage 1's Check-phase rule, suggestive results never terminate;
+# execution continues to file_exists which makes the actual verdict.
+[[controls."STAGE1-REF-SECURITY-01".passes]]
+handler = "llm_extract"
+prompt = "Scan the repository's README and documentation for security-contact information. Propose a contact string suitable for a SECURITY.md."
+files = ["README.md", "README", "docs/**/*.md"]
+target_key = "security_contact"
+authority = "suggestive"
+
+[[controls."STAGE1-REF-SECURITY-01".passes]]
+handler = "file_exists"
+files = ["SECURITY.md", "docs/SECURITY.md", ".github/SECURITY.md"]
+authority = "dispositive"
+
+# =============================================================================
 # MCP Server Configuration
 # =============================================================================
 # This section defines the MCP tools that are exposed when running:

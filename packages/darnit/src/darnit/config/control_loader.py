@@ -260,6 +260,14 @@ def control_from_effective(
             HandlerInvocation(**p) if isinstance(p, dict) else p
             for p in effective.passes_config
         ]
+        # RFC-0001 Stage 1 (feature 025 T013 + T014): validate authority
+        # declarations and log auto-inference for TOML steps that omit
+        # `authority`. Load-time validation catches "loosening" (a step
+        # claiming a higher authority than its handler's default) so a
+        # broken control cannot ship.
+        _validate_and_log_authority(
+            control_id, metadata["handler_invocations"],
+        )
 
     return ControlSpec(
         control_id=control_id,
@@ -505,3 +513,68 @@ def register_controls_from_config(
         registry_func(control)
 
     return len(controls)
+
+
+# =============================================================================
+# RFC-0001 Stage 1 (feature 025 T013 + T014): authority validation
+# =============================================================================
+
+# Authority "strength" ordering for the loosening check. A step MAY declare
+# an authority weaker-or-equal to the handler's default; MUST NOT declare a
+# stronger one. Rationale: a control author can be MORE cautious than the
+# handler ("this control's `file_exists` step is only suggestive here") but
+# cannot claim MORE authority than the handler itself has ("this llm_eval
+# result is dispositive" is exactly the false-PASS lever Stage 1 removes).
+_AUTHORITY_STRENGTH: dict[str, int] = {
+    "suggestive": 1,
+    "dispositive": 2,
+    "asserted": 3,
+}
+
+
+def _validate_and_log_authority(control_id: str, invocations: list) -> None:
+    """Enforce authority rules on TOML step declarations at control load.
+
+    - Log at DEBUG when a step omits `authority` (auto-inferred from handler
+      default at run time).
+    - Raise ``AuthorityViolation`` when a step declares an authority
+      STRONGER than the handler's default (loosening safety is forbidden).
+    - Tightening (weaker or equal) is allowed and silently accepted.
+
+    Does NOT modify invocations; the orchestrator resolves effective
+    authority at dispatch time (see orchestrator._dispatch_handler_invocations).
+    """
+    from darnit.core.errors import AuthorityViolation
+    from darnit.sieve.handler_registry import get_sieve_handler_registry
+
+    registry = get_sieve_handler_registry()
+    for idx, inv in enumerate(invocations):
+        step_authority = getattr(inv, "authority", None)
+        handler_info = registry.get(inv.handler) if hasattr(inv, "handler") else None
+        if handler_info is None:
+            # Unknown handler; the orchestrator will warn and skip at dispatch
+            # time. Nothing to validate here.
+            continue
+        handler_default = handler_info.default_authority
+        if step_authority is None:
+            logger.debug(
+                "Control %s pass[%d] handler=%s: authority auto-inferred as %r "
+                "from handler default",
+                control_id, idx, inv.handler, handler_default,
+            )
+            continue
+        # Explicit authority: enforce no-loosening rule.
+        step_strength = _AUTHORITY_STRENGTH.get(step_authority, 0)
+        default_strength = _AUTHORITY_STRENGTH.get(handler_default, 0)
+        if step_strength > default_strength:
+            raise AuthorityViolation(
+                control_id=control_id,
+                step_id=f"pass[{idx}]:{inv.handler}",
+                message=(
+                    f"step declares authority={step_authority!r} but handler "
+                    f"{inv.handler!r} defaults to {handler_default!r}. TOML "
+                    f"steps may not LOOSEN (claim stronger authority than the "
+                    f"handler). Only tighten (mark a dispositive handler as "
+                    f"suggestive in a specific control's list) is allowed."
+                ),
+            )

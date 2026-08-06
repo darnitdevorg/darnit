@@ -42,16 +42,29 @@ logger = logging.getLogger(__name__)
 _FILE_DISCOVERY_PRUNE_DIRS = frozenset(
     {
         # VCS
-        ".git", ".hg", ".svn",
+        ".git",
+        ".hg",
+        ".svn",
         # Python
-        "__pycache__", ".venv", "venv", ".tox", ".mypy_cache",
-        ".pytest_cache", ".ruff_cache", "site-packages",
+        "__pycache__",
+        ".venv",
+        "venv",
+        ".tox",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        "site-packages",
         # JS/TS
         "node_modules",
         # Rust / Go / Java build outputs
-        "target", "build", "dist", "out",
+        "target",
+        "build",
+        "dist",
+        "out",
         # IDE / OS
-        ".idea", ".vscode", ".DS_Store",
+        ".idea",
+        ".vscode",
+        ".DS_Store",
     }
 )
 
@@ -69,7 +82,7 @@ def _walk_depth_limited(root: str, max_depth: int):
     if max_depth <= 0:
         return
     for dirpath, dirnames, _files in os.walk(root_abs):
-        depth = dirpath[len(root_abs):].count(os.sep)
+        depth = dirpath[len(root_abs) :].count(os.sep)
         # Prune in-place so os.walk skips them (matches os.walk's contract)
         dirnames[:] = [d for d in dirnames if d not in _FILE_DISCOVERY_PRUNE_DIRS]
         if depth >= max_depth:
@@ -330,7 +343,10 @@ def regex_handler(config: dict[str, Any], context: HandlerContext) -> HandlerRes
     pass_if_any = config.get("pass_if_any", True)
 
     return _regex_match_files(
-        file_paths, patterns, min_matches, pass_if_any,
+        file_paths,
+        patterns,
+        min_matches,
+        pass_if_any,
     )
 
 
@@ -351,7 +367,8 @@ def _regex_exclude_evidence(
     for pattern in exclude_globs:
         if "*" in pattern or "?" in pattern:
             matches = globmod.glob(
-                os.path.join(context.local_path, pattern), recursive=True,
+                os.path.join(context.local_path, pattern),
+                recursive=True,
             )
             found.extend(matches)
         elif max_depth > 0:
@@ -454,7 +471,8 @@ def _resolve_regex_files(
 
 
 def _regex_no_files_result(
-    config: dict[str, Any], context: HandlerContext,
+    config: dict[str, Any],
+    context: HandlerContext,
 ) -> HandlerResult:
     """Return the appropriate result when no files could be resolved."""
     file_path = config.get("file", "")
@@ -520,14 +538,16 @@ def _regex_match_files(
             match_count = len(matches)
             matched = match_count >= min_matches
 
-            all_results.append({
-                "file": fpath,
-                "pattern_name": pname,
-                "pattern": pregex,
-                "match_count": match_count,
-                "matched": matched,
-                "matches_preview": matches[:3],
-            })
+            all_results.append(
+                {
+                    "file": fpath,
+                    "pattern_name": pname,
+                    "pattern": pregex,
+                    "match_count": match_count,
+                    "matched": matched,
+                    "matches_preview": matches[:3],
+                }
+            )
 
             if matched:
                 any_match = True
@@ -619,6 +639,80 @@ def llm_eval_handler(config: dict[str, Any], context: HandlerContext) -> Handler
                 "gathered_evidence": context.gathered_evidence,
                 "file_contents": file_contents,
             },
+        },
+    )
+
+
+def llm_extract_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResult:
+    """LLM-backed EXTRACTION step (feature 025 T045).
+
+    Unlike ``llm_eval`` which asks the LLM to make a pass/fail judgment,
+    ``llm_extract`` asks the LLM to extract a VALUE from repository content
+    (e.g., "propose a security contact by scanning README and docs").
+
+    Registration default_authority is ``suggestive`` (T009 migration table):
+    the extracted value is a proposal for human confirmation, never authority
+    for concluding a control. This matches the RFC's Constitution Principle IV
+    (never conclude a user-judgment value from code alone).
+
+    Config fields:
+        prompt: str - Prompt describing what to extract
+        files: list[str] - Glob patterns for content to include
+        target_key: str - Optional context key the extraction targets (for
+            downstream Collect confirmation matching)
+
+    Returns INCONCLUSIVE with a structured `extraction_request` payload in
+    ``details``; the actual LLM call is dispatched via the LLMStep protocol
+    at a later phase (Slice D T047 + downstream drivers). Attaches the
+    prompt + gathered content to evidence for provenance.
+    """
+    import glob as globmod
+
+    prompt = config.get("prompt", "")
+    if not prompt:
+        return HandlerResult(
+            status=HandlerResultStatus.INCONCLUSIVE,
+            message="No prompt specified for llm_extract",
+        )
+
+    # Resolve files to include (bounded).
+    globs = config.get("files", [])
+    file_contents: dict[str, str] = {}
+    for pattern in globs[:5]:  # cap breadth
+        matches = globmod.glob(
+            os.path.join(context.local_path, pattern),
+            recursive=True,
+        )
+        for m in matches[:5]:  # cap depth per glob
+            try:
+                with open(m, encoding="utf-8", errors="ignore") as fh:
+                    rel = os.path.relpath(m, context.local_path)
+                    file_contents[rel] = fh.read()[:10000]
+            except OSError:
+                continue
+
+    # Feature 026: also emit `consultation_request` so the sieve's
+    # PENDING_LLM branch triggers when a driver runs with stop_on_llm=True.
+    # This makes llm_extract a first-class participant in the harness's
+    # LLM dispatch loop (research.md R1) -- same shape llm_eval uses.
+    # `extraction_request` is kept for backward-compat with existing tests.
+    consultation_payload = {
+        "prompt": prompt,
+        "control_id": context.control_id,
+        "target_key": config.get("target_key"),
+        "file_contents": file_contents,
+        "gathered_evidence": context.gathered_evidence,
+    }
+    return HandlerResult(
+        status=HandlerResultStatus.INCONCLUSIVE,
+        message=f"LLM extraction requested for control {context.control_id}",
+        evidence={
+            "llm_extract_prompt": prompt,
+            "llm_extract_files_gathered": sorted(file_contents.keys()),
+        },
+        details={
+            "extraction_request": consultation_payload,
+            "consultation_request": consultation_payload,
         },
     )
 
@@ -853,31 +947,101 @@ def yaml_inject_handler(config: dict[str, Any], context: HandlerContext) -> Hand
 
 
 def register_builtin_handlers() -> None:
-    """Register all built-in sieve handlers with the global registry."""
+    """Register all built-in sieve handlers with the global registry.
+
+    Default authority per handler (RFC-0001 Stage 1, feature 025 T009): see
+    ``specs/025-rfc0001-stage1/data-model.md`` section 2. `dispositive` for
+    handlers that observe ground truth; `suggestive` for LLM-backed handlers;
+    `asserted` for manual/confirmation handlers.
+    """
     registry = get_sieve_handler_registry()
 
     # Verification handlers
-    registry.register("file_exists", phase="deterministic", handler_fn=file_exists_handler,
-                       description="Check file existence from a list of paths")
-    registry.register("exec", phase="deterministic", handler_fn=exec_handler,
-                       description="Run external command, evaluate exit code / CEL expr")
-    registry.register("regex", phase="pattern", handler_fn=regex_handler,
-                       description="Match regex patterns in file content")
-    registry.register("pattern", phase="pattern", handler_fn=regex_handler,
-                       description="Alias for regex handler (match regex patterns in file content)")
-    registry.register("llm_eval", phase="llm", handler_fn=llm_eval_handler,
-                       description="AI evaluation with confidence threshold")
-    registry.register("manual_steps", phase="manual", handler_fn=manual_steps_handler,
-                       description="Human verification checklist")
-    registry.register("manual", phase="manual", handler_fn=manual_steps_handler,
-                       description="Alias for manual_steps handler (human verification checklist)")
+    registry.register(
+        "file_exists",
+        phase="deterministic",
+        handler_fn=file_exists_handler,
+        description="Check file existence from a list of paths",
+        default_authority="dispositive",
+    )
+    registry.register(
+        "exec",
+        phase="deterministic",
+        handler_fn=exec_handler,
+        description="Run external command, evaluate exit code / CEL expr",
+        default_authority="dispositive",
+    )
+    registry.register(
+        "regex",
+        phase="pattern",
+        handler_fn=regex_handler,
+        description="Match regex patterns in file content",
+        default_authority="dispositive",
+    )
+    registry.register(
+        "pattern",
+        phase="pattern",
+        handler_fn=regex_handler,
+        description="Alias for regex handler (match regex patterns in file content)",
+        default_authority="dispositive",
+    )
+    registry.register(
+        "llm_eval",
+        phase="llm",
+        handler_fn=llm_eval_handler,
+        description="AI evaluation with confidence threshold",
+        default_authority="suggestive",
+    )
+    # RFC-0001 Stage 1 (feature 025 T045): llm_extract for value extraction.
+    # Same suggestive-only authority as llm_eval; never concludes a control.
+    registry.register(
+        "llm_extract",
+        phase="llm",
+        handler_fn=llm_extract_handler,
+        description="LLM-backed value extraction (suggestive; never concludes a control)",
+        default_authority="suggestive",
+    )
+    registry.register(
+        "manual_steps",
+        phase="manual",
+        handler_fn=manual_steps_handler,
+        description="Human verification checklist",
+        default_authority="asserted",
+    )
+    registry.register(
+        "manual",
+        phase="manual",
+        handler_fn=manual_steps_handler,
+        description="Alias for manual_steps handler (human verification checklist)",
+        default_authority="asserted",
+    )
 
     # Remediation handlers
-    registry.register("file_create", phase="deterministic", handler_fn=file_create_handler,
-                       description="Create a file from a template or content")
-    registry.register("api_call", phase="deterministic", handler_fn=api_call_handler,
-                       description="Make an HTTP API call")
-    registry.register("project_update", phase="deterministic", handler_fn=project_update_handler,
-                       description="Update .project/project.yaml values")
-    registry.register("yaml_inject", phase="deterministic", handler_fn=yaml_inject_handler,
-                       description="Inject a top-level key into YAML files that lack it")
+    registry.register(
+        "file_create",
+        phase="deterministic",
+        handler_fn=file_create_handler,
+        description="Create a file from a template or content",
+        default_authority="dispositive",
+    )
+    registry.register(
+        "api_call",
+        phase="deterministic",
+        handler_fn=api_call_handler,
+        description="Make an HTTP API call",
+        default_authority="dispositive",
+    )
+    registry.register(
+        "project_update",
+        phase="deterministic",
+        handler_fn=project_update_handler,
+        description="Update .project/project.yaml values",
+        default_authority="asserted",  # writes user-confirmed values
+    )
+    registry.register(
+        "yaml_inject",
+        phase="deterministic",
+        handler_fn=yaml_inject_handler,
+        description="Inject a top-level key into YAML files that lack it",
+        default_authority="dispositive",
+    )

@@ -34,6 +34,11 @@ dependencies = [
     "cel-python>=0.5.0",  # CEL expression evaluation for pass logic
     "tomli>=2.0.0;python_version<'3.11'",
     "tomllib-stubs>=0.1.0;python_version<'3.11'",
+    # RFC-0001 Stage 1 (feature 025): default LLMStep implementation. Required
+    # runtime dependency; LLM-assisted checks are core product functionality
+    # and there is no shipping "no-LLM" install tier. Swappable at code time
+    # via the LLMStep Protocol (single-file replacement), not via install flag.
+    "pydantic-ai-slim[anthropic]>=0.0.14",
 ]
 
 [project.urls]
