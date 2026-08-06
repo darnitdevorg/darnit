@@ -68,7 +68,7 @@ class PydanticAILLMStep:
     (one file); this class is the shipping default, not a mandatory type.
     """
 
-    def __init__(self, model: str = "anthropic:claude-sonnet-4-6") -> None:
+    def __init__(self, model: str = "anthropic:claude-sonnet-5") -> None:
         self.model = model
         self._agent: Any = None  # lazily constructed on first evaluate()
 

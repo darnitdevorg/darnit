@@ -356,7 +356,7 @@ else:
 
 ## Technology Stack
 - **Language**: Python 3.11+ (targets 3.11/3.12)
-- **Core deps**: FastMCP, Pydantic >=2.0, PyYAML, cel-python
+- **Core deps**: FastMCP (via `mcp>=1.23,<2`), Pydantic >=2.0, PyYAML, cel-python, pydantic-ai-slim[anthropic] (required runtime dep as of RFC-0001 Stage 1 / feature 025)
 - **Threat model**: tree-sitter, tree-sitter-language-pack (Python/JS/Go/YAML grammars)
 - **Attestation**: sigstore, in-toto (optional)
 - **Config**: TOML framework configs, `.project/project.yaml` (YAML), `.baseline.toml` (user overrides)
@@ -369,11 +369,14 @@ else:
 - Filesystem only. Composition is resolved in-memory at framework-config load time; no new persistent state. (013-plugin-composition)
 
 ## Recent Changes
+- 026-darnit-harness: adds `darnit harness` subcommand -- end-to-end audit driver with in-band LLM dispatch (fleet-operator + CI-integrated persona). Consumes `ANTHROPIC_API_KEY` from env; dispatches PENDING_LLM results via `PydanticAILLMStep`. Non-interactive by default; batch answers via pluggable `AnswerSource` Protocol with auto-discovery of `.project/project.yaml` + `--answers` override. Markdown + JSON reports. Four documented exit codes (0/1/2/3) plus grep-able stderr summary. New `darnit.harness` subpackage (`driver`, `answer_sources`, `report`, `exit_codes`).
+- 025-rfc0001-stage1: RFC-0001 Stage 1. Adds `authority` (`dispositive`|`suggestive`|`asserted`) to every step + result; per-phase Check execution rule ensures only dispositive/asserted results conclude a control (LLM output alone cannot manufacture a PASS). New `darnit.core.action_plan` module exposes `next_action`/`submit_result` as a public typed protocol; `agent.graph.route()` becomes a thin adapter. MCP surface adds `run_next_action`/`submit_action_result` tools (client-owned state). Baseline attestation predicate gains a per-result `authority` field additively within v1. `pydantic-ai-slim[anthropic]` becomes a required runtime dep.
+- 024-cmd-run-e2e-tests: E2E baseline for `darnit run` pinning header/footer/count/exit-code contract; used as the mechanical regression guarantee for Stage 1's `cmd_run` code path.
 - 021-fix-config-path: framework TOMLs (openssf-baseline.toml, gittuf.toml, reproducibility.toml) moved into `src/<module>/`; `get_framework_config_path()` uses `importlib.resources`. Wheel installs now find the TOML; editable installs unchanged.
 - 012-packaging-distribution: Added Python 3.11/3.12 (workspace targets) plus bash for release scripts and GitHub Actions YAML + `shiv` (binary builder), `cosign` (image + binary signing), `syft` (SBOM generation), `docker buildx` (multi-arch images), `gh` CLI (release creation), Sigstore-action (PyPI wheel signing via `pypa/gh-action-pypi-publish`). No new runtime dependencies in any darnit Python package.
 
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
-[`specs/024-cmd-run-e2e-tests/plan.md`](specs/024-cmd-run-e2e-tests/plan.md)
+[`specs/026-darnit-harness/plan.md`](specs/026-darnit-harness/plan.md)
 <!-- SPECKIT END -->

@@ -44,7 +44,7 @@ class TestPydanticAILLMStep:
         # Remove any inherited API key; construction must still succeed.
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         step = PydanticAILLMStep()
-        assert step.model == "anthropic:claude-sonnet-4-6"
+        assert step.model == "anthropic:claude-sonnet-5"
 
     def test_evaluate_raises_clear_error_without_api_key(
         self, monkeypatch: pytest.MonkeyPatch,
