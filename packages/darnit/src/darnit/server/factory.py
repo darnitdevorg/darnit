@@ -153,6 +153,15 @@ def create_server(config_path: str | Path) -> FastMCP:
             logger.warning(f"Failed to load tool '{name}': {e}")
             continue
 
+    # RFC-0001 Stage 1 (feature 025 T036): register framework-independent
+    # harness-loop tools (run_next_action / submit_action_result). These
+    # live in darnit-core and drive the ActionPlan protocol; they are
+    # available regardless of which framework's TOML the server was built
+    # from.
+    from darnit.server.tools.harness_loop import register_harness_loop_tools
+
+    register_harness_loop_tools(server)
+
     logger.info(
         f"Created MCP server '{server_name}' with {registered_count} tools"
     )
@@ -195,5 +204,10 @@ def create_server_from_dict(config: dict) -> FastMCP:
             server.add_tool(handler, name=name, description=spec.description)
         except (ImportError, AttributeError, ValueError) as e:
             logger.warning(f"Failed to load tool '{name}': {e}")
+
+    # RFC-0001 Stage 1 (feature 025 T036): also register harness-loop tools.
+    from darnit.server.tools.harness_loop import register_harness_loop_tools
+
+    register_harness_loop_tools(server)
 
     return server

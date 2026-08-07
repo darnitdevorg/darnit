@@ -285,28 +285,30 @@ def remediate(state: AuditState, dry_run: bool = False) -> AuditState:
 def route(state: AuditState) -> str:
     """Decide the next step based on the current audit state.
 
+    RFC-0001 Stage 1 (feature 025 T026): now a thin adapter around
+    ``darnit.core.action_plan.next_action``. Returns the historical
+    four-string values for backward compatibility with all existing
+    callers; the ActionPlan protocol is the canonical decision source
+    going forward.
+
     Returns:
-        "collect_context" — WARN controls exist and there are unanswered
+        "collect_context" -- WARN controls exist and there are unanswered
             feedback questions.
-        "remediate"       — FAIL controls exist (and context is complete).
-        "end"             — No actionable findings remain.
+        "remediate"       -- FAIL controls exist (and context is complete).
+        "audit"           -- audit_results empty; needs a fresh audit run.
+        "end"             -- No actionable findings remain.
     """
-    if state.error:
+    from darnit.core.action_plan import HarnessState, next_action
+
+    harness_state = HarnessState.from_audit_state(state)
+    plan = next_action(harness_state)
+    if plan is None:
         return "end"
-
-    if not state.audit_results:
-        # audit_results cleared by collect_context — needs re-audit
-        return "audit"
-
-    has_warn = bool(state.warn_control_ids())
-    has_fail = bool(state.failing_control_ids())
-
-    if has_warn and state.has_unanswered_questions():
-        return "collect_context"
-
-    if has_fail:
-        return "remediate"
-
+    integration = plan.step.integration
+    if integration in ("audit", "collect_context", "remediate"):
+        return integration
+    # Defensive: any future integration name maps to "end" so unknown values
+    # cannot cause runaway loops in legacy callers.
     return "end"
 
 
