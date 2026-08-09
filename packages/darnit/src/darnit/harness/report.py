@@ -1,13 +1,25 @@
 """Harness report models: Markdown + JSON output.
 
 Feature 026 T016-T017. Contract report-format.md.
+
+Feature 027 additions:
+- `PendingFeedbackEntry.resolution_trail`: which resolvers were offered a
+  question that ultimately remained pending.
+- `AnsweredFeedbackEntry` (new): captures each answered feedback question so
+  provenance is recoverable from the report alone (SC-006).
+- `HarnessReport.resolvers_used`: names of QuestionResolvers configured for
+  the run.
+- `HarnessReport.answered_feedback`: list of answered feedback questions,
+  each carrying `origin`, `authority`, and `resolution_trail`.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from darnit.harness.question_resolvers import ResolutionTrailEntry
 
 
 class HarnessSummary(BaseModel):
@@ -25,11 +37,39 @@ class HarnessSummary(BaseModel):
 
 
 class PendingFeedbackEntry(BaseModel):
-    """One unanswered feedback question captured in the report."""
+    """One unanswered feedback question captured in the report.
+
+    Feature 027 addition: `resolution_trail` records which resolvers were
+    offered this question before it was left pending (all skipped/errored).
+    Empty when no resolvers were configured or the AnswerSource chain didn't
+    forward this question.
+    """
 
     control_id: str
     context_key: str
     question: str
+    resolution_trail: list[ResolutionTrailEntry] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class AnsweredFeedbackEntry(BaseModel):
+    """One ANSWERED feedback question captured in the report.
+
+    Feature 027 addition. Distinct model from PendingFeedbackEntry because
+    the schemas differ: answered entries carry `answer`, `origin`, and
+    `authority` fields that are meaningless for still-pending questions.
+    An auditor reading the report can iterate `answered_feedback` to see
+    how every user-judgment value was obtained (SC-006).
+    """
+
+    control_id: str
+    context_key: str
+    question: str
+    answer: str
+    origin: str
+    authority: Literal["asserted"] = "asserted"
+    resolution_trail: list[ResolutionTrailEntry] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -54,6 +94,10 @@ class HarnessReport(BaseModel):
     pending_feedback: list[PendingFeedbackEntry]
     answer_sources_used: list[str]
     llm_calls: dict[str, Any]
+    # Feature 027 additions. Both default to empty so feature-026-era
+    # constructions still validate.
+    resolvers_used: list[str] = Field(default_factory=list)
+    answered_feedback: list[AnsweredFeedbackEntry] = Field(default_factory=list)
     # exit_class NOT emitted in JSON body per RF-8; kept as an attribute
     # for the driver but excluded from serialization.
     exit_class: int = Field(default=0, exclude=True)
@@ -137,6 +181,64 @@ class HarnessReport(BaseModel):
             lines.append("None.")
         lines.append("")
 
+        # Resolvers Used (feature 027; only if non-empty)
+        if self.resolvers_used:
+            lines.append("## Resolvers Used")
+            lines.append("")
+            for resolver_name in self.resolvers_used:
+                lines.append(f"- {resolver_name}")
+            lines.append("")
+
+        # Answered Feedback (feature 027; only if non-empty)
+        if self.answered_feedback:
+            lines.append("## Answered Feedback")
+            lines.append("")
+            for entry in self.answered_feedback:
+                lines.append(
+                    f"- **{entry.control_id}** -- {entry.context_key}",
+                )
+                lines.append(f"  - Question: {entry.question}")
+                lines.append(
+                    f"  - Answered: `{entry.answer}` "
+                    f"(origin: {entry.origin}, authority: {entry.authority})",
+                )
+                if entry.resolution_trail:
+                    lines.append("  - Resolution trail:")
+                    for trail_entry in entry.resolution_trail:
+                        detail = (
+                            f" -- {trail_entry.error_summary}"
+                            if trail_entry.error_summary
+                            else ""
+                        )
+                        lines.append(
+                            f"    - `{trail_entry.resolver_name}`: "
+                            f"{trail_entry.outcome}{detail}",
+                        )
+            lines.append("")
+
+        # Pending Feedback (feature 027 -- render trails if present)
+        if self.pending_feedback:
+            lines.append("## Pending Feedback")
+            lines.append("")
+            for pending in self.pending_feedback:
+                lines.append(
+                    f"- **{pending.control_id}** -- {pending.context_key}",
+                )
+                lines.append(f"  - Question: {pending.question}")
+                if pending.resolution_trail:
+                    lines.append("  - Resolution trail:")
+                    for trail_entry in pending.resolution_trail:
+                        detail = (
+                            f" -- {trail_entry.error_summary}"
+                            if trail_entry.error_summary
+                            else ""
+                        )
+                        lines.append(
+                            f"    - `{trail_entry.resolver_name}`: "
+                            f"{trail_entry.outcome}{detail}",
+                        )
+            lines.append("")
+
         # LLM Calls (RF-6)
         lines.append("## LLM Calls")
         lines.append("")
@@ -165,4 +267,9 @@ class HarnessReport(BaseModel):
         return f"- {control_id} {status} ({authority}) -- {message}"
 
 
-__all__ = ["HarnessSummary", "PendingFeedbackEntry", "HarnessReport"]
+__all__ = [
+    "HarnessSummary",
+    "PendingFeedbackEntry",
+    "AnsweredFeedbackEntry",
+    "HarnessReport",
+]

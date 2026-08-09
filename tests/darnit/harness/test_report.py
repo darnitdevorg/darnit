@@ -164,3 +164,138 @@ class TestMarkdownReport:
         monkeypatch.setenv("ANTHROPIC_API_KEY", secret)
         md = sample_report.to_markdown()
         assert secret not in md
+
+
+# ---------------------------------------------------------------------------
+# Feature 027: resolvers_used + answered_feedback + resolution_trail (T016)
+# ---------------------------------------------------------------------------
+
+
+class TestFeature027ReportAdditions:
+    def _minimal_report(self, **overrides) -> HarnessReport:
+        base = {
+            "target": {"local_path": "/tmp"},
+            "summary": HarnessSummary(
+                total=0, **{"pass": 0, "fail": 0, "warn": 0, "n_a": 0, "error": 0},
+            ),
+            "controls": [],
+            "pending_feedback": [],
+            "answer_sources_used": [],
+            "llm_calls": {"total": 0, "provider": "mock"},
+        }
+        base.update(overrides)
+        return HarnessReport(**base)
+
+    def test_json_emits_resolvers_used_and_answered_feedback_when_empty(
+        self,
+    ) -> None:
+        """Both new fields serialize as empty arrays when unused (predictable shape)."""
+        report = self._minimal_report()
+        payload = json.loads(report.to_json())
+        assert payload["resolvers_used"] == []
+        assert payload["answered_feedback"] == []
+
+    def test_json_roundtrip_with_three_outcome_trail(self) -> None:
+        """Serialize an entry with all three trail outcomes; reparse and
+        assert the shape survives."""
+        from darnit.harness.question_resolvers import ResolutionTrailEntry
+        from darnit.harness.report import AnsweredFeedbackEntry
+
+        entry = AnsweredFeedbackEntry(
+            control_id="C",
+            context_key="k",
+            question="q",
+            answer="v",
+            origin="slack",
+            resolution_trail=[
+                ResolutionTrailEntry(
+                    resolver_name="gh", outcome="errored", error_summary="boom",
+                ),
+                ResolutionTrailEntry(resolver_name="term", outcome="skipped"),
+                ResolutionTrailEntry(resolver_name="slack", outcome="answered"),
+            ],
+        )
+        report = self._minimal_report(
+            resolvers_used=["gh", "term", "slack"],
+            answered_feedback=[entry],
+        )
+        js = report.to_json()
+
+        # Roundtrip via Pydantic
+        reparsed = HarnessReport.model_validate_json(js)
+        assert reparsed.resolvers_used == ["gh", "term", "slack"]
+        assert len(reparsed.answered_feedback) == 1
+        assert reparsed.answered_feedback[0].authority == "asserted"
+        assert [e.outcome for e in reparsed.answered_feedback[0].resolution_trail] == [
+            "errored",
+            "skipped",
+            "answered",
+        ]
+
+    def test_markdown_resolvers_used_section_only_when_non_empty(self) -> None:
+        empty = self._minimal_report()
+        assert "## Resolvers Used" not in empty.to_markdown()
+
+        with_resolvers = self._minimal_report(
+            resolvers_used=["interactive_terminal"],
+        )
+        md = with_resolvers.to_markdown()
+        assert "## Resolvers Used" in md
+        assert "- interactive_terminal" in md
+
+    def test_markdown_answered_feedback_section_with_trail(self) -> None:
+        from darnit.harness.question_resolvers import ResolutionTrailEntry
+        from darnit.harness.report import AnsweredFeedbackEntry
+
+        report = self._minimal_report(
+            resolvers_used=["interactive_terminal"],
+            answered_feedback=[
+                AnsweredFeedbackEntry(
+                    control_id="OSPS-GV-01.01",
+                    context_key="security_contact",
+                    question="Who is the security contact?",
+                    answer="security@example.com",
+                    origin="interactive_terminal",
+                    resolution_trail=[
+                        ResolutionTrailEntry(
+                            resolver_name="interactive_terminal",
+                            outcome="answered",
+                        ),
+                    ],
+                ),
+            ],
+        )
+        md = report.to_markdown()
+        assert "## Answered Feedback" in md
+        assert "OSPS-GV-01.01" in md
+        assert "security@example.com" in md
+        assert "origin: interactive_terminal" in md
+        assert "authority: asserted" in md
+        assert "Resolution trail:" in md
+
+    def test_markdown_pending_feedback_shows_trail(self) -> None:
+        from darnit.harness.question_resolvers import ResolutionTrailEntry
+        from darnit.harness.report import PendingFeedbackEntry
+
+        report = self._minimal_report(
+            resolvers_used=["r1"],
+            pending_feedback=[
+                PendingFeedbackEntry(
+                    control_id="OSPS-GV-01.01",
+                    context_key="security_contact",
+                    question="Who is the security contact?",
+                    resolution_trail=[
+                        ResolutionTrailEntry(
+                            resolver_name="r1",
+                            outcome="errored",
+                            error_summary="unavailable",
+                        ),
+                    ],
+                ),
+            ],
+        )
+        md = report.to_markdown()
+        assert "## Pending Feedback" in md
+        assert "OSPS-GV-01.01" in md
+        assert "Resolution trail:" in md
+        assert "errored -- unavailable" in md

@@ -21,6 +21,7 @@ import pytest
 from darnit.core.llm_step import LLMJudgment, MockLLMStep
 from darnit.harness.answer_sources import AnswerResolver
 from darnit.harness.driver import HarnessRun
+from darnit.harness.question_resolvers import Answer, QuestionResolver
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -32,6 +33,25 @@ def _ensure_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     Tests that explicitly need the missing-key case monkeypatch.delenv().
     """
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")
+
+
+@pytest.fixture(autouse=True)
+def _stub_framework_pending(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default: stub `HarnessRun._enumerate_framework_pending` to `[]`.
+
+    Feature 027 QuestionResolver tests (and other harness tests) assemble
+    synthesized fake results and count how many end up answered/pending.
+    Once PR #365 wired the framework's own `get_pending_context` into
+    `_collect_unanswered`, running against a real .baseline.toml fixture
+    starts emitting real per-key questions -- polluting those counts.
+    Tests that want the enumerator active un-stub via `monkeypatch.undo()`
+    or set `run._enumerate_framework_pending = <real fn>`.
+    """
+    monkeypatch.setattr(
+        HarnessRun,
+        "_enumerate_framework_pending",
+        lambda self: [],
+    )
 
 
 @pytest.fixture
@@ -118,5 +138,64 @@ def harness_run_factory(
             per_call_timeout_s=10,
             total_run_timeout_s=60,
         )
+
+    return _factory
+
+
+# ---------------------------------------------------------------------------
+# Feature 027: QuestionResolver fixtures
+# ---------------------------------------------------------------------------
+
+
+class _MockAnsweringResolver:
+    """Returns a fixed Answer to every question."""
+
+    def __init__(self, name: str = "mock_answering", value: str = "mock-answer") -> None:
+        self.name = name
+        self._value = value
+
+    async def resolve(self, question: object) -> Answer | None:
+        return Answer(value=self._value, origin=self.name)
+
+
+class _MockSkippingResolver:
+    """Returns None to every question."""
+
+    def __init__(self, name: str = "mock_skipping") -> None:
+        self.name = name
+
+    async def resolve(self, question: object) -> Answer | None:
+        return None
+
+
+class _MockErroringResolver:
+    """Raises RuntimeError on every resolve()."""
+
+    def __init__(
+        self,
+        name: str = "mock_erroring",
+        exception_message: str = "mock error",
+    ) -> None:
+        self.name = name
+        self._msg = exception_message
+
+    async def resolve(self, question: object) -> Answer | None:
+        raise RuntimeError(self._msg)
+
+
+@pytest.fixture
+def mock_answering_resolver() -> QuestionResolver:
+    return _MockAnsweringResolver()
+
+
+@pytest.fixture
+def mock_skipping_resolver() -> QuestionResolver:
+    return _MockSkippingResolver()
+
+
+@pytest.fixture
+def mock_erroring_resolver() -> Callable[..., QuestionResolver]:
+    def _factory(exception_message: str = "mock error") -> QuestionResolver:
+        return _MockErroringResolver(exception_message=exception_message)
 
     return _factory

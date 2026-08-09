@@ -369,6 +369,7 @@ else:
 - Filesystem only. Composition is resolved in-memory at framework-config load time; no new persistent state. (013-plugin-composition)
 
 ## Recent Changes
+- 027-interactive-resolvers: adds `--interactive` flag to `darnit harness` and a new `QuestionResolver` Protocol (async, `@runtime_checkable`) that sits downstream of feature 026's `AnswerSource` chain. `InteractiveTerminalResolver` reference implementation prompts on `/dev/tty` (isolated from stdout report / stderr progress streams). Third-party resolvers register via Python entry points under group `darnit.question_resolvers` (mirrors `darnit.frameworks` discovery). Every `Answer` carries `authority: "asserted"` enforced at the model layer via `Literal["asserted"]` with a fixed default. Per-question `resolution_trail` in the report captures which resolvers were offered a question and how each responded (`answered`/`skipped`/`errored`). Fail-fast (<2s) when stdin is not a TTY OR /dev/tty is not openable under `--interactive`. Feature 026's "no re-audit after collect" MVP policy preserved.
 - 026-darnit-harness: adds `darnit harness` subcommand -- end-to-end audit driver with in-band LLM dispatch (fleet-operator + CI-integrated persona). Consumes `ANTHROPIC_API_KEY` from env; dispatches PENDING_LLM results via `PydanticAILLMStep`. Non-interactive by default; batch answers via pluggable `AnswerSource` Protocol with auto-discovery of `.project/project.yaml` + `--answers` override. Markdown + JSON reports. Four documented exit codes (0/1/2/3) plus grep-able stderr summary. New `darnit.harness` subpackage (`driver`, `answer_sources`, `report`, `exit_codes`).
 - 025-rfc0001-stage1: RFC-0001 Stage 1. Adds `authority` (`dispositive`|`suggestive`|`asserted`) to every step + result; per-phase Check execution rule ensures only dispositive/asserted results conclude a control (LLM output alone cannot manufacture a PASS). New `darnit.core.action_plan` module exposes `next_action`/`submit_result` as a public typed protocol; `agent.graph.route()` becomes a thin adapter. MCP surface adds `run_next_action`/`submit_action_result` tools (client-owned state). Baseline attestation predicate gains a per-result `authority` field additively within v1. `pydantic-ai-slim[anthropic]` becomes a required runtime dep.
 - 024-cmd-run-e2e-tests: E2E baseline for `darnit run` pinning header/footer/count/exit-code contract; used as the mechanical regression guarantee for Stage 1's `cmd_run` code path.
@@ -378,5 +379,5 @@ else:
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
-[`specs/026-darnit-harness/plan.md`](specs/026-darnit-harness/plan.md)
+[`specs/027-interactive-resolvers/plan.md`](specs/027-interactive-resolvers/plan.md)
 <!-- SPECKIT END -->

@@ -308,3 +308,84 @@ class TestApiKeyRedaction:
             assert secret not in r.getMessage(), f"API key leaked into log record: {r.getMessage()!r}"
         # Report body also key-clean.
         assert secret not in stdout1
+
+
+# ---------------------------------------------------------------------------
+# Feature 027: --interactive flag (T015)
+# ---------------------------------------------------------------------------
+
+
+class TestInteractiveFlag:
+    """Cover SC-005 (fail-fast) and CLI-visible behavior of --interactive."""
+
+    def test_interactive_with_non_tty_stdin_fails_fast(
+        self,
+        minimal_llm_repo_tree: Path,
+        mock_llm_step: MockLLMStep,
+        capsys: pytest.CaptureFixture[str],
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """SC-005: piped stdin under --interactive -> exit 2 in <2s."""
+        # Ensure isatty returns False (default in pytest, but be explicit).
+        import sys
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+
+        start = time.monotonic()
+        exit_code, _stdout, _stderr, records = _invoke_cli(
+            [str(minimal_llm_repo_tree), "--interactive", "--level", "1"],
+            capsys,
+            caplog,
+            mock_llm=mock_llm_step,
+        )
+        elapsed = time.monotonic() - start
+
+        assert exit_code == int(HarnessExitCode.SETUP_ERROR)
+        assert elapsed < 2.0, f"fail-fast bound exceeded: {elapsed:.3f}s"
+
+        summary_msgs = [r.getMessage() for r in records if "setup_error" in r.getMessage()]
+        assert len(summary_msgs) >= 1
+        assert any("interactive channel unavailable" in m for m in summary_msgs)
+        assert any("stdin is not a TTY" in m for m in summary_msgs)
+
+        # SC-005 also asserts: ZERO progress lines before the setup_error.
+        progress_pattern = re.compile(r"\[\d+/\d+\]")
+        progress_lines = [
+            r.getMessage() for r in records
+            if progress_pattern.search(r.getMessage())
+        ]
+        assert progress_lines == []
+
+    def test_interactive_with_devtty_unavailable_fails_fast(
+        self,
+        minimal_llm_repo_tree: Path,
+        mock_llm_step: MockLLMStep,
+        capsys: pytest.CaptureFixture[str],
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """SC-005 variant: stdin is a TTY but /dev/tty is not openable."""
+        import builtins
+        import sys
+
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+        real_open = builtins.open
+
+        def _fail_open(path: object, *args: object, **kwargs: object) -> object:
+            if path == "/dev/tty":
+                raise OSError("no tty in test env")
+            return real_open(path, *args, **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(builtins, "open", _fail_open)
+
+        exit_code, _stdout, _stderr, records = _invoke_cli(
+            [str(minimal_llm_repo_tree), "--interactive", "--level", "1"],
+            capsys,
+            caplog,
+            mock_llm=mock_llm_step,
+        )
+        assert exit_code == int(HarnessExitCode.SETUP_ERROR)
+
+        summary_msgs = [r.getMessage() for r in records if "setup_error" in r.getMessage()]
+        assert len(summary_msgs) >= 1
+        assert any("/dev/tty not openable" in m for m in summary_msgs)

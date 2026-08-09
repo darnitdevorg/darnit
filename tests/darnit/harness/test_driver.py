@@ -231,9 +231,13 @@ class TestNoReauditAfterCollect:
             },
         ]
 
-        updated, pending, ctx_values = run._collect_unanswered(fake_results)
+        # Feature 027: _collect_unanswered is now async and returns a 4-tuple
+        # (results, pending_feedback, answered_feedback, context_values).
+        updated, pending, answered, ctx_values = _run(
+            run._collect_unanswered(fake_results),
+        )
 
-        # (a) status unchanged
+        # (a) status unchanged (feature 026 invariant preserved)
         assert updated[0]["status"] == "FAIL"
         # (b) answer captured on the question + in context_values
         assert updated[0]["feedback_questions"][0]["answered"] is True
@@ -245,6 +249,368 @@ class TestNoReauditAfterCollect:
         # generally NOT empty on a real fixture -- assert instead that the
         # question we answered isn't in it.
         assert "security_contact" not in {e.context_key for e in pending}
+        # (d) feature 027: answer captured in answered_feedback with origin
+        answered_for_security_contact = [
+            a for a in answered if a.context_key == "security_contact"
+        ]
+        assert len(answered_for_security_contact) == 1
+        entry = answered_for_security_contact[0]
+        assert entry.control_id == "STAGE1-REF-SECURITY-01"
+        assert entry.answer == "sec@example.com"
+        assert entry.origin == "mock"
+        assert entry.authority == "asserted"
+
+
+# ---------------------------------------------------------------------------
+# Feature 027: QuestionResolver chain tests (T014)
+# ---------------------------------------------------------------------------
+
+
+class TestQuestionResolverChain:
+    """Cover SC-003, SC-007, SC-008, FR-006a, FR-011, FR-013 at the driver layer."""
+
+    def _make_fake_results(self, context_keys: list[str]) -> list[dict]:
+        """Build fake result dicts each with one pending feedback question."""
+        return [
+            {
+                "id": f"CTRL-{i:02d}",
+                "status": "FAIL",
+                "authority": "dispositive",
+                "level": 1,
+                "feedback_questions": [
+                    {
+                        "control_id": f"CTRL-{i:02d}",
+                        "context_key": key,
+                        "question": f"Question for {key}?",
+                        "answered": False,
+                    },
+                ],
+            }
+            for i, key in enumerate(context_keys)
+        ]
+
+    def test_answering_resolver_resolves_question_with_asserted_authority(
+        self,
+        minimal_llm_repo_tree: Path,
+        harness_run_factory: Callable[..., HarnessRun],
+        mock_answering_resolver: object,
+    ) -> None:
+        """SC-003 end-to-end: answered question carries authority='asserted' in the report."""
+        run = harness_run_factory(str(minimal_llm_repo_tree))
+        run.question_resolvers = [mock_answering_resolver]
+
+        results = self._make_fake_results(["security_contact"])
+        _updated, pending, answered, ctx = _run(run._collect_unanswered(results))
+
+        assert pending == []
+        assert len(answered) == 1
+        assert answered[0].authority == "asserted"
+        assert answered[0].origin == "mock_answering"
+        assert ctx["security_contact"] == "mock-answer"
+        assert len(answered[0].resolution_trail) == 1
+        assert answered[0].resolution_trail[0].outcome == "answered"
+
+    def test_skipping_then_answering_produces_two_trail_entries(
+        self,
+        minimal_llm_repo_tree: Path,
+        harness_run_factory: Callable[..., HarnessRun],
+        mock_skipping_resolver: object,
+        mock_answering_resolver: object,
+    ) -> None:
+        """Trail ordering: skipping resolver appears BEFORE the answering one."""
+        run = harness_run_factory(str(minimal_llm_repo_tree))
+        run.question_resolvers = [mock_skipping_resolver, mock_answering_resolver]
+
+        results = self._make_fake_results(["security_contact"])
+        _updated, pending, answered, _ctx = _run(run._collect_unanswered(results))
+
+        assert pending == []
+        assert len(answered) == 1
+        trail = answered[0].resolution_trail
+        assert len(trail) == 2
+        assert trail[0].resolver_name == "mock_skipping"
+        assert trail[0].outcome == "skipped"
+        assert trail[1].resolver_name == "mock_answering"
+        assert trail[1].outcome == "answered"
+
+    def test_erroring_resolver_isolated_from_answering(
+        self,
+        minimal_llm_repo_tree: Path,
+        harness_run_factory: Callable[..., HarnessRun],
+        mock_erroring_resolver: Callable[..., object],
+        mock_answering_resolver: object,
+    ) -> None:
+        """SC-007: errored resolver does not stop chain; second resolver answers."""
+        run = harness_run_factory(str(minimal_llm_repo_tree))
+        run.question_resolvers = [
+            mock_erroring_resolver(exception_message="mock error x"),
+            mock_answering_resolver,
+        ]
+
+        results = self._make_fake_results(["security_contact"])
+        _updated, pending, answered, _ctx = _run(run._collect_unanswered(results))
+
+        assert pending == []
+        assert len(answered) == 1
+        trail = answered[0].resolution_trail
+        assert len(trail) == 2
+        assert trail[0].outcome == "errored"
+        assert trail[0].error_summary is not None
+        assert "mock error x" in trail[0].error_summary
+        assert trail[1].outcome == "answered"
+
+    def test_resolvers_configured_but_no_pending_questions(
+        self,
+        minimal_llm_repo_tree: Path,
+        harness_run_factory: Callable[..., HarnessRun],
+        mock_answering_resolver: object,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """When there are 0 pending questions, no bookend lines are emitted."""
+        import logging
+
+        run = harness_run_factory(str(minimal_llm_repo_tree))
+        run.question_resolvers = [mock_answering_resolver]
+
+        caplog.set_level(logging.INFO, logger="darnit.harness")
+        results: list[dict] = []  # no results = no questions
+        _updated, pending, answered, _ctx = _run(run._collect_unanswered(results))
+
+        assert pending == []
+        assert answered == []
+        collection_lines = [
+            r.getMessage() for r in caplog.records
+            if "interactive collection" in r.getMessage()
+        ]
+        assert collection_lines == []
+
+    def test_bookend_lines_appear_exactly_once_each(
+        self,
+        minimal_llm_repo_tree: Path,
+        harness_run_factory: Callable[..., HarnessRun],
+        mock_answering_resolver: object,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """SC-008: exactly two bookend lines per interactive collection phase."""
+        import logging
+        import re
+
+        run = harness_run_factory(str(minimal_llm_repo_tree))
+        run.question_resolvers = [mock_answering_resolver]
+
+        caplog.set_level(logging.INFO, logger="darnit.harness")
+        results = self._make_fake_results(["k1", "k2", "k3"])
+        _run(run._collect_unanswered(results))
+
+        starting = [
+            r.getMessage() for r in caplog.records
+            if "starting interactive collection" in r.getMessage()
+        ]
+        finished = [
+            r.getMessage() for r in caplog.records
+            if "finished interactive collection" in r.getMessage()
+        ]
+        assert len(starting) == 1, f"expected 1 starting bookend, got {starting}"
+        assert len(finished) == 1, f"expected 1 finished bookend, got {finished}"
+        assert "3 pending" in starting[0]
+
+        # No per-control [N/M] progress lines from feature 026 during collect
+        progress_pattern = re.compile(r"\[\d+/\d+\]")
+        between = [
+            r.getMessage() for r in caplog.records
+            if progress_pattern.search(r.getMessage())
+        ]
+        assert between == []
+
+    def test_programmatic_empty_answer_collapsed_to_skip(
+        self,
+        minimal_llm_repo_tree: Path,
+        harness_run_factory: Callable[..., HarnessRun],
+    ) -> None:
+        """FR-006a / M1: Answer('') and Answer('   ') collapse to skip at the driver."""
+        from darnit.harness.question_resolvers import Answer
+
+        class _EmptyReturningResolver:
+            name = "empty_returning"
+
+            async def resolve(self, question: object) -> Answer | None:
+                return Answer(value="   ", origin="empty_returning")
+
+        run = harness_run_factory(str(minimal_llm_repo_tree))
+        run.question_resolvers = [_EmptyReturningResolver()]
+
+        results = self._make_fake_results(["k1"])
+        _updated, pending, answered, _ctx = _run(run._collect_unanswered(results))
+
+        assert answered == []
+        assert len(pending) == 1
+        assert len(pending[0].resolution_trail) == 1
+        assert pending[0].resolution_trail[0].outcome == "skipped"
+
+    def test_answer_values_never_appear_in_log_records(
+        self,
+        minimal_llm_repo_tree: Path,
+        harness_run_factory: Callable[..., HarnessRun],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """FR-013 / M2: resolver-supplied values must not leak to any log line."""
+        import logging
+
+        from darnit.harness.question_resolvers import Answer
+
+        distinct_value = "DISTINCTIVE-VALUE-XYZ-123-NEVER-IN-LOGS"
+
+        class _DistinctiveResolver:
+            name = "distinctive"
+
+            async def resolve(self, question: object) -> Answer | None:
+                return Answer(value=distinct_value, origin="distinctive")
+
+        run = harness_run_factory(str(minimal_llm_repo_tree))
+        run.question_resolvers = [_DistinctiveResolver()]
+
+        caplog.set_level(logging.DEBUG, logger="darnit.harness")
+        results = self._make_fake_results(["k1"])
+        _run(run._collect_unanswered(results))
+
+        for record in caplog.records:
+            assert distinct_value not in record.getMessage(), (
+                f"leaked value into log: {record.getMessage()!r}"
+            )
+
+    def test_per_resolver_timeout_records_errored_entry(
+        self,
+        minimal_llm_repo_tree: Path,
+        harness_run_factory: Callable[..., HarnessRun],
+        mock_answering_resolver: object,
+    ) -> None:
+        """FR-011: a slow resolver hits the timeout, gets 'errored' outcome,
+        and the driver moves on to the next resolver."""
+        import asyncio as _asyncio
+
+        from darnit.harness.question_resolvers import Answer
+
+        class _SlowResolver:
+            name = "slow"
+
+            async def resolve(self, question: object) -> Answer | None:
+                await _asyncio.sleep(0.5)
+                return Answer(value="never-returned", origin="slow")
+
+        run = harness_run_factory(str(minimal_llm_repo_tree))
+        run.question_resolvers = [_SlowResolver(), mock_answering_resolver]
+        run.per_resolver_timeout_s = 0.05
+
+        results = self._make_fake_results(["k1"])
+        _updated, pending, answered, _ctx = _run(run._collect_unanswered(results))
+
+        assert pending == []
+        assert len(answered) == 1
+        trail = answered[0].resolution_trail
+        assert len(trail) == 2
+        assert trail[0].resolver_name == "slow"
+        assert trail[0].outcome == "errored"
+        assert trail[0].error_summary is not None
+        assert "timed out" in trail[0].error_summary
+        assert trail[1].outcome == "answered"
+
+
+# ---------------------------------------------------------------------------
+# US3: composition of --answers file with resolver chain (T023)
+# ---------------------------------------------------------------------------
+
+
+class TestComposition:
+    def test_answer_source_wins_before_resolver_chain(
+        self,
+        minimal_llm_repo_tree: Path,
+        harness_run_factory: Callable[..., HarnessRun],
+        mock_answering_resolver: object,
+    ) -> None:
+        """QR-19: AnswerSource pass runs BEFORE QuestionResolver chain.
+        A question answered by an AnswerSource never reaches the resolvers."""
+        from darnit.harness.answer_sources import AnswerResolver
+        from tests.darnit.harness.test_answer_sources import MockAnswerSource
+
+        answer_resolver = AnswerResolver()
+        answer_resolver.add(
+            MockAnswerSource(
+                "project_yaml", {"security_contact": "from_project@example.com"},
+            ),
+        )
+        answer_resolver.add(
+            MockAnswerSource(
+                "answers_file", {"code_of_conduct_url": "from_answers.md"},
+            ),
+        )
+
+        run = harness_run_factory(str(minimal_llm_repo_tree))
+        run.answer_resolver = answer_resolver
+        run.question_resolvers = [mock_answering_resolver]
+
+        # Three questions: two covered by AnswerSource, one uncovered.
+        results = [
+            {
+                "id": "CTRL-01",
+                "status": "FAIL",
+                "authority": "dispositive",
+                "level": 1,
+                "feedback_questions": [
+                    {
+                        "control_id": "CTRL-01",
+                        "context_key": "security_contact",
+                        "question": "sec?",
+                        "answered": False,
+                    },
+                ],
+            },
+            {
+                "id": "CTRL-02",
+                "status": "FAIL",
+                "authority": "dispositive",
+                "level": 1,
+                "feedback_questions": [
+                    {
+                        "control_id": "CTRL-02",
+                        "context_key": "code_of_conduct_url",
+                        "question": "coc?",
+                        "answered": False,
+                    },
+                ],
+            },
+            {
+                "id": "CTRL-03",
+                "status": "FAIL",
+                "authority": "dispositive",
+                "level": 1,
+                "feedback_questions": [
+                    {
+                        "control_id": "CTRL-03",
+                        "context_key": "release_process",
+                        "question": "release?",
+                        "answered": False,
+                    },
+                ],
+            },
+        ]
+        _updated, pending, answered, ctx = _run(run._collect_unanswered(results))
+
+        # All three answered
+        assert pending == []
+        assert len(answered) == 3
+        # Distinct origins per question
+        by_key = {e.context_key: e for e in answered}
+        assert by_key["security_contact"].origin == "project_yaml"
+        assert by_key["code_of_conduct_url"].origin == "answers_file"
+        assert by_key["release_process"].origin == "mock_answering"
+
+        # Resolver chain was ONLY offered the uncovered question -- verified
+        # by the trail (empty for AnswerSource-answered, populated for the
+        # resolver-answered one).
+        assert by_key["security_contact"].resolution_trail == []
+        assert by_key["code_of_conduct_url"].resolution_trail == []
+        assert len(by_key["release_process"].resolution_trail) == 1
+        assert by_key["release_process"].resolution_trail[0].outcome == "answered"
 
 
 # ---------------------------------------------------------------------------

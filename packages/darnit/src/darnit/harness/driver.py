@@ -26,7 +26,17 @@ from darnit.harness.answer_sources import (
     ProjectYamlAnswerSource,
 )
 from darnit.harness.exit_codes import HarnessExitCode
-from darnit.harness.report import HarnessReport, HarnessSummary, PendingFeedbackEntry
+from darnit.harness.question_resolvers import (
+    Answer,
+    InteractiveAborted,
+    ResolutionTrailEntry,
+)
+from darnit.harness.report import (
+    AnsweredFeedbackEntry,
+    HarnessReport,
+    HarnessSummary,
+    PendingFeedbackEntry,
+)
 from darnit.sieve.models import LLMConsultationResponse, PassOutcome
 from darnit.tools.audit import prepare_audit, run_checks
 
@@ -86,6 +96,12 @@ class HarnessRun:
     per_call_timeout_s: int = 60
     total_run_timeout_s: int = 15 * 60
 
+    # Feature 027: pluggable active resolvers (interactive terminal, A2A, etc).
+    # Runs downstream of the AnswerSource chain. Default empty list preserves
+    # feature 026 behavior (batch-only collection). See data-model.md section 7.
+    question_resolvers: list[Any] = field(default_factory=list)
+    per_resolver_timeout_s: float | None = None
+
     # Counters populated during .run()
     llm_calls_total: int = 0
     llm_provider: str = "anthropic:claude-sonnet-5"
@@ -115,6 +131,27 @@ class HarnessRun:
         if answers_path:
             resolver.add(FileAnswerSource(answers_path))
         return resolver
+
+    # ------------------------------------------------------------------
+    # Factory for QuestionResolver chain (feature 027 T017/T018)
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def build_default_resolver_chain(cls, interactive: bool) -> list[Any]:
+        """Compose the CLI's canonical resolver chain.
+
+        Delegates to `darnit.harness.resolver_discovery.build_default_resolver_chain`
+        which uses `importlib.metadata` entry-points under group
+        `darnit.question_resolvers` (contract QR-14..QR-16).
+
+        - If interactive=True: the `interactive_terminal` resolver is first.
+        - Then every OTHER registered resolver in entry-point discovery order.
+        """
+        # Local import so a broken discovery module doesn't crash the driver's
+        # module load.
+        from darnit.harness.resolver_discovery import build_default_resolver_chain
+
+        return build_default_resolver_chain(interactive=interactive)
 
     # ------------------------------------------------------------------
     # Startup checks (T010, T011)
@@ -396,32 +433,71 @@ class HarnessRun:
     # Collect (T014)
     # ------------------------------------------------------------------
 
-    def _collect_unanswered(
+    def _enumerate_framework_pending(self) -> list[Any]:
+        """Return framework-declared context questions unresolved so far.
+
+        Extracted to a method so isolated tests can monkeypatch it and
+        assert on only the questions their fixtures synthesized. Failure
+        is not fatal -- returns [] on any error and logs at DEBUG.
+        """
+        try:
+            from darnit.config.context_storage import get_pending_context
+
+            return list(get_pending_context(self.local_path, level=self.level))
+        except Exception as exc:
+            logger.debug("get_pending_context failed: %s", exc)
+            return []
+
+    async def _collect_unanswered(
         self,
         results: list[dict[str, Any]],
-    ) -> tuple[list[dict[str, Any]], list[PendingFeedbackEntry], dict[str, str]]:
+    ) -> tuple[
+        list[dict[str, Any]],
+        list[PendingFeedbackEntry],
+        list[AnsweredFeedbackEntry],
+        dict[str, str],
+    ]:
         """Apply resolver answers to any feedback questions in the results.
+
+        Two-phase per contract QR-19:
+          1. AnswerSource chain (feature 026 -- passive lookup by key).
+          2. QuestionResolver chain (feature 027 -- active resolution).
+
+        Contract QR-19: (1) runs strictly before (2); a question answered by
+        (1) never reaches the resolver chain.
 
         Per data-model.md "State transitions" COLLECT_UNANSWERED: does NOT
         re-audit. A control's verdict RETAINS its pre-Collect status. The
-        answer is captured in context_values + on the question object; it
-        does NOT retroactively change the verdict. Also does NOT persist
-        to .project/ (research.md R4 idempotence argument).
+        answer is captured in context_values + on the question object + in
+        the report's answered_feedback list; it does NOT retroactively change
+        the verdict. Also does NOT persist to .project/ (research.md R4
+        idempotence argument).
 
         Feedback questions come from two sources (PR #365 review fix):
 
         1. Any ``result["feedback_questions"]`` a caller has already
            attached (unchanged legacy path).
         2. The framework's own pending-context enumerator
-           (``darnit.config.context_storage.get_pending_context``). This
-           is the only source that currently fires in production; before
+           (``darnit.config.context_storage.get_pending_context``). Before
            this fix, ``--answers`` had nothing to match against and was
-           effectively inert.
+           effectively inert because sieve results never carry
+           ``feedback_questions``.
 
-        Returns (mutated_results, remaining_pending_feedback, context_values).
+        Each source funnels through Phase 1 (AnswerSource chain, same
+        semantics as before) and then Phase 2 (QuestionResolver chain,
+        added in PR #367).
+
+        Returns (mutated_results, pending_feedback, answered_feedback,
+        context_values).
         """
         context_values: dict[str, str] = {}
         remaining_pending: list[PendingFeedbackEntry] = []
+        answered: list[AnsweredFeedbackEntry] = []
+
+        # Collect questions that survive the AnswerSource pass. These will
+        # be offered to the QuestionResolver chain (phase 2). Each element:
+        # (result_dict, question_dict_or_obj, ctx_key, question_text)
+        unresolved: list[tuple[dict[str, Any], Any, str, str]] = []
 
         # (1) Legacy attach path: caller-populated feedback_questions.
         for result in results:
@@ -430,12 +506,15 @@ class HarnessRun:
                 if isinstance(q, dict):
                     ctx_key = q.get("context_key")
                     already = q.get("answered", False)
+                    q_text = q.get("question", "")
                 else:
                     ctx_key = getattr(q, "context_key", None)
                     already = getattr(q, "answered", False)
+                    q_text = getattr(q, "question", "")
                 if not ctx_key or already:
                     continue
 
+                # Phase 1: AnswerSource chain.
                 answer, source_name = self.answer_resolver.resolve(ctx_key)
                 if answer is not None:
                     context_values[ctx_key] = answer
@@ -446,52 +525,282 @@ class HarnessRun:
                     else:
                         q.answered = True
                         q.answer = answer
-                else:
-                    q_text = q.get("question", "") if isinstance(q, dict) else getattr(q, "question", "")
-                    remaining_pending.append(
-                        PendingFeedbackEntry(
+                    answered.append(
+                        AnsweredFeedbackEntry(
                             control_id=result.get("id", ""),
                             context_key=str(ctx_key),
                             question=str(q_text),
+                            answer=str(answer),
+                            origin=str(source_name or "unknown"),
                         ),
+                    )
+                else:
+                    unresolved.append(
+                        (result, q, str(ctx_key), str(q_text)),
                     )
 
         # (2) Framework pending-context enumerator: read `[context.*]` keys
         # that the framework declared and that current .project/project.yaml
         # has not yet answered. Route each through the answer resolver so
         # `--answers` and the auto-discovered `.project/project.yaml` are
-        # actually consulted. Failure to enumerate is not fatal -- log and
-        # continue with whatever the caller already attached.
-        try:
-            from darnit.config.context_storage import get_pending_context
+        # actually consulted (PR #365 review fix). Anything the resolver
+        # can't answer joins the `unresolved` list so it also gets the
+        # QuestionResolver chain (PR #367).
+        #
+        # Extracted through `_enumerate_framework_pending()` so isolated
+        # resolver-chain tests can monkeypatch it to [] and assert on just
+        # the questions they synthesized.
+        pending_ctx = self._enumerate_framework_pending()
 
-            pending_ctx = get_pending_context(self.local_path, level=self.level)
-        except Exception as exc:
-            logger.debug("get_pending_context failed: %s", exc)
-            pending_ctx = []
-
-        seen_ctx_keys = set(context_values.keys()) | {e.context_key for e in remaining_pending}
+        seen_ctx_keys = (
+            set(context_values.keys())
+            | {ctx_key for _r, _q, ctx_key, _t in unresolved}
+        )
         for req in pending_ctx:
             ctx_key = req.key
             if ctx_key in seen_ctx_keys:
                 continue
             seen_ctx_keys.add(ctx_key)
 
-            answer, _source = self.answer_resolver.resolve(ctx_key)
+            answer, source_name = self.answer_resolver.resolve(ctx_key)
             if answer is not None:
                 context_values[ctx_key] = answer
+                answered.append(
+                    AnsweredFeedbackEntry(
+                        control_id=(req.control_ids[0] if req.control_ids else ""),
+                        context_key=str(ctx_key),
+                        question=str(
+                            getattr(req.definition, "prompt", None)
+                            or getattr(req.definition, "hint", None)
+                            or ctx_key
+                        ),
+                        answer=str(answer),
+                        origin=str(source_name or "unknown"),
+                    ),
+                )
                 continue
 
-            question_text = getattr(req.definition, "prompt", None) or getattr(req.definition, "hint", None) or ctx_key
-            remaining_pending.append(
-                PendingFeedbackEntry(
-                    control_id=(req.control_ids[0] if req.control_ids else ""),
-                    context_key=ctx_key,
-                    question=str(question_text),
-                ),
+            question_text = (
+                getattr(req.definition, "prompt", None)
+                or getattr(req.definition, "hint", None)
+                or ctx_key
             )
+            synth_q = {
+                "control_id": (req.control_ids[0] if req.control_ids else ""),
+                "context_key": ctx_key,
+                "question": str(question_text),
+                "answered": False,
+            }
+            synth_result = {"id": (req.control_ids[0] if req.control_ids else "")}
+            unresolved.append((synth_result, synth_q, str(ctx_key), str(question_text)))
 
-        return results, remaining_pending, context_values
+        # Phase 2: QuestionResolver chain.
+        if unresolved and self.question_resolvers:
+            resolver_answered, resolver_pending, resolver_ctx = await self._run_resolver_chain(
+                unresolved,
+            )
+            answered.extend(resolver_answered)
+            remaining_pending.extend(resolver_pending)
+            context_values.update(resolver_ctx)
+        elif unresolved:
+            # No resolver chain configured; every unresolved question stays
+            # pending with an empty trail.
+            for _result, _q, ctx_key, q_text in unresolved:
+                remaining_pending.append(
+                    PendingFeedbackEntry(
+                        control_id=_result.get("id", ""),
+                        context_key=ctx_key,
+                        question=q_text,
+                    ),
+                )
+
+        return results, remaining_pending, answered, context_values
+
+    async def _run_resolver_chain(
+        self,
+        unresolved: list[tuple[dict[str, Any], Any, str, str]],
+    ) -> tuple[
+        list[AnsweredFeedbackEntry],
+        list[PendingFeedbackEntry],
+        dict[str, str],
+    ]:
+        """Offer each unresolved question to the resolver chain in order.
+
+        Emits FR-013a bookend lines on `darnit.harness` INFO. Wraps each
+        resolver call in `asyncio.wait_for` when `per_resolver_timeout_s` is
+        set (FR-011). Builds a `resolution_trail` per question with one
+        `ResolutionTrailEntry` per resolver visited.
+
+        The interactive resolver gets `(position, total)` threaded in via
+        keyword args so its prompt payload can carry the position indicator
+        (FR-013b). Other resolvers only receive the question.
+        """
+        # Local imports to avoid circular import at module load.
+        from darnit.harness.interactive_resolver import InteractiveTerminalResolver
+
+        total = len(unresolved)
+        logger.info(
+            "harness: starting interactive collection (%d pending questions)",
+            total,
+        )
+
+        answered_out: list[AnsweredFeedbackEntry] = []
+        pending_out: list[PendingFeedbackEntry] = []
+        ctx_values: dict[str, str] = {}
+        counts = {"answered": 0, "skipped": 0, "aborted": 0}
+
+        aborted = False
+        for idx, (result, q, ctx_key, q_text) in enumerate(unresolved, start=1):
+            if aborted:
+                # Preserve Ctrl+C semantics: skip the rest without offering
+                # to any resolver. Question stays pending with no trail.
+                pending_out.append(
+                    PendingFeedbackEntry(
+                        control_id=result.get("id", ""),
+                        context_key=ctx_key,
+                        question=q_text,
+                    ),
+                )
+                continue
+
+            trail: list[ResolutionTrailEntry] = []
+            resolved_answer: Answer | None = None
+
+            for resolver in self.question_resolvers:
+                # Thread position + total into the interactive resolver.
+                extra_kwargs: dict[str, Any] = {}
+                if isinstance(resolver, InteractiveTerminalResolver):
+                    extra_kwargs = {"position": idx, "total": total}
+
+                try:
+                    coro = resolver.resolve(q, **extra_kwargs)
+                    if self.per_resolver_timeout_s is not None:
+                        result_ans = await asyncio.wait_for(
+                            coro,
+                            timeout=self.per_resolver_timeout_s,
+                        )
+                    else:
+                        result_ans = await coro
+                except InteractiveAborted:
+                    trail.append(
+                        ResolutionTrailEntry(
+                            resolver_name=resolver.name,
+                            outcome="skipped",
+                        ),
+                    )
+                    aborted = True
+                    break
+                except TimeoutError:
+                    trail.append(
+                        ResolutionTrailEntry(
+                            resolver_name=resolver.name,
+                            outcome="errored",
+                            error_summary=(
+                                f"resolver timed out after {self.per_resolver_timeout_s}s"
+                            ),
+                        ),
+                    )
+                    continue
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "resolver %s raised %s during resolve()",
+                        resolver.name,
+                        type(exc).__name__,
+                    )
+                    safe = _redact_secrets(str(exc))[:200] or "(no error message)"
+                    trail.append(
+                        ResolutionTrailEntry(
+                            resolver_name=resolver.name,
+                            outcome="errored",
+                            error_summary=safe,
+                        ),
+                    )
+                    continue
+
+                # Success path: None => skip, Answer with non-empty stripped
+                # value => answered, empty/whitespace-only Answer => skip
+                # (FR-006a, symmetric with interactive prompt handling).
+                if result_ans is None:
+                    trail.append(
+                        ResolutionTrailEntry(
+                            resolver_name=resolver.name, outcome="skipped",
+                        ),
+                    )
+                    continue
+                if not result_ans.value.strip():
+                    trail.append(
+                        ResolutionTrailEntry(
+                            resolver_name=resolver.name, outcome="skipped",
+                        ),
+                    )
+                    continue
+
+                # Answered.
+                trail.append(
+                    ResolutionTrailEntry(
+                        resolver_name=resolver.name, outcome="answered",
+                    ),
+                )
+                resolved_answer = result_ans
+                break
+
+            # Record on the question dict + context_values regardless of shape.
+            if resolved_answer is not None:
+                ctx_values[ctx_key] = resolved_answer.value
+                if isinstance(q, dict):
+                    q["answered"] = True
+                    q["answer"] = resolved_answer.value
+                    q["answered_by"] = resolved_answer.origin
+                else:
+                    q.answered = True
+                    q.answer = resolved_answer.value
+
+                answered_out.append(
+                    AnsweredFeedbackEntry(
+                        control_id=result.get("id", ""),
+                        context_key=ctx_key,
+                        question=q_text,
+                        answer=resolved_answer.value,
+                        origin=resolved_answer.origin,
+                        resolution_trail=trail,
+                    ),
+                )
+                counts["answered"] += 1
+            else:
+                pending_out.append(
+                    PendingFeedbackEntry(
+                        control_id=result.get("id", ""),
+                        context_key=ctx_key,
+                        question=q_text,
+                        resolution_trail=trail,
+                    ),
+                )
+                if aborted:
+                    counts["aborted"] += 1
+                else:
+                    counts["skipped"] += 1
+
+        # Close any resolvers exposing a close() method (e.g., interactive).
+        for resolver in self.question_resolvers:
+            close_fn = getattr(resolver, "close", None)
+            if callable(close_fn):
+                try:
+                    close_fn()
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "resolver %s raised during close(): %s",
+                        getattr(resolver, "name", "?"),
+                        type(exc).__name__,
+                    )
+
+        logger.info(
+            "harness: finished interactive collection: %d answered, %d skipped, %d aborted",
+            counts["answered"],
+            counts["skipped"],
+            counts["aborted"],
+        )
+
+        return answered_out, pending_out, ctx_values
 
     # ------------------------------------------------------------------
     # Report assembly (T018)
@@ -503,6 +812,7 @@ class HarnessRun:
         target_owner: str,
         target_repo: str,
         pending_feedback: list[PendingFeedbackEntry],
+        answered_feedback: list[AnsweredFeedbackEntry] | None = None,
     ) -> HarnessReport:
         summary_counts = {"PASS": 0, "FAIL": 0, "WARN": 0, "N/A": 0, "ERROR": 0, "PENDING_LLM": 0}
         for r in results:
@@ -528,6 +838,10 @@ class HarnessRun:
         else:
             exit_class = HarnessExitCode.SUCCESS
 
+        resolvers_used = [
+            getattr(r, "name", "unknown") for r in self.question_resolvers
+        ]
+
         return HarnessReport(
             target={
                 "local_path": self.local_path,
@@ -540,6 +854,8 @@ class HarnessRun:
             answer_sources_used=self.answer_resolver.sources_used(),
             llm_calls={"total": self.llm_calls_total, "provider": self.llm_provider},
             exit_class=int(exit_class),
+            resolvers_used=resolvers_used,
+            answered_feedback=answered_feedback or [],
         )
 
     # ------------------------------------------------------------------
@@ -620,10 +936,12 @@ class HarnessRun:
         results = await self._llm_continuation_loop(results, owner, repo, default_branch)
 
         # Collect unanswered feedback questions
-        results, pending_feedback, _context_values = self._collect_unanswered(results)
+        results, pending_feedback, answered_feedback, _context_values = await self._collect_unanswered(results)
 
         # Assemble report
-        return self._assemble_report(results, owner, repo, pending_feedback)
+        return self._assemble_report(
+            results, owner, repo, pending_feedback, answered_feedback,
+        )
 
 
 class HarnessRunTimeout(Exception):

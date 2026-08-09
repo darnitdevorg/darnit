@@ -53,6 +53,13 @@ darnit = "darnit.cli:main"
 # Framework plugins register here
 # Example: openssf-baseline = "darnit_baseline:get_framework_path"
 
+[project.entry-points."darnit.question_resolvers"]
+# Feature 027: QuestionResolver plugins register here. Entry-point declarations
+# are LAZY -- Python only loads the target module when a caller invokes
+# `importlib.metadata.entry_points(group=...).load()`. Missing / broken entry
+# points are logged and skipped at discovery time, never crash the harness.
+interactive_terminal = "darnit.harness.interactive_resolver:build"
+
 [project.optional-dependencies]
 attestation = [
     "sigstore>=3.0.0",
