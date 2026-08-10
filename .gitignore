@@ -51,3 +51,6 @@ baseline-test-repo/
 .doc-cache/
 
 .darnit/
+
+# Feature 028: Tier 2 parity check writes skill-invocation transcripts here.
+parity-artifacts/

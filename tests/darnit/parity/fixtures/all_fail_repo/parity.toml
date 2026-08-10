@@ -1,0 +1,13 @@
+[expected]
+category = "all_fail"
+has_pending_llm = false
+strict = false
+control_ids = ["OSPS-DO-01.01", "OSPS-LE-03.01"]
+
+[expected.counts]
+pass = 0
+fail = 2
+warn = 0
+error = 0
+n_a = 0
+pending_llm = 0

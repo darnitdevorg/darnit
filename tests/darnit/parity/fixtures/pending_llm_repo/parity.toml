@@ -1,0 +1,13 @@
+[expected]
+category = "pending_llm"
+has_pending_llm = true
+strict = false
+control_ids = ["STAGE1-REF-SECURITY-01"]
+
+[expected.counts]
+pass = 0
+fail = 0
+warn = 0
+error = 0
+n_a = 0
+pending_llm = 1

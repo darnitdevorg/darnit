@@ -1,0 +1,83 @@
+# Feature 028 Tier 2: coding-agent skill vs raw MCP tool output parity.
+#
+# Manual-dispatch only. See contract at
+# specs/028-audit-parity-tests/contracts/tier2-workflow.md
+# and governance rationale at spec.md FR-007 / FR-007a / FR-007b.
+#
+# Key security properties (see contract T2-1..T2-16):
+#   - T2-1: workflow_dispatch is the ONLY trigger. No schedule; no push.
+#   - T2-2: Environment `parity-tier2` is REQUIRED. Configure in GitHub UI
+#           with a reviewer list AND the ANTHROPIC_API_KEY secret at the
+#           Environment level (NOT repo level).
+#   - T2-4: NO other workflow in .github/workflows/ references
+#           secrets.ANTHROPIC_API_KEY. Verified by
+#           tests/darnit/parity/tier2/test_workflow_config.py.
+#   - T2-5: permissions: contents: read only. No write scope granted.
+#   - T2-7/T2-8: Preflight actor+SHA logged BEFORE the SDK step consumes
+#                the API key.
+#   - T2-10: NO api_key workflow input (governance regression guard).
+#   - T2-11: artifact upload runs on any exit code (`if: always()`).
+
+name: Parity Tier 2
+
+on:
+  workflow_dispatch:
+    inputs:
+      fixture_glob:
+        description: "Glob to filter which fixtures are run (default: all)"
+        default: "*"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  tier2:
+    runs-on: ubuntu-latest
+    environment: parity-tier2  # T2-2: gated Environment with required reviewers
+    permissions:
+      contents: read  # T2-5: no write scope
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Sync dev environment
+        run: uv sync --extra dev
+
+      - name: Preflight audit log (T2-7/T2-8)
+        run: |
+          {
+            echo "## Tier 2 Preflight"
+            echo ""
+            echo "- actor: ${{ github.actor }}"
+            echo "- sha: ${{ github.sha }}"
+            echo "- fixture_glob: ${{ inputs.fixture_glob }}"
+            echo "- timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run Tier 2 parity check
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          # Run as a module (`python -m`) so the `tests.` package imports
+          # inside run.py resolve. Running as a script (`python <path>`)
+              # would fail because the `tests` package wouldn't be on sys.path.
+          uv run python -m tests.darnit.parity.tier2.run \
+            --fixture-glob "${{ inputs.fixture_glob }}"
+
+      - name: Upload parity artifacts (T2-11)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: parity-artifacts
+          path: parity-artifacts/
+          retention-days: 30
