@@ -164,6 +164,26 @@ uv run pytest tests/darnit/parity/ -q
 
 Expected test count after feature 029 lands: feature-028 baseline + about 10-15 new tests (Protocol conformance + OpenAI adversarial + turn-cap-exhausted + workflow config).
 
+## Cross-provider drift comparison (US3)
+
+Once both Claude and OpenAI Tier 2 workflows have run against the same commit, a maintainer can locally diff their final messages to see where the two providers agree or disagree.
+
+```bash
+# 1. Download both artifact bundles.
+gh run download --repo darnitdevorg/darnit <claude-run-id>
+mv parity-artifacts parity-artifacts-claude
+
+gh run download --repo darnitdevorg/darnit <openai-run-id>
+mv parity-artifacts parity-artifacts-openai
+
+# 2. Run the aggregate script.
+uv run python -m tests.darnit.parity.tier2.scripts.aggregate_provider_diff \
+    --claude-artifacts parity-artifacts-claude \
+    --openai-artifacts parity-artifacts-openai
+```
+
+Output is one Markdown table per fixture with columns `control_id | claude_status | openai_status | disagreement`. Exit codes: 0 success, 1 no fixtures found, 2 missing arguments. Not invoked by CI -- a local maintainer runs it when investigating provider drift.
+
 ## Related follow-ups
 
 - **Issue #369**: Add scheduled cadence + governance-appropriate key sourcing (applies to Claude AND OpenAI workflows; a single follow-up covers both).

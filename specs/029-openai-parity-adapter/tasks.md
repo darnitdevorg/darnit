@@ -238,7 +238,7 @@ description: "Tasks for feature 029: OpenAI Tier 2 Parity Adapter -- second prov
 
 ### Implementation for US3 (optional, may slip)
 
-- [ ] T022 [P] [US3] Create `tests/darnit/parity/tier2/scripts/aggregate_provider_diff.py` (local maintainer script, NOT invoked by any pytest). Reads two artifact bundles (`parity-artifacts-claude/` + `parity-artifacts-openai/`) OR one `parity-artifacts/` directory containing both providers' final messages; for each fixture, parses both providers' summaries; emits a Markdown table `| control_id | claude_status | openai_status | disagreement |`.
+- [X] T022 [P] [US3] Create `tests/darnit/parity/tier2/scripts/aggregate_provider_diff.py` (local maintainer script, NOT invoked by any pytest). Reads two artifact bundles (`parity-artifacts-claude/` + `parity-artifacts-openai/`) OR one `parity-artifacts/` directory containing both providers' final messages; for each fixture, parses both providers' summaries; emits a Markdown table `| control_id | claude_status | openai_status | disagreement |`.
     - Not a runnable CI job; documented in `quickstart.md`.
     - Skipped if T022 slips -- US3 is P3.
 
