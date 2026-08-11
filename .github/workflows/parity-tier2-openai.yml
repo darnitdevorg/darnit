@@ -1,0 +1,93 @@
+# Feature 029 Tier 2 (OpenAI): coding-agent skill vs raw MCP tool output
+# parity for OpenAI-based invocations.
+#
+# Manual-dispatch only. Environment-gated so an authorized reviewer must
+# approve each run BEFORE OPENAI_API_KEY is exposed. See contract at
+# specs/029-openai-parity-adapter/contracts/openai-workflow.md
+# and governance rationale at spec.md FR-005 / FR-007 / FR-007a-equivalent.
+#
+# Key properties (see contract OW-1..OW-16):
+#   - OW-1: workflow_dispatch is the ONLY trigger. No schedule; no push.
+#   - OW-2: two inputs -- fixture_glob AND model (pinned version-suffixed default).
+#   - OW-3: model default MUST be a version-suffixed string (SC-010).
+#   - OW-4: environment `parity-tier2-openai` (distinct from Claude's env).
+#   - OW-6: permissions: contents: read only.
+#   - OW-7/OW-8/OW-9: OPENAI_API_KEY only in this workflow; the
+#                     Anthropic-scoped key MUST NOT appear here.
+#   - OW-10: preflight actor+SHA+model logged BEFORE the SDK step.
+#   - OW-13: no api_key workflow input (governance regression guard).
+#   - OW-14: artifact upload runs on any exit code (`if: always()`).
+
+name: Parity Tier 2 (OpenAI)
+
+on:
+  workflow_dispatch:
+    inputs:
+      fixture_glob:
+        description: "Glob to filter which fixtures are run (default: all)"
+        default: "*"
+        required: false
+      model:
+        description: "Pinned OpenAI model (versioned suffix required; e.g. gpt-4o-2024-08-06)"
+        default: "gpt-4o-2024-08-06"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  tier2:
+    runs-on: ubuntu-latest
+    environment: parity-tier2-openai  # OW-4: gated Environment with required reviewers
+    permissions:
+      contents: read  # OW-6: no write scope
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Sync dev environment
+        run: uv sync --extra dev
+
+      - name: Preflight audit log (OW-10)
+        run: |
+          {
+            echo "## Tier 2 (OpenAI) Preflight"
+            echo ""
+            echo "- actor: ${{ github.actor }}"
+            echo "- sha: ${{ github.sha }}"
+            echo "- fixture_glob: ${{ inputs.fixture_glob }}"
+            echo "- model: ${{ inputs.model }}"
+            echo "- timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run Tier 2 parity check (OpenAI)
+        env:
+          # OW-7: OPENAI_API_KEY appears in this workflow only.
+          # OW-9: this workflow deliberately does NOT expose any other
+          # provider's key -- the Claude/Anthropic-scoped key is only
+          # reachable from the sibling workflow (parity-tier2.yml).
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          # Run as a module (`python -m`) so the `tests.` package imports
+          # inside run.py resolve.
+          uv run python -m tests.darnit.parity.tier2.run \
+            --backend openai \
+            --model "${{ inputs.model }}" \
+            --fixture-glob "${{ inputs.fixture_glob }}"
+
+      - name: Upload parity artifacts (OW-14)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: parity-artifacts-openai
+          path: parity-artifacts/
+          retention-days: 30

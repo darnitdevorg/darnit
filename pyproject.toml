@@ -57,6 +57,11 @@ dev = [
 # explicitly. Not part of `[dev]` per PR #370 review feedback.
 parity-tier2 = [
     "claude-agent-sdk>=0.1.0",
+    # Feature 029: Tier 2 parity check adds an OpenAI backend alongside the
+    # Claude Agent SDK path. TEST-ONLY dep; MUST NOT appear in any darnit
+    # product package's pyproject.toml (SC-006). Pinned >=1.50 for the
+    # Chat Completions tool-calling surface used by openai_backend.py.
+    "openai>=1.50",
 ]
 
 [tool.uv.workspace]

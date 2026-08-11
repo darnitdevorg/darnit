@@ -19,15 +19,24 @@ def write_fixture_artifacts(
     skill_markdown: str,
     diff_md: str,
     metadata: dict[str, object] | None = None,
+    provider: str = "claude",
 ) -> Path:
     """Write the four per-fixture artifact files. Returns the fixture's
     artifact directory.
+
+    Feature 029 addition: `provider` argument controls the filename of
+    the final-message artifact. `"claude"` preserves feature 028's
+    `skill_final_message.md` for backwards compat; any other value writes
+    `<provider>_final_message.md` (e.g., `openai_final_message.md`). Both
+    providers' artifacts can coexist under the same fixture directory
+    across separate dispatches.
     """
     fixture_dir = artifact_root / fixture_name
     fixture_dir.mkdir(parents=True, exist_ok=True)
 
     (fixture_dir / "mcp_tool_result.json").write_text(mcp_json)
-    (fixture_dir / "skill_final_message.md").write_text(skill_markdown)
+    final_message_name = "skill_final_message.md" if provider == "claude" else f"{provider}_final_message.md"
+    (fixture_dir / final_message_name).write_text(skill_markdown)
     (fixture_dir / "diff_report.md").write_text(diff_md)
 
     meta_out: dict[str, object] = {
