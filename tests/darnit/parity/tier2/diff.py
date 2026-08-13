@@ -40,6 +40,8 @@ def diff(
     mcp_result: AuditResult,
     skill_report: SkillReport,
     fixture_name: str,
+    *,
+    final_message_filename: str = "skill_final_message.md",
 ) -> Tier2DiffReport:
     """Compare tool JSON vs skill summary.
 
@@ -48,12 +50,18 @@ def diff(
       2. Per-control status disagreement -> PER_CONTROL_DISAGREE.
       3. Summary-count disagreement (per-control agrees) -> COUNTS_DISAGREE.
       4. All-agree -> success.
+
+    `final_message_filename` is threaded into the failure reports so an
+    OpenAI-provider run reports `openai_final_message.md` rather than
+    the default Claude filename. PR #371 review fix.
     """
     if not skill_report.parseable:
         return Tier2DiffReport(
             fixture_name=fixture_name,
             outcome="skill_unparseable",
-            diff_markdown=_format_unparseable_report(fixture_name, skill_report),
+            diff_markdown=_format_unparseable_report(
+                fixture_name, skill_report, final_message_filename,
+            ),
         )
 
     # Per-control comparison: iterate both directions so a skill that
@@ -85,7 +93,9 @@ def diff(
             fixture_name=fixture_name,
             outcome="per_control_disagree",
             disagreeing_controls=tuple(d[0] for d in disagreements),
-            diff_markdown=_format_per_control_report(fixture_name, disagreements),
+            diff_markdown=_format_per_control_report(
+                fixture_name, disagreements, final_message_filename,
+            ),
         )
 
     # Counts comparison. Compute tool counts from AuditResult.
@@ -127,6 +137,7 @@ def _tool_counts(mcp_result: AuditResult) -> dict[str, int]:
 def _format_per_control_report(
     fixture_name: str,
     disagreements: list[tuple[str, str, str]],
+    final_message_filename: str = "skill_final_message.md",
 ) -> str:
     lines = [
         f"# Tier 2 parity: {fixture_name}",
@@ -140,7 +151,7 @@ def _format_per_control_report(
         lines.append(f"| {cid} | {tool_s} | {skill_s} |")
     lines.append("")
     lines.append(
-        "See `mcp_tool_result.json` and `skill_final_message.md` in this directory for the raw artifacts.",
+        f"See `mcp_tool_result.json` and `{final_message_filename}` in this directory for the raw artifacts.",
     )
     return "\n".join(lines)
 
@@ -168,6 +179,7 @@ def _format_counts_report(
 def _format_unparseable_report(
     fixture_name: str,
     skill_report: SkillReport,
+    final_message_filename: str = "skill_final_message.md",
 ) -> str:
     return (
         f"# Tier 2 parity: {fixture_name}\n\n"
@@ -175,7 +187,7 @@ def _format_unparseable_report(
         "disagreement -- the parser did not find the expected shape in the "
         "skill's final message.\n\n"
         f"Parser notes: {list(skill_report.parse_notes) or ['(none)']}\n\n"
-        "See `skill_final_message.md` in this directory for the raw output.\n"
+        f"See `{final_message_filename}` in this directory for the raw output.\n"
     )
 
 

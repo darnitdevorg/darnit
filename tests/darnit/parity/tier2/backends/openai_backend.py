@@ -73,10 +73,13 @@ def _dispatch_tool_call(call: Any, fixture_dir: Path) -> str:
             args = json.loads(call.function.arguments or "{}")
         except json.JSONDecodeError:
             args = {}
-        # Force local_path to the fixture dir.
+        # PR #371 review fix: pin level + output_format the same way
+        # local_path is pinned. Previous `setdefault` let a rogue model
+        # ask for `output_format="markdown"` and `level=1`, defeating
+        # the comparison against the tool's JSON @ level 3.
         args["local_path"] = str(fixture_dir)
-        args.setdefault("output_format", "json")
-        args.setdefault("level", 3)
+        args["output_format"] = "json"
+        args["level"] = 3
         # Force safe defaults.
         args["auto_init_config"] = False
         args["attest"] = False

@@ -123,12 +123,34 @@ def _diff_one_fixture(
     if openai_report and openai_report.controls:
         openai_by_id = {c.id: c.status for c in openai_report.controls}
 
+    # PR #371 review fix: distinguish "parseable and 0 disagreements"
+    # from "unparseable on one/both sides" -- previously both cases
+    # silently reported "0 disagreements" in the aggregate summary.
+    claude_parseable = bool(claude_report and claude_report.parseable)
+    openai_parseable = bool(openai_report and openai_report.parseable)
+
     control_ids = sorted(set(claude_by_id) | set(openai_by_id))
     if not control_ids:
         lines.append("")
         lines.append("Neither provider's message was parseable at the per-control level.")
         lines.append("")
+        # Mark the summary as UNPARSEABLE so downstream aggregation
+        # cannot count this as a clean "0 disagreements" run.
+        lines.append("Summary: 0 controls compared, UNPARSEABLE.")
+        lines.append("")
         return "\n".join(lines)
+
+    if not (claude_parseable and openai_parseable):
+        missing = []
+        if not claude_parseable:
+            missing.append("claude")
+        if not openai_parseable:
+            missing.append("openai")
+        lines.append("")
+        lines.append(
+            f"Note: {', '.join(missing)} message(s) partially unparseable; "
+            "disagreement count is a lower bound.",
+        )
 
     lines.append("")
     lines.append("| control_id | claude_status | openai_status | disagreement |")
@@ -206,11 +228,19 @@ def main(argv: list[str] | None = None) -> int:
     print()
 
     total_disagreements = 0
+    unparseable_fixtures: list[str] = []
     for name in fixture_names:
         claude_message = _find_message(name, "claude", roots)
         openai_message = _find_message(name, "openai", roots)
         section = _diff_one_fixture(name, claude_message, openai_message)
         print(section)
+        # PR #371 review fix: recognize UNPARSEABLE explicitly and skip
+        # counting -- previously a fully unparseable fixture matched the
+        # "disagreements" branch with a zero and was silently added as
+        # a clean run.
+        if "UNPARSEABLE" in section:
+            unparseable_fixtures.append(name)
+            continue
         if "disagreements" in section:
             # Grep the summary line for the count.
             for line in section.splitlines():
@@ -226,6 +256,12 @@ def main(argv: list[str] | None = None) -> int:
 
     print("---")
     print(f"**Total disagreements across all fixtures: {total_disagreements}**")
+    if unparseable_fixtures:
+        print(
+            f"**Unparseable fixtures (excluded from disagreement count): "
+            f"{unparseable_fixtures}**",
+        )
+        return 1  # non-zero exit so CI won't file an unparseable run as clean
 
     return 0
 

@@ -113,7 +113,10 @@ class TestSC011TurnCapExhausted:
             ),
         ):
             # Also stub the openai import (delayed inside invoke()).
-            import openai
+            # PR #371 review fix: skip cleanly when the parity-tier2 extra
+            # is not installed (unit runs on a lean env), instead of
+            # blowing up with ImportError.
+            openai = pytest.importorskip("openai")
 
             openai.AsyncOpenAI = lambda: mock_client  # type: ignore[assignment]
 

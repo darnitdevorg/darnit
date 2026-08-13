@@ -157,7 +157,20 @@ async def _run_one_fixture(
         )
     else:
         skill_report = SkillReport.parse(skill_result.final_message)
-        diff_report = diff(mcp_result, skill_report, fixture_dir.name)
+        # PR #371 review fix: thread the provider's final-message filename
+        # into the diff so failure reports point at
+        # `openai_final_message.md` rather than the default
+        # `skill_final_message.md` on the OpenAI provider path.
+        provider = _provider_filename_prefix(backend_name)
+        final_message_filename = (
+            "skill_final_message.md" if provider == "claude" else f"{provider}_final_message.md"
+        )
+        diff_report = diff(
+            mcp_result,
+            skill_report,
+            fixture_dir.name,
+            final_message_filename=final_message_filename,
+        )
         outcome = diff_report.outcome
         diff_md = diff_report.diff_markdown
 
