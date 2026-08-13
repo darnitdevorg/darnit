@@ -1,0 +1,11 @@
+extends = "openssf-baseline"
+
+# Disable everything except our STAGE1-REF-* reference control so the LLM
+# dispatch path is exercised without every OSPS control running (which
+# would either need lots of setup or produce lots of noise). The single
+# STAGE1-REF-SECURITY-01 control from feature 025 has the exact shape we
+# need: suggestive llm_extract + dispositive file_exists.
+
+[audit_profiles.stage1_only]
+description = "Stage 1 reference control only -- for feature 026 harness tests"
+tags = { "stage1-ref" = true }

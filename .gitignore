@@ -33,6 +33,10 @@ Thumbs.db
 project.toml
 !example.*.toml
 !example.*.yaml
+# Test fixtures with tracked .baseline.toml. The top-level rule above
+# would otherwise strip them and CI would auto-pick a different
+# framework than the fixture expects (harness/parity tests).
+!tests/darnit/harness/fixtures/**/.baseline.toml
 
 # Logs
 *.log
