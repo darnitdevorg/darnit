@@ -17,23 +17,19 @@ import subprocess
 
 import pytest
 
+_BASE_CANDIDATES = (
+    # `upstream/main` before `origin/main`: on a fork clone, `origin/main`
+    # is often stale (last synced days ago) while `upstream/main` tracks
+    # the source-of-truth remote. On the source repo itself,
+    # `upstream/main` won't exist and we fall through to `origin/main`.
+    "upstream/main",
+    "origin/main",
+    "main",
+)
 
-def _base_ref() -> str | None:
-    """Detect the base ref to diff against. Returns None if none reachable.
 
-    Tries the immediate stack parent first (026-harness-with-stage1) because
-    feature 028 is stacked on it during development; when 028 is on main
-    (after 026 merges), origin/main is the right base. The precise order
-    matters because a stacked-branch check against `main` would incorrectly
-    flag every 026 change as a violation.
-    """
-    for candidate in [
-        "origin/026-harness-with-stage1",
-        "026-harness-with-stage1",
-        "origin/main",
-        "upstream/main",
-        "main",
-    ]:
+def _find_reachable_base() -> str | None:
+    for candidate in _BASE_CANDIDATES:
         rc = subprocess.run(
             ["git", "rev-parse", "--verify", "-q", candidate],
             capture_output=True,
@@ -42,6 +38,41 @@ def _base_ref() -> str | None:
         if rc.returncode == 0 and rc.stdout.strip():
             return candidate
     return None
+
+
+def _base_ref() -> str | None:
+    """Detect the base ref to diff against. Returns None if none reachable
+    even after unshallowing.
+
+    Tries the immediate stack parent first (026-harness-with-stage1) because
+    feature 028 is stacked on it during development; when 028 is on main
+    (after 026 merges), origin/main is the right base. The precise order
+    matters because a stacked-branch check against `main` would incorrectly
+    flag every 026 change as a violation. Under a shallow CI clone (the
+    default `actions/checkout` config) the base ref is often not initially
+    reachable; try `git fetch --unshallow` + a full remote sync once before
+    giving up.
+    """
+    hit = _find_reachable_base()
+    if hit is not None:
+        return hit
+
+    # Shallow-clone recovery path. `--unshallow` deepens the current ref,
+    # but stack-parent refs (`origin/026-harness-with-stage1`) live on
+    # OTHER branches -- add an explicit refspec fetch so they appear.
+    # Both commands quietly succeed even when there's no remote to fetch
+    # from (or the repo is already unshallow); either way we re-check.
+    subprocess.run(
+        ["git", "fetch", "--unshallow", "--tags", "origin"],
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        ["git", "fetch", "origin", "+refs/heads/*:refs/remotes/origin/*"],
+        capture_output=True,
+        text=True,
+    )
+    return _find_reachable_base()
 
 
 def _is_ci() -> bool:
@@ -57,7 +88,15 @@ def _is_ci() -> bool:
 def test_no_product_source_changes() -> None:
     """FR-014: parity-tests PR MUST NOT modify product source. Test/config
     files are exempt so a build-config touch or a test refactor stays in
-    scope."""
+    scope.
+
+    Now that PR #365 has merged, feature 028 sits directly on `main`;
+    the base ref is `origin/main` (or a local `main` variant) and the
+    diff cleanly identifies the parity PR's own commits. If no main ref
+    is reachable at all -- e.g., a shallow CI clone without unshallow
+    -- fall back to skip (local dev) or fail (CI, with a clear pointer
+    at fetch depth).
+    """
     base = _base_ref()
     if base is None:
         # PR #370 review fix: silently skipping under shallow CI clones
