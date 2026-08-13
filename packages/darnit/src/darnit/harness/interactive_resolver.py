@@ -21,6 +21,7 @@ See specs/027-interactive-resolvers/plan.md + research.md R3.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, TextIO
 
 from darnit.harness.question_resolvers import (
@@ -48,7 +49,19 @@ class InteractiveTerminalResolver:
         self._closed = False
 
     def _ensure_streams(self) -> tuple[TextIO, TextIO]:
-        """Return (input, output) streams; open /dev/tty on demand."""
+        """Return (input, output) streams; open /dev/tty on demand.
+
+        Per contract IR-23: /dev/tty is NOT opened when EITHER argument
+        is non-None. Per IR-25, partial injection is not supported --
+        callers who wire only one side silently lost the other before
+        PR #367 review fixed it; that now raises a programming error.
+        """
+        if (self._input_stream is None) != (self._output_stream is None):
+            raise ValueError(
+                "InteractiveTerminalResolver requires both input_stream and "
+                "output_stream, or neither. Providing only one is a "
+                "programming error (contract IR-25).",
+            )
         if self._input_stream is not None and self._output_stream is not None:
             return self._input_stream, self._output_stream
 
@@ -118,8 +131,14 @@ class InteractiveTerminalResolver:
         out_stream.write(prompt)
         out_stream.flush()
 
+        # PR #367 review blocker fix: readline() is blocking and, when
+        # called directly in an async def, freezes the event loop -- so
+        # the driver's `asyncio.wait_for(coro, per_resolver_timeout_s)`
+        # never fires and operator think-time can't be preempted. Wrap
+        # the blocking call in `asyncio.to_thread` so the event loop
+        # keeps running and the driver's timeout is honored.
         try:
-            raw = in_stream.readline()
+            raw = await asyncio.to_thread(in_stream.readline)
         except KeyboardInterrupt as exc:
             raise InteractiveAborted("operator sent SIGINT during prompt") from exc
 

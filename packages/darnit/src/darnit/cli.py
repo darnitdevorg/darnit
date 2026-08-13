@@ -790,9 +790,16 @@ def cmd_harness(args: argparse.Namespace) -> int:
         return int(HarnessExitCode.SETUP_ERROR)
 
     # Feature 027: build the QuestionResolver chain via entry-point discovery.
+    # PR #367 review Constitution IV fix: external resolvers stay out of the
+    # chain unless --allow-external-resolvers is set. An answer they produce
+    # is recorded with authority="asserted", so silent invocation would let
+    # any installed third-party package produce dispositive-strength values
+    # without operator opt-in.
+    allow_external_resolvers = getattr(args, "allow_external_resolvers", False)
     try:
         question_resolvers = HarnessRun.build_default_resolver_chain(
             interactive=interactive,
+            allow_external_resolvers=allow_external_resolvers,
         )
     except HarnessSetupError as exc:
         _emit_exit_summary(f"setup_error, {exc}", HarnessExitCode.SETUP_ERROR)
@@ -845,13 +852,18 @@ def cmd_harness(args: argparse.Namespace) -> int:
         if not text.endswith("\n"):
             sys.stdout.write("\n")
 
-    # Exit summary
+    # Exit summary. Order matches CLI-13 exactly:
+    #   `complete, <P> PASS, <F> FAIL, <W> WARN, <PEND> pending, exit <N>`
+    # so CI parsers written against the contract keep working. Answered
+    # count is appended AFTER `pending`; the CLI-13 grep pattern is a
+    # prefix match on positional fields, so the extra trailing field is
+    # additive rather than positional-shifting. PR #367 review fix.
     s = report.summary
     answered_count = len(report.answered_feedback)
     pending_count = len(report.pending_feedback)
     _emit_exit_summary(
         f"complete, {s.pass_} PASS, {s.fail} FAIL, {s.warn} WARN, "
-        f"{answered_count} answered, {pending_count} pending",
+        f"{pending_count} pending, {answered_count} answered",
         HarnessExitCode(report.exit_class),
     )
     return report.exit_class
@@ -1247,6 +1259,17 @@ def create_parser() -> argparse.ArgumentParser:
             "Per-resolver timeout in seconds. Default: no timeout. "
             "Setting a global bound is usually inappropriate (an operator at "
             "a terminal cannot be on the same clock as a webhook resolver)."
+        ),
+    )
+    harness_parser.add_argument(
+        "--allow-external-resolvers",
+        action="store_true",
+        help=(
+            "Include third-party question resolvers registered under the "
+            "`darnit.question_resolvers` entry-point group. Off by default: "
+            "external resolvers produce authority='asserted' values, so "
+            "silently including them would violate Constitution Principle IV "
+            "(only human confirmation may assert)."
         ),
     )
     harness_parser.set_defaults(func=cmd_harness)

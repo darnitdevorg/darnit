@@ -79,7 +79,11 @@ def discover_registered_resolvers() -> dict[str, QuestionResolver]:
     return found
 
 
-def build_default_resolver_chain(interactive: bool) -> list[Any]:
+def build_default_resolver_chain(
+    interactive: bool,
+    *,
+    allow_external_resolvers: bool = False,
+) -> list[Any]:
     """Build the CLI's canonical resolver chain.
 
     Contract QR-21 + research.md R7:
@@ -87,8 +91,17 @@ def build_default_resolver_chain(interactive: bool) -> list[Any]:
       - If interactive=True: put `interactive_terminal` first (raise if absent).
       - Append every OTHER resolver in discovery order.
 
+    PR #367 review Constitution IV fix: third-party resolvers whose
+    answers become ``authority="asserted"`` are gated behind
+    ``allow_external_resolvers``. Constitution Principle IV allows only
+    human confirmation to produce an asserted value; a resolver that
+    silently loads from an installed Python package is not that. The
+    fleet operator must opt in explicitly (via ``--allow-external-resolvers``
+    on the CLI or the keyword here) before external resolvers enter the
+    chain. Without it, only the interactive terminal (if requested) runs.
+
     Returns a list of resolver instances. The list may be empty when
-    interactive=False and no third-party resolvers are registered.
+    interactive=False and no third-party resolvers are opted in.
     """
     all_resolvers = discover_registered_resolvers()
 
@@ -109,9 +122,20 @@ def build_default_resolver_chain(interactive: bool) -> list[Any]:
             )
         chain.append(terminal)
 
-    # Every other resolver in stable entry-point discovery order.
-    for _name, resolver in all_resolvers.items():
-        chain.append(resolver)
+    # External resolvers only enter the chain when the operator opted in.
+    # Without the opt-in, log at INFO which resolvers were discovered but
+    # NOT invoked, so a fleet operator can see them and choose to enable.
+    if allow_external_resolvers:
+        for _name, resolver in all_resolvers.items():
+            chain.append(resolver)
+    elif all_resolvers:
+        logger.info(
+            "harness: %d external resolver(s) discovered but NOT invoked: %s. "
+            "Pass --allow-external-resolvers to include them (their answers "
+            "will be recorded with authority='asserted').",
+            len(all_resolvers),
+            sorted(all_resolvers.keys()),
+        )
 
     return chain
 

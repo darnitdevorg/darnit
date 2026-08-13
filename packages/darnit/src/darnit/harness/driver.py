@@ -137,7 +137,12 @@ class HarnessRun:
     # ------------------------------------------------------------------
 
     @classmethod
-    def build_default_resolver_chain(cls, interactive: bool) -> list[Any]:
+    def build_default_resolver_chain(
+        cls,
+        interactive: bool,
+        *,
+        allow_external_resolvers: bool = False,
+    ) -> list[Any]:
         """Compose the CLI's canonical resolver chain.
 
         Delegates to `darnit.harness.resolver_discovery.build_default_resolver_chain`
@@ -145,13 +150,18 @@ class HarnessRun:
         `darnit.question_resolvers` (contract QR-14..QR-16).
 
         - If interactive=True: the `interactive_terminal` resolver is first.
-        - Then every OTHER registered resolver in entry-point discovery order.
+        - Third-party resolvers are included only when
+          ``allow_external_resolvers=True`` (PR #367 review fix;
+          Constitution Principle IV).
         """
         # Local import so a broken discovery module doesn't crash the driver's
         # module load.
         from darnit.harness.resolver_discovery import build_default_resolver_chain
 
-        return build_default_resolver_chain(interactive=interactive)
+        return build_default_resolver_chain(
+            interactive=interactive,
+            allow_external_resolvers=allow_external_resolvers,
+        )
 
     # ------------------------------------------------------------------
     # Startup checks (T010, T011)
@@ -661,6 +671,11 @@ class HarnessRun:
                         question=q_text,
                     ),
                 )
+                # PR #367 review fix: bump the aborted counter here too --
+                # previously only the question that triggered the abort
+                # got counted, so the exit-summary undercounted aborts by
+                # (total - 1).
+                counts["aborted"] += 1
                 continue
 
             trail: list[ResolutionTrailEntry] = []
@@ -684,7 +699,7 @@ class HarnessRun:
                 except InteractiveAborted:
                     trail.append(
                         ResolutionTrailEntry(
-                            resolver_name=resolver.name,
+                            resolver_name=getattr(resolver, "name", "<unknown>"),
                             outcome="skipped",
                         ),
                     )
@@ -693,7 +708,7 @@ class HarnessRun:
                 except TimeoutError:
                     trail.append(
                         ResolutionTrailEntry(
-                            resolver_name=resolver.name,
+                            resolver_name=getattr(resolver, "name", "<unknown>"),
                             outcome="errored",
                             error_summary=(
                                 f"resolver timed out after {self.per_resolver_timeout_s}s"
@@ -704,7 +719,7 @@ class HarnessRun:
                 except Exception as exc:  # noqa: BLE001
                     logger.warning(
                         "resolver %s raised %s during resolve()",
-                        resolver.name,
+                        getattr(resolver, "name", "<unknown>"),
                         type(exc).__name__,
                     )
                     safe = _redact_secrets(str(exc))[:200] or "(no error message)"
@@ -867,9 +882,11 @@ class HarnessRun:
 
         Lifecycle per data-model.md "State transitions":
         1. Credentials check (missing key -> raise HarnessSetupError)
-        2. Initial audit (stop_on_llm=True)
+        2. Initial audit (stop_on_llm=True; bounded by total_run_timeout_s)
         3. LLM continuation loop (bounded by total_run_timeout_s)
-        4. Collect unanswered (does NOT re-audit; MVP policy)
+        4. Collect unanswered (NOT bounded; interactive operator think-time
+           MUST NOT count against the audit budget -- PR #367 review
+           blocker fix)
         5. Assemble + return report
 
         Raises HarnessSetupError on class-2 conditions; caller in
@@ -883,10 +900,16 @@ class HarnessRun:
         logger.info("harness: starting audit of %s", self.local_path)
         logger.info(self.answer_resolver.summary())
 
-        # Bound the whole run by total_run_timeout_s.
+        # Steps 2-3 (initial audit + LLM continuation) are bounded by
+        # total_run_timeout_s -- these are non-interactive and can hang
+        # on a bad repo or a stuck LLM call. Step 4 (collect) is NOT
+        # bounded, since interactive resolvers block on operator input
+        # and there is no useful ceiling on that. Per-resolver preemption
+        # is handled inside `_run_resolver_chain` via
+        # `per_resolver_timeout_s`.
         try:
-            report = await asyncio.wait_for(
-                self._run_body(),
+            audit_output = await asyncio.wait_for(
+                self._run_audit_and_llm(),
                 timeout=self.total_run_timeout_s,
             )
         except TimeoutError as exc:
@@ -898,14 +921,28 @@ class HarnessRun:
                 f"audit exceeded total-run timeout of {self.total_run_timeout_s}s",
             ) from exc
 
-        return report
+        results, owner, repo, _default_branch = audit_output
 
-    async def _run_body(self) -> HarnessReport:
-        """Body of run(), separated so run() can wrap it in wait_for."""
+        # Collect unanswered feedback questions (NOT bounded).
+        results, pending_feedback, answered_feedback, _context_values = await self._collect_unanswered(results)
+
+        # Assemble report
+        return self._assemble_report(
+            results, owner, repo, pending_feedback, answered_feedback,
+        )
+
+    async def _run_audit_and_llm(
+        self,
+    ) -> tuple[list[dict[str, Any]], str, str, str]:
+        """Run the initial audit + LLM continuation loop (non-interactive).
+
+        Bounded by ``total_run_timeout_s`` at the call site. Interactive
+        collect is intentionally NOT in here -- see `run()` docstring.
+        """
         # Initial audit. run_sieve_audit is synchronous and calls out to gh/git
         # shell handlers that can block for arbitrary time on a bad repo.
         # Run it in a worker thread so `asyncio.wait_for(total_run_timeout_s)`
-        # around _run_body can actually preempt a stuck audit.
+        # around _run_audit_and_llm can actually preempt a stuck audit.
         results, owner, repo, default_branch = await asyncio.to_thread(
             self._initial_audit,
         )
@@ -934,14 +971,7 @@ class HarnessRun:
 
         # LLM continuation loop
         results = await self._llm_continuation_loop(results, owner, repo, default_branch)
-
-        # Collect unanswered feedback questions
-        results, pending_feedback, answered_feedback, _context_values = await self._collect_unanswered(results)
-
-        # Assemble report
-        return self._assemble_report(
-            results, owner, repo, pending_feedback, answered_feedback,
-        )
+        return results, owner, repo, default_branch
 
 
 class HarnessRunTimeout(Exception):
