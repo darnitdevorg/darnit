@@ -37,8 +37,18 @@ class TestEndToEndDispatch:
         minimal_llm_repo_tree: Path,
         harness_run_factory: Callable[..., HarnessRun],
     ) -> None:
-        """SC-001 + SC-004: harness runs to completion; LLM dispatched;
-        no result ends up PENDING_LLM in the final report."""
+        """SC-001 + SC-004: harness runs to completion; no result ends up
+        PENDING_LLM in the final report.
+
+        Prior to PR #365 fix this test also asserted >=1 LLM dispatch via
+        STAGE1-REF-SECURITY-01's llm_extract step. That ordering
+        (llm_extract first) made the control unable to ever PASS -- see
+        openssf-baseline.toml comment on STAGE1-REF-SECURITY-01. The
+        reorder puts dispositive file_exists first; llm_extract is now
+        unreachable on this fixture, so we no longer assert LLM dispatch
+        via this control. Whether LLM dispatch continues past a
+        suggestive result is tracked as a follow-up.
+        """
         run = harness_run_factory(str(minimal_llm_repo_tree))
         report = _run(run.run())
 
@@ -46,9 +56,8 @@ class TestEndToEndDispatch:
         pending_llm = [c for c in report.controls if c.get("status") == "PENDING_LLM"]
         assert not pending_llm, f"Found unresolved PENDING_LLM results: {[c['id'] for c in pending_llm]}"
 
-        # At least one LLM call was made (STAGE1-REF-SECURITY-01 has a
-        # suggestive llm_extract step in openssf-baseline.toml).
-        assert report.llm_calls["total"] >= 1, f"Expected >=1 LLM call, got {report.llm_calls['total']}"
+        # Provider is always set to the mock/configured model even when
+        # zero calls were made.
         assert report.llm_calls["provider"] == "anthropic:claude-sonnet-5"
 
     def test_llm_suggestive_cannot_conclude_pass(
@@ -230,8 +239,12 @@ class TestNoReauditAfterCollect:
         assert updated[0]["feedback_questions"][0]["answered"] is True
         assert updated[0]["feedback_questions"][0]["answer"] == "sec@example.com"
         assert ctx_values["security_contact"] == "sec@example.com"
-        # (c) no pending entries left
-        assert pending == []
+        # (c) the attached question's context_key is no longer pending.
+        # PR #365 review fix: `_collect_unanswered` also enumerates the
+        # framework's own pending [context.*] keys, so `pending` is
+        # generally NOT empty on a real fixture -- assert instead that the
+        # question we answered isn't in it.
+        assert "security_contact" not in {e.context_key for e in pending}
 
 
 # ---------------------------------------------------------------------------

@@ -15,6 +15,7 @@ import asyncio
 import os
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from darnit.core.llm_step import ConsultationRequest, LLMJudgment, LLMStep, PydanticAILLMStep
@@ -226,10 +227,17 @@ class HarnessRun:
         control_id = consultation_request.get("control_id", "<unknown>")
         prompt = consultation_request.get("prompt", "")
 
+        # PR #365 review fix: propagate the sieve's evidence, hints,
+        # threshold, and pre-read file contents. Prior code dropped these
+        # so the LLM ran the prompt with no supporting context.
         request = ConsultationRequest(
             control_id=control_id,
             prompt=prompt,
             max_tokens=4096,
+            gathered_evidence=consultation_request.get("gathered_evidence", {}) or {},
+            file_contents=consultation_request.get("file_contents", {}) or {},
+            analysis_hints=consultation_request.get("analysis_hints", []) or [],
+            confidence_threshold=consultation_request.get("confidence_threshold"),
         )
 
         try:
@@ -294,15 +302,21 @@ class HarnessRun:
         Bounded by ``total_run_timeout_s`` at the outer call site.
         """
         from darnit.config.control_loader import control_from_effective
-        from darnit.config.merger import load_effective_config_by_name
+        from darnit.config.merger import load_effective_config_auto
         from darnit.sieve.models import CheckContext
         from darnit.sieve.orchestrator import SieveOrchestrator
 
         # Load the effective (composed) config so we can rebuild ControlSpecs
         # to feed back into verify_with_llm_response after LLM dispatch.
-        effective_config = load_effective_config_by_name(
-            self.framework_name or "openssf-baseline",
-            self.local_path,
+        # PR #365 review fix: resolve framework via `load_effective_config_auto`
+        # so `.baseline.toml`'s `extends` (or --framework) determines the
+        # framework, matching how run_sieve_audit chose it for the initial
+        # pass. The previous code called `load_effective_config_by_name`
+        # with a hardcoded "openssf-baseline" fallback, so a non-baseline
+        # harness run would silently load the wrong framework.
+        effective_config = load_effective_config_auto(
+            Path(self.local_path),
+            framework_name=self.framework_name,
         )
 
         orchestrator = SieveOrchestrator(stop_on_llm=True)
@@ -394,18 +408,23 @@ class HarnessRun:
         does NOT retroactively change the verdict. Also does NOT persist
         to .project/ (research.md R4 idempotence argument).
 
+        Feedback questions come from two sources (PR #365 review fix):
+
+        1. Any ``result["feedback_questions"]`` a caller has already
+           attached (unchanged legacy path).
+        2. The framework's own pending-context enumerator
+           (``darnit.config.context_storage.get_pending_context``). This
+           is the only source that currently fires in production; before
+           this fix, ``--answers`` had nothing to match against and was
+           effectively inert.
+
         Returns (mutated_results, remaining_pending_feedback, context_values).
         """
         context_values: dict[str, str] = {}
         remaining_pending: list[PendingFeedbackEntry] = []
 
+        # (1) Legacy attach path: caller-populated feedback_questions.
         for result in results:
-            # Feedback questions live on results emitted by the agent graph,
-            # not directly on the sieve's CheckResult. Sieve results may
-            # include them via evidence -- but MVP flow does not surface
-            # per-control questions through the harness's audit path.
-            # For MVP, harness pending_feedback is empty unless a caller
-            # attaches questions to the result dicts explicitly.
             questions = result.get("feedback_questions", []) or []
             for q in questions:
                 if isinstance(q, dict):
@@ -437,6 +456,41 @@ class HarnessRun:
                         ),
                     )
 
+        # (2) Framework pending-context enumerator: read `[context.*]` keys
+        # that the framework declared and that current .project/project.yaml
+        # has not yet answered. Route each through the answer resolver so
+        # `--answers` and the auto-discovered `.project/project.yaml` are
+        # actually consulted. Failure to enumerate is not fatal -- log and
+        # continue with whatever the caller already attached.
+        try:
+            from darnit.config.context_storage import get_pending_context
+
+            pending_ctx = get_pending_context(self.local_path, level=self.level)
+        except Exception as exc:
+            logger.debug("get_pending_context failed: %s", exc)
+            pending_ctx = []
+
+        seen_ctx_keys = set(context_values.keys()) | {e.context_key for e in remaining_pending}
+        for req in pending_ctx:
+            ctx_key = req.key
+            if ctx_key in seen_ctx_keys:
+                continue
+            seen_ctx_keys.add(ctx_key)
+
+            answer, _source = self.answer_resolver.resolve(ctx_key)
+            if answer is not None:
+                context_values[ctx_key] = answer
+                continue
+
+            question_text = getattr(req.definition, "prompt", None) or getattr(req.definition, "hint", None) or ctx_key
+            remaining_pending.append(
+                PendingFeedbackEntry(
+                    control_id=(req.control_ids[0] if req.control_ids else ""),
+                    context_key=ctx_key,
+                    question=str(question_text),
+                ),
+            )
+
         return results, remaining_pending, context_values
 
     # ------------------------------------------------------------------
@@ -464,7 +518,15 @@ class HarnessRun:
             error=summary_counts["ERROR"],
         )
 
-        exit_class = HarnessExitCode.AUDIT_FAILURES if summary.fail > 0 else HarnessExitCode.SUCCESS
+        # PR #365 review fix: an all-ERROR (or all-WARN) run must NOT exit
+        # 0. Per the exit-code contract (cli.md CLI-11), SUCCESS requires
+        # "all applicable controls PASS or N/A"; anything else is
+        # AUDIT_FAILURES. Constitution II (Conservative-by-Default) also
+        # treats WARN and ERROR as non-compliant.
+        if summary.fail > 0 or summary.error > 0 or summary.warn > 0:
+            exit_class = HarnessExitCode.AUDIT_FAILURES
+        else:
+            exit_class = HarnessExitCode.SUCCESS
 
         return HarnessReport(
             target={

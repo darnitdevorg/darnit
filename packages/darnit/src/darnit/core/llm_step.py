@@ -27,6 +27,15 @@ class ConsultationRequest(BaseModel):
     files_to_include: list[Path] = []
     max_tokens: int = 4096
     response_schema: dict[str, Any] | None = None
+    # PR #365 review fix: the sieve builtin llm_eval handler emits these
+    # alongside the prompt so the LLM sees the evidence gathered by prior
+    # passes plus any hints the control author wrote. Prior driver code
+    # dropped these fields on the floor; the LLM ran the prompt with no
+    # supporting context. Optional so non-sieve callers stay unaffected.
+    gathered_evidence: dict[str, Any] = {}
+    file_contents: dict[str, str] = {}
+    analysis_hints: list[str] = []
+    confidence_threshold: float | None = None
 
 
 class LLMJudgment(BaseModel):
@@ -105,6 +114,17 @@ class PydanticAILLMStep:
         # Assemble the user prompt from the request. Include file contents
         # if provided; cap each at 10K chars to bound context usage.
         parts: list[str] = [f"Control: {request.control_id}", "", request.prompt]
+        if request.analysis_hints:
+            parts.extend(["", "Analysis hints:", *[f"- {h}" for h in request.analysis_hints]])
+        if request.gathered_evidence:
+            parts.extend(["", "Evidence from prior passes:"])
+            for k, v in request.gathered_evidence.items():
+                parts.append(f"- {k}: {v}")
+        # File contents pre-read by the sieve (per-file 10K cap already applied).
+        for name, content in request.file_contents.items():
+            parts.extend(["", f"--- {name} ---", content])
+        # File paths the caller wants the LLM to read directly. Cap at 5 and
+        # 10K chars per file.
         for path in request.files_to_include[:5]:
             try:
                 content = path.read_text(encoding="utf-8", errors="ignore")[:10000]

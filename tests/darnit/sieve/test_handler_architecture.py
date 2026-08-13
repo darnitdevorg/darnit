@@ -114,7 +114,10 @@ class TestHandlerRegistry:
         registry = SieveHandlerRegistry()
         handler_fn = _make_handler(HandlerResultStatus.PASS)
 
-        registry.register("test_handler", "deterministic", handler_fn, "A test handler")
+        registry.register(
+            "test_handler", "deterministic", handler_fn, "A test handler",
+            default_authority="dispositive",
+        )
 
         info = registry.get("test_handler")
         assert info is not None
@@ -133,7 +136,8 @@ class TestHandlerRegistry:
         """Test phase affinity warning is issued."""
         registry = SieveHandlerRegistry()
         registry.register(
-            "file_check", "deterministic", _make_handler(HandlerResultStatus.PASS)
+            "file_check", "deterministic", _make_handler(HandlerResultStatus.PASS),
+            default_authority="dispositive",
         )
         # Should log a warning but not raise
         registry.validate_phase("file_check", "pattern")
@@ -142,9 +146,15 @@ class TestHandlerRegistry:
     def test_duplicate_core_registration(self):
         """Test re-registering a core handler warns."""
         registry = SieveHandlerRegistry()
-        registry.register("h1", "deterministic", _make_handler(HandlerResultStatus.PASS))
+        registry.register(
+            "h1", "deterministic", _make_handler(HandlerResultStatus.PASS),
+            default_authority="dispositive",
+        )
         # Re-register without plugin context — should log warning
-        registry.register("h1", "deterministic", _make_handler(HandlerResultStatus.FAIL))
+        registry.register(
+            "h1", "deterministic", _make_handler(HandlerResultStatus.FAIL),
+            default_authority="dispositive",
+        )
         # Latest registration wins
         info = registry.get("h1")
         result = info.fn({}, HandlerContext(local_path="/tmp"))
@@ -154,10 +164,16 @@ class TestHandlerRegistry:
     def test_plugin_override_core(self):
         """Test plugin handler overrides core handler."""
         registry = SieveHandlerRegistry()
-        registry.register("file_exists", "deterministic", _make_handler(HandlerResultStatus.PASS))
+        registry.register(
+            "file_exists", "deterministic", _make_handler(HandlerResultStatus.PASS),
+            default_authority="dispositive",
+        )
 
         registry.set_plugin_context("my-plugin")
-        registry.register("file_exists", "deterministic", _make_handler(HandlerResultStatus.FAIL))
+        registry.register(
+            "file_exists", "deterministic", _make_handler(HandlerResultStatus.FAIL),
+            default_authority="dispositive",
+        )
         registry.set_plugin_context(None)
 
         info = registry.get("file_exists")
@@ -167,9 +183,18 @@ class TestHandlerRegistry:
     def test_list_handlers_by_phase(self):
         """Test listing handlers filtered by phase."""
         registry = SieveHandlerRegistry()
-        registry.register("h1", "deterministic", _make_handler(HandlerResultStatus.PASS))
-        registry.register("h2", "pattern", _make_handler(HandlerResultStatus.PASS))
-        registry.register("h3", "deterministic", _make_handler(HandlerResultStatus.PASS))
+        registry.register(
+            "h1", "deterministic", _make_handler(HandlerResultStatus.PASS),
+            default_authority="dispositive",
+        )
+        registry.register(
+            "h2", "pattern", _make_handler(HandlerResultStatus.PASS),
+            default_authority="dispositive",
+        )
+        registry.register(
+            "h3", "deterministic", _make_handler(HandlerResultStatus.PASS),
+            default_authority="dispositive",
+        )
 
         det = registry.list_handlers(phase="deterministic")
         assert len(det) == 2
@@ -180,9 +205,15 @@ class TestHandlerRegistry:
     def test_list_handlers_by_plugin(self):
         """Test listing handlers filtered by plugin."""
         registry = SieveHandlerRegistry()
-        registry.register("core_h", "deterministic", _make_handler(HandlerResultStatus.PASS))
+        registry.register(
+            "core_h", "deterministic", _make_handler(HandlerResultStatus.PASS),
+            default_authority="dispositive",
+        )
         registry.set_plugin_context("baseline")
-        registry.register("plugin_h", "pattern", _make_handler(HandlerResultStatus.PASS))
+        registry.register(
+            "plugin_h", "pattern", _make_handler(HandlerResultStatus.PASS),
+            default_authority="dispositive",
+        )
         registry.set_plugin_context(None)
 
         # plugin=None → no filter, returns ALL handlers
@@ -198,7 +229,10 @@ class TestHandlerRegistry:
     def test_clear(self):
         """Test clearing the registry."""
         registry = SieveHandlerRegistry()
-        registry.register("h1", "deterministic", _make_handler(HandlerResultStatus.PASS))
+        registry.register(
+            "h1", "deterministic", _make_handler(HandlerResultStatus.PASS),
+            default_authority="dispositive",
+        )
         assert registry.get("h1") is not None
 
         registry.clear()
@@ -587,7 +621,10 @@ class TestSharedHandlerCache:
                 evidence={"found": True},
             )
 
-        registry.register("shared_check", "deterministic", counting_handler)
+        registry.register(
+            "shared_check", "deterministic", counting_handler,
+            default_authority="dispositive",
+        )
 
         orchestrator = SieveOrchestrator()
 
@@ -619,7 +656,10 @@ class TestSharedHandlerCache:
                 confidence=1.0,
             )
 
-        registry.register("h", "deterministic", counting_handler)
+        registry.register(
+            "h", "deterministic", counting_handler,
+            default_authority="dispositive",
+        )
 
         orchestrator = SieveOrchestrator()
         inv = [HandlerInvocation(handler="h", shared="cache_key")]
@@ -647,6 +687,7 @@ class TestSharedHandlerCache:
             "failing_handler",
             "deterministic",
             _make_handler(HandlerResultStatus.ERROR, "API error"),
+            default_authority="dispositive",
         )
 
         orchestrator = SieveOrchestrator()

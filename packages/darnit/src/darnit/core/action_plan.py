@@ -22,6 +22,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict
 
 from darnit.core.authority import Authority
+from darnit.core.context_validation import validate_context_answer
 from darnit.core.errors import OutOfOrderSubmission, ResultSchemaMismatch
 
 # ---------------------------------------------------------------------------
@@ -349,6 +350,13 @@ def submit_result(
     elif integration == "collect_context":
         # Result from collect_context: user answers to feedback questions.
         answers: dict[str, str] = result.get("answers", {})
+        # PR #365 review fix: reject shell metacharacters / newlines / null
+        # bytes before storing any answer. Answers eventually reach
+        # RemediationExecutor._substitute_command; the legacy agent-graph
+        # confirm_data flow guards this boundary and the new action-plan
+        # collect_context branch must do the same.
+        for key, value in answers.items():
+            validate_context_answer(key, value)
         new_questions = []
         for q in new_state.feedback_questions:
             if q.context_key in answers:
@@ -373,6 +381,13 @@ def submit_result(
         )
 
     # Record the step in the evidence log for provenance.
+    # PR #365 review fix: exclude the bulky per-integration payloads
+    # (audit_results, feedback_questions, remediation_results) from the
+    # raw log -- they already live on `new_state` and duplicating them
+    # here made evidence grow O(steps * controls) per audit run.
+    _bulky_result_keys = frozenset(
+        {"outcome", "reasoning", "audit_results", "feedback_questions", "remediation_results"}
+    )
     control_id = expected.control_id or "__pipeline__"
     ev_list = list(new_state.evidence.get(control_id, []))
     ev_list.append(
@@ -381,7 +396,7 @@ def submit_result(
             authority=expected.step.authority,
             outcome=result.get("outcome", "completed"),
             reasoning=result.get("reasoning", ""),
-            raw={k: v for k, v in result.items() if k not in ("outcome", "reasoning")},
+            raw={k: v for k, v in result.items() if k not in _bulky_result_keys},
         )
     )
     new_state.evidence = {**new_state.evidence, control_id: ev_list}

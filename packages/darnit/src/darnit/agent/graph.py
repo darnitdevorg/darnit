@@ -30,6 +30,9 @@ from typing import Any
 from darnit.agent.state import AuditState
 from darnit.config.context_storage import save_context_values
 from darnit.config.framework_schema import FrameworkConfig
+from darnit.core.context_validation import (
+    validate_context_answer as _validate_context_answer,
+)
 from darnit.core.logging import get_logger
 from darnit.remediation.executor import RemediationExecutor
 from darnit.tools.audit import prepare_audit, run_checks
@@ -344,30 +347,3 @@ def _get_framework_path(framework_name: str | None) -> str | None:
     except Exception as exc:
         logger.warning("Failed to resolve framework path for %r: %s", framework_name, exc)
     return None
-
-
-# Characters that must never appear in user-supplied context answer values.
-# These could be interpreted as shell metacharacters or break argument parsing
-# even when shell=False, and have no legitimate use in compliance context values
-# (paths, maintainer names, policy filenames, etc.).
-_INVALID_ANSWER_CHARS = frozenset("\x00\n\r;|&$`(){}[]<>\\")
-
-
-def _validate_context_answer(key: str, value: str) -> None:
-    """Raise ValueError if *value* contains characters unsafe for context substitution.
-
-    Args:
-        key: The context key (used only for the error message).
-        value: The user-supplied answer string to validate.
-
-    Raises:
-        ValueError: If the value contains shell metacharacters, newlines, or
-            null bytes that could enable injection via command substitution.
-    """
-    found = _INVALID_ANSWER_CHARS & set(value)
-    if found:
-        raise ValueError(
-            f"Context answer for {key!r} contains disallowed character(s) "
-            f"{sorted(found)!r}. Values must not include shell metacharacters, "
-            "newlines, or null bytes."
-        )

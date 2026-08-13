@@ -360,9 +360,9 @@ class TestFlatListOrdering:
                 evidence={"verification_steps": ["Check settings"]},
             )
 
-        registry.register("h_exec", "deterministic", exec_handler)
-        registry.register("h_pattern", "pattern", pattern_handler)
-        registry.register("h_manual", "manual", manual_handler)
+        registry.register("h_exec", "deterministic", exec_handler, default_authority="dispositive")
+        registry.register("h_pattern", "pattern", pattern_handler, default_authority="dispositive")
+        registry.register("h_manual", "manual", manual_handler, default_authority="asserted")
 
         orchestrator = SieveOrchestrator()
         invocations = [

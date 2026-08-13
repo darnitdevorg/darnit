@@ -4378,21 +4378,28 @@ domain = "VM"
 description = "RFC-0001 Stage 1 reference control: SECURITY.md discovery + LLM-suggested contact + confirmation"
 tags = { level = 1, domain = "VM", "stage1-ref" = true }
 
-# Suggestive step FIRST so it can attach a candidate contact as evidence
-# even when the dispositive file_exists step ultimately concludes FAIL.
-# Under Stage 1's Check-phase rule, suggestive results never terminate;
-# execution continues to file_exists which makes the actual verdict.
+# Dispositive file_exists FIRST so a repo with SECURITY.md concludes PASS
+# without ever calling the LLM. Under the harness's `stop_on_llm=True`
+# semantics, an ll m_extract-first ordering returns PENDING_LLM and the
+# sieve never continues to file_exists -- the control lands on WARN,
+# never PASS. Reviewer flagged this on PR #365 as a level-1 control
+# that could never PASS.
+#
+# NOTE: this ordering sacrifices the "suggestive proposes a candidate
+# contact even when file_exists concludes FAIL" property. A future
+# feature can add a "suggestive-runs-after-termination" semantic to the
+# orchestrator so both properties hold; documented for follow-up.
+[[controls."STAGE1-REF-SECURITY-01".passes]]
+handler = "file_exists"
+files = ["SECURITY.md", "docs/SECURITY.md", ".github/SECURITY.md"]
+authority = "dispositive"
+
 [[controls."STAGE1-REF-SECURITY-01".passes]]
 handler = "llm_extract"
 prompt = "Scan the repository's README and documentation for security-contact information. Propose a contact string suitable for a SECURITY.md."
 files = ["README.md", "README", "docs/**/*.md"]
 target_key = "security_contact"
 authority = "suggestive"
-
-[[controls."STAGE1-REF-SECURITY-01".passes]]
-handler = "file_exists"
-files = ["SECURITY.md", "docs/SECURITY.md", ".github/SECURITY.md"]
-authority = "dispositive"
 
 # =============================================================================
 # MCP Server Configuration

@@ -83,7 +83,10 @@ class TestExecutorProjectUpdate:
         def _test_handler(config, ctx):
             return HandlerResult(status=HandlerResultStatus.PASS, message="OK")
 
-        registry.register("_test_pu_handler", "deterministic", _test_handler)
+        registry.register(
+            "_test_pu_handler", "deterministic", _test_handler,
+            default_authority="dispositive",
+        )
 
         try:
             executor = RemediationExecutor(

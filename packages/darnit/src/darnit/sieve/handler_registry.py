@@ -172,7 +172,8 @@ class SieveHandlerRegistry:
         phase: str | HandlerPhase,
         handler_fn: HandlerFn,
         description: str = "",
-        default_authority: Authority = "suggestive",
+        *,
+        default_authority: Authority,
     ) -> None:
         """Register a sieve handler.
 
@@ -183,11 +184,24 @@ class SieveHandlerRegistry:
             description: Human-readable description.
             default_authority: RFC-0001 Stage 1 (feature 025). Authority the
                 orchestrator uses for results from this handler when neither
-                the ``HandlerResult`` nor the TOML step declares one. Defaults
-                to ``"suggestive"`` -- the safe default. Set explicitly to
-                ``"dispositive"`` for handlers that observe ground truth
-                (file_exists, exec, api_call, etc.) or ``"asserted"`` for
+                the ``HandlerResult`` nor the TOML step declares one.
+                REQUIRED (keyword-only, no default). Use ``"dispositive"``
+                for handlers that observe ground truth (file_exists, exec,
+                api_call, pattern matching, gittuf verification, etc.),
+                ``"suggestive"`` for handlers that propose candidates
+                (llm_extract, llm_eval), and ``"asserted"`` for
                 manual/confirmation handlers.
+
+                Making this a REQUIRED keyword prevents the pattern that
+                caused PR #365's silent PASS->WARN regression across every
+                plugin control: a plugin author registers a
+                ground-truth-observing handler, forgets the authority
+                argument, gets the ``"suggestive"`` default, and the
+                handler's PASS results silently downgrade to WARN because
+                a suggestive result never terminates the Check phase.
+                Explicit-required forces the plugin author to name the
+                authority; a missing argument is a ``TypeError`` at
+                registration, not a silent runtime regression.
         """
         if isinstance(phase, str):
             phase = HandlerPhase(phase)

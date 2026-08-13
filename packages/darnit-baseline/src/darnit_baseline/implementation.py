@@ -228,6 +228,9 @@ class OSPSBaselineImplementation:
             phase="deterministic",
             handler_fn=generate_threat_model_handler,
             description="Generate dynamic STRIDE threat model",
+            # RFC-0001 Stage 1: threat-model generation observes ground
+            # truth (file produced or not). Explicitly dispositive.
+            default_authority="dispositive",
         )
         sieve_registry.set_plugin_context(None)
 

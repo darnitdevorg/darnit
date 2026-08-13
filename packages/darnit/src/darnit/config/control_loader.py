@@ -564,8 +564,30 @@ def _validate_and_log_authority(control_id: str, invocations: list) -> None:
             )
             continue
         # Explicit authority: enforce no-loosening rule.
-        step_strength = _AUTHORITY_STRENGTH.get(step_authority, 0)
-        default_strength = _AUTHORITY_STRENGTH.get(handler_default, 0)
+        # PR #365 review fix: reject unknown authority literals up front
+        # instead of silently coercing them to strength 0 (which would let
+        # any typo through as "weaker than everything").
+        if step_authority not in _AUTHORITY_STRENGTH:
+            raise AuthorityViolation(
+                control_id=control_id,
+                step_id=f"pass[{idx}]:{inv.handler}",
+                message=(
+                    f"step declares authority={step_authority!r} which is not "
+                    f"one of {sorted(_AUTHORITY_STRENGTH)!r}."
+                ),
+            )
+        if handler_default not in _AUTHORITY_STRENGTH:
+            raise AuthorityViolation(
+                control_id=control_id,
+                step_id=f"pass[{idx}]:{inv.handler}",
+                message=(
+                    f"handler {inv.handler!r} registered with unknown "
+                    f"default_authority={handler_default!r}. Registration "
+                    f"must use one of {sorted(_AUTHORITY_STRENGTH)!r}."
+                ),
+            )
+        step_strength = _AUTHORITY_STRENGTH[step_authority]
+        default_strength = _AUTHORITY_STRENGTH[handler_default]
         if step_strength > default_strength:
             raise AuthorityViolation(
                 control_id=control_id,

@@ -54,22 +54,21 @@ class TestSecurityMdReferenceControl:
         (tmp_path / "README.md").write_text("# proj\nContact us at team@example.com\n")
 
         control = _load_stage1_ref_control()
-        # Feature 026 T045-adjacent: llm_extract now emits a
-        # consultation_request, so stop_on_llm=True (the default) halts on
-        # it. This test exercises the "runs to completion" path; use
-        # stop_on_llm=False so the runner falls through to file_exists.
-        # The harness (feature 026) is the correct consumer of the
-        # stop_on_llm=True path for LLM-dispatched runs.
+        # PR #365 review fix: TOML now orders dispositive file_exists FIRST
+        # so a repo with SECURITY.md concludes PASS without ever calling
+        # the LLM. This test verifies the FAIL side of that ordering; the
+        # suggestive llm_extract step no longer runs because file_exists
+        # short-circuits at the first pass. Losing the "propose contact
+        # even when SECURITY.md is absent" property is documented as a
+        # follow-up in openssf-baseline.toml.
         orch = SieveOrchestrator(stop_on_llm=False)
         result = orch.verify(control, _make_ctx(tmp_path))
 
         # Dispositive file_exists FAILs (no SECURITY.md in any of the paths).
-        # The suggestive llm_extract step ran first (in TOML order) and
-        # attached evidence, then file_exists concluded.
         assert result.status == "FAIL"
         assert result.authority == "dispositive"
-        # llm_extract's evidence is preserved on the accumulated evidence.
-        assert "llm_extract_prompt" in (result.evidence or {})
+        # file_exists ran and recorded the paths it checked.
+        assert "files_checked" in (result.evidence or {})
 
     def test_second_run_reports_pass_when_security_md_present(
         self,
