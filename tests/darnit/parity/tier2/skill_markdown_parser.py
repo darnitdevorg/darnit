@@ -149,18 +149,32 @@ def _extract_controls(markdown: str) -> list[SkillControlClaim] | None:
         if not cid_match:
             continue
 
-        # Look for one of the status literals nearby (same line).
-        # Sort by length descending so PENDING_LLM matches before PENDING.
-        for status in sorted(_STATUS_LITERALS, key=len, reverse=True):
-            # Whole-word status match (case-sensitive since these are literal
-            # in darnit's output).
-            if re.search(rf"\b{re.escape(status)}\b", line):
-                cid = cid_match.group(1)
-                if cid in seen:
-                    break
-                seen.add(cid)
-                claims.append(SkillControlClaim(id=cid, status=status))
-                break
+        # PR #370 review fix: pick the LEFTMOST status literal on the
+        # line -- previously the loop matched by _STATUS_LITERALS order,
+        # so a phrase like "WARN ... to reach PASS" got read as PASS.
+        # PENDING_LLM contains "PENDING", so exclude any match whose
+        # start position is a substring of a longer literal that starts
+        # earlier on the line.
+        earliest_status: str | None = None
+        earliest_pos = len(line) + 1
+        for status in _STATUS_LITERALS:
+            m = re.search(rf"\b{re.escape(status)}\b", line)
+            if m is None:
+                continue
+            if m.start() < earliest_pos or (
+                m.start() == earliest_pos and len(status) > len(earliest_status or "")
+            ):
+                earliest_pos = m.start()
+                earliest_status = status
+
+        if earliest_status is None:
+            continue
+
+        cid = cid_match.group(1)
+        if cid in seen:
+            continue
+        seen.add(cid)
+        claims.append(SkillControlClaim(id=cid, status=earliest_status))
 
     return claims
 

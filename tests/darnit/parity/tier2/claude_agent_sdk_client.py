@@ -82,10 +82,31 @@ async def invoke_skill(
         f"Summarize the results per the skill's usual format."
     )
 
+    # PR #370 review fix: wire the darnit MCP server, allow the audit
+    # tool, and lock the agent down so it can't reach for out-of-band
+    # settings. Previously ClaudeAgentOptions passed only model, cwd,
+    # and max_turns -- the agent had NO way to call
+    # audit_openssf_baseline and the parity test measured "skill does
+    # nothing" instead of "skill vs tool".
     options = ClaudeAgentOptions(
         model=model.replace("anthropic:", ""),  # SDK expects bare model name
         max_turns=max_turns,
         cwd=str(fixture_dir),
+        mcp_servers={
+            "darnit": {
+                "type": "stdio",
+                "command": "darnit",
+                "args": ["serve", "--framework", "openssf-baseline"],
+            },
+        },
+        # Restrict to the specific MCP tool the parity test needs. Any
+        # off-list tool call is rejected by the SDK.
+        allowed_tools=["mcp__darnit__audit_openssf_baseline"],
+        # Auto-accept the tool call; parity CI is non-interactive.
+        permission_mode="acceptEdits",
+        # Isolate from the running host's Claude Code settings so a
+        # local dev's project/user config can't influence the run.
+        setting_sources=[],
     )
 
     final_text: str = ""

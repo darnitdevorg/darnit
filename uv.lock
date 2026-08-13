@@ -571,12 +571,14 @@ attestation = [
     { name = "darnit-core", extra = ["attestation"] },
 ]
 dev = [
-    { name = "claude-agent-sdk" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
     { name = "vulture" },
+]
+parity-tier2 = [
+    { name = "claude-agent-sdk" },
 ]
 
 [package.dev-dependencies]
@@ -594,7 +596,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "claude-agent-sdk", marker = "extra == 'dev'", specifier = ">=0.1.0" },
+    { name = "claude-agent-sdk", marker = "extra == 'parity-tier2'", specifier = ">=0.1.0" },
     { name = "darnit-baseline", editable = "packages/darnit-baseline" },
     { name = "darnit-core", editable = "packages/darnit" },
     { name = "darnit-core", extras = ["attestation"], marker = "extra == 'attestation'", editable = "packages/darnit" },
@@ -606,7 +608,7 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.0" },
     { name = "vulture", marker = "extra == 'dev'", specifier = ">=2.11" },
 ]
-provides-extras = ["attestation", "dev"]
+provides-extras = ["attestation", "dev", "parity-tier2"]
 
 [package.metadata.requires-dev]
 dev = [

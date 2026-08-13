@@ -50,9 +50,12 @@ dev = [
     "ruff>=0.8.0",
     "pre-commit>=4.0.0",
     "vulture>=2.11",
-    # Feature 028: Tier 2 parity check invokes the /darnit-audit coding-agent
-    # skill via the Claude Agent SDK. TEST-ONLY dep; MUST NOT appear in any
-    # darnit product package's pyproject.toml (SC-006).
+]
+# Feature 028 Tier 2 (PR #370): the coding-agent parity check imports
+# `claude_agent_sdk` (~90 MB). Isolate it here so `darnit-mcp[dev]`
+# stays lean -- Tier 2 CI installs `darnit-mcp[parity-tier2]`
+# explicitly. Not part of `[dev]` per PR #370 review feedback.
+parity-tier2 = [
     "claude-agent-sdk>=0.1.0",
 ]
 

@@ -56,12 +56,15 @@ def diff(
             diff_markdown=_format_unparseable_report(fixture_name, skill_report),
         )
 
-    # Per-control comparison: for every skill claim, find the matching
-    # tool control and compare status.
+    # Per-control comparison: iterate both directions so a skill that
+    # OMITS a control is caught. Previously only skill claims were
+    # walked, so silently dropping a FAIL was reported as "success".
+    # PR #370 review fix.
     mcp_by_id = {c.id: c for c in mcp_result.controls}
     disagreements: list[tuple[str, str, str]] = []  # (control_id, tool_status, skill_status)
 
     assert skill_report.controls is not None
+    skill_by_id = {claim.id: claim for claim in skill_report.controls}
     for claim in skill_report.controls:
         tool_ctrl = mcp_by_id.get(claim.id)
         if tool_ctrl is None:
@@ -69,6 +72,13 @@ def diff(
             continue
         if tool_ctrl.status != claim.status:
             disagreements.append((claim.id, tool_ctrl.status, claim.status))
+
+    # Tool controls the skill did not mention at all.
+    for tool_ctrl in mcp_result.controls:
+        if tool_ctrl.id not in skill_by_id:
+            disagreements.append(
+                (tool_ctrl.id, tool_ctrl.status, "<not in skill output>"),
+            )
 
     if disagreements:
         return Tier2DiffReport(

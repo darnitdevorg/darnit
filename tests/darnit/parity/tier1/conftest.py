@@ -28,6 +28,20 @@ from tests.darnit.parity.tier1.comparator import AuditResult
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 
 
+def pytest_collection_modifyitems(config: pytest.Config, items: list) -> None:
+    """Auto-mark every test in tier1/ as `integration` (PR #370 review fix).
+
+    Parity tests spin up the full harness against a git-initialized
+    fixture repo, so they never satisfy the `unit` marker's contract.
+    Without an explicit mark, CI's `-m unit / -m integration` split
+    silently deselected the whole suite. This hook applies the mark
+    to every collected item under this conftest.
+    """
+    integration_mark = pytest.mark.integration
+    for item in items:
+        item.add_marker(integration_mark)
+
+
 @pytest.fixture(autouse=True)
 def _ensure_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     """The harness's credential check requires ANTHROPIC_API_KEY; set a

@@ -5,11 +5,14 @@ Runs `git diff --name-only <base>...HEAD` and asserts no file under
 the current PR. Guards against a future maintainer accidentally adding
 a "small helper" to product code from a parity-tests PR.
 
-Skips on local dev when no base ref is reachable.
+Fails loudly (not silently) when the base ref cannot be reached under
+CI, since a shallow-clone runner that silently passes gives the
+maintainer a false sense of coverage. PR #370 review fix.
 """
 
 from __future__ import annotations
 
+import os
 import subprocess
 
 import pytest
@@ -41,12 +44,32 @@ def _base_ref() -> str | None:
     return None
 
 
+def _is_ci() -> bool:
+    """True on GitHub Actions and most other CI runners.
+
+    The CI env var is set by GitHub Actions, GitLab CI, CircleCI,
+    Travis, and Buildkite; that's a good-enough shibboleth for
+    turning the "no base ref" case from skip -> fail.
+    """
+    return bool(os.environ.get("CI"))
+
+
 def test_no_product_source_changes() -> None:
     """FR-014: parity-tests PR MUST NOT modify product source. Test/config
     files are exempt so a build-config touch or a test refactor stays in
     scope."""
     base = _base_ref()
     if base is None:
+        # PR #370 review fix: silently skipping under shallow CI clones
+        # gave a false sense of coverage. Skip only when running locally;
+        # under CI, fail with a clear pointer at the fix (fetch depth).
+        if _is_ci():
+            pytest.fail(
+                "FR-014 check cannot run: no base ref reachable and CI=1. "
+                "Configure the workflow to fetch enough history (e.g., "
+                "actions/checkout with fetch-depth: 0) so this check can "
+                "compare against `origin/main`.",
+            )
         pytest.skip("no base ref reachable (local dev); CI enforces this check")
 
     rc = subprocess.run(

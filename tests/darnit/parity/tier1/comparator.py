@@ -116,8 +116,13 @@ class DriftEntry:
 
     @property
     def is_allowed_drift(self) -> bool:
-        """T1-8 canonical table: only PENDING_LLM (MCP) -> non-PENDING_LLM
-        (harness) is allowed. Everything else is disallowed."""
+        """T1-8 canonical table: only PENDING_LLM (MCP) -> a resolved
+        status on the harness side is allowed. A missing control on
+        either side is always a HARD failure per T1-3, even if the
+        other side reads PENDING_LLM. PR #370 review fix.
+        """
+        if self.mcp_status == "<MISSING>" or self.harness_status == "<MISSING>":
+            return False
         if self.mcp_status == "PENDING_LLM" and self.harness_status != "PENDING_LLM":
             return True
         return False

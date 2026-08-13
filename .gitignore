@@ -34,9 +34,11 @@ project.toml
 !example.*.toml
 !example.*.yaml
 # Test fixtures with tracked .baseline.toml. The top-level rule above
-# would otherwise strip them and CI would auto-pick a different
-# framework than the fixture expects (harness/parity tests).
+# would otherwise strip them and CI would either deselect the whole
+# suite (parity) or auto-pick a different framework than the fixture
+# expects (harness).
 !tests/darnit/harness/fixtures/**/.baseline.toml
+!tests/darnit/parity/fixtures/**/.baseline.toml
 
 # Logs
 *.log
