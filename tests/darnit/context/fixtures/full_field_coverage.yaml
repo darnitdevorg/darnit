@@ -1,0 +1,85 @@
+# Feature 030 fixture: exercises every .project/project.yaml field that
+# darnit's `dot_project.py` reader currently exposes on `ProjectConfig`,
+# using representative values that survive a golden-dict comparison.
+#
+# Notes on shape choices (deliberate, not incidental):
+#   - `project_lead` uses the NEW upstream LIST form so the reader's
+#     scalar-or-list coercer (T003-T004) is exercised on every CI run.
+#   - `package_managers` uses the LIST form for at least one registry so
+#     the coercer's map-value path (T005) is exercised on every CI run.
+#   - `cncf_slack_channel` uses the OLD YAML key so the deprecation
+#     warning (T006) fires on every CI run; the paired warning-assertion
+#     test lives in T016.
+#   - `slack_channels` is deliberately NOT included in this file to keep
+#     the golden dict small; NEW-IGNORED capture behavior is verified via
+#     `test_extra_captures_slack_channels` (see T015).
+
+name: full-field-coverage
+description: Reconciliation coverage fixture for feature 030.
+schema_version: "1.2.0"
+type: sandbox
+slug: full-field-coverage
+
+project_lead:
+  - "@alice"
+  - "@bob"
+
+cncf_slack_channel: "#full-field-coverage"
+
+website: "https://example.org"
+artwork: "https://example.org/logo.svg"
+
+repositories:
+  - "cncf/full-field-coverage"
+
+mailing_lists:
+  - "full-field-coverage-dev@example.org"
+
+social:
+  twitter: "@full_field"
+  mastodon: "@full_field@example.social"
+
+package_managers:
+  npm: "@full-field/package"
+  docker:
+    - "cncf/full-field-coverage:latest"
+    - "cncf/full-field-coverage:v1"
+
+adopters:
+  path: "ADOPTERS.md"
+
+maturity_log:
+  - level: "sandbox"
+    date: "2026-01-01"
+
+audits:
+  - date: "2026-06-01"
+    firm: "ExampleSec"
+    report_url: "https://example.org/audit.pdf"
+
+security:
+  policy:
+    path: "SECURITY.md"
+  threat_model:
+    path: "docs/threat-model.md"
+  contact:
+    email: "security@example.org"
+    advisory_url: "https://example.org/advisories"
+
+governance:
+  contributing:
+    path: "CONTRIBUTING.md"
+  code_of_conduct:
+    path: "CODE_OF_CONDUCT.md"
+
+legal:
+  license:
+    path: "LICENSE"
+
+documentation:
+  quickstart:
+    path: "docs/quickstart.md"
+
+landscape:
+  category: "runtime"
+  subcategory: "cloud-native"
