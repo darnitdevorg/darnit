@@ -4,7 +4,7 @@ This module implements reading and writing of .project/project.yaml files
 following the CNCF .project/ specification.
 
 Specification: https://github.com/cncf/automation/tree/main/utilities/dot-project
-Targeted Spec Version: 1.1.0 (based on types.go as of 2026-02)
+Targeted Spec Version: 1.2.0 (based on types.go at commit 641b80619cd5, 2026-06-29)
 
 The reader is tolerant of unknown fields for forward compatibility with
 spec evolution. Required fields are validated per the CNCF types.go struct.
@@ -22,21 +22,40 @@ Example:
     # Write updates (preserving comments)
     writer = DotProjectWriter("/path/to/repo")
     writer.update({"security": {"policy": {"path": "SECURITY.md"}}})
+
+Reconciliation history
+----------------------
+- 1.1.0 -> 1.2.0 (feature 030-dot-project-spec-sync, 2026-08-15):
+    * `project_lead`: accepts scalar or list per upstream `StringOrSlice`;
+      collapses to the first non-empty string element for the existing
+      scalar attribute on `ProjectConfig`.
+    * `package_managers[*]`: accepts scalar or list per upstream
+      `StringOrSlice`; collapses to the first non-empty string element per
+      registry key.
+    * `cncf_slack_channel`: deprecated upstream; darnit still populates the
+      existing scalar attribute from the old YAML key and emits
+      `DeprecationWarning` naming the replacement `slack_channels` and the
+      version (1.2.0) that carries the alias. Alias will be removed in the
+      release immediately following 1.2.0 (feature 030 Q2).
+    * `slack_channels`: new upstream field. Parsed via the existing
+      unknown-field catch-all into `ProjectConfig._extra["slack_channels"]`.
+      Not projected onto any `ProjectConfig` attribute (feature 030 Q1:
+      parse-only scope).
 """
 
 from __future__ import annotations
 
 import logging
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Targeted .project/ spec version
-# Based on cncf/automation types.go
-# Update this when we verify compatibility with newer spec versions
-DOT_PROJECT_SPEC_VERSION = "1.1.0"
+# Targeted .project/ spec version. Bumped 1:1 with the tracked-hash file
+# in `.github/dot-project-spec-hash.txt` per feature 030 Q3.
+DOT_PROJECT_SPEC_VERSION = "1.2.0"
 DOT_PROJECT_SPEC_URL = "https://github.com/cncf/automation/tree/main/utilities/dot-project"
 
 
@@ -515,6 +534,30 @@ class DotProjectReader:
         """Normalize a maintainer handle (strip @ and whitespace)."""
         return handle.strip().lstrip("@")
 
+    @staticmethod
+    def _coerce_scalar_or_list(value: Any) -> str:
+        """Coerce the CNCF `StringOrSlice` YAML shape to a single scalar string.
+
+        Feature 030 (parse-only): upstream `types.go` introduced a
+        `StringOrSlice` helper allowing `project_lead` and each
+        `package_managers[*]` value to be either a plain string or a list of
+        strings. Darnit still exposes the scalar-shape attribute on
+        `ProjectConfig`; multi-value support is a separate feature. This
+        helper returns the input verbatim when it's a scalar, the first
+        element when it's a non-empty list of strings, and ``""`` for None
+        or an empty list. Any other shape yields ``""``.
+        """
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value
+        if isinstance(value, list):
+            for item in value:
+                if isinstance(item, str) and item:
+                    return item
+            return ""
+        return ""
+
     def _parse_config(self, data: dict[str, Any]) -> ProjectConfig:
         """Parse raw YAML data into ProjectConfig."""
         config = ProjectConfig()
@@ -551,14 +594,30 @@ class DotProjectReader:
         config.schema_version = data.get("schema_version", "")
         config.type = data.get("type", "")
         config.slug = data.get("slug", "")
-        config.project_lead = data.get("project_lead", "")
+        config.project_lead = self._coerce_scalar_or_list(data.get("project_lead", ""))
+        if "cncf_slack_channel" in data:
+            warnings.warn(
+                (
+                    "The .project/ specification field `cncf_slack_channel` is "
+                    "deprecated upstream. This alias is accepted by darnit "
+                    "spec version 1.2.0 and will be removed in the next release. "
+                    "Migrate to the `slack_channels` list form defined in the "
+                    "CNCF spec: "
+                    "https://github.com/cncf/automation/tree/main/utilities/dot-project"
+                ),
+                DeprecationWarning,
+                stacklevel=2,
+            )
         config.cncf_slack_channel = data.get("cncf_slack_channel", "")
         config.website = data.get("website", "")
         config.artwork = data.get("artwork", "")
         config.repositories = data.get("repositories", [])
         config.mailing_lists = data.get("mailing_lists", [])
         config.social = data.get("social", {})
-        config.package_managers = data.get("package_managers", {})
+        config.package_managers = {
+            registry: self._coerce_scalar_or_list(value)
+            for registry, value in (data.get("package_managers") or {}).items()
+        }
 
         # Parse adopters file reference
         if "adopters" in data:
