@@ -101,7 +101,9 @@ class TestUpstreamSpecSync:
                 f"After updating implementation, run:\n"
                 f"  uv run pytest tests/darnit/context/test_dot_project_upstream.py -v --update-hash\n\n"
                 f"Also check open PRs for upcoming changes:\n"
-                f"  https://github.com/cncf/automation/pulls"
+                f"  https://github.com/cncf/automation/pulls\n\n"
+                f"Runbook for reconciling with a new upstream:\n"
+                f"  specs/030-dot-project-spec-sync/quickstart.md"
             )
 
     @pytest.mark.upstream
@@ -218,3 +220,60 @@ class TestUpstreamSpecSync:
         assert hasattr(landscape, 'category')
         assert hasattr(landscape, 'subcategory')
         assert hasattr(landscape, '_extra')
+
+
+# Regression tests for the sync-test's failure diagnostics (feature 030 US2).
+# These live OUTSIDE the @pytest.mark.upstream class so they run on every
+# PR and lock the behavior spec User Story 2 depends on.
+
+
+def test_upstream_spec_failure_message_names_both_hashes(monkeypatch):
+    """FR-014/US2: fabricated tracked hash triggers a `pytest.fail` whose
+    message names both hashes AND references the reconciliation runbook.
+
+    Locks the loud-diagnostic behavior of `test_upstream_spec_unchanged`
+    against a future rewrite that swallows either hash or drops the
+    runbook pointer.
+    """
+    import sys
+
+    mod = sys.modules[__name__]
+
+    fake_tracked = "d" * 64  # 64 hex chars; obviously not a real upstream hash
+    fake_content = b"// fabricated upstream content for regression test\n"
+    fake_current = compute_hash(fake_content)
+
+    monkeypatch.setattr(mod, "get_tracked_hash", lambda: fake_tracked)
+    monkeypatch.setattr(mod, "fetch_upstream_types_go", lambda: fake_content)
+
+    with pytest.raises(pytest.fail.Exception) as excinfo:
+        TestUpstreamSpecSync().test_upstream_spec_unchanged(update_upstream_hash=False)
+
+    msg = str(excinfo.value)
+    assert fake_tracked in msg, "failure message must name the tracked hash"
+    assert fake_current in msg, "failure message must name the current upstream hash"
+    assert "specs/030-dot-project-spec-sync/quickstart.md" in msg, (
+        "failure message must point at the reconciliation runbook"
+    )
+
+
+def test_upstream_spec_skips_when_offline(monkeypatch):
+    """FR-007/US2: a `URLError` at fetch time yields `pytest.skip`, not
+    `pytest.fail`. Locks the offline-tolerance behavior against a future
+    rewrite of the fetch path.
+    """
+    import sys
+    import urllib.error
+
+    mod = sys.modules[__name__]
+
+    def _raise_urlerror(*_args, **_kwargs):
+        raise urllib.error.URLError("simulated offline")
+
+    monkeypatch.setattr(urllib.request, "urlopen", _raise_urlerror)
+
+    with pytest.raises(pytest.skip.Exception):
+        # Call the module-level fetch helper directly. Whether the harness
+        # would then invoke test_upstream_spec_unchanged is irrelevant: the
+        # skip is raised inside fetch_upstream_types_go and propagates.
+        mod.fetch_upstream_types_go()
