@@ -2,9 +2,37 @@
 
 Thank you for your interest in contributing! This document provides our contribution policy. For detailed setup and workflow instructions, see the [Getting Started Guide](GETTING_STARTED.md).
 
+## Project Governance
+
+The Project is governed under the [Technical Charter](CHARTER.md) for Darnit a Series of LF Projects, LLC, which is the binding authority. Where any other document differs from the Charter, the Charter controls.
+
+[GOVERNANCE.md](GOVERNANCE.md) documents the Project's [roles](GOVERNANCE.md#roles-and-responsibilities) and the approach for [determining the TSC's voting members](GOVERNANCE.md#technical-steering-committee-membership), along with day-to-day practice: PR review thresholds, the release process, and how TSC decisions are recorded.
+
+The current voting members of the TSC are listed in [TECHNICAL-STEERING-COMMITTEE.md](TECHNICAL-STEERING-COMMITTEE.md).
+
+## Developer Certificate of Origin
+
+All new inbound code contributions must be accompanied by a [Developer Certificate of Origin](https://developercertificate.org) sign-off (Charter 7.b.ii). Sign off by committing with:
+
+```bash
+git commit -s
+```
+
+This appends a `Signed-off-by:` line to the commit message. Pull requests without a sign-off on every commit will not be merged.
+
+## Licensing of Contributions
+
+- **Code**, inbound and outbound, is licensed under the Apache License, Version 2.0 — the Project License (Charter 7.b.i, 7.b.iii).
+- **Documentation** is made available under the Creative Commons Attribution 4.0 International License (Charter 7.b.iv).
+- **Copyright** in each contribution is retained by its copyright holder. No contributor is required to assign copyright to the Project, and there is no CLA (Charter 7.a).
+- Contributed files should carry license information, such as an SPDX short-form identifier (Charter 7.d).
+- Any other license, inbound or outbound, requires a TSC exception approved by a two-thirds vote of the entire TSC (Charter 7.c).
+
+When the Project integrates with or contributes back to upstream projects, it conforms to those projects' license requirements and contribution processes (Charter 7.b.v).
+
 ## Code of Conduct
 
-Please read and follow our Code of Conduct to maintain a welcoming environment for all contributors.
+All Collaborators are expected to uphold a welcoming, harassment-free environment. The TSC may adopt a Project-specific Code of Conduct, which is subject to approval by the LF Projects Series Manager. Until such a Code of Conduct is approved, the [LF Projects Code of Conduct](https://lfprojects.org/policies) applies to all Collaborators in the Project (Charter 4.b).
 
 ## Getting Started
 

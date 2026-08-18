@@ -1,6 +1,6 @@
 # Technical Steering Committee
 
-<!-- Adopted: 2026-06-17. License: CC-BY-4.0. -->
+<!-- Roster adopted: 2026-06-17. Charter executed: 2026-07-29. License: CC-BY-4.0. -->
 
 The current voting members of the darnit Technical Steering Committee are:
 
@@ -11,4 +11,4 @@ The current voting members of the darnit Technical Steering Committee are:
 | Stephen Augustus | Bloomberg | industry | @justaugustus | member |
 | Adolfo Garcia Veytia | Carabiner | industry | @puerco | member |
 
-For the rules that govern membership, voting, and amendments, see [CHARTER.md](./CHARTER.md).
+Voting, oversight, and amendment rules are set by the Project's [Charter](./CHARTER.md). The process for adding and removing voting members of this roster is documented in [GOVERNANCE.md](./GOVERNANCE.md#technical-steering-committee-membership).

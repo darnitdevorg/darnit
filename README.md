@@ -438,7 +438,7 @@ For contributor setup and development workflow, see the [Getting Started Guide](
 
 ## Governance
 
-The darnit Project is governed by a Technical Steering Committee (TSC). See the [Charter](CHARTER.md) for the binding governance rules, the [TSC roster](TECHNICAL-STEERING-COMMITTEE.md) for current voting members, and [GOVERNANCE.md](GOVERNANCE.md) for operational guidance (roles, release process, contact).
+The darnit Project has been established as Darnit a Series of LF Projects, LLC, and is governed by a Technical Steering Committee (TSC). See the [Charter](CHARTER.md) for the binding governance rules, the [TSC roster](TECHNICAL-STEERING-COMMITTEE.md) for current voting members, and [GOVERNANCE.md](GOVERNANCE.md) for roles, TSC membership process, and operational guidance (PR process, releases, contact).
 
 ## License
 
