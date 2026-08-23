@@ -1857,3 +1857,126 @@ teams:
         # alice should appear only once in the flat list
         assert config.maintainers.count("alice") == 1
         assert "bob" in config.maintainers
+
+
+class TestRepositoryEntryReshape:
+    """Spec 1.3.0 reconcile (issue #385): repositories[*] accepts either the
+    legacy plain-string form OR the new {url, tags?, primary?} object form.
+    Both collapse to a URL string in ``ProjectConfig.repositories``."""
+
+    @pytest.mark.unit
+    def test_all_scalar_form_still_works(self, temp_dir: Path):
+        """Backward-compat: a list of plain strings parses unchanged."""
+        from darnit.context.dot_project import DotProjectReader
+
+        project_dir = temp_dir / ".project"
+        project_dir.mkdir()
+        (project_dir / "project.yaml").write_text("""
+name: p
+repositories:
+  - https://github.com/org/one
+  - https://github.com/org/two
+""")
+
+        reader = DotProjectReader(temp_dir)
+        config = reader.read()
+
+        assert config.repositories == [
+            "https://github.com/org/one",
+            "https://github.com/org/two",
+        ]
+
+    @pytest.mark.unit
+    def test_all_object_form_extracts_url(self, temp_dir: Path):
+        """New object form: reader extracts the ``url`` and drops metadata."""
+        from darnit.context.dot_project import DotProjectReader
+
+        project_dir = temp_dir / ".project"
+        project_dir.mkdir()
+        (project_dir / "project.yaml").write_text("""
+name: p
+repositories:
+  - url: https://github.com/org/one
+    tags: [core, sig-apps]
+    primary: true
+  - url: https://github.com/org/two
+    tags: [experimental]
+""")
+
+        reader = DotProjectReader(temp_dir)
+        config = reader.read()
+
+        assert config.repositories == [
+            "https://github.com/org/one",
+            "https://github.com/org/two",
+        ]
+
+    @pytest.mark.unit
+    def test_mixed_string_and_object_forms(self, temp_dir: Path):
+        """Reader accepts a mixed list of legacy strings and new objects."""
+        from darnit.context.dot_project import DotProjectReader
+
+        project_dir = temp_dir / ".project"
+        project_dir.mkdir()
+        (project_dir / "project.yaml").write_text("""
+name: p
+repositories:
+  - https://github.com/org/legacy
+  - url: https://github.com/org/tagged
+    tags: [core]
+    primary: true
+""")
+
+        reader = DotProjectReader(temp_dir)
+        config = reader.read()
+
+        assert config.repositories == [
+            "https://github.com/org/legacy",
+            "https://github.com/org/tagged",
+        ]
+
+    @pytest.mark.unit
+    def test_object_form_without_url_is_dropped(self, temp_dir: Path):
+        """Malformed entries (missing ``url``) are filtered out, not silently included as empty."""
+        from darnit.context.dot_project import DotProjectReader
+
+        project_dir = temp_dir / ".project"
+        project_dir.mkdir()
+        (project_dir / "project.yaml").write_text("""
+name: p
+repositories:
+  - https://github.com/org/valid
+  - tags: [broken]
+""")
+
+        reader = DotProjectReader(temp_dir)
+        config = reader.read()
+
+        assert config.repositories == ["https://github.com/org/valid"]
+
+    @pytest.mark.unit
+    def test_empty_repositories_list_stays_empty(self, temp_dir: Path):
+        """Empty list parses as empty; is_valid() still fails on missing repositories."""
+        from darnit.context.dot_project import DotProjectReader
+
+        project_dir = temp_dir / ".project"
+        project_dir.mkdir()
+        (project_dir / "project.yaml").write_text("""
+name: p
+repositories: []
+""")
+
+        reader = DotProjectReader(temp_dir)
+        config = reader.read()
+
+        assert config.repositories == []
+        is_valid, missing = config.is_valid()
+        assert is_valid is False
+        assert "repositories" in missing
+
+    @pytest.mark.unit
+    def test_spec_version_bumped_to_1_3_0(self):
+        """DOT_PROJECT_SPEC_VERSION MUST be 1.3.0 after the RepositoryEntry reconcile."""
+        from darnit.context.dot_project import DOT_PROJECT_SPEC_VERSION
+
+        assert DOT_PROJECT_SPEC_VERSION == "1.3.0"

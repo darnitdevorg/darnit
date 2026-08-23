@@ -55,8 +55,25 @@ logger = logging.getLogger(__name__)
 
 # Targeted .project/ spec version. Bumped 1:1 with the tracked-hash file
 # in `.github/dot-project-spec-hash.txt` per feature 030 Q3.
-DOT_PROJECT_SPEC_VERSION = "1.2.0"
+DOT_PROJECT_SPEC_VERSION = "1.3.0"
 DOT_PROJECT_SPEC_URL = "https://github.com/cncf/automation/tree/main/utilities/dot-project"
+
+# Reconciliation history
+#  - 1.1.0 -> 1.2.0 (feature 030-dot-project-spec-sync, 2026-08-14):
+#      * project_lead: accepts scalar or list; collapses to first.
+#      * package_managers[*]: accepts scalar or list; collapses to first.
+#      * cncf_slack_channel: deprecated upstream, alias with warning until 1.3.0.
+#      * slack_channels: parsed and ignored (NEW-IGNORED).
+#  - 1.2.0 -> 1.3.0 (issue #385, 2026-08-23):
+#      * repositories[*]: accepts either a plain string OR the new
+#        {url, tags, primary} object form (upstream commit
+#        cncf/automation@bd7fec94, feat: add RepositoryEntry). Reader
+#        collapses to the URL (str) so `ProjectConfig.repositories`
+#        stays `list[str]`; tags/primary metadata is dropped for now
+#        and can be promoted to a structured RepositoryEntry dataclass
+#        in a future reconcile once a control needs it.
+#      * `cncf_slack_channel` deprecation alias retained (removal is
+#        tracked for a later reconcile, not yet scheduled).
 
 
 @dataclass
@@ -558,6 +575,28 @@ class DotProjectReader:
             return ""
         return ""
 
+    @staticmethod
+    def _coerce_repository_entry(value: Any) -> str:
+        """Coerce the CNCF `RepositoryEntry` YAML shape to a scalar URL.
+
+        Spec bump 1.2.0 -> 1.3.0 (issue #385): upstream commit
+        cncf/automation@bd7fec94 changed `Project.Repositories` from
+        ``[]string`` to ``[]RepositoryEntry`` where each item is either
+        a plain string (backward-compatible) or an object of shape
+        ``{url, tags?, primary?}``. Darnit still exposes
+        ``ProjectConfig.repositories`` as ``list[str]``; tags and primary
+        metadata are dropped at parse time. This helper returns the input
+        verbatim for a scalar string, the ``url`` key for a mapping, and
+        ``""`` for anything else (including missing / empty ``url``).
+        """
+        if isinstance(value, str):
+            return value
+        if isinstance(value, dict):
+            url = value.get("url")
+            if isinstance(url, str):
+                return url
+        return ""
+
     def _parse_config(self, data: dict[str, Any]) -> ProjectConfig:
         """Parse raw YAML data into ProjectConfig."""
         config = ProjectConfig()
@@ -611,7 +650,18 @@ class DotProjectReader:
         config.cncf_slack_channel = data.get("cncf_slack_channel", "")
         config.website = data.get("website", "")
         config.artwork = data.get("artwork", "")
-        config.repositories = data.get("repositories", [])
+        # Feature 033 (issue #385): each repositories[*] item may now be a
+        # scalar string OR a {url, tags?, primary?} object. Collapse to
+        # the URL string per _coerce_repository_entry docstring; drop
+        # empty results so a malformed entry doesn't pollute the list.
+        config.repositories = [
+            url
+            for url in (
+                self._coerce_repository_entry(item)
+                for item in (data.get("repositories") or [])
+            )
+            if url
+        ]
         config.mailing_lists = data.get("mailing_lists", [])
         config.social = data.get("social", {})
         config.package_managers = {
