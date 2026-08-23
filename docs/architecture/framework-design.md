@@ -1116,6 +1116,8 @@ Project context from `.project/` SHALL be used to inform WHERE the sieve looks f
 
 The framework SHALL provide a handler registry where handlers are registered by name with a phase affinity. Core SHALL register built-in handlers: `file_exists`, `exec`, `regex`, `llm_eval`, `manual_steps`, `file_create`, `api_call`, `project_update`. Implementations SHALL register domain-specific handlers via the existing `ComplianceImplementation.register_handlers()` method.
 
+Implementation-registered sieve handlers (non-exhaustive): `github_branch_protection` (registered by `darnit-baseline`, encapsulates the classic-branch-protection + repository-rulesets two-surface check for `OSPS-AC-03.01`, `OSPS-AC-03.02`, `OSPS-QA-03.01`, `OSPS-QA-07.01`; see `specs/032-ruleset-branch-protection/contracts/github-branch-protection-handler.md`).
+
 A handler used in a phase different from its registered affinity SHALL trigger a warning but still execute.
 
 ## Appendix C: Removed Requirements

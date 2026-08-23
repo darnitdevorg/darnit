@@ -146,6 +146,11 @@ class TestTomlControlsLoadAsHandlerFormat:
         impl = get_implementation("openssf-baseline")
         assert impl is not None, "openssf-baseline implementation not found"
 
+        # Register baseline-owned sieve handlers (github_branch_protection,
+        # generate_threat_model) so the per-control handler-name check
+        # below finds them alongside core-registered handlers.
+        impl.register_handlers()
+
         toml_path = impl.get_framework_config_path()
         assert toml_path is not None and Path(toml_path).exists(), (
             f"Framework TOML not found at {toml_path}"

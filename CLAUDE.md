@@ -381,5 +381,5 @@ else:
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
-[`specs/031-mcp-server-handler/plan.md`](specs/031-mcp-server-handler/plan.md)
+[`specs/032-ruleset-branch-protection/plan.md`](specs/032-ruleset-branch-protection/plan.md)
 <!-- SPECKIT END -->

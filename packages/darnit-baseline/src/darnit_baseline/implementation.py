@@ -219,6 +219,7 @@ class OSPSBaselineImplementation:
         # Register sieve remediation handlers
         from darnit.sieve.handler_registry import get_sieve_handler_registry
 
+        from .branch_protection import github_branch_protection_handler
         from .threat_model.remediation import generate_threat_model_handler
 
         sieve_registry = get_sieve_handler_registry()
@@ -230,6 +231,16 @@ class OSPSBaselineImplementation:
             description="Generate dynamic STRIDE threat model",
             # RFC-0001 Stage 1: threat-model generation observes ground
             # truth (file produced or not). Explicitly dispositive.
+            default_authority="dispositive",
+        )
+        # Feature 032: ruleset-aware branch-protection verdict. Observes
+        # ground truth (queries GitHub for protection state) so results
+        # are dispositive by default.
+        sieve_registry.register(
+            "github_branch_protection",
+            phase="deterministic",
+            handler_fn=github_branch_protection_handler,
+            description="Ruleset-aware branch-protection verdict",
             default_authority="dispositive",
         )
         sieve_registry.set_plugin_context(None)

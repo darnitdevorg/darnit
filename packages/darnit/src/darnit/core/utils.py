@@ -16,29 +16,77 @@ _GH_CLI_MISSING_MESSAGE = (
     "and run 'gh auth login' to authenticate."
 )
 
+# Feature 032: `gh` emits HTTP-error lines on stderr with the prefix
+# ``HTTP <code>: <message>``; we parse the first three digits to surface
+# the status code to callers that need to distinguish 404 from 403 from
+# 5xx. Format is stable across gh 2.x per research decision R-001.
+_HTTP_STATUS_RE = re.compile(r"^HTTP (\d{3}):", re.MULTILINE)
+
+
+def gh_api_with_status(
+    endpoint: str, *, paginate: bool = False
+) -> tuple[dict[str, Any] | list[Any] | None, int, str]:
+    """Execute a GitHub API call via ``gh api`` and return ``(body, status, error)``.
+
+    Contract (feature 032):
+
+    * On 2xx: ``(parsed_json, status_code, "")``. ``parsed_json`` may be a
+      dict OR a list -- the rulesets endpoint returns a top-level list.
+    * On non-2xx with a parseable ``HTTP <code>:`` prefix in stderr:
+      ``(None, status_code, stderr_message)``.
+    * On subprocess-not-found, JSON-decode failure on a 2xx body, or any
+      other pre-response failure: ``(None, 0, error_message)``. Callers
+      MUST treat ``status == 0`` as ambiguous (WARN, not FAIL) per the
+      Constitution's conservative-by-default posture.
+
+    When ``paginate=True``, ``gh api --paginate`` is invoked; ``gh``
+    concatenates all pages into a single JSON array at the top level.
+    """
+    args = ["gh", "api"]
+    if paginate:
+        args.append("--paginate")
+    args.append(endpoint)
+    try:
+        result = subprocess.run(args, capture_output=True, text=True)
+    except FileNotFoundError:
+        return None, 0, _GH_CLI_MISSING_MESSAGE
+
+    if result.returncode == 0:
+        try:
+            body = json.loads(result.stdout) if result.stdout.strip() else None
+        except json.JSONDecodeError as err:
+            return None, 0, f"GitHub API returned invalid JSON for {endpoint}: {err}"
+        return body, 200, ""
+
+    stderr = (result.stderr or "").strip()
+    match = _HTTP_STATUS_RE.search(stderr)
+    if match:
+        status = int(match.group(1))
+        return None, status, stderr
+    return None, 0, stderr or f"gh api failed with exit code {result.returncode}"
+
 
 def gh_api(endpoint: str) -> dict[str, Any]:
     """Execute a GitHub API call using the gh CLI.
 
-    Raises:
-        RuntimeError: If the API call fails or returns invalid JSON.
-    """
-    try:
-        result = subprocess.run(
-            ["gh", "api", endpoint],
-            capture_output=True,
-            text=True
-        )
-    except FileNotFoundError:
-        raise RuntimeError(_GH_CLI_MISSING_MESSAGE) from None
+    Preserved contract for existing callers: returns the parsed dict on
+    2xx, raises ``RuntimeError`` on any non-2xx or non-dict response.
+    Implementation is a thin wrapper over :func:`gh_api_with_status`.
 
-    if result.returncode != 0:
-        error_msg = result.stderr.strip() or "Unknown error"
-        raise RuntimeError(f"gh api failed: {error_msg}")
-    try:
-        return json.loads(result.stdout)
-    except json.JSONDecodeError as e:
-        raise RuntimeError(f"GitHub API returned invalid JSON for {endpoint}: {e}") from e
+    Raises:
+        RuntimeError: If the API call fails, returns invalid JSON, or
+            returns a non-dict body (e.g., a list from a paginated list
+            endpoint -- such callers MUST use ``gh_api_with_status``
+            directly).
+    """
+    body, status, error = gh_api_with_status(endpoint)
+    if status == 200 and isinstance(body, dict):
+        return body
+    if status == 200:
+        raise RuntimeError(
+            f"gh api {endpoint}: expected dict body but got {type(body).__name__}"
+        )
+    raise RuntimeError(f"gh api failed: {error or 'status ' + str(status)}")
 
 
 def gh_api_safe(endpoint: str) -> dict[str, Any] | None:

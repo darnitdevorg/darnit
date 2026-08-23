@@ -629,12 +629,8 @@ Requires the `gh` CLI to be authenticated with a token holding `repo` scope.
 location_hint = ".github/settings.yml"
 
 [[controls."OSPS-AC-03.01".passes]]
-handler = "exec"
-command = ["gh", "api", "/repos/$OWNER/$REPO/branches/$BRANCH/protection"]
-pass_exit_codes = [0]
-fail_exit_codes = [1]
-output_format = "json"
-expr = 'has(output.json.required_pull_request_reviews)'
+handler = "github_branch_protection"
+requirement = "require_pull_request"
 timeout = 30
 
 [[controls."OSPS-AC-03.01".passes]]
@@ -690,12 +686,8 @@ Requires the `gh` CLI to be authenticated with a token holding `repo` scope.
 """
 
 [[controls."OSPS-AC-03.02".passes]]
-handler = "exec"
-command = ["gh", "api", "/repos/$OWNER/$REPO/branches/$BRANCH/protection"]
-pass_exit_codes = [0]
-fail_exit_codes = [1]
-output_format = "json"
-expr = 'has(output.json.allow_deletions) && has(output.json.allow_deletions.enabled) && output.json.allow_deletions.enabled == false'
+handler = "github_branch_protection"
+requirement = "prevent_deletion"
 timeout = 30
 
 [[controls."OSPS-AC-03.02".passes]]
@@ -2626,12 +2618,8 @@ help_md = """Configure required status checks.
 """
 
 [[controls."OSPS-QA-03.01".passes]]
-handler = "exec"
-command = ["gh", "api", "/repos/$OWNER/$REPO/branches/$BRANCH/protection"]
-pass_exit_codes = [0]
-fail_exit_codes = [1]
-output_format = "json"
-expr = 'has(output.json.required_status_checks)'
+handler = "github_branch_protection"
+requirement = "require_status_checks"
 timeout = 30
 
 [[controls."OSPS-QA-03.01".passes]]
@@ -3227,12 +3215,9 @@ help_md = """Require code review approval.
 """
 
 [[controls."OSPS-QA-07.01".passes]]
-handler = "exec"
-command = ["gh", "api", "/repos/$OWNER/$REPO/branches/$BRANCH/protection", "--jq", ".required_pull_request_reviews.required_approving_review_count >= 1"]
-pass_exit_codes = [0]
-fail_exit_codes = [1]
-output_format = "text"
-expr = 'output.stdout.startsWith("true")'
+handler = "github_branch_protection"
+requirement = "require_approvals"
+required_approvals_minimum = 1
 timeout = 30
 
 [[controls."OSPS-QA-07.01".passes]]

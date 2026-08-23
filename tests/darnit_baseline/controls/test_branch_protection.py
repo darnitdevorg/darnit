@@ -1,33 +1,29 @@
-"""Integration tests for the four branch-protection controls (feature 020, issue #343).
+"""Integration tests for the four branch-protection controls.
 
-Verifies that when the GitHub API returns a definitive 404 "Branch not
-protected" response, each of the following controls resolves to FAIL
-(not WARN, not INCONCLUSIVE):
+Verifies:
+- 404 from classic AND empty rulesets list -> FAIL (feature 019 semantic
+  preserved under feature 032's two-surface check for the true-negative
+  case).
+- Healthy 200 from classic -> PASS via classic surface (no ruleset
+  consultation).
 
-- OSPS-AC-03.01 (PreventDirectCommits)
-- OSPS-AC-03.02 (PreventBranchDeletion)
-- OSPS-QA-03.01 (RequiredStatusChecks)
-- OSPS-QA-07.01 (RequiredApprovals)
+The controls: OSPS-AC-03.01, OSPS-AC-03.02, OSPS-QA-03.01, OSPS-QA-07.01.
 
-Also verifies the happy path (200 with healthy branch-protection body ->
-PASS) does not regress.
-
-Tests patch `subprocess.run` in the exec handler's module so the test
-does not require `gh` on PATH or network access.
+Tests patch `darnit_baseline.branch_protection.gh_api_with_status`
+(function-level substitution) so the tests do not require `gh` on PATH or
+network access.
 """
 
 from __future__ import annotations
-
-import json
-from unittest.mock import patch
 
 import pytest
 
 from darnit.config.merger import load_framework_by_name
 from darnit.core.plugin import ControlSpec
-from darnit.sieve.handler_registry import HandlerContext  # noqa: F401 (documentation)
+from darnit.sieve.handler_registry import reset_sieve_handler_registry
 from darnit.sieve.models import CheckContext
 from darnit.sieve.orchestrator import SieveOrchestrator
+from darnit_baseline import branch_protection as bp
 
 NAMED_CONTROLS = (
     "OSPS-AC-03.01",
@@ -36,13 +32,7 @@ NAMED_CONTROLS = (
     "OSPS-QA-07.01",
 )
 
-BRANCH_NOT_PROTECTED_BODY = json.dumps({
-    "message": "Branch not protected",
-    "documentation_url": "https://docs.github.com/rest/branches/branch-protection#get-branch-protection",
-    "status": "404",
-})
-
-HEALTHY_PROTECTION_BODY = json.dumps({
+HEALTHY_PROTECTION_BODY = {
     "required_pull_request_reviews": {
         "required_approving_review_count": 1,
         "dismiss_stale_reviews": True,
@@ -56,35 +46,34 @@ HEALTHY_PROTECTION_BODY = json.dumps({
     "allow_force_pushes": {"enabled": False},
     "restrictions": None,
     "url": "https://api.github.com/repos/testorg/testrepo/branches/main/protection",
-})
+}
+
+
+@pytest.fixture(autouse=True)
+def _register_baseline_handlers():
+    reset_sieve_handler_registry()
+    from darnit.core.discovery import get_implementation
+
+    impl = get_implementation("openssf-baseline")
+    assert impl is not None, "openssf-baseline implementation not discovered"
+    impl.register_handlers()
+    yield
 
 
 def _load_control(control_id: str) -> ControlSpec:
-    """Load a real ControlSpec from openssf-baseline.toml.
-
-    Uses the framework's own loader so we exercise the exact metadata
-    (passes, handler_invocations, etc.) that ships in the TOML.
-    """
-    config = load_framework_by_name("openssf-baseline")
+    """Load a real ControlSpec from openssf-baseline.toml."""
+    config = load_framework_by_name(control_id.split("-", 1)[0].lower() if False else "openssf-baseline")
     control = config.controls[control_id]
-
-    # Build a ControlSpec that carries the handler_invocations metadata
-    # the orchestrator expects. This mirrors how darnit-baseline's
-    # implementation.get_all_controls() constructs its ControlSpecs.
     tags = control.tags or {}
     level = control.level if control.level is not None else tags.get("level", 1)
     domain = control.domain if control.domain is not None else tags.get("domain", "UNKNOWN")
-
     return ControlSpec(
         control_id=control_id,
         name=control.name,
         description=control.description or "",
         level=level,
         domain=domain,
-        metadata={
-            "handler_invocations": control.passes,
-            "when": control.when,
-        },
+        metadata={"handler_invocations": control.passes, "when": control.when},
     )
 
 
@@ -99,98 +88,79 @@ def _make_context(control_id: str) -> CheckContext:
     )
 
 
-class _FakeSubprocessResult:
-    """Minimal stand-in for subprocess.CompletedProcess."""
+def _install_gh_mock(monkeypatch, responses):
+    """Substitute a canned response sequence into the handler's gh helper."""
+    queue = list(responses)
 
-    def __init__(self, returncode: int, stdout: str = "", stderr: str = ""):
-        self.returncode = returncode
-        self.stdout = stdout
-        self.stderr = stderr
-
-
-@pytest.fixture()
-def patched_gh_404():
-    """Patch subprocess.run so `gh api` returns HTTP 404 'Branch not protected'."""
-    def _fake_run(*args, **kwargs):
-        return _FakeSubprocessResult(
-            returncode=1,
-            stdout=BRANCH_NOT_PROTECTED_BODY,
-            stderr="",
+    def _fake(endpoint, *, paginate=False):
+        for i, (pat, body, status, msg) in enumerate(queue):
+            if pat in endpoint or endpoint.endswith(pat):
+                queue.pop(i)
+                return body, status, msg
+        raise AssertionError(
+            f"unexpected gh_api_with_status call to {endpoint!r} "
+            f"(paginate={paginate}); remaining={[p for p, *_ in queue]}"
         )
 
-    with patch("darnit.sieve.builtin_handlers.subprocess.run", side_effect=_fake_run):
-        yield
-
-
-@pytest.fixture()
-def patched_gh_200_healthy():
-    """Patch subprocess.run so `gh api` returns HTTP 200 with a healthy protection body.
-
-    For OSPS-QA-07.01 the command adds `--jq
-    '.required_pull_request_reviews.required_approving_review_count >= 1'`,
-    so its stdout should be the string `true`. Other three controls receive
-    the full JSON.
-    """
-    def _fake_run(*args, **kwargs):
-        cmd = args[0] if args else kwargs.get("args", [])
-        if any("--jq" in str(a) for a in cmd):
-            return _FakeSubprocessResult(returncode=0, stdout="true\n", stderr="")
-        return _FakeSubprocessResult(
-            returncode=0,
-            stdout=HEALTHY_PROTECTION_BODY,
-            stderr="",
-        )
-
-    with patch("darnit.sieve.builtin_handlers.subprocess.run", side_effect=_fake_run):
-        yield
+    monkeypatch.setattr(bp, "gh_api_with_status", _fake)
 
 
 # ---------------------------------------------------------------------------
-# FR-007 acceptance: definitive 404 -> FAIL
+# Definitive negative: classic 404 + empty rulesets -> FAIL
 # ---------------------------------------------------------------------------
 
 
-class TestDefinitive404ReportsFail:
-    """The four named branch-protection controls MUST report FAIL on 404
-    'Branch not protected' after feature 020 lands."""
+class TestNoProtectionReportsFail:
+    """The four named branch-protection controls MUST report FAIL when
+    both surfaces respond definitively and neither confirms protection.
+    Feature 019 established this invariant for the classic-only case;
+    feature 032 preserves it under the two-surface check."""
 
     @pytest.mark.unit
     @pytest.mark.parametrize("control_id", NAMED_CONTROLS)
-    def test_control_resolves_fail_on_branch_not_protected(self, control_id, patched_gh_404):
+    def test_control_resolves_fail_on_branch_not_protected(self, control_id, monkeypatch):
+        _install_gh_mock(monkeypatch, [
+            ("/branches/main/protection", None, 404, "HTTP 404: Not Found"),
+            ("/rulesets", [], 200, ""),
+        ])
+
         spec = _load_control(control_id)
         context = _make_context(control_id)
         orchestrator = SieveOrchestrator(stop_on_llm=True)
-
         result = orchestrator.verify(spec, context)
         legacy = result.to_legacy_dict()
 
         assert legacy["status"] == "FAIL", (
-            f"{control_id}: expected FAIL on 404 'Branch not protected', "
-            f"got {legacy['status']!r}. Message: {legacy.get('message')!r}"
+            f"{control_id}: expected FAIL on 404 + no rulesets, got "
+            f"{legacy['status']!r}. Message: {legacy.get('message')!r}"
         )
 
 
 # ---------------------------------------------------------------------------
-# FR-009 regression guard: healthy 200 -> PASS
+# Healthy positive: 200 with all fields -> PASS via classic surface
 # ---------------------------------------------------------------------------
 
 
 class TestHealthyResponsePasses:
-    """Regression guard: when branch protection IS enabled with the expected
-    fields, the four named controls MUST still resolve to PASS. Feature 020's
-    orchestrator change must not affect this path."""
+    """Regression guard: a healthy classic branch-protection body still
+    produces PASS across the four controls without consulting rulesets.
+    Feature 032's cross-surface change must not affect this path."""
 
     @pytest.mark.unit
     @pytest.mark.parametrize("control_id", NAMED_CONTROLS)
-    def test_control_resolves_pass_on_healthy_body(self, control_id, patched_gh_200_healthy):
+    def test_control_resolves_pass_on_healthy_body(self, control_id, monkeypatch):
+        # Only the classic call is expected -- rulesets are never consulted.
+        _install_gh_mock(monkeypatch, [
+            ("/branches/main/protection", HEALTHY_PROTECTION_BODY, 200, ""),
+        ])
+
         spec = _load_control(control_id)
         context = _make_context(control_id)
         orchestrator = SieveOrchestrator(stop_on_llm=True)
-
         result = orchestrator.verify(spec, context)
         legacy = result.to_legacy_dict()
 
         assert legacy["status"] == "PASS", (
-            f"{control_id}: expected PASS on healthy branch-protection body, "
-            f"got {legacy['status']!r}. Message: {legacy.get('message')!r}"
+            f"{control_id}: expected PASS on healthy body, got "
+            f"{legacy['status']!r}. Message: {legacy.get('message')!r}"
         )
