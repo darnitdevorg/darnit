@@ -3,8 +3,6 @@
 from pathlib import Path
 
 import pytest
-
-from darnit.sieve.handler_registry import HandlerContext, HandlerResultStatus
 from darnit_reproducibility.handlers import (
     _detect_strong_hermeticity_signal,
     _iter_build_files,
@@ -22,6 +20,8 @@ from darnit_reproducibility.handlers import (
     repro_provenance_exists_handler,
 )
 from darnit_reproducibility.witness_attestation import WitnessCheckResult
+
+from darnit.sieve.handler_registry import HandlerContext, HandlerResultStatus
 
 # _detect_strong_hermeticity_signal and repro_hermetic_build_handler both call
 # check_witness_attestation(), which shells out to `gh` and the network. Tests

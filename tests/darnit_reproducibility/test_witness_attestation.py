@@ -14,8 +14,9 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from darnit.sieve.handler_registry import HandlerContext
 from darnit_reproducibility import witness_attestation as wa
+
+from darnit.sieve.handler_registry import HandlerContext
 
 needs_sigstore = pytest.mark.skipif(
     not wa.SIGSTORE_VERIFY_AVAILABLE,
