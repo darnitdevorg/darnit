@@ -91,6 +91,7 @@ steps = [
 name = "HermeticBuild"
 description = "Build does not fetch dependencies at build time"
 tags = { level = 2, domain = "RE" }
+depends_on = ["RE-01.02"]  # Nix flake strong signal is gated on BuildEnvDeclared having confirmed it
 
 [[controls."RE-02.01".passes]]
 handler = "repro_hermetic_build"
