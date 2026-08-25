@@ -93,6 +93,11 @@ description = "Build does not fetch dependencies at build time"
 tags = { level = 2, domain = "RE" }
 depends_on = ["RE-01.02"]  # Nix flake strong signal is gated on BuildEnvDeclared having confirmed it
 
+# verify_witness_attestations (bool, default true): fetches and Sigstore-verifies
+# Witness/runtime-trace attestation artifacts from the repo's latest CI run via
+# `gh`. Set to false to skip that network round-trip entirely (air-gapped
+# audits, or repos with no usable `gh` login) — falls back to the CI-text/Nix/
+# Bazel signals below it. See witness_attestation.py for details.
 [[controls."RE-02.01".passes]]
 handler = "repro_hermetic_build"
 

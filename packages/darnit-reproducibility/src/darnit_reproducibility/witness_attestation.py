@@ -71,7 +71,13 @@ _SUSPICIOUS_CMDLINE_PATTERNS: tuple[str, ...] = (
 )
 
 _GH_TIMEOUT_SECONDS = 60
-_MAX_ARTIFACT_FILES = 5
+_MAX_ARTIFACT_FILES = 20
+
+# Filenames ending in these suffixes are far more likely to be the actual
+# attestation bundle than an incidental *.json artifact (e.g. a build log
+# dumped as json) — check them first so the cap above can't skip past the
+# real file on a repo with many "*witness*"-matched artifacts.
+_PRIORITY_ARTIFACT_SUFFIXES: tuple[str, ...] = (".att.json", ".bundle.json", ".sigstore.json")
 
 # Substrings gh prints to stderr on an auth failure — used to tell "you're not
 # logged in" apart from "nothing found", which otherwise look identical (both
@@ -178,7 +184,10 @@ def _download_candidate_artifacts(owner: str, repo: str, run_id: str, dest: Path
     )
     if outcome.proc is None:
         return [], outcome.reason
-    found = sorted(dest.rglob("*.json"))[:_MAX_ARTIFACT_FILES]
+    all_files = sorted(dest.rglob("*.json"))
+    priority = [f for f in all_files if f.name.endswith(_PRIORITY_ARTIFACT_SUFFIXES)]
+    rest = [f for f in all_files if f not in priority]
+    found = (priority + rest)[:_MAX_ARTIFACT_FILES]
     if not found:
         return [], f"run {run_id} has no artifacts matching '*witness*'"
     return found, None
