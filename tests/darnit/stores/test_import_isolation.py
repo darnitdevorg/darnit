@@ -18,7 +18,6 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DARNIT_SRC = _REPO_ROOT / "packages" / "darnit" / "src" / "darnit"
 _SIEVE_SRC = _DARNIT_SRC / "sieve"
