@@ -41,6 +41,13 @@ Reconciliation history
       unknown-field catch-all into `ProjectConfig._extra["slack_channels"]`.
       Not projected onto any `ProjectConfig` attribute (feature 030 Q1:
       parse-only scope).
+- 1.3.0 -> 1.4.0 (issue #397, 2026-08-26):
+    * `maintainers.yaml` `teams[*].managed`: new upstream `Team.Managed
+      *bool` (nil defaults to managed; false excludes from CNCF resource
+      automation). Darnit does not consume this attribute today; parsed
+      via the existing unknown-field catch-all in
+      `_parse_maintainer_teams` into `MaintainerTeam._extra["managed"]`
+      (NEW-IGNORED). No new attribute on `MaintainerTeam`.
 """
 
 from __future__ import annotations
@@ -55,7 +62,7 @@ logger = logging.getLogger(__name__)
 
 # Targeted .project/ spec version. Bumped 1:1 with the tracked-hash file
 # in `.github/dot-project-spec-hash.txt` per feature 030 Q3.
-DOT_PROJECT_SPEC_VERSION = "1.3.0"
+DOT_PROJECT_SPEC_VERSION = "1.4.0"
 DOT_PROJECT_SPEC_URL = "https://github.com/cncf/automation/tree/main/utilities/dot-project"
 
 # Reconciliation history
@@ -74,6 +81,14 @@ DOT_PROJECT_SPEC_URL = "https://github.com/cncf/automation/tree/main/utilities/d
 #        in a future reconcile once a control needs it.
 #      * `cncf_slack_channel` deprecation alias retained (removal is
 #        tracked for a later reconcile, not yet scheduled).
+#  - 1.3.0 -> 1.4.0 (issue #397, 2026-08-26):
+#      * maintainers.yaml `teams[*].managed`: new upstream `Team.Managed
+#        *bool` field. Nil means managed; false excludes from CNCF
+#        resource automation. Darnit does not consume this today, so
+#        it is parsed by `_parse_maintainer_teams`'s existing unknown-
+#        field catch-all into `MaintainerTeam._extra["managed"]`
+#        (NEW-IGNORED). Adds no attribute to `MaintainerTeam`.
+#      * `cncf_slack_channel` deprecation alias retained.
 
 
 @dataclass
