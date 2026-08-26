@@ -359,18 +359,29 @@ class DotProjectReader:
 
     Implements tolerant parsing that preserves unknown fields for
     forward compatibility with spec evolution.
+
+    Feature 033: accepts an optional :class:`~darnit.stores.protocols.ProjectStateStore`.
+    When a store is provided, ``read()`` and related methods delegate to
+    the store's ``read_project()`` / ``read_maintainers()``. When None,
+    the reader falls back to direct filesystem I/O on ``<repo_path>/.project/``
+    (the pre-feature behavior). The filesystem default store's own
+    ``read_project()`` constructs a ``DotProjectReader`` with ``store=None``
+    to break the recursion.
     """
 
-    def __init__(self, repo_path: str | Path):
+    def __init__(self, repo_path: str | Path, store: object | None = None):
         """Initialize reader with repository path.
 
         Args:
             repo_path: Path to the repository root
+            store: Optional ProjectStateStore. When provided, reads route
+                through the store; when None, direct filesystem I/O.
         """
         self.repo_path = Path(repo_path)
         self.project_dir = self.repo_path / ".project"
         self.project_yaml = self.project_dir / "project.yaml"
         self.maintainers_yaml = self.project_dir / "maintainers.yaml"
+        self._store = store
 
     def exists(self) -> bool:
         """Check if .project/project.yaml exists."""
@@ -385,6 +396,13 @@ class DotProjectReader:
         Raises:
             ValueError: If YAML parsing fails
         """
+        # Feature 033: store-first path. When a store is bound, delegate.
+        if self._store is not None:
+            config = self._store.read_project()
+            if config is None:
+                return ProjectConfig()
+            return config
+
         if not self.exists():
             logger.debug("No .project/project.yaml found at %s", self.repo_path)
             return ProjectConfig()

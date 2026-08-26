@@ -1,0 +1,15 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "example-store-plugin"
+version = "0.0.1"
+description = "Feature 033 US3 fixture: third-party AttestationStore plugin."
+requires-python = ">=3.10"
+
+[project.entry-points."darnit.stores.attestation"]
+example = "example_store_plugin.backend:ExampleAttestationStore"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/example_store_plugin"]

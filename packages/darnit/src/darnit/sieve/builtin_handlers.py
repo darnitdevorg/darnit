@@ -1145,7 +1145,16 @@ def _lookup_mcp_server(context: HandlerContext, server_name: str) -> Any | None:
 
 
 def _substitute_mcp_args(args: dict[str, Any], context: HandlerContext) -> dict[str, Any]:
-    """Substitute ``$OWNER``/``$REPO``/``$BRANCH``/``$PATH`` in string values."""
+    """Substitute ``$OWNER``/``$REPO``/``$BRANCH``/``$PATH`` in string values.
+
+    Feature 033 T005: uses :func:`darnit.core.env_subst.substitute_dollar_vars`
+    with ``missing="leave"`` semantics so unknown ``$VAR`` tokens in the
+    template are preserved as-is (matches the previous
+    ``_apply_replacements`` behavior). Only the four context-derived
+    tokens are substituted.
+    """
+    from darnit.core.env_subst import substitute_dollar_vars
+
     replacements = {
         "OWNER": context.owner or "",
         "REPO": context.repo or "",
@@ -1155,30 +1164,10 @@ def _substitute_mcp_args(args: dict[str, Any], context: HandlerContext) -> dict[
     out: dict[str, Any] = {}
     for key, value in args.items():
         if isinstance(value, str):
-            out[key] = _apply_replacements(value, replacements)
+            out[key] = substitute_dollar_vars(value, replacements, missing="leave")
         else:
             out[key] = value
     return out
-
-
-def _apply_replacements(template: str, replacements: dict[str, str]) -> str:
-    result: list[str] = []
-    i = 0
-    while i < len(template):
-        ch = template[i]
-        if ch == "$" and i + 1 < len(template):
-            end = i + 1
-            while end < len(template) and (template[end].isalnum() or template[end] == "_"):
-                end += 1
-            if end > i + 1:
-                name = template[i + 1 : end]
-                if name in replacements:
-                    result.append(replacements[name])
-                    i = end
-                    continue
-        result.append(ch)
-        i += 1
-    return "".join(result)
 
 
 def _eval_cel_over_result(

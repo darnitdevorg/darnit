@@ -50,16 +50,25 @@ class DotProjectMapper:
     ``.project`` repository and merges it with the local config.
     """
 
-    def __init__(self, repo_path: str | Path, *, owner: str = ""):
+    def __init__(
+        self,
+        repo_path: str | Path,
+        *,
+        owner: str = "",
+        project_store: object | None = None,
+    ):
         """Initialize mapper with repository path.
 
         Args:
             repo_path: Path to the repository root
             owner: GitHub org/user for org-level .project resolution
+            project_store: Optional ProjectStateStore (feature 033). When
+                provided, project/maintainer reads route through the
+                store instead of direct filesystem I/O.
         """
         self.repo_path = Path(repo_path)
         self.owner = owner
-        self.reader = DotProjectReader(repo_path)
+        self.reader = DotProjectReader(repo_path, store=project_store)
         self._config: ProjectConfig | None = None
         self._context: dict[str, Any] | None = None
 

@@ -57,6 +57,19 @@ testchecks = "darnit_testchecks.adapters.builtin:TrivialRemediationAdapter"
 [project.entry-points."darnit.adapters"]
 testchecks = "darnit_testchecks.adapters.builtin:get_test_check_adapter"
 
+# In-memory reference store backends (feature 033 T020)
+[project.entry-points."darnit.stores.project"]
+in-memory = "darnit_testchecks.stores:InMemoryProjectStateStore"
+
+[project.entry-points."darnit.stores.attestation"]
+in-memory = "darnit_testchecks.stores:InMemoryAttestationStore"
+
+[project.entry-points."darnit.stores.report"]
+in-memory = "darnit_testchecks.stores:InMemoryReportStore"
+
+[project.entry-points."darnit.stores.cache"]
+in-memory = "darnit_testchecks.stores:InMemoryAuditCacheStore"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/darnit_testchecks"]
 

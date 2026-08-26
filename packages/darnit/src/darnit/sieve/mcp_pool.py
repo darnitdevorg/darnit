@@ -521,23 +521,16 @@ def _absent_binary_message(program: str, config: Any) -> str:
 
 
 def _substitute_dollar_vars(template: str, env: dict[str, str]) -> str:
-    """Replace ``$VAR`` occurrences with values from ``env``; empty if unset."""
-    result: list[str] = []
-    i = 0
-    while i < len(template):
-        ch = template[i]
-        if ch == "$" and i + 1 < len(template):
-            end = i + 1
-            while end < len(template) and (template[end].isalnum() or template[end] == "_"):
-                end += 1
-            if end > i + 1:
-                name = template[i + 1 : end]
-                result.append(env.get(name, ""))
-                i = end
-                continue
-        result.append(ch)
-        i += 1
-    return "".join(result)
+    """Thin shim over :func:`darnit.core.env_subst.substitute_dollar_vars`.
+
+    Feature 033 T006 migrated this call site from the duplicated inline
+    implementation to the shared helper. Kept as a shim so the internal
+    ``mcp_pool`` call sites remain unchanged; the shim can be removed
+    when the module is next touched.
+    """
+    from darnit.core.env_subst import substitute_dollar_vars
+
+    return substitute_dollar_vars(template, env, missing="empty")
 
 
 def _first_text(parts: list[Any]) -> str | None:

@@ -74,6 +74,7 @@ from .framework_schema import (
     FrameworkConfig,
     FrameworkDefaults,
     McpServerConfig,
+    StoresConfig,
 )
 from .user_schema import (
     ControlOverride,
@@ -165,6 +166,12 @@ class EffectiveConfig:
     # per-name replacement (spec FR-016). Empty dict is the pre-feature
     # default and preserves backward compatibility.
     mcp_servers: dict[str, "McpServerConfig"] = field(default_factory=dict)
+
+    # Feature 033: merged per-artifact persistence backend selection.
+    # `.baseline.toml`'s `[stores.<kind>]` for a given kind fully
+    # replaces the framework TOML block for that kind (per-kind
+    # replacement, disjoint kinds coexist).
+    stores: "StoresConfig | None" = None
 
     # Source configs (for reference)
     _framework_config: FrameworkConfig | None = None
@@ -391,6 +398,21 @@ def merge_configs(
     if user:
         for name, srv in user.mcp_servers.items():
             effective.mcp_servers[name] = srv
+
+    # Merge persistence backend selection (feature 033).
+    # Per-kind replacement: `.baseline.toml`'s [stores.<kind>] block for
+    # a given kind fully replaces the framework TOML block for that
+    # kind. Disjoint kinds coexist.
+    from .framework_schema import StoresConfig as _StoresConfig
+
+    merged_stores_data: dict[str, Any] = {}
+    for kind in ("project", "attestation", "report", "cache"):
+        fw_block = getattr(framework.stores, kind, None)
+        user_block = getattr(user.stores, kind, None) if user else None
+        block = user_block if user_block is not None else fw_block
+        if block is not None:
+            merged_stores_data[kind] = block
+    effective.stores = _StoresConfig.model_construct(**merged_stores_data)
 
     # Apply user settings
     if user:
