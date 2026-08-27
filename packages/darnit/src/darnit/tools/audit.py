@@ -193,6 +193,57 @@ def load_effective_audit_config(local_path: str, framework_name: str | None = No
         return None
 
 
+def framework_metadata(framework_name: str | None) -> dict[str, str]:
+    """Return the framework metadata block for the audit output header (issue #350).
+
+    Every audit output format (markdown, JSON, SARIF, summary) includes
+    this block so a reader knows what implementation + upstream spec
+    version the audit was evaluated against. Without it, a report from
+    ``OSPS v2025.10.10`` is indistinguishable from ``OSPS v2026.02.19``.
+
+    Args:
+        framework_name: Implementation identifier (e.g., "openssf-baseline").
+            When None or the implementation is not installed, returns a
+            best-effort block with the name (or "unknown") and an ISO
+            timestamp -- never raises.
+
+    Returns:
+        Dict with keys:
+        - ``name``: implementation identifier (or "unknown")
+        - ``display_name``: human-readable name
+        - ``version``: implementation version (e.g., "0.1.0")
+        - ``spec_version``: upstream standard version (e.g., "OSPS v2026.02.19")
+        - ``generated_at``: ISO-8601 UTC timestamp
+    """
+    from datetime import UTC, datetime
+
+    generated_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    fallback: dict[str, str] = {
+        "name": framework_name or "unknown",
+        "display_name": "",
+        "version": "",
+        "spec_version": "",
+        "generated_at": generated_at,
+    }
+    if not framework_name:
+        return fallback
+    try:
+        from darnit.core.discovery import get_implementation
+
+        impl = get_implementation(framework_name)
+    except Exception:  # noqa: BLE001
+        return fallback
+    if impl is None:
+        return fallback
+    return {
+        "name": getattr(impl, "name", framework_name) or framework_name,
+        "display_name": getattr(impl, "display_name", "") or "",
+        "version": getattr(impl, "version", "") or "",
+        "spec_version": getattr(impl, "spec_version", "") or "",
+        "generated_at": generated_at,
+    }
+
+
 def get_excluded_control_ids(local_path: str) -> dict[str, str]:
     """Get control IDs that are excluded via user config.
 
@@ -704,9 +755,19 @@ def format_results_markdown(
     Returns:
         Markdown-formatted report
     """
+    meta = framework_metadata(framework_name)
+    header_lines = [f"# {report_title}", ""]
+    if meta.get("display_name") or meta.get("name"):
+        header_lines.append(
+            f"**Framework:** {meta.get('display_name') or meta['name']}"
+            + (f" v{meta['version']}" if meta.get("version") else "")
+        )
+    if meta.get("spec_version"):
+        header_lines.append(f"**Spec Version:** {meta['spec_version']}")
+    if meta.get("generated_at"):
+        header_lines.append(f"**Generated At:** {meta['generated_at']}")
     lines = [
-        f"# {report_title}",
-        "",
+        *header_lines,
         f"**Repository:** {owner}/{repo}",
         f"**Level Assessed:** {level}",
         "",

@@ -206,6 +206,8 @@ def audit_openssf_baseline(
     elif output_format == "summary":
         # Compact JSON: only id/status/level/details — no evidence or pass_history.
         # ~5-8K vs ~164K for full JSON with 62 controls.
+        from darnit.tools.audit import framework_metadata
+
         compact_results = [
             {
                 "id": r.get("id"),
@@ -216,6 +218,7 @@ def audit_openssf_baseline(
             for r in results
         ]
         output = json.dumps({
+            "metadata": framework_metadata("openssf-baseline"),
             "owner": owner,
             "repo": repo,
             "level": level,
@@ -223,7 +226,10 @@ def audit_openssf_baseline(
             "results": compact_results,
         }, indent=2)
     elif output_format == "json":
+        from darnit.tools.audit import framework_metadata
+
         output = json.dumps({
+            "metadata": framework_metadata("openssf-baseline"),
             "owner": owner,
             "repo": repo,
             "level": level,

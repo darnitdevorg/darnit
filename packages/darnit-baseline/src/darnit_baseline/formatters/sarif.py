@@ -196,18 +196,28 @@ def generate_sarif_audit(
         )
         sarif_results.append(sarif_result)
 
+    # Issue #350: source spec_version from the framework implementation so
+    # the SARIF report carries provenance that a reader can diff against
+    # the standard version it was evaluated against.
+    from darnit.tools.audit import framework_metadata
+
+    meta = framework_metadata("openssf-baseline")
+    driver: dict[str, Any] = {
+        "name": TOOL_NAME,
+        "version": TOOL_VERSION,
+        "informationUri": TOOL_INFO_URI,
+        "rules": rules,
+    }
+    if meta.get("spec_version"):
+        driver["semanticVersion"] = meta["spec_version"]
+
     # Build the complete SARIF document
     sarif = {
         "$schema": SARIF_SCHEMA,
         "version": SARIF_VERSION,
         "runs": [{
             "tool": {
-                "driver": {
-                    "name": TOOL_NAME,
-                    "version": TOOL_VERSION,
-                    "informationUri": TOOL_INFO_URI,
-                    "rules": rules,
-                }
+                "driver": driver,
             },
             "results": sarif_results,
             "invocations": [{
@@ -218,6 +228,10 @@ def generate_sarif_audit(
                 "owner": audit_result.owner,
                 "repo": audit_result.repo,
                 "level": audit_result.level,
+                "framework": meta.get("name", ""),
+                "framework_version": meta.get("version", ""),
+                "spec_version": meta.get("spec_version", ""),
+                "generated_at": meta.get("generated_at", ""),
                 "compliance": {
                     f"level{lvl}": compliant
                     for lvl, compliant in (audit_result.level_compliance or {}).items()
