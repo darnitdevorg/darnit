@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import re
 
-import pytest
-
 
 class TestFrameworkMetadata:
     def test_installed_framework_returns_full_metadata(self):
@@ -93,8 +91,8 @@ class TestMarkdownHeaderIncludesMetadata:
 class TestJsonOutputIncludesMetadata:
     def test_json_output_has_top_level_metadata_block(self, tmp_path, monkeypatch):
         """Every JSON audit output MUST include a top-level `metadata` block."""
-        from unittest.mock import patch
         import json
+        from unittest.mock import patch
 
         # Bypass the actual audit run -- we only care about the JSON shape.
         with patch(
