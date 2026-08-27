@@ -27,6 +27,8 @@ from tests.darnit.parity.tier1.comparator import AuditResult
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 
+_CONFTEST_DIR = Path(__file__).parent.resolve()
+
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list) -> None:
     """Auto-mark every test in tier1/ as `integration` (PR #370 review fix).
@@ -34,12 +36,23 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list) -> None:
     Parity tests spin up the full harness against a git-initialized
     fixture repo, so they never satisfy the `unit` marker's contract.
     Without an explicit mark, CI's `-m unit / -m integration` split
-    silently deselected the whole suite. This hook applies the mark
-    to every collected item under this conftest.
+    silently deselected the whole suite.
+
+    The `items` list pytest passes here contains EVERY collected test
+    in the workspace, not just items under this conftest. Only mark
+    items whose file path is under ``_CONFTEST_DIR`` -- otherwise this
+    hook silently applies the `integration` marker to unrelated tests
+    (see issue #395: a `@pytest.mark.upstream` canary got collected
+    under `-m integration` because of the previous unscoped iteration).
     """
     integration_mark = pytest.mark.integration
     for item in items:
-        item.add_marker(integration_mark)
+        try:
+            item_path = Path(str(item.fspath)).resolve()
+        except (OSError, ValueError):
+            continue
+        if _CONFTEST_DIR == item_path or _CONFTEST_DIR in item_path.parents:
+            item.add_marker(integration_mark)
 
 
 @pytest.fixture(autouse=True)
