@@ -106,6 +106,13 @@ class ExecutionContext:
     # MCP server pay zero cost.
     mcp_servers: dict[str, Any] = field(default_factory=dict)
 
+    # Feature 033: pluggable-stores bundle (four backends: project state,
+    # attestation, report, audit cache). Typed as Any to avoid an
+    # import cycle with darnit.stores. Populated by run_sieve_audit
+    # after resolving the effective stores config; None on paths that
+    # bypass the audit driver (legacy or unit-test constructions).
+    stores: Any = None
+
     # Threading locks
     _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
     _tool_locks: dict[str, threading.Lock] = field(default_factory=dict, init=False, repr=False)

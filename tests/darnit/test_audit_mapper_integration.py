@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
@@ -106,8 +106,12 @@ class TestAuditMapperIntegration:
                         level=1,
                     )
 
-            # Verify mapper was called with correct owner
-            mock_mapper_cls.assert_called_once_with(str(tmp_path), owner="test-org")
+            # Verify mapper was called with correct owner. Feature 033
+            # injects a `project_store` kwarg (any ProjectStateStore),
+            # unrelated to the mapper-context flow under test here.
+            mock_mapper_cls.assert_called_once_with(
+                str(tmp_path), owner="test-org", project_store=ANY
+            )
             mock_mapper.get_context.assert_called_once()
 
     @patch("darnit.tools.audit._get_sieve_components")
@@ -169,5 +173,8 @@ class TestAuditMapperIntegration:
                 level=1,
             )
 
-            # Mapper called with empty owner string
-            mock_mapper_cls.assert_called_once_with(str(tmp_path), owner="")
+            # Mapper called with empty owner string. Feature 033 also
+            # threads a `project_store` kwarg through the mapper.
+            mock_mapper_cls.assert_called_once_with(
+                str(tmp_path), owner="", project_store=ANY
+            )

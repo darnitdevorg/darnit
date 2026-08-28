@@ -46,6 +46,7 @@ from .framework_schema import (
     HandlerInvocation,
     McpServerConfig,
     RemediationConfig,
+    StoresConfig,
 )
 
 # =============================================================================
@@ -262,6 +263,11 @@ class UserConfig(BaseModel):
     # framework's ``[mcp_servers.<name>]`` block of the same name at merge
     # time (spec FR-016); disjoint names coexist.
     mcp_servers: dict[str, McpServerConfig] = Field(default_factory=dict)
+
+    # Per-fleet persistence backend selection (feature 033). Any kind
+    # set here fully replaces the framework's `[stores.<kind>]` block at
+    # merge time; unset kinds inherit from the framework.
+    stores: StoresConfig = Field(default_factory=StoresConfig)
 
     model_config = ConfigDict(extra="allow")
 

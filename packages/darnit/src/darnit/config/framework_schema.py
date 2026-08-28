@@ -1023,6 +1023,76 @@ class PluginConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class StoreBlock(BaseModel):
+    """One ``[stores.<kind>]`` TOML block (feature 033).
+
+    Selects a persistence backend and passes backend-specific
+    configuration keys through to that backend's ``__init__``. String
+    values in the ``model_extra`` bag are passed through
+    :func:`darnit.core.env_subst.substitute_dollar_vars` at load time so
+    secrets can be sourced from ``os.environ`` rather than committed in
+    ``.baseline.toml`` (FR-006).
+
+    Example TOML::
+
+        [stores.attestation]
+        backend = "s3"
+        bucket = "my-fleet-attestations"
+        region = "us-east-1"
+        access_key_id = "$AWS_ACCESS_KEY_ID"
+        secret_access_key = "$AWS_SECRET_ACCESS_KEY"
+
+    The framework validates that the ``backend`` string names a
+    registered entry point under the target group; unresolvable names
+    fail-fast per FR-008.
+    """
+
+    backend: str
+
+    model_config = ConfigDict(extra="allow")
+
+
+class StoresConfig(BaseModel):
+    """The four artifact-class-keyed store blocks (feature 033).
+
+    Any subset may be set; each unset field means "use the filesystem
+    default" for that artifact class (FR-007). ``extra = "forbid"``
+    catches typos like ``[stores.audit_log]`` at schema-load time.
+    """
+
+    project: StoreBlock | None = None
+    attestation: StoreBlock | None = None
+    report: StoreBlock | None = None
+    cache: StoreBlock | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def _substitute_env_vars(self) -> "StoresConfig":
+        """Apply ``$VAR`` substitution to every string value in every block.
+
+        Runs after Pydantic parses the block; walks each set
+        :class:`StoreBlock`'s ``model_extra`` and replaces
+        ``$VAR`` occurrences per feature 025/031 semantics
+        (``missing="empty"``).
+        """
+        from darnit.core.env_subst import substitute_dollar_vars
+
+        for kind in ("project", "attestation", "report", "cache"):
+            block = getattr(self, kind)
+            if block is None:
+                continue
+            extras = block.model_extra or {}
+            for key, value in list(extras.items()):
+                if isinstance(value, str):
+                    extras[key] = substitute_dollar_vars(value)
+            # `backend` is a top-level string field; substitute it too so
+            # `backend = "$STORE_BACKEND"` is honored.
+            if isinstance(block.backend, str):
+                block.backend = substitute_dollar_vars(block.backend)
+        return self
+
+
 class McpServerConfig(BaseModel):
     """One allowlist entry describing an external MCP server darnit may spawn.
 
@@ -1505,6 +1575,12 @@ class FrameworkConfig(BaseModel):
     # the pass references it as ``server = "<name>"``. Empty dict preserves
     # backward-compatible behavior for every existing framework TOML.
     mcp_servers: dict[str, McpServerConfig] = Field(default_factory=dict)
+
+    # Per-artifact persistence backend selection (feature 033). Any unset
+    # field means "use the filesystem default" for that artifact class;
+    # a `.baseline.toml` block for a given kind fully replaces the
+    # framework TOML block for that kind (per-kind replacement).
+    stores: StoresConfig = Field(default_factory=StoresConfig)
 
     # Named audit profiles (optional, for multi-scenario implementations)
     audit_profiles: dict[str, AuditProfileConfig] = Field(default_factory=dict)

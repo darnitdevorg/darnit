@@ -144,6 +144,32 @@ def _get_framework_config_path(framework_name: str | None = None) -> Path | None
     return None
 
 
+def _load_merged_stores(
+    local_path: str, framework_name: str | None
+) -> Any:
+    """Return the merged ``StoresConfig`` for this audit run.
+
+    Feature 033. Composes the framework TOML's ``[stores]`` block with
+    any ``.baseline.toml`` overrides via the per-kind replacement rule
+    baked into :func:`merge_configs`. Returns ``None`` when no framework
+    is resolved or neither surface declares any stores; the caller
+    treats None as "instantiate all filesystem defaults."
+    """
+    from darnit.config import (
+        load_framework_config,
+        load_user_config,
+        merge_configs,
+    )
+
+    framework_path = _get_framework_config_path(framework_name)
+    if not framework_path:
+        return None
+    framework = load_framework_config(framework_path)
+    user = load_user_config(Path(local_path))
+    effective = merge_configs(framework, user)
+    return getattr(effective, "stores", None)
+
+
 def _load_merged_mcp_servers(
     local_path: str, framework_name: str | None
 ) -> dict[str, Any]:
@@ -529,12 +555,24 @@ def run_sieve_audit(
     except Exception as e:
         logger.debug("Auto-detect context failed (non-fatal): %s", e)
 
+    # Feature 033: resolve the pluggable-stores bundle for this audit
+    # run. Zero-config produces filesystem defaults (constitution I).
+    from darnit.stores.selection import resolve_stores
+
+    stores_config = _load_merged_stores(local_path, resolved_fw)
+    stores_bundle = resolve_stores(stores_config, repo_path=Path(local_path))
+    execution_context.stores = stores_bundle
+
     # Inject .project/ mapper context (between auto-detect and user-confirmed).
     # Merge order: auto-detect < .project/ mapper < user-confirmed.
     try:
         from darnit.context.dot_project_mapper import DotProjectMapper
 
-        mapper = DotProjectMapper(local_path, owner=owner or "")
+        mapper = DotProjectMapper(
+            local_path,
+            owner=owner or "",
+            project_store=stores_bundle.project,
+        )
         mapper_context = mapper.get_context()
         if mapper_context:
             project_context.update(mapper_context)
@@ -631,6 +669,11 @@ def run_sieve_audit(
         write_audit_cache(local_path, all_results, summary, level, resolved_fw or "")
     except Exception as exc:
         logger.warning("Failed to write audit cache (non-fatal): %s", exc)
+
+    # Feature 033: release backend resources at audit-boundary teardown.
+    # close() implementations are required to be idempotent (FR-019); any
+    # per-store failure is logged and swallowed by close_all() itself.
+    stores_bundle.close_all()
 
     return all_results, summary
 

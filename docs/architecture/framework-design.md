@@ -1120,6 +1120,10 @@ Implementation-registered sieve handlers (non-exhaustive): `github_branch_protec
 
 A handler used in a phase different from its registered affinity SHALL trigger a warning but still execute.
 
+## 13. Persistence Extension Surface
+
+The framework SHALL provide four per-artifact persistence Protocols under `darnit.stores`, alongside the existing extension surfaces `darnit.frameworks` (compliance implementations) and `darnit.question_resolvers` (feature 027). Third-party persistence backends register under Python entry-point groups `darnit.stores.project`, `darnit.stores.attestation`, `darnit.stores.report`, `darnit.stores.cache`. Filesystem-backed default implementations ship in `darnit-core` and reproduce the pre-feature on-disk layout exactly (feature 033); alternative backends are opt-in via `.baseline.toml` `[stores.<kind>] backend = "..."` blocks. See `specs/033-pluggable-stores/contracts/` for per-Protocol contracts.
+
 ## Appendix C: Removed Requirements
 
 The following requirements have been superseded by the handler dispatch architecture.

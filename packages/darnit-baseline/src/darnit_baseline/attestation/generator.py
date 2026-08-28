@@ -54,7 +54,8 @@ def generate_attestation_from_results(
     staging: bool = False,
     output_path: str | None = None,
     output_dir: str | None = None,
-    storage_config: dict | None = None
+    storage_config: dict | None = None,
+    attestation_store: Any = None,
 ) -> str:
     """Generate attestation from audit results.
 
@@ -62,8 +63,13 @@ def generate_attestation_from_results(
         audit_result: The audit result containing check results and metadata
         sign: Whether to sign with Sigstore (default True)
         staging: Use Sigstore staging environment for testing
-        output_path: Explicit path for the attestation file
-        output_dir: Directory to save attestation (default: repository directory)
+        output_path: Explicit path for the attestation file (legacy)
+        output_dir: Directory to save attestation (legacy; default: repo dir)
+        attestation_store: Feature 033 pluggable AttestationStore. When
+            provided, the bundle is written via ``store.write(bundle_id,
+            bytes, content_type)`` instead of the legacy filesystem
+            path. When None, ``output_path`` / ``output_dir`` control
+            the on-disk write (unchanged pre-feature behavior).
 
     Returns:
         JSON string with attestation or error message
@@ -125,24 +131,45 @@ def generate_attestation_from_results(
         )
         output = json.dumps(unsigned, indent=2)
 
-    # Determine output file path
-    if not output_path:
-        extension = ".sigstore.json" if sign else ".intoto.json"
-        filename = f"{audit_result.repo}-baseline-attestation{extension}"
-        save_dir = output_dir if output_dir else audit_result.local_path
-        output_path = os.path.join(save_dir, filename)
+    # Feature 033 T027: prefer the pluggable AttestationStore when
+    # supplied. The legacy `output_path` / `output_dir` remain the
+    # zero-config path so pre-feature callers keep the same on-disk
+    # semantics without change.
+    if attestation_store is not None:
+        content_type = (
+            "application/vnd.dev.sigstore.bundle+json"
+            if sign
+            else "application/vnd.in-toto+json"
+        )
+        bundle_id = f"{audit_result.repo}-baseline-attestation"
+        try:
+            attestation_store.write(
+                bundle_id, output.encode("utf-8"), content_type
+            )
+            logger.info(f"Attestation written via store: bundle_id={bundle_id}")
+        except Exception as e:  # noqa: BLE001
+            return json.dumps({
+                "error": f"AttestationStore write failed: {e}",
+                "attestation": json.loads(output),
+            }, indent=2)
+    else:
+        # Determine output file path (pre-feature filesystem path).
+        if not output_path:
+            extension = ".sigstore.json" if sign else ".intoto.json"
+            filename = f"{audit_result.repo}-baseline-attestation{extension}"
+            save_dir = output_dir if output_dir else audit_result.local_path
+            output_path = os.path.join(save_dir, filename)
 
-    # Save the attestation
-    try:
-        os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-        with open(output_path, 'w', encoding="utf-8") as f:
-            f.write(output)
-        logger.info(f"Attestation saved to: {output_path}")
-    except OSError as e:
-        return json.dumps({
-            "error": f"Failed to write to {output_path}: {e}",
-            "attestation": json.loads(output)
-        }, indent=2)
+        try:
+            os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+            with open(output_path, 'w', encoding="utf-8") as f:
+                f.write(output)
+            logger.info(f"Attestation saved to: {output_path}")
+        except OSError as e:
+            return json.dumps({
+                "error": f"Failed to write to {output_path}: {e}",
+                "attestation": json.loads(output)
+            }, indent=2)
 
     # Store via pluggable storage backend if configured
     if storage_config is not None:
