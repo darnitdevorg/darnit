@@ -168,10 +168,10 @@ Quick summary of the most common variables:
 - `output.stdout`, `output.stderr`, `output.exit_code` -- populated by `exec`
 - `output.json` -- populated by `exec` only when `output_format = "json"`
 - `output.relative_path`, `output.found_file` -- populated by `file_exists`
-- `output.files_found`, `output.found_files` -- populated by `regex` / `pattern`
+- `output.files_checked` (int), `output.patterns_checked`, `output.any_match`, `output.results` -- populated by the `regex` / `pattern` match path
+- `output.exclude_globs`, `output.files_found`, `output.found_files` -- populated by the `regex` handler's `exclude_globs` path
 - `result.*` -- top-level binding for `handler = "mcp"` (JSON of the tool result)
-- `project.*` -- from `.project/project.yaml`
-- `repo.*`, `context.*` -- ambient audit + user-collected context
+- `project.*`, `repo.*`, `context.*` are **NOT bound** in the `expr` path most controls use; put project-scoped skips on the control's `when` field instead. See [`CEL_CONTEXT.md`](./CEL_CONTEXT.md) for details.
 
 Custom helper functions available to CEL:
 

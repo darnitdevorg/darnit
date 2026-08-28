@@ -73,16 +73,40 @@ which file matched, e.g. `expr = 'output.relative_path == "SECURITY.md"'`.
 
 ### `regex` handler (`pattern` alias)
 
-| Variable                | Type                       | Description                                                |
-|-------------------------|----------------------------|------------------------------------------------------------|
-| `output.files_found`    | int                        | Number of files matched                                    |
-| `output.found_files`    | list<string>               | Relative paths of files that matched at least one pattern  |
-| `output.files_checked`  | list<string>               | Files the handler scanned                                  |
+The `regex` handler has three internal code paths, each with a
+different evidence shape. Which one fires depends on config:
+
+**Standard match path** -- the default, used when `files` resolve to
+existing content and `pattern`/`patterns` is set:
+
+| Variable                    | Type                    | Description                                                          |
+|-----------------------------|-------------------------|----------------------------------------------------------------------|
+| `output.files_checked`      | int                     | Count (NOT list) of files scanned                                    |
+| `output.patterns_checked`   | list<string>            | Names of the patterns evaluated                                      |
+| `output.any_match`          | bool                    | True if any pattern matched in any file                              |
+| `output.results`            | list<dict>              | Up to 20 per-(file, pattern) records: `file`, `pattern_name`, `pattern`, `match_count`, `matched`, `matches_preview` |
+
+**Exclude-globs path** -- used when the pass sets `exclude_globs`
+instead of `pattern`s to test:
+
+| Variable               | Type            | Description                                                        |
+|------------------------|-----------------|--------------------------------------------------------------------|
+| `output.exclude_globs` | list<string>    | The globs the pass declared                                        |
+| `output.files_found`   | int             | Number of files that matched an exclude glob                       |
+| `output.found_files`   | list<string>    | Up to 10 relative paths of the matched files                       |
+
+**No-files path** -- when the pass's `files` list resolves to zero
+matches on disk. Returns INCONCLUSIVE and only exposes:
+
+| Variable                | Type          | Description                                       |
+|-------------------------|---------------|---------------------------------------------------|
+| `output.files_checked`  | list<string>  | The candidate list that produced no matches       |
 
 The `matches` field the CLAUDE.md notes referenced is not present in
-the current handler's evidence -- match structure lives inside the
-handler's confidence + evidence shaping. If you need per-file match
-detail in `expr`, add it to the handler's evidence first.
+the current handler's evidence -- per-file match detail lives inside
+`output.results[]` on the match path. `output.files_checked` is an
+`int` on the match path and a `list[string]` on the no-files path;
+guard with `has()` or a type check before deep access.
 
 ### `mcp` handler
 
@@ -99,7 +123,8 @@ expr = 'result.score >= 7.0'
 ```
 
 There is no `output.*` binding for `handler = "mcp"` passes -- only
-`result.*` and any project/repo bindings below.
+`result.*`. `project.*`/`repo.*`/`context.*` are also NOT available
+here (see the next section for why).
 
 ### Handlers that do NOT evaluate `expr`
 
@@ -108,13 +133,44 @@ There is no `output.*` binding for `handler = "mcp"` passes -- only
 their evidence. Writing an `expr` on their pass config is silently
 ignored today; use the handler's own config keys to shape the verdict.
 
-## Bindings available regardless of handler
+## What is NOT bound in `expr`
 
 The [`CELContext`](../packages/darnit/src/darnit/sieve/cel_evaluator.py)
-dataclass carries additional bindings the runtime can inject when the
-orchestrator constructs a full context (not the trimmed post-step
-context most passes see). Ambient bindings that a control author may
-reference:
+dataclass declares fields for ambient bindings (`project`, `repo`,
+`context`, `files`, `matches`, `response`) that a full-context CEL
+call would receive. **None of these are populated on the `expr` path
+used by controls today.**
+
+The post-step `expr` evaluator at
+[`orchestrator.py:130`](../packages/darnit/src/darnit/sieve/orchestrator.py)
+builds its context as literally
+`{"output": handler_result.evidence or {}}` -- only `output` is bound.
+The `mcp` handler's in-handler CEL similarly binds only
+`{"result": raw_response}`
+([`_eval_cel_over_result`](../packages/darnit/src/darnit/sieve/builtin_handlers.py)).
+Neither path constructs a `CELContext`, so referring to `project.*` or
+`repo.*` in an `expr` fails with `undeclared reference to 'project'`.
+CEL failure logs a warning and preserves the handler's original
+verdict ([`_apply_cel_expr`](../packages/darnit/src/darnit/sieve/orchestrator.py)),
+so a broken reference produces a silent no-op rather than a visible
+error -- worth flagging in your control tests.
+
+If you need a project-context-scoped skip, put the check on the
+control's `when` field instead of the pass's `expr`:
+
+```toml
+[controls."OSPS-XX-YY"]
+when = { language = "python" }
+```
+
+`when` runs against the audit's full project context before the
+pass loop starts; `expr` runs on the trimmed post-step context and
+does not.
+
+## Bindings that WOULD be available if a caller passes a full CELContext
+
+For completeness -- these are wired in the code but no
+production caller (post-step, mcp) uses them today:
 
 | Variable    | Type                      | Populated when                                                  |
 |-------------|---------------------------|-----------------------------------------------------------------|
@@ -122,17 +178,9 @@ reference:
 | `repo.*`    | dict (path, owner, name)  | Set by the audit driver on every audit                          |
 | `context.*` | dict                      | Values the user answered via `darnit collect-context` / harness |
 
-Typical use:
-
-```toml
-# Only apply this pass when project language is Python
-{ handler = "exec", command = ["python", "-c", "print('ok')"], expr = 'project.language == "python"' }
-```
-
-`project.*` is populated from the `.project/` reader
-([`dot_project.py`](../packages/darnit/src/darnit/context/dot_project.py))
-plus any control-side auto-detected values (`language`,
-`ci_provider`, `platform`).
+If these ever get wired into the post-step path, existing controls
+that reference them today (there are currently none in the shipped
+framework) would start seeing them. Track that change here.
 
 ## Custom CEL functions
 
@@ -176,7 +224,7 @@ expr = 'json_path(output.json, "required_pull_request_reviews.required_approving
 - **Substring:** `output.stdout.contains("bazel")`
 - **File-existence as a guard:** `file_exists("Dockerfile") && output.exit_code == 0`
 - **JMESPath extraction:** `json_path(output.json, "runs[0].tool.driver.version")`
-- **Project-scoped when clause:** `project.language == "python"` (put this on a `when` field, not `expr`, if you want the whole pass to be skipped rather than resolved INCONCLUSIVE)
+- **Project-scoped skip:** put `project.language == "python"` on the control's `when` field, not on a pass's `expr` -- `expr` cannot see `project.*` in the post-step path (see "What is NOT bound in `expr`" above).
 
 ## Getting a CEL error
 
