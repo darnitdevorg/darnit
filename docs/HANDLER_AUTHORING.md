@@ -159,25 +159,24 @@ orchestrator applies `expr` after a handler returns `PASS` or `FAIL`.
 - CEL `false` turns the result into `INCONCLUSIVE`, so later passes can still run.
 - CEL evaluation errors fall back to the handler's original verdict.
 
-Common context values available in CEL:
+For the full per-handler variable reference (`exec`, `file_exists`,
+`regex`, `mcp`), the two custom functions (`file_exists`, `json_path`),
+and copy-pasteable patterns, see [`docs/CEL_CONTEXT.md`](./CEL_CONTEXT.md).
 
-- `output.stdout`
-- `output.stderr`
-- `output.exit_code`
-- `output.json`
-- `response.status_code`
-- `response.body`
-- `response.headers`
-- `files`
-- `matches`
-- `project`
-- `context`
-- `repo`
+Quick summary of the most common variables:
+
+- `output.stdout`, `output.stderr`, `output.exit_code` -- populated by `exec`
+- `output.json` -- populated by `exec` only when `output_format = "json"`
+- `output.relative_path`, `output.found_file` -- populated by `file_exists`
+- `output.files_checked` (int), `output.patterns_checked`, `output.any_match`, `output.results` -- populated by the `regex` / `pattern` match path
+- `output.exclude_globs`, `output.files_found`, `output.found_files` -- populated by the `regex` handler's `exclude_globs` path
+- `result.*` -- top-level binding for `handler = "mcp"` (JSON of the tool result)
+- `project.*`, `repo.*`, `context.*` are **NOT bound** in the `expr` path most controls use; put project-scoped skips on the control's `when` field instead. See [`CEL_CONTEXT.md`](./CEL_CONTEXT.md) for details.
 
 Custom helper functions available to CEL:
 
-- `file_exists("PATH")`
-- `json_path(OBJECT, "JMESPATH_EXPRESSION")`
+- `file_exists("PATH")` -- returns `bool`, false if repo path is unavailable
+- `json_path(OBJECT, "JMESPATH_EXPRESSION")` -- JMESPath extractor
 
 Examples:
 

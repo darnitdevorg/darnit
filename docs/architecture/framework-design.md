@@ -255,7 +255,7 @@ env = { "TOOL_VERBOSE" = "true" }
 | `fail_if_output_matches` | `str` | Regex pattern - if matches stdout → FAIL |
 | `pass_if_json_path` | `str` | JSONPath to extract value |
 | `pass_if_json_value` | `str` | Expected value at JSON path for PASS |
-| `expr` | `str` | CEL expression for pass logic (see Section 3.7) |
+| `expr` | `str` | CEL expression for pass logic (see Section 3.7; full context/function reference in [docs/CEL_CONTEXT.md](../CEL_CONTEXT.md)) |
 | `timeout` | `int` | Timeout in seconds (default: 300) |
 | `env` | `dict` | Additional environment variables |
 
