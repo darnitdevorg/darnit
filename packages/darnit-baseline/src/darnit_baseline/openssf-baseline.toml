@@ -1709,7 +1709,11 @@ git commit -s -m "Your commit message"
 
 [controls."OSPS-LE-01.01".locator]
 project_path = "legal.license"
-discover = ["LICENSE", "LICENSE.md", "LICENSE.txt", "COPYING"]
+discover = [
+    "LICENSE", "LICENSE.md", "LICENSE.txt",
+    "LICENCE", "LICENCE.md", "LICENCE.txt",
+    "COPYING", "COPYING.md", "COPYING.txt",
+]
 kind = "file"
 
 [[controls."OSPS-LE-01.01".passes]]
@@ -1897,7 +1901,11 @@ help_md = """Add license file to repository.
 
 [controls."OSPS-LE-03.01".locator]
 project_path = "legal.license"
-discover = ["LICENSE", "LICENSE.md", "COPYING"]
+discover = [
+    "LICENSE", "LICENSE.md", "LICENSE.txt",
+    "LICENCE", "LICENCE.md", "LICENCE.txt",
+    "COPYING", "COPYING.md", "COPYING.txt",
+]
 kind = "file"
 
 [[controls."OSPS-LE-03.01".passes]]
