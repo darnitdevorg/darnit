@@ -20,8 +20,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 try:
     import tomllib
 except ImportError:  # Python 3.10
