@@ -1366,7 +1366,10 @@ prompt = """Evaluate whether this README adequately documents the project:
 2. Does it include installation or setup instructions?
 3. Does it provide usage examples or getting-started guidance?
 A README with only TODO placeholders or a single heading MUST fail."""
-files_to_include = ["$FOUND_FILE"]
+# Issue #402: enumerate real candidate paths so llm_eval sees content
+# even when the deterministic tier resolved INCONCLUSIVE. Handler caps
+# at 5 files; mirrors the locator's `discover` list.
+files_to_include = ["README.md", "README.rst", "README.txt", "README", "readme.md"]
 confidence_threshold = 0.7
 analysis_hints = [
     "Check for project description beyond just the name",
@@ -2334,7 +2337,8 @@ prompt = """Evaluate whether this security policy provides actionable vulnerabil
 2. Does it describe what information to include in a report?
 3. Does it mention an expected response timeline?
 A policy with only TODO placeholders or just the word 'security' MUST fail."""
-files_to_include = ["$FOUND_FILE"]
+# Issue #402: enumerate real candidate paths (locator discover + llm_hints check_files).
+files_to_include = ["SECURITY.md", ".github/SECURITY.md", "docs/SECURITY.md", "README.md", "CONTRIBUTING.md"]
 confidence_threshold = 0.7
 analysis_hints = [
     "Look for a concrete contact method, not just 'contact us'",
@@ -2476,7 +2480,8 @@ prompt = """Evaluate whether this governance document describes real project gov
 2. Does it describe how decisions are made (merge policy, consensus, voting)?
 3. Is this substantive governance documentation, not just boilerplate?
 A file with only TODO placeholders or generic text without named roles MUST fail."""
-files_to_include = ["$FOUND_FILE"]
+# Issue #402: enumerate real candidate paths (locator discover + llm_hints check_files).
+files_to_include = ["GOVERNANCE.md", "MAINTAINERS.md", "CODEOWNERS", "README.md", "CONTRIBUTING.md"]
 confidence_threshold = 0.7
 analysis_hints = [
     "Look for named maintainers or team references (@username, name)",
@@ -3861,7 +3866,9 @@ prompt = """Evaluate whether this document explains how to verify the identity o
 Look for: GPG/PGP key verification instructions, Sigstore/cosign verification steps,
 keyserver references, or other cryptographic identity verification methods.
 A general mention of 'signed releases' without verification instructions is insufficient."""
-files_to_include = ["$FOUND_FILE"]
+# Issue #402: mirror the sibling pattern's file list. Adds README.rst
+# so llm_eval sees real content on rst-based repos.
+files_to_include = ["SECURITY.md", "README.md", "README.rst", "docs/releases.md", "CONTRIBUTING.md"]
 confidence_threshold = 0.7
 analysis_hints = [
     "Look for specific verification commands or tools (gpg --verify, cosign verify)",
@@ -3916,7 +3923,8 @@ handler = "llm_eval"
 prompt = """Evaluate whether this document defines the scope and expected duration of support.
 Look for: which versions are supported, how long support lasts, what kind of support
 is provided (security fixes, bug fixes, feature development), and maintenance windows."""
-files_to_include = ["$FOUND_FILE"]
+# Issue #402: mirror the sibling pattern's file list + rst variant.
+files_to_include = ["SUPPORT.md", "SECURITY.md", "README.md", "README.rst", "docs/support.md"]
 confidence_threshold = 0.7
 analysis_hints = [
     "Look for version support matrices or timelines",
@@ -3979,7 +3987,8 @@ handler = "llm_eval"
 prompt = """Evaluate whether this document describes the end-of-support policy and process.
 Look for: deprecation timelines, sunset procedures, migration guidance,
 end-of-life announcements, or version retirement policies."""
-files_to_include = ["$FOUND_FILE"]
+# Issue #402: mirror the sibling pattern's file list + rst variant.
+files_to_include = ["SUPPORT.md", "SECURITY.md", "README.md", "README.rst", "CONTRIBUTING.md"]
 confidence_threshold = 0.7
 analysis_hints = [
     "Look for explicit deprecation timelines or sunset dates",
@@ -4122,7 +4131,8 @@ prompt = """Evaluate whether this design/architecture document describes real sy
 2. Does it describe actors (users, systems) that interact with the software?
 3. Does it explain data flows or interactions between components?
 A document with only TBD/TODO placeholders or generic headings without content MUST fail."""
-files_to_include = ["$FOUND_FILE"]
+# Issue #402: mirror the sibling pattern's file list.
+files_to_include = ["ARCHITECTURE.md", "docs/architecture.md", "docs/design.md", "DESIGN.md", "README.md"]
 confidence_threshold = 0.7
 analysis_hints = [
     "Look for named components with descriptions of what they do",
@@ -4195,7 +4205,8 @@ prompt = """Evaluate whether this API/interface documentation describes real API
 2. Does it include parameter descriptions, request/response formats, or usage examples?
 3. Is this substantive documentation, not just a heading with no content?
 A document with only headings or TODO placeholders MUST fail."""
-files_to_include = ["$FOUND_FILE"]
+# Issue #402: mirror the sibling pattern's file list (pick top 5 of 10).
+files_to_include = ["API.md", "docs/api.md", "README.md", "openapi.yaml", "swagger.json"]
 confidence_threshold = 0.7
 analysis_hints = [
     "Look for documented endpoints, methods, or CLI commands",
@@ -4329,7 +4340,8 @@ Your job is two-fold:
 A threat model with only false positives MUST FAIL. A threat model with at least some confirmed
 findings or honest "no threats found" sections should PASS.
 Report your verification results structured as: finding ID, verdict, reasoning."""
-files_to_include = ["$FOUND_FILE"]
+# Issue #402: mirror the locator's discover list (top 5 threat-model paths).
+files_to_include = ["docs/threatmodel/SUMMARY.md", "THREAT_MODEL.md", "docs/THREAT_MODEL.md", "docs/threat-model.md", "SECURITY.md"]
 confidence_threshold = 0.7
 analysis_hints = [
     "Code snippets are embedded in the threat model — use them as primary evidence",
