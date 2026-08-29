@@ -123,42 +123,6 @@ jobs:
             --no-error-summary \
             --show-error-codes 2>&1 | grep -E "call-arg|arg-type" && exit 1 || exit 0
 
-  coverage:
-    name: Coverage
-    runs-on: ubuntu-latest
-    needs: test
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
-
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v4
-        with:
-          version: ${{ env.UV_VERSION }}
-          enable-cache: true
-
-      - name: Install dependencies
-        run: uv sync --all-extras
-
-      - name: Install coverage
-        run: uv pip install pytest-cov
-
-      - name: Run tests with coverage
-        run: uv run pytest tests/ -m unit --cov=packages/darnit/src --cov=packages/darnit-baseline/src --cov-report=term-missing --cov-report=xml
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v4
-        with:
-          file: ./coverage.xml
-          fail_ci_if_error: false
-        continue-on-error: true
-
   build:
     name: Build
     runs-on: ubuntu-latest
