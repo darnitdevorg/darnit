@@ -100,7 +100,47 @@ The tree-sitter discovery pipeline is tuned for **web-service shapes**. What wor
 
 If your project doesn't match a supported shape, the generator will still write a report — but it will likely show "Total findings: 0" because no entry points were discovered. That's a coverage gap on our side, not a clean bill of health. Expanding the query set is [tracked in our issue tracker](https://github.com/kusari-oss/darnit/issues?q=is%3Aissue+threat-model+coverage).
 
+## How to Use Darnit
+
+Darnit's product path is **skills invoking MCP tools inside a coding agent** (Claude Code today; other clients coming). You do not call `darnit audit` on the CLI as a daily-use interface -- that command exists for local iteration on framework code and quick sanity checks, not as the front door.
+
+### The product path: skills + MCP
+
+1. Install darnit's MCP config and skills into your coding-agent client:
+   ```bash
+   darnit install                     # global (Claude Code default)
+   darnit install --project           # per-project (.mcp.json + .claude/skills/)
+   darnit install --client claude-desktop
+   ```
+2. Restart the client. Skills appear as slash commands.
+3. Invoke a skill in your agent -- for OpenSSF Baseline audits:
+   ```
+   /darnit-audit
+   ```
+   The skill orchestrates darnit's MCP tools behind the scenes: it runs the audit, handles PENDING_LLM consultations, calls remediation tools, generates attestations, and pulls in project context from `.project/project.yaml`. You reason about the results conversationally; you do not shell out.
+
+See [`docs/getting-started/using-skills.md`](docs/getting-started/using-skills.md) for the full skill catalog, install-target matrix, and multi-repo / profile-selection details.
+
+### The CLI: dev + debug scaffolding
+
+`darnit audit`, `darnit run`, and `darnit serve` all exist for a reason, but only `darnit serve` is a product-facing command (the MCP server the skills talk to). The other two are development tools:
+
+| Command | Intended use | Not for |
+|---------|--------------|---------|
+| `darnit serve` | The MCP server your coding agent connects to. Started automatically by the client's MCP integration. | Direct interactive use. |
+| `darnit audit` | Single-run local check of one repo, without the coding-agent loop. Useful when iterating on framework or TOML controls. | Fleet auditing, remediation-in-conversation, PENDING_LLM handling. |
+| `darnit run` | Batch execution for CI regression / parity testing. | Interactive daily-driver audits. |
+| `darnit harness` | Full audit driver with in-band LLM dispatch and pluggable question resolvers -- the runtime the skills-via-MCP path uses under the hood. Reachable from the CLI for testing the driver itself. | Daily-driver interactive use (invoke via a skill instead). |
+
+If you're evaluating darnit and just want to see something happen: `uv run darnit audit /path/to/repo` will print a report. If you're actually using darnit on real projects: install the skills.
+
+### Direction of travel
+
+RFC-0001 (`docs/rfcs/0001-core-rearchitecture.md`) formalizes this split: the harness driver (Stage 1+) is the runtime that skills call into, and CLI commands become thin adapters around the harness rather than parallel entry points. When Stage 1 fully lands, the skills path gets more capable (in-band LLM dispatch, question resolvers) and the CLI stays at parity for the sanity-check use case.
+
 ## Quick Start
+
+The examples below show the MCP tool signatures that the `/darnit-audit` skill calls under the hood. In normal use you invoke the skill and never see these directly. They're useful for embedding darnit in your own tooling or debugging what the skill orchestrates.
 
 ### Run an Audit
 
