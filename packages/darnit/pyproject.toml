@@ -60,6 +60,28 @@ darnit = "darnit.cli:main"
 # points are logged and skipped at discovery time, never crash the harness.
 interactive_terminal = "darnit.harness.interactive_resolver:build"
 
+# Feature 034: outside-repo filesystem store backends. Both `local-fs` (arbitrary
+# root path via TOML config) and `user-local` (platform-conventional root, XDG /
+# Apple / LOCALAPPDATA) ship in darnit-core alongside the in-repo defaults.
+# `user-local` is deliberately NOT registered under `darnit.stores.project` per
+# FR-009: `.project/project.yaml` must stay in the repo.
+[project.entry-points."darnit.stores.attestation"]
+local-fs = "darnit.stores.defaults.local_fs:LocalFsAttestationStore"
+user-local = "darnit.stores.defaults.user_local:UserLocalAttestationStore"
+
+[project.entry-points."darnit.stores.report"]
+local-fs = "darnit.stores.defaults.local_fs:LocalFsReportStore"
+user-local = "darnit.stores.defaults.user_local:UserLocalReportStore"
+
+[project.entry-points."darnit.stores.cache"]
+local-fs = "darnit.stores.defaults.local_fs:LocalFsAuditCacheStore"
+user-local = "darnit.stores.defaults.user_local:UserLocalAuditCacheStore"
+
+# NOTE: `user-local` is deliberately NOT registered under
+# `darnit.stores.project` per FR-009 -- `.project/project.yaml` stays
+# in the repo. `[stores.project] backend = "user-local"` MUST raise
+# `StoreNotInstalled` at `resolve_stores` time.
+
 [project.optional-dependencies]
 attestation = [
     "sigstore>=3.0.0",

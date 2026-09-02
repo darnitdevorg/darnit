@@ -170,3 +170,146 @@ audit in a process that actually uses the artifact class you back --
 never to zero-config runs, never to audits that skip your kind. Keep
 `__init__` cheap and open connections on first `write` if the backend
 is expensive to establish.
+
+---
+
+# Writing artifacts outside the repo (feature 034)
+
+Feature 034 ships two additional filesystem-backed backends inside
+darnit-core alongside the in-repo defaults. Both are selectable from
+`.baseline.toml` under any `[stores.<kind>]` block; both write outside
+the audited repository. They exist because the in-repo defaults land
+attestations, reports, and audit-cache under `<repo>/.darnit/`, which
+is often not where an operator wants them (backups, CI artifact
+directories, XDG-idiomatic locations).
+
+## `local-fs`: arbitrary root path
+
+Points a store at any local filesystem path. Config:
+
+```toml
+[stores.attestation]
+backend = "local-fs"
+root    = "/absolute/path"   # or "~/subpath", or "$VAR/subpath"
+```
+
+Path resolution runs in this order at store construction:
+
+1. `$VAR` interpolation via darnit's env-subst helper. A missing
+   variable raises `KeyError` immediately -- a typo does NOT silently
+   expand to `""`. This is deliberate: `root` is a compliance-critical
+   config value; loud failure beats surprise empty writes.
+2. `~` expansion via `os.path.expanduser`.
+3. Absolute `Path.resolve()`.
+
+Directory creation is deferred to the first write. Filename
+sanitization is inherited from the in-repo default -- a bundle_id
+containing `../../etc/foo` produces a sanitized filename inside
+`root`, not a path escape.
+
+### Example: CI runner with persistent cache + report artifacts
+
+```toml
+[stores.cache]
+backend = "local-fs"
+root    = "$RUNNER_CACHE_DIR/darnit"
+
+[stores.report]
+backend = "local-fs"
+root    = "$RUNNER_ARTIFACTS_DIR/darnit-reports"
+```
+
+- First-run: cache write goes to `$RUNNER_CACHE_DIR/darnit/`; next-run
+  cache read hits because the runner restored the cache directory
+  between jobs.
+- Reports land where the runner's artifact-upload step already looks.
+  Markdown / JSON / SARIF each become their own file under that root;
+  one info log line per format.
+
+### Multi-repo templating
+
+Darnit has no org-level or user-level config file. If you want the
+same `[stores.<kind>]` block active on 30 repos, use one of:
+
+1. **Env-var interpolation (easiest)**. Keep `root = "$DARNIT_ATT_ROOT"`
+   in every repo's `.baseline.toml`. Set `DARNIT_ATT_ROOT` once per
+   machine (shell profile, systemd unit, CI runner env). The 30 repos
+   share the destination without duplicating the literal path.
+2. **CI/CD templating**. Your workflow rewrites `.baseline.toml` before
+   invoking `darnit audit`.
+3. **Cookiecutter / repo-init tool**. One-shot copy the block into
+   each repo when you first onboard it.
+
+### The `.project/` layer (FR-009)
+
+Neither `local-fs` nor `user-local` is registered under
+`darnit.stores.project`. `.project/project.yaml` is the CNCF
+`.project/` spec's canonical repo-committable artifact and stays in
+the repo by design. If you write `[stores.project] backend = "local-fs"`
+in `.baseline.toml`, `resolve_stores` raises `StoreNotInstalled`
+before any control runs -- the misconfiguration surfaces at audit
+start, not in a confusing runtime failure. Redirecting project state
+outside the repo means governance tooling can no longer find it, so
+this is not supported.
+
+## `user-local`: platform-conventional root
+
+Points a store at the platform-idiomatic user-scoped location. No
+`root` config needed. Example:
+
+```toml
+[stores.attestation]
+backend = "user-local"
+
+[stores.report]
+backend = "user-local"
+
+[stores.cache]
+backend = "user-local"
+```
+
+Resolved paths per platform:
+
+| Platform | Attestations / Reports (data) | Cache |
+|---|---|---|
+| Linux (XDG defaults) | `~/.local/share/darnit/...` | `~/.cache/darnit/...` |
+| Linux (`XDG_DATA_HOME=/X`) | `/X/darnit/...` | (see `XDG_CACHE_HOME`) |
+| macOS | `~/Library/Application Support/darnit/...` | `~/Library/Caches/darnit/...` |
+| Windows | `%LOCALAPPDATA%\darnit\Data\...` | `%LOCALAPPDATA%\darnit\Cache\...` |
+| Unknown | XDG fallback (same as Linux) | XDG fallback |
+
+Passing a `root` kwarg to a `user-local` backend logs a warning and
+uses the platform default anyway. Less disruptive than a hard error
+for operators who copied a snippet from a `local-fs` example.
+
+## Logging
+
+Every successful outside-repo write emits one info-level log line to
+the `darnit.stores.local` logger:
+
+```
+INFO darnit.stores.local: wrote attestation (local-fs): /home/mike/darnit-attestations/acme-widget-baseline-attestation.intoto.json
+```
+
+The in-repo `Filesystem*Store` defaults do NOT emit to this logger, so
+zero-config audits stay log-silent under `darnit.stores.local`.
+
+## Zero-config unchanged
+
+If you do NOT add `[stores.*]` blocks, artifacts continue to land in
+`<repo>/.darnit/` exactly as before this feature. `local-fs` and
+`user-local` are opt-in.
+
+## Troubleshooting
+
+- **`KeyError: DARNIT_ATT_ROOT`**: the env var referenced in `root`
+  isn't set. `local-fs` fails fast on missing vars by design. Export
+  the variable or use a literal path.
+- **`StoreOperationError: [local-fs attestation @ ...]`**: the
+  resolved `root` is unwritable, the disk is full, or the file is
+  locked. The error message names the backend, kind, and resolved path
+  so the operator can correlate. Darnit does NOT silently fall back
+  to the in-repo default.
+- **File landed with `_`s in the name**: your identifier contained
+  filesystem-unsafe characters. The store sanitized them to prevent
+  path traversal. Rename the caller's identifier for cleaner output.
