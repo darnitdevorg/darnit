@@ -1,51 +1,94 @@
 """Audit result cache for cross-tool-call persistence.
 
-Caches audit results in a temp directory so that the remediate tool can
-skip re-running the audit when results are fresh.  Each repository gets
-its own cache keyed by a short hash of its absolute path:
+Caches audit results so the remediate tool can skip re-running the audit
+when results are fresh. Feature 035 refactored this module from a
+direct-tempdir implementation into a thin wrapper over feature 033's
+:class:`~darnit.stores.protocols.AuditCacheStore` Protocol, so an
+operator setting ``[stores.cache]`` in ``.baseline.toml`` actually
+redirects the cache location.
 
-    $TMPDIR/darnit/<repo-hash>/audit-cache.json
+Two call forms:
 
-Staleness is tracked via the git HEAD commit hash and working-tree
-dirty state.  Any mismatch → cache miss → remediate falls back to
-running a fresh audit.
+* **Backward-compat** (external callers, no store passed): the wrapper
+  builds a :class:`~darnit.stores.defaults.FilesystemAuditCacheStore`
+  rooted at ``<tempdir>/darnit/<sha256(abspath(repo))[:16]>`` and uses
+  the literal cache key ``"audit-cache"``. On-disk path is byte-for-byte
+  identical to the pre-feature layout::
 
-Public API:
-    write_audit_cache(local_path, results, summary, level, framework)
-    read_audit_cache(local_path) -> dict | None
-    invalidate_audit_cache(local_path)
+      <tempdir>/darnit/<repo-hash>/audit-cache.json
+
+* **Driver call form** (:mod:`darnit.tools.audit` passes both ``store``
+  and ``cache_key``): the wrapper uses them verbatim. The driver decides
+  the cache_key based on whether ``[stores.cache]`` was configured --
+  ``"audit-cache"`` for the default store (root already encodes repo
+  identity) or ``sha256(abspath(repo))[:16]`` for a configured store
+  (root is operator-picked, key must encode repo identity).
+
+Staleness is tracked via TTL, git HEAD commit hash, and working-tree
+dirty state -- all in this wrapper, not in the store. The store is a
+plain KV over dict envelopes.
+
+Public API::
+
+    write_audit_cache(local_path, results, summary, level, framework,
+                      *, store=None, cache_key=None)
+    read_audit_cache(local_path, ttl_seconds=3600,
+                     *, store=None, cache_key=None) -> dict | None
+    invalidate_audit_cache(local_path, *, store=None, cache_key=None)
 """
 
 from __future__ import annotations
 
 import hashlib
-import json
-import os
 import subprocess
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from darnit.core.logging import get_logger
 from darnit.sieve.models import CheckResult
+
+if TYPE_CHECKING:
+    from darnit.stores.protocols import AuditCacheStore
 
 logger = get_logger("core.audit_cache")
 
 CACHE_FILENAME = "audit-cache.json"
 CACHE_VERSION = 1
 
+# Invalidation via write-expired-envelope (feature 035 clarify Q3).
+# The AuditCacheStore Protocol has no delete(key) method; instead,
+# invalidate_audit_cache overwrites the current envelope with one whose
+# timestamp is guaranteed to fail every future TTL check.
+_EXPIRED_ENVELOPE: dict[str, Any] = {
+    "version": CACHE_VERSION,
+    "timestamp": "1970-01-01T00:00:00+00:00",
+    "commit": None,
+    "commit_dirty": False,
+    "level": 0,
+    "framework": "",
+    "results": [],
+    "summary": {},
+}
+
 
 # ---------------------------------------------------------------------------
-# Cache location
+# Cache location (backward-compat helper)
 # ---------------------------------------------------------------------------
 
 
 def _get_cache_dir(local_path: str) -> Path:
     """Return the per-repo cache directory under the system temp dir.
 
+    Used by:
+    * the backward-compat default-store construction in the three public
+      wrapper functions when the caller does NOT pass ``store``, and
+    * existing tests at ``tests/darnit/core/test_audit_cache.py`` that
+      compose the expected on-disk path via this helper.
+
     Uses a short SHA-256 hash of the repo's resolved absolute path so
-    that each repository gets an isolated cache directory.
+    each repository gets an isolated cache directory.
     """
     resolved = str(Path(local_path).resolve())
     repo_hash = hashlib.sha256(resolved.encode()).hexdigest()[:16]
@@ -88,8 +131,40 @@ def _is_working_tree_dirty(local_path: str) -> bool:
             return len(result.stdout.strip()) > 0
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         pass
-    # If we can't determine dirty state, assume dirty (conservative)
+    # If we can't determine dirty state, assume dirty (conservative).
     return True
+
+
+# ---------------------------------------------------------------------------
+# Internal store selection
+# ---------------------------------------------------------------------------
+
+
+def _resolve_store_and_key(
+    local_path: str,
+    store: AuditCacheStore | None,
+    cache_key: str | None,
+) -> tuple[AuditCacheStore, str]:
+    """Return ``(store, cache_key)`` per the two-form contract.
+
+    * Both ``None``: build a default
+      :class:`~darnit.stores.defaults.FilesystemAuditCacheStore` rooted at
+      ``<tempdir>/darnit/<sha256(abspath(local_path))[:16]>`` and use
+      cache_key ``"audit-cache"``. Byte-for-byte legacy path.
+    * Both provided: return as-is.
+    * Exactly one provided: :class:`TypeError` (partial-kwarg guardrail
+      per contracts/audit-cache-wrapper.md).
+    """
+    if (store is None) != (cache_key is None):
+        raise TypeError("store and cache_key must be passed together")
+    if store is None:
+        # Deferred import to keep the module import graph shallow.
+        from darnit.stores.defaults import FilesystemAuditCacheStore
+
+        store = FilesystemAuditCacheStore(_get_cache_dir(local_path))
+        cache_key = "audit-cache"
+    assert cache_key is not None  # narrow type
+    return store, cache_key
 
 
 # ---------------------------------------------------------------------------
@@ -103,21 +178,34 @@ def write_audit_cache(
     summary: dict[str, int],
     level: int,
     framework: str,
+    *,
+    store: AuditCacheStore | None = None,
+    cache_key: str | None = None,
 ) -> None:
-    """Write audit results to the cache.
+    """Write audit results to the cache via the given (or default) store.
 
-    Creates the cache directory if it doesn't exist.  Uses atomic write
-    (tempfile + rename) to prevent corruption from interrupted writes.
+    Composes the cache envelope (version, timestamp, commit, commit_dirty,
+    level, framework, results, summary) and hands it to
+    ``store.write(cache_key, envelope)``. Failures are logged at warning
+    level and swallowed -- per feature 035 FR-007, cache-write failure
+    MUST NOT propagate to the audit's exit code.
 
     Args:
-        local_path: Path to the repository root.
+        local_path: Path to the repository root (used for git
+            introspection and, when ``store`` is None, for default-store
+            construction).
         results: The raw results list from ``run_sieve_audit()``.
         summary: Status count summary from ``run_sieve_audit()``.
         level: Maximum audit level that was evaluated.
         framework: Framework name (e.g. ``"openssf-baseline"``).
+        store: Optional :class:`AuditCacheStore` instance. When None, a
+            legacy-path default store is constructed. Must be passed
+            together with ``cache_key``.
+        cache_key: Optional cache key string. When None, defaults to
+            ``"audit-cache"`` (used with the default store's per-repo
+            tempdir root). Must be passed together with ``store``.
     """
-    cache_dir = _get_cache_dir(local_path)
-    cache_dir.mkdir(parents=True, exist_ok=True)
+    store, cache_key = _resolve_store_and_key(local_path, store, cache_key)
 
     envelope: dict[str, Any] = {
         "version": CACHE_VERSION,
@@ -130,47 +218,46 @@ def write_audit_cache(
         "summary": summary,
     }
 
-    cache_path = cache_dir / CACHE_FILENAME
-
-    # Atomic write: write to temp file in same directory, then rename.
-    fd, tmp_path = tempfile.mkstemp(dir=str(cache_dir), suffix=".tmp", prefix="audit-cache-")
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(envelope, f, indent=2)
-        os.replace(tmp_path, str(cache_path))
-        logger.debug("Wrote audit cache to %s", cache_path)
-    except Exception:
-        # Clean up temp file on failure
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-        raise
+        store.write(cache_key, envelope)
+    except Exception as exc:  # noqa: BLE001 -- FR-007 best-effort
+        logger.warning(
+            "audit cache write failed (non-fatal): %s: %s",
+            type(exc).__name__,
+            exc,
+        )
 
 
-def read_audit_cache(local_path: str, ttl_seconds: int = 3600) -> dict[str, Any] | None:
+def read_audit_cache(
+    local_path: str,
+    ttl_seconds: int = 3600,
+    *,
+    store: AuditCacheStore | None = None,
+    cache_key: str | None = None,
+) -> dict[str, Any] | None:
     """Read cached audit results if they are still fresh.
 
-    Returns the full cache envelope (including ``results`` and ``summary``)
-    when the cache exists, is valid JSON, has a supported version,
-    is within the TTL limit, and the git commit + dirty state match
-    the current repository state.
+    Returns the full cache envelope (including ``results`` and
+    ``summary``) when the cache exists, has a supported version, is
+    within the TTL, and its git commit + dirty state match the current
+    repository state.
 
-    Returns ``None`` on any mismatch, missing file, or corruption —
-    callers should fall back to running a fresh audit.
+    Returns ``None`` on any mismatch, missing file, or corruption --
+    callers should fall back to running a fresh audit. Never raises.
+
+    Staleness enforcement (TTL / commit / dirty) lives here, NOT in the
+    store; the store is a plain KV.
     """
-    cache_path = _get_cache_dir(local_path) / CACHE_FILENAME
+    store, cache_key = _resolve_store_and_key(local_path, store, cache_key)
 
-    if not cache_path.is_file():
-        logger.debug("No audit cache file at %s", cache_path)
+    try:
+        data = store.read(cache_key)
+    except Exception as exc:  # noqa: BLE001 -- read must never raise
+        logger.debug("audit cache read failed: %s", exc)
         return None
 
-    # Parse JSON
-    try:
-        with open(cache_path, encoding="utf-8") as f:
-            data = json.load(f)
-    except (json.JSONDecodeError, OSError) as exc:
-        logger.debug("Corrupt or unreadable audit cache: %s", exc)
+    if data is None:
+        logger.debug("No audit cache found for key %s", cache_key)
         return None
 
     if not isinstance(data, dict):
@@ -201,8 +288,8 @@ def read_audit_cache(local_path: str, ttl_seconds: int = 3600) -> dict[str, Any]
     # Staleness: commit hash
     cached_commit = data.get("commit")
     if cached_commit is None:
-        # Written in a non-git repo → always stale
-        logger.debug("Audit cache has null commit — treating as stale")
+        # Written in a non-git repo -> always stale.
+        logger.debug("Audit cache has null commit -- treating as stale")
         return None
 
     current_commit = _get_head_commit(local_path)
@@ -229,14 +316,32 @@ def read_audit_cache(local_path: str, ttl_seconds: int = 3600) -> dict[str, Any]
     return data
 
 
-def invalidate_audit_cache(local_path: str) -> None:
-    """Delete the audit cache file if it exists.
+def invalidate_audit_cache(
+    local_path: str,
+    *,
+    store: AuditCacheStore | None = None,
+    cache_key: str | None = None,
+) -> None:
+    """Invalidate the audit cache by writing an expired envelope.
 
-    No-op if the file is already missing.
+    Feature 035 clarify Q3: since the :class:`AuditCacheStore` Protocol
+    has no ``delete(key)`` method, invalidation is implemented as an
+    overwrite with an envelope whose timestamp is 1970-01-01T00:00:00Z.
+    The next :func:`read_audit_cache` misses on the TTL check.
+
+    The on-disk cache file remains until the next successful write
+    overwrites it -- acceptable because the default cache path is an
+    operator-invisible tempdir.
+
+    Never raises. Write failures are logged at warning level and
+    swallowed (same contract as :func:`write_audit_cache`).
     """
-    cache_path = _get_cache_dir(local_path) / CACHE_FILENAME
+    store, cache_key = _resolve_store_and_key(local_path, store, cache_key)
     try:
-        cache_path.unlink(missing_ok=True)
-        logger.debug("Invalidated audit cache at %s", cache_path)
-    except OSError as exc:
-        logger.debug("Could not remove audit cache: %s", exc)
+        store.write(cache_key, dict(_EXPIRED_ENVELOPE))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "audit cache invalidation failed (non-fatal): %s: %s",
+            type(exc).__name__,
+            exc,
+        )
