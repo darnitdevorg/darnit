@@ -3854,7 +3854,10 @@ help_md = """Document how to verify release author.
 
 [[controls."OSPS-DO-03.02".passes]]
 handler = "pattern"
-files = ["SECURITY.md", "README.md", "docs/releases.md", "CONTRIBUTING.md", "docs/RELEASE-VERIFICATION.md"]
+# rst/txt/no-ext README variants added so this pass can PASS/FAIL
+# deterministically on projects that don't ship .md-based READMEs
+# (Python/Sphinx projects like tqdm surfaced the gap; see issue #402).
+files = ["SECURITY.md", "README.md", "README.rst", "README.txt", "README", "docs/releases.md", "CONTRIBUTING.md", "docs/RELEASE-VERIFICATION.md"]
 
 [controls."OSPS-DO-03.02".passes.pattern.patterns]
 verify_author = "(verify|verif|signature|sign|GPG|Sigstore).*(author|release|identity)"
@@ -3912,7 +3915,8 @@ help_md = """Document support policy.
 
 [[controls."OSPS-DO-04.01".passes]]
 handler = "pattern"
-files = ["SUPPORT.md", "SECURITY.md", "README.md"]
+# rst/txt/no-ext README variants added (see #402 sibling change).
+files = ["SUPPORT.md", "SECURITY.md", "README.md", "README.rst", "README.txt", "README", "docs/support.md"]
 
 [controls."OSPS-DO-04.01".passes.pattern.patterns]
 support_scope = "(support.*(scope|duration|period|timeline)|version.*(support|maintenance))"
@@ -3976,7 +3980,8 @@ help_md = """Document end-of-life policy.
 
 [[controls."OSPS-DO-05.01".passes]]
 handler = "pattern"
-files = ["SUPPORT.md", "SECURITY.md", "README.md"]
+# rst/txt/no-ext README variants added (see #402 sibling change).
+files = ["SUPPORT.md", "SECURITY.md", "README.md", "README.rst", "README.txt", "README", "CONTRIBUTING.md"]
 
 [controls."OSPS-DO-05.01".passes.pattern.patterns]
 eol_policy = "(end.of.(life|support)|EOL|deprecat|sunset)"
@@ -4115,7 +4120,9 @@ look_for_urls = true
 
 [[controls."OSPS-SA-01.01".passes]]
 handler = "pattern"
-files = ["ARCHITECTURE.md", "docs/architecture.md", "docs/design.md", "DESIGN.md", "README.md"]
+# rst variants added; ARCHITECTURE/DESIGN commonly live as .rst
+# in Sphinx-based Python projects.
+files = ["ARCHITECTURE.md", "ARCHITECTURE.rst", "docs/architecture.md", "docs/architecture.rst", "docs/design.md", "docs/design.rst", "DESIGN.md", "DESIGN.rst", "README.md", "README.rst"]
 pass_if_any = true
 
 [controls."OSPS-SA-01.01".passes.pattern.patterns]
@@ -4189,7 +4196,9 @@ look_for_urls = true
 # Check for API documentation in dedicated files OR README sections
 [[controls."OSPS-SA-02.01".passes]]
 handler = "pattern"
-files = ["API.md", "docs/api.md", "README.md", "docs/README.md", "USAGE.md", "docs/getting-started.md", "openapi.yaml", "openapi.json", "swagger.yaml", "swagger.json"]
+# README.rst added for Sphinx-based projects; API.rst / USAGE.rst
+# variants common in the same ecosystem.
+files = ["API.md", "API.rst", "docs/api.md", "docs/api.rst", "README.md", "README.rst", "docs/README.md", "USAGE.md", "USAGE.rst", "docs/getting-started.md", "openapi.yaml", "openapi.json", "swagger.yaml", "swagger.json"]
 pass_if_any = true
 
 [controls."OSPS-SA-02.01".passes.pattern.patterns]
