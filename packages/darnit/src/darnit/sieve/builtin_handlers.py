@@ -327,6 +327,10 @@ def regex_handler(config: dict[str, Any], context: HandlerContext) -> HandlerRes
         files_checked: int - Number of files examined
         results: list[dict] - Per-file match details
         patterns_checked: list[str] - Pattern names checked
+        resolved_files: list[str] - (match mode) absolute paths of files
+            that existed on disk and were scanned. A downstream
+            ``llm_eval`` pass automatically falls back to this list when
+            ``files_to_include`` produces no content (issue #402).
         files_found: int - (exclude mode) number of files matching globs
         found_files: list[str] - (exclude mode) matched file paths
     """
@@ -569,6 +573,13 @@ def _regex_match_files(
         "patterns_checked": list(patterns.keys()),
         "results": all_results[:20],
         "any_match": any_match,
+        # Issue #402 Option 2: paths of files that actually existed on
+        # disk and were scanned. A downstream `llm_eval` pass can fall
+        # back to this list when `$FOUND_FILE` is empty (e.g.
+        # `pattern -> llm_eval` shapes with no `file_exists` sibling),
+        # avoiding the empty-file_contents bug documented in #402. Absolute
+        # paths -- llm_eval accepts either shape (see llm_eval_handler).
+        "resolved_files": list(file_paths),
     }
 
     if pass_if_any:
@@ -611,6 +622,23 @@ def llm_eval_handler(config: dict[str, Any], context: HandlerContext) -> Handler
         prompt: str - Prompt for LLM evaluation
         confidence_threshold: float - Minimum confidence to accept (default: 0.8)
         analysis_hints: list[str] - Hints for the LLM
+        files_to_include: list[str] - Files whose contents to bundle with
+            the consultation. Supports:
+            - literal paths (relative to repo root or absolute)
+            - ``"$FOUND_FILE"`` -> `gathered_evidence["found_file"]` (from
+              a preceding `file_exists` PASS)
+            - ``"$RESOLVED_FILES"`` -> `gathered_evidence["resolved_files"]`
+              (list from a preceding `regex`/`pattern` pass). Fans out to
+              multiple candidates from a single sentinel (issue #402).
+            Missing files are silently skipped. Capped at 5 file contents
+            total; each capped at 10000 bytes.
+
+            When `files_to_include` produces no file contents at all
+            (empty $FOUND_FILE, missing literal paths, and no
+            $RESOLVED_FILES sentinel), the handler automatically falls
+            back to `gathered_evidence["resolved_files"]` so a
+            `pattern -> llm_eval` shape without a `file_exists` sibling
+            never ships an empty consultation (issue #402).
 
     Note: This handler returns INCONCLUSIVE with a consultation request in the details,
     since actual LLM invocation happens at the MCP server level.
@@ -622,15 +650,17 @@ def llm_eval_handler(config: dict[str, Any], context: HandlerContext) -> Handler
             message="No prompt specified for LLM evaluation",
         )
 
-    # Resolve files_to_include: read file contents for LLM context
+    # Resolve files_to_include: read file contents for LLM context.
+    # Supported sentinels:
+    #   $FOUND_FILE      -> gathered_evidence["found_file"] (from file_exists)
+    #   $RESOLVED_FILES  -> gathered_evidence["resolved_files"] (from regex/pattern; issue #402)
+    # Literal paths are opened directly; missing files are silently skipped.
     files_to_include = config.get("files_to_include", [])
     file_contents: dict[str, str] = {}
-    for f in files_to_include[:5]:
-        resolved = f
-        if f == "$FOUND_FILE":
-            resolved = context.gathered_evidence.get("found_file", "")
-        if not resolved:
-            continue
+
+    def _read(resolved: str) -> None:
+        if not resolved or len(file_contents) >= 5:
+            return
         full = os.path.join(context.local_path, resolved) if not os.path.isabs(resolved) else resolved
         try:
             with open(full, encoding="utf-8", errors="ignore") as fh:
@@ -638,6 +668,24 @@ def llm_eval_handler(config: dict[str, Any], context: HandlerContext) -> Handler
                 file_contents[rel] = fh.read()[:10000]
         except OSError:
             pass
+
+    for f in files_to_include[:5]:
+        if f == "$FOUND_FILE":
+            _read(context.gathered_evidence.get("found_file", ""))
+        elif f == "$RESOLVED_FILES":
+            for candidate in context.gathered_evidence.get("resolved_files", []) or []:
+                _read(candidate)
+        else:
+            _read(f)
+
+    # Issue #402 Option 2: automatic fallback for TOMLs that still ship
+    # `files_to_include = ["$FOUND_FILE"]` and no `file_exists` sibling.
+    # If nothing above resolved to real content, try `resolved_files` from
+    # the preceding regex/pattern pass. Preserves single-source-of-truth
+    # for the file list (the sibling pattern already declares it).
+    if not file_contents:
+        for candidate in context.gathered_evidence.get("resolved_files", []) or []:
+            _read(candidate)
 
     return HandlerResult(
         status=HandlerResultStatus.INCONCLUSIVE,

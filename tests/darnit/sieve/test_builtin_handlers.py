@@ -574,6 +574,31 @@ class TestRegexHandler:
         )
         assert result.status == HandlerResultStatus.PASS
 
+    # -------------------------------------------------------------------------
+    # Issue #402 Option 2: resolved_files evidence for llm_eval fallback
+    # -------------------------------------------------------------------------
+
+    def test_evidence_includes_resolved_files_on_match_path(self, tmp_path, ctx):
+        """`resolved_files` MUST list every path that existed on disk and was scanned."""
+        readme = tmp_path / "README.md"
+        readme.write_text("hello world")
+        security = tmp_path / "SECURITY.md"
+        security.write_text("no matches here for the sentinel")
+
+        result = regex_handler(
+            {
+                "files": ["README.md", "SECURITY.md", "MISSING.md"],
+                "pattern": r"hello",
+            },
+            ctx,
+        )
+        # MISSING.md must NOT appear -- the field is "existed on disk and was scanned".
+        assert "resolved_files" in result.evidence
+        resolved = set(result.evidence["resolved_files"])
+        assert str(readme) in resolved
+        assert str(security) in resolved
+        assert not any("MISSING.md" in p for p in resolved)
+
 
 # =============================================================================
 # regex_handler — depth-limited file discovery
@@ -848,6 +873,84 @@ class TestLlmEvalHandler:
         """When files_to_include is absent, file_contents should be empty."""
         result = llm_eval_handler(
             {"prompt": "Evaluate this"},
+            ctx,
+        )
+        assert result.details["consultation_request"]["file_contents"] == {}
+
+    # -------------------------------------------------------------------------
+    # Issue #402 Option 2: resolved_files sentinel + automatic fallback
+    # -------------------------------------------------------------------------
+
+    def test_resolved_files_sentinel_reads_all_evidence_paths(self, ctx, tmp_path):
+        """`$RESOLVED_FILES` expands to every path in `gathered_evidence["resolved_files"]`."""
+        for name in ("README.md", "SECURITY.md", "CONTRIBUTING.md"):
+            (tmp_path / name).write_text(f"# {name}\ncontent for {name}\n")
+        ctx.gathered_evidence["resolved_files"] = [
+            str(tmp_path / "README.md"),
+            str(tmp_path / "SECURITY.md"),
+            str(tmp_path / "CONTRIBUTING.md"),
+        ]
+
+        result = llm_eval_handler(
+            {"prompt": "Evaluate docs", "files_to_include": ["$RESOLVED_FILES"]},
+            ctx,
+        )
+        fc = result.details["consultation_request"]["file_contents"]
+        assert set(fc.keys()) == {"README.md", "SECURITY.md", "CONTRIBUTING.md"}
+        assert "content for README.md" in fc["README.md"]
+
+    def test_resolved_files_fallback_when_files_to_include_yields_empty(self, ctx, tmp_path):
+        """The core #402 fix: `["$FOUND_FILE"]` with no found_file falls back to `resolved_files`."""
+        readme = tmp_path / "README.rst"
+        readme.write_text("Sphinx-style rst readme content", encoding="utf-8")
+        # No `found_file` in gathered_evidence -- the failure mode from #402.
+        ctx.gathered_evidence["resolved_files"] = [str(readme)]
+
+        result = llm_eval_handler(
+            {"prompt": "Evaluate README", "files_to_include": ["$FOUND_FILE"]},
+            ctx,
+        )
+        fc = result.details["consultation_request"]["file_contents"]
+        # Before the fix: {} (empty consultation).
+        # After the fix: README.rst content shipped via automatic fallback.
+        assert "README.rst" in fc
+        assert "Sphinx-style" in fc["README.rst"]
+
+    def test_no_fallback_when_files_to_include_already_produced_content(self, ctx, tmp_path):
+        """Fallback fires only when file_contents is empty. Explicit paths win."""
+        readme = tmp_path / "README.md"
+        readme.write_text("explicit content")
+        rst_readme = tmp_path / "README.rst"
+        rst_readme.write_text("rst content that must NOT leak in")
+        ctx.gathered_evidence["resolved_files"] = [str(rst_readme)]
+
+        result = llm_eval_handler(
+            {"prompt": "Evaluate", "files_to_include": ["README.md"]},
+            ctx,
+        )
+        fc = result.details["consultation_request"]["file_contents"]
+        assert set(fc.keys()) == {"README.md"}
+        assert "rst content" not in fc["README.md"]
+
+    def test_fallback_respects_five_file_cap(self, ctx, tmp_path):
+        """`resolved_files` with >5 entries is capped at 5 in the fallback path."""
+        paths = []
+        for i in range(8):
+            p = tmp_path / f"f{i}.md"
+            p.write_text(f"content {i}")
+            paths.append(str(p))
+        ctx.gathered_evidence["resolved_files"] = paths
+
+        result = llm_eval_handler(
+            {"prompt": "Evaluate"},  # no files_to_include -> fallback fires
+            ctx,
+        )
+        assert len(result.details["consultation_request"]["file_contents"]) == 5
+
+    def test_no_fallback_when_gathered_evidence_has_no_resolved_files(self, ctx):
+        """Absent `resolved_files` is a no-op, not an error."""
+        result = llm_eval_handler(
+            {"prompt": "Evaluate", "files_to_include": ["$FOUND_FILE"]},
             ctx,
         )
         assert result.details["consultation_request"]["file_contents"] == {}
