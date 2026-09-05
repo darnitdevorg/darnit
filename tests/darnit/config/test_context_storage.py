@@ -457,6 +457,101 @@ class TestRunDetectPipelineHasReleases:
         result = _run_detect_pipeline("has_releases", pipeline, str(tmp_path), "owner", "repo")
         assert result is None
 
+    def test_value_if_fail_fires_on_last_detector_fail(self, tmp_path: Path) -> None:
+        """When the last detector fails and has value_if_fail, it fires.
+
+        Reproducibility fix: a flaky `gh release list` (non-zero exit, empty
+        stdout with an expr, or ERROR) previously left the key missing from
+        context, which caused when-clause matching to skip controls
+        nondeterministically across audit runs. With value_if_fail wired,
+        the failure resolves to a stable false.
+        """
+        pipeline = [
+            self._make_invocation(handler="file_exists", files=[".github/workflows/release*"], value_if_pass=True),
+            self._make_invocation(handler="file_exists", files=["CHANGELOG.md", "CHANGELOG"], value_if_pass=True),
+            self._make_invocation(
+                handler="exec",
+                command=["false"],  # deterministic non-zero exit
+                pass_exit_codes=[0],
+                value_if_pass=True,
+                value_if_fail=False,
+            ),
+        ]
+        result = _run_detect_pipeline("has_releases", pipeline, str(tmp_path), "owner", "repo")
+        assert result is not None
+        assert result.value is False
+        assert "fail_fallback" in result.detection_method
+
+    def test_value_if_fail_fires_when_expr_evaluates_false(self, tmp_path: Path) -> None:
+        """PASS-with-expr-false (INCONCLUSIVE post-CEL) also triggers value_if_fail.
+
+        This is the "gh release list succeeded but returned empty stdout"
+        case -- the repo genuinely has no releases. Pre-fix: INCONCLUSIVE
+        propagated to end-of-chain and returned None. Post-fix: value_if_fail
+        stabilises this to false.
+        """
+        with patch("darnit.sieve.builtin_handlers.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            pipeline = [
+                self._make_invocation(
+                    handler="exec",
+                    command=["gh", "release", "list", "--repo", "$OWNER/$REPO", "--limit", "1"],
+                    pass_exit_codes=[0],
+                    expr='output.stdout != ""',
+                    value_if_pass=True,
+                    value_if_fail=False,
+                ),
+            ]
+            result = _run_detect_pipeline("has_releases", pipeline, str(tmp_path), "owner", "repo")
+        assert result is not None
+        assert result.value is False
+        assert "fail_fallback" in result.detection_method
+
+    def test_value_if_fail_short_circuits_middle_detector(self, tmp_path: Path) -> None:
+        """value_if_fail on a middle detector fires and skips subsequent detectors.
+
+        Documents the short-circuit semantic: if a TOML author sets
+        value_if_fail on a non-last detector, later detectors are not tried
+        when that detector fails. If a chain-level fallback is desired
+        instead, put value_if_fail on the last detector.
+        """
+        (tmp_path / "CHANGELOG.md").write_text("# changelog\n")
+        pipeline = [
+            self._make_invocation(
+                handler="exec",
+                command=["false"],
+                pass_exit_codes=[0],
+                value_if_pass=True,
+                value_if_fail=False,
+            ),
+            # This later detector WOULD pass but should not be reached.
+            self._make_invocation(handler="file_exists", files=["CHANGELOG.md"], value_if_pass=True),
+        ]
+        result = _run_detect_pipeline("has_releases", pipeline, str(tmp_path), "owner", "repo")
+        assert result is not None
+        assert result.value is False, "short-circuit: middle detector's value_if_fail must fire"
+
+    def test_earlier_pass_still_wins_over_later_value_if_fail(self, tmp_path: Path) -> None:
+        """PASS-first-wins semantics preserved: earlier detector's success skips fail-fallback.
+
+        Guards against a regression where the fix accidentally makes
+        value_if_fail from later detectors override earlier successes.
+        """
+        (tmp_path / "CHANGELOG.md").write_text("# changelog\n")
+        pipeline = [
+            self._make_invocation(handler="file_exists", files=["CHANGELOG.md"], value_if_pass=True),
+            self._make_invocation(
+                handler="exec",
+                command=["false"],
+                pass_exit_codes=[0],
+                value_if_pass=True,
+                value_if_fail=False,
+            ),
+        ]
+        result = _run_detect_pipeline("has_releases", pipeline, str(tmp_path), "owner", "repo")
+        assert result is not None
+        assert result.value is True
+
 
 class TestRunDetectPipelinePlatform:
     """Tests for platform detect pipeline (FR-3)."""
