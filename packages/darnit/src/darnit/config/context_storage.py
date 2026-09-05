@@ -701,7 +701,29 @@ def _run_detect_pipeline(
                         confidence=result.confidence,
                     )
 
-            # INCONCLUSIVE or FAIL — try next handler in pipeline
+            # Non-PASS: apply value_if_fail as a stable fallback if the TOML
+            # author set one. Short-circuits the chain -- subsequent handlers
+            # are not tried. This is the mechanism that makes flaky network
+            # detectors (e.g., `gh release list`) produce a deterministic
+            # false rather than a missing key when they can't conclude.
+            if result.status in (
+                HandlerResultStatus.FAIL,
+                HandlerResultStatus.INCONCLUSIVE,
+                HandlerResultStatus.ERROR,
+            ):
+                value_if_fail = handler_config.get("value_if_fail")
+                if value_if_fail is not None:
+                    return ContextValue.auto_detected(
+                        value=value_if_fail,
+                        method=f"detect_pipeline:{invocation.handler}:fail_fallback",
+                        # Handlers that FAIL / ERROR / INCONCLUSIVE frequently
+                        # leave confidence unset (None); fall back to
+                        # auto_detected's own default rather than passing None
+                        # into a numeric comparison.
+                        confidence=result.confidence if result.confidence is not None else 0.8,
+                    )
+
+            # No value_if_fail -- try next handler in pipeline
 
     except ImportError:
         logger.debug("Sieve handler registry not available for context detection")
