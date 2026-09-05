@@ -10,6 +10,8 @@ without the feature switched on.
 
 from __future__ import annotations
 
+import hashlib
+import tempfile
 from pathlib import Path
 
 from darnit.stores import discovery
@@ -30,9 +32,7 @@ class TestUS2ZeroConfig:
         assert isinstance(bundle.report, FilesystemReportStore)
         assert isinstance(bundle.cache, FilesystemAuditCacheStore)
 
-    def test_no_plugin_backend_constructed_under_zero_config(
-        self, tmp_path: Path
-    ):
+    def test_no_plugin_backend_constructed_under_zero_config(self, tmp_path: Path):
         """SC-003: a plugin registered but not selected must never be built."""
         # Reset cache so we can monkey-inject a fake entry.
         discovery._reset_discovery_cache()
@@ -51,9 +51,7 @@ class TestUS2ZeroConfig:
 
             # Seed the per-process discovery cache directly so
             # `discover_stores("darnit.stores.attestation")` sees the fake.
-            discovery._DISCOVERY_CACHE["darnit.stores.attestation"] = {
-                "fake-plugin": FakePlugin
-            }
+            discovery._DISCOVERY_CACHE["darnit.stores.attestation"] = {"fake-plugin": FakePlugin}
 
             bundle = resolve_stores(None, repo_path=tmp_path)
             # Force realistic access on all four kinds.
@@ -69,8 +67,18 @@ class TestUS2ZeroConfig:
             discovery._reset_discovery_cache()
 
     def test_filesystem_defaults_use_canonical_darnit_paths(self, tmp_path: Path):
-        """Zero-config on-disk paths match the pre-feature convention."""
+        """Zero-config on-disk paths match the pre-feature convention.
+
+        Feature 035 SC-008: cache default moved to the legacy
+        ``<tempdir>/darnit/<sha256(abspath(repo))[:16]>`` location so the
+        pre-feature ``darnit.core.audit_cache`` on-disk path is preserved
+        byte-for-byte after the store-abstraction routing. Attestation
+        and report defaults are unchanged.
+        """
         bundle = resolve_stores(None, repo_path=tmp_path)
         assert bundle.attestation._root == tmp_path / ".darnit" / "attestations"  # type: ignore[attr-defined]
         assert bundle.report._root == tmp_path / ".darnit" / "reports"  # type: ignore[attr-defined]
-        assert bundle.cache._root == tmp_path / ".darnit" / "audit-cache"  # type: ignore[attr-defined]
+
+        expected_hash = hashlib.sha256(str(tmp_path.resolve()).encode()).hexdigest()[:16]
+        expected_cache_root = Path(tempfile.gettempdir()) / "darnit" / expected_hash
+        assert bundle.cache._root == expected_cache_root  # type: ignore[attr-defined]

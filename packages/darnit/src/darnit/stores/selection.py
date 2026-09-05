@@ -24,6 +24,8 @@ call ``.cache.close()``. Idempotent per FR-019.
 
 from __future__ import annotations
 
+import hashlib
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -134,7 +136,10 @@ def resolve_stores(
             need it.
         attestation_root, report_root, cache_root: Optional overrides for
             filesystem-default roots. When None, uses
-            ``<repo_path>/.darnit/{attestations,reports,audit-cache}``.
+            ``<repo_path>/.darnit/{attestations,reports}`` for the first two
+            and ``<tempfile.gettempdir()>/darnit/<sha256(abspath(repo))[:16]>``
+            for the cache (feature 035: matches the pre-feature
+            :mod:`darnit.core.audit_cache` on-disk path).
 
     Returns:
         A :class:`_StoreBundle` whose fields lazily instantiate on first
@@ -148,7 +153,14 @@ def resolve_stores(
     """
     attestation_root = attestation_root or (repo_path / ".darnit" / "attestations")
     report_root = report_root or (repo_path / ".darnit" / "reports")
-    cache_root = cache_root or (repo_path / ".darnit" / "audit-cache")
+    if cache_root is None:
+        # Feature 035: default cache lands at the legacy per-repo tempdir path
+        # (<tempdir>/darnit/<sha256(abspath(repo))[:16]>) so bundle.cache's
+        # default backend produces the same on-disk path as the pre-feature
+        # audit_cache wrapper. The wrapper passes cache_key = "audit-cache"
+        # in the default-store case, yielding <root>/audit-cache.json.
+        _repo_hash = hashlib.sha256(str(repo_path.resolve()).encode()).hexdigest()[:16]
+        cache_root = Path(tempfile.gettempdir()) / "darnit" / _repo_hash
 
     default_factories = {
         "project": lambda: FilesystemProjectStateStore(repo_path),
@@ -163,16 +175,12 @@ def resolve_stores(
         if block is None:
             factories[kind] = default_factories[kind]
         else:
-            factories[kind] = _validate_and_make_factory(
-                kind, block, repo_path=repo_path
-            )
+            factories[kind] = _validate_and_make_factory(kind, block, repo_path=repo_path)
 
     return _StoreBundle(factories)
 
 
-def _validate_and_make_factory(
-    kind: str, block: Any, *, repo_path: Path
-) -> Callable[[], Any]:
+def _validate_and_make_factory(kind: str, block: Any, *, repo_path: Path) -> Callable[[], Any]:
     """Discover the plugin, validate its class shape, return a factory.
 
     Validation runs eagerly (before the factory fires) so a bad
@@ -192,11 +200,7 @@ def _validate_and_make_factory(
     cls = registered[name]
 
     # Class-shape Protocol check (avoids instantiation).
-    missing = [
-        attr
-        for attr in _protocol_methods(protocol_cls)
-        if not hasattr(cls, attr)
-    ]
+    missing = [attr for attr in _protocol_methods(protocol_cls) if not hasattr(cls, attr)]
     if missing:
         raise StoreProtocolMismatch(
             group=group,
@@ -205,11 +209,7 @@ def _validate_and_make_factory(
             missing=missing,
         )
 
-    kwargs = {
-        k: v
-        for k, v in dict(block.model_extra or {}).items()
-        if k != "backend"
-    }
+    kwargs = {k: v for k, v in dict(block.model_extra or {}).items() if k != "backend"}
     kwargs.setdefault("repo_path", repo_path)
 
     def _factory() -> Any:

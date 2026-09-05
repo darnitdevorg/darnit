@@ -8,6 +8,7 @@ as the main MCP entry point. This module provides supporting functions
 and can be used for programmatic access.
 """
 
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -144,9 +145,7 @@ def _get_framework_config_path(framework_name: str | None = None) -> Path | None
     return None
 
 
-def _load_merged_stores(
-    local_path: str, framework_name: str | None
-) -> Any:
+def _load_merged_stores(local_path: str, framework_name: str | None) -> Any:
     """Return the merged ``StoresConfig`` for this audit run.
 
     Feature 033. Composes the framework TOML's ``[stores]`` block with
@@ -170,9 +169,7 @@ def _load_merged_stores(
     return getattr(effective, "stores", None)
 
 
-def _load_merged_mcp_servers(
-    local_path: str, framework_name: str | None
-) -> dict[str, Any]:
+def _load_merged_mcp_servers(local_path: str, framework_name: str | None) -> dict[str, Any]:
     """Return the merged ``mcp_servers`` allowlist for this audit run.
 
     Composes the framework TOML's block with any ``.baseline.toml``
@@ -537,9 +534,7 @@ def run_sieve_audit(
     # simply see an empty allowlist and any mcp handler pass resolves
     # ERROR ("unknown MCP server: ...") at dispatch time.
     try:
-        execution_context.mcp_servers = _load_merged_mcp_servers(
-            local_path, resolved_fw
-        )
+        execution_context.mcp_servers = _load_merged_mcp_servers(local_path, resolved_fw)
     except Exception as err:  # noqa: BLE001 - config load must not break audit
         logger.debug("MCP allowlist load failed (non-fatal): %s", err)
     all_results: list[CheckResult] = []
@@ -662,11 +657,33 @@ def run_sieve_audit(
     summary = summarize_results(all_results)
 
     # Write results to cache so remediate can skip re-running the audit.
-    # Failures here must never break the audit pipeline.
-    try:
-        from darnit.core.audit_cache import write_audit_cache
+    # Feature 035: route through stores_bundle.cache so [stores.cache] TOML
+    # config actually redirects the on-disk location. Pick the cache_key
+    # by whether the operator configured a store: default store's root
+    # already encodes repo identity (uses fixed "audit-cache"); configured
+    # store's root is operator-picked and may be shared across repos, so
+    # the key must encode repo identity.
+    if stores_config is None or stores_config.cache is None:
+        cache_key = "audit-cache"
+    else:
+        cache_key = hashlib.sha256(str(Path(local_path).resolve()).encode()).hexdigest()[:16]
 
-        write_audit_cache(local_path, all_results, summary, level, resolved_fw or "")
+    from darnit.core.audit_cache import write_audit_cache
+
+    # write_audit_cache is best-effort per FR-007 -- it swallows and logs
+    # internally. The enclosing try/except is defensive belt-and-braces
+    # against any unexpected exception path (e.g. TypeError from a
+    # future signature change).
+    try:
+        write_audit_cache(
+            local_path,
+            all_results,
+            summary,
+            level,
+            resolved_fw or "",
+            store=stores_bundle.cache,
+            cache_key=cache_key,
+        )
     except Exception as exc:
         logger.warning("Failed to write audit cache (non-fatal): %s", exc)
 

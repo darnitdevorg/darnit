@@ -259,7 +259,12 @@ class TestInvalidateCache:
         assert cache_path.exists()
 
         invalidate_audit_cache(str(temp_git_repo))
-        assert not cache_path.exists()
+        # Feature 035 clarify Q3: invalidation writes an expired envelope
+        # rather than deleting the file (AuditCacheStore has no delete()).
+        # The file remains on disk with a 1970-01-01 timestamp; the
+        # observable behavior is that the next read misses on TTL.
+        assert cache_path.exists()
+        assert read_audit_cache(str(temp_git_repo)) is None
 
     @pytest.mark.unit
     def test_invalidate_missing_noop(self, temp_git_repo: Path):
@@ -278,16 +283,27 @@ class TestAtomicWrite:
 
     @pytest.mark.unit
     def test_no_partial_file_on_error(self, temp_git_repo: Path, sample_results, sample_summary):
-        """If json.dump raises, no cache file should be left behind."""
-        with patch("darnit.core.audit_cache.json.dump", side_effect=OSError("disk full")):
-            with pytest.raises(OSError):
-                write_audit_cache(
-                    str(temp_git_repo),
-                    sample_results,
-                    sample_summary,
-                    3,
-                    "test",
-                )
+        """A failing store.write is swallowed with a warning; no partial file.
+
+        Feature 035 FR-007 relaxed the pre-feature "raises on tempfile/rename
+        failure" behavior to feature-033 FR-011's best-effort semantics: log
+        and continue. The 'no partial file' invariant is now enforced by
+        FilesystemAuditCacheStore's tempfile-then-rename + tempfile cleanup.
+        """
+        # Patch the underlying store's write to raise. The wrapper MUST
+        # swallow it (no raise) and no cache file should exist afterwards.
+        with patch(
+            "darnit.stores.defaults.cache.FilesystemAuditCacheStore.write",
+            side_effect=OSError("disk full"),
+        ):
+            # Must NOT raise (FR-007).
+            write_audit_cache(
+                str(temp_git_repo),
+                sample_results,
+                sample_summary,
+                3,
+                "test",
+            )
 
         cache_path = _get_cache_dir(str(temp_git_repo)) / CACHE_FILENAME
         assert not cache_path.exists()

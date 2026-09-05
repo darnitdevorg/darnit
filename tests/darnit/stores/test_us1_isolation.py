@@ -7,6 +7,8 @@ filesystem-default instances for the other three kinds.
 
 from __future__ import annotations
 
+import hashlib
+import tempfile
 from pathlib import Path
 
 from darnit_testchecks.stores import InMemoryProjectStateStore
@@ -35,11 +37,15 @@ class TestUS1Isolation:
         bundle = resolve_stores(config, repo_path=tmp_path)
 
         # Trigger construction and verify the filesystem defaults were
-        # built against `<repo>/.darnit/...`, the canonical zero-config
-        # location.
+        # built at their canonical zero-config location. Feature 035
+        # rebased the cache default to the legacy tempdir/hash path
+        # (SC-008); attestation and report defaults are unchanged.
         att = bundle.attestation
         rep = bundle.report
         cache = bundle.cache
         assert att._root == tmp_path / ".darnit" / "attestations"  # type: ignore[attr-defined]
         assert rep._root == tmp_path / ".darnit" / "reports"  # type: ignore[attr-defined]
-        assert cache._root == tmp_path / ".darnit" / "audit-cache"  # type: ignore[attr-defined]
+
+        expected_hash = hashlib.sha256(str(tmp_path.resolve()).encode()).hexdigest()[:16]
+        expected_cache_root = Path(tempfile.gettempdir()) / "darnit" / expected_hash
+        assert cache._root == expected_cache_root  # type: ignore[attr-defined]
