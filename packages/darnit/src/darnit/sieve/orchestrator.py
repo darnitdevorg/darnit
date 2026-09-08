@@ -144,6 +144,9 @@ def _apply_cel_expr(
             # Both handler and CEL point at the same verdict — preserve it.
             # Feature 026 bug fix: carry the incoming handler_result.authority
             # through so downstream reporting doesn't see "unknown".
+            # Feature 036: same treatment for error_class -- every branch here
+            # builds a NEW HandlerResult, so any field not threaded explicitly
+            # is silently dropped.
             if handler_result.status == HandlerResultStatus.PASS:
                 return HandlerResult(
                     status=HandlerResultStatus.PASS,
@@ -151,6 +154,7 @@ def _apply_cel_expr(
                     confidence=1.0,
                     evidence=evidence,
                     authority=handler_result.authority,
+                    error_class=handler_result.error_class,
                 )
             # Handler FAIL + CEL false: definitive non-compliance (issue #343).
             return HandlerResult(
@@ -159,6 +163,7 @@ def _apply_cel_expr(
                 confidence=1.0,
                 evidence=evidence,
                 authority=handler_result.authority,
+                error_class=handler_result.error_class,
             )
         # Disagreement (PASS+false or FAIL+true) -> defer to next pass.
         return HandlerResult(
@@ -166,6 +171,7 @@ def _apply_cel_expr(
             message="Handler and CEL disagree, evaluation inconclusive",
             evidence=evidence,
             authority=handler_result.authority,
+            error_class=handler_result.error_class,
         )
     except Exception as e:
         logger.warning("CEL evaluator unavailable for expr=%r: %s: %s", expr, type(e).__name__, e)
@@ -492,6 +498,11 @@ class SieveOrchestrator:
                 self._apply_on_pass(control_spec, context, accumulated_evidence)
                 return sieve_result
 
+            # Feature 036 (FR-009a): error_class propagates from the RESOLVING
+            # pass only. CONCLUDE_PASS above is deliberately excluded -- it
+            # fires only when handler_status is PASS, and HandlerResult
+            # rejects PASS + error_class, so there is provably nothing to
+            # carry there.
             if disposition == StepDisposition.CONCLUDE_FAIL:
                 return SieveResult(
                     control_id=control_spec.control_id,
@@ -505,6 +516,7 @@ class SieveOrchestrator:
                     resolving_pass_index=pass_index,
                     resolving_pass_handler=invocation.handler,
                     authority=effective_authority,
+                    error_class=handler_result.error_class,
                 )
 
             if disposition == StepDisposition.TERMINATE_ERROR:
@@ -520,6 +532,7 @@ class SieveOrchestrator:
                     resolving_pass_index=pass_index,
                     resolving_pass_handler=invocation.handler,
                     authority=effective_authority,
+                    error_class=handler_result.error_class,
                 )
 
             # ATTACH_EVIDENCE_AND_CONTINUE or TERMINATE_INCONCLUSIVE fall
