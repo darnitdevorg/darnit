@@ -73,7 +73,13 @@ def format_result_text(result: dict) -> str:
     }
     icon = status_icons.get(status, "?")
 
-    return f"  {icon} {control_id}: {status} - {details}"
+    # Feature 036: annotate environmental failures so triage from this
+    # output alone is possible -- "[auth]" means fix the token, an
+    # unannotated FAIL means fix the repo.
+    error_class = result.get("error_class")
+    ec_tag = f" [{error_class}]" if error_class else ""
+
+    return f"  {icon} {control_id}: {status}{ec_tag} - {details}"
 
 
 def format_results_text(results: list[CheckResult], framework_name: str, show_all: bool = False) -> str:

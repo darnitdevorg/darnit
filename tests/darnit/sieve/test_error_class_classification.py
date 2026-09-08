@@ -314,8 +314,9 @@ class TestDriverLevelErrorClassSurfacing:
             level=1,
         )
 
-        env_line = next(l for l in md.splitlines() if "OSPS-LE-02.02" in l)
-        real_line = next(l for l in md.splitlines() if "OSPS-QA-04.01" in l)
+        lines = md.splitlines()
+        env_line = next(ln for ln in lines if "OSPS-LE-02.02" in ln)
+        real_line = next(ln for ln in lines if "OSPS-QA-04.01" in ln)
 
         assert "auth" in env_line, (
             "the environmental failure must be annotated with its error_class"

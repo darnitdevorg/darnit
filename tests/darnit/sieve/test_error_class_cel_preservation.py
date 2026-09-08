@@ -157,3 +157,140 @@ class TestPassResultsCannotCarryErrorClass:
                 message="ok",
                 error_class="timeout",
             )
+
+
+class TestAllInconclusiveWarnFallback:
+    """The WARN fallthrough must not lose the environmental cause.
+
+    FR-009a says error_class comes from the RESOLVING pass. When every
+    pass is inconclusive there IS no resolving pass, so a strict reading
+    leaves error_class None -- and a fully degraded audit then reports a
+    bare "manual verification required" with no hint that the operator's
+    token expired. That defeats US1.
+
+    The fallback: with no conclusion to supersede it, the most recent
+    environmental classification is the best available explanation.
+
+    Last NON-NONE rather than simply last, because nearly every baseline
+    control ends with a `manual` pass -- an "ask a human" placeholder that
+    always returns INCONCLUSIVE and can never conclude anything. Treating
+    it as "the final attempt ran cleanly" would wipe the real failure that
+    preceded it, which is precisely the common degraded-audit shape.
+    """
+
+    def _run(self, handler_specs: list[tuple[str, HandlerResult]]):
+        from darnit.config.framework_schema import HandlerInvocation
+        from darnit.core.plugin import ControlSpec
+        from darnit.sieve.handler_registry import get_sieve_handler_registry
+        from darnit.sieve.models import CheckContext
+        from darnit.sieve.orchestrator import SieveOrchestrator
+
+        registry = get_sieve_handler_registry()
+        invocations = []
+        for name, result in handler_specs:
+            registry.register(
+                name,
+                "deterministic",
+                lambda config, ctx, _r=result: _r,
+                default_authority="suggestive",
+            )
+            invocations.append(HandlerInvocation(handler=name))
+
+        control = ControlSpec(
+            control_id="TEST-WARN.01",
+            name="t",
+            description="d",
+            level=1,
+            domain="TEST",
+            metadata={"handler_invocations": invocations},
+        )
+        context = CheckContext(
+            owner="o",
+            repo="r",
+            local_path="/tmp/test",
+            default_branch="main",
+            control_id="TEST-WARN.01",
+            project_context={},
+        )
+        return SieveOrchestrator(stop_on_llm=True)._dispatch_handler_invocations(
+            control, context
+        )
+
+    @pytest.mark.unit
+    def test_env_failure_then_manual_placeholder_keeps_the_cause(self) -> None:
+        """The dominant real-world shape: exec fails, manual pass follows."""
+        result = self._run(
+            [
+                (
+                    "wfb_exec_036",
+                    HandlerResult(
+                        status=HandlerResultStatus.INCONCLUSIVE,
+                        message="Command exited with unexpected code 1",
+                        error_class="auth",
+                    ),
+                ),
+                (
+                    "wfb_manual_036",
+                    HandlerResult(
+                        status=HandlerResultStatus.INCONCLUSIVE,
+                        message="Manual verification required",
+                    ),
+                ),
+            ]
+        )
+        assert result is not None
+        assert result.status == "WARN"
+        assert result.error_class == "auth", (
+            "a trailing manual placeholder must not erase the exec failure "
+            "that actually caused this control to be unverifiable"
+        )
+
+    @pytest.mark.unit
+    def test_all_clean_inconclusive_carries_no_error_class(self) -> None:
+        """No environmental failure anywhere means no annotation."""
+        result = self._run(
+            [
+                (
+                    "wfb_clean_a_036",
+                    HandlerResult(
+                        status=HandlerResultStatus.INCONCLUSIVE,
+                        message="could not determine",
+                    ),
+                ),
+                (
+                    "wfb_clean_b_036",
+                    HandlerResult(
+                        status=HandlerResultStatus.INCONCLUSIVE,
+                        message="also could not determine",
+                    ),
+                ),
+            ]
+        )
+        assert result is not None
+        assert result.status == "WARN"
+        assert result.error_class is None
+
+    @pytest.mark.unit
+    def test_later_env_failure_supersedes_earlier_one(self) -> None:
+        result = self._run(
+            [
+                (
+                    "wfb_first_036",
+                    HandlerResult(
+                        status=HandlerResultStatus.INCONCLUSIVE,
+                        message="a",
+                        error_class="network",
+                    ),
+                ),
+                (
+                    "wfb_second_036",
+                    HandlerResult(
+                        status=HandlerResultStatus.INCONCLUSIVE,
+                        message="b",
+                        error_class="rate_limit",
+                    ),
+                ),
+            ]
+        )
+        assert result is not None
+        assert result.error_class == "rate_limit"

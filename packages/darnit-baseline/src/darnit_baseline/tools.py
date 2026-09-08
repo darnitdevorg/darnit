@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 # OSPS control-ID-to-tool mapping for audit report remediation suggestions.
 # This keeps all OSPS-specific knowledge in the implementation package.
@@ -33,6 +34,25 @@ OSPS_REMEDIATION_MAP: dict = {
     "branch_name": "fix/openssf-baseline",
     "framework_name": "OpenSSF Baseline",
 }
+
+
+def _compact_result(r: dict[str, Any]) -> dict[str, Any]:
+    """Reduce one check result to the `summary` output shape.
+
+    Drops evidence and pass_history (~5-8K vs ~164K for 62 controls) but
+    keeps ``error_class`` when present. Feature 036: a summary that hides
+    "we could not verify" is worse than no summary -- a consumer would
+    read an unreachable network as a real compliance failure.
+    """
+    compact: dict[str, Any] = {
+        "id": r.get("id"),
+        "status": r.get("status"),
+        "level": r.get("level"),
+        "details": r.get("details", ""),
+    }
+    if r.get("error_class") is not None:
+        compact["error_class"] = r["error_class"]
+    return compact
 
 
 def _build_audit_result(
@@ -208,15 +228,7 @@ def audit_openssf_baseline(
         # ~5-8K vs ~164K for full JSON with 62 controls.
         from darnit.tools.audit import framework_metadata
 
-        compact_results = [
-            {
-                "id": r.get("id"),
-                "status": r.get("status"),
-                "level": r.get("level"),
-                "details": r.get("details", ""),
-            }
-            for r in results
-        ]
+        compact_results = [_compact_result(r) for r in results]
         output = json.dumps({
             "metadata": framework_metadata("openssf-baseline"),
             "owner": owner,

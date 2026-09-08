@@ -330,6 +330,7 @@ class SieveOrchestrator:
         registry = get_sieve_handler_registry()
         pass_history: list[PassAttempt] = []
         accumulated_evidence: dict[str, Any] = {}
+        last_error_class: str | None = None
 
         # Build handler context
         handler_ctx = HandlerContext(
@@ -437,6 +438,17 @@ class SieveOrchestrator:
 
                 # Post-handler CEL expression evaluation
                 handler_result = _apply_cel_expr(handler_config, handler_result)
+
+                # Feature 036: remember the most recent environmental
+                # classification for the all-inconclusive WARN fallthrough
+                # below. Last non-None rather than simply last, because most
+                # controls end with a `manual` pass -- a "ask a human"
+                # placeholder that always returns INCONCLUSIVE and can never
+                # conclude anything. Treating that as "the final attempt ran
+                # cleanly" would wipe the real exec failure that preceded it,
+                # which is the common shape for a degraded audit.
+                if handler_result.error_class is not None:
+                    last_error_class = handler_result.error_class
 
                 duration_ms = int((time.time() - start_time) * 1000)
 
@@ -584,6 +596,15 @@ class SieveOrchestrator:
             # / unknown -- suggestive. Preserves the safety-provenance
             # signal on the human-facing report.
             authority="suggestive",
+            # Feature 036: no pass concluded, so FR-009a's "resolving pass"
+            # does not exist here. Fall back to the LAST pass's
+            # classification -- with nothing to supersede it, an
+            # environmental failure on the final attempt is the best
+            # available explanation for why this control could not be
+            # verified. Without this, a fully degraded audit (every pass
+            # timing out) reports a bare "manual verification required" and
+            # the operator never learns their token expired.
+            error_class=last_error_class,
         )
 
     def verify(self, control_spec: ControlSpec, context: CheckContext) -> SieveResult:

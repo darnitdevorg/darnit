@@ -99,6 +99,14 @@ def build_assessment_predicate(
         # producer emits authority for every result it generates.
         if r.get("authority") is not None:
             control["authority"] = r["authority"]
+        # Feature 036: additive `error_class` field, present only when the
+        # resolving pass could not run to completion. Additive within the v1
+        # predicate schema -- no version bump, same treatment `authority`
+        # got above. A signed attestation carrying a bare verdict when the
+        # underlying check never reached the network is exactly the
+        # misleading claim Constitution Principle II forbids.
+        if r.get("error_class") is not None:
+            control["error_class"] = r["error_class"]
         controls.append(control)
 
     # Build configuration section

@@ -381,5 +381,5 @@ else:
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
-[`specs/035-audit-cache-store-migration/plan.md`](specs/035-audit-cache-store-migration/plan.md)
+[`specs/036-tier2-error-class/plan.md`](specs/036-tier2-error-class/plan.md)
 <!-- SPECKIT END -->
