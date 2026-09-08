@@ -41,6 +41,12 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 MCP_DEFAULT_TIMEOUT_SECONDS: float = 60.0
+"""Per-call timeout for `handler = "mcp"` passes when the pass omits `timeout`.
+
+Spec FR-002 (clarified 2026-08-16). Individual passes MAY override via
+``timeout = <seconds>``. Kept as a module constant so tests can monkeypatch
+it without stubbing the whole handler.
+"""
 
 # =============================================================================
 # Feature 036: environmental-failure classification
@@ -123,12 +129,6 @@ def _atomic_write_text(path: str, content: str) -> None:
         except OSError:
             pass
         raise
-"""Per-call timeout for `handler = "mcp"` passes when the pass omits `timeout`.
-
-Spec FR-002 (clarified 2026-08-16). Individual passes MAY override via
-``timeout = <seconds>``. Kept as a module constant so tests can monkeypatch
-it without stubbing the whole handler.
-"""
 
 
 # =============================================================================
@@ -1179,7 +1179,10 @@ def mcp_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResul
     try:
         raw_response = pool.call_tool(server_name, tool_name, substituted_args, timeout)
     except UnknownMcpServer as err:
-        error_info = (HandlerResultStatus.ERROR, str(err))
+        # A control names a server the operator never configured. Not
+        # strictly environmental, but the operator fix is the same shape as
+        # a missing binary: make the server available.
+        error_info = (HandlerResultStatus.ERROR, str(err), "not_found")
     except McpServerBinaryMissing as err:
         # optional=true (default) -> INCONCLUSIVE; optional=false -> FAIL
         optional = True
@@ -1187,9 +1190,11 @@ def mcp_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResul
             optional = bool(getattr(server_config, "optional", True))
         status = HandlerResultStatus.INCONCLUSIVE if optional else HandlerResultStatus.FAIL
         message = str(err) if optional else f"Required MCP server binary not found. {err}"
-        error_info = (status, message)
+        error_info = (status, message, "not_found")
     except McpServerVerificationFailed as err:
-        error_info = (HandlerResultStatus.ERROR, str(err))
+        # Sigstore verification failure is auth-shaped: the operator has to
+        # fix a trust relationship, not a network path.
+        error_info = (HandlerResultStatus.ERROR, str(err), "auth")
     except McpServerHandshakeFailed as err:
         # Contract: INCONCLUSIVE by default; FAIL when the operator marked
         # the server as required (optional=false).
@@ -1197,7 +1202,7 @@ def mcp_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResul
         if server_config is not None:
             optional = bool(getattr(server_config, "optional", True))
         status = HandlerResultStatus.INCONCLUSIVE if optional else HandlerResultStatus.FAIL
-        error_info = (status, str(err))
+        error_info = (status, str(err), "network")
     except McpServerUnusable as err:
         # Broken twice -- treat like an unusable binary: INCONCLUSIVE unless
         # the operator marked the server required (optional=false), then FAIL.
@@ -1205,17 +1210,20 @@ def mcp_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResul
         if server_config is not None:
             optional = bool(getattr(server_config, "optional", True))
         status = HandlerResultStatus.INCONCLUSIVE if optional else HandlerResultStatus.FAIL
-        error_info = (status, str(err))
+        error_info = (status, str(err), "network")
     except McpToolTimeout as err:
-        error_info = (HandlerResultStatus.ERROR, str(err))
+        error_info = (HandlerResultStatus.ERROR, str(err), "timeout")
     except McpToolError as err:
-        error_info = (HandlerResultStatus.ERROR, str(err))
+        # The tool ran but errored internally -- it did not complete cleanly.
+        error_info = (HandlerResultStatus.ERROR, str(err), "crashed")
     except McpToolResponseNotJson as err:
-        error_info = (HandlerResultStatus.ERROR, str(err))
+        # The tool ran and produced output we cannot interpret.
+        error_info = (HandlerResultStatus.ERROR, str(err), "crashed")
     except Exception as err:  # noqa: BLE001 - final safety net
         error_info = (
             HandlerResultStatus.ERROR,
             f"MCP handler unexpected error: {type(err).__name__}: {err}",
+            "crashed",
         )
 
     elapsed_ms = int((_time.time() - call_start) * 1000)
@@ -1234,7 +1242,10 @@ def mcp_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResul
         trust_label = session.trust_label
 
     if error_info is not None:
-        status, message = error_info
+        status, message, error_class = error_info
+        _log_environmental_failure(
+            context.control_id, f"mcp:{server_name}.{tool_name}", error_class, message
+        )
         invocation_record = {
             "server": server_name,
             "tool": tool_name,
@@ -1244,7 +1255,12 @@ def mcp_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResul
             "elapsed_ms": elapsed_ms,
         }
         evidence: dict[str, Any] = {"mcp_calls": [invocation_record]}
-        return HandlerResult(status=status, message=message, evidence=evidence)
+        return HandlerResult(
+            status=status,
+            message=message,
+            evidence=evidence,
+            error_class=error_class,
+        )
 
     assert raw_response is not None
     invocation_record = {

@@ -416,8 +416,15 @@ class SieveOrchestrator:
                 try:
                     handler_result = handler_info.fn(handler_config, handler_ctx)
                 except Exception as e:
-                    logger.debug(
-                        "Handler %s error: %s: %s",
+                    # Feature 036: a handler that raised did not complete, so
+                    # this is an environmental failure, not a verdict. WARN
+                    # rather than DEBUG -- a crashed handler and a genuine
+                    # ERROR verdict were previously indistinguishable to
+                    # anyone reading default-level logs.
+                    logger.warning(
+                        "%s: %s handler could not complete "
+                        "(error_class=crashed): %s: %s",
+                        control_spec.control_id,
                         invocation.handler,
                         type(e).__name__,
                         e,
@@ -425,6 +432,7 @@ class SieveOrchestrator:
                     handler_result = HandlerResult(
                         status=HandlerResultStatus.ERROR,
                         message=f"Handler error: {e}",
+                        error_class="crashed",
                     )
 
                 # Post-handler CEL expression evaluation

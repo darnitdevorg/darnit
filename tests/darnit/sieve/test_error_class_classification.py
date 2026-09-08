@@ -327,3 +327,175 @@ class TestDriverLevelErrorClassSurfacing:
             "a genuine finding must NOT be annotated -- otherwise every real "
             "failure reads as an infrastructure blip"
         )
+
+
+class TestAutoDetectGitFailureLogging:
+    """Contract section 2.4: git failures log; a missing remote does not."""
+
+    @pytest.mark.unit
+    def test_git_timeout_warns(self, tmp_path: Path, caplog) -> None:
+        from darnit.context.auto_detect import _get_remote_url
+
+        with caplog.at_level(logging.WARNING):
+            with patch(
+                "darnit.context.auto_detect.subprocess.run",
+                side_effect=subprocess.TimeoutExpired(cmd=["git"], timeout=5),
+            ):
+                assert _get_remote_url("origin", str(tmp_path)) is None
+
+        joined = " ".join(
+            r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING
+        )
+        assert "timeout" in joined
+        assert "origin" in joined
+
+    @pytest.mark.unit
+    def test_missing_git_binary_warns_not_found(self, tmp_path: Path, caplog) -> None:
+        from darnit.context.auto_detect import _get_remote_url
+
+        with caplog.at_level(logging.WARNING):
+            with patch(
+                "darnit.context.auto_detect.subprocess.run",
+                side_effect=FileNotFoundError("git"),
+            ):
+                assert _get_remote_url("origin", str(tmp_path)) is None
+
+        joined = " ".join(
+            r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING
+        )
+        assert "not_found" in joined
+
+    @pytest.mark.unit
+    def test_absent_remote_does_not_warn(self, tmp_path: Path, caplog) -> None:
+        """git answering "no such remote" is a legitimate answer, not a failure.
+
+        Warning here would make every single-remote repo noisy, which is how
+        loud logging becomes ignored logging.
+        """
+        with caplog.at_level(logging.WARNING):
+            with patch(
+                "darnit.context.auto_detect.subprocess.run",
+                return_value=_proc(2, stderr="error: No such remote 'upstream'"),
+            ):
+                from darnit.context.auto_detect import _get_remote_url
+
+                assert _get_remote_url("upstream", str(tmp_path)) is None
+
+        assert [
+            r for r in caplog.records if r.levelno >= logging.WARNING
+        ] == [], "an absent remote must not produce a WARN"
+
+
+class TestMcpHandlerClassification:
+    """Contract section 2.2: all McpPoolError subclasses are classified.
+
+    The pool arrives via ``HandlerContext.mcp_pool``, so the test injects a
+    raising stub there rather than patching a module function.
+    """
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        ("exc_name", "expected"),
+        [
+            ("McpToolTimeout", "timeout"),
+            ("McpServerHandshakeFailed", "network"),
+            ("McpServerBinaryMissing", "not_found"),
+            ("McpServerVerificationFailed", "auth"),
+            ("McpServerUnusable", "network"),
+            ("McpToolError", "crashed"),
+            ("McpToolResponseNotJson", "crashed"),
+        ],
+    )
+    def test_each_mcp_exception_maps_to_its_error_class(
+        self, exc_name: str, expected: str, tmp_path: Path, caplog
+    ) -> None:
+        """FR-006's three named types plus the five it delegates to the contract."""
+        from darnit.sieve import mcp_pool as mcp_pool_mod
+        from darnit.sieve.builtin_handlers import mcp_handler
+
+        exc_cls = getattr(mcp_pool_mod, exc_name)
+        fake_pool = MagicMock()
+        fake_pool.call_tool.side_effect = exc_cls("simulated failure")
+        fake_pool._sessions = {}
+
+        ctx = _ctx(tmp_path)
+        ctx.mcp_pool = fake_pool
+
+        with caplog.at_level(logging.WARNING):
+            result = mcp_handler(
+                {
+                    "handler": "mcp",
+                    "server": "test-server",
+                    "tool": "test-tool",
+                    "args": {},
+                },
+                ctx,
+            )
+
+        assert result.error_class == expected, (
+            f"{exc_name} should classify as {expected}, got {result.error_class!r}"
+        )
+        joined = " ".join(
+            r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING
+        )
+        assert expected in joined, f"{exc_name} must log its error_class at WARN"
+
+
+class TestOrchestratorCrashClassification:
+    """Contract section 2.3: a raising handler is `crashed`, logged at WARN."""
+
+    @pytest.mark.unit
+    def test_raising_handler_yields_crashed_and_warns(self, caplog) -> None:
+        from darnit.config.framework_schema import HandlerInvocation
+        from darnit.core.plugin import ControlSpec
+        from darnit.sieve.handler_registry import get_sieve_handler_registry
+        from darnit.sieve.models import CheckContext
+        from darnit.sieve.orchestrator import SieveOrchestrator
+
+        def boom(config, ctx):
+            raise RuntimeError("simulated handler bug")
+
+        registry = get_sieve_handler_registry()
+        registry.register(
+            "exploding_handler_036",
+            "deterministic",
+            boom,
+            default_authority="dispositive",
+        )
+
+        control = ControlSpec(
+            control_id="TEST-CRASH.01",
+            name="Test crash",
+            description="A handler that raises",
+            level=1,
+            domain="TEST",
+            metadata={
+                "handler_invocations": [
+                    HandlerInvocation(handler="exploding_handler_036")
+                ]
+            },
+        )
+        context = CheckContext(
+            owner="o",
+            repo="r",
+            local_path="/tmp/test",
+            default_branch="main",
+            control_id="TEST-CRASH.01",
+            project_context={},
+        )
+
+        orch = SieveOrchestrator(stop_on_llm=True)
+        with caplog.at_level(logging.WARNING):
+            result = orch._dispatch_handler_invocations(control, context)
+
+        assert result is not None
+        assert result.status == "ERROR"
+        assert result.error_class == "crashed", (
+            "a handler that raised did not complete, so it is an "
+            "environmental failure, not a verdict"
+        )
+        joined = " ".join(
+            r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING
+        )
+        assert "TEST-CRASH.01" in joined, "log must name the control"
+        assert "crashed" in joined, "log must name the error_class"
