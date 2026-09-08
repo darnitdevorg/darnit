@@ -75,7 +75,10 @@ def detect_ci_provider(local_path: str) -> str | None:
             # For directories (e.g. .github/workflows), check it has files
             if os.path.isdir(full_path):
                 try:
-                    entries = os.listdir(full_path)
+                    # sorted() so a repo with multiple workflow files always
+                    # scans them in the same order across runs. Determinism
+                    # Tier 1 (#418).
+                    entries = sorted(os.listdir(full_path))
                     if any(
                         e.endswith((".yml", ".yaml")) for e in entries
                     ):
@@ -305,10 +308,13 @@ def detect_has_subprojects(local_path: str) -> bool | None:
         d = p / dirname
         if d.is_dir():
             try:
-                children = [
-                    c for c in d.iterdir()
-                    if c.is_dir() and not c.name.startswith(".")
-                ]
+                # sorted() so iteration order is stable across runs even if
+                # a future change replaces the len() check with slice /
+                # first-match semantics. Determinism Tier 1 (#418).
+                children = sorted(
+                    (c for c in d.iterdir() if c.is_dir() and not c.name.startswith(".")),
+                    key=lambda c: c.name,
+                )
                 if len(children) >= 2:
                     return True
             except OSError:

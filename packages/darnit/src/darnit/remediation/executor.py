@@ -30,6 +30,8 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from jinja2 import Environment
 
 from darnit.config.framework_schema import (
@@ -107,8 +109,9 @@ class RemediationExecutor:
     - << REPO >> - Repository name
     - << BRANCH >> - Default branch
     - << PATH >> - Local repository path
-    - << YEAR >> - Current year
-    - << DATE >> - Current date (ISO format)
+    - << YEAR >> - Current year (used by LICENSE templates; year-per-year
+      cadence is slow enough that PR diffs stay stable within a calendar
+      year -- see Determinism Tier 1 note in _get_template_context)
     - << CONTROL >> - Control ID being remediated
     - << context.KEY >> - Confirmed project context values
     - << project.KEY >> - Values from .project/project.yaml
@@ -127,6 +130,7 @@ class RemediationExecutor:
         project_values: dict[str, Any] | None = None,
         scan_values: dict[str, Any] | None = None,
         framework_path: str | None = None,
+        now_provider: Callable[[], datetime] | None = None,
     ):
         """Initialize the executor.
 
@@ -144,6 +148,10 @@ class RemediationExecutor:
             framework_path: Absolute path to the framework TOML file.
                 Template ``file`` references are resolved relative to this
                 file's directory.  Falls back to ``local_path`` when None.
+            now_provider: Optional callable returning the "current" datetime,
+                used to derive ``<< YEAR >>`` in template output. Defaults
+                to :func:`datetime.now`. Parameterized so tests can inject
+                a fixed clock (Determinism Tier 1, #418).
         """
         self.local_path = os.path.abspath(local_path)
         self.templates = templates or {}
@@ -152,6 +160,7 @@ class RemediationExecutor:
         self._context_values = context_values or {}
         self._project_values = project_values or {}
         self._scan_values = scan_values or {}
+        self._now_provider = now_provider or datetime.now
 
         # Auto-detect owner/repo if not provided
         if not owner or not repo:
@@ -175,25 +184,31 @@ class RemediationExecutor:
         Jinja2 templates access these as e.g. ``<< REPO >>`` or
         ``<< context.maintainers >>``.
         """
-        now = datetime.now()
+        # YEAR is derived from now_provider (test-injectable). DATE was
+        # dropped: no template referenced it, and its day-per-day drift
+        # was cluttering PR diffs for identical inputs run on different
+        # days. Determinism Tier 1 (#418).
+        now = self._now_provider()
         ctx: dict[str, Any] = {
             "OWNER": self.owner or "",
             "REPO": self.repo or "",
             "BRANCH": self.default_branch,
             "PATH": self.local_path,
             "YEAR": str(now.year),
-            "DATE": now.strftime("%Y-%m-%d"),
             "CONTROL": control_id,
         }
 
-        # Build nested context/project/scan namespaces
+        # Build nested context/project/scan namespaces. List values are
+        # sorted before joining so upstream ordering (dict iteration,
+        # API-response order) does not drift the rendered output across
+        # runs. Determinism Tier 1 (#418).
         context_ns: dict[str, str] = {}
         if self._context_values:
             for key, value in self._context_values.items():
                 if isinstance(value, str):
                     context_ns[key] = value
                 elif isinstance(value, list):
-                    context_ns[key] = " ".join(str(v) for v in value)
+                    context_ns[key] = " ".join(sorted(str(v) for v in value))
                 elif value is not None:
                     context_ns[key] = str(value)
         ctx["context"] = context_ns

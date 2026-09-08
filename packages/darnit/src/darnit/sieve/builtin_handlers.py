@@ -22,6 +22,7 @@ import logging
 import os
 import re
 import subprocess
+import tempfile
 from typing import Any
 
 from .handler_registry import (
@@ -38,6 +39,29 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 MCP_DEFAULT_TIMEOUT_SECONDS: float = 60.0
+
+
+def _atomic_write_text(path: str, content: str) -> None:
+    """Write ``content`` to ``path`` atomically via tempfile-then-rename.
+
+    Determinism Tier 1 (#418): direct ``open(path, "w").write(content)``
+    leaves a partial file behind if the process crashes or the disk fills
+    mid-write. Tempfile in the same directory + ``os.replace`` gives us
+    the same "either fully written or absent" invariant that
+    :class:`FilesystemAuditCacheStore` uses (feature 033).
+    """
+    directory = os.path.dirname(path) or "."
+    fd, tmp = tempfile.mkstemp(dir=directory, prefix=".darnit-write-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(content)
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 """Per-call timeout for `handler = "mcp"` passes when the pass omits `timeout`.
 
 Spec FR-002 (clarified 2026-08-16). Individual passes MAY override via
@@ -95,8 +119,10 @@ def _walk_depth_limited(root: str, max_depth: int):
         return
     for dirpath, dirnames, _files in os.walk(root_abs):
         depth = dirpath[len(root_abs) :].count(os.sep)
-        # Prune in-place so os.walk skips them (matches os.walk's contract)
-        dirnames[:] = [d for d in dirnames if d not in _FILE_DISCOVERY_PRUNE_DIRS]
+        # Prune in-place so os.walk skips them (matches os.walk's contract).
+        # Sort so os.walk visits subdirs deterministically -- "first match
+        # wins" semantics downstream depend on this. Determinism Tier 1 (#418).
+        dirnames[:] = sorted(d for d in dirnames if d not in _FILE_DISCOVERY_PRUNE_DIRS)
         if depth >= max_depth:
             # Don't descend further; stop yielding deeper dirs
             dirnames.clear()
@@ -132,7 +158,9 @@ def file_exists_handler(config: dict[str, Any], context: HandlerContext) -> Hand
         if "*" in pattern:
             import glob
 
-            matches = glob.glob(os.path.join(context.local_path, pattern))
+            # sorted() so "first match wins" is stable across filesystems.
+            # Determinism Tier 1 (#418).
+            matches = sorted(glob.glob(os.path.join(context.local_path, pattern)))
             if matches:
                 found = matches[0]
                 rel_path = os.path.relpath(found, context.local_path)
@@ -449,9 +477,13 @@ def _resolve_regex_files(
         for file_pattern in files_list:
             if "*" in file_pattern or "?" in file_pattern:
                 # Glob patterns: always use glob.glob; max_depth does not apply.
-                matches = globmod.glob(
-                    os.path.join(context.local_path, file_pattern),
-                    recursive=True,
+                # sorted() so downstream ordering is stable across filesystems.
+                # Determinism Tier 1 (#418).
+                matches = sorted(
+                    globmod.glob(
+                        os.path.join(context.local_path, file_pattern),
+                        recursive=True,
+                    )
                 )
                 resolved.extend(m for m in matches if os.path.isfile(m))
             elif max_depth > 0:
@@ -834,8 +866,7 @@ def file_create_handler(config: dict[str, Any], context: HandlerContext) -> Hand
 
     try:
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
-        with open(full_path, "w", encoding="utf-8") as f:
-            f.write(content)
+        _atomic_write_text(full_path, content)
     except OSError as e:
         return HandlerResult(
             status=HandlerResultStatus.ERROR,
@@ -980,8 +1011,7 @@ def yaml_inject_handler(config: dict[str, Any], context: HandlerContext) -> Hand
         lines.insert(insert_idx, injection.rstrip())
 
         try:
-            with open(filepath, "w", encoding="utf-8") as f:
-                f.write("\n".join(lines))
+            _atomic_write_text(filepath, "\n".join(lines))
             modified.append(os.path.relpath(filepath, context.local_path))
         except OSError:
             continue
