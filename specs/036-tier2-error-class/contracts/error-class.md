@@ -79,13 +79,32 @@ Git subprocess failures in `detect_platform` (and structurally similar detectors
 
 ## 3. Propagation rule
 
-`SieveResult.error_class` comes from the **RESOLVING pass's** `HandlerResult.error_class` only (FR-009a / clarify Q1).
+Two cases, depending on whether any pass resolved the control.
+
+### 3.1 A pass resolved it (FR-009a)
+
+`SieveResult.error_class` comes from the **RESOLVING pass's** `HandlerResult.error_class` only.
 
 * Pass 1 times out, pass 2 resolves cleanly -> `SieveResult.error_class is None`. Pass 2's clean conclusion supersedes.
 * Pass 1 fails cleanly, pass 2 times out and is the resolving pass -> `SieveResult.error_class == "timeout"`.
-* All passes exhausted without resolution, last pass had an `error_class` -> that pass is the resolving pass by definition; its `error_class` propagates.
 
 Earlier passes' `error_class` values are discarded, not aggregated. The `pass_history` field already carries the per-pass trail for anyone who needs it.
+
+`CONCLUDE_PASS` is excluded from the threading by construction: it fires only when the handler status is PASS, which section 6's rule 2 makes unrepresentable alongside an `error_class`. There is provably nothing to carry.
+
+### 3.2 No pass resolved it -- the all-inconclusive WARN (FR-009b)
+
+Every pass returned INCONCLUSIVE and the control terminates WARN. There is no resolving pass, so 3.1 has nothing to select from. The **most recent non-null** `error_class` across the chain propagates.
+
+| Chain | Result |
+|---|---|
+| `exec` -> `auth`, then `manual` -> null | `auth` |
+| `exec` -> `network`, then `exec` -> `rate_limit` | `rate_limit` (later supersedes) |
+| `exec` -> null, then `manual` -> null | `None` (nothing environmental happened) |
+
+**Why non-null rather than simply last**: nearly every OpenSSF Baseline control ends with a `manual` pass -- an "ask a human" placeholder that always returns INCONCLUSIVE and can never conclude anything. Reading that trailing placeholder as "the final attempt ran cleanly" would erase the real `exec` failure preceding it. That is the dominant degraded-audit shape, so getting this wrong silently defeats the feature: the operator sees "manual verification required" and never learns their token expired.
+
+**Why this does not contradict 3.1**: it applies only where 3.1 is silent, and preserves 3.1's ordering intent (later supersedes earlier). A control whose passes all ran cleanly and were merely inconclusive still carries no `error_class` -- "could not determine" is a different answer from "could not check."
 
 ## 4. CEL post-step preservation obligation
 
@@ -184,6 +203,7 @@ SC-002 is verified against a baseline captured from unmodified `main` BEFORE any
 |---|---|
 | Classification per site (sections 2.1-2.4) | `tests/darnit/sieve/test_error_class_classification.py` |
 | CEL preservation, 4 transitions (section 4) | `tests/darnit/sieve/test_error_class_cel_preservation.py` |
+| All-inconclusive WARN fallback (section 3.2) | `tests/darnit/sieve/test_error_class_cel_preservation.py` (`TestAllInconclusiveWarnFallback`) |
 | Validation rules 1 and 2 (section 6) | same as classification module (`TestHandlerResultValidation`) |
 | Happy-path byte-for-byte invariance (section 8) | `tests/darnit/test_error_class_happy_path.py`, compared against the pre-feature baseline captured in `tests/darnit/fixtures/error_class_baseline/` |
 | JSON / SARIF / predicate shapes (section 5) | `tests/darnit_baseline/test_error_class_output_surfaces.py` |
