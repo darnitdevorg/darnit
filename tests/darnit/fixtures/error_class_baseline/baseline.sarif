@@ -1,0 +1,92 @@
+[
+  {
+    "level": "note",
+    "locations": [
+      {
+        "physicalLocation": {
+          "artifactLocation": {
+            "uri": "README.md",
+            "uriBaseId": "%SRCROOT%"
+          },
+          "region": {
+            "startColumn": 1,
+            "startLine": 1
+          }
+        }
+      }
+    ],
+    "message": {
+      "text": "Required file found: README.md"
+    },
+    "partialFingerprints": {
+      "primaryLocationLineHash": "e84bb6a1069e86f7"
+    },
+    "properties": {
+      "ospsLevel": 1,
+      "passHistory": [
+        {
+          "checks_performed": [
+            "handler:file_exists"
+          ],
+          "duration_ms": "<SCRUBBED-DURATION>",
+          "phase": "deterministic",
+          "result": {
+            "confidence": 1.0,
+            "message": "Required file found: README.md",
+            "outcome": "pass"
+          }
+        }
+      ],
+      "resolvingPassHandler": "file_exists",
+      "resolvingPassIndex": 0,
+      "status": "PASS"
+    },
+    "ruleId": "OSPS-DO-01.01",
+    "ruleIndex": 0
+  },
+  {
+    "level": "error",
+    "locations": [
+      {
+        "physicalLocation": {
+          "artifactLocation": {
+            "uri": "README.md",
+            "uriBaseId": "%SRCROOT%"
+          },
+          "region": {
+            "startColumn": 1,
+            "startLine": 1
+          }
+        }
+      }
+    ],
+    "message": {
+      "text": "None of the required files found: ['LICENSE', 'LICENSE.md', 'LICENSE.txt', 'LICENCE', 'LICENCE.md', 'LICENCE.txt', 'COPYING', 'COPYING.md', 'COPYING.txt']"
+    },
+    "partialFingerprints": {
+      "primaryLocationLineHash": "ed25f5476f46ab94"
+    },
+    "properties": {
+      "ospsLevel": 1,
+      "passHistory": [
+        {
+          "checks_performed": [
+            "handler:file_exists"
+          ],
+          "duration_ms": "<SCRUBBED-DURATION>",
+          "phase": "deterministic",
+          "result": {
+            "confidence": 1.0,
+            "message": "None of the required files found: ['LICENSE', 'LICENSE.md', 'LICENSE.txt', 'LICENCE', 'LICENCE.md', 'LICENCE.txt', 'COPYING', 'COPYING.md', 'COPYING.txt']",
+            "outcome": "fail"
+          }
+        }
+      ],
+      "resolvingPassHandler": "file_exists",
+      "resolvingPassIndex": 0,
+      "status": "FAIL"
+    },
+    "ruleId": "OSPS-LE-03.01",
+    "ruleIndex": 1
+  }
+]

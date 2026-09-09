@@ -151,6 +151,15 @@ class CheckResult(TypedDict):
     # authority-less result as suggestive (cannot conclude PASS/FAIL).
     authority: NotRequired[str]  # values in {"dispositive", "suggestive", "asserted"}
 
+    # Feature 036. Environmental failure class, present only when the
+    # resolving pass could not run to completion (network / auth / timeout /
+    # rate_limit / not_found / crashed). `NotRequired` for the same reason
+    # authority is: additive, and absent on results serialized before this
+    # feature. Typed `str` rather than `ErrorClass` because this TypedDict is
+    # the deserialization boundary -- a result from a future darnit version
+    # may carry a value this version's Literal does not know.
+    error_class: NotRequired[str]
+
     # Attached post-hoc at tools/audit.py:530.
     when: NotRequired[str]
 
@@ -182,6 +191,13 @@ class SieveResult:
     # suggestive-equivalent for disposition purposes.
     authority: str | None = None
 
+    # Feature 036. Environmental failure class of the RESOLVING pass only
+    # (FR-009a) -- earlier non-resolving passes' values are discarded, not
+    # aggregated, since a later pass that concluded on real evidence
+    # supersedes an earlier environmental failure. The per-pass trail
+    # already lives in `pass_history`.
+    error_class: str | None = None
+
     def to_legacy_dict(self) -> CheckResult:
         """Convert to legacy result format for backward compatibility.
 
@@ -210,6 +226,8 @@ class SieveResult:
             result["resolving_pass_handler"] = self.resolving_pass_handler
         if self.authority is not None:
             result["authority"] = self.authority
+        if self.error_class is not None:
+            result["error_class"] = self.error_class
         if self.pass_history:
             result["pass_history"] = [
                 {

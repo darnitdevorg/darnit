@@ -32,6 +32,7 @@ from enum import Enum
 from typing import Any
 
 from darnit.core.authority import Authority
+from darnit.core.error_class import ERROR_CLASSES, ErrorClass
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +73,13 @@ class HandlerResult:
             legitimately produces a different-authority result than its default
             (rare). NEVER set ``"asserted"`` from code alone -- asserted is
             human-only per Constitution Principle IV.
+        error_class: Feature 036. Set ONLY when the handler could not run to
+            completion for an environmental reason (network unreachable, auth
+            expired, subprocess timeout, missing binary, unexpected crash).
+            Leave None on every success path AND on every clean failure -- a
+            check that ran and found the repo non-compliant is a bare
+            FAIL/WARN, not an environmental error. See
+            :mod:`darnit.core.error_class`.
     """
 
     status: HandlerResultStatus
@@ -80,6 +88,32 @@ class HandlerResult:
     evidence: dict[str, Any] = field(default_factory=dict)
     details: dict[str, Any] = field(default_factory=dict)
     authority: Authority | None = None
+    error_class: ErrorClass | None = None
+
+    def __post_init__(self) -> None:
+        """Enforce the two ``error_class`` invariants from the feature-036 contract.
+
+        Rule 1 (FR-002a): reject unknown values. ``ErrorClass`` is a
+        ``Literal`` and therefore erased at runtime, so without this check a
+        typo'd or future-version value would flow silently into a report and
+        an attestation as an uninterpretable failure cause.
+
+        Rule 2: reject ``error_class`` alongside ``PASS``. A handler that
+        could not complete cannot have produced a real pass.
+        """
+        if self.error_class is None:
+            return
+        if self.error_class not in ERROR_CLASSES:
+            raise ValueError(
+                f"error_class={self.error_class!r} is not a known ErrorClass; "
+                f"expected one of {sorted(ERROR_CLASSES)}"
+            )
+        if self.status == HandlerResultStatus.PASS:
+            raise ValueError(
+                f"error_class={self.error_class!r} is incompatible with "
+                "status=PASS; a handler that could not complete cannot "
+                "produce a PASS"
+            )
 
 
 @dataclass

@@ -1,0 +1,76 @@
+[
+  {
+    "authority": "dispositive",
+    "confidence": 1.0,
+    "details": "Required file found: README.md",
+    "evidence": {
+      "files_checked": [
+        "README.md",
+        "README.rst",
+        "README.txt",
+        "README",
+        "readme.md"
+      ],
+      "found_file": "<FIXTURE>/README.md",
+      "relative_path": "README.md"
+    },
+    "id": "OSPS-DO-01.01",
+    "level": 1,
+    "pass_history": [
+      {
+        "checks_performed": [
+          "handler:file_exists"
+        ],
+        "duration_ms": "<SCRUBBED-DURATION>",
+        "phase": "deterministic",
+        "result": {
+          "confidence": 1.0,
+          "message": "Required file found: README.md",
+          "outcome": "pass"
+        }
+      }
+    ],
+    "resolving_pass_handler": "file_exists",
+    "resolving_pass_index": 0,
+    "sieve_phase": "deterministic",
+    "status": "PASS"
+  },
+  {
+    "authority": "dispositive",
+    "details": "None of the required files found: ['LICENSE', 'LICENSE.md', 'LICENSE.txt', 'LICENCE', 'LICENCE.md', 'LICENCE.txt', 'COPYING', 'COPYING.md', 'COPYING.txt']",
+    "evidence": {
+      "files_checked": [
+        "LICENSE",
+        "LICENSE.md",
+        "LICENSE.txt",
+        "LICENCE",
+        "LICENCE.md",
+        "LICENCE.txt",
+        "COPYING",
+        "COPYING.md",
+        "COPYING.txt"
+      ],
+      "max_depth": 0
+    },
+    "id": "OSPS-LE-03.01",
+    "level": 1,
+    "pass_history": [
+      {
+        "checks_performed": [
+          "handler:file_exists"
+        ],
+        "duration_ms": "<SCRUBBED-DURATION>",
+        "phase": "deterministic",
+        "result": {
+          "confidence": 1.0,
+          "message": "None of the required files found: ['LICENSE', 'LICENSE.md', 'LICENSE.txt', 'LICENCE', 'LICENCE.md', 'LICENCE.txt', 'COPYING', 'COPYING.md', 'COPYING.txt']",
+          "outcome": "fail"
+        }
+      }
+    ],
+    "resolving_pass_handler": "file_exists",
+    "resolving_pass_index": 0,
+    "sieve_phase": "deterministic",
+    "status": "FAIL"
+  }
+]

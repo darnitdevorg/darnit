@@ -144,6 +144,9 @@ def _apply_cel_expr(
             # Both handler and CEL point at the same verdict — preserve it.
             # Feature 026 bug fix: carry the incoming handler_result.authority
             # through so downstream reporting doesn't see "unknown".
+            # Feature 036: same treatment for error_class -- every branch here
+            # builds a NEW HandlerResult, so any field not threaded explicitly
+            # is silently dropped.
             if handler_result.status == HandlerResultStatus.PASS:
                 return HandlerResult(
                     status=HandlerResultStatus.PASS,
@@ -151,6 +154,7 @@ def _apply_cel_expr(
                     confidence=1.0,
                     evidence=evidence,
                     authority=handler_result.authority,
+                    error_class=handler_result.error_class,
                 )
             # Handler FAIL + CEL false: definitive non-compliance (issue #343).
             return HandlerResult(
@@ -159,6 +163,7 @@ def _apply_cel_expr(
                 confidence=1.0,
                 evidence=evidence,
                 authority=handler_result.authority,
+                error_class=handler_result.error_class,
             )
         # Disagreement (PASS+false or FAIL+true) -> defer to next pass.
         return HandlerResult(
@@ -166,6 +171,7 @@ def _apply_cel_expr(
             message="Handler and CEL disagree, evaluation inconclusive",
             evidence=evidence,
             authority=handler_result.authority,
+            error_class=handler_result.error_class,
         )
     except Exception as e:
         logger.warning("CEL evaluator unavailable for expr=%r: %s: %s", expr, type(e).__name__, e)
@@ -324,6 +330,7 @@ class SieveOrchestrator:
         registry = get_sieve_handler_registry()
         pass_history: list[PassAttempt] = []
         accumulated_evidence: dict[str, Any] = {}
+        last_error_class: str | None = None
 
         # Build handler context
         handler_ctx = HandlerContext(
@@ -410,8 +417,15 @@ class SieveOrchestrator:
                 try:
                     handler_result = handler_info.fn(handler_config, handler_ctx)
                 except Exception as e:
-                    logger.debug(
-                        "Handler %s error: %s: %s",
+                    # Feature 036: a handler that raised did not complete, so
+                    # this is an environmental failure, not a verdict. WARN
+                    # rather than DEBUG -- a crashed handler and a genuine
+                    # ERROR verdict were previously indistinguishable to
+                    # anyone reading default-level logs.
+                    logger.warning(
+                        "%s: %s handler could not complete "
+                        "(error_class=crashed): %s: %s",
+                        control_spec.control_id,
                         invocation.handler,
                         type(e).__name__,
                         e,
@@ -419,10 +433,22 @@ class SieveOrchestrator:
                     handler_result = HandlerResult(
                         status=HandlerResultStatus.ERROR,
                         message=f"Handler error: {e}",
+                        error_class="crashed",
                     )
 
                 # Post-handler CEL expression evaluation
                 handler_result = _apply_cel_expr(handler_config, handler_result)
+
+                # Feature 036: remember the most recent environmental
+                # classification for the all-inconclusive WARN fallthrough
+                # below. Last non-None rather than simply last, because most
+                # controls end with a `manual` pass -- a "ask a human"
+                # placeholder that always returns INCONCLUSIVE and can never
+                # conclude anything. Treating that as "the final attempt ran
+                # cleanly" would wipe the real exec failure that preceded it,
+                # which is the common shape for a degraded audit.
+                if handler_result.error_class is not None:
+                    last_error_class = handler_result.error_class
 
                 duration_ms = int((time.time() - start_time) * 1000)
 
@@ -492,6 +518,11 @@ class SieveOrchestrator:
                 self._apply_on_pass(control_spec, context, accumulated_evidence)
                 return sieve_result
 
+            # Feature 036 (FR-009a): error_class propagates from the RESOLVING
+            # pass only. CONCLUDE_PASS above is deliberately excluded -- it
+            # fires only when handler_status is PASS, and HandlerResult
+            # rejects PASS + error_class, so there is provably nothing to
+            # carry there.
             if disposition == StepDisposition.CONCLUDE_FAIL:
                 return SieveResult(
                     control_id=control_spec.control_id,
@@ -505,6 +536,7 @@ class SieveOrchestrator:
                     resolving_pass_index=pass_index,
                     resolving_pass_handler=invocation.handler,
                     authority=effective_authority,
+                    error_class=handler_result.error_class,
                 )
 
             if disposition == StepDisposition.TERMINATE_ERROR:
@@ -520,6 +552,7 @@ class SieveOrchestrator:
                     resolving_pass_index=pass_index,
                     resolving_pass_handler=invocation.handler,
                     authority=effective_authority,
+                    error_class=handler_result.error_class,
                 )
 
             # ATTACH_EVIDENCE_AND_CONTINUE or TERMINATE_INCONCLUSIVE fall
@@ -563,6 +596,15 @@ class SieveOrchestrator:
             # / unknown -- suggestive. Preserves the safety-provenance
             # signal on the human-facing report.
             authority="suggestive",
+            # Feature 036: no pass concluded, so FR-009a's "resolving pass"
+            # does not exist here. Fall back to the LAST pass's
+            # classification -- with nothing to supersede it, an
+            # environmental failure on the final attempt is the best
+            # available explanation for why this control could not be
+            # verified. Without this, a fully degraded audit (every pass
+            # timing out) reports a bare "manual verification required" and
+            # the operator never learns their token expired.
+            error_class=last_error_class,
         )
 
     def verify(self, control_spec: ControlSpec, context: CheckContext) -> SieveResult:

@@ -519,7 +519,15 @@ def collect_auto_context_with_confidence(
 
 
 def _get_remote_url(remote_name: str, cwd: str) -> str | None:
-    """Get the URL of a named git remote."""
+    """Get the URL of a named git remote.
+
+    Returns None both when the remote does not exist and when git could not
+    be consulted at all -- but only the second case logs. Feature 036: a
+    non-zero exit here is git's legitimate answer ("no such remote"), which
+    is different in kind from git timing out or not being installed. Warning
+    on the former would make every single-remote repo noisy; staying silent
+    on the latter is what made a broken git install invisible.
+    """
     try:
         result = subprocess.run(
             ["git", "remote", "get-url", remote_name],
@@ -530,8 +538,25 @@ def _get_remote_url(remote_name: str, cwd: str) -> str | None:
         )
         if result.returncode == 0:
             return result.stdout.strip()
-    except (subprocess.SubprocessError, FileNotFoundError, OSError):
-        pass
+    except subprocess.TimeoutExpired:
+        logger.warning(
+            "context.platform: git remote lookup for %r timed out "
+            "(error_class=timeout); platform detection degraded",
+            remote_name,
+        )
+    except FileNotFoundError:
+        logger.warning(
+            "context.platform: git binary not found on PATH "
+            "(error_class=not_found); platform detection degraded",
+        )
+    except (subprocess.SubprocessError, OSError) as err:
+        logger.warning(
+            "context.platform: git remote lookup for %r failed "
+            "(error_class=network): %s: %s; platform detection degraded",
+            remote_name,
+            type(err).__name__,
+            err,
+        )
     return None
 
 

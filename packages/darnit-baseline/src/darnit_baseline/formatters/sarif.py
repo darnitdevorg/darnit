@@ -390,6 +390,13 @@ def result_to_sarif_result(
     if pass_history:
         sarif_result["properties"]["passHistory"] = pass_history
 
+    # Feature 036: environmental failure cause, when the resolving pass could
+    # not run to completion. Lets a code-scanning consumer separate "fix the
+    # runner" from "fix the repo".
+    error_class = result.get("error_class")
+    if error_class is not None:
+        sarif_result["properties"]["errorClass"] = error_class
+
     return sarif_result
 
 

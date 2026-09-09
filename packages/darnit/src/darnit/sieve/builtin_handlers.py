@@ -25,6 +25,8 @@ import subprocess
 import tempfile
 from typing import Any
 
+from darnit.core.error_class import ErrorClass
+
 from .handler_registry import (
     HandlerContext,
     HandlerResult,
@@ -39,6 +41,71 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 MCP_DEFAULT_TIMEOUT_SECONDS: float = 60.0
+"""Per-call timeout for `handler = "mcp"` passes when the pass omits `timeout`.
+
+Spec FR-002 (clarified 2026-08-16). Individual passes MAY override via
+``timeout = <seconds>``. Kept as a module constant so tests can monkeypatch
+it without stubbing the whole handler.
+"""
+
+# =============================================================================
+# Feature 036: environmental-failure classification
+# =============================================================================
+
+# GitHub-only stderr patterns for v0 (clarify Q4). The `exec` handler sees
+# only stdout/stderr/exit-code -- it has no access to response headers -- so
+# classification is substring matching against `gh` CLI stderr shape. Other
+# exec targets (git, curl, syft, cosign) fall through to `network`; per-target
+# pattern packs are a follow-up if real audits show they are needed.
+#
+# Rate-limit is checked BEFORE auth: GitHub answers 403 for both rate limits
+# and permission failures, and the rate-limit body is the more specific signal.
+_GH_RATE_LIMIT_PATTERNS: tuple[str, ...] = (
+    "api rate limit exceeded",
+    "secondary rate limit",
+    "abuse detection mechanism",
+)
+
+_GH_AUTH_PATTERNS: tuple[str, ...] = (
+    "http 401",
+    "bad credentials",
+    "requires authentication",
+    "gh auth login",
+    "authentication token",
+)
+
+
+def _classify_exec_failure(stderr: str) -> ErrorClass:
+    """Classify a non-zero-exit subprocess failure from its stderr.
+
+    Only called on paths where the command did not complete as expected.
+    Callers must NOT invoke this for a declared ``fail_exit_codes`` hit --
+    that is a check that ran and concluded, not an environmental failure.
+    """
+    haystack = (stderr or "").lower()
+    if any(p in haystack for p in _GH_RATE_LIMIT_PATTERNS):
+        return "rate_limit"
+    if any(p in haystack for p in _GH_AUTH_PATTERNS):
+        return "auth"
+    return "network"
+
+
+def _log_environmental_failure(
+    control_id: str, handler: str, error_class: ErrorClass, message: str
+) -> None:
+    """Emit the contract-section-7 WARN line for an environmental failure.
+
+    WARN rather than DEBUG so a degraded audit is visible at the default log
+    level -- an operator should not have to know to raise verbosity to
+    discover that half their checks never reached the network.
+    """
+    logger.warning(
+        "%s: %s handler could not complete (error_class=%s): %s",
+        control_id,
+        handler,
+        error_class,
+        message,
+    )
 
 
 def _atomic_write_text(path: str, content: str) -> None:
@@ -62,12 +129,6 @@ def _atomic_write_text(path: str, content: str) -> None:
         except OSError:
             pass
         raise
-"""Per-call timeout for `handler = "mcp"` passes when the pass omits `timeout`.
-
-Spec FR-002 (clarified 2026-08-16). Individual passes MAY override via
-``timeout = <seconds>``. Kept as a module constant so tests can monkeypatch
-it without stubbing the whole handler.
-"""
 
 
 # =============================================================================
@@ -267,16 +328,22 @@ def exec_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResu
             env=env,
         )
     except subprocess.TimeoutExpired:
+        message = f"Command timed out after {timeout}s: {resolved_cmd[0]}"
+        _log_environmental_failure(context.control_id, "exec", "timeout", message)
         return HandlerResult(
             status=HandlerResultStatus.ERROR,
-            message=f"Command timed out after {timeout}s: {resolved_cmd[0]}",
+            message=message,
             evidence={"command": resolved_cmd, "timeout": timeout},
+            error_class="timeout",
         )
     except FileNotFoundError:
+        message = f"Command not found: {resolved_cmd[0]}"
+        _log_environmental_failure(context.control_id, "exec", "not_found", message)
         return HandlerResult(
             status=HandlerResultStatus.ERROR,
-            message=f"Command not found: {resolved_cmd[0]}",
+            message=message,
             evidence={"command": resolved_cmd},
+            error_class="not_found",
         )
 
     evidence: dict[str, Any] = {
@@ -305,6 +372,8 @@ def exec_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResu
             evidence=evidence,
         )
     elif fail_exit_codes and proc.returncode in fail_exit_codes:
+        # Declared failure code: the check RAN and concluded non-compliance.
+        # No error_class -- this is a real finding, not an environment problem.
         return HandlerResult(
             status=HandlerResultStatus.FAIL,
             message=f"Command failed (exit code {proc.returncode})",
@@ -312,10 +381,17 @@ def exec_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResu
             evidence=evidence,
         )
     else:
+        # Undeclared exit code: we cannot tell whether the check concluded.
+        # Classify from stderr so the operator can distinguish a rate limit
+        # or expired token from a genuine non-compliance signal.
+        error_class = _classify_exec_failure(evidence["stderr"])
+        message = f"Command exited with unexpected code {proc.returncode}"
+        _log_environmental_failure(context.control_id, "exec", error_class, message)
         return HandlerResult(
             status=HandlerResultStatus.INCONCLUSIVE,
-            message=f"Command exited with unexpected code {proc.returncode}",
+            message=message,
             evidence=evidence,
+            error_class=error_class,
         )
 
 
@@ -1103,7 +1179,10 @@ def mcp_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResul
     try:
         raw_response = pool.call_tool(server_name, tool_name, substituted_args, timeout)
     except UnknownMcpServer as err:
-        error_info = (HandlerResultStatus.ERROR, str(err))
+        # A control names a server the operator never configured. Not
+        # strictly environmental, but the operator fix is the same shape as
+        # a missing binary: make the server available.
+        error_info = (HandlerResultStatus.ERROR, str(err), "not_found")
     except McpServerBinaryMissing as err:
         # optional=true (default) -> INCONCLUSIVE; optional=false -> FAIL
         optional = True
@@ -1111,9 +1190,11 @@ def mcp_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResul
             optional = bool(getattr(server_config, "optional", True))
         status = HandlerResultStatus.INCONCLUSIVE if optional else HandlerResultStatus.FAIL
         message = str(err) if optional else f"Required MCP server binary not found. {err}"
-        error_info = (status, message)
+        error_info = (status, message, "not_found")
     except McpServerVerificationFailed as err:
-        error_info = (HandlerResultStatus.ERROR, str(err))
+        # Sigstore verification failure is auth-shaped: the operator has to
+        # fix a trust relationship, not a network path.
+        error_info = (HandlerResultStatus.ERROR, str(err), "auth")
     except McpServerHandshakeFailed as err:
         # Contract: INCONCLUSIVE by default; FAIL when the operator marked
         # the server as required (optional=false).
@@ -1121,7 +1202,7 @@ def mcp_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResul
         if server_config is not None:
             optional = bool(getattr(server_config, "optional", True))
         status = HandlerResultStatus.INCONCLUSIVE if optional else HandlerResultStatus.FAIL
-        error_info = (status, str(err))
+        error_info = (status, str(err), "network")
     except McpServerUnusable as err:
         # Broken twice -- treat like an unusable binary: INCONCLUSIVE unless
         # the operator marked the server required (optional=false), then FAIL.
@@ -1129,17 +1210,20 @@ def mcp_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResul
         if server_config is not None:
             optional = bool(getattr(server_config, "optional", True))
         status = HandlerResultStatus.INCONCLUSIVE if optional else HandlerResultStatus.FAIL
-        error_info = (status, str(err))
+        error_info = (status, str(err), "network")
     except McpToolTimeout as err:
-        error_info = (HandlerResultStatus.ERROR, str(err))
+        error_info = (HandlerResultStatus.ERROR, str(err), "timeout")
     except McpToolError as err:
-        error_info = (HandlerResultStatus.ERROR, str(err))
+        # The tool ran but errored internally -- it did not complete cleanly.
+        error_info = (HandlerResultStatus.ERROR, str(err), "crashed")
     except McpToolResponseNotJson as err:
-        error_info = (HandlerResultStatus.ERROR, str(err))
+        # The tool ran and produced output we cannot interpret.
+        error_info = (HandlerResultStatus.ERROR, str(err), "crashed")
     except Exception as err:  # noqa: BLE001 - final safety net
         error_info = (
             HandlerResultStatus.ERROR,
             f"MCP handler unexpected error: {type(err).__name__}: {err}",
+            "crashed",
         )
 
     elapsed_ms = int((_time.time() - call_start) * 1000)
@@ -1158,7 +1242,10 @@ def mcp_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResul
         trust_label = session.trust_label
 
     if error_info is not None:
-        status, message = error_info
+        status, message, error_class = error_info
+        _log_environmental_failure(
+            context.control_id, f"mcp:{server_name}.{tool_name}", error_class, message
+        )
         invocation_record = {
             "server": server_name,
             "tool": tool_name,
@@ -1168,7 +1255,12 @@ def mcp_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResul
             "elapsed_ms": elapsed_ms,
         }
         evidence: dict[str, Any] = {"mcp_calls": [invocation_record]}
-        return HandlerResult(status=status, message=message, evidence=evidence)
+        return HandlerResult(
+            status=status,
+            message=message,
+            evidence=evidence,
+            error_class=error_class,
+        )
 
     assert raw_response is not None
     invocation_record = {

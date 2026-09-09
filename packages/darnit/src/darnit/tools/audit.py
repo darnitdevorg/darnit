@@ -925,11 +925,18 @@ def format_results_markdown(
                 control_id = r.get("id", "")
                 details = r.get("details", "No details")
 
+                # Feature 036: annotate environmental failures so an operator
+                # can tell "we could not verify" from "we verified and it
+                # failed". The two demand different responses -- fix the
+                # runner vs fix the repo.
+                error_class = r.get("error_class")
+                ec_tag = f" `[{error_class}]`" if error_class else ""
+
                 # Task 8.2: Annotate inferred PASSes with source control
                 if status == "PASS" and "Inferred from" in details:
                     lines.append(f"- **{control_id}** (L{r.get('level', 1)}): {details} *(inferred)*")
                 else:
-                    lines.append(f"- **{control_id}** (L{r.get('level', 1)}): {details}")
+                    lines.append(f"- **{control_id}**{ec_tag} (L{r.get('level', 1)}): {details}")
 
                 # Show resolving pass transparency (which handler produced this result)
                 resolving_handler = r.get("resolving_pass_handler")
