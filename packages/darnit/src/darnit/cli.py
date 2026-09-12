@@ -237,6 +237,14 @@ def cmd_audit(args: argparse.Namespace) -> int:
         controls=controls,
         apply_user_config=False,  # CLI already applied filters above
         stop_on_llm=True,
+        # Issue #427: the framework name has to reach the audit driver, not
+        # just the control loader above. Without it the driver cannot
+        # register the framework's plugin sieve handlers, and every control
+        # referencing one falls through to `manual` with a WARN that reads
+        # like "could not verify" rather than "handler never loaded".
+        # openssf-baseline masked this because its controls use only
+        # built-in handlers.
+        framework_name=config.framework_name,
     )
 
     # Output results

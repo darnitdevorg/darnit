@@ -475,6 +475,16 @@ def run_sieve_audit(
         except Exception:
             pass
 
+    # Register the framework's custom sieve handlers (issue #427). This runs
+    # regardless of whether `controls` was supplied: a caller passing
+    # pre-loaded ControlSpecs still needs the handlers those specs reference
+    # to exist in the registry. Previously this happened only in the MCP
+    # server factory, so plugin-provided handlers were missing from every
+    # other entry point and their controls silently fell through to `manual`.
+    from darnit.core.discovery import register_implementation_handlers
+
+    register_implementation_handlers(resolved_fw)
+
     # Resolve controls: use provided list or load from TOML/registry
     if controls is not None:
         all_controls = list(controls)
