@@ -420,10 +420,16 @@ def merge_configs(
         effective.cache_ttl = user.settings.cache_ttl
         effective.timeout = user.settings.timeout
 
-    # Collect all control IDs
-    all_control_ids: set[str] = set(framework.controls.keys())
-    if user:
-        all_control_ids.update(user.controls.keys())
+    # Collect all control IDs, preserving declaration order (issue #428).
+    # A `set` here randomized iteration order per PYTHONHASHSEED, so the
+    # same repo audited twice listed its controls differently. `dict` keys
+    # already carry TOML declaration order, which groups controls by domain
+    # the way the framework author wrote them -- so dedup through
+    # `dict.fromkeys` rather than sorting, which would discard that grouping.
+    # Framework controls first, then any user-only additions.
+    all_control_ids: list[str] = list(
+        dict.fromkeys([*framework.controls, *(user.controls if user else [])])
+    )
 
     # Merge each control
     for control_id in all_control_ids:
