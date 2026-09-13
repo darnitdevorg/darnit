@@ -31,6 +31,13 @@ If this PR modifies controls or TOML configuration:
 - [ ] Added tests for new functionality (if applicable)
 - [ ] Linting passes (`uv run ruff check .`)
 
+## AI assistance
+
+- [ ] No AI assistance was used
+- [ ] AI assistance was used
+
+<!-- If used: which tool(s), and which parts of this PR are AI-generated. -->
+
 ## Additional Notes
 
 <!-- Any additional context, screenshots, or information -->

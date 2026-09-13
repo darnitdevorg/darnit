@@ -30,9 +30,8 @@ Human-to-human communication is essential for an open source community to thrive
 
 ### Disclosure
 
-You are required to disclose whether AI has been used to assist in the development of your pull request. 
-If so, you must document which tool(s) have been used, how they were used, and specify what code or text is AI generated. 
-We will reject any pull request that does not include the disclosure.
+Please disclose in the pull request description whether AI assistance was used, which tool(s), and which parts of the contribution are AI-generated. The PR template has a field for this.
+We do not claim to detect AI use, and disclosure alone is not what we are checking for. What we require is that you understand and can explain what you submit. We will reject a contribution the author cannot explain, and an undisclosed contribution that reads as machine-generated fails that bar.
 
 ## Contribution Contents
 
