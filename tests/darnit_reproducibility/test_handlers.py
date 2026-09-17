@@ -355,9 +355,7 @@ class TestDetectStrongSignal:
         (tmp_path / "MODULE.bazel").write_text("module(name = 'myproject')")
         wf = tmp_path / "ci.yml"
         wf.write_text(
-            "steps:\n"
-            "  # TODO: bazel build //... --sandbox_default_allow_network=false\n"
-            "  - run: bazel build //...\n"
+            "steps:\n  # TODO: bazel build //... --sandbox_default_allow_network=false\n  - run: bazel build //...\n"
         )
         signal, _ = _detect_strong_hermeticity_signal(tmp_path, [wf], {}, make_ctx(tmp_path), {})
         assert signal is None
@@ -426,6 +424,201 @@ class TestRepoDepsPin:
         (tmp_path / "requirements.txt").write_text("requests>=2.0")
         result = repro_deps_pinned_handler({}, make_ctx(tmp_path))
         assert result.status == HandlerResultStatus.PASS
+
+    # ------------------------------------------------------------------
+    # Feature 037 (issue #429): requirements.txt contents are read, not
+    # merely noticed. The six tests above predate this feature and are
+    # deliberately unmodified -- `requests>=2.0` classifies UNPINNED and
+    # still FAILs, so the pre-existing contract survives unchanged.
+    # ------------------------------------------------------------------
+
+    HASH = "a" * 64
+    SHA1 = "d" * 40
+
+    def _repo(self, tmp_path: Path, contents: str) -> Path:
+        (tmp_path / "requirements.txt").write_text(contents, encoding="utf-8")
+        return tmp_path
+
+    def test_hash_pinned_requirements_passes(self, tmp_path: Path) -> None:
+        """SC-001: the reporter's case in #429.
+
+        Before this feature, a `pip-compile --generate-hashes` output got the
+        same hard FAIL as a bare `numpy`.
+        """
+        repo = self._repo(
+            tmp_path,
+            f"click==8.1.7 \\\n    --hash=sha256:{self.HASH}\nnumpy==1.26.4 --hash=sha256:{self.HASH}\n",
+        )
+        result = repro_deps_pinned_handler({}, make_ctx(repo))
+        assert result.status == HandlerResultStatus.PASS
+        assert result.confidence == 0.8
+        assert "hash" in result.message.lower(), (
+            "the message must name hash-pinning, so the operator can tell the "
+            "verdict came from reading the file rather than from its name"
+        )
+
+    def test_pass_evidence_records_what_was_inspected(self, tmp_path: Path) -> None:
+        """FR-012: a reviewer can audit the verdict from the result alone."""
+        repo = self._repo(tmp_path, f"numpy==1.26.4 --hash=sha256:{self.HASH}\n")
+        evidence = repro_deps_pinned_handler({}, make_ctx(repo)).evidence
+        assert evidence["inspected_file"] == "requirements.txt"
+        assert evidence["classification"] == "hash_pinned"
+        assert evidence["requirement_count"] == 1
+
+    def test_version_pinned_warns_about_transitive_dependencies(self, tmp_path: Path) -> None:
+        """SC-003 / FR-005. Not FAIL: this repo is meaningfully different from
+        one using open ranges. Not PASS: its transitive dependencies float."""
+        repo = self._repo(tmp_path, "numpy==1.26.4\nclick==8.1.7\n")
+        result = repro_deps_pinned_handler({}, make_ctx(repo))
+        assert result.status == HandlerResultStatus.WARN
+        assert result.confidence == 0.8
+        assert "transitive" in result.message.lower()
+
+    def test_unpinned_names_an_offending_requirement(self, tmp_path: Path) -> None:
+        """SC-002 / FR-006: actionable without re-deriving the finding."""
+        repo = self._repo(tmp_path, "numpy>=1.26\nclick==8.1.7\n")
+        result = repro_deps_pinned_handler({}, make_ctx(repo))
+        assert result.status == HandlerResultStatus.FAIL
+        assert "numpy>=1.26" in result.message
+
+    def test_three_verdicts_are_mutually_distinct(self, tmp_path: Path) -> None:
+        """SC-003: the whole point is that these stopped being one verdict."""
+        statuses = set()
+        for name, contents in (
+            ("hashed", f"numpy==1.0 --hash=sha256:{self.HASH}\n"),
+            ("pinned", "numpy==1.0\n"),
+            ("loose", "numpy>=1.0\n"),
+        ):
+            repo = tmp_path / name
+            repo.mkdir()
+            (repo / "requirements.txt").write_text(contents, encoding="utf-8")
+            statuses.add(repro_deps_pinned_handler({}, make_ctx(repo)).status)
+        assert statuses == {
+            HandlerResultStatus.PASS,
+            HandlerResultStatus.WARN,
+            HandlerResultStatus.FAIL,
+        }
+
+    def test_one_floating_dependency_governs(self, tmp_path: Path) -> None:
+        """US2 scenario 3: the weakest line decides."""
+        repo = self._repo(tmp_path, "numpy==1.0\nclick==2.0\nrequests>=2.0\n")
+        assert repro_deps_pinned_handler({}, make_ctx(repo)).status == HandlerResultStatus.FAIL
+
+    def test_vcs_sha_caps_the_file_at_warn(self, tmp_path: Path) -> None:
+        """FR-010: a commit SHA pins, but it is never hash evidence."""
+        repo = self._repo(
+            tmp_path,
+            f"numpy==1.0 --hash=sha256:{self.HASH}\npkg @ git+https://example.invalid/y@{self.SHA1}\n",
+        )
+        assert repro_deps_pinned_handler({}, make_ctx(repo)).status == HandlerResultStatus.WARN
+
+    def test_empty_requirements_is_treated_as_absent(self, tmp_path: Path) -> None:
+        """FR-011: a file declaring no dependencies is evidence of neither good
+        nor bad practice, so the no-dependency-files verdict stands."""
+        repo = self._repo(tmp_path, "# nothing here\n\n")
+        result = repro_deps_pinned_handler({}, make_ctx(repo))
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
+        assert result.evidence["loose_manifests_found"] == []
+
+    def test_empty_requirements_lets_another_manifest_decide(self, tmp_path: Path) -> None:
+        repo = self._repo(tmp_path, "# nothing here\n")
+        (repo / "setup.py").write_text("x", encoding="utf-8")
+        result = repro_deps_pinned_handler({}, make_ctx(repo))
+        assert result.status == HandlerResultStatus.FAIL
+        assert "setup.py" in result.message
+        assert "requirements.txt" not in result.message
+
+    def test_unresolved_include_is_reported_as_not_inspected(self, tmp_path: Path) -> None:
+        """FR-007: "we could not read it" must not read as "we read it and it
+        is unpinned"."""
+        repo = self._repo(tmp_path, "-r base.txt\n")
+        result = repro_deps_pinned_handler({}, make_ctx(repo))
+        assert result.status == HandlerResultStatus.FAIL
+        assert "could not be" in result.message
+        assert "inspect" in result.message
+
+    def test_unreadable_file_never_reaches_the_classifier(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Contract T-7. Cannot be a committed fixture: needs a runtime chmod."""
+        import darnit_reproducibility.requirements_pins as pins
+
+        calls = []
+        monkeypatch.setattr(
+            pins,
+            "classify",
+            lambda text: (
+                calls.append(text)
+                or (_ for _ in ()).throw(AssertionError("classifier must not run on an unreadable file"))
+            ),
+        )
+        repo = self._repo(tmp_path, "numpy==1.0\n")
+        (repo / "requirements.txt").chmod(0o000)
+        try:
+            result = repro_deps_pinned_handler({}, make_ctx(repo))
+        finally:
+            (repo / "requirements.txt").chmod(0o644)
+        assert result.status == HandlerResultStatus.FAIL
+        assert "could not be inspected" in result.message
+        assert calls == []
+
+    def test_undecodable_file_never_reaches_the_classifier(self, tmp_path: Path) -> None:
+        """Contract T-7: invalid UTF-8 is unreadable, not unpinned."""
+        (tmp_path / "requirements.txt").write_bytes(b"numpy==1.0\n\xff\xfe\x00bad\n")
+        result = repro_deps_pinned_handler({}, make_ctx(tmp_path))
+        assert result.status == HandlerResultStatus.FAIL
+        assert "could not be inspected" in result.message
+        assert result.evidence["classification"] == "not_inspectable"
+
+    def test_option_lines_and_self_reference_do_not_change_the_verdict(self, tmp_path: Path) -> None:
+        """FR-018: the file classifies on its requirements alone."""
+        repo = self._repo(
+            tmp_path,
+            f"--index-url https://example.invalid/simple\n-e .\nnumpy==1.0 --hash=sha256:{self.HASH}\n",
+        )
+        assert repro_deps_pinned_handler({}, make_ctx(repo)).status == HandlerResultStatus.PASS
+
+    def test_lock_file_short_circuits_before_reading_contents(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """FR-001 / US3: the lock file decides and the requirements contents
+        are never consulted."""
+        import darnit_reproducibility.requirements_pins as pins
+
+        calls: list[str] = []
+        original = pins.classify
+        monkeypatch.setattr(pins, "classify", lambda text: calls.append(text) or original(text))
+        (tmp_path / "uv.lock").write_text("lock content", encoding="utf-8")
+        repo = self._repo(tmp_path, "numpy>=1.0\nclick>=8.0\n")
+        result = repro_deps_pinned_handler({}, make_ctx(repo))
+        assert result.status == HandlerResultStatus.PASS
+        assert calls == [], "lock-file path must not read requirements.txt"
+
+    def test_requirements_family_spellings_are_still_not_discovered(self, tmp_path: Path) -> None:
+        """FR-019: discovery did not widen. A repo whose only requirements file
+        is `requirements-dev.txt` is INCONCLUSIVE today and stays that way."""
+        (tmp_path / "requirements-dev.txt").write_text("numpy>=1.0", encoding="utf-8")
+        (tmp_path / "requirements").mkdir()
+        (tmp_path / "requirements" / "base.txt").write_text("numpy>=1.0", encoding="utf-8")
+        assert repro_deps_pinned_handler({}, make_ctx(tmp_path)).status == HandlerResultStatus.INCONCLUSIVE
+
+    @pytest.mark.parametrize(
+        ("filename", "contents"),
+        [
+            ("setup.py", "from setuptools import setup"),
+            ("package.json", "{}"),
+            ("Cargo.toml", "[package]"),
+            ("go.mod", "module x"),
+        ],
+    )
+    def test_other_loose_manifests_are_still_judged_by_presence(
+        self, tmp_path: Path, filename: str, contents: str
+    ) -> None:
+        """FR-014: this feature changed nothing for them."""
+        (tmp_path / filename).write_text(contents, encoding="utf-8")
+        result = repro_deps_pinned_handler({}, make_ctx(tmp_path))
+        assert result.status == HandlerResultStatus.FAIL
+        assert result.message.startswith("Dependency manifests found but no lock files:")
 
 
 class TestBuildEnvDeclared:

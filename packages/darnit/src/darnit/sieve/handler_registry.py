@@ -51,6 +51,24 @@ class HandlerResultStatus(str, Enum):
 
     PASS = "pass"
     FAIL = "fail"
+    # Feature 037 (FR-016). The handler reached a conclusion, and the
+    # conclusion is that the evidence is insufficient to pass.
+    #
+    # WARN differs from INCONCLUSIVE in kind, not in degree:
+    #   INCONCLUSIVE -- the handler determined nothing; another pass may still
+    #                   determine something, so the pipeline continues.
+    #   WARN         -- the handler determined something, and what it
+    #                   determined is not a pass.
+    #
+    # Do NOT return WARN to mean "I am unsure". That is INCONCLUSIVE. WARN is
+    # for the case where the evidence was read, understood, and found short --
+    # a requirements.txt that pins direct dependencies while its transitive
+    # dependencies float, for instance.
+    #
+    # Like PASS and FAIL, a WARN concludes the control only under terminal
+    # authority (dispositive or asserted); see resolve_step_result. A WARN
+    # counts as FAIL for compliance (Constitution Principle II).
+    WARN = "warn"
     INCONCLUSIVE = "inconclusive"
     ERROR = "error"
 
@@ -105,8 +123,7 @@ class HandlerResult:
             return
         if self.error_class not in ERROR_CLASSES:
             raise ValueError(
-                f"error_class={self.error_class!r} is not a known ErrorClass; "
-                f"expected one of {sorted(ERROR_CLASSES)}"
+                f"error_class={self.error_class!r} is not a known ErrorClass; expected one of {sorted(ERROR_CLASSES)}"
             )
         if self.status == HandlerResultStatus.PASS:
             raise ValueError(

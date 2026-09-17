@@ -6,6 +6,12 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "darnit-core>=0.1.0",
+    # PEP 440 requirement parsing for the requirements.txt pin classifier.
+    # darnit-core already imports `packaging` at runtime (core/composition.py,
+    # config/framework_schema.py) without declaring it; this declares it where
+    # it is used rather than inheriting an undeclared import. See
+    # specs/037-pinned-requirements-detection/research.md R4.
+    "packaging>=23.0",
 ]
 
 [project.entry-points."darnit.implementations"]

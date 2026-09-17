@@ -1,0 +1,2 @@
+pkg @ git+https://example.invalid/y@dddddddddddddddddddddddddddddddddddddddd
+numpy==1.26.4

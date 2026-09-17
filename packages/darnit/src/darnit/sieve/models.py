@@ -24,6 +24,7 @@ class PassOutcome(Enum):
 
     PASS = "pass"  # Control satisfied
     FAIL = "fail"  # Control NOT satisfied
+    WARN = "warn"  # Determined incomplete -- evidence read, found insufficient
     INCONCLUSIVE = "inconclusive"  # Cannot determine, continue to next pass
     ERROR = "error"  # Pass failed to execute
 

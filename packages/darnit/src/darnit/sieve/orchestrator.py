@@ -48,6 +48,9 @@ class StepDisposition(str, Enum):
 
     CONCLUDE_PASS = "conclude_pass"
     CONCLUDE_FAIL = "conclude_fail"
+    # Feature 037 (FR-016): the handler determined the evidence is incomplete.
+    # Conclusive, and gated by authority exactly as PASS and FAIL are.
+    CONCLUDE_WARN = "conclude_warn"
     ATTACH_EVIDENCE_AND_CONTINUE = "attach_and_continue"
     TERMINATE_INCONCLUSIVE = "terminate_inconclusive"
     TERMINATE_ERROR = "terminate_error"
@@ -68,13 +71,20 @@ def resolve_step_result(
     if handler_status == HandlerResultStatus.ERROR:
         return StepDisposition.TERMINATE_ERROR
 
-    if handler_status in (HandlerResultStatus.PASS, HandlerResultStatus.FAIL):
+    # Feature 037: WARN joins PASS and FAIL here rather than getting its own
+    # rule. A WARN is a conclusion, so the RFC-0001 Stage 1 invariant covers
+    # it: without the authority gate a suggestive LLM step could halt
+    # verification before a dispositive step ever ran. That errs toward
+    # non-compliance, which is the safe direction, but it would silently
+    # reduce how much verification actually happens.
+    _CONCLUSIVE = {
+        HandlerResultStatus.PASS: StepDisposition.CONCLUDE_PASS,
+        HandlerResultStatus.FAIL: StepDisposition.CONCLUDE_FAIL,
+        HandlerResultStatus.WARN: StepDisposition.CONCLUDE_WARN,
+    }
+    if handler_status in _CONCLUSIVE:
         if is_terminal_authority(effective_authority):
-            return (
-                StepDisposition.CONCLUDE_PASS
-                if handler_status == HandlerResultStatus.PASS
-                else StepDisposition.CONCLUDE_FAIL
-            )
+            return _CONCLUSIVE[handler_status]
         if is_last_step:
             return StepDisposition.TERMINATE_INCONCLUSIVE
         return StepDisposition.ATTACH_EVIDENCE_AND_CONTINUE
@@ -136,9 +146,8 @@ def _apply_cel_expr(
 
         evidence = dict(handler_result.evidence or {})
         evidence["expr"] = expr
-        agreement = (
-            (handler_result.status == HandlerResultStatus.PASS and bool(cel_result.value))
-            or (handler_result.status == HandlerResultStatus.FAIL and not cel_result.value)
+        agreement = (handler_result.status == HandlerResultStatus.PASS and bool(cel_result.value)) or (
+            handler_result.status == HandlerResultStatus.FAIL and not cel_result.value
         )
         if agreement:
             # Both handler and CEL point at the same verdict — preserve it.
@@ -423,8 +432,7 @@ class SieveOrchestrator:
                     # ERROR verdict were previously indistinguishable to
                     # anyone reading default-level logs.
                     logger.warning(
-                        "%s: %s handler could not complete "
-                        "(error_class=crashed): %s: %s",
+                        "%s: %s handler could not complete (error_class=crashed): %s: %s",
                         control_spec.control_id,
                         invocation.handler,
                         type(e).__name__,
@@ -531,6 +539,28 @@ class SieveOrchestrator:
                     level=control_spec.level,
                     conclusive_phase=phase,
                     pass_history=pass_history,
+                    evidence=accumulated_evidence,
+                    source="sieve",
+                    resolving_pass_index=pass_index,
+                    resolving_pass_handler=invocation.handler,
+                    authority=effective_authority,
+                    error_class=handler_result.error_class,
+                )
+
+            # Feature 037 (FR-016): a conclusive WARN carries the handler's
+            # own message. That is the entire point -- the all-inconclusive
+            # fallthrough below substitutes a fixed string, which cannot say
+            # WHY a control is short. error_class is threaded because, unlike
+            # CONCLUDE_PASS, nothing forbids WARN + error_class.
+            if disposition == StepDisposition.CONCLUDE_WARN:
+                return SieveResult(
+                    control_id=control_spec.control_id,
+                    status="WARN",
+                    message=handler_result.message,
+                    level=control_spec.level,
+                    conclusive_phase=phase,
+                    pass_history=pass_history,
+                    confidence=handler_result.confidence,
                     evidence=accumulated_evidence,
                     source="sieve",
                     resolving_pass_index=pass_index,
@@ -710,10 +740,7 @@ class SieveOrchestrator:
 
         # Determine outcome based on confidence
         if llm_response.status in (PassOutcome.PASS, PassOutcome.FAIL):
-            if (
-                llm_response.confidence >= confidence_threshold
-                and is_terminal_authority(llm_step_authority)
-            ):
+            if llm_response.confidence >= confidence_threshold and is_terminal_authority(llm_step_authority):
                 status: CheckStatus = "PASS" if llm_response.status == PassOutcome.PASS else "FAIL"
                 return SieveResult(
                     control_id=control_spec.control_id,
@@ -807,9 +834,7 @@ class SieveOrchestrator:
                 try:
                     self._mcp_pool.teardown_all()
                 except Exception as err:  # noqa: BLE001 - best-effort teardown
-                    logger.warning(
-                        "MCP pool teardown at verify_batch exit raised: %s", err
-                    )
+                    logger.warning("MCP pool teardown at verify_batch exit raised: %s", err)
                 self._mcp_pool = None
 
         # Return in original order
@@ -906,6 +931,11 @@ def _handler_status_to_outcome(status: HandlerResultStatus) -> PassOutcome:
     mapping = {
         HandlerResultStatus.PASS: PassOutcome.PASS,
         HandlerResultStatus.FAIL: PassOutcome.FAIL,
+        # Feature 037: explicit, because the fallback below is
+        # PassOutcome.INCONCLUSIVE -- omitting this entry would record a pass
+        # that concluded as one that reached no conclusion, contradicting the
+        # control's own status in pass_history.
+        HandlerResultStatus.WARN: PassOutcome.WARN,
         HandlerResultStatus.ERROR: PassOutcome.ERROR,
         HandlerResultStatus.INCONCLUSIVE: PassOutcome.INCONCLUSIVE,
     }

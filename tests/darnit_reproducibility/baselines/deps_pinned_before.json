@@ -1,0 +1,22 @@
+{
+  "lockfile_repo": {
+    "confidence": 0.8,
+    "evidence": {
+      "lock_files_found": [
+        "uv.lock (uv (Python))"
+      ],
+      "loose_manifests_found": []
+    },
+    "message": "Lock file(s) found: uv.lock (uv (Python))",
+    "status": "pass"
+  },
+  "no_deps_repo": {
+    "confidence": 0.0,
+    "evidence": {
+      "lock_files_found": [],
+      "loose_manifests_found": []
+    },
+    "message": "No dependency files found \u2014 cannot determine if deps are pinned",
+    "status": "inconclusive"
+  }
+}

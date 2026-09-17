@@ -16,19 +16,52 @@ from .witness_attestation import WitnessCheckResult, check_witness_attestation
 logger = get_logger("darnit_reproducibility.handlers")
 
 
+_MAX_EVIDENCE_EXAMPLES = 10
+
+
+def _inspect_requirements(path: Path) -> tuple[Any, str | None]:
+    """Read and classify a requirements.txt.
+
+    Returns ``(report, unreadable_reason)``. Exactly one is meaningful. The
+    classifier is deliberately NOT called when the file cannot be read or
+    decoded -- "we read it and it is unpinned" and "we could not read it" are
+    different claims and must stay distinguishable (FR-007).
+    """
+    from .requirements_pins import classify
+
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        return None, f"not valid UTF-8 ({exc.reason})"
+    except OSError as exc:
+        return None, f"could not be read ({exc.strerror or type(exc).__name__})"
+    return classify(text), None
+
+
+def _sample(items: list[str]) -> list[str]:
+    """Cap enumerated evidence so a 400-requirement file stays readable."""
+    return items[:_MAX_EVIDENCE_EXAMPLES]
+
+
 def repro_deps_pinned_handler(
     config: dict[str, Any],
     ctx: HandlerContext,
 ) -> HandlerResult:
     """Check that dependencies are pinned to exact versions.
 
-    Looks for lock files — the most reliable signal that deps are pinned.
-    PASS if a lock file exists, FAIL if only a loose manifest exists,
-    INCONCLUSIVE if no dependency files found at all.
+    A lock file is the strongest signal and short-circuits everything else.
+    Failing that, a `requirements.txt` is READ rather than merely noticed
+    (feature 037, issue #429): a file pinned with hashes passes, one pinned
+    with `==` alone warns because its transitive dependencies still float, and
+    one with open ranges fails naming an offender.
+
+    Every other loose manifest is still judged by presence alone; extending
+    content inspection to them needs ecosystem-specific handling and is out of
+    scope here.
     """
     path = Path(ctx.local_path)
 
-    # Lock files — strong signal that deps are pinned
+    # Lock files - strong signal that deps are pinned
     lock_files = {
         "uv.lock": "uv (Python)",
         "poetry.lock": "Poetry (Python)",
@@ -41,7 +74,7 @@ def repro_deps_pinned_handler(
         "composer.lock": "Composer (PHP)",
     }
 
-    # Loose manifests without lock files — weak signal
+    # Loose manifests without lock files - weak signal
     loose_manifests = {
         "requirements.txt": "pip requirements",
         "setup.py": "setuptools",
@@ -61,18 +94,95 @@ def repro_deps_pinned_handler(
             # Only flag loose if no corresponding lock exists
             found_loose.append(f"{filename} ({label})")
 
-    evidence = {
+    evidence: dict[str, Any] = {
         "lock_files_found": found_locks,
         "loose_manifests_found": found_loose,
     }
 
     if found_locks:
+        # Unchanged, deliberately: a lock file is judged first and its
+        # contents are never consulted (FR-001). This path must stay
+        # byte-identical across feature 037 (SC-004).
         return HandlerResult(
             status=HandlerResultStatus.PASS,
             message=f"Lock file(s) found: {', '.join(found_locks)}",
             confidence=0.8,  # a lock file proves deps were pinned once, not that it is current
             evidence=evidence,
         )
+
+    requirements = path / "requirements.txt"
+    if requirements.exists():
+        from .requirements_pins import FileClassification
+
+        report, unreadable = _inspect_requirements(requirements)
+        evidence["inspected_file"] = "requirements.txt"
+
+        if unreadable is not None:
+            evidence["classification"] = "not_inspectable"
+            evidence["not_inspectable_reason"] = unreadable
+            return HandlerResult(
+                status=HandlerResultStatus.FAIL,
+                message=(f"requirements.txt contents could not be inspected: {unreadable}. Judged on presence alone."),
+                confidence=0.8,
+                evidence=evidence,
+            )
+
+        evidence["classification"] = report.classification.value
+        evidence["requirement_count"] = len(report.lines)
+
+        if report.classification is FileClassification.NOT_INSPECTABLE:
+            evidence["not_inspectable_reason"] = report.reason
+            return HandlerResult(
+                status=HandlerResultStatus.FAIL,
+                message=(
+                    f"requirements.txt contents could not be fully inspected: "
+                    f"{report.reason}. Judged on presence alone."
+                ),
+                confidence=0.8,
+                evidence=evidence,
+            )
+
+        if report.classification is FileClassification.HASH_PINNED:
+            return HandlerResult(
+                status=HandlerResultStatus.PASS,
+                message=(
+                    f"requirements.txt: all {len(report.lines)} requirement(s) pinned to an exact version with a hash"
+                ),
+                confidence=0.8,
+                evidence=evidence,
+            )
+
+        if report.classification is FileClassification.VERSION_PINNED:
+            evidence["unhashed_examples"] = _sample(report.unhashed)
+            evidence["unhashed_count"] = len(report.unhashed)
+            return HandlerResult(
+                status=HandlerResultStatus.WARN,
+                message=(
+                    f"requirements.txt pins all {len(report.lines)} direct dependency(ies) "
+                    "to exact versions but carries no hashes, so transitive dependencies "
+                    "resolve at install time and are not pinned. A lock file or "
+                    "hash-pinned requirements would close this."
+                ),
+                confidence=0.8,
+                evidence=evidence,
+            )
+
+        if report.classification is FileClassification.UNPINNED:
+            evidence["unpinned_examples"] = _sample(report.unpinned)
+            evidence["unpinned_count"] = len(report.unpinned)
+            shown = ", ".join(_sample(report.unpinned)[:3])
+            return HandlerResult(
+                status=HandlerResultStatus.FAIL,
+                message=(f"requirements.txt has {len(report.unpinned)} unpinned requirement(s), including: {shown}"),
+                confidence=0.8,
+                evidence=evidence,
+            )
+
+        # NO_REQUIREMENTS: the file declares no dependencies, so it is evidence
+        # of neither good nor bad pinning practice. Treat it as absent and let
+        # any other loose manifest decide (FR-011).
+        found_loose = [f for f in found_loose if not f.startswith("requirements.txt")]
+        evidence["loose_manifests_found"] = found_loose
 
     if found_loose:
         return HandlerResult(
@@ -84,7 +194,7 @@ def repro_deps_pinned_handler(
 
     return HandlerResult(
         status=HandlerResultStatus.INCONCLUSIVE,
-        message="No dependency files found — cannot determine if deps are pinned",
+        message="No dependency files found \u2014 cannot determine if deps are pinned",
         confidence=0.0,
         evidence=evidence,
     )
@@ -331,7 +441,6 @@ def _iter_container_files(path: Path) -> list[Path]:
     return results[:_FILE_SCAN_LIMIT]
 
 
-
 # Bazel network sandbox flags — current name, negated shorthand, and the
 # deprecated pre-rename name (still honored by Bazel as an alias).
 _BAZEL_NETWORK_BLOCK_FLAGS: tuple[str, ...] = (
@@ -526,7 +635,9 @@ def repro_hermetic_build_handler(
     # is stronger evidence than the grep heuristic below — surface it as a
     # violation on its own rather than waiting for a matching CI-text pattern.
     if witness_result.verified and witness_result.network_clean is False:
-        violations.append(f"witness attestation ({witness_result.evidence.get('artifact', '?')}): {witness_result.detail}")
+        violations.append(
+            f"witness attestation ({witness_result.evidence.get('artifact', '?')}): {witness_result.detail}"
+        )
 
     for f in all_files:
         is_dockerfile = f in container_file_set

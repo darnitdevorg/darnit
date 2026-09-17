@@ -653,10 +653,14 @@ version = "0.1.0"
 source = { editable = "packages/darnit-reproducibility" }
 dependencies = [
     { name = "darnit-core" },
+    { name = "packaging" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "darnit-core", editable = "packages/darnit" }]
+requires-dist = [
+    { name = "darnit-core", editable = "packages/darnit" },
+    { name = "packaging", specifier = ">=23.0" },
+]
 
 [[package]]
 name = "darnit-testchecks"

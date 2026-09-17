@@ -173,8 +173,51 @@ The sieve orchestrator executes passes in declaration order, dispatching each to
 #### Scenario: Pass execution follows declaration order
 - **WHEN** a control has multiple `[[passes]]` entries
 - **THEN** the orchestrator MUST execute them in the order they appear in the TOML file
-- **AND** the orchestrator MUST stop at the first conclusive result (PASS, FAIL, or ERROR)
+- **AND** the orchestrator MUST stop at the first conclusive result (PASS, FAIL, WARN, or ERROR)
 - **AND** INCONCLUSIVE results MUST cause the orchestrator to continue to the next pass
+
+### 3.0 Handler Outcomes
+
+A handler returns one of five outcomes. Four are conclusive under the rules below; INCONCLUSIVE never is.
+
+| Outcome | Meaning | Concludes the control? |
+|---------|---------|------------------------|
+| `PASS` | The control is satisfied. | Yes, under terminal authority |
+| `FAIL` | The control is not satisfied. | Yes, under terminal authority |
+| `WARN` | The handler read the evidence, understood it, and determined it is insufficient to pass. | Yes, under terminal authority |
+| `INCONCLUSIVE` | The handler determined nothing. | No -- the pipeline continues |
+| `ERROR` | The handler did not complete. | Yes, terminal regardless of authority |
+
+`WARN` differs from `INCONCLUSIVE` in kind, not in degree. INCONCLUSIVE means a later pass may still determine something. WARN means the answer has been determined and the answer is "not enough". A handler MUST NOT return WARN to mean "I am unsure".
+
+A WARN counts as FAIL for compliance calculations (Constitution Principle II). A WARN carries the handler's own message; it MUST NOT be replaced by a generic string.
+
+#### Scenario: A handler concludes WARN
+- **WHEN** a handler returns WARN and the effective authority is `dispositive` or `asserted`
+- **THEN** the orchestrator MUST conclude the control as WARN
+- **AND** the resulting message MUST be the handler's own message
+- **AND** the pass history MUST record the pass outcome as WARN, not INCONCLUSIVE
+
+#### Scenario: A non-authoritative WARN does not conclude
+- **WHEN** a handler returns WARN and the effective authority is `suggestive` or absent
+- **THEN** the orchestrator MUST NOT conclude the control
+- **AND** it MUST attach evidence and continue, or terminate INCONCLUSIVE if this was the last step
+
+### 3.0.1 Step Disposition Table
+
+The disposition applied to each step, by handler outcome and effective authority:
+
+| Handler outcome | Terminal authority | Non-terminal, not last | Non-terminal, last step |
+|-----------------|--------------------|------------------------|-------------------------|
+| `ERROR` | TERMINATE_ERROR | TERMINATE_ERROR | TERMINATE_ERROR |
+| `PASS` | CONCLUDE_PASS | ATTACH_EVIDENCE_AND_CONTINUE | TERMINATE_INCONCLUSIVE |
+| `FAIL` | CONCLUDE_FAIL | ATTACH_EVIDENCE_AND_CONTINUE | TERMINATE_INCONCLUSIVE |
+| `WARN` | CONCLUDE_WARN | ATTACH_EVIDENCE_AND_CONTINUE | TERMINATE_INCONCLUSIVE |
+| `INCONCLUSIVE` | ATTACH_EVIDENCE_AND_CONTINUE | ATTACH_EVIDENCE_AND_CONTINUE | TERMINATE_INCONCLUSIVE |
+
+The WARN row is deliberately identical to the PASS and FAIL rows. A WARN is a conclusion, so the RFC-0001 Stage 1 authority invariant covers it: LLM output alone cannot manufacture a WARN that halts verification, just as it cannot manufacture a PASS.
+
+The CEL post-step (section 3.6) does not modify a WARN result. Its transition table is defined for PASS and FAIL only; there is no "CEL disagrees with WARN" cell, because WARN already asserts that the evidence is incomplete.
 
 ### 3.1 Pass Execution Order
 

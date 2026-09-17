@@ -1,0 +1,2 @@
+numpy[extra]==1.26.4; python_version < "3.11"
+click==8.1.7
