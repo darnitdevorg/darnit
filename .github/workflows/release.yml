@@ -361,7 +361,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up QEMU (multi-arch emulation for arm64 build on amd64 runner)
-        uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a # v3
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v3
         with:
           platforms: arm64
 
