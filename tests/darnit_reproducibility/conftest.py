@@ -58,3 +58,30 @@ def lockfile_repo(tmp_path: Path) -> Path:
 def no_deps_repo(tmp_path: Path) -> Path:
     """A repo with no dependency files at all."""
     return tmp_path
+
+
+def repro_ctx(repo: Path, dependency_results: dict[str, str] | None = None) -> HandlerContext:
+    """HandlerContext for a reproducibility handler under test (feature 038).
+
+    `dependency_results` carries prior control verdicts. RE-02.01's Nix strong
+    signal is gated on `dependency_results["RE-01.02"] == "PASS"`, so exercising
+    the FR-010 propagation means setting it here.
+    """
+    return HandlerContext(
+        local_path=str(repo),
+        owner="org",
+        repo="repo",
+        default_branch="main",
+        control_id="RE-TEST",
+        project_context={},
+        gathered_evidence={},
+        shared_cache={},
+        dependency_results=dependency_results or {},
+    )
+
+
+# Feature 038: keeps the corpus test off the network. Tests added to the classes
+# in test_handlers.py do NOT need this -- that module has an autouse
+# `_stub_witness_attestation` fixture (line 33) which already isolates them.
+# Two mechanisms for one concern would be worse than one.
+OFFLINE_CONFIG: dict[str, object] = {"verify_witness_attestations": False}

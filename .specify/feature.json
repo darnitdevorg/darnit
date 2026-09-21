@@ -1,1 +1,3 @@
-{"feature_directory": "specs/037-pinned-requirements-detection"}
+{
+  "feature_directory": "specs/038-repro-false-pass"
+}

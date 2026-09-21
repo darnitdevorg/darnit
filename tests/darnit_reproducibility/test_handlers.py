@@ -128,6 +128,32 @@ class TestScanLine:
         assert pattern == "wget"
 
 
+class TestScanLineNondeterminism:
+    """Feature 038 (#432): the fourth scan kind.
+
+    A `nondeterminism` match must not be classified as `violation`, or the
+    handler would report a compiler flag under the network-fetch message.
+    """
+
+    @pytest.mark.parametrize("flag", ["-ffast-math", "-march=native", "-mtune=native"])
+    def test_flags_classify_as_nondeterminism(self, flag: str) -> None:
+        pattern, kind = _scan_line(f"gcc {flag} -o app main.c")
+        assert kind == "nondeterminism"
+        assert pattern == flag
+
+    def test_network_fetch_still_wins_on_a_line_doing_both(self) -> None:
+        """A line that fetches AND sets a flag is reported as the fetch, which
+        is the larger problem."""
+        _pattern, kind = _scan_line("pip install foo && gcc -march=native main.c")
+        assert kind == "violation"
+
+    def test_o3_is_not_a_finding(self) -> None:
+        assert _scan_line("gcc -O3 -o app main.c") == (None, "safe")
+
+    def test_commented_flag_is_safe(self) -> None:
+        assert _scan_line("# gcc -march=native main.c") == (None, "safe")
+
+
 class TestFileCollectors:
     """Unit tests for the _iter_* file-discovery helpers."""
 
@@ -624,8 +650,72 @@ class TestRepoDepsPin:
 class TestBuildEnvDeclared:
     """Tests for repro_build_env_declared_handler()."""
 
-    def test_pass_with_dockerfile(self, tmp_path: Path) -> None:
+    DIGEST = "sha256:" + "a" * 64
+
+    def test_warn_with_tag_pinned_dockerfile(self, tmp_path: Path) -> None:
+        """Feature 038 (#431). This asserted PASS until 2026-09.
+
+        `python:3.11` is a tag. It is rebuilt and resolves to different bytes
+        over time, which is the opposite of a declared environment.
+        """
         (tmp_path / "Dockerfile").write_text("FROM python:3.11")
+        result = repro_build_env_declared_handler({}, make_ctx(tmp_path))
+        assert result.status == HandlerResultStatus.WARN
+        assert "python:3.11" in result.message
+
+    def test_pass_with_digest_pinned_dockerfile(self, tmp_path: Path) -> None:
+        """SC-003: the digest case keeps today's output exactly."""
+        (tmp_path / "Dockerfile").write_text(f"FROM alpine@{self.DIGEST}")
+        result = repro_build_env_declared_handler({}, make_ctx(tmp_path))
+        assert result.status == HandlerResultStatus.PASS
+        assert result.confidence == 0.85
+        assert result.message == "Build environment declared via: Dockerfile (Docker)"
+
+    def test_latest_tag_warns(self, tmp_path: Path) -> None:
+        """SC-002: the shape #431 was filed about."""
+        (tmp_path / "Dockerfile").write_text("FROM alpine:latest")
+        result = repro_build_env_declared_handler({}, make_ctx(tmp_path))
+        assert result.status == HandlerResultStatus.WARN
+        assert "alpine:latest" in result.message
+
+    def test_multistage_does_not_report_the_stage_name(self, tmp_path: Path) -> None:
+        """BE-4. `FROM builder` is a stage reference, not a registry image.
+
+        Reporting it would produce a spurious finding on every multi-stage
+        build, including this repository's own packaging/container/Dockerfile.
+        """
+        (tmp_path / "Dockerfile").write_text("FROM python:3.12 AS builder\nRUN true\nFROM builder\n")
+        result = repro_build_env_declared_handler({}, make_ctx(tmp_path))
+        assert result.status == HandlerResultStatus.WARN
+        assert "python:3.12" in result.message
+        assert "builder" not in result.message
+
+    def test_multistage_all_digest_pinned_passes(self, tmp_path: Path) -> None:
+        (tmp_path / "Dockerfile").write_text(f"FROM alpine@{self.DIGEST} AS builder\nFROM builder\n")
+        result = repro_build_env_declared_handler({}, make_ctx(tmp_path))
+        assert result.status == HandlerResultStatus.PASS
+
+    def test_containerfile_handled_like_dockerfile(self, tmp_path: Path) -> None:
+        (tmp_path / "Containerfile").write_text("FROM alpine:latest")
+        result = repro_build_env_declared_handler({}, make_ctx(tmp_path))
+        assert result.status == HandlerResultStatus.WARN
+
+    def test_flake_wins_over_unpinned_dockerfile(self, tmp_path: Path) -> None:
+        """BE-9: a stronger declaration is checked first."""
+        (tmp_path / "flake.nix").write_text("{ outputs = {}; }")
+        (tmp_path / "Dockerfile").write_text("FROM alpine:latest")
+        result = repro_build_env_declared_handler({}, make_ctx(tmp_path))
+        assert result.status == HandlerResultStatus.PASS
+
+    def test_dockerfile_without_from_is_treated_as_absent(self, tmp_path: Path) -> None:
+        """BE-11: declares no base image, so it is evidence of neither."""
+        (tmp_path / "Dockerfile").write_text("RUN echo hi\n")
+        result = repro_build_env_declared_handler({}, make_ctx(tmp_path))
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
+
+    def test_vagrantfile_unchanged_in_v0(self, tmp_path: Path) -> None:
+        """BE-10: content-dependent in principle, not inspected yet."""
+        (tmp_path / "Vagrantfile").write_text('config.vm.box = "ubuntu/jammy64"')
         result = repro_build_env_declared_handler({}, make_ctx(tmp_path))
         assert result.status == HandlerResultStatus.PASS
 
@@ -849,6 +939,158 @@ class TestHermeticBuild:
         assert "Bazel" in result.message
 
 
+class TestHermeticBuildCoverage:
+    """Feature 038: scan coverage (#430, #432) and the FR-010 propagation.
+
+    Kept in its own class because these exercise additions to the scan rather
+    than the existing PASS/FAIL contract covered by TestHermeticBuild.
+    """
+
+    def _repo(self, tmp_path: Path, files: dict[str, str]) -> Path:
+        for name, content in files.items():
+            target = tmp_path / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+        return tmp_path
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "go install example.com/tool@latest",
+            "go get example.com/dep",
+            "cargo install ripgrep",
+            "gem install bundler",
+        ],
+    )
+    def test_installers_are_violations(self, tmp_path: Path, command: str) -> None:
+        """HS-1 / SC-004: a Go or Rust build that fetches at build time used to
+        scan clean, because only the Python and Node installers were listed."""
+        repo = self._repo(tmp_path, {".github/workflows/ci.yml": f"steps:\n  - run: {command}\n"})
+        result = repro_hermetic_build_handler({}, make_ctx(repo))
+        assert result.status == HandlerResultStatus.FAIL
+        assert "ci.yml" in result.message
+
+    def test_pinned_installer_names_the_version(self, tmp_path: Path) -> None:
+        """HS-2 / FR-011. Still a violation -- this control's subject is
+        hermeticity, not determinism -- but the operator can see it is pinned."""
+        repo = self._repo(
+            tmp_path,
+            {".github/workflows/ci.yml": "steps:\n  - run: go install example.com/t@v1.2.3\n"},
+        )
+        result = repro_hermetic_build_handler({}, make_ctx(repo))
+        assert result.status == HandlerResultStatus.FAIL
+        assert "pinned to v1.2.3" in result.message
+
+    @pytest.mark.parametrize("flag", ["-ffast-math", "-march=native", "-mtune=native"])
+    def test_nondeterministic_flags_are_reported(self, tmp_path: Path, flag: str) -> None:
+        """HS-3 / SC-005."""
+        repo = self._repo(tmp_path, {"Makefile": f"build:\n\tgcc {flag} -o app main.c\n"})
+        result = repro_hermetic_build_handler({}, make_ctx(repo))
+        assert result.status == HandlerResultStatus.FAIL
+        assert flag in result.message
+        assert "Makefile" in result.message
+
+    def test_flag_finding_is_not_called_a_network_fetch(self, tmp_path: Path) -> None:
+        """HS-4. Sharing the network-fetch message would tell the operator a
+        compiler flag was a network fetch."""
+        repo = self._repo(tmp_path, {"Makefile": "build:\n\tgcc -march=native main.c\n"})
+        result = repro_hermetic_build_handler({}, make_ctx(repo))
+        assert "live network fetches" not in result.message
+        assert "Non-deterministic compiler flags" in result.message
+
+    def test_o3_alone_is_not_flagged(self, tmp_path: Path) -> None:
+        """HS-5. At a fixed toolchain `-O3` is deterministic. The
+        non-determinism #432 describes comes from the unpinned toolchain, and
+        flagging `-O3` would fire on a large share of legitimate builds."""
+        repo = self._repo(tmp_path, {"Makefile": "build:\n\tgcc -O3 -o app main.c\n"})
+        result = repro_hermetic_build_handler({}, make_ctx(repo))
+        assert result.status != HandlerResultStatus.FAIL
+
+    @pytest.mark.parametrize("line", ["# gcc -march=native main.c", "# go install example.com/t@latest"])
+    def test_comments_are_not_findings(self, tmp_path: Path, line: str) -> None:
+        """HS-6 / FR-015. Detection goes through `_scan_line`, which strips
+        comments; a second scanning path would lose that."""
+        repo = self._repo(tmp_path, {"Makefile": f"build:\n\t{line}\n\techo ok\n"})
+        result = repro_hermetic_build_handler({}, make_ctx(repo))
+        assert result.status != HandlerResultStatus.FAIL
+
+    def test_bazel_pass_survives_the_reporting_split(self, tmp_path: Path) -> None:
+        """HS-9. T004 restructured the violation buckets inside this handler,
+        which is exactly where the early-return PASS paths could regress."""
+        repo = self._repo(
+            tmp_path,
+            {
+                "WORKSPACE": "workspace(name='x')\n",
+                ".github/workflows/ci.yml": (
+                    "steps:\n  - run: bazel build //... --sandbox_default_allow_network=false\n"
+                ),
+            },
+        )
+        result = repro_hermetic_build_handler({}, make_ctx(repo))
+        assert result.status == HandlerResultStatus.PASS
+        assert "Strong hermeticity signal" in result.message
+
+    def test_nix_signal_still_fires_when_re0102_passed(self, tmp_path: Path) -> None:
+        """HS-7: the unchanged case."""
+        repo = self._repo(
+            tmp_path,
+            {
+                "flake.nix": "{ outputs = {}; }",
+                ".github/workflows/ci.yml": "steps:\n  - run: nix build .#default\n",
+            },
+        )
+        ctx = make_ctx(repo, dependency_results={"RE-01.02": "PASS"})
+        result = repro_hermetic_build_handler({}, ctx)
+        assert result.status == HandlerResultStatus.PASS
+        assert "Nix flake build in CI" in result.message
+
+    def test_nix_signal_withheld_says_why(self, tmp_path: Path) -> None:
+        """HS-8 / SC-010. The FR-010 propagation.
+
+        A repo with a flake and an unpinned Dockerfile loses a hermeticity PASS
+        without its flake changing. That is intended, but the operator must be
+        able to tell the signal was withheld because of RE-01.02 rather than
+        because the flake stopped being found.
+        """
+        repo = self._repo(
+            tmp_path,
+            {
+                "flake.nix": "{ outputs = {}; }",
+                "Dockerfile": "FROM alpine:latest\n",
+                ".github/workflows/ci.yml": "steps:\n  - run: nix build .#default\n",
+            },
+        )
+        ctx = make_ctx(repo, dependency_results={"RE-01.02": "WARN"})
+        result = repro_hermetic_build_handler({}, ctx)
+        assert result.status != HandlerResultStatus.PASS
+        assert "RE-01.02" in result.message
+        assert "BuildEnvDeclared" in result.message
+
+    def test_propagation_end_to_end(self, tmp_path: Path) -> None:
+        """SC-010: RE-01.02 does not pass, and RE-02.01 loses the signal."""
+        repo = self._repo(
+            tmp_path,
+            {
+                "flake.nix": "{ outputs = {}; }",
+                "Dockerfile": "FROM alpine:latest\n",
+                ".github/workflows/ci.yml": "steps:\n  - run: nix build .#default\n",
+            },
+        )
+        env = repro_build_env_declared_handler({}, make_ctx(repo))
+        assert env.status == HandlerResultStatus.PASS, (
+            "a flake outranks an unpinned Dockerfile, so RE-01.02 still passes here"
+        )
+
+        # Without the flake, the unpinned Dockerfile governs and the chain breaks.
+        (repo / "flake.nix").unlink()
+        env = repro_build_env_declared_handler({}, make_ctx(repo))
+        assert env.status == HandlerResultStatus.WARN
+        hermetic = repro_hermetic_build_handler(
+            {}, make_ctx(repo, dependency_results={"RE-01.02": env.status.value.upper()})
+        )
+        assert hermetic.status != HandlerResultStatus.PASS
+
+
 class TestProvenanceExists:
     """Tests for repro_provenance_exists_handler()."""
 
@@ -878,12 +1120,39 @@ class TestBitForBit:
         result = repro_bit_for_bit_handler({}, make_ctx(tmp_path))
         assert result.status == HandlerResultStatus.INCONCLUSIVE
 
-    def test_pass_with_source_date_epoch(self, tmp_path: Path) -> None:
+    HASH_SIGNALS = ("SOURCE_DATE_EPOCH", "reprotest", "diffoscope")
+
+    def test_warn_with_source_date_epoch(self, tmp_path: Path) -> None:
+        """Feature 038 (#445). This asserted PASS until 2026-09.
+
+        One occurrence of an environment variable name in one workflow used to
+        produce a dispositive PASS on "Build output is identical across
+        independent builds". Nothing was built; nothing was compared.
+        """
         wf_dir = tmp_path / ".github" / "workflows"
         wf_dir.mkdir(parents=True)
         (wf_dir / "ci.yml").write_text("env:\n  SOURCE_DATE_EPOCH: 0")
         result = repro_bit_for_bit_handler({}, make_ctx(tmp_path))
-        assert result.status == HandlerResultStatus.PASS
+        assert result.status == HandlerResultStatus.WARN
+
+    def test_warn_message_names_signal_and_the_gap(self, tmp_path: Path) -> None:
+        """SC-001, FR-012: "no evidence" and "promising but unverified" must be
+        distinguishable from the message alone."""
+        wf_dir = tmp_path / ".github" / "workflows"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "ci.yml").write_text("env:\n  SOURCE_DATE_EPOCH: 0")
+        result = repro_bit_for_bit_handler({}, make_ctx(tmp_path))
+        assert "SOURCE_DATE_EPOCH" in result.message
+        assert "not verified" in result.message
+
+    @pytest.mark.parametrize("signal", ["reprotest", "diffoscope"])
+    def test_other_signals_warn_the_same_way(self, tmp_path: Path, signal: str) -> None:
+        wf_dir = tmp_path / ".github" / "workflows"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "ci.yml").write_text(f"steps:\n  - run: {signal} ./build.sh\n")
+        result = repro_bit_for_bit_handler({}, make_ctx(tmp_path))
+        assert result.status == HandlerResultStatus.WARN
+        assert signal in result.message
 
     def test_date_macro_not_flagged(self, tmp_path: Path) -> None:
         """__DATE__ is a C-source macro, not a workflow signal; a workflow-only
