@@ -417,12 +417,17 @@ def _try_sieve_detection(
         result = sieve.detect(key, local_path, owner, repo)
 
         if result.is_usable:
-            # Convert sieve result to ContextValue
-            return ContextValue.auto_detected(
+            from darnit.config.context_storage import _apply_detect_filter, get_context_definitions
+
+            detected = ContextValue.auto_detected(
                 value=result.value,
                 method=f"context_sieve ({len(result.signals)} signals)",
                 confidence=result.confidence,
             )
+            definition = (
+                framework.context.get_definition(key) if framework else get_context_definitions(local_path).get(key)
+            )
+            return _apply_detect_filter(key, definition, detected)
     except ImportError:
         logger.debug("Context sieve not available, skipping auto-detection")
     except Exception as e:

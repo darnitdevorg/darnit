@@ -146,6 +146,7 @@ class TestReporting:
             result = _apply_detect_filter("security_contact", _definition("!value.contains("), _detected("x"))
         assert result is None
         assert "security_contact" in caplog.text
+        assert "!value.contains(" in caplog.text, "FR-007: the warning must name the expression"
 
     @pytest.mark.unit
     def test_rejected_and_unevaluable_read_differently(self, caplog: pytest.LogCaptureFixture) -> None:
@@ -234,3 +235,40 @@ class TestStoredValues:
         value = context_storage.get_context_value(str(tmp_path), "has_releases")
         assert value is not None
         assert value.value is True
+
+    @pytest.mark.unit
+    def test_load_context_drops_failing_stored_value(self, tmp_path: Path) -> None:
+        """FR-014 for every reader, not just get_context_value.
+
+        The audit, remediation, auto-detect, and harness paths all read through
+        load_context. Filtering only in get_context_value left each of them
+        consuming the rejected value -- a remediated SECURITY.md would still
+        name the placeholder address.
+        """
+        self._store(tmp_path, "security_contact", PLACEHOLDER)
+        flat = context_storage.flatten_user_context(context_storage.load_context(str(tmp_path)))
+        assert "security_contact" not in flat
+
+    @pytest.mark.unit
+    def test_load_stored_context_is_unfiltered(self, tmp_path: Path) -> None:
+        """Write-verification needs what is actually on disk."""
+        self._store(tmp_path, "security_contact", PLACEHOLDER)
+        flat = context_storage.flatten_user_context(context_storage.load_stored_context(str(tmp_path)))
+        assert flat["security_contact"] == PLACEHOLDER
+
+    @pytest.mark.unit
+    def test_collect_auto_context_does_not_consume_failing_stored_value(self, tmp_path: Path) -> None:
+        from darnit.context.auto_detect import collect_auto_context
+
+        self._store(tmp_path, "security_contact", PLACEHOLDER)
+        assert collect_auto_context(str(tmp_path)).get("security_contact") != PLACEHOLDER
+
+    @pytest.mark.unit
+    def test_failing_stored_value_is_asked_about_again(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A value that reads as unset must not also count as confirmed, or the
+        user is never prompted to replace it."""
+        monkeypatch.setattr(context_storage, "_run_detect_pipeline", lambda *a, **k: None)
+        monkeypatch.setattr(context_storage, "_try_sieve_detection", lambda *a, **k: None)
+        self._store(tmp_path, "security_contact", PLACEHOLDER)
+        pending = get_pending_context(str(tmp_path))
+        assert "security_contact" in [p.key for p in pending]

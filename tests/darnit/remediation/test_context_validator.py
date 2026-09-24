@@ -527,3 +527,35 @@ class TestOrchestratorContextIntegration:
 
         if result["status"] == "applied":
             assert (Path(temp_repo) / "CODEOWNERS").exists()
+
+
+class TestSieveDetectionIsFiltered:
+    """FR-003/FR-004: remediation's own sieve route must not bypass detect_filter."""
+
+    class _Result:
+        is_usable = True
+        confidence = 1.0
+        signals: list = []
+
+        def __init__(self, value):
+            self.value = value
+
+    def _sieve(self, value):
+        result = self._Result(value)
+        return type("Sieve", (), {"detect": lambda self, *a, **k: result})()
+
+    @pytest.mark.unit
+    def test_placeholder_is_not_offered(self, temp_repo):
+        from darnit.remediation.context_validator import _try_sieve_detection
+
+        with patch("darnit.context.get_context_sieve", return_value=self._sieve("security@example.com")):
+            assert _try_sieve_detection("security_contact", temp_repo, None, None) is None
+
+    @pytest.mark.unit
+    def test_real_value_is_offered(self, temp_repo):
+        from darnit.remediation.context_validator import _try_sieve_detection
+
+        with patch("darnit.context.get_context_sieve", return_value=self._sieve("security@real.org")):
+            detected = _try_sieve_detection("security_contact", temp_repo, None, None)
+        assert detected is not None
+        assert detected.value == "security@real.org"

@@ -18,6 +18,7 @@ from darnit.config.context_storage import (
     get_raw_value,
     is_context_confirmed,
     load_context,
+    load_stored_context,
     save_context_value,
     save_context_values,
 )
@@ -324,7 +325,9 @@ context:
 context:
   security_contact: security@example.org
 """)
-        result = load_context(str(tmp_path))
+        # Placeholder address the shipped detect_filter rejects; this test is
+        # about parsing storage, so read it unfiltered.
+        result = load_stored_context(str(tmp_path))
 
         assert "security" in result
         assert "security_contact" in result["security"]

@@ -185,7 +185,16 @@ class TestProjectYamlAnswerSource:
     def test_reads_security_contact_from_project_yaml(self, tmp_path: Path) -> None:
         (tmp_path / ".project").mkdir()
         (tmp_path / ".project" / "project.yaml").write_text(
+            "name: test-repo\nsecurity:\n  contact: sec@real.org\n",
+        )
+        src = ProjectYamlAnswerSource(str(tmp_path))
+        assert src.get_answer("security_contact") == "sec@real.org"
+
+    def test_does_not_answer_with_value_failing_detect_filter(self, tmp_path: Path) -> None:
+        """FR-014: a stored placeholder must not be handed out as an answer."""
+        (tmp_path / ".project").mkdir()
+        (tmp_path / ".project" / "project.yaml").write_text(
             "name: test-repo\nsecurity:\n  contact: sec@example.com\n",
         )
         src = ProjectYamlAnswerSource(str(tmp_path))
-        assert src.get_answer("security_contact") == "sec@example.com"
+        assert src.get_answer("security_contact") is None

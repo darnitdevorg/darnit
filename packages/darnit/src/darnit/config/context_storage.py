@@ -63,7 +63,18 @@ def _parse_context_value(val: Any) -> ContextValue | None:
 
 
 def load_context(local_path: str) -> ContextByCategory:
-    """Load all context values with provenance from project config.
+    """Load usable context values: stored values re-checked against detect_filter.
+
+    Every consumer of context -- audit, remediation, auto-detect, the harness,
+    and pending-key calculation -- reads through here, so a stored value that
+    fails its key's filter is dropped for all of them at once (FR-014). Use
+    load_stored_context only when the raw on-disk contents are needed.
+    """
+    return _filter_context(local_path, load_stored_context(local_path))
+
+
+def load_stored_context(local_path: str) -> ContextByCategory:
+    """Load all context values with provenance from project config, unfiltered.
 
     This function abstracts the storage format and returns context values
     organized by category with full provenance tracking.
@@ -204,10 +215,7 @@ def get_context_value(
                 stored = cat_context[key]
                 break
 
-    if stored is None:
-        return None
-
-    return _filter_stored_value(local_path, key, stored)
+    return stored
 
 
 def get_raw_value(
@@ -234,7 +242,27 @@ def get_raw_value(
     return default
 
 
-def _filter_stored_value(local_path: str, key: str, stored: ContextValue) -> ContextValue | None:
+def _filter_context(local_path: str, context: ContextByCategory) -> ContextByCategory:
+    if not context:
+        return context
+    try:
+        definitions = get_context_definitions(local_path)
+    except Exception as exc:  # noqa: BLE001 - a read must not fail on config
+        logger.debug("Could not load context definitions to filter stored context: %s", exc)
+        return context
+
+    filtered: ContextByCategory = {}
+    for category, values in context.items():
+        for key, stored in values.items():
+            kept = _filter_stored_value(definitions, key, stored)
+            if kept is not None:
+                filtered.setdefault(category, {})[key] = kept
+    return filtered
+
+
+def _filter_stored_value(
+    definitions: dict[str, ContextDefinition], key: str, stored: ContextValue
+) -> ContextValue | None:
     """Re-evaluate a stored value against its key's detect_filter (FR-014).
 
     The read path performed no validation before feature 039, so a value
@@ -243,11 +271,9 @@ def _filter_stored_value(local_path: str, key: str, stored: ContextValue) -> Con
     the guard was off. Without this, the fix protects only repositories that
     have never been audited.
 
-    The filter is resolved here rather than passed in by callers. An optional
-    parameter defaulting to no filtering would mean any future caller silently
-    skips the guard, which is the defect class this feature exists to close.
-    Framework config loading is cached by path and mtime, so the lookup is
-    cheap.
+    This runs inside load_context rather than being opted into by callers. An
+    opt-in would mean any future caller silently skips the guard, which is the
+    defect class this feature exists to close.
 
     Nothing is written (FR-015). A stored value may carry a human confirmation,
     and Principle IV makes confirmation the transition that grants usability --
@@ -255,12 +281,6 @@ def _filter_stored_value(local_path: str, key: str, stored: ContextValue) -> Con
     silently revoke what a person put there.
     """
     from darnit.context.detect_filter import FilterDecision, apply_filter
-
-    try:
-        definitions = get_context_definitions(local_path)
-    except Exception as exc:  # noqa: BLE001 - a read must not fail on config
-        logger.debug("Could not load context definitions to filter '%s': %s", key, exc)
-        return stored
 
     definition = definitions.get(key)
     expression = getattr(definition, "detect_filter", None) if definition else None

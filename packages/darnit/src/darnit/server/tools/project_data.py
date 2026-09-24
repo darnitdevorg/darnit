@@ -161,11 +161,11 @@ confirm_project_data(
         return f"❌ Error saving config: {e}"
 
     # Round-trip verification: read back persisted values to catch path-mismatch bugs
-    from darnit.config.context_storage import load_context
+    from darnit.config.context_storage import load_stored_context
 
     verified_values: list[str] = []
     try:
-        readback = load_context(resolved_path)
+        readback = load_stored_context(resolved_path)
         # Flatten all categories into a single dict of key -> value
         all_values: dict[str, object] = {}
         for cat_values in readback.values():

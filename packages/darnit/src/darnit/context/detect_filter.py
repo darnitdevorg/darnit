@@ -75,23 +75,25 @@ def _compile(expression: str, key: str) -> CELProgram | None:
         # framework author's typo must not propagate out of context collection
         # and abort the audit.
         logger.warning(
-            "context key '%s': detect_filter could not be compiled, so no "
+            "context key '%s': detect_filter %r could not be compiled, so no "
             "detected value can be accepted for this key: %s: %s",
             key,
+            expression,
             type(exc).__name__,
             exc,
         )
         return None
 
 
-def _evaluate_scalar(program: CELProgram, candidate: Any, key: str) -> FilterDecision:
+def _evaluate_scalar(program: CELProgram, candidate: Any, key: str, expression: str) -> FilterDecision:
     """Evaluate one scalar candidate. Never returns KEEP on failure."""
     try:
         result = CELEvaluator().evaluate(program, {"value": candidate})
     except (CELEvaluationError, CELTimeoutError) as exc:
         logger.warning(
-            "context key '%s': detect_filter could not be evaluated against a detected value; discarding it: %s",
+            "context key '%s': detect_filter %r could not be evaluated against a detected value; discarding it: %s",
             key,
+            expression,
             exc,
         )
         return FilterDecision.UNEVALUABLE
@@ -101,8 +103,9 @@ def _evaluate_scalar(program: CELProgram, candidate: Any, key: str) -> FilterDec
         # raising. Checking only for exceptions would silently treat this as
         # having passed.
         logger.warning(
-            "context key '%s': detect_filter could not be evaluated against a detected value; discarding it: %s",
+            "context key '%s': detect_filter %r could not be evaluated against a detected value; discarding it: %s",
             key,
+            expression,
             result.error,
         )
         return FilterDecision.UNEVALUABLE
@@ -131,7 +134,7 @@ def apply_filter(expression: str | None, candidate: Any, key: str) -> FilterOutc
         kept: list[Any] = []
         dropped: list[Any] = []
         for element in candidate:
-            if _evaluate_scalar(program, element, key) is FilterDecision.KEEP:
+            if _evaluate_scalar(program, element, key, expression) is FilterDecision.KEEP:
                 kept.append(element)
             else:
                 dropped.append(element)
@@ -149,7 +152,7 @@ def apply_filter(expression: str | None, candidate: Any, key: str) -> FilterOutc
             reason=(f"{len(dropped)} detected value(s) filtered out" if dropped else ""),
         )
 
-    decision = _evaluate_scalar(program, candidate, key)
+    decision = _evaluate_scalar(program, candidate, key, expression)
     if decision is FilterDecision.KEEP:
         return FilterOutcome(decision=decision, value=candidate)
     return FilterOutcome(
