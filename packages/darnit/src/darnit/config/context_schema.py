@@ -84,9 +84,7 @@ class ContextValue(BaseModel):
     auto_accepted: bool = False
 
     @classmethod
-    def user_confirmed(
-        cls, value: Any, confirmed_at: datetime | None = None
-    ) -> "ContextValue":
+    def user_confirmed(cls, value: Any, confirmed_at: datetime | None = None) -> "ContextValue":
         """Create a user-confirmed context value."""
         return cls(
             source=ContextSource.USER_CONFIRMED,
@@ -171,6 +169,10 @@ class ContextDefinition(BaseModel):
     store_as: str | None = None  # e.g., "governance.maintainers"
     auto_detect: bool = False
     auto_detect_method: str | None = None  # e.g., "github_collaborators"
+    # CEL expression filtering auto-detected candidates. Candidate binds as
+    # `value`; true keeps. Mirrors ContextDefinitionConfig in framework_schema
+    # -- issue #165 named both models, and the read path reads this one.
+    detect_filter: str | None = None
     required: bool = False
     presentation_hint: str | None = None  # e.g., "[y/N]", "[1-3]"
     allowed_values: list[str] | None = None  # Display values (distinct from validation `values`)
@@ -283,9 +285,7 @@ class ProjectExtensions(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
-    openssf_baseline: BaselineExtension | None = Field(
-        default=None, alias="openssf-baseline"
-    )
+    openssf_baseline: BaselineExtension | None = Field(default=None, alias="openssf-baseline")
     # Other extensions can be added here with similar pattern
 
 

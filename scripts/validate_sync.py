@@ -197,6 +197,61 @@ def validate_sarif_reads_from_toml() -> ValidationResult:
     )
 
 
+def validate_context_keys() -> ValidationResult:
+    """Every [context.*] key in a shipped TOML must be a declared schema field.
+
+    `ContextDefinitionConfig` sets `extra="allow"`, so an undeclared key is
+    retained and never reported -- a misspelled `detect_fliter` behaves exactly
+    like the correct spelling: it does nothing. Two instances of that defect
+    have been found by unrelated bug reports (`detect_filter`, #165/#150, and
+    `value_if_fail`, PR #417), both after shipping.
+
+    This check covers TOMLs shipped in this repository. The schema itself stays
+    permissive, so third-party plugin configs continue to load as they do today.
+
+    Returns:
+        ValidationResult with pass/fail status
+    """
+    import tomllib
+
+    sys.path.insert(0, str(PROJECT_ROOT / "packages" / "darnit" / "src"))
+    from darnit.config.framework_schema import ContextDefinitionConfig
+
+    declared = set(ContextDefinitionConfig.model_fields)
+    offenders: list[str] = []
+
+    for toml_path in sorted(PROJECT_ROOT.glob("packages/*/src/*/*.toml")):
+        try:
+            data = tomllib.loads(toml_path.read_text(encoding="utf-8"))
+        except (OSError, tomllib.TOMLDecodeError) as exc:
+            return ValidationResult(
+                passed=False,
+                message=f"Could not read {toml_path.name}",
+                details=str(exc),
+            )
+
+        context = data.get("context", {})
+        for key, definition in context.items():
+            if not isinstance(definition, dict):
+                continue  # scalar settings like auto_accept_confidence
+            for field_name in definition:
+                if field_name not in declared:
+                    rel = toml_path.relative_to(PROJECT_ROOT)
+                    offenders.append(f"  - {rel}: [context.{key}] has '{field_name}'")
+
+    if offenders:
+        return ValidationResult(
+            passed=False,
+            message="Undeclared [context.*] keys (silently ignored at runtime)",
+            details="\n".join(offenders),
+        )
+
+    return ValidationResult(
+        passed=True,
+        message=f"Context keys in sync ({len(declared)} declared fields)",
+    )
+
+
 def run_validations(verbose: bool = False) -> int:
     """Run all validation checks.
 
@@ -210,6 +265,7 @@ def run_validations(verbose: bool = False) -> int:
         ("TOML Schema", validate_toml_schema),
         ("Pass Types Sync", validate_pass_types_sync),
         ("SARIF Source", validate_sarif_reads_from_toml),
+        ("Context Keys", validate_context_keys),
     ]
 
     results = []

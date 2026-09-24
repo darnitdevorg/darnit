@@ -63,7 +63,18 @@ def _parse_context_value(val: Any) -> ContextValue | None:
 
 
 def load_context(local_path: str) -> ContextByCategory:
-    """Load all context values with provenance from project config.
+    """Load usable context values: stored values re-checked against detect_filter.
+
+    Every consumer of context -- audit, remediation, auto-detect, the harness,
+    and pending-key calculation -- reads through here, so a stored value that
+    fails its key's filter is dropped for all of them at once (FR-014). Use
+    load_stored_context only when the raw on-disk contents are needed.
+    """
+    return _filter_context(local_path, load_stored_context(local_path))
+
+
+def load_stored_context(local_path: str) -> ContextByCategory:
+    """Load all context values with provenance from project config, unfiltered.
 
     This function abstracts the storage format and returns context values
     organized by category with full provenance tracking.
@@ -192,17 +203,19 @@ def get_context_value(
     """
     context = load_context(local_path)
 
+    stored: ContextValue | None = None
     if category:
         # Search specific category
         cat_context = context.get(category, {})
-        return cat_context.get(key)
+        stored = cat_context.get(key)
+    else:
+        # Search all categories
+        for cat_context in context.values():
+            if key in cat_context:
+                stored = cat_context[key]
+                break
 
-    # Search all categories
-    for cat_context in context.values():
-        if key in cat_context:
-            return cat_context[key]
-
-    return None
+    return stored
 
 
 def get_raw_value(
@@ -227,6 +240,73 @@ def get_raw_value(
     if ctx_value:
         return ctx_value.value
     return default
+
+
+def _filter_context(local_path: str, context: ContextByCategory) -> ContextByCategory:
+    if not context:
+        return context
+    try:
+        definitions = get_context_definitions(local_path)
+    except Exception as exc:  # noqa: BLE001 - a read must not fail on config
+        logger.debug("Could not load context definitions to filter stored context: %s", exc)
+        return context
+
+    filtered: ContextByCategory = {}
+    for category, values in context.items():
+        for key, stored in values.items():
+            kept = _filter_stored_value(definitions, key, stored)
+            if kept is not None:
+                filtered.setdefault(category, {})[key] = kept
+    return filtered
+
+
+def _filter_stored_value(
+    definitions: dict[str, ContextDefinition], key: str, stored: ContextValue
+) -> ContextValue | None:
+    """Re-evaluate a stored value against its key's detect_filter (FR-014).
+
+    The read path performed no validation before feature 039, so a value
+    auto-accepted while the filter was not running persists indefinitely -- and
+    the repositories most likely to hold one are exactly those audited while
+    the guard was off. Without this, the fix protects only repositories that
+    have never been audited.
+
+    This runs inside load_context rather than being opted into by callers. An
+    opt-in would mean any future caller silently skips the guard, which is the
+    defect class this feature exists to close.
+
+    Nothing is written (FR-015). A stored value may carry a human confirmation,
+    and Principle IV makes confirmation the transition that grants usability --
+    the framework reports that a stored value now fails its filter; it does not
+    silently revoke what a person put there.
+    """
+    from darnit.context.detect_filter import FilterDecision, apply_filter
+
+    definition = definitions.get(key)
+    expression = getattr(definition, "detect_filter", None) if definition else None
+    if not expression:
+        return stored
+
+    outcome = apply_filter(expression, stored.value, key)
+    if outcome.decision is FilterDecision.KEEP:
+        if outcome.discarded:
+            logger.info(
+                "Context '%s': stored value had %d element(s) removed by "
+                "detect_filter on read; stored context is unchanged",
+                key,
+                len(outcome.discarded),
+            )
+            stored.value = outcome.value
+        return stored
+
+    logger.warning(
+        "Context '%s': the stored value fails this key's detect_filter and is "
+        "treated as unset (%s). Stored context is NOT modified; correct or "
+        "remove it in .project/ if it is wrong.",
+        key,
+        outcome.reason,
+    )
+    return None
 
 
 def is_context_confirmed(local_path: str, key: str) -> bool:
@@ -400,6 +480,7 @@ def get_context_definitions(local_path: str) -> dict[str, ContextDefinition]:
                 auto_detect=defn.auto_detect,
                 auto_detect_method=defn.auto_detect_method,
                 required=defn.required,
+                detect_filter=defn.detect_filter,
             )
 
         return definitions
@@ -446,6 +527,7 @@ def get_context_definitions_with_detect(
                 auto_detect=defn.auto_detect,
                 auto_detect_method=defn.auto_detect_method,
                 required=defn.required,
+                detect_filter=defn.detect_filter,
             )
             detect_pipeline = defn.detect if hasattr(defn, "detect") else None
             result[key] = (definition, detect_pipeline)
@@ -552,6 +634,15 @@ def get_pending_context(
             # Fallback: context sieve (hardcoded Python detectors)
             current_value = _try_sieve_detection(key, local_path, owner, repo)
 
+        # Feature 039 (#165, #150): apply the key's detect_filter here, where
+        # both detection routes have converged, and BEFORE the auto-accept
+        # threshold below. Filtering inside each route separately would be two
+        # call sites to keep in step, and the sieve fallback is the older path
+        # most likely to be forgotten. Filtering after the threshold would
+        # already have written the rejected value.
+        if current_value is not None:
+            current_value = _apply_detect_filter(key, definition, current_value)
+
         # Auto-accept high-confidence detections without user prompting
         if current_value is not None and current_value.confidence >= auto_accept_threshold:
             current_value.auto_accepted = True
@@ -600,6 +691,57 @@ def get_pending_context(
     pending.sort(key=lambda x: x.priority, reverse=True)
 
     return pending
+
+
+def _apply_detect_filter(
+    key: str,
+    definition: Any,
+    detected: ContextValue,
+) -> ContextValue | None:
+    """Filter a detected candidate through the key's `detect_filter`.
+
+    Returns the surviving value, or None when nothing survives. A key with no
+    filter is returned untouched.
+
+    The reporting here is deliberate. A discarded value must be
+    distinguishable from "detection found nothing" (FR-008), and a filter that
+    could not run must be distinguishable from one that ran and said no -- a
+    guard that silently does not run is the defect this feature fixes.
+    """
+    from darnit.context.detect_filter import FilterDecision, apply_filter
+
+    expression = getattr(definition, "detect_filter", None)
+    if not expression:
+        return detected
+
+    outcome = apply_filter(expression, detected.value, key)
+
+    if outcome.decision is FilterDecision.KEEP:
+        if outcome.discarded:
+            logger.info(
+                "Context '%s': kept %d detected value(s), discarded %d by detect_filter (%s)",
+                key,
+                len(outcome.value) if isinstance(outcome.value, list) else 1,
+                len(outcome.discarded),
+                ", ".join(repr(d) for d in outcome.discarded[:3]),
+            )
+        detected.value = outcome.value
+        return detected
+
+    if outcome.decision is FilterDecision.REJECT:
+        logger.info(
+            "Context '%s': detected value rejected by detect_filter, leaving the key unset (%s)",
+            key,
+            ", ".join(repr(d) for d in outcome.discarded[:3]),
+        )
+    else:
+        logger.warning(
+            "Context '%s': detect_filter could not be evaluated, so the "
+            "detected value is discarded rather than accepted (%s)",
+            key,
+            outcome.reason,
+        )
+    return None
 
 
 def _run_detect_pipeline(

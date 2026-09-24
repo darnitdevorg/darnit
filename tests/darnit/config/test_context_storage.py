@@ -18,6 +18,7 @@ from darnit.config.context_storage import (
     get_raw_value,
     is_context_confirmed,
     load_context,
+    load_stored_context,
     save_context_value,
     save_context_values,
 )
@@ -324,7 +325,9 @@ context:
 context:
   security_contact: security@example.org
 """)
-        result = load_context(str(tmp_path))
+        # Placeholder address the shipped detect_filter rejects; this test is
+        # about parsing storage, so read it unfiltered.
+        result = load_stored_context(str(tmp_path))
 
         assert "security" in result
         assert "security_contact" in result["security"]
@@ -367,13 +370,20 @@ class TestSaveNewContextFields:
         assert result == "MAINTAINERS.md"
 
     def test_save_security_contact(self, tmp_path: Path) -> None:
-        """Test saving security contact."""
+        """Test saving security contact.
+
+        The sample address is deliberately NOT `security@example.com`. That key
+        declares a `detect_filter` rejecting example.com, which has been live
+        since feature 039, so the placeholder now reads back as unset -- see
+        tests/darnit/config/test_context_filtering.py for that behaviour. This
+        test is about the save/read round-trip, not the filter.
+        """
         (tmp_path / ".git").mkdir()
 
-        save_context_value(str(tmp_path), "security_contact", "security@example.com")
+        save_context_value(str(tmp_path), "security_contact", "security@real-project.org")
 
         result = get_raw_value(str(tmp_path), "security_contact")
-        assert result == "security@example.com"
+        assert result == "security@real-project.org"
 
     def test_save_governance_model(self, tmp_path: Path) -> None:
         """Test saving governance model."""
