@@ -440,6 +440,58 @@ class TestRepoDepsPin:
         result = repro_deps_pinned_handler({}, make_ctx(tmp_path))
         assert result.status == HandlerResultStatus.FAIL
 
+    def test_inconclusive_with_pyproject_name_only(self, tmp_path: Path) -> None:
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'pkg'\n")
+        result = repro_deps_pinned_handler({}, make_ctx(tmp_path))
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
+
+    def test_fail_with_pyproject_dependencies(self, tmp_path: Path) -> None:
+        (tmp_path / "pyproject.toml").write_text(
+            "[project]\nname = 'pkg'\ndependencies = ['requests>=2.0']\n"
+        )
+        result = repro_deps_pinned_handler({}, make_ctx(tmp_path))
+        assert result.status == HandlerResultStatus.FAIL
+
+    def test_fail_with_pyproject_dynamic_dependencies(self, tmp_path: Path) -> None:
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'pkg'\ndynamic = ['dependencies']\n")
+        result = repro_deps_pinned_handler({}, make_ctx(tmp_path))
+        assert result.status == HandlerResultStatus.FAIL
+
+    def test_fail_with_only_environment_yml(self, tmp_path: Path) -> None:
+        (tmp_path / "environment.yml").write_text("name: env\n")
+        result = repro_deps_pinned_handler({}, make_ctx(tmp_path))
+        assert result.status == HandlerResultStatus.FAIL
+
+    def test_fail_with_only_environment_yaml(self, tmp_path: Path) -> None:
+        (tmp_path / "environment.yaml").write_text("name: env\n")
+        result = repro_deps_pinned_handler({}, make_ctx(tmp_path))
+        assert result.status == HandlerResultStatus.FAIL
+
+    def test_fail_with_only_pipfile(self, tmp_path: Path) -> None:
+        (tmp_path / "Pipfile").write_text("[packages]\n")
+        result = repro_deps_pinned_handler({}, make_ctx(tmp_path))
+        assert result.status == HandlerResultStatus.FAIL
+
+    def test_pass_with_conda_lock_yml(self, tmp_path: Path) -> None:
+        (tmp_path / "conda-lock.yml").write_text("lock")
+        result = repro_deps_pinned_handler({}, make_ctx(tmp_path))
+        assert result.status == HandlerResultStatus.PASS
+
+    def test_pass_with_pdm_lock(self, tmp_path: Path) -> None:
+        (tmp_path / "pdm.lock").write_text("lock")
+        result = repro_deps_pinned_handler({}, make_ctx(tmp_path))
+        assert result.status == HandlerResultStatus.PASS
+
+    def test_pass_with_bun_lockb(self, tmp_path: Path) -> None:
+        (tmp_path / "bun.lockb").write_text("lock")
+        result = repro_deps_pinned_handler({}, make_ctx(tmp_path))
+        assert result.status == HandlerResultStatus.PASS
+
+    def test_pass_with_pnpm_lock_yaml(self, tmp_path: Path) -> None:
+        (tmp_path / "pnpm-lock.yaml").write_text("lock")
+        result = repro_deps_pinned_handler({}, make_ctx(tmp_path))
+        assert result.status == HandlerResultStatus.PASS
+
     def test_inconclusive_with_no_deps(self, tmp_path: Path) -> None:
         result = repro_deps_pinned_handler({}, make_ctx(tmp_path))
         assert result.status == HandlerResultStatus.INCONCLUSIVE

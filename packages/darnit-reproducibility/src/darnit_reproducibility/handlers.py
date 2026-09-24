@@ -6,6 +6,7 @@ rather than falsely passing or failing.
 """
 
 import re
+import tomllib
 from pathlib import Path
 from typing import Any, Literal
 
@@ -18,6 +19,20 @@ logger = get_logger("darnit_reproducibility.handlers")
 
 
 _MAX_EVIDENCE_EXAMPLES = 10
+
+
+def _pyproject_declares_dependencies(path: Path) -> bool:
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+        return True
+
+    project = data.get("project", {})
+    return bool(
+        project.get("dependencies")
+        or project.get("optional-dependencies")
+        or "dependencies" in project.get("dynamic", [])
+    )
 
 
 def _inspect_requirements(path: Path) -> tuple[Any, str | None]:
@@ -67,8 +82,12 @@ def repro_deps_pinned_handler(
         "uv.lock": "uv (Python)",
         "poetry.lock": "Poetry (Python)",
         "Pipfile.lock": "Pipenv (Python)",
+        "pdm.lock": "PDM (Python)",
+        "conda-lock.yml": "conda-lock",
         "package-lock.json": "npm (Node)",
         "yarn.lock": "Yarn (Node)",
+        "pnpm-lock.yaml": "pnpm (Node)",
+        "bun.lockb": "Bun (Node)",
         "Cargo.lock": "Cargo (Rust)",
         "go.sum": "Go modules",
         "Gemfile.lock": "Bundler (Ruby)",
@@ -79,6 +98,10 @@ def repro_deps_pinned_handler(
     loose_manifests = {
         "requirements.txt": "pip requirements",
         "setup.py": "setuptools",
+        "pyproject.toml": "pyproject (Python)",
+        "Pipfile": "Pipenv (Python)",
+        "environment.yml": "conda environment",
+        "environment.yaml": "conda environment",
         "package.json": "npm package",
         "Cargo.toml": "Cargo manifest",
         "go.mod": "Go module",
@@ -91,9 +114,12 @@ def repro_deps_pinned_handler(
 
     found_loose = []
     for filename, label in loose_manifests.items():
-        if (path / filename).exists():
-            # Only flag loose if no corresponding lock exists
-            found_loose.append(f"{filename} ({label})")
+        candidate = path / filename
+        if not candidate.exists():
+            continue
+        if filename == "pyproject.toml" and not _pyproject_declares_dependencies(candidate):
+            continue
+        found_loose.append(f"{filename} ({label})")
 
     evidence: dict[str, Any] = {
         "lock_files_found": found_locks,
