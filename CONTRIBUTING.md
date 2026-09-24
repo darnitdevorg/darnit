@@ -43,6 +43,35 @@ See the [Getting Started Guide](GETTING_STARTED.md) for:
 - [Framework Development](docs/getting-started/framework-development.md) — Working on the core framework
 - [Implementation Development](docs/getting-started/implementation-development.md) — Creating compliance plugins
 
+## Reporting Issues
+
+When opening an issue, choose the appropriate GitHub issue type for the
+request. Bug reports and feature requests are tracked using issue types rather
+than `bug` and `enhancement` labels.
+
+New issues are labeled `needs triage` until they have been reviewed by a
+maintainer. Maintainers may apply additional labels to identify the affected
+module or interface:
+
+- `module-core` — darnit core
+- `module-baseline` — OpenSSF Baseline module
+- `module-amber` — Amber module
+- `module-gittuf` — gittuf module
+- `module-reproducibility` — Reproducibility module
+- `interface-cli` — command-line interface
+- `interface-mcp` — MCP interface
+
+Each module gets its own `module-<name>` label as it lands.
+
+The `need info` label indicates that more information is needed from the issue
+reporter. Issues that are closed without implementation may use
+`closed-invalid` or `closed-wontfix` to indicate the reason for closure.
+
+The full label set is defined in [`.github/labels.yml`](.github/labels.yml) and
+applied by a sync workflow when that file lands on `main`. Add or change labels
+there rather than in the GitHub web interface, so the taxonomy stays reviewable
+and does not drift from the issue templates.
+
 ## MCP Server Development
 
 Most day-to-day darnit development happens through the local MCP server rather

@@ -82,5 +82,5 @@ jobs:
             - Tests: \`tests/darnit/context/test_dot_project_upstream.py\`
             - Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
             `,
-              labels: ['upstream-spec-change', 'maintenance']
+              labels: ['upstream-spec-change', 'needs triage']
             });

@@ -1,7 +1,8 @@
 ---
 name: Feature Request
 about: Suggest a new feature or improvement
-labels: enhancement
+labels: "needs triage"
+type: Feature
 ---
 
 ## Description

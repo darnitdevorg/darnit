@@ -1,7 +1,8 @@
 ---
 name: Bug Report
 about: Report a bug in darnit
-labels: bug
+labels: "needs triage"
+type: Bug
 ---
 
 ## Description

@@ -1,0 +1,28 @@
+name: Triage Label
+
+# Issue templates can only label issues opened through them. This covers blank
+# issues, issues opened via the API, and issues transferred in from elsewhere.
+on:
+  issues:
+    types: [opened, transferred]
+
+permissions: {}
+
+jobs:
+  needs-triage:
+    name: Apply needs triage
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+
+    steps:
+      - name: Add needs triage
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: ['needs triage'],
+            });
