@@ -299,7 +299,8 @@ auto_detect = true
 required = false
 hint_sources = ["SECURITY.md", ".github/SECURITY.md"]
 allow_sieve_hints = true
-# Filter: reject detected values containing "example.com" or "example.org"
+# Rejects detected values containing "example.com" or "example.org" before
+# they can be stored or offered for confirmation (feature 039).
 detect_filter = "!value.contains('example.com') && !value.contains('example.org')"
 
 [context.governance_model]
