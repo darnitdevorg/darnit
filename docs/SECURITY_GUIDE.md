@@ -291,19 +291,9 @@ Darnit's plugin system allows extending functionality through third-party packag
 
 ### Current Status
 
-> **Note:** The Sigstore verification module (`darnit.core.verification`) is fully
-> implemented and tested, but it is **not yet integrated into plugin discovery**.
-> Currently, `discover_implementations()` loads all entry-point plugins
-> unconditionally. The verification infrastructure is ready to be wired in — see
-> the TODO in `packages/darnit/src/darnit/core/discovery.py`.
->
-> In practice this means:
-> - **Local development**: All plugins load without verification (expected behavior).
-> - **Published releases**: The GitHub Actions publish workflow supports Sigstore
->   attestations (`attestations: true`), but the release trigger is not yet active.
-> - **Production hardening**: Once verification is integrated into discovery and
->   packages are published with attestations, set `allow_unsigned = false` to
->   enforce signed-only plugins.
+Discovery enforces plugin verification using `[plugins]` in `.baseline.toml`. If that policy is absent, unsigned plugins still load and a warning is logged. Set `allow_unsigned = false` when signatures should be required.
+
+Per-plugin tables are keyed by the installed distribution name (`darnit-baseline`), not the entry-point slug (`openssf-baseline`). An explicit `allow_unsigned` there overrides the global setting; if omitted, the global value applies.
 
 ### Plugin Verification with Sigstore
 

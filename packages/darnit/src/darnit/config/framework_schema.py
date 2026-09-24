@@ -1035,8 +1035,7 @@ class PluginConfig(BaseModel):
     # Examples: ">=1.0.0", ">=1.0.0,<2.0.0", "==1.2.3"
     version: str | None = None
 
-    # Whether to allow unsigned packages (default: False for security)
-    # If False, plugin must be signed via Sigstore
+    # Unset inherits the global `[plugins]` value.
     allow_unsigned: bool = False
 
     # List of trusted Sigstore publishers (GitHub orgs or users)
@@ -1210,7 +1209,8 @@ class PluginsConfig(BaseModel):
     Example TOML:
         ```toml
         [plugins]
-        # Plugin definitions follow
+        allow_unsigned = false
+        trusted_publishers = ["https://github.com/my-org"]
 
         [plugins."darnit-baseline"]
         version = ">=1.0.0"
@@ -1224,8 +1224,8 @@ class PluginsConfig(BaseModel):
     # Dictionary of plugin name -> configuration
     plugins: dict[str, PluginConfig] = Field(default_factory=dict)
 
-    # Global settings for plugin loading
-    # If True, allow any unsigned plugin (overrides per-plugin setting)
+    # Written as `allow_unsigned` under `[plugins]`. Whether it was set at all
+    # distinguishes strict from unconfigured; see resolve_allow_unsigned.
     global_allow_unsigned: bool = False
 
     # Global list of trusted publishers (merged with per-plugin lists)
@@ -1238,45 +1238,86 @@ class PluginsConfig(BaseModel):
     def transform_toml_structure(cls, data: Any) -> Any:
         """Transform TOML [plugins.name] structure to {plugins: {name: ...}}.
 
-        TOML structure:
-            [plugins."darnit-baseline"]
-            version = ">=1.0.0"
-            ...
+        ``{"allow_unsigned": False, "darnit-baseline": {...}}`` becomes
+        ``{"global_allow_unsigned": False, "plugins": {"darnit-baseline": {...}}}``
 
-        Gets parsed as:
-            {"darnit-baseline": {"version": ">=1.0.0", ...}}
-
-        We transform to:
-            {"plugins": {"darnit-baseline": {"version": ">=1.0.0", ...}}}
+        ``allow_unsigned``/``trusted_publishers`` are canonical, ``global_*``
+        are aliases. A global key is emitted only when one was supplied, so
+        ``model_fields_set`` still records what was set.
         """
         if isinstance(data, dict):
             # If 'plugins' already exists, pass through as-is
             if "plugins" in data:
                 return data
 
-            # Check for global settings
-            global_allow_unsigned = data.pop("global_allow_unsigned", False)
-            global_trusted_publishers = data.pop("global_trusted_publishers", [])
+            # Must not mutate the caller's dict.
+            remaining = dict(data)
+            result: dict[str, Any] = {}
+
+            for canonical, alias in (
+                ("allow_unsigned", "global_allow_unsigned"),
+                ("trusted_publishers", "global_trusted_publishers"),
+            ):
+                # Pop both so neither is mistaken for a plugin name.
+                has_canonical = canonical in remaining
+                canonical_value = remaining.pop(canonical, None)
+                has_alias = alias in remaining
+                alias_value = remaining.pop(alias, None)
+
+                if has_canonical:
+                    result[alias] = canonical_value
+                elif has_alias:
+                    result[alias] = alias_value
 
             # Treat remaining keys as plugin names
             plugins = {}
-            for key, value in list(data.items()):
+            for key, value in remaining.items():
                 if isinstance(value, dict):
                     plugins[key] = value
 
-            return {
-                "plugins": plugins,
-                "global_allow_unsigned": global_allow_unsigned,
-                "global_trusted_publishers": global_trusted_publishers,
-            }
+            result["plugins"] = plugins
+            return result
         return data
 
     def get_plugin_config(self, name: str) -> PluginConfig | None:
         """Get configuration for a specific plugin."""
         return self.plugins.get(name)
 
+    def resolve_allow_unsigned(self, plugin_name: str | None = None) -> bool | None:
+        """Resolve the configured ``allow_unsigned`` policy.
+
+        Only an explicitly-set per-plugin value overrides the global one, so a
+        version-only block inherits instead of forcing strict. None means
+        nothing was configured.
+        """
+        if plugin_name is not None:
+            plugin = self.plugins.get(plugin_name)
+            if plugin is not None and "allow_unsigned" in plugin.model_fields_set:
+                return plugin.allow_unsigned
+
+        if "global_allow_unsigned" in self.model_fields_set:
+            return self.global_allow_unsigned
+
+        return None
+
+    def resolve_trusted_publishers(self, plugin_name: str | None = None) -> list[str]:
+        """Union the global trusted publishers with a plugin's own, in order."""
+        publishers = list(self.global_trusted_publishers)
+
+        if plugin_name is not None:
+            plugin = self.plugins.get(plugin_name)
+            if plugin is not None:
+                for publisher in plugin.trusted_publishers:
+                    if publisher not in publishers:
+                        publishers.append(publisher)
+
+        return publishers
+
     def is_plugin_trusted(self, name: str, publisher: str | None = None) -> bool:
         """Check if a plugin/publisher combination is trusted.
+
+        Shares the resolvers with the verification config adapter so both
+        read one configuration the same way.
 
         Args:
             name: Plugin package name
@@ -1285,24 +1326,19 @@ class PluginsConfig(BaseModel):
         Returns:
             True if the plugin is allowed to run
         """
-        plugin_config = self.plugins.get(name)
+        allow_unsigned = self.resolve_allow_unsigned(name)
+        if allow_unsigned is None:
+            # Unconfigured is permissive, matching VerificationConfig.
+            allow_unsigned = True
 
-        # Check global unsigned allowance
-        if self.global_allow_unsigned:
-            return True
-
-        # Check per-plugin unsigned allowance
-        if plugin_config and plugin_config.allow_unsigned:
+        if allow_unsigned:
             return True
 
         # If no publisher, unsigned is not allowed
         if publisher is None:
             return False
 
-        # Check trusted publishers (global + per-plugin)
-        trusted = set(self.global_trusted_publishers)
-        if plugin_config:
-            trusted.update(plugin_config.trusted_publishers)
+        trusted = self.resolve_trusted_publishers(name)
 
         # Empty trusted list means any valid signature is accepted
         if not trusted:

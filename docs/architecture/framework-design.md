@@ -829,7 +829,9 @@ api_check = "darnit_baseline.checks:check_branch_protection"
 
 ### 6.6 Plugin Verification with Sigstore
 
-Plugins can be verified using Sigstore-based attestations:
+Discovery verifies plugins before loading them. Policy comes from the operator's `.baseline.toml`, not from a plugin's own framework TOML. With no `[plugins]` policy, unsigned plugins load (backward compatible). Set `allow_unsigned = false` to require signatures.
+
+`global_allow_unsigned` and `global_trusted_publishers` are accepted aliases. Prefer the names below.
 
 ```toml
 # .baseline.toml
@@ -840,27 +842,33 @@ trusted_publishers = [
     "https://github.com/openssf",
 ]
 
+# Distribution name, not the entry-point slug.
 [plugins."darnit-baseline"]
-version = ">=1.0.0"
+allow_unsigned = true
+trusted_publishers = ["https://github.com/my-org"]
 ```
+
+An explicit per-plugin `allow_unsigned` overrides the global value. If that key is omitted, the plugin inherits the global value, or the permissive default when neither is set. `trusted_publishers` lists are combined. An empty list keeps the verifier's existing "any valid signature" behavior.
 
 **Configuration Fields**:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `allow_unsigned` | `bool` | Allow plugins without Sigstore signatures (default: false in production) |
-| `trusted_publishers` | `list[str]` | OIDC identities to trust (GitHub org URLs, email addresses) |
+| `allow_unsigned` | `bool` | Allow plugins without Sigstore signatures. Unset means allow. |
+| `trusted_publishers` | `list[str]` | Extra OIDC identities to trust (GitHub org URLs, org names, email addresses) |
 
 **Default Trusted Publishers**:
+- `https://github.com/darnitdevorg`
 - `https://github.com/kusari-oss`
 - `https://github.com/kusaridev`
 
 **Verification Flow**:
-1. Plugin loaded via entry point
-2. Check for Sigstore attestation on PyPI
-3. Verify signature against trusted publishers
-4. Cache verification result (24h TTL)
-5. If unsigned and `allow_unsigned = false`, reject plugin
+1. Read `[plugins]` from `.baseline.toml`
+2. Resolve the installed distribution name for each entry point
+3. Check for a Sigstore attestation on PyPI
+4. Match the publisher against the combined trusted list
+5. Cache the verification result (24h TTL)
+6. If unsigned and `allow_unsigned` is false, skip the plugin
 
 ---
 

@@ -295,9 +295,11 @@ This works but bypasses the signing chain. Fine for development; not recommended
 
 ## Signing and the `[plugins]` trust config
 
-darnit's plugin discovery has an optional verification step backed by Sigstore. By default it allows unsigned plugins (for backward compatibility), but production deployments can flip the switch.
+Discovery verifies plugins with Sigstore before loading them. Policy is read from the project's `.baseline.toml`. With no `[plugins]` settings, unsigned plugins are allowed. Set `allow_unsigned = false` to require signatures.
 
-Configure trust in your project's `.baseline.toml`:
+Per-plugin keys are distribution names. An explicit `allow_unsigned` overrides the global value; otherwise the plugin inherits it. `trusted_publishers` from both levels are combined.
+
+Configure trust in `.baseline.toml`:
 
 ```toml
 [plugins]

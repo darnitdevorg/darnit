@@ -483,7 +483,7 @@ def run_sieve_audit(
     # other entry point and their controls silently fell through to `manual`.
     from darnit.core.discovery import register_implementation_handlers
 
-    register_implementation_handlers(resolved_fw)
+    register_implementation_handlers(resolved_fw, local_path)
 
     # Resolve controls: use provided list or load from TOML/registry
     if controls is not None:
@@ -494,7 +494,7 @@ def run_sieve_audit(
             try:
                 from darnit.core.discovery import get_implementation
 
-                impl = get_implementation(resolved_fw)
+                impl = get_implementation(resolved_fw, local_path)
                 if impl and hasattr(impl, "register_controls"):
                     impl.register_controls()
                     logger.debug(f"Registered Python control definitions from {impl.name}")
