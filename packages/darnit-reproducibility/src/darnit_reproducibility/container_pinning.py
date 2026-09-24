@@ -87,13 +87,13 @@ def _classify_reference(image: str, known_stages: set[str]) -> PinKind:
 
 
 def parse(text: str) -> list[ImageReference]:
-    """Parse ``FROM`` lines, resolving stage aliases before classifying.
+    """Parse ``FROM`` lines, classifying each against the stages defined above it.
 
-    Stage names are collected across the whole file first: a `FROM builder`
-    line can only be recognized once `... AS builder` has been seen, and in a
-    well-formed Dockerfile that always precedes it.
+    Docker resolves `FROM builder` to a stage only when `... AS builder`
+    appeared on an earlier line. A line's own alias and any forward reference
+    name a registry image, so counting them as stages would be a false PASS.
     """
-    raw_lines: list[tuple[str, str, str | None]] = []
+    refs: list[ImageReference] = []
     known_stages: set[str] = set()
 
     for line in text.splitlines():
@@ -107,23 +107,23 @@ def parse(text: str) -> list[ImageReference]:
         alias = _AS_CLAUSE.search(rest)
         if alias:
             stage_name = alias.group("name")
-            known_stages.add(stage_name.lower())
             rest = rest[: alias.start()].strip()
 
         # `FROM --platform=... image` -- drop flags, keep the image.
         parts = [p for p in rest.split() if not p.startswith("--")]
         image = parts[0] if parts else ""
-        raw_lines.append((line.strip(), image, stage_name))
-
-    return [
-        ImageReference(
-            raw=raw,
-            image=image or None,
-            stage_name=stage,
-            pin=_classify_reference(image, known_stages),
+        refs.append(
+            ImageReference(
+                raw=line.strip(),
+                image=image or None,
+                stage_name=stage_name,
+                pin=_classify_reference(image, known_stages),
+            )
         )
-        for raw, image, stage in raw_lines
-    ]
+        if stage_name:
+            known_stages.add(stage_name.lower())
+
+    return refs
 
 
 def classify(text: str) -> ContainerReport:

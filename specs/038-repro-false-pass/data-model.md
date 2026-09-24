@@ -33,7 +33,7 @@ One `FROM` line, after stage names are resolved.
 
 `DIGEST`, `SCRATCH`, and `STAGE_REF` are acceptable. `TAG` and `INDETERMINATE` are not: a tag is mutable, and an unresolvable reference cannot be claimed as pinned (Principle II).
 
-**Stage names must be collected before classification.** A multi-stage build introduces names with `AS`, and later `FROM <name>` lines refer to them. Classifying those as images produces a spurious finding on every multi-stage Dockerfile -- including `packaging/container/Dockerfile` in this repository.
+**Stage names must be known before the lines that reference them.** Each line is classified against the stages defined on earlier lines only; its own alias and forward references are registry images. A multi-stage build introduces names with `AS`, and later `FROM <name>` lines refer to them. Classifying those as images produces a spurious finding on every multi-stage Dockerfile -- including `packaging/container/Dockerfile` in this repository.
 
 ### `ContainerClassification`
 

@@ -81,6 +81,19 @@ class TestStageReferences:
         ]
         assert "builder" not in report.unpinned
 
+    @pytest.mark.unit
+    def test_own_alias_does_not_make_the_image_a_stage(self) -> None:
+        """`FROM node AS node` pulls node:latest; its own alias is not an earlier stage."""
+        report = classify("FROM node AS node\nRUN true\n")
+        assert report.classification is ContainerClassification.UNPINNED
+        assert report.unpinned == ["node"]
+
+    @pytest.mark.unit
+    def test_forward_reference_is_a_registry_image(self) -> None:
+        """Docker resolves a name to a stage only if the stage was defined earlier."""
+        kinds = _kinds(f"FROM builder\nFROM alpine@{DIGEST} AS builder\n")
+        assert kinds == [PinKind.TAG, PinKind.DIGEST]
+
 
 class TestFileClassification:
     """BE-7 and the file-level rules."""

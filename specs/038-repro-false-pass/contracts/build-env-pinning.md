@@ -18,7 +18,7 @@ An image reference is acceptable when it carries `@sha256:<64 hex>`, is `scratch
 
 ### C-3: Stage references are not images
 
-Stage names introduced by `AS <name>` MUST be collected before classification and excluded from it. A later `FROM <name>` refers to a stage, not a registry image, and reporting it as unpinned is a false finding on every multi-stage build.
+Stage names introduced by `AS <name>` MUST be excluded from classification on later lines only. A later `FROM <name>` refers to a stage, not a registry image, and reporting it as unpinned is a false finding on every multi-stage build. A line's own alias (`FROM node AS node`) and a forward reference (`FROM builder` above `... AS builder`) name registry images and MUST be classified as such; treating them as stages is a false PASS.
 
 ### C-4: The weakest reference governs
 
