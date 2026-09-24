@@ -16,11 +16,18 @@ _GH_CLI_MISSING_MESSAGE = (
     "and run 'gh auth login' to authenticate."
 )
 
-# Feature 032: `gh` emits HTTP-error lines on stderr with the prefix
+# Feature 032: `go-gh` emits HTTP-error lines on stderr with the prefix
 # ``HTTP <code>: <message>``; we parse the first three digits to surface
 # the status code to callers that need to distinguish 404 from 403 from
-# 5xx. Format is stable across gh 2.x per research decision R-001.
-_HTTP_STATUS_RE = re.compile(r"^HTTP (\d{3}):", re.MULTILINE)
+# 5xx. `gh api`'s own error formatter puts the code at the END of the
+# line instead: ``<message> (HTTP <code>)``, e.g. ``Not Found (HTTP 404)``,
+# further wrapped by the root command as ``gh: <message> (HTTP <code>)``.
+# Format is stable across gh 2.x per research decision R-001.
+_HTTP_STATUS_RE = re.compile(
+    r"^HTTP (\d{3}):"  # go-gh SDK `HTTPError.Error()`: "HTTP 404: Not Found (...)"
+    r"|\(HTTP (\d{3})\)",  # `gh api` subcommand's own formatter: "gh: Not Found (HTTP 404)"
+    re.MULTILINE,
+)
 
 
 def gh_api_with_status(
@@ -32,7 +39,9 @@ def gh_api_with_status(
 
     * On 2xx: ``(parsed_json, status_code, "")``. ``parsed_json`` may be a
       dict OR a list -- the rulesets endpoint returns a top-level list.
-    * On non-2xx with a parseable ``HTTP <code>:`` prefix in stderr:
+    * On non-2xx with a parseable status code in stderr -- either the
+      go-gh SDK's ``HTTP <code>: <message>`` prefix or the `gh api`
+      subcommand's own ``<message> (HTTP <code>)`` suffix form --:
       ``(None, status_code, stderr_message)``.
     * On subprocess-not-found, JSON-decode failure on a 2xx body, or any
       other pre-response failure: ``(None, 0, error_message)``. Callers
@@ -61,7 +70,7 @@ def gh_api_with_status(
     stderr = (result.stderr or "").strip()
     match = _HTTP_STATUS_RE.search(stderr)
     if match:
-        status = int(match.group(1))
+        status = int(match.group(1) or match.group(2))
         return None, status, stderr
     return None, 0, stderr or f"gh api failed with exit code {result.returncode}"
 
