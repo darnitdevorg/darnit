@@ -1,7 +1,9 @@
 """Unit tests for the `gh_api_with_status` helper (feature 032).
 
 Mocks `subprocess.run` directly to exercise the helper's status-code
-extraction from `gh`'s stderr. Verifies the thin-wrapper contracts of
+extraction from `gh`'s stderr, which comes in two independently-formatted
+shapes depending on which part of the `gh`/`go-gh` codebase produced it
+(see the suffix-form tests below). Verifies the thin-wrapper contracts of
 `gh_api` and `gh_api_safe` are preserved.
 """
 
@@ -69,6 +71,20 @@ class TestGhApiStatus:
         with patch("darnit.core.utils.subprocess.run", return_value=_cp(1, "", "HTTP 502: Bad Gateway")):
             _, status, _ = utils.gh_api_with_status("/x")
         assert status == 502
+
+    def test_404_parses_from_gh_api_subcommand_suffix_form(self):
+        stderr = "gh: Not Found (HTTP 404)"
+        with patch("darnit.core.utils.subprocess.run", return_value=_cp(1, "", stderr)):
+            body, status, err = utils.gh_api_with_status("/x")
+        assert body is None
+        assert status == 404
+        assert "HTTP 404" in err
+
+    def test_403_parses_from_gh_api_subcommand_suffix_form(self):
+        stderr = "gh: Must have push access to view repository collaborators. (HTTP 403)"
+        with patch("darnit.core.utils.subprocess.run", return_value=_cp(1, "", stderr)):
+            _, status, _ = utils.gh_api_with_status("/x")
+        assert status == 403
 
     def test_unparseable_stderr_returns_zero(self):
         with patch("darnit.core.utils.subprocess.run", return_value=_cp(1, "", "connection reset by peer")):
