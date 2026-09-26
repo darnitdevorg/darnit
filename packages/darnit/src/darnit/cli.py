@@ -196,6 +196,10 @@ def format_audit_metadata_text(metadata: dict) -> str:
     if ignored:
         lines.append(f"Ignored repository settings ({len(ignored)}):")
         lines.extend(f"  {s['file']}: {s['key']} (belongs in {s['new_home']})" for s in ignored)
+    unknown = metadata.get("unknown_assertions") or []
+    if unknown:
+        lines.append(f"Claims about unknown controls, ignored ({len(unknown)}):")
+        lines.extend(f"  {a['location']}: {a['control_id']}" for a in unknown)
     return "\n".join(lines)
 
 
@@ -332,11 +336,12 @@ def cmd_audit(args: argparse.Namespace) -> int:
         # built-in handlers.
         framework_name=config.framework_name,
         operator_config=operator_config,
+        target=target,
     )
 
     from darnit.tools.audit import audit_report_metadata
 
-    metadata = audit_report_metadata(operator_config, str(repo_path), target)
+    metadata = audit_report_metadata(operator_config, str(repo_path), target, config.framework_name)
 
     # Output results
     if args.output == "json":
@@ -785,6 +790,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         local_path=repo_path,
         owner=owner,
         repo=repo,
+        target=target,
         framework_name=getattr(args, "framework", None),
         level=getattr(args, "level", 3),
     )

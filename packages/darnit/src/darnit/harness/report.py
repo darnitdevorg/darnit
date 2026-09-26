@@ -102,6 +102,7 @@ class HarnessReport(BaseModel):
     operator_config: dict[str, Any] | None = None
     trust: dict[str, Any] | None = None
     ignored_repository_settings: list[dict[str, str]] = Field(default_factory=list)
+    unknown_assertions: list[dict[str, Any]] = Field(default_factory=list)
     # exit_class NOT emitted in JSON body per RF-8; kept as an attribute
     # for the driver but excluded from serialization.
     exit_class: int = Field(default=0, exclude=True)

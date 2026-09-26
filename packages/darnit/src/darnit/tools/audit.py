@@ -228,38 +228,248 @@ def _apply_operator_controls(
     return result
 
 
-def _known_control_ids(controls: list[Any], framework_name: str | None, operator: "OperatorConfig") -> set[str]:
+def _load_framework(framework_name: str | None) -> Any | None:
+    framework_path = _get_framework_config_path(framework_name)
+    if not framework_path:
+        return None
+    from darnit.config import load_framework_config
+
+    return load_framework_config(framework_path)
+
+
+def _known_control_ids(controls: list[Any], framework: Any | None, operator: "OperatorConfig") -> set[str]:
     """Control ids the framework (and operator configuration) define, for validating claims."""
     known = {c.control_id for c in controls} | set(operator.custom_controls)
-    framework_path = _get_framework_config_path(framework_name)
-    if framework_path:
-        from darnit.config import load_framework_config
-
-        known |= set(load_framework_config(framework_path).controls)
+    if framework is not None:
+        known |= set(framework.controls)
     return known
 
 
 def audit_report_metadata(
-    operator_config: "LoadedOperatorConfig", local_path: str, target: str | None = None
+    operator_config: "LoadedOperatorConfig",
+    local_path: str,
+    target: str | None = None,
+    framework_name: str | None = None,
 ) -> dict[str, Any]:
     """Report fields every driver adds to an audit's output (feature 040).
 
     ``operator_config`` names the operator configuration the run used,
     ``trust`` records whether the audited repository is trusted and why
-    (``target`` is the repository identity the operator named, if any), and
+    (``target`` is the repository identity the operator named, if any),
     ``ignored_repository_settings`` lists tool settings the audited
-    repository tried to supply, each with the place it now belongs.
+    repository tried to supply, each with the place it now belongs, and
+    ``unknown_assertions`` lists not-applicable claims about controls
+    ``framework_name`` does not define (they have no effect).
     """
     from darnit.config.merger import find_ignored_repository_settings
+    from darnit.trust.assertions import unknown_assertions
     from darnit.trust.decision import decide_trust
 
+    framework = _load_framework(framework_name)
+    unknown = (
+        unknown_assertions(local_path, _known_control_ids([], framework, operator_config.config))
+        if framework is not None
+        else []
+    )
     return {
         "operator_config": operator_config.report(),
         "trust": decide_trust(target, operator_config.config, local_path).report(),
         "ignored_repository_settings": [
             asdict(setting) for setting in find_ignored_repository_settings(Path(local_path))
         ],
+        "unknown_assertions": [
+            {"control_id": a.control_id, "location": a.location, "asserted_by": a.asserted_by, "reason": a.reason}
+            for a in unknown
+        ],
     }
+
+
+def _stored_context_locations(local_path: str, stored_context: dict[str, Any]) -> dict[str, str]:
+    """Where each stored context value was read from in the audited repository."""
+    from darnit.config.context_storage import flatten_user_context
+
+    if (Path(local_path) / ".project" / "darnit.yaml").is_file():
+        base = ".project/darnit.yaml:context"
+    else:
+        base = ".project/project.yaml:x-openssf-baseline.context"
+    return {key: f"{base}.{key}" for key in flatten_user_context(stored_context)}
+
+
+def _applicability_context(
+    local_path: str, owner: str | None, project_store: Any = None
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, str]]:
+    """Context for ``when``-clause evaluation, as an audit sees it.
+
+    Returns the project context, the values darnit detected itself, and the
+    keys of the project context whose value came from the audited
+    repository, mapped to where each was read (feature 040, FR-013a).
+    """
+    # Auto-detected values (platform, ci_provider, language) are overridden
+    # by user-confirmed values from .project.yaml.
+    project_context: dict[str, Any] = {}
+    detected_context: dict[str, Any] = {}
+    repository_values: dict[str, str] = {}
+    try:
+        from darnit.context.auto_detect import collect_auto_context
+
+        project_context = collect_auto_context(local_path)
+        detected_context = collect_auto_context(local_path, include_stored=False)
+    except Exception as e:
+        logger.debug("Auto-detect context failed (non-fatal): %s", e)
+
+    # Inject .project/ mapper context (between auto-detect and user-confirmed).
+    # Merge order: auto-detect < .project/ mapper < user-confirmed.
+    try:
+        from darnit.context.dot_project_mapper import DotProjectMapper
+
+        mapper = DotProjectMapper(
+            local_path,
+            owner=owner or "",
+            project_store=project_store,
+        )
+        mapper_context = mapper.get_context()
+        if mapper_context:
+            project_context.update(mapper_context)
+            repository_values.update(dict.fromkeys(mapper_context, ".project/project.yaml"))
+            logger.debug(
+                "Injected %d .project/ mapper context variables",
+                len(mapper_context),
+            )
+    except Exception as e:
+        logger.debug(".project/ mapper context failed (non-fatal): %s", e)
+
+    try:
+        from darnit.config.context_storage import (
+            flatten_user_context,
+            load_context,
+        )
+
+        user_context = load_context(local_path)
+        if user_context:
+            # User-confirmed values override auto-detected and mapper ones
+            project_context.update(flatten_user_context(user_context))
+            repository_values.update(_stored_context_locations(local_path, user_context))
+    except Exception as e:
+        logger.debug("User context load failed (non-fatal): %s", e)
+
+    return project_context, detected_context, repository_values
+
+
+def prepare_claim_confirmations(
+    local_path: str,
+    control_ids: list[str],
+    framework_name: str,
+    operator: "OperatorConfig",
+    owner: str | None,
+    repo: str | None,
+) -> dict[str, tuple[Any, str, dict[str, Any] | None]]:
+    """The current claim, evidence digest, and any contradiction for each claimed control.
+
+    Used to record an operator-side confirmation bound to what the claim and
+    its evidence say now (feature 040, FR-019). Controls without a
+    not-applicable claim are absent from the result.
+
+    Raises:
+        ValueError: ``framework_name`` cannot be resolved.
+    """
+    from darnit.trust.assertions import (
+        collect_assertions,
+        context_value_assertions,
+        evidence_digest,
+        find_contradiction,
+        observe_context_evidence,
+    )
+
+    framework = _load_framework(framework_name)
+    if framework is None:
+        raise ValueError(f"framework {framework_name!r} could not be loaded")
+    wanted = set(control_ids)
+    claims = {
+        a.control_id: a
+        for a in collect_assertions(local_path, _known_control_ids([], framework, operator))
+        if a.control_id in wanted
+    }
+    context, detected, repository_values = _applicability_context(local_path, owner)
+    controls_when = {
+        cid: framework.controls[cid].when for cid in wanted if cid in framework.controls and framework.controls[cid].when
+    }
+    for claim in context_value_assertions(controls_when, context, detected, repository_values):
+        claims.setdefault(claim.control_id, claim)
+
+    prepared = {}
+    for control_id, claim in claims.items():
+        control = framework.controls.get(control_id)
+        contradicted_by = getattr(control, "contradicted_by", None)
+        evidence = None
+        contradiction = None
+        if contradicted_by is not None:
+            definition = framework.context.definitions.get(contradicted_by.context)
+            pipeline = definition.detect if definition is not None else None
+            evidence = observe_context_evidence(contradicted_by, pipeline, local_path, owner, repo)
+            contradiction = find_contradiction(contradicted_by, evidence) if evidence.obtained else None
+        prepared[control_id] = (claim, evidence_digest(claim, evidence), contradiction)
+    return prepared
+
+
+def _assess_assertions(
+    local_path: str,
+    controls: list[Any],
+    known_control_ids: set[str],
+    framework: Any | None,
+    trust: Any,
+    owner: str | None,
+    repo: str | None,
+    context: dict[str, Any],
+    detected: dict[str, Any],
+    repository_values: dict[str, str],
+) -> dict[str, Any]:
+    """Outcome of every not-applicable claim about the audited controls (feature 040, FR-013a to FR-019)."""
+    from darnit.trust.assertions import (
+        assess_assertion,
+        collect_assertions,
+        context_value_assertions,
+        observe_context_evidence,
+    )
+    from darnit.trust.confirmations import load_confirmations
+
+    audited = {c.control_id for c in controls}
+    claims = {a.control_id: a for a in collect_assertions(local_path, known_control_ids) if a.control_id in audited}
+    controls_when = {c.control_id: c.metadata.get("when") for c in controls if c.metadata.get("when")}
+    for claim in context_value_assertions(controls_when, context, detected, repository_values):
+        claims.setdefault(claim.control_id, claim)
+    if not claims:
+        return {}
+
+    identity = trust.repository
+    repository = identity.canonical if identity is not None and identity.trusted_eligible else None
+    confirmations = load_confirmations(repository, checkout=local_path) if repository else []
+    definitions = framework.context.definitions if framework is not None else {}
+    evidence: dict[str, Any] = {}
+
+    def observer(contradicted_by: Any) -> Any:
+        def observe() -> Any:
+            key = contradicted_by.context
+            if key not in evidence:
+                definition = definitions.get(key)
+                pipeline = definition.detect if definition is not None else None
+                evidence[key] = observe_context_evidence(contradicted_by, pipeline, local_path, owner, repo)
+            return evidence[key]
+
+        return observe
+
+    assessments = {}
+    for control_id, claim in claims.items():
+        control = framework.controls.get(control_id) if framework is not None else None
+        contradicted_by = getattr(control, "contradicted_by", None)
+        assessments[control_id] = assess_assertion(
+            claim,
+            trusted=trust.trusted and framework is not None,
+            contradicted_by=contradicted_by,
+            observe=observer(contradicted_by) if contradicted_by is not None else None,
+            repository=repository,
+            confirmations=confirmations,
+        )
+    return assessments
 
 
 def load_effective_audit_config(local_path: str, framework_name: str | None = None) -> Any | None:
@@ -437,6 +647,7 @@ def run_checks(
     apply_user_config: bool = True,
     framework_name: str | None = None,
     operator_config: "LoadedOperatorConfig | None" = None,
+    target: str | None = None,
 ) -> tuple[list[CheckResult], dict[str, str]]:
     """Run OSPS baseline checks at the specified level.
 
@@ -456,13 +667,13 @@ def run_checks(
             If None, resolved from .baseline.toml in the repo.
         operator_config: Operator configuration for this run. If None,
             resolved from the launch options for ``local_path``.
+        target: Repository identity the operator named, for the trust decision.
 
     Returns:
         Tuple of (check_results, skipped_controls)
-        where skipped_controls maps control_id to reason
+        where skipped_controls maps each control whose not-applicable claim
+        was honored to the claim's reason
     """
-    skipped_controls = get_excluded_control_ids(local_path) if apply_user_config else {}
-
     results, _summary = run_sieve_audit(
         owner,
         repo,
@@ -473,8 +684,14 @@ def run_checks(
         stop_on_llm=stop_on_llm,
         framework_name=framework_name,
         operator_config=operator_config,
+        target=target,
     )
 
+    skipped_controls = {
+        r["id"]: r["assertion"].get("reason") or "asserted not applicable"
+        for r in results
+        if (r.get("assertion") or {}).get("outcome") == "honored"
+    }
     return results, skipped_controls
 
 
@@ -491,6 +708,7 @@ def run_sieve_audit(
     stop_on_llm: bool = True,
     framework_name: str | None = None,
     operator_config: "LoadedOperatorConfig | None" = None,
+    target: str | None = None,
 ) -> tuple[list[CheckResult], dict[str, int]]:
     """Run a sieve-based compliance audit -- the canonical audit pipeline.
 
@@ -512,9 +730,11 @@ def run_sieve_audit(
         controls: Pre-loaded ControlSpec objects. If None, loads from
             TOML/registry automatically.
         tags: Tag filters to apply to controls (e.g., ["domain=AC"]).
-        apply_user_config: Report the repository's not-applicable claims
-            (``.project/darnit.yaml``, ``.baseline.toml``) with each claimed
-            control's result.
+        apply_user_config: Evaluate the repository's not-applicable claims
+            (``.project/darnit.yaml``, ``.baseline.toml``, and applicability-
+            changing ``.project/`` context values) and report each with the
+            claimed control's result. When False, claims are ignored and
+            every control is evaluated normally.
         stop_on_llm: Return PENDING_LLM for LLM consultation.
         framework_name: Explicit framework name (e.g., "openssf-baseline").
             Required when controls is None and multiple implementations are
@@ -522,6 +742,8 @@ def run_sieve_audit(
         operator_config: Operator configuration for this run. If None,
             resolved from the launch options for ``local_path``; an
             unusable operator configuration raises ``OperatorConfigError``.
+        target: Repository identity the operator named. It decides whether
+            the repository is trusted, and so whether claims can be honored.
 
     Returns:
         Tuple of (results, summary) where results is a list of check result
@@ -597,7 +819,8 @@ def run_sieve_audit(
             all_controls.extend(registry.get_specs_by_level(lvl))
         all_controls = _apply_operator_controls(all_controls, resolved_fw, operator)
 
-    known_control_ids = _known_control_ids(all_controls, resolved_fw, operator)
+    framework = _load_framework(resolved_fw)
+    known_control_ids = _known_control_ids(all_controls, framework, operator)
 
     # Filter by level (applies to both provided and loaded controls)
     all_controls = [c for c in all_controls if (c.level or 0) <= level]
@@ -613,15 +836,6 @@ def run_sieve_audit(
             all_controls = filter_controls(all_controls, tag_filters)
         except ImportError:
             logger.debug("Filtering module not available, skipping tag filter")
-
-    # Feature 040: not-applicable claims are the repository's assertions.
-    # They are reported with each claimed control's result; the control is
-    # still evaluated and counts normally until the claim can be honored.
-    assertions: dict[str, Any] = {}
-    if apply_user_config:
-        from darnit.trust.assertions import collect_assertions
-
-        assertions = {a.control_id: a for a in collect_assertions(local_path, known_control_ids)}
 
     orchestrator = SieveOrchestrator(stop_on_llm=stop_on_llm)
     from darnit.core.models import ExecutionContext
@@ -644,17 +858,6 @@ def run_sieve_audit(
         logger.debug("MCP allowlist load failed (non-fatal): %s", err)
     all_results: list[CheckResult] = []
 
-    # Build project_context once for all controls.
-    # Auto-detected values (platform, ci_provider, language) are overridden
-    # by user-confirmed values from .project.yaml.
-    project_context: dict[str, Any] = {}
-    try:
-        from darnit.context.auto_detect import collect_auto_context
-
-        project_context = collect_auto_context(local_path)
-    except Exception as e:
-        logger.debug("Auto-detect context failed (non-fatal): %s", e)
-
     # Feature 033: resolve the pluggable-stores bundle for this audit
     # run. Zero-config produces filesystem defaults (constitution I).
     from darnit.stores.selection import resolve_stores
@@ -663,41 +866,32 @@ def run_sieve_audit(
     stores_bundle = resolve_stores(stores_config, repo_path=Path(local_path))
     execution_context.stores = stores_bundle
 
-    # Inject .project/ mapper context (between auto-detect and user-confirmed).
-    # Merge order: auto-detect < .project/ mapper < user-confirmed.
-    try:
-        from darnit.context.dot_project_mapper import DotProjectMapper
-
-        mapper = DotProjectMapper(
-            local_path,
-            owner=owner or "",
-            project_store=stores_bundle.project,
-        )
-        mapper_context = mapper.get_context()
-        if mapper_context:
-            project_context.update(mapper_context)
-            logger.debug(
-                "Injected %d .project/ mapper context variables",
-                len(mapper_context),
-            )
-    except Exception as e:
-        logger.debug(".project/ mapper context failed (non-fatal): %s", e)
-
-    try:
-        from darnit.config.context_storage import (
-            flatten_user_context,
-            load_context,
-        )
-
-        user_context = load_context(local_path)
-        if user_context:
-            # User-confirmed values override auto-detected and mapper ones
-            project_context.update(flatten_user_context(user_context))
-    except Exception as e:
-        logger.debug("User context load failed (non-fatal): %s", e)
+    project_context, detected_context, repository_values = _applicability_context(
+        local_path, owner, stores_bundle.project
+    )
 
     if project_context:
         logger.info("Project context for when-clause evaluation: %s", project_context)
+
+    # Feature 040: not-applicable claims -- explicit ones and context values
+    # read from the repository that make a control not applicable -- count
+    # only when honored (trusted, reasoned, uncontradicted, or confirmed).
+    assessments: dict[str, Any] = {}
+    if apply_user_config:
+        from darnit.trust.decision import decide_trust
+
+        assessments = _assess_assertions(
+            local_path,
+            all_controls,
+            known_control_ids,
+            framework,
+            decide_trust(target, operator, local_path),
+            owner,
+            repo,
+            project_context,
+            detected_context,
+            repository_values,
+        )
 
     # Create UnifiedLocator for .project/-aware file resolution
     locator = None
@@ -711,9 +905,37 @@ def run_sieve_audit(
     except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as e:
         logger.warning(f"Failed to create UnifiedLocator: {e}")
 
+    from darnit.sieve.models import SieveResult
+    from darnit.sieve.orchestrator import evaluate_when_clause
+    from darnit.trust.assertions import neutral_context
+
     # Run sieve verification for each control
     for spec in all_controls:
         control_id = spec.control_id
+        assessment = assessments.get(control_id)
+        honored = assessment is not None and assessment.outcome == "honored"
+        when_clause = spec.metadata.get("when")
+
+        if honored and assessment.assertion.origin == "explicit_claim":
+            result_dict = SieveResult(
+                control_id=control_id,
+                status="N/A",
+                message=f"Not applicable (asserted by {assessment.assertion.asserted_by})",
+                level=spec.level,
+                source="assertion",
+                authority="asserted",
+            ).to_legacy_dict()
+            if when_clause:
+                result_dict["when"] = when_clause
+            result_dict["assertion"] = assessment.report()
+            all_results.append(result_dict)
+            continue
+
+        control_context = project_context
+        if when_clause and not honored:
+            neutral = neutral_context(when_clause, project_context, detected_context, repository_values)
+            if not evaluate_when_clause(when_clause, project_context) and evaluate_when_clause(when_clause, neutral):
+                control_context = neutral
 
         # Create check context
         context = CheckContext(
@@ -729,7 +951,7 @@ def run_sieve_audit(
             },
             locator=locator,
             locator_config=spec.locator_config,
-            project_context=dict(project_context),
+            project_context=dict(control_context),
             execution_context=execution_context,
         )
 
@@ -741,13 +963,13 @@ def run_sieve_audit(
 
         # Attach when clause metadata so the formatter can hint about
         # controls that may become N/A once project context is confirmed.
-        when_clause = spec.metadata.get("when")
         if when_clause:
             result_dict["when"] = when_clause
 
-        assertion = assertions.get(control_id)
-        if assertion is not None:
-            result_dict["assertion"] = assertion.report("pending")
+        if assessment is not None:
+            if honored and result_dict.get("status") == "N/A":
+                result_dict["authority"] = "asserted"
+            result_dict["assertion"] = assessment.report()
 
         all_results.append(result_dict)
 
@@ -799,7 +1021,9 @@ def calculate_compliance(results: list[dict[str, Any]], level: int = 3) -> dict[
     has explicitly PASSED.  Controls that are WARN (needs verification),
     FAIL, ERROR, or PENDING_LLM are all treated as non-compliant because
     we cannot confirm the control is satisfied.  Only N/A controls are
-    excluded from the calculation.
+    excluded from the calculation; a not-applicable claim is N/A only when
+    honored.  A level with a pending claim is not compliant until the claim
+    is confirmed (feature 040); a contradicted claim has no effect.
 
     Args:
         results: List of check results
@@ -811,9 +1035,11 @@ def calculate_compliance(results: list[dict[str, Any]], level: int = 3) -> dict[
     compliance = {}
 
     for lvl in range(1, level + 1):
-        level_results = [r for r in results if r.get("level", 1) == lvl and r.get("status") != "N/A"]
+        at_level = [r for r in results if r.get("level", 1) == lvl]
+        pending = any((r.get("assertion") or {}).get("outcome") == "pending" for r in at_level)
+        level_results = [r for r in at_level if r.get("status") != "N/A"]
         all_pass = all(r.get("status") == "PASS" for r in level_results)
-        compliance[lvl] = all_pass and len(level_results) > 0
+        compliance[lvl] = all_pass and len(level_results) > 0 and not pending
 
     return compliance
 
@@ -972,6 +1198,11 @@ def format_results_markdown(
             n_fail = sum(1 for r in lvl_results if r.get("status") == "FAIL")
             n_warn = sum(1 for r in lvl_results if r.get("status") == "WARN")
             n_other = len(lvl_results) - n_pass - n_fail - n_warn
+            n_pending_claims = sum(
+                1
+                for r in results
+                if r.get("level", 1) == lvl and (r.get("assertion") or {}).get("outcome") == "pending"
+            )
             parts = []
             if n_fail:
                 parts.append(f"{n_fail} failed")
@@ -979,6 +1210,8 @@ def format_results_markdown(
                 parts.append(f"{n_warn} unverified")
             if n_other:
                 parts.append(f"{n_other} error/pending")
+            if n_pending_claims:
+                parts.append(f"{n_pending_claims} not-applicable claim(s) pending confirmation")
             detail = ", ".join(parts) if parts else "no controls passed"
             lines.append(f"- **Level {lvl}:** ❌ Not Compliant ({detail})")
 
@@ -1047,11 +1280,7 @@ def format_results_markdown(
 
                 assertion = r.get("assertion")
                 if assertion:
-                    lines.append(
-                        f"  - *Asserted not applicable* by {assertion['asserted_by']} in "
-                        f"`{assertion['location']}` ({assertion.get('reason') or 'no reason given'}): "
-                        f"{assertion['outcome']}"
-                    )
+                    lines.extend(_format_assertion_markdown(assertion))
 
                 # Show pass history (tier progression through the cascade)
                 pass_history = r.get("pass_history")
@@ -1240,6 +1469,43 @@ def _format_audit_metadata_markdown(audit_metadata: dict[str, Any] | None) -> li
         lines.append("*The audited repository cannot configure darnit. These settings were not applied:*")
         lines.append("")
         lines.extend(f"- `{s['file']}`: `{s['key']}` (belongs in {s['new_home']})" for s in ignored)
+    unknown = audit_metadata.get("unknown_assertions") or []
+    if unknown:
+        lines.extend(["", "## Claims About Unknown Controls", ""])
+        lines.append("*These not-applicable claims name controls this framework does not define and have no effect:*")
+        lines.append("")
+        lines.extend(f"- `{a['control_id']}` in `{a['location']}` (asserted by {a['asserted_by']})" for a in unknown)
+    return lines
+
+
+_ASSERTION_LABELS = {
+    "honored": "Asserted not applicable, honored",
+    "pending": "Asserted not applicable, pending confirmation; counts as non-compliant",
+    "contradicted": "Asserted not applicable, contradicted by evidence; claim ignored",
+}
+
+
+def _format_assertion_markdown(assertion: dict[str, Any]) -> list[str]:
+    """Lines describing a control's not-applicable claim and its outcome (feature 040)."""
+    outcome = assertion.get("outcome", "pending")
+    origin = assertion.get("origin", "explicit_claim")
+    source = f" via `{origin}`" if origin != "explicit_claim" else ""
+    lines = [
+        f"  - *{_ASSERTION_LABELS.get(outcome, outcome)}*: by {assertion.get('asserted_by')} in "
+        f"`{assertion.get('location')}`{source} ({assertion.get('reason') or 'no reason given'})"
+    ]
+    confirmation = assertion.get("confirmation")
+    if confirmation:
+        lines.append(
+            f"  - *Confirmed* by {confirmation['confirmed_by']} at {confirmation['confirmed_at']} "
+            f"(expires {confirmation['expires_at']})"
+        )
+    contradiction = assertion.get("contradiction")
+    if contradiction:
+        lines.append(
+            f"  - *Contradicted*: {contradiction['summary']} "
+            f"({contradiction['evidence_source']}, {contradiction['observed_at']})"
+        )
     return lines
 
 

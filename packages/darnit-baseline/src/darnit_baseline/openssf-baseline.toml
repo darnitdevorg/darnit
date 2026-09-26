@@ -332,7 +332,7 @@ prompt = "Does this project make official releases?"
 hint = "Set to true if you publish versioned releases"
 no_detect_hint = "No releases, version tags, or release workflows were found in the repository. Do you plan to publish versioned releases in the future? Release-related controls will be marked N/A if set to false."
 examples = ["true", "false"]
-affects = ["OSPS-BR-02.01", "OSPS-BR-03.01", "OSPS-BR-04.01"]
+affects = ["OSPS-BR-02.01", "OSPS-BR-04.01", "OSPS-BR-06.01", "OSPS-LE-03.02", "OSPS-SA-03.01"]
 store_as = "build.has_releases"
 auto_detect = true
 required = false
@@ -1099,6 +1099,7 @@ name = "UniqueVersionIdentifiers"
 description = "Assign unique version identifiers to each official release"
 tags = { level = 2, domain = "BR", build = true, releases = true }
 when = { has_releases = true, platform = "github" }
+contradicted_by = { context = "has_releases", when_value = true }
 
 # ExecPass: Check GitHub releases have unique version tags
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-BR-02.01"
@@ -1145,6 +1146,7 @@ name = "ReleaseChangelog"
 description = "Releases include log of functional and security modifications"
 tags = { level = 2, domain = "BR", build = true, releases = true, documentation = true }
 when = { has_releases = true, platform = "github" }
+contradicted_by = { context = "has_releases", when_value = true }
 help_md = """This control can be satisfied in two ways:
 
 1. **GitHub Releases with notes** (preferred for projects using GitHub releases):
@@ -1271,6 +1273,7 @@ name = "SignReleases"
 description = "Sign releases or provide signed manifest containing hashes"
 tags = { level = 2, domain = "BR", build = true, releases = true, security = true }
 when = { has_releases = true }
+contradicted_by = { context = "has_releases", when_value = true }
 
 # Pattern: Check workflows or docs for signing mentions
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-BR-06.01"
@@ -1961,6 +1964,7 @@ name = "LicenseInReleases"
 description = "License file included in releases"
 tags = { level = 1, domain = "LE", legal = true, license = true }
 when = { has_releases = true, platform = "github" }
+contradicted_by = { context = "has_releases", when_value = true }
 inferred_from = "OSPS-LE-03.01"  # If LICENSE exists in repo, GitHub auto-includes it in source archives
 
 # Check that release assets include license file
@@ -4249,6 +4253,7 @@ name = "SecurityAssessment"
 description = "Perform security assessment before major releases"
 tags = { level = 2, domain = "SA", security = true, releases = true }
 when = { has_releases = true }
+contradicted_by = { context = "has_releases", when_value = true }
 
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-SA-03.01"
 location_hint = "SECURITY.md"
@@ -4484,6 +4489,10 @@ description = """Record user-confirmed project context in .project.yaml.
 - `has_releases`: Boolean - does project make official releases?
 - `is_library`: Boolean - is this a library consumed by other projects?
 - `has_compiled_assets`: Boolean - does project release compiled binaries?
+- `confirm_not_applicable`: Control IDs whose pending not-applicable claim the
+  operator confirms, with `owner`, `repo` (and `host` when not github.com)
+  naming the repository. Recorded operator-side. Only on the operator's
+  explicit instruction; never confirm a claim on your own judgment.
 
 **Examples:**
 ```
@@ -4492,6 +4501,9 @@ confirm_project_data(maintainers="CODEOWNERS")
 
 # Explicit maintainer list
 confirm_project_data(maintainers=["@alice", "@bob"])
+
+# Confirm a pending not-applicable claim (operator instruction only)
+confirm_project_data(confirm_not_applicable=["OSPS-BR-02.01"], owner="org", repo="name")
 
 # Multiple context values
 confirm_project_data(

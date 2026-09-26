@@ -10,10 +10,17 @@ NOT change; the addition is field-additive within v1 per Q2 clarification.
 Consumers with permissive schemas continue to load unchanged; consumers
 with field-strict validation must update. See
 specs/025-rfc0001-stage1/contracts/attestation-authority-field.md.
+
+Feature 040: a result that is N/A because a not-applicable claim was honored
+carries ``authority: asserted``, ``asserted_by``, and, when a confirmation
+made it count, ``confirmed_by`` and ``confirmed_at``. Level compliance uses
+the framework's shared rule (``darnit.tools.audit.calculate_compliance``).
 """
 
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Optional
+
+from darnit.tools.audit import calculate_compliance
 
 if TYPE_CHECKING:
     from darnit.config.schema import ProjectConfig
@@ -57,6 +64,7 @@ def build_assessment_predicate(
     errors = [r for r in results if r["status"] == "ERROR"]
 
     # Calculate level compliance
+    compliance = calculate_compliance(results, min(level, 3))
     levels = {}
     for lvl in [1, 2, 3]:
         if lvl <= level:
@@ -68,7 +76,7 @@ def build_assessment_predicate(
                 "total": lvl_total,
                 "passed": lvl_passes,
                 "failed": lvl_fails,
-                "compliant": lvl_fails == 0,
+                "compliant": compliance[lvl],
             }
 
     # Determine highest compliant level
@@ -109,6 +117,16 @@ def build_assessment_predicate(
         # misleading claim Constitution Principle II forbids.
         if r.get("error_class") is not None:
             control["error_class"] = r["error_class"]
+        assertion = r.get("assertion")
+        if assertion and assertion.get("outcome") == "honored" and r["status"] == "N/A":
+            control["authority"] = "asserted"
+            control["asserted_by"] = assertion.get("asserted_by")
+            confirmation = assertion.get("confirmation")
+            if confirmation:
+                control["confirmed_by"] = confirmation.get("confirmed_by")
+                control["confirmed_at"] = confirmation.get("confirmed_at")
+        elif assertion:
+            control["assertion_outcome"] = assertion.get("outcome")
         controls.append(control)
 
     # Build configuration section
@@ -117,13 +135,9 @@ def build_assessment_predicate(
         "adapters_used": adapters_used or ["builtin"],
     }
 
-    if project_config:
-        excluded = []
-        for control_id, override in project_config.control_overrides.items():
-            if override.get("status") == "n/a":
-                excluded.append(control_id)
-        if excluded:
-            config_section["excluded_controls"] = excluded
+    excluded = [c["id"] for c in controls if c.get("authority") == "asserted" and c["status"] == "N/A"]
+    if excluded:
+        config_section["excluded_controls"] = excluded
 
     predicate = {
         "assessor": {"name": "openssf-baseline-mcp", "version": "0.1.0", "uri": "https://github.com/ossf/baseline-mcp"},

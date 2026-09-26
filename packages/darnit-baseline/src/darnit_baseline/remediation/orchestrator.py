@@ -26,7 +26,6 @@ from darnit.remediation.context_validator import (
     check_context_requirements,
 )
 from darnit.remediation.executor import RemediationExecutor
-from darnit.sieve.project_context import is_control_applicable
 from darnit.tools import (
     calculate_compliance,
     prepare_audit,
@@ -241,6 +240,7 @@ def _run_baseline_checks(
     repo: str | None,
     local_path: str,
     level: int = 3,
+    target: str | None = None,
 ) -> tuple[AuditResult | None, str | None]:
     """Run baseline checks and return audit result or error.
 
@@ -249,6 +249,7 @@ def _run_baseline_checks(
         repo: Repository name
         local_path: Path to local repository
         level: Maximum OSPS level to check (1, 2, or 3)
+        target: Repository identity the operator named, for the trust decision
 
     Returns:
         Tuple of (AuditResult, None) on success or (None, error_message) on failure
@@ -262,6 +263,7 @@ def _run_baseline_checks(
     all_results, skipped_controls = run_checks(
         owner, repo, resolved_path, default_branch, level,
         framework_name="openssf-baseline",
+        target=target,
     )
 
     # Calculate summary
@@ -379,16 +381,6 @@ def _apply_control_remediation(
                 "result": prompt_output,
                 "declarative": False,
             }
-
-    # --- Applicability check (.project.yaml overrides) ---
-    applicable, reason = is_control_applicable(local_path, control_id)
-    if not applicable:
-        return {
-            "control_id": control_id,
-            "status": "skipped",
-            "description": description,
-            "message": reason,
-        }
 
     # --- Try executable declarative remediation ---
     remediation_config, templates = _get_declarative_remediation(control_id)
@@ -868,9 +860,12 @@ def remediate_audit_findings(
         return f"❌ Error: {path_error}"
     local_path = resolved_path
 
-    # Auto-detect owner/repo (origin first)
     from darnit.core.utils import detect_owner_repo
+    from darnit.trust.decision import target_from_owner_repo
 
+    target = target_from_owner_repo(owner, repo)
+
+    # Auto-detect owner/repo (origin first)
     if not owner or not repo:
         detected_owner, detected_repo = detect_owner_repo(local_path)
         owner = owner or detected_owner
@@ -906,6 +901,7 @@ def remediate_audit_findings(
     # automatically" and existing content may be correct.
     # ------------------------------------------------------------------
     failed_ids: set[str] | None = None
+    audit_results: list[dict[str, Any]] = []
     error: str | None = None
 
     try:
@@ -917,18 +913,28 @@ def remediate_audit_findings(
 
     if cache is not None:
         logger.info("Using cached audit results (skipping redundant audit)")
+        audit_results = cache["results"]
         failed_ids = {
-            r.get("id", "") for r in cache["results"] if r.get("status") == "FAIL"
+            r.get("id", "") for r in audit_results if r.get("status") == "FAIL"
         }
     else:
         logger.info("No cached audit results, running audit")
         audit_result, error = _run_baseline_checks(
-            owner=owner, repo=repo, local_path=local_path
+            owner=owner, repo=repo, local_path=local_path, target=target
         )
         if not error and audit_result:
+            audit_results = audit_result.all_results
             failed_ids = {
-                r.get("id", "") for r in audit_result.all_results if r.get("status") == "FAIL"
+                r.get("id", "") for r in audit_results if r.get("status") == "FAIL"
             }
+
+    # Feature 040: only an honored not-applicable claim exempts a control
+    # from remediation; pending and contradicted claims never do.
+    honored_claims = {
+        r.get("id", ""): r["assertion"].get("reason") or "asserted not applicable"
+        for r in audit_results
+        if (r.get("assertion") or {}).get("outcome") == "honored"
+    }
 
     # Apply profile filter to failed_ids
     if profile_ids is not None and failed_ids is not None:
@@ -1009,6 +1015,14 @@ def remediate_audit_findings(
     # ------------------------------------------------------------------
     results = []
     for control_id in remediable_ids:
+        if control_id in honored_claims:
+            results.append({
+                "control_id": control_id,
+                "status": "skipped",
+                "description": framework.controls[control_id].description or control_id,
+                "message": f"Not applicable (asserted, honored): {honored_claims[control_id]}",
+            })
+            continue
         result = _apply_control_remediation(
             control_id=control_id,
             local_path=local_path,

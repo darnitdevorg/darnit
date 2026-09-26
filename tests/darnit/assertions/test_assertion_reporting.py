@@ -171,3 +171,53 @@ def test_markdown_names_the_claim() -> None:
     assert "@alice" in md
     assert "docs live elsewhere" in md
     assert "pending" in md
+
+
+@pytest.mark.unit
+def test_markdown_shows_each_outcome_with_its_evidence() -> None:
+    confirmation = {"confirmed_by": "alice", "confirmed_at": "2026-09-01T00:00:00Z", "expires_at": "2027-02-28T00:00:00Z"}
+    contradiction = {
+        "evidence_source": "context.has_releases detection (detect_pipeline:file_exists)",
+        "observed_at": "2026-09-01T00:00:00Z",
+        "summary": "has_releases detected as True, which contradicts the not-applicable claim",
+    }
+    results = [
+        {"id": "A", "status": "N/A", "details": "", "level": 1, "assertion": {
+            **_expected_assertion("project"), "outcome": "honored", "confirmation": confirmation}},
+        {"id": "B", "status": "FAIL", "details": "", "level": 1, "assertion": {
+            **_expected_assertion("project"), "outcome": "contradicted", "contradiction": contradiction}},
+        {"id": "C", "status": "PASS", "details": "", "level": 1, "assertion": _expected_assertion("project")},
+    ]
+    summary = {"PASS": 1, "FAIL": 1, "WARN": 0, "N/A": 1, "ERROR": 0, "PENDING_LLM": 0, "total": 3}
+
+    md = format_results_markdown("example", "repo", results, summary, {1: False}, 1)
+
+    assert "Asserted not applicable, honored" in md
+    assert "Confirmed* by alice" in md
+    assert "contradicted by evidence" in md
+    assert "has_releases detected as True" in md
+    assert "pending confirmation" in md
+    assert "1 not-applicable claim(s) pending confirmation" in md
+
+
+@pytest.mark.integration
+def test_claims_about_unknown_controls_are_reported(tmp_path: Path) -> None:
+    from darnit.config.operator.loader import resolve_operator_config
+    from darnit.tools.audit import _format_audit_metadata_markdown, audit_report_metadata
+
+    repo = _repo(tmp_path, readme=True, claim_file="project")
+    (repo / ".project" / "darnit.yaml").write_text(
+        "controls:\n  OSPS-XX-99.99:\n    status: n/a\n    reason: x\n", encoding="utf-8"
+    )
+
+    metadata = audit_report_metadata(resolve_operator_config(repo), str(repo), None, "openssf-baseline")
+
+    assert metadata["unknown_assertions"] == [
+        {
+            "control_id": "OSPS-XX-99.99",
+            "location": ".project/darnit.yaml:controls.OSPS-XX-99.99",
+            "asserted_by": "repository content",
+            "reason": "x",
+        }
+    ]
+    assert "OSPS-XX-99.99" in "\n".join(_format_audit_metadata_markdown(metadata))

@@ -67,8 +67,11 @@ version: "1.0"
 class TestProjectConfigIntegration:
     """Test that remediation respects .project/ control overrides."""
 
-    def test_skip_remediation_for_na_control(self, tmp_path):
-        """Test that remediation is skipped when a control is marked N/A."""
+    def test_raw_na_claim_does_not_skip_remediation(self, tmp_path):
+        """A .project/ N/A claim alone does not skip remediation (feature 040, T053).
+
+        Only an honored claim, known from the audit result, exempts a control.
+        """
         _create_project_config(
             tmp_path,
             control_overrides={
@@ -84,7 +87,7 @@ class TestProjectConfigIntegration:
             dry_run=True,
         )
 
-        assert result["status"] == "skipped"
+        assert result["status"] != "skipped"
         assert result["control_id"] == "OSPS-VM-02.01"
 
     def test_remediation_proceeds_for_applicable_control(self, tmp_path):
@@ -145,8 +148,8 @@ class TestProjectConfigIntegration:
 class TestDeclarativeRemediationWithProjectConfig:
     """Test that declarative remediation works with .project/ integration."""
 
-    def test_declarative_remediation_respects_na(self, tmp_path):
-        """Test that declarative TOML remediation respects N/A status."""
+    def test_declarative_remediation_ignores_raw_na_claim(self, tmp_path):
+        """A raw .project/ N/A claim does not skip declarative remediation (feature 040, T053)."""
         _create_project_config(
             tmp_path,
             control_overrides={
@@ -162,8 +165,7 @@ class TestDeclarativeRemediationWithProjectConfig:
             dry_run=True,
         )
 
-        assert result["status"] == "skipped"
-        assert "Contributing guide maintained externally" in str(result)
+        assert result["status"] != "skipped"
 
 
 class TestConfigUpdateAfterRemediation:

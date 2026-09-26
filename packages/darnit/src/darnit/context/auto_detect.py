@@ -335,7 +335,7 @@ _LANGUAGE_TO_ECOSYSTEM: dict[str, str] = {
 }
 
 
-def collect_auto_context(local_path: str) -> dict[str, Any]:
+def collect_auto_context(local_path: str, *, include_stored: bool = True) -> dict[str, Any]:
     """Collect all auto-detectable context. Returns flat dict with bare keys.
 
     Only includes keys where detection succeeded. Keys use the same names
@@ -344,6 +344,9 @@ def collect_auto_context(local_path: str) -> dict[str, Any]:
     Persisted context from ``.project/darnit.yaml`` is loaded first and takes
     precedence over auto-detection. This ensures that user-confirmed values
     from ``confirm_project_context`` are used in subsequent audits.
+
+    With ``include_stored=False`` only detected values are returned; stored
+    values are repository content (feature 040, FR-013a).
     """
     context: dict[str, Any] = {}
 
@@ -351,7 +354,7 @@ def collect_auto_context(local_path: str) -> dict[str, Any]:
     try:
         from darnit.config.context_storage import load_context
 
-        stored = load_context(local_path)
+        stored = load_context(local_path) if include_stored else {}
         for category_values in stored.values():
             for key, ctx_val in category_values.items():
                 context[key] = ctx_val.value

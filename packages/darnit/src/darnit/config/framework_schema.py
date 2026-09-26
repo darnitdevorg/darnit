@@ -641,6 +641,20 @@ class TemplateConfig(BaseModel):
 # =============================================================================
 
 
+class ContradictedBy(BaseModel):
+    """Evidence that contradicts a not-applicable claim about a control.
+
+    ``context`` names a context key whose detection pipeline supplies the
+    evidence; when detection yields ``when_value``, the claim is contradicted.
+    When detection cannot produce a value, the claim stays pending.
+    """
+
+    context: str
+    when_value: Any
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class ControlConfig(BaseModel):
     """Configuration for a single compliance control.
 
@@ -689,6 +703,11 @@ class ControlConfig(BaseModel):
     # Example: when = { has_releases = true }  →  skip if project has no releases
     # Missing context keys → control runs normally (conservative)
     when: dict[str, Any] | None = None
+
+    # Evidence that refutes a not-applicable claim about this control
+    # (feature 040, FR-017). Example:
+    #   contradicted_by = { context = "has_releases", when_value = true }
+    contradicted_by: ContradictedBy | None = None
 
     # Control dependencies
     # depends_on: ordering only — this control runs after listed controls

@@ -52,6 +52,8 @@ def _compact_result(r: dict[str, Any]) -> dict[str, Any]:
     }
     if r.get("error_class") is not None:
         compact["error_class"] = r["error_class"]
+    if r.get("assertion") is not None:
+        compact["assertion"] = r["assertion"]
     return compact
 
 
@@ -227,9 +229,10 @@ def audit_openssf_baseline(
         stop_on_llm=True,
         framework_name="openssf-baseline",
         operator_config=operator_config,
+        target=target,
     )
 
-    metadata = audit_report_metadata(operator_config, str(repo_path), target)
+    metadata = audit_report_metadata(operator_config, str(repo_path), target, "openssf-baseline")
     warning = registration_scope_warning(repo_path)
     if warning:
         metadata["warnings"] = [warning]
@@ -618,6 +621,10 @@ def confirm_project_data(
     maintainers: list[str] | str | None = None,
     security_contact: str | None = None,
     governance_model: str | None = None,
+    confirm_not_applicable: list[str] | None = None,
+    owner: str | None = None,
+    repo: str | None = None,
+    host: str | None = None,
 ) -> str:
     """
     Record user-confirmed project data in .project.yaml.
@@ -635,6 +642,9 @@ def confirm_project_data(
     - `has_releases`: Boolean - does project make official releases?
     - `is_library`: Boolean - is this a library consumed by other projects?
     - `has_compiled_assets`: Boolean - does project release compiled binaries?
+    - `confirm_not_applicable`: Control IDs whose pending not-applicable claim the
+      operator confirms, with `owner`, `repo` (and `host` when not github.com)
+      naming the repository. Only on the operator's explicit instruction.
 
     **Examples:**
     ```
@@ -667,6 +677,11 @@ def confirm_project_data(
         maintainers=maintainers,
         security_contact=security_contact,
         governance_model=governance_model,
+        confirm_not_applicable=confirm_not_applicable,
+        owner=owner,
+        repo=repo,
+        host=host,
+        framework_name="openssf-baseline",
     )
 
 
@@ -1208,6 +1223,7 @@ def generate_attestation(
             level=level,
             framework_name="openssf-baseline",
             operator_config=operator_config,
+            target=target,
         )
         compliance = calculate_compliance(results, level)
         audit_result = _build_audit_result(
@@ -1631,7 +1647,9 @@ def audit_org(
         level=level,
         framework_name="openssf-baseline",
         audit_metadata={
-            k: result[k] for k in ("operator_config", "trust", "ignored_repository_settings") if k in result
+            k: result[k]
+            for k in ("operator_config", "trust", "ignored_repository_settings", "unknown_assertions")
+            if k in result
         },
     )
 

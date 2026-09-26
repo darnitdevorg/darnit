@@ -82,6 +82,7 @@ def audit(state: AuditState) -> AuditState:
             stop_on_llm=True,
             apply_user_config=True,
             framework_name=state.framework_name,
+            target=state.target,
         )
         state.audit_results = results
         state.error = None

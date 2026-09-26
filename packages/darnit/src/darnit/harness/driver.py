@@ -275,6 +275,7 @@ class HarnessRun:
                 apply_user_config=True,
                 framework_name=self.framework_name,
                 operator_config=self.operator_config,
+                target=self.target,
             )
         except Exception as exc:
             raise HarnessSetupError(
@@ -893,7 +894,8 @@ class HarnessRun:
         # "all applicable controls PASS or N/A"; anything else is
         # AUDIT_FAILURES. Constitution II (Conservative-by-Default) also
         # treats WARN and ERROR as non-compliant.
-        if summary.fail > 0 or summary.error > 0 or summary.warn > 0:
+        pending_claims = any((r.get("assertion") or {}).get("outcome") == "pending" for r in results)
+        if summary.fail > 0 or summary.error > 0 or summary.warn > 0 or pending_claims:
             exit_class = HarnessExitCode.AUDIT_FAILURES
         else:
             exit_class = HarnessExitCode.SUCCESS
@@ -903,7 +905,7 @@ class HarnessRun:
         ]
 
         metadata = (
-            audit_report_metadata(self.operator_config, self.local_path, self.target)
+            audit_report_metadata(self.operator_config, self.local_path, self.target, self.framework_name)
             if self.operator_config
             else {}
         )

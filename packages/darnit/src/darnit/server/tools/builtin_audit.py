@@ -141,10 +141,12 @@ async def builtin_audit(
         tags=tags_list,
         apply_user_config=True,
         stop_on_llm=True,
+        framework_name=_framework_name,
         operator_config=operator_config,
+        target=target,
     )
 
-    metadata = audit_report_metadata(operator_config, str(repo_path), target)
+    metadata = audit_report_metadata(operator_config, str(repo_path), target, _framework_name)
     warning = registration_scope_warning(repo_path)
     if warning:
         metadata["warnings"] = [warning]

@@ -750,6 +750,8 @@ def _run_detect_pipeline(
     local_path: str,
     owner: str | None,
     repo: str | None,
+    *,
+    strict: bool = False,
 ) -> ContextValue | None:
     """Run handler-based context detection pipeline.
 
@@ -765,10 +767,15 @@ def _run_detect_pipeline(
         local_path: Path to the repository
         owner: GitHub owner (optional)
         repo: GitHub repo name (optional)
+        strict: Used when the result is evidence (feature 040, FR-017). A
+            ``value_if_fail`` fallback is taken only from a handler that ran
+            and concluded, and only when no earlier handler failed to run;
+            otherwise nothing is returned.
 
     Returns:
         ContextValue with auto-detected value if found, None otherwise
     """
+    incomplete = False
     try:
         from darnit.sieve.handler_registry import (
             HandlerContext,
@@ -799,6 +806,7 @@ def _run_detect_pipeline(
                     invocation.handler,
                     key,
                 )
+                incomplete = True
                 continue
 
             # Build handler config from invocation's extra fields
@@ -814,6 +822,7 @@ def _run_detect_pipeline(
                     key,
                     e,
                 )
+                incomplete = True
                 continue
 
             # Apply CEL expr if present (same as orchestrator does for controls)
@@ -853,8 +862,16 @@ def _run_detect_pipeline(
                 HandlerResultStatus.INCONCLUSIVE,
                 HandlerResultStatus.ERROR,
             ):
+                concluded = result.status == HandlerResultStatus.FAIL or (
+                    result.status == HandlerResultStatus.INCONCLUSIVE and "expr" in (result.evidence or {})
+                )
+                if strict and not concluded:
+                    incomplete = True
+                    continue
                 value_if_fail = handler_config.get("value_if_fail")
                 if value_if_fail is not None:
+                    if strict and incomplete:
+                        return None
                     return ContextValue.auto_detected(
                         value=value_if_fail,
                         method=f"detect_pipeline:{invocation.handler}:fail_fallback",

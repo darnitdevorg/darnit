@@ -58,6 +58,8 @@ class AuditState:
     default_branch: str = "main"
     framework_name: str | None = None
     level: int = 3
+    # Repository identity the operator named, for the trust decision (feature 040).
+    target: str | None = None
 
     # Populated by the audit node.
     # Feature 022: typed as list[CheckResult] (TypedDict). Runtime shape is
