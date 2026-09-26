@@ -63,7 +63,7 @@ See Also:
 import copy
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 try:
     import tomllib
@@ -85,6 +85,9 @@ from .user_schema import (
     ControlStatus,
     UserConfig,
 )
+
+if TYPE_CHECKING:
+    from .operator.schema import OperatorConfig
 
 logger = get_logger("config.merger")
 
@@ -367,19 +370,38 @@ def merge_control(
     return effective
 
 
+def ensure_framework_allowed(framework_name: str, operator: "OperatorConfig | None") -> None:
+    """Refuse a framework the operator's ``plugins.allowed`` list leaves out."""
+    if operator is not None and operator.plugins.allowed and framework_name not in operator.plugins.allowed:
+        raise ValueError(
+            f"Framework '{framework_name}' is not in the operator configuration's "
+            f"plugins.allowed list ({', '.join(operator.plugins.allowed)})."
+        )
+
+
 def merge_configs(
     framework: FrameworkConfig,
     user: UserConfig | None = None,
+    operator: "OperatorConfig | None" = None,
 ) -> EffectiveConfig:
-    """Merge framework and user configurations into effective config.
+    """Merge framework, user, and operator configurations into effective config.
+
+    Operator configuration is applied last: its pass overrides, custom
+    controls, MCP servers, and stores win over the framework's.
 
     Args:
         framework: Framework configuration
         user: User configuration (optional)
+        operator: Operator configuration (optional)
 
     Returns:
         Merged EffectiveConfig ready for use
+
+    Raises:
+        ValueError: The operator's ``plugins.allowed`` list excludes the framework.
     """
+    ensure_framework_allowed(framework.metadata.name, operator)
+
     # Start with framework metadata
     effective = EffectiveConfig(
         framework_name=framework.metadata.name,
@@ -404,6 +426,8 @@ def merge_configs(
     if user:
         for name, srv in user.mcp_servers.items():
             effective.mcp_servers[name] = srv
+    if operator:
+        effective.mcp_servers.update(operator.mcp_servers)
 
     # Merge persistence backend selection (feature 033).
     # Per-kind replacement: `.baseline.toml`'s [stores.<kind>] block for
@@ -415,7 +439,8 @@ def merge_configs(
     for kind in ("project", "attestation", "report", "cache"):
         fw_block = getattr(framework.stores, kind, None)
         user_block = getattr(user.stores, kind, None) if user else None
-        block = user_block if user_block is not None else fw_block
+        operator_block = getattr(operator.stores, kind, None) if operator else None
+        block = next((b for b in (operator_block, user_block, fw_block) if b is not None), None)
         if block is not None:
             merged_stores_data[kind] = block
     effective.stores = _StoresConfig.model_construct(**merged_stores_data)
@@ -457,6 +482,18 @@ def merge_configs(
             user_override=user_override,
             defaults=framework.defaults,
         )
+
+    if operator:
+        for control_id, control in operator.custom_controls.items():
+            effective.controls[control_id] = merge_control(
+                control_id=control_id,
+                framework_control=control,
+                user_override=None,
+                defaults=framework.defaults,
+            )
+        for control_id, override in operator.controls.items():
+            if override.passes is not None and control_id in effective.controls:
+                effective.controls[control_id].passes_config = [p.model_dump() for p in override.passes]
 
     return effective
 
@@ -594,6 +631,35 @@ def load_framework_config(path: Path) -> FrameworkConfig:
     return config
 
 
+OPERATOR_CONFIGURATION_HOME = "operator configuration"
+PROJECT_ASSERTIONS_HOME = ".project/darnit.yaml"
+USER_CONFIG_FILENAME = ".baseline.toml"
+
+# Files shaped like operator configuration that darnit never reads from an
+# audited repository; they are reported so their authors know where the
+# settings belong.
+_OPERATOR_SHAPED_FILES = (".darnit/config.toml", ".darnit.toml", "darnit.toml", ".config/darnit/config.toml")
+_PROJECT_EXTENSION_FILE = ".project/darnit.yaml"
+_PROJECT_TOOL_KEYS = frozenset(
+    {"operator", "plugins", "mcp_servers", "custom_controls", "stores", "llm", "trust", "policy", "adapters", "passes"}
+)
+
+
+@dataclass(frozen=True)
+class IgnoredSetting:
+    """A setting found in the audited repository that darnit did not apply."""
+
+    file: str
+    key: str
+    new_home: str
+
+
+def _new_home(key: str) -> str:
+    if key.startswith("controls.") and key.rsplit(".", 1)[-1] in ("status", "reason"):
+        return PROJECT_ASSERTIONS_HOME
+    return OPERATOR_CONFIGURATION_HOME
+
+
 # Keys a repository's own .baseline.toml may set.
 # Everything else can change what darnit executes, which servers, adapters,
 # or stores it trusts, which framework definition it loads, or which controls
@@ -636,6 +702,25 @@ def _restrict_untrusted_user_config(data: dict[str, Any]) -> tuple[dict[str, Any
     return restricted, ignored
 
 
+def load_user_config_with_report(repo_path: Path) -> tuple[UserConfig | None, list[IgnoredSetting]]:
+    """Load a repository's .baseline.toml as untrusted input and list what was ignored.
+
+    Returns:
+        The restricted UserConfig (or None when there is no file) and one
+        IgnoredSetting per key that was not applied.
+    """
+    config_path = Path(repo_path) / USER_CONFIG_FILENAME
+    if not config_path.exists():
+        return None, []
+
+    with open(config_path, "rb") as f:
+        data = tomllib.load(f)
+
+    restricted, ignored = _restrict_untrusted_user_config(data)
+    report = [IgnoredSetting(USER_CONFIG_FILENAME, key, _new_home(key)) for key in dict.fromkeys(ignored)]
+    return UserConfig(**restricted), report
+
+
 def load_user_config(repo_path: Path, *, trusted: bool = False) -> UserConfig | None:
     """Load user configuration from repository.
 
@@ -656,38 +741,91 @@ def load_user_config(repo_path: Path, *, trusted: bool = False) -> UserConfig | 
     Returns:
         Parsed UserConfig or None if not found
     """
-    config_path = Path(repo_path) / ".baseline.toml"
+    config_path = Path(repo_path) / USER_CONFIG_FILENAME
 
     if not config_path.exists():
         return None
 
-    with open(config_path, "rb") as f:
-        data = tomllib.load(f)
-
     if trusted:
-        return UserConfig(**data)
+        with open(config_path, "rb") as f:
+            return UserConfig(**tomllib.load(f))
 
-    restricted, ignored = _restrict_untrusted_user_config(data)
+    user, ignored = load_user_config_with_report(repo_path)
     if ignored:
         logger.warning(
             "Ignoring settings in %s that can change what darnit executes or trusts: %s. "
             "A repository's own configuration is untrusted input; settings like these "
             "belong in operator configuration outside the audited repository.",
             config_path,
-            ", ".join(sorted(set(ignored))),
+            ", ".join(sorted(s.key for s in ignored)),
         )
-    return UserConfig(**restricted)
+    return user
+
+
+def _operator_shaped_settings(repo_path: Path) -> list[IgnoredSetting]:
+    settings: list[IgnoredSetting] = []
+    for rel in _OPERATOR_SHAPED_FILES:
+        path = repo_path / rel
+        if not path.is_file():
+            continue
+        try:
+            keys = list(tomllib.loads(path.read_text(encoding="utf-8")))
+        except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+            keys = ["*"]
+        settings.extend(IgnoredSetting(rel, key, OPERATOR_CONFIGURATION_HOME) for key in keys)
+    return settings
+
+
+def _project_extension_settings(repo_path: Path) -> list[IgnoredSetting]:
+    path = repo_path / _PROJECT_EXTENSION_FILE
+    if not path.is_file():
+        return []
+    import yaml
+
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError):
+        return []
+    if not isinstance(data, dict):
+        return []
+
+    keys = [key for key in data if key in _PROJECT_TOOL_KEYS]
+    controls = data.get("controls")
+    if isinstance(controls, dict):
+        for control_id, override in controls.items():
+            if isinstance(override, dict):
+                keys.extend(
+                    f"controls.{control_id}.{field}" for field in override if field not in _UNTRUSTED_CONTROL_KEYS
+                )
+    return [IgnoredSetting(_PROJECT_EXTENSION_FILE, key, OPERATOR_CONFIGURATION_HOME) for key in keys]
+
+
+def find_ignored_repository_settings(repo_path: Path) -> list[IgnoredSetting]:
+    """List every tool setting the audited repository tries to supply.
+
+    None of these are applied; they are reported with the place the setting
+    now belongs so the report can show what was ignored (feature 040).
+    """
+    repo_path = Path(repo_path)
+    try:
+        _user, ignored = load_user_config_with_report(repo_path)
+    except (OSError, tomllib.TOMLDecodeError, ValueError):
+        ignored = [IgnoredSetting(USER_CONFIG_FILENAME, "*", OPERATOR_CONFIGURATION_HOME)]
+    return [*ignored, *_operator_shaped_settings(repo_path), *_project_extension_settings(repo_path)]
 
 
 def load_effective_config(
     framework_path: Path,
     repo_path: Path | None = None,
+    *,
+    operator: "OperatorConfig | None" = None,
 ) -> EffectiveConfig:
     """Load and merge framework and user configurations.
 
     Args:
         framework_path: Path to framework TOML file
         repo_path: Path to repository (for .baseline.toml)
+        operator: Operator configuration to apply (optional)
 
     Returns:
         Merged EffectiveConfig
@@ -698,7 +836,7 @@ def load_effective_config(
     if repo_path:
         user = load_user_config(repo_path)
 
-    return merge_configs(framework, user)
+    return merge_configs(framework, user, operator)
 
 
 # =============================================================================
@@ -800,6 +938,8 @@ def list_available_frameworks() -> list[str]:
 def load_effective_config_by_name(
     framework_name: str,
     repo_path: Path | None = None,
+    *,
+    operator: "OperatorConfig | None" = None,
 ) -> EffectiveConfig:
     """Load and merge framework (by name) and user configurations.
 
@@ -809,6 +949,7 @@ def load_effective_config_by_name(
     Args:
         framework_name: Framework identifier (e.g., "openssf-baseline")
         repo_path: Path to repository (for .baseline.toml)
+        operator: Operator configuration to apply (optional)
 
     Returns:
         Merged EffectiveConfig
@@ -829,13 +970,15 @@ def load_effective_config_by_name(
     if repo_path:
         user = load_user_config(repo_path)
 
-    return merge_configs(framework, user)
+    return merge_configs(framework, user, operator)
 
 
 def load_effective_config_auto(
     repo_path: Path,
     framework_path: Path | None = None,
     framework_name: str | None = None,
+    *,
+    operator: "OperatorConfig | None" = None,
 ) -> EffectiveConfig:
     """Load effective config with automatic framework resolution.
 
@@ -849,6 +992,7 @@ def load_effective_config_auto(
         repo_path: Path to repository
         framework_path: Explicit path to framework TOML (optional)
         framework_name: Explicit framework name (optional)
+        operator: Operator configuration to apply (optional)
 
     Returns:
         Merged EffectiveConfig
@@ -893,7 +1037,7 @@ def load_effective_config_auto(
                 "Please install darnit-baseline or specify a framework."
             ) from None
 
-    return merge_configs(framework, user)
+    return merge_configs(framework, user, operator)
 
 
 # =============================================================================

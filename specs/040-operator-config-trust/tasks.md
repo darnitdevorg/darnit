@@ -58,25 +58,25 @@
 
 ### Tests for User Story 1
 
-- [ ] T012 [P] [US1] Write loader tests (resolution order explicit path > default location > built-in defaults; missing explicit path is an error; missing default file is not; digest and source recorded) in `tests/darnit/config/operator/test_loader.py`
-- [ ] T013 [P] [US1] Write containment tests (configuration path inside the audited repository refused after resolving symlinks and `XDG_CONFIG_HOME`; checked per audit target) in `tests/darnit/config/operator/test_containment.py`
-- [ ] T014 [P] [US1] Write permission-check tests (owner and group/world-write checks on file and parents; warn by default, refuse in strict mode; strict mode enabled by `--strict-operator-config`, by recognized CI, or by the file, and never disabled by the file; Windows not checkable) in `tests/darnit/config/operator/test_permissions.py`
-- [ ] T015 [P] [US1] Write the planted-configuration suite for SC-001: every setting a repository could try to supply (in `.baseline.toml`, `.project/`, and an operator-config-shaped file) has no effect and is listed in `ignored_repository_settings` in `tests/darnit/config/operator/test_repository_cannot_configure.py`
-- [ ] T016 [P] [US1] Write driver-parity tests for SC-002 (CLI, MCP tool function, harness report the same `operator_config.digest` and apply the same pass override) in `tests/darnit/config/operator/test_driver_parity.py`
+- [X] T012 [P] [US1] Write loader tests (resolution order explicit path > default location > built-in defaults; missing explicit path is an error; missing default file is not; digest and source recorded) in `tests/darnit/config/operator/test_loader.py`
+- [X] T013 [P] [US1] Write containment tests (configuration path inside the audited repository refused after resolving symlinks and `XDG_CONFIG_HOME`; checked per audit target) in `tests/darnit/config/operator/test_containment.py`
+- [X] T014 [P] [US1] Write permission-check tests (owner and group/world-write checks on file and parents; warn by default, refuse in strict mode; strict mode enabled by `--strict-operator-config`, by recognized CI, or by the file, and never disabled by the file; Windows not checkable) in `tests/darnit/config/operator/test_permissions.py`
+- [X] T015 [P] [US1] Write the planted-configuration suite for SC-001: every setting a repository could try to supply (in `.baseline.toml`, `.project/`, and an operator-config-shaped file) has no effect and is listed in `ignored_repository_settings` in `tests/darnit/config/operator/test_repository_cannot_configure.py`
+- [X] T016 [P] [US1] Write driver-parity tests for SC-002 (CLI, MCP tool function, harness report the same `operator_config.digest` and apply the same pass override) in `tests/darnit/config/operator/test_driver_parity.py`
 
 ### Implementation for User Story 1
 
-- [ ] T017 [US1] Implement `load_operator_config(explicit_path, audit_target, strict)` with resolution, validation errors naming file and dotted key, SHA-256 digest, containment check, and permission check (strict from the launch option or CI, or turned on by the file) in `packages/darnit/src/darnit/config/operator/loader.py`
-- [ ] T018 [US1] Apply operator configuration to effective configuration (operator pass overrides, custom controls, MCP servers, stores, plugin allow list and trusted publishers) with precedence defaults < operator < per-run flags in `packages/darnit/src/darnit/config/merger.py`
-- [ ] T019 [US1] Record `operator_config {source, digest, permission_check}` and `ignored_repository_settings [{file, key, new_home}]` in audit results in `packages/darnit/src/darnit/tools/audit.py`
-- [ ] T020 [US1] Add `--operator-config PATH` and `--strict-operator-config` to `audit`, `run`, and `harness` subcommands and wire it into config loading in `packages/darnit/src/darnit/cli.py`
-- [ ] T021 [US1] Add `--operator-config PATH` and `--strict-operator-config` to `darnit serve` (distinct from the positional framework config) and resolve operator configuration per audit call with the containment check in `packages/darnit/src/darnit/server/factory.py`
-- [ ] T022 [P] [US1] Pass operator configuration through MCP audit tools (`builtin_audit` and the baseline audit tool) in `packages/darnit/src/darnit/server/tools/builtin_audit.py` and `packages/darnit-baseline/src/darnit_baseline/tools.py`
-- [ ] T023 [US1] Load operator configuration in the harness, apply its `llm` settings (provider, model, budget) to the LLM step, and include it in the report in `packages/darnit/src/darnit/harness/driver.py` and `packages/darnit/src/darnit/core/llm_step.py`
-- [ ] T024 [US1] Pass operator configuration through the remaining audit-running paths -- the organization sweep, the ActionPlan MCP tools, and the attestation tool -- in `packages/darnit/src/darnit/tools/audit_org.py`, `packages/darnit/src/darnit/server/tools/harness_loop.py`, and `packages/darnit-baseline/src/darnit_baseline/tools.py`
-- [ ] T025 [US1] Warn in MCP tool results when the server's working directory or the agent-reported project directory lies inside the audited repository in `packages/darnit/src/darnit/server/factory.py`
-- [ ] T026 [US1] Implement `darnit config show` (source, digest, permission check, effective settings with secrets redacted) in `packages/darnit/src/darnit/cli.py`
-- [ ] T027 [US1] Change `darnit install` to write user-scope MCP registrations by default; require an explicit flag with a warning for project scope in `packages/darnit/src/darnit/cli.py`
+- [X] T017 [US1] Implement `load_operator_config(explicit_path, audit_target, strict)` with resolution, validation errors naming file and dotted key, SHA-256 digest, containment check, and permission check (strict from the launch option or CI, or turned on by the file) in `packages/darnit/src/darnit/config/operator/loader.py`
+- [X] T018 [US1] Apply operator configuration to effective configuration (operator pass overrides, custom controls, MCP servers, stores, plugin allow list and trusted publishers) with precedence defaults < operator < per-run flags in `packages/darnit/src/darnit/config/merger.py`
+- [X] T019 [US1] Record `operator_config {source, digest, permission_check}` and `ignored_repository_settings [{file, key, new_home}]` in audit results in `packages/darnit/src/darnit/tools/audit.py`
+- [X] T020 [US1] Add `--operator-config PATH` and `--strict-operator-config` to `audit`, `run`, and `harness` subcommands and wire it into config loading in `packages/darnit/src/darnit/cli.py`
+- [X] T021 [US1] Add `--operator-config PATH` and `--strict-operator-config` to `darnit serve` (distinct from the positional framework config) and resolve operator configuration per audit call with the containment check in `packages/darnit/src/darnit/server/factory.py`
+- [X] T022 [P] [US1] Pass operator configuration through MCP audit tools (`builtin_audit` and the baseline audit tool) in `packages/darnit/src/darnit/server/tools/builtin_audit.py` and `packages/darnit-baseline/src/darnit_baseline/tools.py`
+- [X] T023 [US1] Load operator configuration in the harness, apply its `llm` settings (provider, model, budget) to the LLM step, and include it in the report in `packages/darnit/src/darnit/harness/driver.py` and `packages/darnit/src/darnit/core/llm_step.py`
+- [X] T024 [US1] Pass operator configuration through the remaining audit-running paths -- the organization sweep, the ActionPlan MCP tools, and the attestation tool -- in `packages/darnit/src/darnit/tools/audit_org.py`, `packages/darnit/src/darnit/server/tools/harness_loop.py`, and `packages/darnit-baseline/src/darnit_baseline/tools.py`
+- [X] T025 [US1] Warn in MCP tool results when the server's working directory or the agent-reported project directory lies inside the audited repository in `packages/darnit/src/darnit/server/factory.py`
+- [X] T026 [US1] Implement `darnit config show` (source, digest, permission check, effective settings with secrets redacted) in `packages/darnit/src/darnit/cli.py`
+- [X] T027 [US1] Change `darnit install` to write user-scope MCP registrations by default; require an explicit flag with a warning for project scope in `packages/darnit/src/darnit/cli.py`
 
 **Checkpoint**: User Story 1 is functional and testable on its own (MVP).
 

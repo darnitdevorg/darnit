@@ -9,9 +9,9 @@ and can be used for programmatic access.
 """
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from darnit.core.logging import get_logger
 from darnit.core.utils import (
@@ -19,6 +19,10 @@ from darnit.core.utils import (
     validate_local_path,
 )
 from darnit.sieve.models import CheckResult
+
+if TYPE_CHECKING:
+    from darnit.config.operator.loader import LoadedOperatorConfig
+    from darnit.config.operator.schema import OperatorConfig
 
 logger = get_logger("tools.audit")
 
@@ -145,14 +149,16 @@ def _get_framework_config_path(framework_name: str | None = None) -> Path | None
     return None
 
 
-def _load_merged_stores(local_path: str, framework_name: str | None) -> Any:
+def _load_merged_stores(
+    local_path: str, framework_name: str | None, operator: "OperatorConfig | None" = None
+) -> Any:
     """Return the merged ``StoresConfig`` for this audit run.
 
     Feature 033. Composes the framework TOML's ``[stores]`` block with
-    any ``.baseline.toml`` overrides via the per-kind replacement rule
-    baked into :func:`merge_configs`. Returns ``None`` when no framework
-    is resolved or neither surface declares any stores; the caller
-    treats None as "instantiate all filesystem defaults."
+    operator configuration via the per-kind replacement rule baked into
+    :func:`merge_configs`. Returns ``None`` when neither surface declares
+    any stores; the caller treats None as "instantiate all filesystem
+    defaults."
     """
     from darnit.config import (
         load_framework_config,
@@ -162,20 +168,22 @@ def _load_merged_stores(local_path: str, framework_name: str | None) -> Any:
 
     framework_path = _get_framework_config_path(framework_name)
     if not framework_path:
-        return None
+        return operator.stores if operator is not None else None
     framework = load_framework_config(framework_path)
     user = load_user_config(Path(local_path))
-    effective = merge_configs(framework, user)
+    effective = merge_configs(framework, user, operator)
     return getattr(effective, "stores", None)
 
 
-def _load_merged_mcp_servers(local_path: str, framework_name: str | None) -> dict[str, Any]:
+def _load_merged_mcp_servers(
+    local_path: str, framework_name: str | None, operator: "OperatorConfig | None" = None
+) -> dict[str, Any]:
     """Return the merged ``mcp_servers`` allowlist for this audit run.
 
-    Composes the framework TOML's block with any ``.baseline.toml``
-    overrides via the standard :func:`merge_configs` rule (per-name
-    replacement, spec FR-016). Returns an empty dict when no framework
-    is resolved or neither surface declares any servers.
+    Composes the framework TOML's block with operator configuration via
+    the standard :func:`merge_configs` rule (per-name replacement, spec
+    FR-016). Returns an empty dict when neither surface declares any
+    servers.
     """
     from darnit.config import (
         load_framework_config,
@@ -185,11 +193,56 @@ def _load_merged_mcp_servers(local_path: str, framework_name: str | None) -> dic
 
     framework_path = _get_framework_config_path(framework_name)
     if not framework_path:
-        return {}
+        return dict(operator.mcp_servers) if operator is not None else {}
     framework = load_framework_config(framework_path)
     user = load_user_config(Path(local_path))
-    effective = merge_configs(framework, user)
+    effective = merge_configs(framework, user, operator)
     return dict(effective.mcp_servers)
+
+
+def _apply_operator_controls(
+    controls: list[Any], framework_name: str | None, operator: "OperatorConfig"
+) -> list[Any]:
+    """Replace passes the operator overrides and add operator custom controls."""
+    if not (operator.controls or operator.custom_controls):
+        return controls
+    framework_path = _get_framework_config_path(framework_name)
+    if not framework_path:
+        return controls
+
+    from darnit.config import load_framework_config, merge_configs
+    from darnit.config.control_loader import control_from_effective
+
+    effective = merge_configs(load_framework_config(framework_path), None, operator)
+    replaced = {cid for cid, o in operator.controls.items() if o.passes is not None} | set(operator.custom_controls)
+    result = [
+        control_from_effective(c.control_id, effective.controls[c.control_id])
+        if c.control_id in replaced and c.control_id in effective.controls
+        else c
+        for c in controls
+    ]
+    present = {c.control_id for c in result}
+    result.extend(
+        control_from_effective(cid, effective.controls[cid]) for cid in operator.custom_controls if cid not in present
+    )
+    return result
+
+
+def audit_report_metadata(operator_config: "LoadedOperatorConfig", local_path: str) -> dict[str, Any]:
+    """Report fields every driver adds to an audit's output (feature 040).
+
+    ``operator_config`` names the operator configuration the run used, and
+    ``ignored_repository_settings`` lists tool settings the audited
+    repository tried to supply, each with the place it now belongs.
+    """
+    from darnit.config.merger import find_ignored_repository_settings
+
+    return {
+        "operator_config": operator_config.report(),
+        "ignored_repository_settings": [
+            asdict(setting) for setting in find_ignored_repository_settings(Path(local_path))
+        ],
+    }
 
 
 def load_effective_audit_config(local_path: str, framework_name: str | None = None) -> Any | None:
@@ -366,6 +419,7 @@ def run_checks(
     stop_on_llm: bool = True,
     apply_user_config: bool = True,
     framework_name: str | None = None,
+    operator_config: "LoadedOperatorConfig | None" = None,
 ) -> tuple[list[CheckResult], dict[str, str]]:
     """Run OSPS baseline checks at the specified level.
 
@@ -383,6 +437,8 @@ def run_checks(
         apply_user_config: Apply .baseline.toml user config overrides
         framework_name: Explicit framework name (e.g., "openssf-baseline").
             If None, resolved from .baseline.toml in the repo.
+        operator_config: Operator configuration for this run. If None,
+            resolved from the launch options for ``local_path``.
 
     Returns:
         Tuple of (check_results, skipped_controls)
@@ -399,6 +455,7 @@ def run_checks(
         apply_user_config=apply_user_config,
         stop_on_llm=stop_on_llm,
         framework_name=framework_name,
+        operator_config=operator_config,
     )
 
     return results, skipped_controls
@@ -416,6 +473,7 @@ def run_sieve_audit(
     apply_user_config: bool = True,
     stop_on_llm: bool = True,
     framework_name: str | None = None,
+    operator_config: "LoadedOperatorConfig | None" = None,
 ) -> tuple[list[CheckResult], dict[str, int]]:
     """Run a sieve-based compliance audit -- the canonical audit pipeline.
 
@@ -442,6 +500,9 @@ def run_sieve_audit(
         framework_name: Explicit framework name (e.g., "openssf-baseline").
             Required when controls is None and multiple implementations are
             installed. If None, resolved from .baseline.toml in the repo.
+        operator_config: Operator configuration for this run. If None,
+            resolved from the launch options for ``local_path``; an
+            unusable operator configuration raises ``OperatorConfigError``.
 
     Returns:
         Tuple of (results, summary) where results is a list of check result
@@ -454,6 +515,12 @@ def run_sieve_audit(
     get_control_registry = sieve["get_control_registry"]
     SieveOrchestrator = sieve["SieveOrchestrator"]
     CheckContext = sieve["CheckContext"]
+
+    if operator_config is None:
+        from darnit.config.operator.loader import resolve_operator_config
+
+        operator_config = resolve_operator_config(local_path)
+    operator = operator_config.config
 
     # Load user config exclusions if enabled
     excluded_ids: set[str] = set()
@@ -474,6 +541,11 @@ def run_sieve_audit(
                 resolved_fw = user_cfg.extends
         except Exception:
             pass
+
+    if resolved_fw:
+        from darnit.config.merger import ensure_framework_allowed
+
+        ensure_framework_allowed(resolved_fw, operator)
 
     # Register the framework's custom sieve handlers (issue #427). This runs
     # regardless of whether `controls` was supplied: a caller passing
@@ -512,6 +584,7 @@ def run_sieve_audit(
         all_controls = []
         for lvl in range(1, level + 1):
             all_controls.extend(registry.get_specs_by_level(lvl))
+        all_controls = _apply_operator_controls(all_controls, resolved_fw, operator)
 
     # Filter by level (applies to both provided and loaded controls)
     all_controls = [c for c in all_controls if (c.level or 0) <= level]
@@ -544,7 +617,7 @@ def run_sieve_audit(
     # simply see an empty allowlist and any mcp handler pass resolves
     # ERROR ("unknown MCP server: ...") at dispatch time.
     try:
-        execution_context.mcp_servers = _load_merged_mcp_servers(local_path, resolved_fw)
+        execution_context.mcp_servers = _load_merged_mcp_servers(local_path, resolved_fw, operator)
     except Exception as err:  # noqa: BLE001 - config load must not break audit
         logger.debug("MCP allowlist load failed (non-fatal): %s", err)
     all_results: list[CheckResult] = []
@@ -564,7 +637,7 @@ def run_sieve_audit(
     # run. Zero-config produces filesystem defaults (constitution I).
     from darnit.stores.selection import resolve_stores
 
-    stores_config = _load_merged_stores(local_path, resolved_fw)
+    stores_config = _load_merged_stores(local_path, resolved_fw, operator)
     stores_bundle = resolve_stores(stores_config, repo_path=Path(local_path))
     execution_context.stores = stores_bundle
 
@@ -797,6 +870,7 @@ def format_results_markdown(
     report_title: str = "Compliance Audit Report",
     remediation_map: dict[str, Any] | None = None,
     framework_name: str | None = None,
+    audit_metadata: dict[str, Any] | None = None,
 ) -> str:
     """Format audit results as Markdown.
 
@@ -821,6 +895,8 @@ def format_results_markdown(
                 "branch_name": str,
                 "framework_name": str,
             }
+        audit_metadata: Output of :func:`audit_report_metadata`, plus an
+            optional ``warnings`` list.
 
     Returns:
         Markdown-formatted report
@@ -840,6 +916,7 @@ def format_results_markdown(
         *header_lines,
         f"**Repository:** {owner}/{repo}",
         f"**Level Assessed:** {level}",
+        *_format_audit_metadata_markdown(audit_metadata),
         "",
         "## Summary",
         "",
@@ -1115,6 +1192,28 @@ def format_results_markdown(
     return "\n".join(lines)
 
 
+def _format_audit_metadata_markdown(audit_metadata: dict[str, Any] | None) -> list[str]:
+    if not audit_metadata:
+        return []
+    lines: list[str] = []
+    operator = audit_metadata.get("operator_config")
+    if operator:
+        digest = f", sha256 `{operator['digest']}`" if operator.get("digest") else ""
+        lines.append(
+            f"**Operator Configuration:** `{operator['source']}`{digest} "
+            f"(permission check: {operator['permission_check']})"
+        )
+    for warning in audit_metadata.get("warnings", []):
+        lines.extend(["", f"> **Warning:** {warning}"])
+    ignored = audit_metadata.get("ignored_repository_settings") or []
+    if ignored:
+        lines.extend(["", "## Ignored Repository Settings", ""])
+        lines.append("*The audited repository cannot configure darnit. These settings were not applied:*")
+        lines.append("")
+        lines.extend(f"- `{s['file']}`: `{s['key']}` (belongs in {s['new_home']})" for s in ignored)
+    return lines
+
+
 def _get_next_steps_section(
     local_path: str | None,
     summary: dict[str, int],
@@ -1328,6 +1427,7 @@ __all__ = [
     "summarize_results",
     "format_results_markdown",
     "list_available_checks",
+    "audit_report_metadata",
     # User config integration
     "load_effective_audit_config",
     "get_excluded_control_ids",

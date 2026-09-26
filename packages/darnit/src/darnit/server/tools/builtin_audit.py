@@ -47,11 +47,15 @@ async def builtin_audit(
         load_controls_from_effective,
         load_effective_config_by_name,
     )
+    from darnit.config.operator.loader import OperatorConfigError, resolve_operator_config
     from darnit.core.discovery import get_implementation
+    from darnit.server.factory import registration_scope_warning
     from darnit.sieve.registry import get_control_registry
     from darnit.tools.audit import (
+        audit_report_metadata,
         calculate_compliance,
         format_results_markdown,
+        framework_metadata,
         run_sieve_audit,
     )
 
@@ -62,9 +66,14 @@ async def builtin_audit(
     if not _framework_name:
         return "Error: No framework name configured for this audit tool."
 
-    # Load effective config (framework TOML merged with user .baseline.toml)
     try:
-        config = load_effective_config_by_name(_framework_name, repo_path)
+        operator_config = resolve_operator_config(repo_path)
+    except OperatorConfigError as e:
+        return f"Error: {e}"
+
+    # Load effective config (framework TOML merged with operator configuration)
+    try:
+        config = load_effective_config_by_name(_framework_name, repo_path, operator=operator_config.config)
     except Exception as e:
         return f"Error loading framework config '{_framework_name}': {e}"
 
@@ -121,11 +130,26 @@ async def builtin_audit(
         tags=tags_list,
         apply_user_config=True,
         stop_on_llm=True,
+        operator_config=operator_config,
     )
+
+    metadata = audit_report_metadata(operator_config, str(repo_path))
+    warning = registration_scope_warning(repo_path)
+    if warning:
+        metadata["warnings"] = [warning]
 
     # Format output
     if output_format == "json":
-        return json_mod.dumps(results, indent=2, default=str)
+        return json_mod.dumps(
+            {
+                "metadata": framework_metadata(_framework_name),
+                **metadata,
+                "summary": summary,
+                "results": results,
+            },
+            indent=2,
+            default=str,
+        )
 
     # Use implementation display_name for report title
     report_title = f"{impl.display_name} Audit Report" if impl else "Compliance Audit Report"
@@ -141,6 +165,7 @@ async def builtin_audit(
         local_path=str(repo_path),
         report_title=report_title,
         framework_name=_framework_name,
+        audit_metadata=metadata,
     )
 
 

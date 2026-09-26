@@ -24,7 +24,7 @@ allow_unsigned = false
 
 [mcp_servers.scanner]
 command = ["scanner-mcp", "--stdio"]
-env = { SCANNER_TOKEN = "SCANNER_TOKEN" }          # value names an environment variable
+env = { SCANNER_TOKEN = "$SCANNER_TOKEN" }         # $VAR is substituted from the environment at launch
 trusted_publisher = "https://github.com/example"
 
 [controls."OSPS-DO-01.01"]
@@ -55,7 +55,7 @@ strict_permissions = true                         # may only turn strict mode ON
 
 - Nothing in the audited repository can add to, override, or select this configuration.
 - There is no environment variable that grants trust to repository content.
-- Every report records `operator_config.source` (path or `builtin-defaults`) and `operator_config.digest` (SHA-256 of the file bytes). Secrets never appear in the file, so the digest is safe to publish.
+- Every report records `operator_config.source` (path or `builtin-defaults`) and `operator_config.digest` (SHA-256 of the file bytes). Secrets should be referenced as `$VAR` (substituted at launch) rather than written literally, so the digest is safe to publish; `darnit config show` prints `$VAR` references and redacts any other value.
 
 ## Permission check (POSIX)
 

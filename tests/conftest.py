@@ -9,6 +9,20 @@ from pathlib import Path
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _isolate_operator_config(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> Generator[None, None, None]:
+    """Keep the developer's own operator configuration out of every test (feature 040)."""
+    from darnit.config.operator import loader
+
+    missing = tmp_path_factory.mktemp("operator-config") / "absent"
+    monkeypatch.setattr(loader, "user_config_dir", lambda: missing)
+    loader.set_launch_options(None, strict=False)
+    yield
+    loader.set_launch_options(None, strict=False)
+
+
 @pytest.fixture
 def temp_dir() -> Generator[Path, None, None]:
     """Create a temporary directory for tests."""

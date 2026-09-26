@@ -7,6 +7,7 @@ dynamically from TOML configuration files.
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -86,14 +87,47 @@ def _register_implementation_handlers(config: dict) -> None:
             logger.warning(f"Failed to register handlers for '{framework_name}': {e}")
 
 
-def create_server(config_path: str | Path) -> FastMCP:
+def registration_scope_warning(audit_target: str | Path) -> str | None:
+    """Warn when this server appears to have been launched from inside the audited repository.
+
+    A project-scoped registration lets the repository choose how darnit is
+    launched. The server's working directory, or the project directory an
+    agent reports in ``CLAUDE_PROJECT_DIR``, lying inside the audited
+    repository suggests that kind of registration.
+    """
+    target = Path(audit_target).resolve()
+    candidates = [Path.cwd()]
+    if os.environ.get("CLAUDE_PROJECT_DIR"):
+        candidates.append(Path(os.environ["CLAUDE_PROJECT_DIR"]))
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if resolved == target or target in resolved.parents:
+            return (
+                f"The darnit MCP server is running from {resolved}, inside the audited repository. "
+                "If darnit is registered in this repository's own MCP configuration, the repository "
+                "controls how darnit is launched; register darnit at user scope instead "
+                "(`darnit install` without --project)."
+            )
+    return None
+
+
+def create_server(
+    config_path: str | Path,
+    *,
+    operator_config_path: str | Path | None = None,
+    strict_operator_config: bool = False,
+) -> FastMCP:
     """Create an MCP server from a TOML configuration file.
 
     Reads the TOML config, discovers tools from the [mcp.tools] section,
     dynamically imports their handlers, and registers them with FastMCP.
+    The operator configuration launch options are recorded so each audit
+    tool call resolves operator configuration against its own target.
 
     Args:
         config_path: Path to the TOML configuration file
+        operator_config_path: ``--operator-config`` given at launch
+        strict_operator_config: ``--strict-operator-config`` given at launch
 
     Returns:
         Configured FastMCP server ready to run
@@ -109,10 +143,14 @@ def create_server(config_path: str | Path) -> FastMCP:
     # Import here to avoid circular imports and allow lazy loading
     from mcp.server.fastmcp import FastMCP
 
+    from darnit.config.operator.loader import set_launch_options
+
     try:
         import tomllib
     except ImportError:
         import tomli as tomllib  # type: ignore[import-not-found]
+
+    set_launch_options(operator_config_path, strict=strict_operator_config)
 
     config_path = Path(config_path)
     if not config_path.exists():

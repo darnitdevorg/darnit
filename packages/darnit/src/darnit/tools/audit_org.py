@@ -204,8 +204,10 @@ def _audit_single_repo(
 
         # Run audit
         try:
-            from darnit.tools.audit import run_sieve_audit
+            from darnit.config.operator.loader import resolve_operator_config
+            from darnit.tools.audit import audit_report_metadata, run_sieve_audit
 
+            operator_config = resolve_operator_config(clone_path)
             results, summary = run_sieve_audit(
                 owner=owner,
                 repo=repo,
@@ -216,6 +218,7 @@ def _audit_single_repo(
                 apply_user_config=True,
                 stop_on_llm=True,
                 framework_name=framework_name,
+                operator_config=operator_config,
             )
             return {
                 "repo": repo,
@@ -223,6 +226,7 @@ def _audit_single_repo(
                 "error": None,
                 "results": results,
                 "summary": summary,
+                **audit_report_metadata(operator_config, clone_path),
             }
         except Exception as e:
             logger.warning("Audit failed for %s/%s: %s", owner, repo, e)

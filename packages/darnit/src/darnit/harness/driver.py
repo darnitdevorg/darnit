@@ -16,7 +16,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from darnit.core.llm_step import ConsultationRequest, LLMJudgment, LLMStep, PydanticAILLMStep
 from darnit.core.logging import get_logger
@@ -38,7 +38,10 @@ from darnit.harness.report import (
     PendingFeedbackEntry,
 )
 from darnit.sieve.models import LLMConsultationResponse, PassOutcome
-from darnit.tools.audit import prepare_audit, run_checks
+from darnit.tools.audit import audit_report_metadata, prepare_audit, run_checks
+
+if TYPE_CHECKING:
+    from darnit.config.operator.loader import LoadedOperatorConfig
 
 logger = get_logger("harness")
 
@@ -101,6 +104,10 @@ class HarnessRun:
     # feature 026 behavior (batch-only collection). See data-model.md section 7.
     question_resolvers: list[Any] = field(default_factory=list)
     per_resolver_timeout_s: float | None = None
+
+    # Feature 040: operator configuration for this run. None resolves it from
+    # the launch options against ``local_path`` when the run starts.
+    operator_config: LoadedOperatorConfig | None = None
 
     # Counters populated during .run()
     llm_calls_total: int = 0
@@ -201,6 +208,34 @@ class HarnessRun:
                 )
         return None
 
+    def _resolve_operator_config(self) -> None:
+        from darnit.config.operator.loader import OperatorConfigError, resolve_operator_config
+
+        if self.operator_config is None:
+            try:
+                self.operator_config = resolve_operator_config(self.local_path)
+            except OperatorConfigError as exc:
+                raise HarnessSetupError(str(exc)) from exc
+        self._apply_operator_llm_settings()
+
+    def _apply_operator_llm_settings(self) -> None:
+        """Apply the operator's ``[llm]`` provider and model to the default LLM step.
+
+        ``max_cost_usd_per_run`` is not enforced: the LLM step does not track cost.
+        """
+        llm = self.operator_config.config.llm if self.operator_config else None
+        if llm is None:
+            return
+        provider = llm.provider or "anthropic"
+        if provider != "anthropic":
+            raise HarnessSetupError(
+                f"operator configuration llm.provider {provider!r} is not supported; "
+                "the harness supports 'anthropic'"
+            )
+        if llm.model and isinstance(self.llm_step, PydanticAILLMStep):
+            self.llm_step.model = f"{provider}:{llm.model}"
+            self.llm_provider = self.llm_step.model
+
     def _initial_audit(
         self,
     ) -> tuple[list[dict[str, Any]], str, str, str]:
@@ -233,6 +268,7 @@ class HarnessRun:
                 stop_on_llm=True,
                 apply_user_config=True,
                 framework_name=self.framework_name,
+                operator_config=self.operator_config,
             )
         except Exception as exc:
             raise HarnessSetupError(
@@ -364,6 +400,7 @@ class HarnessRun:
         effective_config = load_effective_config_auto(
             Path(self.local_path),
             framework_name=self.framework_name,
+            operator=self.operator_config.config if self.operator_config else None,
         )
 
         orchestrator = SieveOrchestrator(stop_on_llm=True)
@@ -857,7 +894,12 @@ class HarnessRun:
             getattr(r, "name", "unknown") for r in self.question_resolvers
         ]
 
+        metadata = (
+            audit_report_metadata(self.operator_config, self.local_path) if self.operator_config else {}
+        )
+
         return HarnessReport(
+            **metadata,
             target={
                 "local_path": self.local_path,
                 "owner": target_owner or None,
@@ -896,6 +938,7 @@ class HarnessRun:
         cred_error = self._check_credentials()
         if cred_error is not None:
             raise HarnessSetupError(cred_error)
+        self._resolve_operator_config()
 
         logger.info("harness: starting audit of %s", self.local_path)
         logger.info(self.answer_resolver.summary())

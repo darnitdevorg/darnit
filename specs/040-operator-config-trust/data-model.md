@@ -10,7 +10,7 @@ Loaded from the operator configuration file (see [contracts/operator-config.md](
 | `plugins.allowed` | list[str] | Plugin (framework) names that may load. Empty means all installed. |
 | `plugins.trusted_publishers` | list[str] | Signing identities trusted for plugins. |
 | `plugins.allow_unsigned` | bool | Default `false`. |
-| `mcp_servers.<name>` | object | Launch command, args, env (env values are variable names only), trusted publisher. |
+| `mcp_servers.<name>` | object | Launch command, env (`$VAR` references substituted at launch), trusted publisher. |
 | `controls.<id>.passes` | list | Operator-supplied pass overrides (replaces the repository-level mechanism). |
 | `custom_controls.<id>` | object | Operator-defined controls. |
 | `stores.<kind>` | object | Storage backend selection per kind. |

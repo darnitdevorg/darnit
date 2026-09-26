@@ -136,7 +136,10 @@ def audit_openssf_baseline(
         load_controls_from_effective,
         load_effective_config_by_name,
     )
+    from darnit.config.operator.loader import OperatorConfigError, resolve_operator_config
+    from darnit.server.factory import registration_scope_warning
     from darnit.tools.audit import (
+        audit_report_metadata,
         calculate_compliance,
         format_results_markdown,
         run_sieve_audit,
@@ -146,6 +149,11 @@ def audit_openssf_baseline(
     repo_path = Path(local_path).resolve()
     if not repo_path.exists():
         return f"❌ Error: Repository path not found: {repo_path}"
+
+    try:
+        operator_config = resolve_operator_config(repo_path)
+    except OperatorConfigError as e:
+        return f"Error: {e}"
 
     # Auto-detect owner/repo from git (upstream-first by default)
     from darnit.core.utils import detect_owner_repo
@@ -158,7 +166,7 @@ def audit_openssf_baseline(
 
     # Load framework config
     try:
-        config = load_effective_config_by_name("openssf-baseline", repo_path)
+        config = load_effective_config_by_name("openssf-baseline", repo_path, operator=operator_config.config)
     except Exception as e:
         return f"❌ Error loading framework: {e}"
 
@@ -211,7 +219,13 @@ def audit_openssf_baseline(
         apply_user_config=True,
         stop_on_llm=True,
         framework_name="openssf-baseline",
+        operator_config=operator_config,
     )
+
+    metadata = audit_report_metadata(operator_config, str(repo_path))
+    warning = registration_scope_warning(repo_path)
+    if warning:
+        metadata["warnings"] = [warning]
 
     # Format output
     if output_format == "badge":
@@ -231,6 +245,7 @@ def audit_openssf_baseline(
         compact_results = [_compact_result(r) for r in results]
         output = json.dumps({
             "metadata": framework_metadata("openssf-baseline"),
+            **metadata,
             "owner": owner,
             "repo": repo,
             "level": level,
@@ -242,6 +257,7 @@ def audit_openssf_baseline(
 
         output = json.dumps({
             "metadata": framework_metadata("openssf-baseline"),
+            **metadata,
             "owner": owner,
             "repo": repo,
             "level": level,
@@ -270,6 +286,7 @@ def audit_openssf_baseline(
             report_title="OpenSSF Baseline Audit Report",
             remediation_map=OSPS_REMEDIATION_MAP,
             framework_name="openssf-baseline",
+            audit_metadata=metadata,
         )
 
     if attest:
@@ -1160,6 +1177,7 @@ def generate_attestation(
         return "❌ Error: owner/repo could not be determined. Pass them explicitly."
 
     try:
+        from darnit.config.operator.loader import resolve_operator_config
         from darnit.tools.audit import calculate_compliance, run_sieve_audit
         from darnit_baseline.attestation import generate_attestation_from_results
 
@@ -1171,6 +1189,7 @@ def generate_attestation(
             default_branch=default_branch,
             level=level,
             framework_name="openssf-baseline",
+            operator_config=resolve_operator_config(repo_path),
         )
         compliance = calculate_compliance(results, level)
         audit_result = _build_audit_result(
@@ -1592,6 +1611,7 @@ def audit_org(
         compliance=compliance,
         level=level,
         framework_name="openssf-baseline",
+        audit_metadata={k: result[k] for k in ("operator_config", "ignored_repository_settings") if k in result},
     )
 
 

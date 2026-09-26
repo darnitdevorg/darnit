@@ -98,6 +98,9 @@ class HarnessReport(BaseModel):
     # constructions still validate.
     resolvers_used: list[str] = Field(default_factory=list)
     answered_feedback: list[AnsweredFeedbackEntry] = Field(default_factory=list)
+    # Feature 040: operator configuration used and repository settings ignored.
+    operator_config: dict[str, Any] | None = None
+    ignored_repository_settings: list[dict[str, str]] = Field(default_factory=list)
     # exit_class NOT emitted in JSON body per RF-8; kept as an attribute
     # for the driver but excluded from serialization.
     exit_class: int = Field(default=0, exclude=True)
@@ -129,6 +132,12 @@ class HarnessReport(BaseModel):
         lines.append(f"- Target: `{target.get('local_path', '')}`")
         if target.get("owner") and target.get("repo"):
             lines.append(f"- Repository: `{target['owner']}/{target['repo']}`")
+        if self.operator_config:
+            digest = self.operator_config.get("digest")
+            lines.append(
+                f"- Operator configuration: `{self.operator_config['source']}`"
+                + (f" (sha256 `{digest}`)" if digest else "")
+            )
         s = self.summary
         lines.append(f"- Total: {s.total}")
         lines.append(f"- Passed: {s.pass_}")
@@ -237,6 +246,14 @@ class HarnessReport(BaseModel):
                             f"    - `{trail_entry.resolver_name}`: "
                             f"{trail_entry.outcome}{detail}",
                         )
+            lines.append("")
+
+        # Ignored Repository Settings (feature 040; only if non-empty)
+        if self.ignored_repository_settings:
+            lines.append("## Ignored Repository Settings")
+            lines.append("")
+            for setting in self.ignored_repository_settings:
+                lines.append(f"- `{setting['file']}`: `{setting['key']}` (belongs in {setting['new_home']})")
             lines.append("")
 
         # LLM Calls (RF-6)
