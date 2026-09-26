@@ -74,7 +74,7 @@
 - [X] T022 [P] [US1] Pass operator configuration through MCP audit tools (`builtin_audit` and the baseline audit tool) in `packages/darnit/src/darnit/server/tools/builtin_audit.py` and `packages/darnit-baseline/src/darnit_baseline/tools.py`
 - [X] T023 [US1] Load operator configuration in the harness, apply its `llm` settings (provider, model, budget) to the LLM step, and include it in the report in `packages/darnit/src/darnit/harness/driver.py` and `packages/darnit/src/darnit/core/llm_step.py`
 - [X] T024 [US1] Pass operator configuration through the remaining audit-running paths -- the organization sweep, the ActionPlan MCP tools, and the attestation tool -- in `packages/darnit/src/darnit/tools/audit_org.py`, `packages/darnit/src/darnit/server/tools/harness_loop.py`, and `packages/darnit-baseline/src/darnit_baseline/tools.py`
-- [X] T025 [US1] Warn in MCP tool results when the server's working directory or the agent-reported project directory lies inside the audited repository in `packages/darnit/src/darnit/server/factory.py`
+- [X] T025 [US1] Warn in MCP tool results when darnit's own code (interpreter prefix, executable, or package) lives inside the audited repository, i.e. a repository-scoped registration; not based on the working directory in `packages/darnit/src/darnit/server/factory.py`
 - [X] T026 [US1] Implement `darnit config show` (source, digest, permission check, effective settings with secrets redacted) in `packages/darnit/src/darnit/cli.py`
 - [X] T027 [US1] Change `darnit install` to write user-scope MCP registrations by default; require an explicit flag with a warning for project scope in `packages/darnit/src/darnit/cli.py`
 

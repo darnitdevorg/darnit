@@ -103,23 +103,28 @@ def test_create_server_records_launch_options(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 def test_registration_scope_warning(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Warn only when darnit's own code runs from inside the audited repository.
+
+    Coding agents start user-scope and repository-scope MCP servers alike in
+    the session directory, so the working directory and CLAUDE_PROJECT_DIR do
+    not indicate how darnit was registered. Where darnit's code lives does: a
+    repository-scoped `uv run darnit serve` runs the repository's own copy.
+    """
     from darnit.server.factory import registration_scope_warning
 
     repo = tmp_path / "repo"
-    (repo / "sub").mkdir(parents=True)
-    elsewhere = tmp_path / "elsewhere"
-    elsewhere.mkdir()
-    monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
+    (repo / ".venv" / "lib").mkdir(parents=True)
+    elsewhere = tmp_path / "home" / ".local"
+    elsewhere.mkdir(parents=True)
 
-    monkeypatch.chdir(elsewhere)
-    assert registration_scope_warning(str(repo)) is None
-
-    monkeypatch.chdir(repo / "sub")
-    assert "user scope" in registration_scope_warning(str(repo))
-
-    monkeypatch.chdir(elsewhere)
+    monkeypatch.chdir(repo)
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(repo))
-    assert "user scope" in registration_scope_warning(str(repo))
+    assert registration_scope_warning(str(repo), code_locations=[elsewhere]) is None
+
+    warning = registration_scope_warning(str(repo), code_locations=[elsewhere, repo / ".venv" / "lib"])
+    assert warning is not None
+    assert "user scope" in warning
+    assert "developing darnit itself" in warning
 
 
 @pytest.mark.unit

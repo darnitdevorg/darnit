@@ -29,5 +29,5 @@ ignored_repository_settings: [ { file, key, new_home } ]
 ## MCP server behavior
 
 - On each audit call, the server resolves operator configuration and applies the containment check against that call's target.
-- When the server's working directory, or a project directory reported by the agent, lies inside the audited repository, the tool result includes a warning recommending user-scope registration.
+- When darnit's own code (interpreter prefix, executable, or package) lives inside the audited repository -- as with a repository-scoped `uv run darnit serve` registration -- the tool result includes a warning recommending user-scope registration. This is expected when developing darnit itself. The working directory is not used as a signal, because agents start servers of every scope in the session directory.
 - Confirmation of a pending claim is exposed through the existing confirmation tool, extended to accept `control_id` + claim; the confirmation is written to operator-side storage.

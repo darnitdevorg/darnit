@@ -46,7 +46,7 @@ Each item records the decision, the rationale, and the alternatives considered. 
 
 ## R5. Repository-scoped agent registrations
 
-- **Decision**: Documentation and skills instruct users to register darnit's MCP server at user scope. At each audit the server warns when its working directory, or the project directory an agent reports, lies inside the audited repository, and the containment check in R2 prevents operator configuration from being read from there.
+- **Decision**: Documentation and skills instruct users to register darnit's MCP server at user scope. At each audit the server warns when darnit's own code (interpreter prefix, executable, or package) lives inside the audited repository -- the signature of a repository-scoped registration such as `uv run darnit serve`, which runs the repository's own copy of darnit. The working directory and `CLAUDE_PROJECT_DIR` are not used: observed Claude Code behavior is to start user-scope and repository-scope servers alike in the session directory. The containment check in R2 prevents operator configuration from being read from the repository.
 - **Rationale**: Several coding agents let project-level configuration set an MCP server's command, arguments, and environment, and some load it without a prompt in non-interactive modes. darnit cannot control how it was launched, so it must not depend on launch-time inputs for trust.
 
 ## R6. Where project assertions and confirmations live

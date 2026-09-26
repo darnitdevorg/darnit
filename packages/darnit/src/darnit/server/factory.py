@@ -7,7 +7,7 @@ dynamically from TOML configuration files.
 from __future__ import annotations
 
 import logging
-import os
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -87,26 +87,32 @@ def _register_implementation_handlers(config: dict) -> None:
             logger.warning(f"Failed to register handlers for '{framework_name}': {e}")
 
 
-def registration_scope_warning(audit_target: str | Path) -> str | None:
-    """Warn when this server appears to have been launched from inside the audited repository.
+def _darnit_code_locations() -> list[Path]:
+    import darnit
 
-    A project-scoped registration lets the repository choose how darnit is
-    launched. The server's working directory, or the project directory an
-    agent reports in ``CLAUDE_PROJECT_DIR``, lying inside the audited
-    repository suggests that kind of registration.
+    return [Path(sys.prefix), Path(sys.executable), Path(darnit.__file__).parent]
+
+
+def registration_scope_warning(audit_target: str | Path, *, code_locations: list[Path] | None = None) -> str | None:
+    """Warn when darnit's own code runs from inside the audited repository.
+
+    Coding agents start user-scope and repository-scope MCP servers alike in
+    the session directory, so the working directory says nothing about how
+    darnit was registered. A repository-scoped registration such as
+    ``uv run darnit serve`` does, however, run the repository's own copy of
+    darnit, which is visible in where the interpreter and package live.
     """
     target = Path(audit_target).resolve()
-    candidates = [Path.cwd()]
-    if os.environ.get("CLAUDE_PROJECT_DIR"):
-        candidates.append(Path(os.environ["CLAUDE_PROJECT_DIR"]))
-    for candidate in candidates:
-        resolved = candidate.resolve()
+    for location in code_locations if code_locations is not None else _darnit_code_locations():
+        resolved = location.resolve()
         if resolved == target or target in resolved.parents:
             return (
-                f"The darnit MCP server is running from {resolved}, inside the audited repository. "
-                "If darnit is registered in this repository's own MCP configuration, the repository "
-                "controls how darnit is launched; register darnit at user scope instead "
-                "(`darnit install` without --project)."
+                f"darnit is running from {resolved}, inside the audited repository, so the "
+                "repository supplies the code auditing it (for example a repository-scoped "
+                "`uv run darnit serve` registration). That is expected when developing darnit "
+                "itself; for other repositories, register darnit at user scope "
+                "(`darnit install` without --project) and do not approve repository-scoped "
+                "darnit servers."
             )
     return None
 
