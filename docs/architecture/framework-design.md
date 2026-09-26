@@ -829,10 +829,10 @@ api_check = "darnit_baseline.checks:check_branch_protection"
 
 ### 6.6 Plugin Verification with Sigstore
 
-Plugins can be verified using Sigstore-based attestations:
+Plugins can be verified using Sigstore-based attestations. Plugin trust is operator configuration (Section 14); it is never read from the audited repository:
 
 ```toml
-# .baseline.toml
+# operator configuration (e.g. ~/.config/darnit/config.toml)
 [plugins]
 allow_unsigned = false
 trusted_publishers = [
@@ -1125,6 +1125,7 @@ The darnit framework package SHALL NOT contain code, modules, or string literals
 - **THEN** they SHALL use `get_implementation(name)` with an explicit name
 - **AND** the name SHALL be resolved from `.baseline.toml` `extends` field,
   an explicit parameter, or `discover_implementations()` to list available options
+- **AND** a repository may name a framework only by registered name (never by file path), and the operator's choice (Section 14) takes precedence
 
 ---
 
@@ -1165,7 +1166,35 @@ A handler used in a phase different from its registered affinity SHALL trigger a
 
 ## 13. Persistence Extension Surface
 
-The framework SHALL provide four per-artifact persistence Protocols under `darnit.stores`, alongside the existing extension surfaces `darnit.frameworks` (compliance implementations) and `darnit.question_resolvers` (feature 027). Third-party persistence backends register under Python entry-point groups `darnit.stores.project`, `darnit.stores.attestation`, `darnit.stores.report`, `darnit.stores.cache`. Filesystem-backed default implementations ship in `darnit-core` and reproduce the pre-feature on-disk layout exactly (feature 033); alternative backends are opt-in via `.baseline.toml` `[stores.<kind>] backend = "..."` blocks. See `specs/033-pluggable-stores/contracts/` for per-Protocol contracts.
+The framework SHALL provide four per-artifact persistence Protocols under `darnit.stores`, alongside the existing extension surfaces `darnit.frameworks` (compliance implementations) and `darnit.question_resolvers` (feature 027). Third-party persistence backends register under Python entry-point groups `darnit.stores.project`, `darnit.stores.attestation`, `darnit.stores.report`, `darnit.stores.cache`. Filesystem-backed default implementations ship in `darnit-core` and reproduce the pre-feature on-disk layout exactly (feature 033); alternative backends are opt-in via operator configuration `[stores.<kind>] backend = "..."` blocks (Section 14). See `specs/033-pluggable-stores/contracts/` for per-Protocol contracts.
+
+## 14. Operator Configuration and Trust Boundary
+
+Design principle: **the audited repository is untrusted input in its entirety, including any configuration it contains.** A repository may supply assertions about itself, which are recorded and reported as its own; it may not change what darnit executes, how steps conclude, or which plugins, servers, integrations, or stores are trusted. See `specs/040-operator-config-trust/` for the full contracts.
+
+### 14.1 Operator configuration
+
+- Tool configuration is owned by the operator (whoever runs darnit) and lives in one user-level file: `$XDG_CONFIG_HOME/darnit/config.toml` (absolute values only) or `~/.config/darnit/config.toml` on Linux and macOS, `%APPDATA%\darnit\config.toml` on Windows. `--operator-config PATH` at launch overrides the location for every driver.
+- Precedence: built-in defaults, then operator configuration, then per-run flags. Nothing from the audited repository enters this chain.
+- The framework SHALL refuse operator configuration whose resolved path lies inside the audited repository, SHALL reject unknown keys, and SHALL check file permissions (warn by default; refuse in strict mode, which is enabled at launch or by default in CI and can only be turned on, not off, by the file).
+- There is no environment variable that grants trust to repository content.
+- Every report records the operator configuration source and a digest of its content.
+
+### 14.2 Trusted repositories and CI
+
+- The operator lists trusted repositories by canonical identity (`host/namespace/name`). The identity used for a trust decision comes from the operator's audit target or CI metadata, never solely from the checkout's own version-control configuration.
+- CI trust is opt-in per rule; the initial rule trusts pushes to the default branch of a listed repository. Pull requests from forks and unrecognized events are never trusted.
+
+### 14.3 Project assertions
+
+- Project assertions (for example "this control is not applicable, reason X") live in `.project/` (darnit's extension file for anything upstream `.project/` cannot express). Project data that changes a control's applicability is treated as an assertion.
+- An assertion-backed not-applicable result is **honored** only for a trusted repository with a reason and no contradicting evidence; otherwise it is **pending** (non-compliant until the operator confirms it) or **contradicted** (ignored, with the evidence reported). Controls MAY declare `contradicted_by` evidence in framework TOML.
+- Confirmations are stored on the operator side, keyed by repository identity, claim, and evidence digest, and lapse on expiry or when the evidence changes.
+- Reports and attestations label every assertion-backed N/A as asserted, with the asserter and any confirmer.
+
+### 14.4 Repository-level .baseline.toml
+
+The repository-level `.baseline.toml` is deprecated. During the deprecation release only its per-control status and reason are read, as assertions under 14.3; every other setting is ignored with a warning naming its new home. `darnit config migrate` moves assertions into `.project/` and proposes an operator configuration fragment.
 
 ## Appendix C: Removed Requirements
 

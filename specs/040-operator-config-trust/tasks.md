@@ -25,11 +25,11 @@
 
 **Purpose**: Spec-first documentation and package skeletons.
 
-- [ ] T001 Confirm the prerequisite change restricting repository-supplied configuration (`load_user_config(..., trusted=False)`) is merged on main; rebase this branch on it (plan.md "Sequencing and dependencies" step 1)
-- [ ] T002 Update `docs/architecture/framework-design.md` first: add sections for operator configuration, the repository trust boundary, project assertions and their outcomes (honored/pending/contradicted), and `contradicted_by` (constitution Development Workflow)
-- [ ] T003 [P] Create package skeleton `packages/darnit/src/darnit/config/operator/__init__.py` exporting the public loader API
-- [ ] T004 [P] Create package skeleton `packages/darnit/src/darnit/trust/__init__.py`
-- [ ] T005 [P] Create test package directories `tests/darnit/config/operator/__init__.py`, `tests/darnit/trust/__init__.py`, `tests/darnit/assertions/__init__.py`
+- [X] T001 Confirm the prerequisite change restricting repository-supplied configuration (`load_user_config(..., trusted=False)`) is merged on main; rebase this branch on it (plan.md "Sequencing and dependencies" step 1)
+- [X] T002 Update `docs/architecture/framework-design.md` first: add sections for operator configuration, the repository trust boundary, project assertions and their outcomes (honored/pending/contradicted), and `contradicted_by` (constitution Development Workflow)
+- [X] T003 [P] Create package skeleton `packages/darnit/src/darnit/config/operator/__init__.py` exporting the public loader API
+- [X] T004 [P] Create package skeleton `packages/darnit/src/darnit/trust/__init__.py`
+- [X] T005 [P] Create test package directories `tests/darnit/config/operator/__init__.py`, `tests/darnit/trust/__init__.py`, `tests/darnit/assertions/__init__.py`
 
 ---
 
@@ -39,12 +39,12 @@
 
 **CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T006 [P] Write tests for the user config directory (XDG absolute-only rule, `~/.config` fallback on Linux and macOS, `%APPDATA%` on Windows, relative `XDG_CONFIG_HOME` ignored) in `tests/darnit/stores/test_platform_paths_config.py`
-- [ ] T007 Add `user_config_dir()` to `packages/darnit/src/darnit/stores/defaults/platform_paths.py` per research R1, and make existing XDG handling in that module ignore relative values
-- [ ] T008 [P] Write tests for `OperatorConfig` models (required `schema_version = 1`, unknown keys rejected with dotted key path, env values are variable names, defaults per data-model.md) in `tests/darnit/config/operator/test_schema.py`
-- [ ] T009 Implement `OperatorConfig` and nested models (`operator` with `identity`, `plugins`, `mcp_servers`, `controls`, `custom_controls`, `stores`, `llm`, `trust`, `policy`) with `extra="forbid"` in `packages/darnit/src/darnit/config/operator/schema.py` per contracts/operator-config.md
-- [ ] T010 [P] Write tests for `RepositoryIdentity` normalization (scp-like, `ssh://`, `https://`, trailing `.git`, ports and user info stripped, case folding for github.com, gitlab.com and operator-listed hosts, unknown aliases fail closed) in `tests/darnit/trust/test_identity.py`
-- [ ] T011 Implement `canonical_identity()` and `RepositoryIdentity` (with `source` and `trusted_eligible`) in `packages/darnit/src/darnit/trust/identity.py` per research R3
+- [X] T006 [P] Write tests for the user config directory (XDG absolute-only rule, `~/.config` fallback on Linux and macOS, `%APPDATA%` on Windows, relative `XDG_CONFIG_HOME` ignored) in `tests/darnit/stores/test_platform_paths_config.py`
+- [X] T007 Add `user_config_dir()` to `packages/darnit/src/darnit/stores/defaults/platform_paths.py` per research R1, and make existing XDG handling in that module ignore relative values
+- [X] T008 [P] Write tests for `OperatorConfig` models (required `schema_version = 1`, unknown keys rejected with dotted key path, env values are variable names, defaults per data-model.md) in `tests/darnit/config/operator/test_schema.py`
+- [X] T009 Implement `OperatorConfig` and nested models (`operator` with `identity`, `plugins`, `mcp_servers`, `controls`, `custom_controls`, `stores`, `llm`, `trust`, `policy`) with `extra="forbid"` in `packages/darnit/src/darnit/config/operator/schema.py` per contracts/operator-config.md
+- [X] T010 [P] Write tests for `RepositoryIdentity` normalization (scp-like, `ssh://`, `https://`, trailing `.git`, ports and user info stripped, case folding for github.com, gitlab.com and operator-listed hosts, unknown aliases fail closed) in `tests/darnit/trust/test_identity.py`
+- [X] T011 Implement `canonical_identity()` and `RepositoryIdentity` (with `source` and `trusted_eligible`) in `packages/darnit/src/darnit/trust/identity.py` per research R3
 
 **Checkpoint**: Foundation ready. User story work can begin.
 
