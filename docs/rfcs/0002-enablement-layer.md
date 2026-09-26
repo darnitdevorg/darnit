@@ -156,6 +156,22 @@ Rules:
 
 This RFC assumes RFC-0001 Stage 2: integrations are the only code, and standards are data. Capabilities follow the same rule. A new standard or capability should ship as TOML plus existing integrations and recipes; custom code is an integration, not a special path.
 
+### Framework hooks beyond repositories
+
+Enablement is not limited to repository hygiene. Capabilities such as reproducible builds and reproducible computational results need darnit to work with things that are not a Git repository on a forge, to act on targets that are not a pull request, and to judge outcomes that are not a document or a setting. Domain modules (for example reproducibility) supply the implementations; the framework supplies five contracts.
+
+**1. Subjects.** Today every run assumes a hosted repository (`owner/repo`, platform APIs, `.project/` in the tree). The core gains a generic subject model: repository, revision, build, execution run, environment, artifact, and dataset, each identified by content digest where possible and by a stable URI otherwise. Controls, capabilities, evidence, and snapshots attach to subjects rather than to `owner/repo`. Hosted-repository facts become one subject type among several, and nothing in the core assumes a particular forge, shell, or operating system.
+
+**2. Evidence importers.** Attestations produced by other tools (build provenance, execution traces, environment and hardware descriptions, scanner results) enter through a typed importer contract: verify the signature and signer identity, map the predicate to evidence on a subject, and assign authority per RFC-0001. A new attestation or attestor type is a new importer, not a core change. Importers never execute content from the attestation.
+
+**3. Environment providers.** An integration contract for provisioning an execution environment, running a declared command in it, collecting outputs as evidence, and tearing it down. Providers declare cost class and side effects; any provider that consumes paid or shared resources requires a `remediation_approval`-style task before it runs and respects run budgets. Environment specifications are data (base image or definition, dependencies, hardware requirements, data mounts), so they can be planned, diffed, and remediated like any other plan. Multi-stage and multi-environment executions are sequences of such runs within one engine run.
+
+**4. Remediation targets beyond pull requests.** The RFC-0001 remediation loop (plan, apply, re-check) generalizes from "forge" to "target": a repository branch and pull request is one target; an environment specification, an organization setting, or a recipe record are others. Each target type defines how a plan is rendered for review, how it is applied, and what re-check proves the change worked. For an environment specification the re-check is re-execution. Model-proposed changes are acceptable here precisely because the re-check, not the model, decides success.
+
+**5. Comparators and result approval.** Deciding whether a re-execution reproduced an original result is a first-class, pluggable step. A comparator takes two sets of outputs and returns an outcome whose authority follows RFC-0001: an exact digest match is dispositive; a tolerance, statistical, or semantic match is suggestive; a person's judgment that results are equivalent is asserted and arrives through a `result_approval` pending task. A model never declares a result reproduced on its own.
+
+Two supporting requirements follow from these hooks: long-running or paid work needs the durable, resumable run execution that RFC-0001 deferred (built on the engine's run log), and evidence about private inputs (datasets, proprietary code) must be representable by digest alone, with redaction rules that keep private content out of published records.
+
 ## Relationship to RFC-0001
 
 RFC-0001 defines how darnit reaches trustworthy verdicts (authority, drivers, evidence, remediation safety). This RFC changes what darnit is for and what it spends its effort on. It relies on RFC-0001 for: per-claim authority and the rule that a model never concludes PASS; engine-held run state and typed pending tasks; the candidate/confirmed context envelope; the audited-repository trust boundary; and the plan/apply/re-check remediation loop, which capability installation uses directly.
@@ -169,6 +185,7 @@ RFC-0001 defines how darnit reaches trustworthy verdicts (authority, drivers, ev
 | C | Evidence-first evaluation: prefer project-produced, identity-verified evidence; memoized judgments and confirmations by evidence digest | A second run on an unchanged repository makes no model calls and asks no questions |
 | D | Repository-snapshot spike, then (if warranted) the predicate, the scheduled workflow capability, and a verifier | Snapshots produced by a project's CI verify, supersede correctly, and express unobservable values distinctly |
 | E | Incremental and pull-request mode; organization question inbox | A pull request that weakens a protected setting is flagged; an organization-scoped answer clears the same question across repositories |
+| F | Framework hooks beyond repositories: subject model, evidence-importer contract, environment-provider contract, generalized remediation targets, comparators and `result_approval`; durable runs on the run log | A domain module runs capture, re-execution in a provisioned environment, and comparison end to end through these contracts with no module-specific code in the core |
 
 ## Alternatives Considered
 
@@ -185,3 +202,6 @@ RFC-0001 defines how darnit reaches trustworthy verdicts (authority, drivers, ev
 4. **Snapshot identity.** How should consumers weigh project-produced snapshots against fleet-operator snapshots for the same repository?
 5. **Where the predicate lives.** Keep it darnit-owned, or propose it to an existing attestation or OpenSSF working group once it has proven itself? Naming, including its relationship to existing discovery work such as `chainsights`, is open.
 6. **Expiry defaults.** Per-property validity windows for snapshots and per-key expiry for memoized confirmations: shared defaults or per-standard?
+7. **Subject identity.** Which subject types need a content digest versus a URI, and how are subjects related (a run of a build of a revision)?
+8. **Comparator authority.** Should any non-exact comparator (numeric tolerance, statistical equivalence) ever be promotable to dispositive for a declared result type, following RFC-0001's "authority can be earned" rule?
+9. **Provider budgets.** Where do cost budgets and approval policy for paid environment providers live: operator configuration, per run, or per capability?
