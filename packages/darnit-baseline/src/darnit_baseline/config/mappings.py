@@ -55,11 +55,10 @@ PROJECT_TYPE_EXCLUSIONS: dict[str, set[str]] = {
 # Format: "section.field" - resolver will check both standard and extension sections
 CONTROL_REFERENCE_MAPPING: dict[str, str] = {
     # Security (standard .project fields)
-    # SECURITY.md addresses multiple controls (VM and DO domains)
+    # SECURITY.md addresses multiple controls (VM domain)
     "OSPS-VM-01.01": "security.policy",           # SECURITY.md - vulnerability reporting contact
     "OSPS-VM-02.01": "security.policy",           # SECURITY.md - vulnerability reporting process
     "OSPS-VM-03.01": "security.policy",           # SECURITY.md - response timeline
-    "OSPS-DO-02.01": "security.policy",           # SECURITY.md (documentation domain)
     "OSPS-SA-03.02": "security.threat_model",     # Threat model
 
     # Governance (standard .project fields)
