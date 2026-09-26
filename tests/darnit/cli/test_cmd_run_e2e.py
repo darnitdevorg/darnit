@@ -129,8 +129,7 @@ class TestGoldenPath:
         """Pins C10/C11/C12/C13: Passed+Failed+Warned <= Total, with the
         remainder going to N/A/ERROR/PENDING_LLM (contract C14).
 
-        On the golden fixture, three controls are disabled via .baseline.toml
-        overrides and produce N/A status, so Passed + Failed + Warned < Total.
+        Controls in no printed bucket are N/A, ERROR, or PENDING_LLM.
         """
         _exit, stdout, _stderr = invoke_cmd_run(
             [str(minimal_repo_tree), "--feedback", "noninteractive"],

@@ -94,9 +94,10 @@ def audit_openssf_baseline(
     attest: bool = False,
     sign_attestation: bool = True,
     staging: bool = False,
-    prefer_upstream: bool = True,
+    prefer_upstream: bool = False,
     profile: str | None = None,
     project_url: str | None = None,
+    host: str | None = None,
 ) -> str:
     """
     Run a comprehensive OpenSSF Baseline audit on a repository.
@@ -122,12 +123,14 @@ def audit_openssf_baseline(
         sign_attestation: Sign attestation with Sigstore. Default: True
         staging: Use Sigstore staging environment. Default: False
         prefer_upstream: If True, prefer 'upstream' git remote when auto-detecting owner/repo.
-                         Useful for auditing forks against their upstream repository. Default: True
+                         Default: False. Auto-detected owner/repo never make a repository trusted.
         profile: Optional audit profile name to filter controls. Short name (e.g., "level1_quick")
                  or qualified name (e.g., "openssf-baseline:level1_quick"). Default: None (all controls)
         project_url: Canonical repository URL for the Best Practices Badge submission
                      (e.g. "https://github.com/curl/curl"). Auto-detected from git when omitted.
                      Only used when output_format="badge".
+        host: Git host of owner/repo (default github.com). owner, repo, and host
+              name the repository whose trust is decided from operator configuration.
 
     Returns:
         Formatted audit report with compliance status and remediation instructions
@@ -155,7 +158,11 @@ def audit_openssf_baseline(
     except OperatorConfigError as e:
         return f"Error: {e}"
 
-    # Auto-detect owner/repo from git (upstream-first by default)
+    from darnit.trust.decision import target_from_owner_repo
+
+    target = target_from_owner_repo(owner, repo, host)
+
+    # Auto-detect owner/repo from git (origin first)
     from darnit.core.utils import detect_owner_repo
 
     detected_owner, detected_repo = detect_owner_repo(
@@ -222,7 +229,7 @@ def audit_openssf_baseline(
         operator_config=operator_config,
     )
 
-    metadata = audit_report_metadata(operator_config, str(repo_path))
+    metadata = audit_report_metadata(operator_config, str(repo_path), target)
     warning = registration_scope_warning(repo_path)
     if warning:
         metadata["warnings"] = [warning]
@@ -293,6 +300,7 @@ def audit_openssf_baseline(
         attest_note = _attest_audit(
             owner, repo, repo_path, level, default_branch,
             results, summary, sign=sign_attestation, staging=staging,
+            trust=metadata["trust"],
         )
         # Only markdown output can carry the note without breaking the
         # format; for JSON/SARIF the attestation file is still written.
@@ -313,6 +321,7 @@ def _attest_audit(
     *,
     sign: bool,
     staging: bool,
+    trust: dict | None = None,
 ) -> str:
     """Generate an attestation from completed audit results.
 
@@ -330,6 +339,7 @@ def _attest_audit(
             owner, repo, repo_path, level, default_branch,
             results, summary, compliance,
         )
+        audit_result.trust = trust
         message = generate_attestation_from_results(
             audit_result, sign=sign, staging=staging,
         )
@@ -1144,6 +1154,7 @@ def generate_attestation(
     staging: bool = False,
     output_path: str | None = None,
     output_dir: str | None = None,
+    host: str | None = None,
 ) -> str:
     """
     Generate an in-toto attestation for OpenSSF Baseline compliance.
@@ -1159,6 +1170,8 @@ def generate_attestation(
         staging: Use Sigstore staging environment. Default: False
         output_path: Explicit path for attestation file
         output_dir: Directory to save attestation
+        host: Git host of owner/repo (default github.com); owner, repo, and host
+              name the repository whose trust is recorded in the attestation
 
     Returns:
         JSON attestation and path to saved file
@@ -1168,6 +1181,9 @@ def generate_attestation(
         return f"❌ Error: Repository path not found: {repo_path}"
 
     from darnit.core.utils import detect_owner_repo
+    from darnit.trust.decision import target_from_owner_repo
+
+    target = target_from_owner_repo(owner, repo, host)
 
     detected_owner, detected_repo = detect_owner_repo(str(repo_path))
     owner = owner or detected_owner
@@ -1179,9 +1195,11 @@ def generate_attestation(
     try:
         from darnit.config.operator.loader import resolve_operator_config
         from darnit.tools.audit import calculate_compliance, run_sieve_audit
+        from darnit.trust.decision import decide_trust
         from darnit_baseline.attestation import generate_attestation_from_results
 
         default_branch = _detect_default_branch(repo_path)
+        operator_config = resolve_operator_config(repo_path)
         results, summary = run_sieve_audit(
             owner=owner,
             repo=repo,
@@ -1189,13 +1207,14 @@ def generate_attestation(
             default_branch=default_branch,
             level=level,
             framework_name="openssf-baseline",
-            operator_config=resolve_operator_config(repo_path),
+            operator_config=operator_config,
         )
         compliance = calculate_compliance(results, level)
         audit_result = _build_audit_result(
             owner, repo, repo_path, level, default_branch,
             results, summary, compliance,
         )
+        audit_result.trust = decide_trust(target, operator_config.config, repo_path).report()
         return generate_attestation_from_results(
             audit_result,
             sign=sign,
@@ -1611,7 +1630,9 @@ def audit_org(
         compliance=compliance,
         level=level,
         framework_name="openssf-baseline",
-        audit_metadata={k: result[k] for k in ("operator_config", "ignored_repository_settings") if k in result},
+        audit_metadata={
+            k: result[k] for k in ("operator_config", "trust", "ignored_repository_settings") if k in result
+        },
     )
 
 

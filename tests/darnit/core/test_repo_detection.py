@@ -5,9 +5,11 @@ from unittest.mock import patch
 
 from darnit.core.utils import (
     _parse_github_url,
+    detect_checkout_identity,
     detect_owner_repo,
     detect_repo_from_git,
 )
+from darnit.trust.identity import IdentitySource
 
 
 class TestParseGithubUrl:
@@ -55,8 +57,8 @@ class TestDetectRepoFromGit:
         assert result["repo"] == "my-repo"
         assert result["source"] == "explicit"
 
-    def test_upstream_preferred_over_origin(self, temp_git_repo: Path):
-        """Default: upstream remote checked first."""
+    def test_origin_preferred_over_upstream(self, temp_git_repo: Path):
+        """Default: origin remote checked first (feature 040, research R3)."""
 
         def fake_remote(name, cwd):
             if name == "upstream":
@@ -72,14 +74,14 @@ class TestDetectRepoFromGit:
             result = detect_repo_from_git(str(temp_git_repo))
 
         assert result is not None
-        assert result["owner"] == "upstream-org"
-        assert result["source"] == "upstream"
+        assert result["owner"] == "fork-user"
+        assert result["source"] == "origin"
 
-    def test_origin_fallback_when_no_upstream(self, temp_git_repo: Path):
-        """No upstream remote → falls back to origin."""
+    def test_upstream_fallback_when_no_origin(self, temp_git_repo: Path):
+        """No origin remote -> falls back to upstream."""
 
         def fake_remote(name, cwd):
-            if name == "origin":
+            if name == "upstream":
                 return "https://github.com/my-user/my-repo.git"
             return None
 
@@ -92,10 +94,10 @@ class TestDetectRepoFromGit:
         assert result is not None
         assert result["owner"] == "my-user"
         assert result["repo"] == "my-repo"
-        assert result["source"] == "origin"
+        assert result["source"] == "upstream"
 
-    def test_prefer_upstream_false_reverses_order(self, temp_git_repo: Path):
-        """prefer_upstream=False checks origin first."""
+    def test_prefer_upstream_true_is_explicit_opt_in(self, temp_git_repo: Path):
+        """prefer_upstream=True checks upstream first."""
 
         def fake_remote(name, cwd):
             if name == "upstream":
@@ -109,12 +111,29 @@ class TestDetectRepoFromGit:
             patch("darnit.core.utils._gh_enrich", return_value={}),
         ):
             result = detect_repo_from_git(
-                str(temp_git_repo), prefer_upstream=False
+                str(temp_git_repo), prefer_upstream=True
             )
 
         assert result is not None
-        assert result["owner"] == "fork-user"
-        assert result["source"] == "origin"
+        assert result["owner"] == "upstream-org"
+        assert result["source"] == "upstream"
+
+    def test_identity_keeps_host(self, temp_git_repo: Path):
+        """The canonical identity of the remote keeps its host."""
+
+        def fake_remote(name, cwd):
+            if name == "origin":
+                return "git@gitlab.example.com:Team/Sub/Proj.git"
+            return None
+
+        with (
+            patch("darnit.core.utils._get_remote_url", side_effect=fake_remote),
+            patch("darnit.core.utils._gh_enrich", return_value={}),
+        ):
+            result = detect_repo_from_git(str(temp_git_repo))
+
+        assert result is not None
+        assert result["identity"] == "gitlab.example.com/Team/Sub/Proj"
 
     def test_source_field_present(self, temp_git_repo: Path):
         """Return dict includes source field."""
@@ -225,10 +244,33 @@ class TestDetectOwnerRepo:
         with patch(
             "darnit.core.utils.detect_repo_from_git", return_value=None
         ) as mock:
-            detect_owner_repo(str(temp_git_repo), prefer_upstream=False)
+            detect_owner_repo(str(temp_git_repo), prefer_upstream=True)
             mock.assert_called_once_with(
                 str(temp_git_repo),
-                prefer_upstream=False,
+                prefer_upstream=True,
                 owner=None,
                 repo=None,
             )
+
+
+class TestDetectCheckoutIdentity:
+    """Checkout remotes give a hint only, from origin only (feature 040)."""
+
+    def test_origin_is_a_checkout_hint(self, temp_git_repo: Path):
+        with patch(
+            "darnit.core.utils._get_remote_url",
+            side_effect=lambda name, cwd: "https://github.com/Org/Repo.git" if name == "origin" else None,
+        ):
+            identity = detect_checkout_identity(str(temp_git_repo))
+
+        assert identity is not None
+        assert identity.canonical == "github.com/org/repo"
+        assert identity.source is IdentitySource.CHECKOUT_HINT
+        assert identity.trusted_eligible is False
+
+    def test_upstream_is_never_used(self, temp_git_repo: Path):
+        with patch(
+            "darnit.core.utils._get_remote_url",
+            side_effect=lambda name, cwd: "https://github.com/org/repo.git" if name == "upstream" else None,
+        ):
+            assert detect_checkout_identity(str(temp_git_repo)) is None

@@ -135,6 +135,35 @@ def _copy_and_init(src: Path, dest: Path) -> Path:
     return dest
 
 
+# Three testchecks controls have pass_if_any=false on "no forbidden pattern
+# in **/*.py" checks. The handler's pass_if_any=false semantics require every
+# pattern to MATCH (not "must not match"), so a clean hello.py fails them by
+# design. The operator configuration below replaces their passes so the
+# golden-path fixture produces zero FAIL results. This is a fixture concern
+# only; no production behavior is affected.
+_FIXTURE_OPERATOR_CONFIG = """schema_version = 1
+""" + "".join(
+    f'''
+[controls."{control_id}"]
+passes = [{{ handler = "file_exists", files = ["README.md"] }}]
+'''
+    for control_id in ("TEST-QA-01", "TEST-QA-02", "TEST-SEC-01")
+)
+
+
+@pytest.fixture(autouse=True)
+def _fixture_operator_config(
+    _isolate_operator_config: None, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from darnit.config.operator import loader
+
+    config_dir = tmp_path_factory.mktemp("cli-operator-config")
+    (config_dir / "config.toml").write_text(_FIXTURE_OPERATOR_CONFIG, encoding="utf-8")
+    (config_dir / "config.toml").chmod(0o600)
+    config_dir.chmod(0o700)
+    monkeypatch.setattr(loader, "user_config_dir", lambda: config_dir)
+
+
 @pytest.fixture
 def minimal_repo_tree(tmp_path: Path) -> Path:
     """Copy the MinimalRepo fixture to tmp and git-init it."""

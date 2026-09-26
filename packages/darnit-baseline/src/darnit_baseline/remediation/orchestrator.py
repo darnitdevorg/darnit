@@ -868,7 +868,7 @@ def remediate_audit_findings(
         return f"❌ Error: {path_error}"
     local_path = resolved_path
 
-    # Auto-detect owner/repo (upstream-first by default)
+    # Auto-detect owner/repo (origin first)
     from darnit.core.utils import detect_owner_repo
 
     if not owner or not repo:

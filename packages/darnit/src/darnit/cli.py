@@ -186,6 +186,12 @@ def format_audit_metadata_text(metadata: dict) -> str:
         f"Operator configuration: {operator['source']}{digest}, "
         f"permission check: {operator['permission_check']}"
     ]
+    trust = metadata.get("trust")
+    if trust:
+        from darnit.trust.decision import format_trust
+
+        lines.append(f"Trust: {format_trust(trust)}")
+        lines.extend(f"  warning: {w}" for w in trust.get("warnings", []))
     ignored = metadata.get("ignored_repository_settings") or []
     if ignored:
         lines.append(f"Ignored repository settings ({len(ignored)}):")
@@ -212,6 +218,20 @@ def _load_operator_config(args: argparse.Namespace, audit_target: Path | None):
     except OperatorConfigError as e:
         logger.error(str(e))
         return None
+
+
+def _operator_target(args: argparse.Namespace, operator) -> tuple[bool, str | None]:
+    """Canonical ``--repo`` identity; ``(False, None)`` after logging when it cannot be parsed."""
+    from darnit.trust.identity import canonical_identity
+
+    raw = getattr(args, "repo", None)
+    if not raw:
+        return True, None
+    canonical = canonical_identity(raw, operator.trust.case_insensitive_hosts)
+    if canonical is None:
+        logger.error(f"--repo {raw!r} is not a repository identity; expected HOST/NAMESPACE/NAME")
+        return False, None
+    return True, canonical
 
 
 def cmd_audit(args: argparse.Namespace) -> int:
@@ -244,6 +264,9 @@ def cmd_audit(args: argparse.Namespace) -> int:
     if operator_config is None:
         return 1
     operator = operator_config.config
+    ok, target = _operator_target(args, operator)
+    if not ok:
+        return 1
 
     # Load configuration
     try:
@@ -283,8 +306,9 @@ def cmd_audit(args: argparse.Namespace) -> int:
 
     # Detect owner/repo from git if available
     from darnit.core.utils import detect_owner_repo
+    from darnit.trust.decision import owner_repo_from_identity
 
-    owner, repo = detect_owner_repo(str(repo_path))
+    owner, repo = owner_repo_from_identity(target) if target else detect_owner_repo(str(repo_path))
     default_branch = _detect_default_branch(repo_path)
 
     # Delegate to canonical audit pipeline
@@ -297,7 +321,7 @@ def cmd_audit(args: argparse.Namespace) -> int:
         default_branch=default_branch,
         level=3,
         controls=controls,
-        apply_user_config=False,  # CLI already applied filters above
+        apply_user_config=True,
         stop_on_llm=True,
         # Issue #427: the framework name has to reach the audit driver, not
         # just the control loader above. Without it the driver cannot
@@ -312,7 +336,7 @@ def cmd_audit(args: argparse.Namespace) -> int:
 
     from darnit.tools.audit import audit_report_metadata
 
-    metadata = audit_report_metadata(operator_config, str(repo_path))
+    metadata = audit_report_metadata(operator_config, str(repo_path), target)
 
     # Output results
     if args.output == "json":
@@ -731,8 +755,16 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     repo_path = str(Path(args.repo_path).resolve())
 
-    if _load_operator_config(args, Path(repo_path)) is None:
+    operator_config = _load_operator_config(args, Path(repo_path))
+    if operator_config is None:
         return 1
+    ok, target = _operator_target(args, operator_config.config)
+    if not ok:
+        return 1
+
+    from darnit.trust.decision import decide_trust, format_trust, owner_repo_from_identity
+
+    trust = decide_trust(target, operator_config.config, repo_path).report()
 
     # Feedback mode — default to interactive if terminal, noninteractive if not
     feedback_mode = args.feedback_mode
@@ -742,11 +774,17 @@ def cmd_run(args: argparse.Namespace) -> int:
     print("\nDarnit run")
     print(f"  Repository : {repo_path}")
     print(f"  Feedback   : {feedback_mode}")
+    print(f"  Trust      : {format_trust(trust)}")
+    for warning in trust["warnings"]:
+        print(f"  Warning    : {warning}")
     print()
 
     # framework_name=None auto-resolves from .baseline.toml inside audit().
+    owner, repo = owner_repo_from_identity(target) if target else (None, None)
     state = AuditState(
         local_path=repo_path,
+        owner=owner,
+        repo=repo,
         framework_name=getattr(args, "framework", None),
         level=getattr(args, "level", 3),
     )
@@ -871,6 +909,10 @@ def cmd_harness(args: argparse.Namespace) -> int:
     if operator_config is None:
         _emit_exit_summary("setup_error, operator configuration unusable", HarnessExitCode.SETUP_ERROR)
         return int(HarnessExitCode.SETUP_ERROR)
+    ok, target = _operator_target(args, operator_config.config)
+    if not ok:
+        _emit_exit_summary("setup_error, --repo is not a repository identity", HarnessExitCode.SETUP_ERROR)
+        return int(HarnessExitCode.SETUP_ERROR)
 
     # Build the resolver via the explicit factory. Any AnswerSourceLoadError
     # from a bad --answers file surfaces as a SETUP_ERROR.
@@ -920,6 +962,7 @@ def cmd_harness(args: argparse.Namespace) -> int:
         question_resolvers=question_resolvers,
         per_resolver_timeout_s=per_resolver_timeout_s,
         operator_config=operator_config,
+        target=target,
     )
 
     try:
@@ -1103,6 +1146,35 @@ def cmd_config_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_config_trust(args: argparse.Namespace) -> int:
+    """Add, list, or remove entries of ``[trust].repos`` in the operator configuration file."""
+    from darnit.config.operator.loader import default_config_path
+    from darnit.config.operator.trust_repos import (
+        TrustEditError,
+        add_trusted_repo,
+        list_trusted_repos,
+        remove_trusted_repo,
+    )
+
+    path = Path(args.operator_config).expanduser() if args.operator_config else default_config_path()
+    try:
+        if args.trust_command == "list":
+            for entry in list_trusted_repos(path):
+                sys.stdout.write(f"{entry}\n")
+        elif args.trust_command == "add":
+            if add_trusted_repo(path, args.identity):
+                logger.info(f"Added {args.identity} to trust.repos in {path}")
+            else:
+                logger.info(f"{args.identity} is already in trust.repos in {path}")
+        else:
+            remove_trusted_repo(path, args.identity)
+            logger.info(f"Removed {args.identity} from trust.repos in {path}")
+    except TrustEditError as e:
+        logger.error(str(e))
+        return 1
+    return 0
+
+
 # Helpers
 
 
@@ -1141,6 +1213,15 @@ def _add_operator_config_args(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Refuse an operator configuration file that fails the permission check "
              "(always on in recognized CI)",
+    )
+
+
+def _add_target_arg(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--repo",
+        metavar="HOST/NS/NAME",
+        help="Identity of the repository being audited (e.g. github.com/org/project). "
+             "Trust is decided from this identity; the checkout's own remotes are never trusted.",
     )
 
 
@@ -1256,6 +1337,7 @@ def create_parser() -> argparse.ArgumentParser:
         help="Audit profile name to filter controls (e.g., 'level1_quick' or 'openssf-baseline:level1_quick')",
     )
     _add_operator_config_args(audit_parser)
+    _add_target_arg(audit_parser)
     audit_parser.set_defaults(func=cmd_audit)
 
     # plan command (debug)
@@ -1365,6 +1447,7 @@ def create_parser() -> argparse.ArgumentParser:
              "auto (interactive if terminal, noninteractive in CI)",
     )
     _add_operator_config_args(run_parser)
+    _add_target_arg(run_parser)
     run_parser.set_defaults(func=cmd_run)
 
     # harness command (feature 026)
@@ -1454,10 +1537,11 @@ def create_parser() -> argparse.ArgumentParser:
         ),
     )
     _add_operator_config_args(harness_parser)
+    _add_target_arg(harness_parser)
     harness_parser.set_defaults(func=cmd_harness)
 
     # config command (feature 040)
-    config_parser = subparsers.add_parser("config", help="Inspect operator configuration")
+    config_parser = subparsers.add_parser("config", help="Inspect or edit operator configuration")
     config_subparsers = config_parser.add_subparsers(dest="config_command", required=True)
     config_show_parser = config_subparsers.add_parser(
         "show",
@@ -1465,6 +1549,25 @@ def create_parser() -> argparse.ArgumentParser:
     )
     _add_operator_config_args(config_show_parser)
     config_show_parser.set_defaults(func=cmd_config_show)
+    config_trust_parser = config_subparsers.add_parser(
+        "trust",
+        help="Edit the repositories listed in [trust].repos of the operator configuration",
+    )
+    trust_subparsers = config_trust_parser.add_subparsers(dest="trust_command", required=True)
+    for name, help_text in (
+        ("add", "Add a repository identity (HOST/NAMESPACE/NAME or a clone URL)"),
+        ("remove", "Remove a repository identity"),
+        ("list", "List trusted repository identities"),
+    ):
+        trust_parser = trust_subparsers.add_parser(name, help=help_text)
+        if name != "list":
+            trust_parser.add_argument("identity", metavar="IDENTITY")
+        trust_parser.add_argument(
+            "--operator-config",
+            metavar="PATH",
+            help="Operator configuration file to edit (default: the per-user darnit config.toml)",
+        )
+        trust_parser.set_defaults(func=cmd_config_trust)
 
     # install command
     install_parser = subparsers.add_parser(

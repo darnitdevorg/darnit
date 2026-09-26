@@ -28,6 +28,7 @@ def build_assessment_predicate(
     results: list[dict[str, Any]],
     project_config: Optional["ProjectConfig"],
     adapters_used: list[str],
+    trust: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the assessment attestation predicate.
 
@@ -43,6 +44,7 @@ def build_assessment_predicate(
         results: List of check results
         project_config: Project configuration (if any)
         adapters_used: List of adapters used for checks
+        trust: Trust decision for the audited repository (feature 040)
 
     Returns:
         Dictionary containing the attestation predicate
@@ -145,6 +147,9 @@ def build_assessment_predicate(
 
     if ref:
         predicate["repository"]["ref"] = ref
+    # Feature 040: additive within the v1 predicate, like `authority`.
+    if trust is not None:
+        predicate["trust"] = trust
 
     return predicate
 

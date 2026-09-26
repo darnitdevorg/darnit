@@ -90,18 +90,18 @@
 
 ### Tests for User Story 4
 
-- [ ] T028 [P] [US4] Write CI detection tests with GitHub event-payload fixtures (default-branch push trusted when the rule is configured; pull_request, pull_request_target, workflow_run, merge_group untrusted; fork detection by head vs base repository id; unknown event untrusted) in `tests/darnit/trust/test_ci_github.py`
-- [ ] T029 [P] [US4] Write GitLab CI detection tests (`CI_PIPELINE_SOURCE=push` with `CI_COMMIT_BRANCH == CI_DEFAULT_BRANCH` trusted; any merge-request context untrusted) in `tests/darnit/trust/test_ci_gitlab.py`
-- [ ] T030 [P] [US4] Write trust-decision tests (identity from operator target or CI metadata only; checkout remotes are `checkout_hint` and never trusted; `upstream` remote never preferred; target/remote mismatch reported; reason strings per data-model.md) in `tests/darnit/trust/test_decision.py`
+- [X] T028 [P] [US4] Write CI detection tests with GitHub event-payload fixtures (default-branch push trusted when the rule is configured; pull_request, pull_request_target, workflow_run, merge_group untrusted; fork detection by head vs base repository id; unknown event untrusted) in `tests/darnit/trust/test_ci_github.py`
+- [X] T029 [P] [US4] Write GitLab CI detection tests (`CI_PIPELINE_SOURCE=push` with `CI_COMMIT_BRANCH == CI_DEFAULT_BRANCH` trusted; any merge-request context untrusted) in `tests/darnit/trust/test_ci_gitlab.py`
+- [X] T030 [P] [US4] Write trust-decision tests (identity from operator target or CI metadata only; checkout remotes are `checkout_hint` and never trusted; `upstream` remote never preferred; target/remote mismatch reported; reason strings per data-model.md) in `tests/darnit/trust/test_decision.py`
 
 ### Implementation for User Story 4
 
-- [ ] T031 [P] [US4] Implement CI platform and event detection and the `push-default-branch` rule (including HEAD equals the CI commit check) in `packages/darnit/src/darnit/trust/ci.py` per research R4
-- [ ] T032 [US4] Implement `decide_trust(target, operator_config, checkout)` producing `TrustDecision` with `ci_facts` in `packages/darnit/src/darnit/trust/decision.py`
-- [ ] T033 [US4] Stop preferring an `upstream` remote and keep the host in parsed identities; mark checkout-derived identity as a hint only in `packages/darnit/src/darnit/core/utils.py` (`detect_repo_from_git`, `_parse_github_url`)
-- [ ] T034 [US4] Accept an explicit `--repo HOST/NS/NAME` target on CLI and harness and an optional `host` argument on MCP audit tools; record `trust {repository, identity_source, trusted, reason, ci_facts}` in results in `packages/darnit/src/darnit/cli.py`, `packages/darnit/src/darnit/harness/driver.py`, and `packages/darnit/src/darnit/tools/audit.py`
-- [ ] T035 [US4] Record a trust decision for every audit-running path not covered by T034: in the organization sweep use each enumerated repository as the operator target (identity source `operator_target`), and include the decision in the ActionPlan tools and attestation tool, in `packages/darnit/src/darnit/tools/audit_org.py`, `packages/darnit/src/darnit/server/tools/harness_loop.py`, and `packages/darnit-baseline/src/darnit_baseline/tools.py`
-- [ ] T036 [US4] Implement `darnit config trust add|list|remove` editing only `[trust].repos` in the operator configuration file in `packages/darnit/src/darnit/cli.py`
+- [X] T031 [P] [US4] Implement CI platform and event detection and the `push-default-branch` rule (including HEAD equals the CI commit check) in `packages/darnit/src/darnit/trust/ci.py` per research R4
+- [X] T032 [US4] Implement `decide_trust(target, operator_config, checkout)` producing `TrustDecision` with `ci_facts` in `packages/darnit/src/darnit/trust/decision.py`
+- [X] T033 [US4] Stop preferring an `upstream` remote and keep the host in parsed identities; mark checkout-derived identity as a hint only in `packages/darnit/src/darnit/core/utils.py` (`detect_repo_from_git`, `_parse_github_url`)
+- [X] T034 [US4] Accept an explicit `--repo HOST/NS/NAME` target on CLI and harness and an optional `host` argument on MCP audit tools; record `trust {repository, identity_source, trusted, reason, ci_facts}` in results in `packages/darnit/src/darnit/cli.py`, `packages/darnit/src/darnit/harness/driver.py`, and `packages/darnit/src/darnit/tools/audit.py`
+- [X] T035 [US4] Record a trust decision for every audit-running path not covered by T034: in the organization sweep use each enumerated repository as the operator target (identity source `operator_target`), and include the decision in the ActionPlan tools and attestation tool, in `packages/darnit/src/darnit/tools/audit_org.py`, `packages/darnit/src/darnit/server/tools/harness_loop.py`, and `packages/darnit-baseline/src/darnit_baseline/tools.py`
+- [X] T036 [US4] Implement `darnit config trust add|list|remove` editing only `[trust].repos` in the operator configuration file in `packages/darnit/src/darnit/cli.py`
 
 **Checkpoint**: Trust decisions are reported for every run.
 
@@ -115,14 +115,14 @@
 
 ### Tests for User Story 2
 
-- [ ] T037 [P] [US2] Write tests for reading claims from `.project/darnit.yaml` `controls` (optional `asserted_by`, default `repository content`, unknown control id reported and ignored, missing reason recorded) in `tests/darnit/assertions/test_project_assertions.py`
-- [ ] T038 [P] [US2] Write tests that darnit-written `.project/` files still conform to the upstream schema after adding `asserted_by` (darnit data only in the extension file) in `tests/darnit/assertions/test_project_schema_conformance.py`
+- [X] T037 [P] [US2] Write tests for reading claims from `.project/darnit.yaml` `controls` (optional `asserted_by`, default `repository content`, unknown control id reported and ignored, missing reason recorded) in `tests/darnit/assertions/test_project_assertions.py`
+- [X] T038 [P] [US2] Write tests that darnit-written `.project/` files still conform to the upstream schema after adding `asserted_by` (darnit data only in the extension file) in `tests/darnit/assertions/test_project_schema_conformance.py`
 
 ### Implementation for User Story 2
 
-- [ ] T039 [US2] Add optional `asserted_by` to the `.project/darnit.yaml` control override model in `packages/darnit/src/darnit/config/schema.py`
-- [ ] T040 [US2] Implement `collect_assertions(project_config, framework)` returning `ProjectAssertion` records (explicit claims) in `packages/darnit/src/darnit/trust/assertions.py`
-- [ ] T041 [US2] Make audit paths read project assertions from `.project/` instead of repository `.baseline.toml` status overrides, and unify the currently divergent N/A handling so every driver path reports assertion-backed results the same way, in `packages/darnit/src/darnit/tools/audit.py` and `packages/darnit/src/darnit/config/control_loader.py`
+- [X] T039 [US2] Add optional `asserted_by` to the `.project/darnit.yaml` control override model in `packages/darnit/src/darnit/config/schema.py`
+- [X] T040 [US2] Implement `collect_assertions(project_config, framework)` returning `ProjectAssertion` records (explicit claims) in `packages/darnit/src/darnit/trust/assertions.py`
+- [X] T041 [US2] Make audit paths read project assertions from `.project/` instead of repository `.baseline.toml` status overrides, and unify the currently divergent N/A handling so every driver path reports assertion-backed results the same way, in `packages/darnit/src/darnit/tools/audit.py` and `packages/darnit/src/darnit/config/control_loader.py`
 
 **Checkpoint**: Claims are read from `.project/` and reported with their origin.
 

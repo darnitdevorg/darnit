@@ -13,25 +13,25 @@ The `darnit.core.utils` module SHALL expose a single function `detect_repo_from_
 - **WHEN** an implementation package (e.g., `darnit-baseline`) needs owner/repo
 - **THEN** it SHALL import and call the framework's `detect_repo_from_git()` rather than defining its own `_detect_owner_repo()` function
 
-### Requirement: Repo identity resolution SHALL prefer upstream remote over origin
+### Requirement: Repo identity resolution SHALL prefer origin remote over upstream
 
 The canonical `detect_repo_from_git()` function SHALL check git remotes in the following order by default:
-1. `upstream` remote (the original repo for forks)
-2. `origin` remote (fallback)
+1. `origin` remote
+2. `upstream` remote (fallback)
 
-This ensures that audits run on forks evaluate the upstream project's settings — not the fork's.
+A fork clone is identified as itself, not as its parent. Remotes are part of the audited checkout, so an identity derived from them is a display hint only and SHALL NOT be used to decide trust (feature 040, FR-016a); `detect_checkout_identity()` returns the `origin` identity marked as `checkout_hint` and never consults `upstream`.
 
 #### Scenario: Fork with upstream remote configured
 - **WHEN** the local repo has both `upstream` (pointing to `github.com/org/repo`) and `origin` (pointing to `github.com/user/repo`) remotes
-- **THEN** `detect_repo_from_git()` SHALL return the owner/repo from the `upstream` remote
-
-#### Scenario: Non-fork with only origin remote
-- **WHEN** the local repo has only an `origin` remote
 - **THEN** `detect_repo_from_git()` SHALL return the owner/repo from the `origin` remote
 
-#### Scenario: Override to use origin
-- **WHEN** a caller passes `prefer_upstream=False`
-- **THEN** `detect_repo_from_git()` SHALL check `origin` first, then `upstream`
+#### Scenario: Only an upstream remote
+- **WHEN** the local repo has only an `upstream` remote
+- **THEN** `detect_repo_from_git()` SHALL return the owner/repo from the `upstream` remote
+
+#### Scenario: Explicit opt-in to upstream
+- **WHEN** a caller passes `prefer_upstream=True`
+- **THEN** `detect_repo_from_git()` SHALL check `upstream` first, then `origin`
 
 ### Requirement: Repo identity resolution SHALL support explicit owner/repo override
 
@@ -47,7 +47,7 @@ When the caller provides explicit `owner` and `repo` parameters, the function SH
 
 ### Requirement: Repo identity resolution SHALL return structured metadata
 
-The function SHALL return a dict with at minimum: `owner`, `repo`, `url`, `is_private`, `default_branch`, `resolved_path`, and `source` (which remote or override was used). If detection fails entirely, it SHALL return `None`.
+The function SHALL return a dict with at minimum: `owner`, `repo`, `url`, `is_private`, `default_branch`, `resolved_path`, `source` (which remote or override was used), and `identity` (the remote's canonical `host/namespace/name`, keeping the host, or `None`). If detection fails entirely, it SHALL return `None`.
 
 #### Scenario: Successful detection
 - **WHEN** the function resolves owner/repo from a git remote

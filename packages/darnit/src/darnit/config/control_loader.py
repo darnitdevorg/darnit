@@ -382,6 +382,10 @@ def load_controls_from_effective(config: EffectiveConfig) -> list[ControlSpec]:
     This is the main entry point for loading controls from merged
     framework + user configuration.
 
+    Controls a repository claims are not applicable are still loaded: the
+    claim is the repository's assertion, which the audit reports alongside
+    the control's result (feature 040).
+
     Args:
         config: Merged effective configuration
 
@@ -391,11 +395,6 @@ def load_controls_from_effective(config: EffectiveConfig) -> list[ControlSpec]:
     controls = []
 
     for control_id, effective in config.controls.items():
-        # Skip non-applicable controls
-        if not effective.is_applicable():
-            logger.debug(f"Skipping {control_id}: {effective.status_reason}")
-            continue
-
         try:
             control = control_from_effective(control_id, effective)
             controls.append(control)

@@ -79,6 +79,8 @@ def generate_attestation_from_results(
             "error": "Could not determine git commit. Is this a git repository?"
         }, indent=2)
 
+    trust = getattr(audit_result, "trust", None)
+
     # Build the predicate
     predicate = build_assessment_predicate(
         owner=audit_result.owner,
@@ -88,7 +90,8 @@ def generate_attestation_from_results(
         level=audit_result.level,
         results=audit_result.all_results,
         project_config=audit_result.project_config,
-        adapters_used=["builtin"]
+        adapters_used=["builtin"],
+        trust=trust if isinstance(trust, dict) else None,
     )
 
     predicate_type = BASELINE_PREDICATE_TYPE

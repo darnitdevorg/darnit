@@ -228,17 +228,34 @@ def _apply_operator_controls(
     return result
 
 
-def audit_report_metadata(operator_config: "LoadedOperatorConfig", local_path: str) -> dict[str, Any]:
+def _known_control_ids(controls: list[Any], framework_name: str | None, operator: "OperatorConfig") -> set[str]:
+    """Control ids the framework (and operator configuration) define, for validating claims."""
+    known = {c.control_id for c in controls} | set(operator.custom_controls)
+    framework_path = _get_framework_config_path(framework_name)
+    if framework_path:
+        from darnit.config import load_framework_config
+
+        known |= set(load_framework_config(framework_path).controls)
+    return known
+
+
+def audit_report_metadata(
+    operator_config: "LoadedOperatorConfig", local_path: str, target: str | None = None
+) -> dict[str, Any]:
     """Report fields every driver adds to an audit's output (feature 040).
 
-    ``operator_config`` names the operator configuration the run used, and
+    ``operator_config`` names the operator configuration the run used,
+    ``trust`` records whether the audited repository is trusted and why
+    (``target`` is the repository identity the operator named, if any), and
     ``ignored_repository_settings`` lists tool settings the audited
     repository tried to supply, each with the place it now belongs.
     """
     from darnit.config.merger import find_ignored_repository_settings
+    from darnit.trust.decision import decide_trust
 
     return {
         "operator_config": operator_config.report(),
+        "trust": decide_trust(target, operator_config.config, local_path).report(),
         "ignored_repository_settings": [
             asdict(setting) for setting in find_ignored_repository_settings(Path(local_path))
         ],
@@ -495,7 +512,9 @@ def run_sieve_audit(
         controls: Pre-loaded ControlSpec objects. If None, loads from
             TOML/registry automatically.
         tags: Tag filters to apply to controls (e.g., ["domain=AC"]).
-        apply_user_config: Apply .baseline.toml user config exclusions.
+        apply_user_config: Report the repository's not-applicable claims
+            (``.project/darnit.yaml``, ``.baseline.toml``) with each claimed
+            control's result.
         stop_on_llm: Return PENDING_LLM for LLM consultation.
         framework_name: Explicit framework name (e.g., "openssf-baseline").
             Required when controls is None and multiple implementations are
@@ -521,14 +540,6 @@ def run_sieve_audit(
 
         operator_config = resolve_operator_config(local_path)
     operator = operator_config.config
-
-    # Load user config exclusions if enabled
-    excluded_ids: set[str] = set()
-    if apply_user_config:
-        skipped = get_excluded_control_ids(local_path)
-        excluded_ids = set(skipped.keys())
-        if excluded_ids:
-            logger.info(f"Skipping {len(excluded_ids)} controls per user config")
 
     # Resolve framework name from .baseline.toml if not provided
     resolved_fw = framework_name
@@ -586,6 +597,8 @@ def run_sieve_audit(
             all_controls.extend(registry.get_specs_by_level(lvl))
         all_controls = _apply_operator_controls(all_controls, resolved_fw, operator)
 
+    known_control_ids = _known_control_ids(all_controls, resolved_fw, operator)
+
     # Filter by level (applies to both provided and loaded controls)
     all_controls = [c for c in all_controls if (c.level or 0) <= level]
 
@@ -600,6 +613,15 @@ def run_sieve_audit(
             all_controls = filter_controls(all_controls, tag_filters)
         except ImportError:
             logger.debug("Filtering module not available, skipping tag filter")
+
+    # Feature 040: not-applicable claims are the repository's assertions.
+    # They are reported with each claimed control's result; the control is
+    # still evaluated and counts normally until the claim can be honored.
+    assertions: dict[str, Any] = {}
+    if apply_user_config:
+        from darnit.trust.assertions import collect_assertions
+
+        assertions = {a.control_id: a for a in collect_assertions(local_path, known_control_ids)}
 
     orchestrator = SieveOrchestrator(stop_on_llm=stop_on_llm)
     from darnit.core.models import ExecutionContext
@@ -693,18 +715,6 @@ def run_sieve_audit(
     for spec in all_controls:
         control_id = spec.control_id
 
-        # Handle user config exclusions
-        if control_id in excluded_ids:
-            all_results.append(
-                {
-                    "id": control_id,
-                    "status": "N/A",
-                    "details": "Excluded via .baseline.toml",
-                    "level": spec.level or 1,
-                }
-            )
-            continue
-
         # Create check context
         context = CheckContext(
             owner=owner,
@@ -734,6 +744,10 @@ def run_sieve_audit(
         when_clause = spec.metadata.get("when")
         if when_clause:
             result_dict["when"] = when_clause
+
+        assertion = assertions.get(control_id)
+        if assertion is not None:
+            result_dict["assertion"] = assertion.report("pending")
 
         all_results.append(result_dict)
 
@@ -1031,6 +1045,14 @@ def format_results_markdown(
                 if resolving_handler is not None:
                     lines.append(f"  - *Resolved by:* `{resolving_handler}` (pass #{resolving_index})")
 
+                assertion = r.get("assertion")
+                if assertion:
+                    lines.append(
+                        f"  - *Asserted not applicable* by {assertion['asserted_by']} in "
+                        f"`{assertion['location']}` ({assertion.get('reason') or 'no reason given'}): "
+                        f"{assertion['outcome']}"
+                    )
+
                 # Show pass history (tier progression through the cascade)
                 pass_history = r.get("pass_history")
                 if pass_history and len(pass_history) > 1:
@@ -1203,6 +1225,13 @@ def _format_audit_metadata_markdown(audit_metadata: dict[str, Any] | None) -> li
             f"**Operator Configuration:** `{operator['source']}`{digest} "
             f"(permission check: {operator['permission_check']})"
         )
+    trust = audit_metadata.get("trust")
+    if trust:
+        from darnit.trust.decision import format_trust
+
+        lines.append(f"**Trust:** {format_trust(trust)}")
+        for warning in trust.get("warnings", []):
+            lines.extend(["", f"> **Warning:** {warning}"])
     for warning in audit_metadata.get("warnings", []):
         lines.extend(["", f"> **Warning:** {warning}"])
     ignored = audit_metadata.get("ignored_repository_settings") or []

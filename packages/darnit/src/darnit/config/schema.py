@@ -287,10 +287,15 @@ class DocumentationConfig(BaseModel):
 
 
 class ControlOverride(BaseModel):
-    """Override status for a specific OSPS control."""
+    """Override status for a specific OSPS control.
+
+    A ``n/a`` or ``disabled`` status is the project's assertion that the
+    control does not apply; ``asserted_by`` names who makes it (feature 040).
+    """
 
     status: ControlStatusValue
     reason: str | None = None
+    asserted_by: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 

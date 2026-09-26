@@ -70,6 +70,11 @@ def get_launch_options() -> LaunchOptions:
     return _launch_options
 
 
+def default_config_path() -> Path:
+    """The per-user operator configuration file location."""
+    return user_config_dir() / CONFIG_FILENAME
+
+
 def _permissions_checkable() -> bool:
     return sys.platform != "win32" and hasattr(os, "getuid")
 

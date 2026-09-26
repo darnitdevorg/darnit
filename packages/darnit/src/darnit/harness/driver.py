@@ -108,6 +108,9 @@ class HarnessRun:
     # Feature 040: operator configuration for this run. None resolves it from
     # the launch options against ``local_path`` when the run starts.
     operator_config: LoadedOperatorConfig | None = None
+    # Repository identity the operator named (``--repo``); the basis for the
+    # run's trust decision. None leaves the checkout's remotes as a hint only.
+    target: str | None = None
 
     # Counters populated during .run()
     llm_calls_total: int = 0
@@ -247,9 +250,12 @@ class HarnessRun:
         `.baseline.toml` / undetectable owner+repo. Message points at
         `darnit init` per CLI-1.
         """
+        from darnit.trust.decision import owner_repo_from_identity
+
+        owner, repo = owner_repo_from_identity(self.target) if self.target else (None, None)
         owner, repo, resolved_path, default_branch, error = prepare_audit(
-            None,
-            None,
+            owner,
+            repo,
             self.local_path,
         )
         if error:
@@ -462,6 +468,8 @@ class HarnessRun:
                 response,
             )
             final_dict = sieve_result.to_legacy_dict()
+            if "assertion" in result:
+                final_dict["assertion"] = result["assertion"]
             updated[control_id] = final_dict
 
             logger.info(
@@ -895,7 +903,9 @@ class HarnessRun:
         ]
 
         metadata = (
-            audit_report_metadata(self.operator_config, self.local_path) if self.operator_config else {}
+            audit_report_metadata(self.operator_config, self.local_path, self.target)
+            if self.operator_config
+            else {}
         )
 
         return HarnessReport(

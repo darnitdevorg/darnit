@@ -23,6 +23,9 @@ async def builtin_audit(
     level: int = 3,
     output_format: str = "markdown",
     tags: str | list[str] | None = None,
+    owner: str | None = None,
+    repo: str | None = None,
+    host: str | None = None,
     *,
     _framework_name: str = "",
 ) -> str:
@@ -36,6 +39,10 @@ async def builtin_audit(
         level: Maximum maturity level to check (default: 3).
         output_format: Output format - "markdown", "json", or "sarif".
         tags: Filter controls by tags (e.g., "domain=AC", "level=1").
+        owner: Repository owner or namespace (auto-detected from git if not provided).
+        repo: Repository name (auto-detected from git if not provided).
+        host: Git host of owner/repo (default github.com). owner, repo, and host
+            name the repository whose trust is decided from operator configuration.
         _framework_name: Internal - set by the factory at registration time.
 
     Returns:
@@ -108,8 +115,12 @@ async def builtin_audit(
 
     # Detect owner/repo for context
     from darnit.core.utils import detect_owner_repo
+    from darnit.trust.decision import target_from_owner_repo
 
-    owner, repo = detect_owner_repo(str(repo_path))
+    target = target_from_owner_repo(owner, repo, host)
+    detected_owner, detected_repo = detect_owner_repo(str(repo_path))
+    owner = owner or detected_owner
+    repo = repo or detected_repo
 
     # Normalize tags
     tags_list: list[str] | None = None
@@ -133,7 +144,7 @@ async def builtin_audit(
         operator_config=operator_config,
     )
 
-    metadata = audit_report_metadata(operator_config, str(repo_path))
+    metadata = audit_report_metadata(operator_config, str(repo_path), target)
     warning = registration_scope_warning(repo_path)
     if warning:
         metadata["warnings"] = [warning]

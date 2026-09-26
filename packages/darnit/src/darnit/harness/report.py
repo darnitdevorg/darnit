@@ -100,6 +100,7 @@ class HarnessReport(BaseModel):
     answered_feedback: list[AnsweredFeedbackEntry] = Field(default_factory=list)
     # Feature 040: operator configuration used and repository settings ignored.
     operator_config: dict[str, Any] | None = None
+    trust: dict[str, Any] | None = None
     ignored_repository_settings: list[dict[str, str]] = Field(default_factory=list)
     # exit_class NOT emitted in JSON body per RF-8; kept as an attribute
     # for the driver but excluded from serialization.
@@ -138,6 +139,11 @@ class HarnessReport(BaseModel):
                 f"- Operator configuration: `{self.operator_config['source']}`"
                 + (f" (sha256 `{digest}`)" if digest else "")
             )
+        if self.trust:
+            from darnit.trust.decision import format_trust
+
+            lines.append(f"- Trust: {format_trust(self.trust)}")
+            lines.extend(f"- Warning: {w}" for w in self.trust.get("warnings", []))
         s = self.summary
         lines.append(f"- Total: {s.total}")
         lines.append(f"- Passed: {s.pass_}")

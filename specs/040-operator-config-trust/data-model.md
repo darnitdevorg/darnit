@@ -49,6 +49,7 @@ Derived at load: `source` (absolute path or `builtin-defaults`) and `digest` (SH
 | `trusted` | bool | |
 | `reason` | str | For example `listed; local run`, `not listed`, `ci: fork pull request`, `ci: unknown event`, `identity from checkout only`. |
 | `ci_facts` | map | Platform, event, ref, default branch, head/base identity when in CI. |
+| `warnings` | list[str] | For example a mismatch between the operator target and the checkout's `origin` remote. |
 
 Recorded in the report and attestation.
 

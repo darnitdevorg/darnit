@@ -175,3 +175,4 @@ class AuditResult:
     skipped_controls: dict[str, str] = field(default_factory=dict)
     commit: str | None = None
     ref: str | None = None
+    trust: dict[str, Any] | None = None  # Feature 040: trust decision report block

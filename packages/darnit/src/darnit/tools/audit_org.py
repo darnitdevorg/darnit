@@ -206,6 +206,7 @@ def _audit_single_repo(
         try:
             from darnit.config.operator.loader import resolve_operator_config
             from darnit.tools.audit import audit_report_metadata, run_sieve_audit
+            from darnit.trust.decision import target_from_owner_repo
 
             operator_config = resolve_operator_config(clone_path)
             results, summary = run_sieve_audit(
@@ -226,7 +227,7 @@ def _audit_single_repo(
                 "error": None,
                 "results": results,
                 "summary": summary,
-                **audit_report_metadata(operator_config, clone_path),
+                **audit_report_metadata(operator_config, clone_path, target_from_owner_repo(owner, repo)),
             }
         except Exception as e:
             logger.warning("Audit failed for %s/%s: %s", owner, repo, e)
@@ -379,6 +380,9 @@ def format_org_results_markdown(
                 summary=summary,
                 compliance=compliance,
                 level=level,
+                audit_metadata={
+                    k: result[k] for k in ("operator_config", "trust", "ignored_repository_settings") if k in result
+                },
             )
             lines.append(report)
         else:

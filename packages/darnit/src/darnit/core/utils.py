@@ -5,9 +5,11 @@ import json
 import os
 import re
 import subprocess
+from collections.abc import Iterable
 from typing import Any
 
 from darnit.core.logging import get_logger
+from darnit.trust.identity import IdentitySource, RepositoryIdentity, canonical_identity
 
 logger = get_logger("utils")
 
@@ -237,13 +239,29 @@ def _parse_github_url(url: str) -> tuple[str, str] | None:
     return None
 
 
+def detect_checkout_identity(
+    local_path: str, case_insensitive_hosts: Iterable[str] = ()
+) -> RepositoryIdentity | None:
+    """Canonical identity of the checkout's ``origin`` remote, as a hint only.
+
+    Remotes are part of the audited checkout, so this identity is never
+    eligible for trust (feature 040, FR-016a); an ``upstream`` remote is
+    never consulted.
+    """
+    url = _get_remote_url("origin", local_path)
+    canonical = canonical_identity(url, case_insensitive_hosts) if url else None
+    if canonical is None:
+        return None
+    return RepositoryIdentity(canonical, IdentitySource.CHECKOUT_HINT)
+
+
 def detect_repo_from_git(
     local_path: str,
     *,
-    prefer_upstream: bool = True,
+    prefer_upstream: bool = False,
     owner: str | None = None,
     repo: str | None = None,
-) -> dict[str, str] | None:
+) -> dict[str, Any] | None:
     """Canonical repo identity detection — single source of truth.
 
     Resolves the repository owner, name, and metadata. This is the ONLY
@@ -252,13 +270,16 @@ def detect_repo_from_git(
 
     Resolution order:
     1. If both owner and repo are provided explicitly, return immediately.
-    2. Check git remotes (upstream first, then origin) for owner/repo.
+    2. Check git remotes (origin first, then upstream) for owner/repo.
     3. Enrich with metadata from gh CLI if available.
+
+    The result describes the checkout and is never a basis for trust; see
+    :func:`detect_checkout_identity`.
 
     Args:
         local_path: Path to the git repository.
-        prefer_upstream: If True (default), check 'upstream' remote before
-            'origin'. Set to False to prefer origin (rare).
+        prefer_upstream: If True, check 'upstream' remote before 'origin'.
+            Default False: a fork clone is identified as itself.
         owner: Explicit owner override. Skips detection if both owner and
             repo are provided.
         repo: Explicit repo override. Skips detection if both owner and
@@ -266,7 +287,9 @@ def detect_repo_from_git(
 
     Returns:
         Dict with owner, repo, url, is_private, default_branch,
-        resolved_path, and source — or None if detection fails entirely.
+        resolved_path, source, and identity (the remote's canonical
+        ``host/namespace/name``, or None) -- or None if detection fails
+        entirely.
     """
     resolved_path, error = validate_local_path(local_path)
     if error:
@@ -282,6 +305,7 @@ def detect_repo_from_git(
             "default_branch": "main",
             "resolved_path": resolved_path,
             "source": "explicit",
+            "identity": None,
         }
 
     # Detect from git remotes
@@ -289,6 +313,7 @@ def detect_repo_from_git(
     detected_owner = None
     detected_repo = None
     source = None
+    identity = None
 
     for remote in remotes:
         url = _get_remote_url(remote, resolved_path)
@@ -297,6 +322,7 @@ def detect_repo_from_git(
             if parsed:
                 detected_owner, detected_repo = parsed
                 source = remote
+                identity = canonical_identity(url)
                 break
 
     # Apply explicit overrides for partial specification
@@ -320,6 +346,7 @@ def detect_repo_from_git(
         "default_branch": metadata.get("default_branch", "main"),
         "resolved_path": resolved_path,
         "source": source or "fallback",
+        "identity": identity,
     }
 
 
@@ -356,7 +383,7 @@ def _gh_enrich(owner: str, repo: str, cwd: str) -> dict[str, Any]:
 def detect_owner_repo(
     local_path: str,
     *,
-    prefer_upstream: bool = True,
+    prefer_upstream: bool = False,
     owner: str | None = None,
     repo: str | None = None,
 ) -> tuple[str, str]:
