@@ -81,16 +81,20 @@ packages/darnit/src/darnit/
 |   |-- identity.py               # canonical repository identity (host/ns/name), identity sources
 |   |-- ci.py                     # CI platform/event detection, push-default-branch rule
 |   |-- decision.py               # TrustDecision for a run
+|   |-- assertions.py             # ProjectAssertion collection and outcome evaluation
 |   `-- confirmations.py          # operator-side confirmation store (data root)
-|-- sieve/ and tools/audit.py     # assertion evaluation (honored/pending/contradicted), N/A labelling,
-|                                 # applicability-changing context values as assertions
+|-- tools/audit.py                # applying assertion outcomes to results and compliance; N/A labelling
+|-- tools/audit_org.py            # operator configuration and trust decision per enumerated repository
 |-- stores/defaults/platform_paths.py  # user config dir (XDG rules, absolute-only)
-|-- server/ (factory, tools)      # --operator-config, per-call containment check, confirmation tool
+|-- server/ (factory, tools)      # --operator-config, per-call containment check, confirmation tool,
+|                                 # ActionPlan tools (harness_loop.py)
 |-- harness/driver.py             # --operator-config, trust decision in report
 `-- cli.py                        # --operator-config, `config show|migrate|trust`, `install` scope
 
 packages/darnit-baseline/src/darnit_baseline/
 |-- openssf-baseline.toml         # contradicted_by on release-dependent controls; affects-list fixes
+|-- tools.py                      # baseline audit and attestation tools pass operator config
+|-- remediation/orchestrator.py   # uses assertion outcomes instead of raw N/A overrides
 `-- attestation/predicate.py      # authority/asserter fields for assertion-backed N/A
 
 docs/

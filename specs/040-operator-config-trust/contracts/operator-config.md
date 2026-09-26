@@ -43,9 +43,12 @@ repos = ["github.com/example/project"]
 case_insensitive_hosts = ["git.example.com"]
 ci = [ { event = "push-default-branch" } ]
 
+[operator]
+identity = "alice@example.com"                   # recorded as confirmed_by; defaults to the OS user
+
 [policy]
 confirmation_expiry_days = 180
-strict_permissions = false
+strict_permissions = true                         # may only turn strict mode ON; see below
 ```
 
 ## Guarantees
@@ -58,7 +61,9 @@ strict_permissions = false
 
 The file and each parent directory up to the user's home (or filesystem root) must be owned by the current user or root and must not be group- or world-writable.
 
-| Result | `strict_permissions = false` | `strict_permissions = true` |
+Strict mode is on when `--strict-operator-config` is given at launch, when running in recognized CI, or when the file sets `policy.strict_permissions = true`. The file cannot turn strict mode off, because a file that fails the check is exactly the file that must not be trusted to relax it.
+
+| Result | Strict mode off | Strict mode on |
 |---|---|---|
 | Pass | load | load |
 | Fail | warn, load | refuse, exit non-zero |

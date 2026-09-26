@@ -6,6 +6,7 @@
 |---|---|
 | All audit-running CLI subcommands (`audit`, `run`, `harness`) | `--operator-config PATH` |
 | `darnit serve` | `--operator-config PATH` (distinct from the existing positional framework config) |
+| All of the above | `--strict-operator-config`: refuse an operator configuration file that fails the permission check. On by default in recognized CI. |
 | `darnit config show` | Prints the resolved source, digest, permission-check result, and effective settings with secrets redacted. |
 | `darnit config migrate [REPO]` | Moves project assertions from `REPO/.baseline.toml` into `REPO/.project/darnit.yaml`; prints a proposed operator-configuration fragment for tool settings. Never writes operator configuration. Refuses to overwrite existing `.project/darnit.yaml` claims for the same control without `--force`. |
 | `darnit config trust add IDENTITY` / `trust list` / `trust remove` | Convenience editors for `[trust].repos`, operating only on the operator configuration file. |

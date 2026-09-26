@@ -19,7 +19,8 @@ Loaded from the operator configuration file (see [contracts/operator-config.md](
 | `trust.case_insensitive_hosts` | list[str] | Extra hosts whose paths are case-insensitive. |
 | `trust.ci` | list[CiTrustRule] | Empty by default. |
 | `policy.confirmation_expiry_days` | int | Default 180. |
-| `policy.strict_permissions` | bool | Default `false`; when `true`, a file failing the permission check is refused. |
+| `policy.strict_permissions` | bool | Default `false`. May only turn strict mode on; strict mode is primarily set by the `--strict-operator-config` launch option and is on by default in recognized CI. |
+| `operator.identity` | str | Identity recorded as `confirmed_by`; defaults to the OS user name. |
 
 Validation: every model forbids unknown keys; errors name the file and dotted key.
 
@@ -104,7 +105,7 @@ Stored under the darnit data root (operator side), never in the audited reposito
 | `control_id` | str | |
 | `claim` | enum | `not_applicable`. |
 | `evidence_digest` | str | Digest of the assertion text plus any declared evidence observed at confirmation time. |
-| `confirmed_by` | str | Operator identity (local user or configured identity). |
+| `confirmed_by` | str | `operator.identity` from operator configuration, else the OS user name. |
 | `confirmed_at` | timestamp | |
 | `expires_at` | timestamp | `confirmed_at + policy.confirmation_expiry_days`. |
 

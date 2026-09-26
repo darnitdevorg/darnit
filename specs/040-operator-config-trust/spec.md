@@ -132,7 +132,7 @@ A maintainer has an existing `.baseline.toml`. After upgrading, they need to kno
 - **FR-004**: darnit MUST refuse to load operator configuration from a path inside the audited repository, and MUST report the refusal.
 - **FR-005**: Operator configuration MUST be able to express: allowed plugins and trusted publishers; MCP servers and their launch commands; integrations and custom checks or controls; storage backends; LLM provider, model, and spending budgets; the list of trusted repositories; CI trust rules; and policy defaults including confirmation expiry.
 - **FR-006**: Operator configuration MUST be validated on load; unknown keys and invalid values MUST stop the run with an error naming the file and key.
-- **FR-007**: darnit MUST warn when the operator configuration file is writable by users other than its owner, and MUST offer a strict mode in which such a file is refused.
+- **FR-007**: darnit MUST warn when the operator configuration file is writable by users other than its owner, and MUST offer a strict mode in which such a file is refused. Strict mode MUST be enabled by a launch option (and by default in recognized CI), not by the configuration file being checked; the file may only turn strict mode on, never off.
 - **FR-008**: darnit MUST NOT provide any environment variable or repository-side switch that grants trust to repository content; trust decisions MUST come only from operator configuration.
 - **FR-009**: Every run MUST record, in its report, which operator configuration source was used (path or "built-in defaults") and a digest of its content, without exposing secrets it contains.
 
