@@ -114,7 +114,7 @@ A maintainer has an existing `.baseline.toml`. After upgrading, they need to kno
 - The audited repository is inside the directory that holds operator configuration, or vice versa: repository content is still never read as operator configuration.
 - A trusted repository is identified by a different URL form (SSH vs HTTPS, trailing `.git`, case differences): repositories are matched on a canonical identity.
 - A not-applicable claim names a control that does not exist in the selected framework: the claim is reported as unknown and has no effect.
-- A not-applicable claim has no reason: it is reported and treated as pending even for a trusted repository.
+- An explicit not-applicable claim has no reason: it is reported and treated as pending even for a trusted repository. (A project data value such as "no releases" needs no separate reason.)
 - Evidence needed to check a claim is unavailable (network or permission error): the claim is treated as pending, not as uncontradicted.
 - A confirmation was based on evidence that has since changed: the confirmation no longer applies and the claim returns to pending.
 - A checkout's version-control configuration names a different repository than the one the operator asked to audit (for example a fork whose remotes point at the upstream project): the operator's target identity is used, and the mismatch is reported.
@@ -151,7 +151,7 @@ A maintainer has an existing `.baseline.toml`. After upgrading, they need to kno
 - **FR-016**: A repository is trusted only if its canonical identity appears in the operator's trusted repositories and, for CI runs, the operator's CI trust rules permit trust for the triggering event. Pull requests from forks MUST never be trusted.
 - **FR-016a**: The repository identity used for trust decisions MUST come from the operator (the audit target the operator named) or from CI platform metadata, never solely from the audited checkout's own version-control configuration. When the identity cannot be established from those sources, the repository MUST be treated as untrusted.
 - **FR-017**: Controls MAY declare evidence that can contradict a not-applicable claim (for example the platform's release data for a "no releases" claim). When such evidence cannot be obtained, the claim MUST be treated as pending, not uncontradicted.
-- **FR-018**: A claim without a reason MUST be treated as pending regardless of trust.
+- **FR-018**: An explicit claim without a reason MUST be treated as pending regardless of trust. Applicability-changing project data (FR-013a) is a typed value that states its own reason and is exempt from this rule; it is still subject to trust and contradicting evidence.
 - **FR-019**: A confirmation of a claim MUST record who confirmed it, when, and the evidence it was based on; it MUST lapse when it expires or when that evidence changes.
 - **FR-019a**: Confirmations MUST be stored on the operator side (not in the audited repository), keyed by canonical repository identity, the claim, and a digest of the evidence the confirmation was based on.
 - **FR-020**: Reports and attestations MUST label every result that counts as not applicable because of an assertion as "asserted", with the asserter and, where present, the confirmer.

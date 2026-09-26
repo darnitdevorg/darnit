@@ -127,7 +127,8 @@ class TestAuditedContextValues:
             assert result["assertion"]["location"] == LOCATION
             assert result["status"] != "N/A"
 
-    def test_trusted_repository_without_reason_is_still_pending(self, tmp_path: Path) -> None:
+    def test_trusted_repository_with_unobtainable_evidence_is_pending(self, tmp_path: Path) -> None:
+        """No reason is needed for a context value, but release evidence cannot be read here."""
         from darnit.config.operator.loader import LoadedOperatorConfig
         from darnit.config.operator.schema import OperatorConfig
 

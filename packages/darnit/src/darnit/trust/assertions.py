@@ -5,9 +5,9 @@ and, during the ``.baseline.toml`` deprecation period, from per-control
 ``status``/``reason`` in ``.baseline.toml``. Project data in ``.project/``
 that makes a control not applicable is a claim too (FR-013a). Claims are
 repository content: a claim counts only when its outcome is ``honored`` --
-the repository is trusted, the claim gives a reason, and no declared
-evidence contradicts it -- or when an operator-side confirmation matches it
-(FR-014 to FR-019).
+the repository is trusted, an explicit claim gives a reason (a project data
+value states its own), and no declared evidence contradicts it -- or when an
+operator-side confirmation matches it (FR-014 to FR-019).
 """
 
 from __future__ import annotations
@@ -39,6 +39,7 @@ _NOT_APPLICABLE = frozenset({ControlStatusValue.NA.value, ControlStatusValue.DIS
 
 AssertionOutcome = Literal["honored", "pending", "contradicted"]
 CLAIM_NOT_APPLICABLE = "not_applicable"
+CONTEXT_VALUE_ORIGIN = "context_value:"
 
 
 @dataclass(frozen=True)
@@ -207,7 +208,7 @@ def context_value_assertions(
                 reason=None,
                 asserted_by=DEFAULT_ASSERTER,
                 location=repository_values[key],
-                origin=f"context_value:{key}",
+                origin=f"{CONTEXT_VALUE_ORIGIN}{key}",
                 value=context[key],
             )
         )
@@ -321,7 +322,7 @@ def assess_assertion(
                 observed.append(observe())
         return observed[0]
 
-    if trusted and assertion.reason:
+    if trusted and (assertion.reason or assertion.origin.startswith(CONTEXT_VALUE_ORIGIN)):
         current = evidence()
         if current is None:
             return AssertionAssessment(assertion, "honored")

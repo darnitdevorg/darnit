@@ -79,6 +79,29 @@ class TestStateMachine:
     def test_missing_reason_is_pending_even_when_trusted(self) -> None:
         assert assess_assertion(_claim(reason=None), trusted=True, contradicted_by=None).outcome == "pending"
 
+    def test_context_value_needs_no_reason_when_trusted_and_uncontradicted(self) -> None:
+        """A typed project value (e.g. has_releases: false) states its own reason (FR-018)."""
+        claim = _claim(reason=None, origin="context_value:has_releases")
+        result = assess_assertion(claim, trusted=True, contradicted_by=RELEASES, observe=_observe(False))
+
+        assert result.outcome == "honored"
+
+    def test_context_value_is_still_contradicted_by_evidence(self) -> None:
+        claim = _claim(reason=None, origin="context_value:has_releases")
+        result = assess_assertion(claim, trusted=True, contradicted_by=RELEASES, observe=_observe(True))
+
+        assert result.outcome == "contradicted"
+
+    def test_context_value_is_pending_when_untrusted_or_evidence_unobtainable(self) -> None:
+        claim = _claim(reason=None, origin="context_value:has_releases")
+
+        assert assess_assertion(claim, trusted=False, contradicted_by=RELEASES, observe=_observe(False)).outcome == (
+            "pending"
+        )
+        assert assess_assertion(claim, trusted=True, contradicted_by=RELEASES, observe=_observe(None)).outcome == (
+            "pending"
+        )
+
     def test_unobtainable_evidence_is_pending(self) -> None:
         result = assess_assertion(_claim(), trusted=True, contradicted_by=RELEASES, observe=_observe(None))
 

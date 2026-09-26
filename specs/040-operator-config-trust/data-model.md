@@ -61,7 +61,7 @@ Read from `.project/darnit.yaml` `controls.<id>` (or, during deprecation, `.base
 |---|---|---|
 | `control_id` | str | Must exist in the selected framework, otherwise reported as unknown and ignored. |
 | `claim` | enum | `not_applicable`. |
-| `reason` | str or null | Missing reason forces `pending` (FR-018). |
+| `reason` | str or null | Missing reason forces `pending` for explicit claims (FR-018); context-value claims are exempt. |
 | `asserted_by` | str | From the file when given; otherwise `repository content`. |
 | `location` | str | Repository-relative file and key path. |
 | `origin` | enum | `explicit_claim` or `context_value:<key>`. |
@@ -77,7 +77,8 @@ State machine:
                    |
    repo trusted?   | no -----------------------------> pending
                    | yes
-   reason present? | no -----------------------------> pending
+   reason present? | no (explicit claim) -------------> pending
+                   |   (context values need no reason)
                    | yes
    evidence declared & obtainable?
                    | declared, unobtainable ----------> pending
