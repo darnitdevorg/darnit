@@ -367,6 +367,8 @@ else:
 - External release surfaces only — PyPI, TestPyPI, GHCR, GitHub Releases (binary assets + attestations), `kusari-oss/homebrew-tap` repo (formula). Repo itself stores only build configs and workflow definitions. (012-packaging-distribution)
 - Python 3.11/3.12 (workspace targets — same as the rest of darnit) + `pydantic >= 2.0` (already used for `FrameworkConfig`); `packaging` for PEP 440 `SpecifierSet` (declared by `darnit-reproducibility` as of feature 037; darnit-core imports it at runtime without declaring it, which is tracked separately). `tomllib` from stdlib for TOML parsing. No new runtime dependencies. (013-plugin-composition)
 - Filesystem only. Composition is resolved in-memory at framework-config load time; no new persistent state. (013-plugin-composition)
+- Python 3.11/3.12 (workspace targets) + `tomllib` (stdlib), `pydantic >= 2` (existing; `extra="forbid"` for the new models). No new runtime dependencies: per-user config location extends the existing `darnit/stores/defaults/platform_paths.py`; repository-identity normalization is a small in-tree helper. (040-operator-config-trust)
+- Filesystem only. Operator configuration: one TOML file per user (research R1). Confirmations: a file under the existing darnit data root, keyed by canonical repository identity (research R6). Project assertions: `.project/darnit.yaml` in the audited repository (read-only input). (040-operator-config-trust)
 
 ## Recent Changes
 - 029-openai-parity-adapter: adds OpenAI as a second Tier 2 backend to feature 028's parity test suite. Introduces `SkillInvocationBackend` Protocol in `tests/darnit/parity/tier2/backends/base.py` (test-only seam; `@runtime_checkable`); refactors feature 028's `claude_agent_sdk_client.py` into `backends/claude_agent_sdk.py` (backwards-compat shim preserves old import path); adds `OpenAIBackend` using Chat Completions API with `tools=[...]` function-calling, `temperature=0.0`, and pinned version-suffixed model default (`gpt-4o-2024-08-06`). Runner gains `--backend`, `--model`, `--max-turns` flags; new outcome `turn_cap_exhausted` (exit code 5) distinguishes runaway tool-loops from unparseable output. Separate `parity-tier2-openai.yml` workflow with `environment: parity-tier2-openai` (its own reviewer list + `OPENAI_API_KEY` at Environment scope, no repo-level exposure); mechanically enforced by workflow-config test. Zero product-package changes. Closes #368.
@@ -381,5 +383,5 @@ else:
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
-[`specs/039-wire-detect-filter/plan.md`](specs/039-wire-detect-filter/plan.md)
+[`specs/040-operator-config-trust/plan.md`](specs/040-operator-config-trust/plan.md)
 <!-- SPECKIT END -->
