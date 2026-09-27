@@ -128,6 +128,22 @@ tests/
 - Optional pinning of numeric platform repository IDs in `trust.repos`.
 - Trust rules beyond `push-default-branch` (for example same-repository pull requests).
 
+## Before merge
+
+- [ ] Fix the test-order dependence: two tests in `tests/darnit/cli/test_cmd_run_e2e.py` fail when `tests/darnit/config` runs before `tests/darnit/cli` on this branch (does not reproduce on main).
+- [ ] Rebase onto main after the repository-configuration change is merged.
+
+## Issues to file after merge
+
+These describe behavior that exists only once this feature lands, so they are filed after it merges.
+
+- The "Ignoring settings" warning for repository configuration is logged three times per CLI audit (good first issue).
+- `llm.max_cost_usd_per_run` in operator configuration is parsed but not enforced; the LLM step does not track cost.
+- `contradicted_by` supports only context keys, not named checks.
+- The CSL audit path runs with `apply_user_config=False`, so project claims are ignored there (good first issue).
+- `plugins.trusted_publishers` / `allow_unsigned` in operator configuration are not applied yet (link to #448 / #461).
+- Before switching `BASELINE_TOML_DEPRECATION_ACTIVE` off: `darnit run` needs `--framework` (#507) and test fixtures that use `.baseline.toml` `extends` need migrating.
+
 ## Complexity Tracking
 
 No constitution violations; no entries.
