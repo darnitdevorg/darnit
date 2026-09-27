@@ -43,6 +43,14 @@ jobs:
       - name: Run integration tests
         run: uv run pytest tests/ -m integration -v --tb=short
 
+      # The corpus tests carry no marker, so the -m runs above skip them.
+      - name: Run adversarial corpus gate
+        run: uv run pytest tests/darnit_baseline/corpus/ -v --tb=short
+
+      - name: Write corpus report to the job summary
+        if: always()
+        run: uv run python scripts/corpus_report.py --format markdown >> "$GITHUB_STEP_SUMMARY"
+
   lint:
     name: Lint
     runs-on: ubuntu-latest

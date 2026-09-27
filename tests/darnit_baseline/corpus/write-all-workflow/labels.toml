@@ -1,0 +1,14 @@
+[fixture]
+description = "The only CI workflow grants permissions: write-all to every job"
+
+[labels."OSPS-AC-04.02"]
+expected = "FAIL"
+why = "write-all grants far more than a test job needs."
+
+[labels."OSPS-AC-04.01"]
+expected = "NOT_PASS"
+why = "The requirement is the platform default for jobs that specify no permissions; the files cannot show it."
+
+[labels."OSPS-QA-06.01"]
+expected = "NOT_PASS"
+why = "The job runs `make test`, but there is no Makefile or test suite, and nothing shows the run gates acceptance."

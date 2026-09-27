@@ -1,0 +1,54 @@
+[fixture]
+description = "README, CONTRIBUTING, SECURITY, and SUPPORT exist but each says only TODO"
+
+[labels."OSPS-DO-01.01"]
+expected = "NOT_PASS"
+why = "A README that says only TODO contains no user guide."
+
+[labels."OSPS-DO-02.01"]
+expected = "NOT_PASS"
+why = "No document explains how to report a defect."
+
+[labels."OSPS-DO-07.01"]
+expected = "FAIL"
+why = "No document explains how to build the software."
+
+[labels."OSPS-GV-03.01"]
+expected = "FAIL"
+why = "CONTRIBUTING says only TODO; the contribution process is not explained."
+
+[labels."OSPS-GV-03.02"]
+expected = "FAIL"
+why = "No requirements for acceptable contributions are documented."
+
+[labels."OSPS-VM-01.01"]
+expected = "FAIL"
+why = "SECURITY says only TODO; there is no disclosure policy or response timeframe."
+
+[labels."OSPS-VM-02.01"]
+expected = "FAIL"
+why = "No document names a security contact."
+
+[labels."OSPS-VM-03.01"]
+expected = "FAIL"
+why = "No document provides a means for private vulnerability reporting."
+
+[labels."OSPS-DO-03.01"]
+expected = "NOT_PASS"
+why = "No instructions to verify the integrity and authenticity of release assets."
+
+[labels."OSPS-DO-04.01"]
+expected = "NOT_PASS"
+why = "SUPPORT says only TODO; no statement of the scope and duration of support."
+
+[labels."OSPS-DO-05.01"]
+expected = "NOT_PASS"
+why = "No statement of when releases stop receiving security updates."
+
+[labels."OSPS-QA-06.02"]
+expected = "FAIL"
+why = "No document says when and how tests are run."
+
+[labels."OSPS-SA-02.01"]
+expected = "NOT_PASS"
+why = "No description of the external software interfaces."

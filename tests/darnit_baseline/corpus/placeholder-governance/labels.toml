@@ -1,0 +1,42 @@
+[fixture]
+description = "GOVERNANCE, MAINTAINERS, CODEOWNERS, CONTRIBUTING, and LICENSE exist but each says only TODO"
+
+[labels."OSPS-GV-01.01"]
+expected = "FAIL"
+why = "No list of members with access to sensitive resources."
+
+[labels."OSPS-GV-01.02"]
+expected = "FAIL"
+why = "No description of roles and responsibilities."
+
+[labels."OSPS-GV-03.01"]
+expected = "FAIL"
+why = "CONTRIBUTING says only TODO."
+
+[labels."OSPS-GV-03.02"]
+expected = "FAIL"
+why = "No requirements for acceptable contributions."
+
+[labels."OSPS-GV-04.01"]
+expected = "FAIL"
+why = "No policy for reviewing collaborators before granting escalated permissions; CODEOWNERS is a TODO comment."
+
+[labels."OSPS-LE-01.01"]
+expected = "NOT_PASS"
+why = "Requires contributors to assert authorization on every commit; nothing here enforces it."
+
+[labels."OSPS-LE-02.01"]
+expected = "FAIL"
+why = "LICENSE says only TODO; there is no OSI or FSF license."
+
+[labels."OSPS-LE-02.02"]
+expected = "NOT_PASS"
+why = "No license, so released assets carry none."
+
+[labels."OSPS-LE-03.01"]
+expected = "FAIL"
+why = "The LICENSE file holds no license text."
+
+[labels."OSPS-LE-03.02"]
+expected = "NOT_PASS"
+why = "No license to include with released assets."

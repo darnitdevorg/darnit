@@ -128,15 +128,15 @@
 
 ### Tests for User Story 4
 
-- [ ] T038 [P] [US4] Write runner self-tests (a synthetic framework with a promoted step that is fooled by a fixture fails the run and names step and fixture; a new fixture with only `labels.toml` is measured) in `tests/darnit_baseline/corpus/test_runner.py`
+- [X] T038 [P] [US4] Write runner self-tests (a synthetic framework with a promoted step that is fooled by a fixture fails the run and names step and fixture; a new fixture with only `labels.toml` is measured) in `tests/darnit_baseline/corpus/test_runner.py`
 
 ### Implementation for User Story 4
 
-- [ ] T039 [P] [US4] Create fixtures `placeholder-docs`, `policy-denies-process`, `write-all-workflow`, `placeholder-governance` with `labels.toml` under `tests/darnit_baseline/corpus/`
-- [ ] T040 [P] [US4] Create fixtures `empty`, `reference-good`, and platform scenarios `platform-no-protection`, `platform-ruleset-protection`, `platform-permission-denied`, `platform-rate-limited` (recorded responses) under `tests/darnit_baseline/corpus/`
-- [ ] T041 [US4] Implement the corpus runner (load fixtures and labels, run the sieve with the `gh_api` recorded-response stub, collect per-step/per-outcome conclusions, fail on any false PASS by a step allowed to conclude PASS) in `tests/darnit_baseline/corpus/runner.py` and the pytest entry `tests/darnit_baseline/corpus/test_corpus.py`
-- [ ] T042 [US4] Implement `scripts/corpus_report.py` (Markdown and JSON; corpus version digest over fixtures and labels; eligibility for promotion)
-- [ ] T043 [US4] Add a CI step running the corpus test in `.github/workflows/ci.yml`
+- [X] T039 [P] [US4] Create fixtures `placeholder-docs`, `policy-denies-process`, `write-all-workflow`, `placeholder-governance` with `labels.toml` under `tests/darnit_baseline/corpus/`
+- [X] T040 [P] [US4] Create fixtures `empty`, `reference-good`, and platform scenarios `platform-no-protection`, `platform-ruleset-protection`, `platform-permission-denied`, `platform-rate-limited` (recorded responses) under `tests/darnit_baseline/corpus/`
+- [X] T041 [US4] Implement the corpus runner (load fixtures and labels, run the sieve with the `gh_api` recorded-response stub, collect per-step/per-outcome conclusions, fail on any false PASS by a step allowed to conclude PASS) in `tests/darnit_baseline/corpus/runner.py` and the pytest entry `tests/darnit_baseline/corpus/test_corpus.py`
+- [X] T042 [US4] Implement `scripts/corpus_report.py` (Markdown and JSON; corpus version digest over fixtures and labels; eligibility for promotion)
+- [X] T043 [US4] Add a CI step running the corpus test in `.github/workflows/ci.yml`
 
 **Checkpoint**: Every step is measured; false PASS fails CI.
 

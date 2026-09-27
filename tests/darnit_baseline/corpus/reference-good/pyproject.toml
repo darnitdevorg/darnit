@@ -1,0 +1,14 @@
+[project]
+name = "widget"
+version = "1.2.0"
+description = "Print ASCII widgets"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = ["click>=8.1"]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

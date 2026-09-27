@@ -1,0 +1,44 @@
+[fixture]
+description = "Primary branch protected only by an active repository ruleset (classic protection answers 404)"
+
+[fixture.platform."/repos/$OWNER/$REPO/branches/$BRANCH/protection"]
+status = 404
+error = "HTTP 404: Branch not protected"
+body = { message = "Branch not protected" }
+
+[fixture.platform."/repos/$OWNER/$REPO/rulesets"]
+status = 200
+body = [{ id = 1, name = "protect-main", target = "branch", enforcement = "active" }]
+
+[fixture.platform."/repos/$OWNER/$REPO/rulesets/1"]
+status = 200
+
+[fixture.platform."/repos/$OWNER/$REPO/rulesets/1".body]
+id = 1
+name = "protect-main"
+target = "branch"
+enforcement = "active"
+bypass_actors = []
+conditions = { ref_name = { include = ["~DEFAULT_BRANCH"], exclude = [] } }
+rules = [
+    { type = "deletion" },
+    { type = "non_fast_forward" },
+    { type = "pull_request", parameters = { required_approving_review_count = 1, dismiss_stale_reviews_on_push = true, require_code_owner_review = false, require_last_push_approval = false, required_review_thread_resolution = false } },
+    { type = "required_status_checks", parameters = { strict_required_status_checks_policy = true, required_status_checks = [{ context = "test" }] } },
+]
+
+[labels."OSPS-AC-03.01"]
+expected = "PASS"
+why = "The ruleset requires a pull request for main, so direct commits are rejected."
+
+[labels."OSPS-AC-03.02"]
+expected = "PASS"
+why = "The ruleset restricts deleting main."
+
+[labels."OSPS-QA-03.01"]
+expected = "PASS"
+why = "The ruleset requires the test status check to pass."
+
+[labels."OSPS-QA-07.01"]
+expected = "PASS"
+why = "The ruleset requires one approving review before merging."

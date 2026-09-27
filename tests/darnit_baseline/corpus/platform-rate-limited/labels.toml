@@ -1,0 +1,34 @@
+[fixture]
+description = "The platform is rate limiting the token: 429, and a 403 whose message is a rate limit"
+
+[fixture.platform."/repos/$OWNER/$REPO/branches/$BRANCH/protection"]
+status = 429
+error = "HTTP 429: API rate limit exceeded"
+
+[fixture.platform."/repos/$OWNER/$REPO/rulesets"]
+status = 429
+error = "HTTP 429: API rate limit exceeded"
+
+[fixture.platform."/repos/$OWNER/$REPO"]
+status = 403
+error = "HTTP 403: API rate limit exceeded for user ID 1"
+
+[labels."OSPS-AC-03.01"]
+expected = "NOT_PASS"
+why = "Rate limited; nothing is known."
+
+[labels."OSPS-AC-03.02"]
+expected = "NOT_PASS"
+why = "Rate limited; nothing is known."
+
+[labels."OSPS-QA-03.01"]
+expected = "NOT_PASS"
+why = "Rate limited; nothing is known."
+
+[labels."OSPS-QA-07.01"]
+expected = "NOT_PASS"
+why = "Rate limited; nothing is known."
+
+[labels."OSPS-QA-01.01"]
+expected = "NOT_PASS"
+why = "Rate limited; nothing is known."

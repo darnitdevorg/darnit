@@ -1,0 +1,70 @@
+[fixture]
+description = "A small well-formed repository whose documents and configuration satisfy the labelled controls"
+
+[labels."OSPS-AC-04.02"]
+expected = "PASS"
+why = "The only workflow grants contents: read, the minimum a test job needs."
+
+[labels."OSPS-DO-07.01"]
+expected = "PASS"
+why = "README explains how to build, including the Python version and build dependencies."
+
+[labels."OSPS-GV-01.01"]
+expected = "PASS"
+why = "GOVERNANCE lists each member with access to sensitive resources and that access."
+
+[labels."OSPS-GV-01.02"]
+expected = "PASS"
+why = "GOVERNANCE describes the maintainer and contributor roles and their responsibilities."
+
+[labels."OSPS-GV-03.01"]
+expected = "PASS"
+why = "CONTRIBUTING explains the contribution process step by step."
+
+[labels."OSPS-GV-03.02"]
+expected = "PASS"
+why = "CONTRIBUTING lists requirements for acceptable contributions (tests, sign-off, style)."
+
+[labels."OSPS-GV-04.01"]
+expected = "PASS"
+why = "GOVERNANCE requires a recorded review before granting escalated permissions."
+
+[labels."OSPS-LE-02.01"]
+expected = "PASS"
+why = "The source code is licensed under MIT, an OSI-approved license."
+
+[labels."OSPS-LE-03.01"]
+expected = "PASS"
+why = "The MIT license text is in the LICENSE file."
+
+[labels."OSPS-QA-02.01"]
+expected = "PASS"
+why = "pyproject.toml lists the direct dependencies."
+
+[labels."OSPS-QA-05.01"]
+expected = "PASS"
+why = "No generated executables are committed."
+
+[labels."OSPS-QA-05.02"]
+expected = "PASS"
+why = "No binary artifacts are committed."
+
+[labels."OSPS-QA-06.02"]
+expected = "PASS"
+why = "README and CONTRIBUTING say the tests run in CI on every pull request and how to run them locally."
+
+[labels."OSPS-QA-06.03"]
+expected = "PASS"
+why = "CONTRIBUTING requires behavior changes to add or update tests."
+
+[labels."OSPS-VM-01.01"]
+expected = "PASS"
+why = "SECURITY describes coordinated disclosure with response timeframes."
+
+[labels."OSPS-VM-02.01"]
+expected = "PASS"
+why = "SECURITY names two security contacts."
+
+[labels."OSPS-VM-03.01"]
+expected = "PASS"
+why = "SECURITY provides private reporting through GitHub and a security email address."

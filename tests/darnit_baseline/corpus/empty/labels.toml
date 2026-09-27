@@ -1,0 +1,66 @@
+[fixture]
+description = "An empty repository: every document and configuration file is missing"
+
+[labels."OSPS-DO-01.01"]
+expected = "NOT_PASS"
+why = "No README or user guide."
+
+[labels."OSPS-DO-07.01"]
+expected = "FAIL"
+why = "No build instructions."
+
+[labels."OSPS-GV-01.01"]
+expected = "FAIL"
+why = "No list of members with access to sensitive resources."
+
+[labels."OSPS-GV-01.02"]
+expected = "FAIL"
+why = "No roles and responsibilities."
+
+[labels."OSPS-GV-03.01"]
+expected = "FAIL"
+why = "No contribution guide."
+
+[labels."OSPS-GV-03.02"]
+expected = "FAIL"
+why = "No requirements for acceptable contributions."
+
+[labels."OSPS-LE-02.01"]
+expected = "FAIL"
+why = "No license at all."
+
+[labels."OSPS-LE-03.01"]
+expected = "FAIL"
+why = "No LICENSE, COPYING, or LICENSE/ directory."
+
+[labels."OSPS-QA-05.01"]
+expected = "PASS"
+why = "The repository contains no files, so no generated executables."
+
+[labels."OSPS-QA-05.02"]
+expected = "PASS"
+why = "The repository contains no files, so no binary artifacts."
+
+[labels."OSPS-QA-06.02"]
+expected = "FAIL"
+why = "No document says when and how tests are run."
+
+[labels."OSPS-VM-01.01"]
+expected = "FAIL"
+why = "No disclosure policy."
+
+[labels."OSPS-VM-02.01"]
+expected = "FAIL"
+why = "No security contact."
+
+[labels."OSPS-VM-03.01"]
+expected = "FAIL"
+why = "No documented means of private vulnerability reporting."
+
+[labels."OSPS-BR-01.01"]
+expected = "N/A"
+why = "There is no CI/CD pipeline, so nothing operates on untrusted metadata."
+
+[labels."OSPS-AC-04.02"]
+expected = "N/A"
+why = "There is no CI/CD pipeline, so no job is assigned permissions."

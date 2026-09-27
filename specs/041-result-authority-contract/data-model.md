@@ -99,7 +99,7 @@ model service failure at any point --> ERROR for the model step
 
 ### CorpusFixture
 
-`tests/darnit_baseline/corpus/<fixture>/`: file tree, optional `platform/` recorded responses, and `labels.toml`:
+`tests/darnit_baseline/corpus/<fixture>/`: file tree and `labels.toml` (expected outcomes and optional recorded platform responses):
 
 | Field | Type | Notes |
 |---|---|---|

@@ -1,0 +1,30 @@
+[fixture]
+description = "SECURITY.md exists and states that there is no security policy, process, or contact"
+
+[labels."OSPS-VM-01.01"]
+expected = "FAIL"
+why = "The policy says there is no disclosure process."
+
+[labels."OSPS-VM-02.01"]
+expected = "FAIL"
+why = "The policy says there is no security contact."
+
+[labels."OSPS-VM-03.01"]
+expected = "FAIL"
+why = "The policy says there is no way to report a vulnerability."
+
+[labels."OSPS-VM-05.01"]
+expected = "FAIL"
+why = "No policy for remediating SCA findings."
+
+[labels."OSPS-VM-06.01"]
+expected = "FAIL"
+why = "No policy for remediating SAST findings."
+
+[labels."OSPS-BR-07.02"]
+expected = "FAIL"
+why = "No policy for managing secrets and credentials."
+
+[labels."OSPS-DO-05.01"]
+expected = "NOT_PASS"
+why = "The policy says the project does not respond to security reports; no end-of-support statement."

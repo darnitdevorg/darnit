@@ -1,0 +1,48 @@
+[fixture]
+description = "A public GitHub repository whose primary branch has no classic protection and no rulesets"
+
+[fixture.platform."/repos/$OWNER/$REPO/branches/$BRANCH/protection"]
+status = 404
+error = "HTTP 404: Branch not protected"
+body = { message = "Branch not protected" }
+
+[fixture.platform."/repos/$OWNER/$REPO/rulesets"]
+status = 200
+body = []
+
+[fixture.platform."/repos/$OWNER/$REPO"]
+status = 200
+body = { private = false, allow_forking = true, has_issues = true, has_discussions = false, html_url = "https://github.com/corpus/platform-no-protection" }
+jq = { ".has_issues" = "true", ".has_issues or .has_discussions" = "true" }
+
+[labels."OSPS-AC-03.01"]
+expected = "FAIL"
+why = "Neither classic protection nor a ruleset prevents direct commits to main."
+
+[labels."OSPS-AC-03.02"]
+expected = "FAIL"
+why = "Nothing prevents deleting main."
+
+[labels."OSPS-QA-03.01"]
+expected = "FAIL"
+why = "No status checks are required on main."
+
+[labels."OSPS-QA-07.01"]
+expected = "FAIL"
+why = "No approval is required before merging to main."
+
+[labels."OSPS-QA-01.01"]
+expected = "PASS"
+why = "The repository is public (private = false) at a static URL."
+
+[labels."OSPS-GV-02.01"]
+expected = "PASS"
+why = "Issues are enabled on a public repository, a mechanism for public discussion."
+
+[labels."OSPS-AC-02.01"]
+expected = "NOT_PASS"
+why = "The requirement is least-privilege defaults for new collaborators; allow_forking says nothing about it."
+
+[labels."OSPS-VM-04.01"]
+expected = "NOT_PASS"
+why = "The requirement is publishing data about discovered vulnerabilities; issues being enabled does not show it."
