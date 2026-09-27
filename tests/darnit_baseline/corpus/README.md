@@ -44,6 +44,7 @@ change.
 | `platform-ruleset-protection` | Protection only through an active ruleset |
 | `platform-permission-denied` | 403 and 401 from the platform |
 | `platform-rate-limited` | 429, and a 403 whose message is a rate limit |
+| `platform-org-2fa-hidden` | Org hides its 2FA requirement; the auditor has 2FA |
 
 ## labels.toml
 

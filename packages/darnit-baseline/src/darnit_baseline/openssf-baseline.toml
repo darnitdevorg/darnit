@@ -452,9 +452,9 @@ help_md = """Enable MFA for all organization members (or for a solo-maintainer u
   account owner's GitHub Settings → Password and authentication →
   'Two-factor authentication'.
 
-The user-owned fallback is a liberal interpretation of the OpenSSF Baseline
-control (which is org-scoped by design). It covers the common case of a
-solo maintainer on a personal account; it does NOT substitute for org-wide
+The user-owned check measures the account running the audit, not the
+project, so darnit records it as evidence only; a person confirms the
+control for a user-owned repository. It does NOT substitute for org-wide
 enforcement when the repository sits inside an organization.
 
 **References:**
@@ -472,25 +472,15 @@ handler = "gh_api"
 endpoint = "/orgs/$OWNER"
 expr = 'response.body.two_factor_requirement_enabled == true'
 
-# Fallback for user-owned repos: org enforcement isn't possible (the owner
-# isn't an org), so check whether the authenticated maintainer has 2FA
-# enabled on their personal account. Requires `gh auth refresh -s read:user`
-# so the token can read the `two_factor_authentication` field on /user.
-#
-# This is a deliberately liberal interpretation: the canonical spec is
-# org-scoped, and this fallback measures the account running the audit.
-# It runs only when the org check above did not conclude (the owner is
-# not an org, or the org field is not visible to this token). Narrowing
-# the trigger to user-owned repos is tracked separately.
-#
-# No has() guard for the same reason as above: without the read:user
-# scope the field is absent and the step is ERROR. The auditor lacking 2FA
-# does not show the project fails, so this step never concludes FAIL.
+# Evidence only: /user describes the account running the audit, not the
+# project. It also runs when an org hides its 2FA field from this token,
+# where concluding PASS from the auditor's own 2FA would be a false PASS.
+# Requires `gh auth refresh -s read:user` to see the field.
 [[controls."OSPS-AC-01.01".passes]]
 handler = "gh_api"
 endpoint = "/user"
 expr = 'response.body.two_factor_authentication == true'
-concludes = ["pass"]
+concludes = []
 
 [[controls."OSPS-AC-01.01".passes]]
 handler = "manual"

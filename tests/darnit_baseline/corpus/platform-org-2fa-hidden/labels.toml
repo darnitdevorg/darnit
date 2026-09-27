@@ -1,0 +1,14 @@
+[fixture]
+description = "Organization hides its 2FA requirement from the token; the account running the audit has 2FA"
+
+[fixture.platform."/orgs/$OWNER"]
+status = 200
+body = { login = "corpus", type = "Organization" }
+
+[fixture.platform."/user"]
+status = 200
+body = { login = "auditor", two_factor_authentication = true }
+
+[labels."OSPS-AC-01.01"]
+expected = "NOT_PASS"
+why = "Whether the organization requires MFA is unknown; the auditor's own 2FA says nothing about the project's members."
