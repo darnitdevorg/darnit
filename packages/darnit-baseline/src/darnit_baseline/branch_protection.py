@@ -17,8 +17,11 @@ Verdict semantics:
   repository ruleset that targets the audited branch carries the signal.
 * FAIL when both surfaces respond successfully and neither carries the
   signal (locks feature 019's shipped invariant on the true-negative path).
-* INCONCLUSIVE (which the trailing manual pass promotes to WARN) when
-  either surface returns 401/403/429/5xx or a mid-pagination fetch fails.
+* ERROR with an error class (feature 041) when either surface returns
+  401/403 (``auth``), 429 or a rate-limit 403 (``rate_limit``), 5xx or no
+  response (``unavailable``), when ``gh`` is not installed
+  (``missing_tool``), or when a mid-pagination fetch fails. A broken
+  measurement is never reported as FAIL.
 
 The default-branch value used for ``~DEFAULT_BRANCH`` include-list matching
 is consumed from ``HandlerContext.default_branch``, which the audit driver
@@ -38,7 +41,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Literal, TypedDict
 
-from darnit.core.utils import gh_api_with_status
+from darnit.core.utils import gh_api_error_class, gh_api_with_status
 from darnit.sieve.handler_registry import (
     HandlerContext,
     HandlerResult,
@@ -470,7 +473,7 @@ def github_branch_protection_handler(
             },
         )
 
-    # Ambiguous classic response -> INCONCLUSIVE without consulting rulesets.
+    # Ambiguous classic response -> ERROR without consulting rulesets.
     # A 401/403/429/5xx/0 from classic tells us nothing about protection, so
     # we cannot conservatively decide FAIL by consulting rulesets alone.
     if (
@@ -478,13 +481,14 @@ def github_branch_protection_handler(
         or classic.status >= 500
     ):
         return HandlerResult(
-            status=HandlerResultStatus.INCONCLUSIVE,
+            status=HandlerResultStatus.ERROR,
             message=_classic_ambiguous_message(classic),
             evidence={
                 "source": VerdictSource.INSUFFICIENT_ACCESS.value,
                 "requirement": requirement.value,
                 "classic_status": classic.status,
             },
+            error_class=gh_api_error_class(classic.status, classic.error),
         )
 
     # Classic returned a definitive negative signal (404, or 200 without the
@@ -529,9 +533,9 @@ def github_branch_protection_handler(
             },
         )
 
-    # PARTIAL_FETCH or INSUFFICIENT_ACCESS from rulesets -> WARN
+    # PARTIAL_FETCH or INSUFFICIENT_ACCESS from rulesets -> ERROR
     return HandlerResult(
-        status=HandlerResultStatus.INCONCLUSIVE,
+        status=HandlerResultStatus.ERROR,
         message=_rulesets_ambiguous_message(rulesets),
         evidence={
             "source": rulesets.source.value,
@@ -539,6 +543,7 @@ def github_branch_protection_handler(
             "classic_status": classic.status,
             "rulesets_status": rulesets.status,
         },
+        error_class=gh_api_error_class(rulesets.status, rulesets.error),
     )
 
 

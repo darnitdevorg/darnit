@@ -20,10 +20,13 @@ Two placement rules:
    [`specs/020-definitive-fail-verdict/contracts/cel-post-step.md`](../specs/020-definitive-fail-verdict/contracts/cel-post-step.md)
    for the full truth table.
 
-2. **In-handler CEL (`mcp` only).** `handler = "mcp"` evaluates `expr`
-   against the JSON result of the MCP tool call before deciding
+2. **In-handler CEL (`mcp` and `gh_api`).** `handler = "mcp"` evaluates
+   `expr` against the JSON result of the MCP tool call before deciding
    PASS/FAIL. See
    [`_eval_cel_over_result` in `builtin_handlers.py`](../packages/darnit/src/darnit/sieve/builtin_handlers.py).
+   `handler = "gh_api"` evaluates `expr` against the platform API
+   response on a 2xx answer (true -> PASS, false -> FAIL) and the
+   post-handler step is skipped for it.
 
 ## Available variables per handler
 
@@ -125,6 +128,22 @@ expr = 'result.score >= 7.0'
 There is no `output.*` binding for `handler = "mcp"` passes -- only
 `result.*`. `project.*`/`repo.*`/`context.*` are also NOT available
 here (see the next section for why).
+
+### `gh_api` handler
+
+`expr` runs only on a 2xx answer, against `response`:
+
+| Variable               | Type   | Description                                   |
+|------------------------|--------|-----------------------------------------------|
+| `response.status_code` | int    | HTTP status of the answer                     |
+| `response.body`        | any    | Parsed JSON body (map, list, or null)         |
+
+Response headers are not bound (`gh api` does not expose them). An
+`expr` that cannot be evaluated here is ERROR (class `evaluation`), not
+a preserved verdict. Test for a field with `has()`:
+`has(response.body.required_pull_request_reviews)`; comparing a map to
+`null` has no overload in the evaluator and errors. Non-2xx answers
+never reach `expr`; see framework-design.md section 3.8.
 
 ### Handlers that do NOT evaluate `expr`
 

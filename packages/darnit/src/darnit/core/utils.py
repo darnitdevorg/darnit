@@ -5,9 +5,10 @@ import json
 import os
 import re
 import subprocess
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
+from darnit.core.error_class import ErrorClass
 from darnit.core.logging import get_logger
 from darnit.trust.identity import IdentitySource, RepositoryIdentity, canonical_identity
 
@@ -31,6 +32,83 @@ _HTTP_STATUS_RE = re.compile(
     re.MULTILINE,
 )
 
+GhApiResponse = tuple[dict[str, Any] | list[Any] | None, int, str]
+GhApiResponder = Callable[[str, bool], GhApiResponse]
+
+# Feature 041: when set, ``gh_api_with_status`` returns this responder's
+# answer instead of running ``gh``. Tests and the adversarial corpus use it
+# to serve recorded platform responses offline (see RecordedGhApi).
+_gh_api_responder: GhApiResponder | None = None
+
+
+def set_gh_api_responder(responder: GhApiResponder | None) -> GhApiResponder | None:
+    """Route ``gh_api_with_status`` through ``responder`` (None restores ``gh``).
+
+    Returns the previous responder so callers can restore it.
+    """
+    global _gh_api_responder
+    previous = _gh_api_responder
+    _gh_api_responder = responder
+    return previous
+
+
+class RecordedGhApi:
+    """A responder serving recorded platform responses keyed by API path.
+
+    ``responses`` maps an endpoint (after ``$OWNER``/``$REPO``/``$BRANCH``
+    substitution, leading slash optional) to ``{"status": int, "body": ...,
+    "error": str}``. An endpoint with no recording answers as a transport
+    failure (status 0), so an offline run never reaches the network and
+    never mistakes a missing recording for a platform answer.
+    ``gh_missing=True`` answers every call as if ``gh`` were not installed.
+    """
+
+    def __init__(self, responses: Mapping[str, Mapping[str, Any]] | None = None, *, gh_missing: bool = False):
+        self.responses = {self._key(k): dict(v) for k, v in (responses or {}).items()}
+        self.gh_missing = gh_missing
+        self.calls: list[str] = []
+
+    @staticmethod
+    def _key(endpoint: str) -> str:
+        return "/" + endpoint.lstrip("/")
+
+    def __call__(self, endpoint: str, paginate: bool = False) -> GhApiResponse:
+        self.calls.append(endpoint)
+        if self.gh_missing:
+            return None, 0, _GH_CLI_MISSING_MESSAGE
+        recorded = self.responses.get(self._key(endpoint))
+        if recorded is None:
+            return None, 0, f"no recorded response for {endpoint}"
+        status = int(recorded.get("status", 200))
+        if 200 <= status < 300:
+            return recorded.get("body"), status, ""
+        return None, status, str(recorded.get("error") or f"HTTP {status}")
+
+
+_GH_RATE_LIMIT_MARKERS: tuple[str, ...] = (
+    "api rate limit exceeded",
+    "secondary rate limit",
+    "abuse detection mechanism",
+)
+
+
+def gh_api_error_class(status: int, error: str) -> ErrorClass:
+    """Classify a non-2xx ``gh_api_with_status`` answer (feature 041).
+
+    ``missing_tool`` when ``gh`` is not installed; ``rate_limit`` for 429 or
+    a 403 whose message is a rate limit; ``auth`` for 401 and other 403s;
+    ``unavailable`` for everything else (5xx, transport failure, an
+    undeclared status).
+    """
+    if status == 0 and (error or "").startswith(_GH_CLI_MISSING_MESSAGE[:25]):
+        return "missing_tool"
+    lowered = (error or "").lower()
+    if status == 429 or (status == 403 and any(m in lowered for m in _GH_RATE_LIMIT_MARKERS)):
+        return "rate_limit"
+    if status in (401, 403):
+        return "auth"
+    return "unavailable"
+
 
 def gh_api_with_status(
     endpoint: str, *, paginate: bool = False
@@ -52,7 +130,12 @@ def gh_api_with_status(
 
     When ``paginate=True``, ``gh api --paginate`` is invoked; ``gh``
     concatenates all pages into a single JSON array at the top level.
+
+    When a responder is installed with :func:`set_gh_api_responder`, its
+    answer is returned instead (feature 041).
     """
+    if _gh_api_responder is not None:
+        return _gh_api_responder(endpoint, paginate)
     args = ["gh", "api"]
     if paginate:
         args.append("--paginate")

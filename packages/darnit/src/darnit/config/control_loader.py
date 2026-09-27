@@ -585,5 +585,8 @@ def validate_step_authority(framework: str | None, control_id: str, invocations:
             if "fail" not in effective_outcomes(info, inv):
                 reject("fail_on_miss requires outcome 'fail' in the step's effective set")
 
-        if getattr(inv, "fail_on_status", None) is not None and inv.handler != "gh_api":
-            reject(f"fail_on_status is only for gh_api steps, not {inv.handler!r}")
+        if getattr(inv, "fail_on_status", None) is not None:
+            if inv.handler != "gh_api":
+                reject(f"fail_on_status is only for gh_api steps, not {inv.handler!r}")
+            if "fail" not in effective_outcomes(info, inv):
+                reject("fail_on_status requires outcome 'fail' in the step's effective set")

@@ -178,7 +178,7 @@ The sieve orchestrator executes passes in declaration order, dispatching each to
 
 ### 3.0 Handler Outcomes
 
-A handler returns one of five outcomes. INCONCLUSIVE never concludes; PASS, FAIL, and WARN conclude only when the step may conclude them.
+A handler returns one of five outcomes. INCONCLUSIVE and ERROR never conclude; PASS, FAIL, and WARN conclude only when the step may conclude them.
 
 | Outcome | Meaning | Concludes the control? |
 |---------|---------|------------------------|
@@ -186,7 +186,7 @@ A handler returns one of five outcomes. INCONCLUSIVE never concludes; PASS, FAIL
 | `FAIL` | The control is not satisfied. | Yes, when `fail` is in the step's effective set |
 | `WARN` | The handler read the evidence, understood it, and determined it is insufficient to pass. | Yes, when `fail` is in the step's effective set |
 | `INCONCLUSIVE` | The handler determined nothing. | No -- the pipeline continues |
-| `ERROR` | The handler did not complete. | Yes, terminal regardless of the effective set |
+| `ERROR` | The handler could not measure (platform or API error, missing tool, evaluation error). | No -- the error is recorded and the pipeline continues; if no later step concludes, the control ends ERROR with the first recorded cause |
 
 `WARN` differs from `INCONCLUSIVE` in kind, not in degree. INCONCLUSIVE means a later pass may still determine something. WARN means the answer has been determined and the answer is "not enough". A handler MUST NOT return WARN to mean "I am unsure".
 
@@ -237,7 +237,7 @@ A plugin handler registers its ceiling with the handler (`registry.register(...,
 
 1. `existence` on a step type without an existence ceiling;
 2. `fail_on_miss` on a non-pattern step, or without `fail` in the effective set;
-3. `fail_on_status` on a step type other than `gh_api`;
+3. `fail_on_status` on a step type other than `gh_api`, or without `fail` in the effective set;
 4. any `concludes` outcome outside the (existence) ceiling without a promotion for that outcome;
 5. a promotion whose outcome is not `pass`, or that lacks `corpus`.
 
@@ -262,13 +262,15 @@ The disposition applied to each step, by handler outcome and whether the outcome
 
 | Handler outcome | In effective set | Not in effective set, not last | Not in effective set, last step |
 |-----------------|------------------|--------------------------------|---------------------------------|
-| `ERROR` | TERMINATE_ERROR | TERMINATE_ERROR | TERMINATE_ERROR |
+| `ERROR` | RECORD_ERROR_AND_CONTINUE (TERMINATE_ERROR on the last step) | RECORD_ERROR_AND_CONTINUE | TERMINATE_ERROR |
 | `PASS` | CONCLUDE_PASS | ATTACH_EVIDENCE_AND_CONTINUE | TERMINATE_INCONCLUSIVE |
 | `FAIL` | CONCLUDE_FAIL | ATTACH_EVIDENCE_AND_CONTINUE | TERMINATE_INCONCLUSIVE |
 | `WARN` | CONCLUDE_WARN (when `fail` is in the set) | ATTACH_EVIDENCE_AND_CONTINUE | TERMINATE_INCONCLUSIVE |
 | `INCONCLUSIVE` | ATTACH_EVIDENCE_AND_CONTINUE | ATTACH_EVIDENCE_AND_CONTINUE | TERMINATE_INCONCLUSIVE |
 
-A step that concludes within its effective set records authority `dispositive` and `concluded_by` = the step's handler name. A control no step concludes is WARN with authority `suggestive` and `concluded_by = "none"`, carrying the evidence gathered.
+A step that concludes within its effective set records authority `dispositive` and `concluded_by` = the step's handler name. A control no step concludes, and in which no step erred, is WARN with authority `suggestive` and `concluded_by = "none"`, carrying the evidence gathered.
+
+**Errors.** An ERROR step never concludes the control, and in particular never concludes FAIL. The orchestrator records the first ERROR (its class and cause) and runs the remaining steps. If a later step concludes, its result wins; the earlier error stays in the pass history. If no later step concludes, the control is ERROR with `error = {class, cause}` from the first recorded error (class `evaluation` when the handler named none), `concluded_by` and `resolving_pass_index` naming the step that erred. A recorded ERROR takes precedence over ending WARN and over stopping for a model judgment (`PENDING`, section 5.4): a control with a broken measurement does not wait for a judgment.
 
 `inferred_from` (a control that passes when another control passed) follows the same rule: the inferred PASS is produced only when the source control's PASS was itself concluded (authority `dispositive` or `asserted`), and it records `concluded_by = "inferred_from"`.
 
@@ -362,6 +364,8 @@ env = { "TOOL_VERBOSE" = "true" }
 **Security**:
 - Commands are executed as a list (no shell interpolation)
 - Variable substitution only replaces whole tokens or substrings safely
+
+**Broken measurements**: a command whose binary is not installed is ERROR, class `missing_tool`; a timeout is ERROR, class `timeout`. Neither is FAIL.
 
 #### Scenario: CEL expression evaluated
 - **WHEN** an `exec` handler has an `expr` field
@@ -571,7 +575,7 @@ expr = 'output.json.status == "pass" && size(output.json.issues) == 0'
 handler = "gh_api"
 endpoint = "/repos/$OWNER/$REPO/branches/$BRANCH/protection"
 fail_on_status = [404]
-expr = 'response.body.required_pull_request_reviews != null'
+expr = 'has(response.body.required_pull_request_reviews)'
 ```
 
 **Fields**:
@@ -581,19 +585,23 @@ expr = 'response.body.required_pull_request_reviews != null'
 | `handler` | `str` | MUST be `"gh_api"` |
 | `endpoint` | `str` | API path (supports `$OWNER`, `$REPO`, `$BRANCH`) |
 | `fail_on_status` | `list[int]` | HTTP statuses that prove failure (step field) |
-| `expr` | `str` | CEL over `response.status_code` and `response.body`; `true` -> PASS, `false` -> FAIL |
+| `expr` | `str` | CEL over `response.status_code` and `response.body` (the parsed JSON body); `true` -> PASS, `false` -> FAIL. Evaluated by the handler, not by the post-step of section 3.7, so `output.*` is not bound. Response headers are not available (`gh api` does not expose them). |
 
 **Ceiling**: `{pass, fail}`.
 
 **Behavior**:
-1. 2xx: `expr` decides (no `expr`: PASS)
-2. A status in `fail_on_status` -> FAIL
-3. 401 / 403 -> ERROR, class `auth`
-4. 429 (or a rate-limit 403) -> ERROR, class `rate_limit`
+1. 2xx: `expr` decides (no `expr`: PASS); an `expr` that cannot be evaluated over the response -> ERROR, class `evaluation`
+2. 429, or a 403 whose message is a rate limit -> ERROR, class `rate_limit`, even when the status is in `fail_on_status` (a rate limit never proves failure)
+3. A status in `fail_on_status` -> FAIL
+4. 401 / 403 -> ERROR, class `auth`
 5. 5xx, transport failure, or any other status not declared -> ERROR, class `unavailable`
 6. `gh` not installed -> ERROR, class `missing_tool`
 
 A response that is ambiguous between "not found" and "not permitted to see" is ERROR unless the step declares otherwise.
+
+**Evidence**: `endpoint` (after substitution), `response` (`status_code`, `body`), and on a non-2xx answer the `gh` error text.
+
+**Recorded responses**: the handler calls the platform through `darnit.core.utils.gh_api_with_status`. `set_gh_api_responder(responder)` routes every such call (including the `github_branch_protection` plugin handler's) through a responder instead of `gh`; `RecordedGhApi({path: {status, body, error}})` serves recorded responses keyed by API path, answers an unrecorded path as a transport failure (status 0), and with `gh_missing = True` answers as if `gh` were not installed. Tests and the adversarial corpus (section 5.5) use it to run platform checks offline and deterministically.
 
 #### Scenario: Declared status proves failure
 - **WHEN** a `gh_api` step with `fail_on_status = [404]` receives 404
@@ -602,6 +610,10 @@ A response that is ambiguous between "not found" and "not permitted to see" is E
 #### Scenario: Undeclared status is a broken measurement
 - **WHEN** a `gh_api` step receives 404 without declaring it, or receives 401, 403, 429, or 5xx
 - **THEN** the handler MUST return ERROR with the cause
+
+#### Scenario: A rate limit never proves failure
+- **WHEN** a `gh_api` step declares `fail_on_status = [403]` and receives a rate-limit 403
+- **THEN** the handler MUST return ERROR, class `rate_limit`
 
 ---
 
@@ -777,14 +789,18 @@ for invocation in control.metadata["handler_invocations"]:
     allowed = effective_set(handler, invocation)   # section 3.0.1
 
     if result.outcome == ERROR:
-        return SieveResult(status="ERROR", error={"class": ..., "cause": ...})
+        first_error = first_error or (result.error_class, result.message)
+        continue                                      # never concludes FAIL
     if result.outcome == PASS and "pass" in allowed:
         return SieveResult(status="PASS", authority="dispositive", concluded_by=invocation.handler)
     if result.outcome in (FAIL, WARN) and "fail" in allowed:
         return SieveResult(status=result.outcome, authority="dispositive", concluded_by=invocation.handler)
     # anything else is evidence -> continue to next handler
+    # (a model step stops here with PENDING only when no error was recorded)
 
 # No step concluded
+if first_error:
+    return SieveResult(status="ERROR", error={"class": first_error[0] or "evaluation", "cause": first_error[1]})
 return SieveResult(status="WARN", authority="suggestive", concluded_by="none")
 ```
 
@@ -829,6 +845,15 @@ Result fields beyond `status`:
 - **WHEN** a step could not measure (API authorization or rate-limit error, missing tool, evaluation error)
 - **THEN** the result MUST be ERROR with `error.class` and `error.cause`
 - **AND** it MUST NOT be reported as FAIL
+
+#### Scenario: A later step concludes after an ERROR
+- **WHEN** a step returns ERROR and a later step concludes within its effective set
+- **THEN** the control MUST take the later step's result
+- **AND** the ERROR MUST remain in the pass history
+
+#### Scenario: A required MCP server is missing
+- **WHEN** an `mcp` step's server is marked required (`optional = false`) and its binary is absent, its handshake fails, or it is unusable
+- **THEN** the step MUST return ERROR (class `missing_tool` for an absent binary, `network` otherwise), not FAIL
 
 ### 5.3 Evidence Accumulation
 

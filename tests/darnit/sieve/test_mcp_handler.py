@@ -423,11 +423,12 @@ def test_binary_absent_optional_true_inconclusive(tmp_path, mcp_counter_file):
 
 
 # ---------------------------------------------------------------------------
-# T040: binary absent + optional=false -> FAIL with same shape
+# T040: binary absent + optional=false -> ERROR with same shape (feature 041:
+# a missing required server is a broken measurement, never FAIL)
 # ---------------------------------------------------------------------------
 
 
-def test_binary_absent_optional_false_fails(tmp_path, mcp_counter_file):
+def test_binary_absent_optional_false_errors(tmp_path, mcp_counter_file):
     absent_cmd = ["definitelynotarealthing_xyzq_abc"]
     server_config = McpServerConfig(
         command=absent_cmd,
@@ -450,7 +451,8 @@ def test_binary_absent_optional_false_fails(tmp_path, mcp_counter_file):
     result = mcp_handler(
         {"server": "missing", "tool": "echo", "args": {}}, ctx
     )
-    assert result.status == HandlerResultStatus.FAIL
+    assert result.status == HandlerResultStatus.ERROR
+    assert result.error_class == "missing_tool"
     assert "MCP server binary not found: definitelynotarealthing_xyzq_abc" in result.message
 
 

@@ -52,6 +52,10 @@ class StepDisposition(str, Enum):
     # Conclusive under the same permission as FAIL (feature 041).
     CONCLUDE_WARN = "conclude_warn"
     ATTACH_EVIDENCE_AND_CONTINUE = "attach_and_continue"
+    # Feature 041: a broken measurement never concludes FAIL. The error is
+    # recorded and later steps still run; the control ends ERROR only when
+    # no later step concludes.
+    RECORD_ERROR_AND_CONTINUE = "record_error_and_continue"
     TERMINATE_INCONCLUSIVE = "terminate_inconclusive"
     TERMINATE_ERROR = "terminate_error"
 
@@ -67,10 +71,12 @@ def resolve_step_result(
     may conclude for its control. A PASS concludes only when ``pass`` is in
     it; a FAIL, or a WARN (a non-compliant conclusion like FAIL), only when
     ``fail`` is in it. Anything else is evidence: execution continues, or
-    ends inconclusive on the last step. ERROR is terminal regardless.
+    ends inconclusive on the last step. An ERROR never concludes: it is
+    recorded and execution continues, or ends ERROR on the last step,
+    whatever the effective set.
     """
     if handler_status == HandlerResultStatus.ERROR:
-        return StepDisposition.TERMINATE_ERROR
+        return StepDisposition.TERMINATE_ERROR if is_last_step else StepDisposition.RECORD_ERROR_AND_CONTINUE
 
     _CONCLUSIVE = {
         HandlerResultStatus.PASS: ("pass", StepDisposition.CONCLUDE_PASS),
@@ -85,6 +91,12 @@ def resolve_step_result(
     if is_last_step:
         return StepDisposition.TERMINATE_INCONCLUSIVE
     return StepDisposition.ATTACH_EVIDENCE_AND_CONTINUE
+
+
+# Handlers that evaluate ``expr`` themselves over their own binding
+# (``gh_api`` binds ``response``); the post-step would re-evaluate it over
+# ``output`` and fail.
+_HANDLERS_EVALUATING_OWN_EXPR = frozenset({"gh_api"})
 
 
 def _apply_cel_expr(
@@ -116,7 +128,7 @@ def _apply_cel_expr(
     See ``specs/020-definitive-fail-verdict/contracts/cel-post-step.md``.
     """
     expr = handler_config.get("expr")
-    if not expr:
+    if not expr or handler_config.get("handler") in _HANDLERS_EVALUATING_OWN_EXPR:
         return handler_result
 
     # Only override conclusive verdicts — ERROR and INCONCLUSIVE pass through
@@ -230,7 +242,9 @@ class SieveOrchestrator:
     Orchestrates the verification pipeline via handler dispatch.
 
     The sieve iterates a flat ordered list of handler invocations per control,
-    stopping as soon as a handler returns a conclusive result (PASS, FAIL, ERROR).
+    stopping as soon as a step concludes (PASS, FAIL, or WARN within its
+    effective set). An ERROR is recorded and later steps still run; the
+    control ends ERROR when none of them concludes (feature 041).
 
     For LLM handlers, the orchestrator can either:
     - Return PENDING (pending.kind = llm_judgment) with the consultation
@@ -327,7 +341,9 @@ class SieveOrchestrator:
         """Dispatch handler invocations from metadata.
 
         Iterates the flat handler invocation list in order, stops at the
-        first conclusive result (PASS, FAIL, ERROR).
+        first conclusive result. An ERROR step does not stop it (feature
+        041): the first error is recorded and later steps run; if none
+        concludes, the control ends ERROR with that first cause.
 
         Returns SieveResult if dispatch produced a result, None if no
         handler invocations are configured.
@@ -340,6 +356,7 @@ class SieveOrchestrator:
         pass_history: list[PassAttempt] = []
         accumulated_evidence: dict[str, Any] = {}
         last_error_class: str | None = None
+        first_error: dict[str, Any] | None = None
 
         # Build handler context
         handler_ctx = HandlerContext(
@@ -573,30 +590,30 @@ class SieveOrchestrator:
                     concluded_by=invocation.handler,
                 )
 
-            if disposition == StepDisposition.TERMINATE_ERROR:
-                return SieveResult(
-                    control_id=control_spec.control_id,
-                    status="ERROR",
-                    message=handler_result.message,
-                    level=control_spec.level,
-                    conclusive_phase=phase,
-                    pass_history=pass_history,
-                    evidence=accumulated_evidence,
-                    source="sieve",
-                    resolving_pass_index=pass_index,
-                    resolving_pass_handler=invocation.handler,
-                    authority=effective_authority,
-                    error_class=handler_result.error_class,
-                    concluded_by=invocation.handler,
-                )
+            # Feature 041: a broken measurement is not a finding. Keep the
+            # first cause and let later steps try; the pass history keeps
+            # every attempt either way.
+            if disposition in (StepDisposition.RECORD_ERROR_AND_CONTINUE, StepDisposition.TERMINATE_ERROR):
+                if first_error is None:
+                    first_error = {
+                        "message": handler_result.message,
+                        "error_class": handler_result.error_class,
+                        "phase": phase,
+                        "pass_index": pass_index,
+                        "handler": invocation.handler,
+                        "authority": effective_authority,
+                    }
+                continue
 
             # ATTACH_EVIDENCE_AND_CONTINUE or TERMINATE_INCONCLUSIVE fall
             # through to the LLM-consultation / continue path below.
 
-            # INCONCLUSIVE -- check for LLM consultation
+            # INCONCLUSIVE -- check for LLM consultation. An earlier ERROR
+            # takes precedence over waiting for a judgment.
             if (
                 phase == VerificationPhase.LLM
                 and self.stop_on_llm
+                and first_error is None
                 and handler_result.details
                 and "consultation_request" in handler_result.details
             ):
@@ -618,6 +635,27 @@ class SieveOrchestrator:
                 )
 
             # Continue to next handler
+
+        if first_error is not None:
+            return SieveResult(
+                control_id=control_spec.control_id,
+                status="ERROR",
+                message=first_error["message"],
+                level=control_spec.level,
+                conclusive_phase=first_error["phase"],
+                pass_history=pass_history,
+                evidence=accumulated_evidence,
+                source="sieve",
+                resolving_pass_index=first_error["pass_index"],
+                resolving_pass_handler=first_error["handler"],
+                authority=first_error["authority"],
+                error_class=first_error["error_class"],
+                concluded_by=first_error["handler"],
+                error={
+                    "class": first_error["error_class"] or "evaluation",
+                    "cause": first_error["message"],
+                },
+            )
 
         # All handler invocations inconclusive
         return SieveResult(

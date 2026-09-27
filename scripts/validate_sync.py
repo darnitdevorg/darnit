@@ -125,7 +125,7 @@ def validate_pass_types_sync() -> ValidationResult:
 
     # Expected built-in handler names from spec (registered handler names only)
     spec_handler_names = set()
-    for handler_name in ["file_exists", "exec", "regex", "pattern", "llm_eval", "manual", "manual_steps"]:
+    for handler_name in ["file_exists", "exec", "gh_api", "regex", "pattern", "llm_eval", "manual", "manual_steps"]:
         if handler_name in spec_content:
             spec_handler_names.add(handler_name)
 

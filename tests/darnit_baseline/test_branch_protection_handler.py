@@ -482,12 +482,13 @@ class TestFailPaths:
 
 
 # ---------------------------------------------------------------------------
-# US3: WARN (INCONCLUSIVE) on ambiguous responses
+# US3, revised by feature 041: ERROR with an error class on ambiguous
+# responses (a broken measurement, never FAIL)
 # ---------------------------------------------------------------------------
 
 
 class TestAmbiguousResponses:
-    def test_classic_403_returns_inconclusive(self, monkeypatch, ctx):
+    def test_classic_403_returns_error(self, monkeypatch, ctx):
         seq = _GhResponseSequencer([
             ("/branches/main/protection", None, 403, "HTTP 403: Forbidden"),
         ])
@@ -495,12 +496,13 @@ class TestAmbiguousResponses:
         result = github_branch_protection_handler(
             {"requirement": "require_pull_request"}, ctx
         )
-        assert result.status == HandlerResultStatus.INCONCLUSIVE
+        assert result.status == HandlerResultStatus.ERROR
+        assert result.error_class == "auth"
         assert result.evidence["source"] == "insufficient-access"
         assert result.evidence["classic_status"] == 403
         assert "rulesets_status" not in result.evidence  # never consulted
 
-    def test_classic_401_returns_inconclusive(self, monkeypatch, ctx):
+    def test_classic_401_returns_error(self, monkeypatch, ctx):
         seq = _GhResponseSequencer([
             ("/branches/main/protection", None, 401, "HTTP 401: Unauthorized"),
         ])
@@ -508,10 +510,11 @@ class TestAmbiguousResponses:
         result = github_branch_protection_handler(
             {"requirement": "require_pull_request"}, ctx
         )
-        assert result.status == HandlerResultStatus.INCONCLUSIVE
+        assert result.status == HandlerResultStatus.ERROR
+        assert result.error_class == "auth"
         assert result.evidence["source"] == "insufficient-access"
 
-    def test_classic_5xx_returns_inconclusive(self, monkeypatch, ctx):
+    def test_classic_5xx_returns_error(self, monkeypatch, ctx):
         seq = _GhResponseSequencer([
             ("/branches/main/protection", None, 502, "HTTP 502: Bad Gateway"),
         ])
@@ -519,10 +522,11 @@ class TestAmbiguousResponses:
         result = github_branch_protection_handler(
             {"requirement": "require_pull_request"}, ctx
         )
-        assert result.status == HandlerResultStatus.INCONCLUSIVE
+        assert result.status == HandlerResultStatus.ERROR
+        assert result.error_class == "unavailable"
         assert result.evidence["classic_status"] == 502
 
-    def test_rulesets_403_returns_inconclusive(self, monkeypatch, ctx):
+    def test_rulesets_403_returns_error(self, monkeypatch, ctx):
         seq = _GhResponseSequencer([
             ("/branches/main/protection", None, 404, "HTTP 404: Not Found"),
             ("/rulesets", None, 403, "HTTP 403: Forbidden"),
@@ -531,12 +535,13 @@ class TestAmbiguousResponses:
         result = github_branch_protection_handler(
             {"requirement": "require_pull_request"}, ctx
         )
-        assert result.status == HandlerResultStatus.INCONCLUSIVE
+        assert result.status == HandlerResultStatus.ERROR
+        assert result.error_class == "auth"
         assert result.evidence["source"] == "insufficient-access"
         assert result.evidence["classic_status"] == 404
         assert result.evidence["rulesets_status"] == 403
 
-    def test_rulesets_429_returns_inconclusive(self, monkeypatch, ctx):
+    def test_rulesets_429_returns_error(self, monkeypatch, ctx):
         seq = _GhResponseSequencer([
             ("/branches/main/protection", None, 404, "HTTP 404: Not Found"),
             ("/rulesets", None, 429, "HTTP 429: Too Many Requests"),
@@ -545,10 +550,11 @@ class TestAmbiguousResponses:
         result = github_branch_protection_handler(
             {"requirement": "require_pull_request"}, ctx
         )
-        assert result.status == HandlerResultStatus.INCONCLUSIVE
+        assert result.status == HandlerResultStatus.ERROR
+        assert result.error_class == "rate_limit"
         assert result.evidence["rulesets_status"] == 429
 
-    def test_partial_fetch_returns_inconclusive(self, monkeypatch, ctx):
+    def test_partial_fetch_returns_error(self, monkeypatch, ctx):
         # List succeeds; detail 404s (ruleset deleted between calls).
         seq = _GhResponseSequencer([
             ("/branches/main/protection", None, 404, "HTTP 404: Not Found"),
@@ -559,11 +565,12 @@ class TestAmbiguousResponses:
         result = github_branch_protection_handler(
             {"requirement": "require_pull_request"}, ctx
         )
-        assert result.status == HandlerResultStatus.INCONCLUSIVE
+        assert result.status == HandlerResultStatus.ERROR
+        assert result.error_class == "unavailable"
         assert result.evidence["source"] == "partial-fetch"
         assert "ruleset 42" in result.message
 
-    def test_gh_cli_missing_returns_inconclusive(self, monkeypatch, ctx):
+    def test_gh_cli_missing_returns_error(self, monkeypatch, ctx):
         seq = _GhResponseSequencer([
             ("/branches/main/protection", None, 0,
              "GitHub CLI (gh) not found. Install it from https://cli.github.com/"),
@@ -572,12 +579,13 @@ class TestAmbiguousResponses:
         result = github_branch_protection_handler(
             {"requirement": "require_pull_request"}, ctx
         )
-        assert result.status == HandlerResultStatus.INCONCLUSIVE
+        assert result.status == HandlerResultStatus.ERROR
+        assert result.error_class == "missing_tool"
         assert result.evidence["source"] == "insufficient-access"
         assert result.evidence["classic_status"] == 0
         assert "gh) not found" in result.message
 
-    def test_classic_status_zero_returns_inconclusive(self, monkeypatch, ctx):
+    def test_classic_status_zero_returns_error(self, monkeypatch, ctx):
         seq = _GhResponseSequencer([
             ("/branches/main/protection", None, 0, "connection reset by peer"),
         ])
@@ -585,7 +593,8 @@ class TestAmbiguousResponses:
         result = github_branch_protection_handler(
             {"requirement": "require_pull_request"}, ctx
         )
-        assert result.status == HandlerResultStatus.INCONCLUSIVE
+        assert result.status == HandlerResultStatus.ERROR
+        assert result.error_class == "unavailable"
         assert result.evidence["source"] == "insufficient-access"
 
 

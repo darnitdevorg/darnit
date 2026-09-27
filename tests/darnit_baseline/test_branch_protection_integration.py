@@ -168,11 +168,13 @@ def test_api_call_budget_matches_sc_004(monkeypatch, control_specs):
 
 
 # ---------------------------------------------------------------------------
-# US3 -- WARN falls through to manual pass (T056)
+# US3 -- revised by feature 041: a 403 is a broken measurement. The
+# trailing manual pass still runs, concludes nothing, and the control ends
+# ERROR with the cause (T056).
 # ---------------------------------------------------------------------------
 
 
-def test_warn_when_403_falls_through_to_manual(monkeypatch, control_specs):
+def test_error_when_403_falls_through_to_manual(monkeypatch, control_specs):
     seq = _Sequencer([
         ("/branches/main/protection", None, 403, "HTTP 403: Forbidden"),
     ])
@@ -182,6 +184,6 @@ def test_warn_when_403_falls_through_to_manual(monkeypatch, control_specs):
     orch = SieveOrchestrator(stop_on_llm=False)
     result = orch.verify(spec, _make_context("OSPS-AC-03.01"))
 
-    # Handler is INCONCLUSIVE -> orchestrator falls through to the trailing
-    # manual pass, which resolves the control as WARN with verification steps.
-    assert result.status == "WARN"
+    assert result.status == "ERROR"
+    assert result.error["class"] == "auth"
+    assert [a.checks_performed for a in result.pass_history][-1] == ["handler:manual"]

@@ -25,16 +25,25 @@ class TestResolveStepResult:
     """resolve_step_result: pure Check-phase execution rule."""
 
     # -----------------------------------------------------------------
-    # ERROR is terminal regardless of the effective set (FR-003 (c))
+    # ERROR never concludes, whatever the effective set (feature 041):
+    # recorded and continued, or terminal ERROR on the last step
     # -----------------------------------------------------------------
 
     @pytest.mark.parametrize("allowed", ALL_SETS)
-    @pytest.mark.parametrize("is_last", [True, False])
-    def test_error_terminates_regardless_of_effective_set(self, allowed, is_last):
+    def test_error_is_recorded_and_continues(self, allowed):
         d = resolve_step_result(
             handler_status=HandlerResultStatus.ERROR,
             allowed=allowed,
-            is_last_step=is_last,
+            is_last_step=False,
+        )
+        assert d == StepDisposition.RECORD_ERROR_AND_CONTINUE
+
+    @pytest.mark.parametrize("allowed", ALL_SETS)
+    def test_error_on_last_step_terminates_error(self, allowed):
+        d = resolve_step_result(
+            handler_status=HandlerResultStatus.ERROR,
+            allowed=allowed,
+            is_last_step=True,
         )
         assert d == StepDisposition.TERMINATE_ERROR
 

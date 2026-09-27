@@ -107,7 +107,7 @@ class TestExecHandlerClassification:
         assert result.error_class == "timeout"
 
     @pytest.mark.unit
-    def test_missing_binary_classifies_as_not_found(self, tmp_path: Path) -> None:
+    def test_missing_binary_classifies_as_missing_tool(self, tmp_path: Path) -> None:
         with patch(
             "darnit.sieve.builtin_handlers.subprocess.run",
             side_effect=FileNotFoundError("no such file"),
@@ -117,7 +117,7 @@ class TestExecHandlerClassification:
                 _ctx(tmp_path),
             )
         assert result.status == HandlerResultStatus.ERROR
-        assert result.error_class == "not_found"
+        assert result.error_class == "missing_tool"
 
     @pytest.mark.unit
     def test_rate_limit_stderr_classifies_as_rate_limit(self, tmp_path: Path) -> None:
@@ -400,7 +400,7 @@ class TestMcpHandlerClassification:
         [
             ("McpToolTimeout", "timeout"),
             ("McpServerHandshakeFailed", "network"),
-            ("McpServerBinaryMissing", "not_found"),
+            ("McpServerBinaryMissing", "missing_tool"),
             ("McpServerVerificationFailed", "auth"),
             ("McpServerUnusable", "network"),
             ("McpToolError", "crashed"),

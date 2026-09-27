@@ -76,16 +76,16 @@
 
 ### Tests for User Story 2
 
-- [ ] T018 [P] [US2] Write `gh_api` handler tests with recorded responses: 200 + expr, 404 with `fail_on_status = [404]` -> FAIL, 404 without it -> ERROR, 401/403 -> ERROR class `auth`, 429 -> `rate_limit`, 5xx/transport -> `unavailable`, `gh` missing -> `missing_tool`, in `tests/darnit/sieve/test_gh_api_handler.py`
-- [ ] T019 [P] [US2] Write tests: exec with a missing binary -> ERROR `missing_tool`; mcp step with a missing required server -> ERROR; branch-protection 401/403/429 -> ERROR with class, in `tests/darnit/sieve/test_error_outcomes.py` and `tests/darnit_baseline/test_branch_protection_errors.py`
-- [ ] T020 [P] [US2] Write a compliance test: any ERROR at a level makes it non-compliant, via `calculate_compliance`, in `tests/darnit/tools/test_compliance_errors.py`
+- [X] T018 [P] [US2] Write `gh_api` handler tests with recorded responses: 200 + expr, 404 with `fail_on_status = [404]` -> FAIL, 404 without it -> ERROR, 401/403 -> ERROR class `auth`, 429 -> `rate_limit`, 5xx/transport -> `unavailable`, `gh` missing -> `missing_tool`, in `tests/darnit/sieve/test_gh_api_handler.py`
+- [X] T019 [P] [US2] Write tests: exec with a missing binary -> ERROR `missing_tool`; mcp step with a missing required server -> ERROR; branch-protection 401/403/429 -> ERROR with class, in `tests/darnit/sieve/test_error_outcomes.py` and `tests/darnit_baseline/test_branch_protection_errors.py`
+- [X] T020 [P] [US2] Write a compliance test: any ERROR at a level makes it non-compliant, via `calculate_compliance`, in `tests/darnit/tools/test_compliance_errors.py`
 
 ### Implementation for User Story 2
 
-- [ ] T021 [US2] Implement the `gh_api` handler (endpoint with `$OWNER/$REPO/$BRANCH` substitution, CEL `expr` over `response`, `fail_on_status`, error classes) using the existing `gh_api_with_status` helper in `packages/darnit/src/darnit/sieve/builtin_handlers.py`; add a recorded-response stub hook for tests and the corpus
-- [ ] T022 [US2] Return ERROR `missing_tool` from `exec` when the binary is absent, and ERROR from the mcp handler when a required server is missing, in `packages/darnit/src/darnit/sieve/builtin_handlers.py`
-- [ ] T023 [US2] Return ERROR with an error class for 401/403/429 in `packages/darnit-baseline/src/darnit_baseline/branch_protection.py`
-- [ ] T024 [US2] Propagate ERROR through the orchestrator so an ERROR step never concludes FAIL and the control ends ERROR when no later step concludes, recording the cause, in `packages/darnit/src/darnit/sieve/orchestrator.py`
+- [X] T021 [US2] Implement the `gh_api` handler (endpoint with `$OWNER/$REPO/$BRANCH` substitution, CEL `expr` over `response`, `fail_on_status`, error classes) using the existing `gh_api_with_status` helper in `packages/darnit/src/darnit/sieve/builtin_handlers.py`; add a recorded-response stub hook for tests and the corpus
+- [X] T022 [US2] Return ERROR `missing_tool` from `exec` when the binary is absent, and ERROR from the mcp handler when a required server is missing, in `packages/darnit/src/darnit/sieve/builtin_handlers.py`
+- [X] T023 [US2] Return ERROR with an error class for 401/403/429 in `packages/darnit-baseline/src/darnit_baseline/branch_protection.py`
+- [X] T024 [US2] Propagate ERROR through the orchestrator so an ERROR step never concludes FAIL and the control ends ERROR when no later step concludes, recording the cause, in `packages/darnit/src/darnit/sieve/orchestrator.py`
 
 **Checkpoint**: Broken measurements read as ERROR everywhere.
 

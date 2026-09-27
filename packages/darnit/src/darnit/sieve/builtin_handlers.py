@@ -6,6 +6,7 @@ from TOML HandlerInvocation configs via the SieveHandlerRegistry.
 Built-in verification handlers:
     - file_exists: Check file existence from a list of paths
     - exec: Run external command, evaluate exit code / CEL expr
+    - gh_api: Platform API call decided by HTTP status and CEL over the response
     - regex: Match regex patterns in file content
     - llm_eval: AI evaluation with confidence threshold
     - manual_steps: Human verification checklist
@@ -338,12 +339,12 @@ def exec_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResu
         )
     except FileNotFoundError:
         message = f"Command not found: {resolved_cmd[0]}"
-        _log_environmental_failure(context.control_id, "exec", "not_found", message)
+        _log_environmental_failure(context.control_id, "exec", "missing_tool", message)
         return HandlerResult(
             status=HandlerResultStatus.ERROR,
             message=message,
             evidence={"command": resolved_cmd},
-            error_class="not_found",
+            error_class="missing_tool",
         )
 
     evidence: dict[str, Any] = {
@@ -393,6 +394,98 @@ def exec_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResu
             evidence=evidence,
             error_class=error_class,
         )
+
+
+def gh_api_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResult:
+    """Call the platform API through ``gh api`` and decide from the HTTP status.
+
+    Feature 041. ``gh api`` exits 1 for 401, 403, 404, and 429 alike, so an
+    ``exec`` step cannot tell "does not exist" from "not permitted to see".
+    Only statuses the step declares in ``fail_on_status`` prove failure;
+    every other non-2xx answer is a broken measurement (ERROR).
+
+    Config fields:
+        endpoint: str - API path (supports $OWNER, $REPO, $BRANCH)
+        expr: str - CEL over ``response.status_code`` and ``response.body``
+            on a 2xx answer: true -> PASS, false -> FAIL (no expr: PASS)
+        fail_on_status: list[int] - Step field. Statuses that prove failure.
+
+    Evidence: ``endpoint`` (after substitution) and ``response``
+    (``status_code``, ``body``). See framework-design.md section 3.8.
+    """
+    from darnit.core.utils import gh_api_error_class, gh_api_with_status
+
+    endpoint = config.get("endpoint", "")
+    if not endpoint:
+        return HandlerResult(
+            status=HandlerResultStatus.ERROR,
+            message="No endpoint specified for gh_api handler",
+            error_class="evaluation",
+        )
+    for var, val in (("$OWNER", context.owner), ("$REPO", context.repo), ("$BRANCH", context.default_branch)):
+        endpoint = endpoint.replace(var, val or "")
+
+    body, status, error = gh_api_with_status(endpoint)
+    response: dict[str, Any] = {"status_code": status, "body": body}
+    evidence: dict[str, Any] = {"endpoint": endpoint, "response": response}
+
+    if 200 <= status < 300:
+        expr = config.get("expr")
+        if not expr:
+            return HandlerResult(
+                status=HandlerResultStatus.PASS,
+                message=f"Platform API answered HTTP {status} for {endpoint}",
+                confidence=1.0,
+                evidence=evidence,
+            )
+        from .cel_evaluator import evaluate_cel
+
+        evidence["expr"] = expr
+        cel_result = evaluate_cel(expr, {"response": response})
+        if not cel_result.success:
+            message = f"Could not evaluate expr over the response from {endpoint}: {cel_result.error}"
+            _log_environmental_failure(context.control_id, "gh_api", "evaluation", message)
+            return HandlerResult(
+                status=HandlerResultStatus.ERROR,
+                message=message,
+                evidence=evidence,
+                error_class="evaluation",
+            )
+        if cel_result.value:
+            return HandlerResult(
+                status=HandlerResultStatus.PASS,
+                message=f"Platform API response for {endpoint} satisfies expr",
+                confidence=1.0,
+                evidence=evidence,
+            )
+        return HandlerResult(
+            status=HandlerResultStatus.FAIL,
+            message=f"Platform API response for {endpoint} does not satisfy expr",
+            confidence=1.0,
+            evidence=evidence,
+        )
+
+    error_class = gh_api_error_class(status, error)
+    if error:
+        evidence["error"] = error[:500]
+    fail_on_status = config.get("fail_on_status") or []
+    if status > 0 and status in fail_on_status and error_class != "rate_limit":
+        return HandlerResult(
+            status=HandlerResultStatus.FAIL,
+            message=f"Platform API answered HTTP {status} for {endpoint}, which proves failure for this control",
+            confidence=1.0,
+            evidence=evidence,
+        )
+
+    detail = f"HTTP {status}" if status else (error or "no response")
+    message = f"Platform API call {endpoint} could not be measured ({error_class}): {detail}"
+    _log_environmental_failure(context.control_id, "gh_api", error_class, message)
+    return HandlerResult(
+        status=HandlerResultStatus.ERROR,
+        message=message,
+        evidence=evidence,
+        error_class=error_class,
+    )
 
 
 def regex_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResult:
@@ -1195,32 +1288,33 @@ def mcp_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResul
         # a missing binary: make the server available.
         error_info = (HandlerResultStatus.ERROR, str(err), "not_found")
     except McpServerBinaryMissing as err:
-        # optional=true (default) -> INCONCLUSIVE; optional=false -> FAIL
+        # optional=true (default) -> INCONCLUSIVE; optional=false -> ERROR.
+        # A missing server is a broken measurement, never FAIL (feature 041).
         optional = True
         if server_config is not None:
             optional = bool(getattr(server_config, "optional", True))
-        status = HandlerResultStatus.INCONCLUSIVE if optional else HandlerResultStatus.FAIL
+        status = HandlerResultStatus.INCONCLUSIVE if optional else HandlerResultStatus.ERROR
         message = str(err) if optional else f"Required MCP server binary not found. {err}"
-        error_info = (status, message, "not_found")
+        error_info = (status, message, "missing_tool")
     except McpServerVerificationFailed as err:
         # Sigstore verification failure is auth-shaped: the operator has to
         # fix a trust relationship, not a network path.
         error_info = (HandlerResultStatus.ERROR, str(err), "auth")
     except McpServerHandshakeFailed as err:
-        # Contract: INCONCLUSIVE by default; FAIL when the operator marked
+        # Contract: INCONCLUSIVE by default; ERROR when the operator marked
         # the server as required (optional=false).
         optional = True
         if server_config is not None:
             optional = bool(getattr(server_config, "optional", True))
-        status = HandlerResultStatus.INCONCLUSIVE if optional else HandlerResultStatus.FAIL
+        status = HandlerResultStatus.INCONCLUSIVE if optional else HandlerResultStatus.ERROR
         error_info = (status, str(err), "network")
     except McpServerUnusable as err:
         # Broken twice -- treat like an unusable binary: INCONCLUSIVE unless
-        # the operator marked the server required (optional=false), then FAIL.
+        # the operator marked the server required (optional=false), then ERROR.
         optional = True
         if server_config is not None:
             optional = bool(getattr(server_config, "optional", True))
-        status = HandlerResultStatus.INCONCLUSIVE if optional else HandlerResultStatus.FAIL
+        status = HandlerResultStatus.INCONCLUSIVE if optional else HandlerResultStatus.ERROR
         error_info = (status, str(err), "network")
     except McpToolTimeout as err:
         error_info = (HandlerResultStatus.ERROR, str(err), "timeout")
@@ -1381,8 +1475,8 @@ def register_builtin_handlers() -> None:
 
     Ceilings per step type (feature 041, data-model.md "HandlerCeiling"):
     presence and pattern steps prove only absence ({fail}; {pass, fail} when
-    the step declares ``existence``); command and MCP observations may
-    conclude either way; model, manual, and remediation handlers conclude
+    the step declares ``existence``); command, platform API, and MCP
+    observations may conclude either way; model, manual, and remediation handlers conclude
     nothing.
     """
     registry = get_sieve_handler_registry()
@@ -1401,6 +1495,15 @@ def register_builtin_handlers() -> None:
         phase="deterministic",
         handler_fn=exec_handler,
         description="Run external command, evaluate exit code / CEL expr",
+        ceiling={"pass", "fail"},
+    )
+    # Feature 041: only declared statuses prove failure; any other non-2xx
+    # answer is ERROR, so the step may conclude either way.
+    registry.register(
+        "gh_api",
+        phase="deterministic",
+        handler_fn=gh_api_handler,
+        description="Call the platform API via gh; decide from HTTP status and CEL over response.*",
         ceiling={"pass", "fail"},
     )
     registry.register(

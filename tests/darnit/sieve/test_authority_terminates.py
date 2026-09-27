@@ -126,8 +126,10 @@ class TestLLMOnlyCannotConclude:
         assert result.evidence.get("proposal") == "found"
         assert result.evidence.get("file") == "/path"
 
-    def test_error_from_dispositive_terminates_without_escalation(self):
-        """FR-003 (c): ERROR is terminal; strategy list does NOT escalate."""
+    def test_error_is_not_escalated_to_a_conclusion(self):
+        """Feature 041: an ERROR is recorded and later steps run, but a step
+        that may not conclude cannot turn it into a verdict; the control
+        ends ERROR with the first cause."""
         registry = get_sieve_handler_registry()
 
         exec_call_count = {"n": 0}
@@ -162,9 +164,10 @@ class TestLLMOnlyCannotConclude:
         orch = SieveOrchestrator()
         result = orch.verify(control, _make_ctx())
 
-        assert result.status == "ERROR", f"ERROR from dispositive step must be terminal, got {result.status}"
+        assert result.status == "ERROR", f"a later evidence-only PASS must not replace ERROR, got {result.status}"
+        assert result.error["cause"] == "Command not available"
         assert exec_call_count["n"] == 1
-        assert llm_call_count["n"] == 0, "LLM step must NOT have been called after ERROR (FR-003 (c): no escalation)"
+        assert llm_call_count["n"] == 1, "later steps still run after an ERROR (feature 041)"
 
 
 class TestPromptInjectionSafety:

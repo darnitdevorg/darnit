@@ -28,7 +28,7 @@ existence = true          # the requirement is literally that the file exists: m
 handler = "gh_api"
 endpoint = "/repos/$OWNER/$REPO/branches/$BRANCH/protection"
 fail_on_status = [404]    # 404 proves "no branch protection"; 401/403/429/5xx are ERROR
-expr = 'response.body.required_pull_request_reviews != null'
+expr = 'has(response.body.required_pull_request_reviews)'
 
 [[controls."OSPS-XX-01.01".passes]]
 handler = "pattern"
@@ -41,7 +41,7 @@ promotion = { outcome = "pass", corpus = "c-2026.10.01-3f9a", note = "0 false PA
 ## Rules
 
 1. Effective set = (`existence_ceiling` if `existence = true` else `ceiling`), narrowed by `concludes` if present, widened only by `promotion`.
-2. Loading rejects: `existence` on a non-presence/pattern handler; `fail_on_miss` without `fail` in the effective set; `fail_on_status` on a handler other than `gh_api`; any outcome outside the ceiling without a promotion. Errors name the framework, control, step index, and outcome.
+2. Loading rejects: `existence` on a non-presence/pattern handler; `fail_on_miss` without `fail` in the effective set; `fail_on_status` on a handler other than `gh_api` or without `fail` in the effective set; any outcome outside the ceiling without a promotion. Errors name the framework, control, step index, and outcome.
 3. Validation runs in every control-loading path after plugin handlers register.
 4. A step result whose outcome is not in the effective set is recorded as evidence; evaluation continues.
 5. Plugin handlers register their ceiling with the handler; a plugin handler that registers no ceiling defaults to `{}` (evidence only).

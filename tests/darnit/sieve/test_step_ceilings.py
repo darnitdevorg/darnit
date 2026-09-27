@@ -167,6 +167,13 @@ class TestLoadTimeValidation:
     def test_fail_on_status_only_on_gh_api(self) -> None:
         self._reject(HandlerInvocation(handler="exec", fail_on_status=[404]), "fail_on_status")
 
+    def test_fail_on_status_without_fail_rejected(self) -> None:
+        self._reject(
+            HandlerInvocation(handler="gh_api", endpoint="/x", fail_on_status=[404], concludes=["pass"]),
+            "fail_on_status",
+            "fail",
+        )
+
     def test_promotion_on_model_judgment_rejected(self) -> None:
         self._reject(
             HandlerInvocation(

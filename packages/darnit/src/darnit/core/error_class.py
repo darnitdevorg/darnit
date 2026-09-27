@@ -28,11 +28,18 @@ timeout        Subprocess exceeded its ``timeout`` budget, or an MCP tool
                call exceeded ``MCP_DEFAULT_TIMEOUT_SECONDS``.
 rate_limit     GitHub primary or secondary rate limit, or abuse-detection
                throttle.
-not_found      A required binary or MCP server executable is absent from
-               PATH.
+not_found      A control names an MCP server the operator never configured.
+               (Before feature 041 this also covered an absent binary; step
+               results now report that as ``missing_tool``.)
 crashed        A handler raised an unexpected exception, or an MCP tool
                returned unparseable output. The handler did not complete
                cleanly.
+missing_tool   Feature 041. A tool the step needs (``gh``, a command's
+               binary, a required MCP server executable) is not installed.
+unavailable    Feature 041. The platform API answered with a 5xx or a status
+               the step did not declare, or the request never got a response.
+evaluation     Feature 041. The step ran but its result could not be
+               evaluated (for example a CEL ``expr`` error over a response).
 =============  ===============================================================
 
 Two names are exported because ``typing.Literal`` is erased at runtime
@@ -64,6 +71,9 @@ ErrorClass = Literal[
     "rate_limit",
     "not_found",
     "crashed",
+    "missing_tool",
+    "unavailable",
+    "evaluation",
 ]
 
 # Runtime-checkable companion to ``ErrorClass``. See module docstring for
@@ -76,6 +86,9 @@ ERROR_CLASSES: frozenset[ErrorClass] = frozenset(
         "rate_limit",
         "not_found",
         "crashed",
+        "missing_tool",
+        "unavailable",
+        "evaluation",
     )
 )
 
