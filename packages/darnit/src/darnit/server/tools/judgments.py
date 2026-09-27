@@ -166,26 +166,64 @@ async def submit_judgment(
     )
 
 
-def register_judgment_tools(server: Any, framework_name: str | None) -> None:
-    """Register ``submit_judgment`` bound to the server's framework."""
-    if not framework_name:
-        logger.debug("No framework name; submit_judgment not registered")
-        return
+async def confirm_pass_candidate(
+    control_ids: list[str],
+    owner: str,
+    repo: str,
+    host: str = "github.com",
+    local_path: str = ".",
+    _framework_name: str | None = None,
+) -> str:
+    """Confirm stored PASS candidates for the named repository.
 
+    Call this ONLY when the operator explicitly tells you to confirm. A
+    confirmation applies to the evidence as it is now and lapses when it
+    expires or the judged content or the control's rubric changes.
+
+    Args:
+        control_ids: Controls whose PASS candidate the operator confirms.
+        owner: Owner of the audited repository.
+        repo: Name of the audited repository.
+        host: Git host of owner/repo.
+        local_path: Path to the audited checkout.
+    """
+    from darnit.server.tools.project_data import confirm_pass_candidates_impl
+
+    return await asyncio.to_thread(
+        confirm_pass_candidates_impl,
+        local_path,
+        list(control_ids or []),
+        owner=owner,
+        repo=repo,
+        host=host,
+        framework_name=_framework_name,
+    )
+
+
+def _bind_framework(fn: Any, framework_name: str) -> Any:
     import functools
     import inspect
 
-    @functools.wraps(submit_judgment)
-    async def bound(**kwargs: Any) -> dict[str, Any]:
+    @functools.wraps(fn)
+    async def bound(**kwargs: Any) -> Any:
         kwargs["_framework_name"] = framework_name
-        return await submit_judgment(**kwargs)
+        return await fn(**kwargs)
 
-    sig = inspect.signature(submit_judgment)
+    sig = inspect.signature(fn)
     bound.__signature__ = sig.replace(  # type: ignore[attr-defined]
         parameters=[p for name, p in sig.parameters.items() if name != "_framework_name"]
     )
+    return bound
+
+
+def register_judgment_tools(server: Any, framework_name: str | None) -> None:
+    """Register ``submit_judgment`` and ``confirm_pass_candidate`` bound to the server's framework."""
+    if not framework_name:
+        logger.debug("No framework name; judgment tools not registered")
+        return
+
     server.add_tool(
-        bound,
+        _bind_framework(submit_judgment, framework_name),
         name="submit_judgment",
         description=(
             "Submit a judgment for a control awaiting one (PENDING, pending.kind = llm_judgment). "
@@ -195,4 +233,14 @@ def register_judgment_tools(server: Any, framework_name: str | None) -> None:
             "finding; unverifiable citations are rejected. Never state your verdict as the audit result."
         ),
     )
-    logger.debug("Registered submit_judgment for framework %s", framework_name)
+    server.add_tool(
+        _bind_framework(confirm_pass_candidate, framework_name),
+        name="confirm_pass_candidate",
+        description=(
+            "Confirm stored PASS candidates (PENDING, pending.kind = confirmation) for the named "
+            "repository. Call ONLY on the operator's explicit instruction; never on your own "
+            "judgment. Confirms only a candidate for the current evidence; the confirmation lapses "
+            "on expiry or when the judged content or rubric changes."
+        ),
+    )
+    logger.debug("Registered judgment tools for framework %s", framework_name)

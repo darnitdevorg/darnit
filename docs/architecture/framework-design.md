@@ -905,7 +905,14 @@ submit_judgment(
 
 It re-runs the audit for `local_path` to re-gather the control's judged content (the client's copy is never trusted), applies section 3.5, and for a valid positive judgment records the candidate (`source = "mcp_agent"`). A negative judgment returns a suggestive FAIL finding and stores nothing; an invalid one returns a rejection naming the excerpts not found and stores nothing. A control that does not reach its model step is rejected.
 
-An operator confirms candidates through the framework's confirmation tool (for OpenSSF Baseline, `confirm_project_data(confirm_pass_candidate=[control_id, ...], owner=..., repo=..., host=...)`), which re-gathers the evidence and confirms only a stored candidate whose digest matches the current evidence, recording `confirmed_by`, `confirmed_at`, and `expires_at` (operator policy `confirmation_expiry_days`).
+```
+confirm_pass_candidate(
+  control_ids: list[str], owner: str, repo: str,
+  host: str = "github.com", local_path: str = "."
+) -> str
+```
+
+An operator confirms candidates through `confirm_pass_candidate`, registered on every framework server beside `submit_judgment` (OpenSSF Baseline also accepts `confirm_project_data(confirm_pass_candidate=[...])`, which runs the same confirmation). It re-gathers the evidence and confirms only a stored candidate whose digest matches the current evidence, recording `confirmed_by`, `confirmed_at`, and `expires_at` (operator policy `confirmation_expiry_days`). An agent calls it only on the operator's explicit instruction.
 
 **ActionPlan.** For the `audit` step, `submit_action_result` accepts no client payload: the server runs the audit itself and records only the results the engine produced. In-process drivers submit the engine's result object (`run_audit_step`); a plain mapping carrying audit results is rejected with `ResultSchemaMismatch`.
 

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from darnit.server.tools.judgments import submit_judgment, submit_judgment_impl
+from darnit.server.tools.judgments import confirm_pass_candidate, submit_judgment, submit_judgment_impl
 from darnit.trust.confirmations import load_candidates, load_confirmations
 from tests.darnit.trust.judgment_repo import (
     CI_VARS,
@@ -185,6 +185,51 @@ class TestConfirmingACandidate:
 
         assert self._confirm(repo).startswith("Error: name the repository")
         assert load_confirmations() == []
+
+
+@pytest.mark.integration
+class TestConfirmPassCandidateTool:
+    """The framework-neutral confirmation tool, here on a non-Baseline framework."""
+
+    def test_confirms_a_candidate_for_the_current_evidence(self, repo: Path) -> None:
+        _submit(repo)
+
+        message = asyncio.run(
+            confirm_pass_candidate(
+                control_ids=[CONTROL], owner=OWNER, repo=REPO, local_path=str(repo), _framework_name=FRAMEWORK
+            )
+        )
+
+        assert f"{CONTROL}: confirmed by" in message
+        result = audit(repo)
+        assert result["status"] == "PASS"
+        assert result["authority"] == "asserted"
+
+    def test_requires_a_framework(self, repo: Path) -> None:
+        _submit(repo)
+
+        message = asyncio.run(
+            confirm_pass_candidate(control_ids=[CONTROL], owner=OWNER, repo=REPO, local_path=str(repo))
+        )
+
+        assert message.startswith("Error:")
+        assert load_confirmations() == []
+
+
+@pytest.mark.unit
+def test_every_framework_server_registers_confirm_pass_candidate() -> None:
+    from darnit.server.factory import create_server_from_dict
+
+    server = create_server_from_dict({"metadata": {"name": FRAMEWORK}, "mcp": {"name": "t"}})
+    tools = {tool.name: tool for tool in asyncio.new_event_loop().run_until_complete(server.list_tools())}
+
+    assert set(tools["confirm_pass_candidate"].inputSchema["properties"]) == {
+        "control_ids",
+        "owner",
+        "repo",
+        "host",
+        "local_path",
+    }
 
 
 @pytest.mark.unit

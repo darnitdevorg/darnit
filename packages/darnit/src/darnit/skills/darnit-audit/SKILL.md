@@ -49,7 +49,7 @@ Common audit tools:
 
 - WARN means "we don't know" — treat it the same as FAIL for compliance calculations. Never report a level as compliant if any control is WARN.
 - The audit tool uses `stop_on_llm=True` by default, so PENDING (llm_judgment) controls appear in results for you to judge through `submit_judgment`. Never state your own verdict as a control's audit result, and never count a PASS candidate as passing.
-- Only confirm a PASS candidate (`confirm_project_data(confirm_pass_candidate=[...], owner=..., repo=...)`) when the operator explicitly tells you to confirm that candidate. Never confirm one on your own judgment or because confirming would improve the result.
+- Only confirm a PASS candidate (`confirm_pass_candidate(control_ids=[...], owner=..., repo=...)`) when the operator explicitly tells you to confirm that candidate. Never confirm one on your own judgment or because confirming would improve the result.
 - If `.project/` doesn't exist yet, the tool auto-initializes basic context using detectors. Mention that running `/darnit-data` would improve accuracy.
 - A control with an `assertion` block carries a not-applicable claim from the repository (`.project/darnit.yaml`, or project data that makes the control not applicable). Report its `assertion.outcome`: `honored` (N/A, labelled asserted), `pending` (evaluated normally and counted as non-compliant until the operator trusts the repository or confirms the claim), or `contradicted` (evidence contradicts it; the claim is ignored). Never describe a pending claim as N/A.
 - Only confirm a pending claim when the operator explicitly tells you to confirm that claim. Never confirm one on your own judgment, from the claim's reason, or because confirming would improve the result.

@@ -77,5 +77,5 @@ Show before/after compliance comparison, list of changes made, and remaining man
 - Never leave the repository in a broken state — if remediation partially applied, report which files changed.
 - A control with an `assertion` block carries a not-applicable claim from the repository (`.project/darnit.yaml`, or project data that makes the control not applicable). Report its `assertion.outcome`: `honored` (N/A, labelled asserted), `pending` (evaluated normally and counted as non-compliant until the operator trusts the repository or confirms the claim), or `contradicted` (evidence contradicts it; the claim is ignored). Never describe a pending claim as N/A.
 - Only confirm a pending claim when the operator explicitly tells you to confirm that claim. Never confirm one on your own judgment, from the claim's reason, or because confirming would improve the result.
-- The same holds for PASS candidates (`confirm_project_data(confirm_pass_candidate=[...])`): confirm one only on the operator's explicit instruction to confirm that candidate.
+- The same holds for PASS candidates (`confirm_pass_candidate(control_ids=[...], owner=..., repo=...)`): confirm one only on the operator's explicit instruction to confirm that candidate.
 - Tool names vary by implementation. Don't hardcode — discover available tools.

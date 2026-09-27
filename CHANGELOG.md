@@ -102,7 +102,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   content the step read becomes a PASS candidate (`PENDING`, kind
   `confirmation`), stored operator-side for an operator- or CI-named
   repository; it counts as non-compliant until the operator confirms it with
-  `confirm_project_data` (`confirm_pass_candidate`). A confirmed candidate
+  the new `confirm_pass_candidate` MCP tool (every framework server; OpenSSF
+  Baseline also accepts `confirm_project_data(confirm_pass_candidate=...)`).
+  A confirmed candidate
   reports PASS with `authority: asserted`, `concluded_by: confirmation`, and
   the confirmer, time, and expiry, and lapses when the judged content or the
   control's rubric changes or the confirmation expires. A negative judgment
