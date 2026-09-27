@@ -23,7 +23,7 @@
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-- [ ] T001 In a separate change based on main (not this branch), narrow the parity guard so it applies only to changes to the parity harness (tier1/tier2 code), not to fixture and expectation updates under `tests/darnit/parity/fixtures/`, in `tests/darnit/parity/tier1/test_no_product_changes.py` (research R8); rebase this branch on it once merged (opened as #509)
+- [X] T001 In a separate change based on main (not this branch), narrow the parity guard so it applies only to changes to the parity harness (tier1/tier2 code), not to fixture and expectation updates under `tests/darnit/parity/fixtures/`, in `tests/darnit/parity/tier1/test_no_product_changes.py` (research R8); rebase this branch on it once merged (opened as #509)
 - [ ] T002 Update `docs/architecture/framework-design.md` first: step ceilings and declarations (`concludes`, `existence`, `fail_on_miss`, `fail_on_status`, `promotion`), the `gh_api` handler, the result statuses (PENDING replaces PENDING_LLM; ERROR with cause), PASS candidates and confirmation, and the corpus gate; add `gh_api` to the handler-name registry so `scripts/validate_sync.py` passes
 - [ ] T003 [P] Create the corpus skeleton `tests/darnit_baseline/corpus/README.md` (fixture layout and `labels.toml` format per data-model.md) and an empty `tests/darnit_baseline/corpus/__init__.py`
 
