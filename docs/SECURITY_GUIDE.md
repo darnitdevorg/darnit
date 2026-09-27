@@ -56,7 +56,7 @@ darnit_mycompany/
 This automatically allows your module to be loaded:
 
 ```toml
-# .baseline.toml
+# Framework TOML shipped in your plugin package
 [adapters.mycompany]
 type = "python"
 module = "darnit_mycompany.adapters.custom"
@@ -194,16 +194,95 @@ def validate_path(path: str, allowed_base: str) -> Path:
 
 ## Configuration Security
 
-### `.baseline.toml` Security
+darnit separates two kinds of configuration:
 
-A `.baseline.toml` file lives in the repository being audited, so darnit treats it as untrusted input. Only `version`, `settings`, and `extends` naming a registered framework are honored.
+- **Operator configuration** is tool configuration owned by whoever runs darnit. It is the only place tool settings come from.
+- **Project claims** in `.project/` are statements a repository makes about itself. They are reported, and they count only under the trust and evidence rules below.
 
-Everything else is ignored with a warning:
+Nothing in an audited repository can add to, override, or select operator configuration.
 
-- control `passes`, `check`, `remediation` and `config` overrides, custom controls, `control_groups`, `adapters`, `mcp_servers`, `stores`, plugin trust settings, and `extends` pointing at a file path, because they could change what darnit executes or trusts;
-- per-control `status` and `reason` (for example marking a control `n/a`), because they would let the audited party remove controls from its own compliance result.
+### Operator Configuration
 
-Settings of that kind belong to the operator running darnit, not to the audited repository; operator configuration outside the repository replaces them in the next release. If darnit logs that it ignored settings from `.baseline.toml`, they have no effect on the audit.
+Operator configuration is a TOML file found the same way by every driver (CLI, MCP server, headless harness):
+
+1. `--operator-config PATH` given at launch (`darnit audit`, `darnit run`, `darnit harness`, `darnit serve`, `darnit config show`).
+2. Otherwise the per-user location: `$XDG_CONFIG_HOME/darnit/config.toml` when `XDG_CONFIG_HOME` is set and absolute, else `~/.config/darnit/config.toml` (Linux and macOS), or `%APPDATA%\darnit\config.toml` (Windows).
+3. Otherwise built-in defaults.
+
+It holds allowed plugins and trusted publishers, MCP servers, per-control pass overrides and custom controls, storage backends, LLM settings, trusted repositories, CI trust rules, and policy defaults:
+
+```toml
+schema_version = 1
+
+[plugins]
+allowed = ["openssf-baseline"]
+trusted_publishers = ["https://github.com/darnitdevorg"]
+allow_unsigned = false
+
+[mcp_servers.scanner]
+command = ["scanner-mcp", "--stdio"]
+env = { SCANNER_TOKEN = "$SCANNER_TOKEN" }   # substituted from the environment at launch
+
+[trust]
+repos = ["github.com/example/project"]
+ci = [ { event = "push-default-branch" } ]
+
+[policy]
+confirmation_expiry_days = 180
+```
+
+`darnit config show` prints the file in use, its SHA-256 digest, the permission-check result, and the effective settings with secrets redacted. Every audit report records the same source and digest, so reference secrets as `$VAR` rather than writing them into the file.
+
+Safeguards:
+
+- **Validation**: unknown keys and invalid values stop the run with an error naming the file and key.
+- **Containment**: an operator configuration path inside the audited repository is refused, and the refusal is reported. A repository cannot supply operator configuration by passing a path into itself.
+- **Permission check (POSIX)**: the file and each parent directory up to your home directory must be owned by you (or root) and not group- or world-writable. A failing file is loaded with a warning, or refused in strict mode.
+- **Strict mode**: enabled by `--strict-operator-config`, automatically in recognized CI, or by `policy.strict_permissions = true` in the file. The file can only turn strict mode on, never off.
+
+### Trusted Repositories and CI
+
+A repository's claims can only be honored when the operator trusts that repository for the run.
+
+- **Local runs**: a repository is trusted when the identity you name (`--repo HOST/NAMESPACE/NAME` on the CLI and harness, or the `owner`/`repo` arguments of an MCP tool) is listed in `[trust].repos`. Identities are compared in canonical form, so SSH and HTTPS URLs, a trailing `.git`, and host case all match. A checkout's own remotes are never trusted; a mismatch between your target and the checkout's `origin` is reported.
+- **CI**: trust comes from CI metadata and an opt-in rule. The only rule is `push-default-branch`: a push to the repository's default branch (GitHub Actions or GitLab CI) of a listed repository, with the checked-out commit matching the one CI reports. Pull requests, merge requests (from forks or not), `workflow_run`, merge-queue events, and unrecognized CI environments are untrusted.
+
+Manage the list with `darnit config trust add|list|remove`, which edits only `[trust].repos` in the operator configuration file. Reports record the trust decision, its reason, and the CI facts used.
+
+### Project Claims in `.project/`
+
+A repository records that a control does not apply in `.project/darnit.yaml`:
+
+```yaml
+controls:
+  OSPS-BR-02.01:
+    status: n/a
+    reason: "Pre-1.0 project with no releases yet. Tracked in issue #123."
+    asserted_by: "@maintainer"   # optional
+```
+
+Project data in `.project/` that makes a control not applicable (for example a value its applicability condition reads) is a claim too. Every claim has one outcome, shown in the report:
+
+| Outcome | When | Effect |
+|---------|------|--------|
+| `honored` | The repository is trusted, an explicit claim gives a reason, and no evidence the control declares contradicts it; or an operator confirmed the claim | Control is `N/A`, labelled asserted |
+| `pending` | Anything else, including untrusted repositories, claims without a reason, and evidence that could not be obtained | Control is evaluated normally and counts as non-compliant |
+| `contradicted` | Evidence contradicts the claim (for example a release exists) | Claim is ignored; control is evaluated normally |
+
+An operator can confirm a pending claim through the `confirm_project_data` MCP tool (`confirm_not_applicable`). Confirmations are stored on the operator side, never in the repository, and lapse when they expire or when the claim's reason or evidence changes. An agent must only confirm a claim when the operator explicitly asks it to.
+
+### Deprecated: `.baseline.toml`
+
+`.baseline.toml` is deprecated. In this release darnit reads its per-control `status` and `reason` and treats them exactly like `.project/` claims; it also still honors `extends` naming a registered framework (use `--framework` instead). Every audit warns for each setting in the file, naming where it now belongs. Tool settings in it are not applied. A later release will ignore the file.
+
+Run `darnit config migrate [REPO]` to write its claims to `.project/darnit.yaml` (existing claims are kept unless you pass `--force`) and print a proposed operator configuration fragment for its tool settings. The command never writes operator configuration. Review both, then delete `.baseline.toml`.
+
+### Configuration Review Checklist
+
+When reviewing changes to `.project/`:
+
+1. **Verify N/A justifications** are legitimate and each claim has a `reason`
+2. **Check the audit report** for pending and contradicted claims, and for ignored repository settings, which indicate configuration that belongs in operator configuration
 
 ---
 
@@ -219,14 +298,18 @@ The MCP server has access to:
 - **GitHub API** (via configured token)
 - **Network** (for external tool integrations)
 
-### Recommended Configuration
+### Register darnit at User Scope
+
+Register darnit's MCP server in your own (user-scope) agent configuration, not in a configuration file committed to a repository. `darnit install` writes user-scope registrations by default; `--project` writes a repository-scoped one and is not recommended.
+
+A repository-scoped registration lets the repository decide how darnit is launched: its command, arguments, and environment. For example, a repository-scoped `uv run darnit serve` runs the repository's own copy of darnit, not the one you installed. Do not approve repository-scoped darnit servers in repositories you do not control. When darnit's own code is running from inside the audited repository, audit results include a warning recommending user-scope registration (expected only when developing darnit itself).
 
 ```json
 {
   "mcpServers": {
     "darnit": {
-      "command": "uv",
-      "args": ["run", "--directory", "/path/to/baseline-mcp", "python", "main.py"],
+      "command": "darnit",
+      "args": ["serve"],
       "env": {
         "GITHUB_TOKEN": "${GITHUB_TOKEN}",
         "DARNIT_LOG_LEVEL": "INFO"
@@ -235,6 +318,8 @@ The MCP server has access to:
   }
 }
 ```
+
+Pass `--operator-config PATH` and `--strict-operator-config` in `args` if you keep operator configuration somewhere other than the per-user location.
 
 ### Security Recommendations
 
@@ -286,7 +371,7 @@ Darnit supports [Sigstore](https://www.sigstore.dev/)-based plugin verification 
 #### Configuration
 
 ```toml
-# .baseline.toml
+# Operator configuration (for example ~/.config/darnit/config.toml)
 [plugins]
 allow_unsigned = false          # Reject unsigned plugins (use true for local dev)
 trusted_publishers = [          # Trust plugins signed by these OIDC identities

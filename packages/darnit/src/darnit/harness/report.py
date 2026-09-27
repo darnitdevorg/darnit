@@ -103,6 +103,7 @@ class HarnessReport(BaseModel):
     trust: dict[str, Any] | None = None
     ignored_repository_settings: list[dict[str, str]] = Field(default_factory=list)
     unknown_assertions: list[dict[str, Any]] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
     # exit_class NOT emitted in JSON body per RF-8; kept as an attribute
     # for the driver but excluded from serialization.
     exit_class: int = Field(default=0, exclude=True)
@@ -145,6 +146,7 @@ class HarnessReport(BaseModel):
 
             lines.append(f"- Trust: {format_trust(self.trust)}")
             lines.extend(f"- Warning: {w}" for w in self.trust.get("warnings", []))
+        lines.extend(f"- Warning: {w}" for w in self.warnings)
         s = self.summary
         lines.append(f"- Total: {s.total}")
         lines.append(f"- Passed: {s.pass_}")

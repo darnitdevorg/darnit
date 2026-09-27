@@ -167,16 +167,16 @@
 
 ### Tests for User Story 5
 
-- [ ] T057 [P] [US5] Write deprecation tests (only per-control status/reason read, treated as assertions under the US3 rules; one warning per setting naming its new home; file ignored with a notice after the deprecation flag flips) in `tests/darnit/config/operator/test_baseline_deprecation.py`
-- [ ] T058 [P] [US5] Write migration tests (claims written to `.project/darnit.yaml`; proposed operator fragment printed; operator configuration file untouched; existing claims not overwritten without `--force`) in `tests/darnit/config/operator/test_migrate.py`
+- [X] T057 [P] [US5] Write deprecation tests (only per-control status/reason read, treated as assertions under the US3 rules; one warning per setting naming its new home; file ignored with a notice after the deprecation flag flips) in `tests/darnit/config/operator/test_baseline_deprecation.py`
+- [X] T058 [P] [US5] Write migration tests (claims written to `.project/darnit.yaml`; proposed operator fragment printed; operator configuration file untouched; existing claims not overwritten without `--force`) in `tests/darnit/config/operator/test_migrate.py`
 
 ### Implementation for User Story 5
 
-- [ ] T059 [US5] Implement deprecation-period reading of `.baseline.toml` assertions and the per-setting warning, behind a single release-controlled switch, in `packages/darnit/src/darnit/config/merger.py`
-- [ ] T060 [US5] Implement migration logic in `packages/darnit/src/darnit/config/operator/migrate.py` and the `darnit config migrate [REPO] [--force]` command in `packages/darnit/src/darnit/cli.py`
-- [ ] T061 [US5] Replace `.baseline.toml` as the parity-corpus fixture marker and migrate fixture files in `tests/darnit/parity/tier1/fixture_meta.py`, `tests/darnit/parity/tier1/conftest.py`, and `tests/darnit/parity/fixtures/`
-- [ ] T062 [US5] Migrate remaining tests that construct `.baseline.toml` for tool settings to operator configuration fixtures, and those that assert exclusions to `.project/` claims (test modules listed in research R8), in `tests/`
-- [ ] T063 [P] [US5] Update `darnit init` so it no longer creates `.baseline.toml` and instead explains `.project/` claims and operator configuration in `packages/darnit/src/darnit/cli.py`
+- [X] T059 [US5] Implement deprecation-period reading of `.baseline.toml` assertions and the per-setting warning, behind a single release-controlled switch, in `packages/darnit/src/darnit/config/merger.py`
+- [X] T060 [US5] Implement migration logic in `packages/darnit/src/darnit/config/operator/migrate.py` and the `darnit config migrate [REPO] [--force]` command in `packages/darnit/src/darnit/cli.py`
+- [X] T061 [US5] Replace `.baseline.toml` as the parity-corpus fixture marker and migrate fixture files in `tests/darnit/parity/tier1/fixture_meta.py`, `tests/darnit/parity/tier1/conftest.py`, and `tests/darnit/parity/fixtures/`
+- [X] T062 [US5] Migrate remaining tests that construct `.baseline.toml` for tool settings to operator configuration fixtures, and those that assert exclusions to `.project/` claims (test modules listed in research R8), in `tests/`
+- [X] T063 [P] [US5] Update `darnit init` so it no longer creates `.baseline.toml` and instead explains `.project/` claims and operator configuration in `packages/darnit/src/darnit/cli.py`
 
 **Checkpoint**: All user stories are independently functional.
 
@@ -184,12 +184,12 @@
 
 ## Phase 8: Polish & Cross-Cutting Concerns
 
-- [ ] T064 [P] Update `docs/SECURITY_GUIDE.md` configuration sections to describe operator configuration, user-scope registration, trust lists, and CI rules; remove repository-configuration guidance
-- [ ] T065 [P] Update agent skills to recommend user-scope registration and describe pending claims and confirmation in `packages/darnit/src/darnit/skills/darnit-audit/SKILL.md`, `darnit-comply/SKILL.md`, `darnit-data/SKILL.md`, and `darnit-remediate/SKILL.md`
-- [ ] T066 [P] Update `CLAUDE.md` Context System and Technology Stack sections to replace `.baseline.toml` user overrides with operator configuration and `.project/` claims
-- [ ] T067 [P] Add a CHANGELOG entry describing operator configuration, the deprecation of `.baseline.toml`, and the new `config` subcommands in `CHANGELOG.md`
-- [ ] T068 Run quickstart.md end to end against scratch repositories and record results in `specs/040-operator-config-trust/quickstart.md` (append a "Validation log" section)
-- [ ] T069 Run `uv run ruff check .`, `uv run pytest tests/ --ignore=tests/integration/ -q`, and `uv run python scripts/validate_sync.py --verbose`; fix failures
+- [X] T064 [P] Update `docs/SECURITY_GUIDE.md` configuration sections to describe operator configuration, user-scope registration, trust lists, and CI rules; remove repository-configuration guidance
+- [X] T065 [P] Update agent skills to recommend user-scope registration and describe pending claims and confirmation in `packages/darnit/src/darnit/skills/darnit-audit/SKILL.md`, `darnit-comply/SKILL.md`, `darnit-data/SKILL.md`, and `darnit-remediate/SKILL.md`
+- [X] T066 [P] Update `CLAUDE.md` Context System and Technology Stack sections to replace `.baseline.toml` user overrides with operator configuration and `.project/` claims
+- [X] T067 [P] Add a CHANGELOG entry describing operator configuration, the deprecation of `.baseline.toml`, and the new `config` subcommands in `CHANGELOG.md`
+- [X] T068 Run quickstart.md end to end against scratch repositories and record results in `specs/040-operator-config-trust/quickstart.md` (append a "Validation log" section)
+- [X] T069 Run `uv run ruff check .`, `uv run pytest tests/ --ignore=tests/integration/ -q`, and `uv run python scripts/validate_sync.py --verbose`; fix failures
 - [ ] T070 File the upstream `.project/` proposal for an exemption/applicability field and link it from `specs/040-operator-config-trust/research.md` R6
 
 ---

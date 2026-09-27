@@ -14,6 +14,7 @@ from pathlib import Path
 
 from tests.darnit.parity.tier1.fixture_meta import (
     VALID_CATEGORIES,
+    discover_fixtures,
     load_parity_metadata,
 )
 
@@ -21,9 +22,7 @@ FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 
 
 def _discover_fixtures() -> list[Path]:
-    if not FIXTURES_DIR.exists():
-        return []
-    return sorted(p for p in FIXTURES_DIR.iterdir() if p.is_dir() and (p / ".baseline.toml").exists())
+    return discover_fixtures(FIXTURES_DIR)
 
 
 class TestCorpusInventory:

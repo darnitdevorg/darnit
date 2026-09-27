@@ -86,6 +86,8 @@ Show: branch name, controls fixed, files changed, PR URL (if created), and remai
 - Do NOT call `create_remediation_branch` or `commit_remediation_changes` separately — use the `branch_name` and `auto_commit` params instead.
 - If `remediate_audit_findings` fails mid-way, report which files were already changed so the user can review.
 - The tool respects the `safe` flag on remediations — only safe remediations are auto-applied. Unsafe ones are listed but excluded.
+- Register darnit's MCP server at user scope (`darnit install` does this by default); a repository-scoped `uv run darnit serve` runs the repository's own copy of darnit.
+- Only controls whose not-applicable claim is `honored` are skipped. Controls with a `pending` or `contradicted` claim are remediated like any other failing control. Do not confirm a pending claim to avoid a remediation; confirm one only when the operator explicitly tells you to.
 - If there are unresolved data questions, the remediation tool will block and tell you. Suggest running `/darnit-data` first.
 - The §3a verification-prompt-block files (today: `THREAT_MODEL.md` / `docs/threatmodel/SUMMARY.md`) are the ONE exception to §3b's "trust the template" stance. Always ask the user before doing a large triage pass on these — don't silently rewrite dozens of findings, and don't silently skip them either. The default "skip enhancement" rule from §3b is wrong for these files.
 

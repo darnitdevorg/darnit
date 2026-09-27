@@ -246,9 +246,8 @@ class HarnessRun:
 
         Returns (results, owner, repo, default_branch).
 
-        Raises ``HarnessSetupError`` on framework-load failures / missing
-        `.baseline.toml` / undetectable owner+repo. Message points at
-        `darnit init` per CLI-1.
+        Raises ``HarnessSetupError`` on framework-load failures /
+        undetectable owner+repo. Message points at ``--framework`` per CLI-1.
         """
         from darnit.trust.decision import owner_repo_from_identity
 
@@ -260,8 +259,7 @@ class HarnessRun:
         )
         if error:
             raise HarnessSetupError(
-                f"cannot prepare audit for {self.local_path}: {error}. "
-                "Run `darnit init` if this repo has no .baseline.toml.",
+                f"cannot prepare audit for {self.local_path}: {error}.",
             )
 
         try:
@@ -283,18 +281,15 @@ class HarnessRun:
             ) from exc
 
         # Empty results means no controls loaded -- almost always because
-        # the target has no .baseline.toml (framework not resolvable) or
-        # no framework name was passed via --framework. Silent "0 PASS,
-        # 0 FAIL" is misleading; a fleet operator wiring this into CI would
-        # see exit 0 and assume compliance. Raise SETUP_ERROR pointing at
-        # `darnit init` (CLI-1 contract).
+        # the framework could not be resolved. Silent "0 PASS, 0 FAIL" is
+        # misleading; a fleet operator wiring this into CI would see exit 0
+        # and assume compliance. Raise SETUP_ERROR pointing at --framework
+        # (CLI-1 contract).
         if not results:
             raise HarnessSetupError(
                 f"no controls loaded for {self.local_path}. "
-                "Likely cause: no .baseline.toml in the target repo, or "
-                "the framework named in .baseline.toml is not installed. "
-                "Run `darnit init` in the target repo, or pass "
-                "`--framework <name>` explicitly.",
+                "Likely cause: the framework is not installed or could not be "
+                "resolved. Pass `--framework <name>` explicitly.",
             )
 
         return results, owner or "", repo or "", default_branch

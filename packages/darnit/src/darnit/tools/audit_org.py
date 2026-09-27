@@ -384,7 +384,7 @@ def format_org_results_markdown(
                 level=level,
                 audit_metadata={
                     k: result[k]
-                    for k in ("operator_config", "trust", "ignored_repository_settings", "unknown_assertions")
+                    for k in ("operator_config", "trust", "ignored_repository_settings", "unknown_assertions", "warnings")
                     if k in result
                 },
             )

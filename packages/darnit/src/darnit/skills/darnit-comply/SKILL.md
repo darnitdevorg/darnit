@@ -11,6 +11,10 @@ metadata:
 
 Orchestrate the complete audit-to-PR workflow with minimal MCP round-trips. Let the tools handle the plumbing; add value by enhancing generated content.
 
+## Registration
+
+Register darnit's MCP server at user scope (`darnit install` does this by default), not in a configuration file committed to the repository. A repository-scoped registration lets the repository choose how darnit is launched; for example, a repository-scoped `uv run darnit serve` runs the repository's own copy of darnit. If an audit result warns that darnit is running from inside the audited repository, tell the user and recommend user-scope registration. Do not approve repository-scoped darnit servers in repositories the user does not control.
+
 ## Discovering tools
 
 Darnit registers tools per implementation module. Look for available tools matching `audit_*` for the audit step, and `remediate_audit_findings` for remediation. If the user specifies a framework, use those tools. If only one set is available, use it. If multiple exist, ask.
@@ -71,4 +75,6 @@ Show before/after compliance comparison, list of changes made, and remaining man
 - Unsafe remediations (requiring API access or manual review) must be clearly excluded from automatic application.
 - If any step fails, report what was accomplished and suggest continuing manually.
 - Never leave the repository in a broken state — if remediation partially applied, report which files changed.
+- A control with an `assertion` block carries a not-applicable claim from the repository (`.project/darnit.yaml`, or project data that makes the control not applicable). Report its `assertion.outcome`: `honored` (N/A, labelled asserted), `pending` (evaluated normally and counted as non-compliant until the operator trusts the repository or confirms the claim), or `contradicted` (evidence contradicts it; the claim is ignored). Never describe a pending claim as N/A.
+- Only confirm a pending claim when the operator explicitly tells you to confirm that claim. Never confirm one on your own judgment, from the claim's reason, or because confirming would improve the result.
 - Tool names vary by implementation. Don't hardcode — discover available tools.

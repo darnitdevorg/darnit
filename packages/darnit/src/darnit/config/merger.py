@@ -633,7 +633,13 @@ def load_framework_config(path: Path) -> FrameworkConfig:
 
 OPERATOR_CONFIGURATION_HOME = "operator configuration"
 PROJECT_ASSERTIONS_HOME = ".project/darnit.yaml"
+FRAMEWORK_OPTION_HOME = "the --framework option"
 USER_CONFIG_FILENAME = ".baseline.toml"
+
+# True for the .baseline.toml deprecation release (FR-021): per-control
+# status/reason are still read as claims and every setting is warned about.
+# Set to False in the following minor release to ignore the file (FR-023).
+BASELINE_TOML_DEPRECATION_ACTIVE = True
 
 # Files shaped like operator configuration that darnit never reads from an
 # audited repository; they are reported so their authors know where the
@@ -710,7 +716,7 @@ def load_user_config_with_report(repo_path: Path) -> tuple[UserConfig | None, li
         IgnoredSetting per key that was not applied.
     """
     config_path = Path(repo_path) / USER_CONFIG_FILENAME
-    if not config_path.exists():
+    if not BASELINE_TOML_DEPRECATION_ACTIVE or not config_path.exists():
         return None, []
 
     with open(config_path, "rb") as f:
@@ -743,7 +749,7 @@ def load_user_config(repo_path: Path, *, trusted: bool = False) -> UserConfig | 
     """
     config_path = Path(repo_path) / USER_CONFIG_FILENAME
 
-    if not config_path.exists():
+    if not BASELINE_TOML_DEPRECATION_ACTIVE or not config_path.exists():
         return None
 
     if trusted:
@@ -760,6 +766,54 @@ def load_user_config(repo_path: Path, *, trusted: bool = False) -> UserConfig | 
             ", ".join(sorted(s.key for s in ignored)),
         )
     return user
+
+
+def _baseline_toml_settings(data: dict[str, Any]) -> list[str]:
+    settings: list[str] = []
+    for key, value in data.items():
+        if key == "version":
+            continue
+        if key != "controls" or not isinstance(value, dict):
+            settings.append(key)
+            continue
+        for control_id, override in value.items():
+            if not isinstance(override, dict):
+                settings.append(f"controls.{control_id}")
+                continue
+            custom = all(k in override for k in ("name", "level", "domain"))
+            fields = [f for f in override if not custom or f in _UNTRUSTED_CONTROL_KEYS]
+            settings.extend(f"controls.{control_id}.{field}" for field in fields)
+            if custom:
+                settings.append(f"controls.{control_id}")
+    return settings
+
+
+def baseline_toml_warnings(repo_path: Path) -> list[str]:
+    """Deprecation warnings for the audited repository's .baseline.toml (FR-021, FR-023).
+
+    During the deprecation release, one warning per setting naming where the
+    setting now belongs; afterwards, a single notice that the file was ignored.
+    """
+    path = Path(repo_path) / USER_CONFIG_FILENAME
+    if not path.is_file():
+        return []
+    migrate = "run `darnit config migrate` to move per-control status and reason to " + PROJECT_ASSERTIONS_HOME
+    if not BASELINE_TOML_DEPRECATION_ACTIVE:
+        return [
+            f"{USER_CONFIG_FILENAME} is no longer read and was ignored; {migrate}. "
+            f"Tool settings belong in {OPERATOR_CONFIGURATION_HOME}."
+        ]
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+        return [f"{USER_CONFIG_FILENAME} is deprecated and could not be read; {migrate}."]
+
+    warnings = []
+    for setting in _baseline_toml_settings(data):
+        home = FRAMEWORK_OPTION_HOME if setting.startswith("extends") else _new_home(setting)
+        hint = " (run `darnit config migrate`)" if home == PROJECT_ASSERTIONS_HOME else ""
+        warnings.append(f"{USER_CONFIG_FILENAME} is deprecated: `{setting}` belongs in {home}{hint}.")
+    return warnings
 
 
 def _operator_shaped_settings(repo_path: Path) -> list[IgnoredSetting]:

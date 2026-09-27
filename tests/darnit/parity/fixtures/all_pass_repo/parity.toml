@@ -1,3 +1,6 @@
+# Feature 028 parity fixture: expects every selected control to PASS.
+# Uses two simple dispositive file_exists controls so no LLM involvement.
+
 [expected]
 category = "all_pass"
 has_pending_llm = false

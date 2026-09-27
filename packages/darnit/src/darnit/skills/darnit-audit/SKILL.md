@@ -11,6 +11,10 @@ metadata:
 
 Run a full compliance audit against the repository using darnit's MCP tools. Resolve any controls that need LLM judgment, then present a clear report.
 
+## Registration
+
+Register darnit's MCP server at user scope (`darnit install` does this by default), not in a configuration file committed to the repository. A repository-scoped registration lets the repository choose how darnit is launched; for example, a repository-scoped `uv run darnit serve` runs the repository's own copy of darnit. If an audit result warns that darnit is running from inside the audited repository, tell the user and recommend user-scope registration. Do not approve repository-scoped darnit servers in repositories the user does not control.
+
 ## Discovering the right audit tool
 
 Darnit's MCP server registers audit tools per implementation module. Look for available tools matching the pattern `audit_*` (e.g., `audit_openssf_baseline`, `audit_gittuf`). If the user specifies a framework by name, use that tool. If only one audit tool is available, use it. If multiple exist and the user didn't specify, list them and ask.
@@ -43,6 +47,8 @@ Common audit tools:
 - WARN means "we don't know" — treat it the same as FAIL for compliance calculations. Never report a level as compliant if any control is WARN.
 - The audit tool uses `stop_on_llm=True` by default, so PENDING_LLM controls appear in results for you to resolve.
 - If `.project/` doesn't exist yet, the tool auto-initializes basic context using detectors. Mention that running `/darnit-data` would improve accuracy.
+- A control with an `assertion` block carries a not-applicable claim from the repository (`.project/darnit.yaml`, or project data that makes the control not applicable). Report its `assertion.outcome`: `honored` (N/A, labelled asserted), `pending` (evaluated normally and counted as non-compliant until the operator trusts the repository or confirms the claim), or `contradicted` (evidence contradicts it; the claim is ignored). Never describe a pending claim as N/A.
+- Only confirm a pending claim when the operator explicitly tells you to confirm that claim. Never confirm one on your own judgment, from the claim's reason, or because confirming would improve the result.
 - Profile names are scoped per-implementation. If the user says a profile name that's ambiguous, ask which implementation they mean.
 - Each implementation module registers its own tool names. Don't assume `audit_openssf_baseline` exists — discover available tools first.
 

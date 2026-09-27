@@ -37,6 +37,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Operator configuration: a user-level TOML file found the same way by the
+  CLI, MCP server, and harness (`--operator-config PATH`, else
+  `$XDG_CONFIG_HOME/darnit/config.toml` or `~/.config/darnit/config.toml`,
+  else built-in defaults). It is the only source of tool settings: plugins,
+  MCP servers, pass overrides, custom controls, stores, LLM settings, trusted
+  repositories, CI trust rules, and policy. Unknown keys stop the run, a path
+  inside the audited repository is refused, and a file writable by others is
+  refused under `--strict-operator-config` (on by default in recognized CI).
+  Reports record its source and digest.
+- `darnit config show` (resolved operator configuration, digest, permission
+  check, and redacted settings), `darnit config trust add|list|remove`
+  (edits `[trust].repos`), and `darnit config migrate [REPO] [--force]`
+  (writes `.baseline.toml` claims to `.project/darnit.yaml` and prints a
+  proposed operator configuration fragment; it never writes operator
+  configuration).
+- CI trust decisions: in CI a repository is trusted only under the opt-in
+  `push-default-branch` rule (GitHub Actions, GitLab CI); pull requests,
+  merge requests, and unrecognized CI are untrusted. Locally, `--repo
+  HOST/NAMESPACE/NAME` (or an MCP tool's `owner`/`repo`) names the audited
+  repository; a checkout's own remotes are never trusted. Reports record the
+  decision, its reason, and the CI facts used.
+- Assertion outcomes for not-applicable claims from `.project/darnit.yaml`
+  (with optional `asserted_by`) and from `.project/` context values that make
+  a control not applicable: each claimed control reports `honored`,
+  `pending`, or `contradicted`. Operators can confirm a pending claim with
+  `confirm_project_data` (`confirm_not_applicable`); confirmations are stored
+  operator-side and lapse on expiry or when the claim or its evidence
+  changes. Framework controls can declare `contradicted_by` evidence.
 - `docs/architecture/` directory containing the 25 rehomed architectural reference
   specs (including the authoritative `framework-design.md`), plus a one-screen
   `README.md` index. These are static reference documentation, not in-flight
@@ -48,6 +76,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `.baseline.toml` is deprecated. In this release darnit reads its
+  per-control `status`/`reason` as not-applicable claims under the same rules
+  as `.project/` claims, still honors `extends` naming a registered framework,
+  ignores its tool settings (see Security above), and warns once per setting
+  in the file with the setting's new home. A later release will ignore the
+  file with a notice. `darnit init` no longer creates `.baseline.toml`; it
+  explains `.project/` claims and operator configuration.
+- A not-applicable claim makes a control `N/A` (excluded from the level's
+  denominator) only when it is honored: the repository is trusted, an
+  explicit claim gives a reason, and no declared evidence contradicts it, or
+  an operator confirmed it. Pending claims count as non-compliant and
+  contradicted claims have no effect. Remediation skips only honored claims.
+- Attestation level compliance uses the same rule as audit reports: WARN,
+  ERROR, PENDING_LLM, and pending claims are non-compliant. Assertion-backed
+  `N/A` results carry `authority: asserted` and `asserted_by`.
+- `darnit install --project` warns that a repository-scoped registration lets
+  the repository control how darnit is launched; user scope remains the
+  default.
+- The built-in audit tool's JSON output is now an object (`metadata`,
+  `operator_config`, `trust`, `ignored_repository_settings`,
+  `unknown_assertions`, `summary`, `results`, and `warnings` when present)
+  instead of a bare list of results.
 - The authoritative location of the framework-design specification has moved
   from `openspec/specs/framework-design/spec.md` to
   `docs/architecture/framework-design.md`. The project constitution,

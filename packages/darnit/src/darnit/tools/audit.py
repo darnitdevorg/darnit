@@ -257,11 +257,13 @@ def audit_report_metadata(
     ``trust`` records whether the audited repository is trusted and why
     (``target`` is the repository identity the operator named, if any),
     ``ignored_repository_settings`` lists tool settings the audited
-    repository tried to supply, each with the place it now belongs, and
+    repository tried to supply, each with the place it now belongs,
     ``unknown_assertions`` lists not-applicable claims about controls
-    ``framework_name`` does not define (they have no effect).
+    ``framework_name`` does not define (they have no effect), and
+    ``warnings`` (present only when non-empty) carries the ``.baseline.toml``
+    deprecation warnings, which are also logged.
     """
-    from darnit.config.merger import find_ignored_repository_settings
+    from darnit.config.merger import baseline_toml_warnings, find_ignored_repository_settings
     from darnit.trust.assertions import unknown_assertions
     from darnit.trust.decision import decide_trust
 
@@ -271,7 +273,7 @@ def audit_report_metadata(
         if framework is not None
         else []
     )
-    return {
+    metadata: dict[str, Any] = {
         "operator_config": operator_config.report(),
         "trust": decide_trust(target, operator_config.config, local_path).report(),
         "ignored_repository_settings": [
@@ -282,6 +284,12 @@ def audit_report_metadata(
             for a in unknown
         ],
     }
+    warnings = baseline_toml_warnings(Path(local_path))
+    for warning in warnings:
+        logger.warning(warning)
+    if warnings:
+        metadata["warnings"] = warnings
+    return metadata
 
 
 def _stored_context_locations(local_path: str, stored_context: dict[str, Any]) -> dict[str, str]:

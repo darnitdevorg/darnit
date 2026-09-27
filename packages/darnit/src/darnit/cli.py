@@ -11,7 +11,7 @@ Usage:
     darnit audit [OPTIONS] [REPO_PATH]  # Debug: Run audit without LLM
     darnit plan [OPTIONS] [REPO_PATH]   # Debug: Show execution plan
     darnit validate [OPTIONS] PATH      # Validate framework config
-    darnit init [OPTIONS] [REPO_PATH]   # Initialize .baseline.toml
+    darnit init [OPTIONS] [REPO_PATH]   # Explain project claims and operator config
     darnit list [OPTIONS]               # List available frameworks
 
 Examples:
@@ -192,6 +192,7 @@ def format_audit_metadata_text(metadata: dict) -> str:
 
         lines.append(f"Trust: {format_trust(trust)}")
         lines.extend(f"  warning: {w}" for w in trust.get("warnings", []))
+    lines.extend(f"Warning: {w}" for w in metadata.get("warnings", []))
     ignored = metadata.get("ignored_repository_settings") or []
     if ignored:
         lines.append(f"Ignored repository settings ({len(ignored)}):")
@@ -495,53 +496,42 @@ def cmd_validate(args: argparse.Namespace) -> int:
 
 
 def cmd_init(args: argparse.Namespace) -> int:
-    """Initialize a .baseline.toml file."""
+    """Explain where project claims and operator configuration live; writes nothing."""
+    from darnit.config.operator.loader import default_config_path
+
     repo_path = Path(args.repo_path).resolve()
-    baseline_path = repo_path / ".baseline.toml"
-
-    if baseline_path.exists() and not args.force:
-        logger.error(".baseline.toml already exists. Use --force to overwrite.")
-        return 1
-
-    # Auto-detect framework from installed implementations
     if args.framework:
         framework = args.framework
     else:
         from darnit.core.discovery import discover_implementations
+
         impls = discover_implementations()
-        if len(impls) == 1:
-            framework = next(iter(impls))
-        else:
-            framework = "openssf-baseline"
+        framework = next(iter(impls)) if len(impls) == 1 else "openssf-baseline"
 
-    template = f'''# Darnit configuration file
-# See: https://github.com/kusari-oss/darnit
-
-version = "1.0"
-extends = "{framework}"
-
-[settings]
-cache_results = true
-timeout = 300
-
-# Adapter definitions (uncomment to use external tools)
-# [adapters.kusari]
-# type = "command"
-# command = "kusari"
-# output_format = "json"
-
-# Control overrides
-# [controls."CONTROL-ID"]
-# status = "n/a"
-# reason = "Pre-release project"
-
-# Use custom adapter for specific controls
-# [controls."CONTROL-ID"]
-# check = {{ adapter = "kusari" }}
-'''
-
-    baseline_path.write_text(template, encoding="utf-8")
-    logger.info(f"✓ Created {baseline_path}")
+    lines = [
+        "darnit does not create configuration files in the repository; nothing was written.",
+        "",
+        f"Project claims live in {repo_path / '.project' / 'darnit.yaml'} and are committed with the project.",
+        "Record a control that does not apply like this:",
+        "",
+        "  controls:",
+        "    OSPS-BR-02.01:",
+        "      status: n/a",
+        '      reason: "Pre-1.0 project with no releases yet"',
+        "",
+        "A claim counts only when the operator trusts the repository and no evidence contradicts it;",
+        "otherwise it is reported as pending and the control counts as non-compliant.",
+        "",
+        f"Operator configuration (tool settings; never read from a repository): {default_config_path()}",
+        "  darnit config show                           shows the file in use and its settings",
+        "  darnit config trust add HOST/NAMESPACE/NAME  trusts a repository's claims",
+        "Name the audited repository with --repo HOST/NAMESPACE/NAME; a checkout's own remotes are never trusted.",
+        "",
+        f"Select the framework per run with --framework {framework}.",
+    ]
+    if (repo_path / ".baseline.toml").exists():
+        lines.extend(["", "This repository has a deprecated .baseline.toml; run `darnit config migrate` to move it."])
+    sys.stdout.write("\n".join(lines) + "\n")
     return 0
 
 
@@ -1181,6 +1171,53 @@ def cmd_config_trust(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_config_migrate(args: argparse.Namespace) -> int:
+    """Move .baseline.toml claims to .project/darnit.yaml and print a proposed operator fragment."""
+    from darnit.config.operator.loader import default_config_path
+    from darnit.config.operator.migrate import MigrationError, migrate_baseline_toml
+
+    repo_path = Path(args.repo_path).resolve()
+    try:
+        result = migrate_baseline_toml(repo_path, force=args.force)
+    except MigrationError as e:
+        logger.error(str(e))
+        return 1
+
+    lines = [f"Claims in {result.project_file}:"]
+    lines.extend(f"  written: {cid}" for cid in result.written)
+    lines.extend(f"  already present: {cid}" for cid in result.unchanged)
+    lines.extend(
+        f"  kept existing claim for {cid} (re-run with --force to replace it)" for cid in result.skipped
+    )
+    if not (result.written or result.unchanged or result.skipped):
+        lines.append("  none")
+    if result.not_migrated:
+        lines.append("Not migrated (no equivalent): " + ", ".join(result.not_migrated))
+    operator_path = default_config_path()
+    if result.operator_fragment:
+        lines.extend(
+            [
+                "",
+                f"Proposed operator configuration (not written; review it and add it to {operator_path}):",
+                "",
+                result.operator_fragment.rstrip("\n"),
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "Next steps:",
+            f"  1. Review {result.project_file.relative_to(repo_path)} and commit it.",
+            f"  2. Add the tool settings you want to {operator_path} (`darnit config show` prints the file in use).",
+            "  3. Claims count only for repositories you trust: `darnit config trust add HOST/NAMESPACE/NAME`,",
+            "     then audit with --repo HOST/NAMESPACE/NAME.",
+            "  4. Re-run the audit, compare results, then delete .baseline.toml.",
+        ]
+    )
+    sys.stdout.write("\n".join(lines) + "\n")
+    return 0
+
+
 # Helpers
 
 
@@ -1407,7 +1444,9 @@ def create_parser() -> argparse.ArgumentParser:
     validate_parser.set_defaults(func=cmd_validate)
 
     # init command
-    init_parser = subparsers.add_parser("init", help="Initialize .baseline.toml")
+    init_parser = subparsers.add_parser(
+        "init", help="Explain where project claims and operator configuration live"
+    )
     init_parser.add_argument(
         "repo_path",
         nargs="?",
@@ -1416,12 +1455,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     init_parser.add_argument(
         "-f", "--framework",
-        help="Framework to extend (default: auto-detect)",
-    )
-    init_parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Overwrite existing file",
+        help="Framework to suggest (default: auto-detect)",
     )
     init_parser.set_defaults(func=cmd_init)
 
@@ -1574,6 +1608,17 @@ def create_parser() -> argparse.ArgumentParser:
             help="Operator configuration file to edit (default: the per-user darnit config.toml)",
         )
         trust_parser.set_defaults(func=cmd_config_trust)
+    config_migrate_parser = config_subparsers.add_parser(
+        "migrate",
+        help="Move .baseline.toml claims to .project/darnit.yaml and print a proposed operator configuration",
+    )
+    config_migrate_parser.add_argument("repo_path", nargs="?", default=".", metavar="REPO", help="Repository path")
+    config_migrate_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Replace claims .project/darnit.yaml already makes for the same controls",
+    )
+    config_migrate_parser.set_defaults(func=cmd_config_migrate)
 
     # install command
     install_parser = subparsers.add_parser(

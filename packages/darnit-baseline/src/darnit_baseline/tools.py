@@ -235,7 +235,7 @@ def audit_openssf_baseline(
     metadata = audit_report_metadata(operator_config, str(repo_path), target, "openssf-baseline")
     warning = registration_scope_warning(repo_path)
     if warning:
-        metadata["warnings"] = [warning]
+        metadata.setdefault("warnings", []).append(warning)
 
     # Format output
     if output_format == "badge":
@@ -1648,7 +1648,7 @@ def audit_org(
         framework_name="openssf-baseline",
         audit_metadata={
             k: result[k]
-            for k in ("operator_config", "trust", "ignored_repository_settings", "unknown_assertions")
+            for k in ("operator_config", "trust", "ignored_repository_settings", "unknown_assertions", "warnings")
             if k in result
         },
     )

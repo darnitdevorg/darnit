@@ -34,6 +34,9 @@ Guide the user through providing missing project data that darnit needs for accu
 ## Gotchas
 
 - Never fill in values on the user's behalf. Auto-detected values must be confirmed, not silently applied.
+- Register darnit's MCP server at user scope (`darnit install` does this by default), not in a configuration file committed to the repository; a repository-scoped `uv run darnit serve` runs the repository's own copy of darnit.
+- Project data that makes a control not applicable (for example "no releases") is a not-applicable claim. It counts only when the operator trusts the repository and no evidence contradicts it; otherwise the audit reports it as pending and the control counts as non-compliant.
+- Pending claims can be confirmed with `confirm_project_data` (`confirm_not_applicable` plus `owner`/`repo`); the confirmation is stored on the operator's machine, not in the repository. Only do this when the operator explicitly tells you to confirm that specific claim. Never confirm a claim on your own, and never treat a user's answer to a data question as a confirmation of a claim.
 - The `get_pending_data` response includes an `answer_mapping` field showing how to map each answer to `confirm_project_data` parameters.
 - Questions are sorted by priority (number of affected controls). Present them in order.
 - Data is persisted to `.project/project.yaml` — this file should be committed to the repository.

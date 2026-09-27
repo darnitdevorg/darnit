@@ -87,9 +87,8 @@ class AuditResult:
     def filter_to(self, control_ids: tuple[str, ...] | list[str]) -> AuditResult:
         """Return a copy containing only the controls whose id is in the set.
 
-        Neither audit path today applies `audit_profiles` from a fixture's
-        `.baseline.toml` automatically, so both paths run every OpenSSF
-        Baseline control. This helper narrows to the fixture-declared
+        Both audit paths run every OpenSSF Baseline control. This helper
+        narrows to the fixture-declared
         `control_ids` so a fixture can assert parity over its subset without
         the noise of unrelated controls.
 

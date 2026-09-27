@@ -291,6 +291,10 @@ governance:
 
 Context is injected into sieve orchestrator and available to CEL expressions.
 
+Project claims live in `.project/darnit.yaml` (`controls.<id>: {status, reason, asserted_by}`). A not-applicable claim, explicit or implied by a `.project/` context value, counts only when its outcome is `honored` (trusted repository and uncontradicted, or operator-confirmed); `pending` counts as non-compliant and `contradicted` has no effect (feature 040).
+
+Tool configuration comes only from operator configuration (`--operator-config PATH`, else `$XDG_CONFIG_HOME/darnit/config.toml` / `~/.config/darnit/config.toml`, else built-in defaults), never from the audited repository. It holds plugins, MCP servers, pass overrides, custom controls, stores, LLM settings, `[trust].repos`, CI trust rules, and policy. `darnit config show|trust|migrate` inspect it, edit the trust list, and move a deprecated `.baseline.toml` (during the deprecation release only per-control `status`/`reason`, read as claims, and `extends` by registered name are honored, with a warning per setting; switch `BASELINE_TOML_DEPRECATION_ACTIVE` in `config/merger.py`).
+
 ### Handler Registration
 
 Plugins register handlers using the `register_handlers()` method:
@@ -321,7 +325,7 @@ handler = "my_tool"  # Short name instead of full module path
 Plugins support Sigstore verification:
 
 ```toml
-# .baseline.toml
+# operator configuration (~/.config/darnit/config.toml)
 [plugins]
 allow_unsigned = false
 trusted_publishers = ["https://github.com/kusari-oss"]
@@ -359,7 +363,7 @@ else:
 - **Core deps**: FastMCP (via `mcp>=1.23,<2`), Pydantic >=2.0, PyYAML, cel-python, pydantic-ai-slim[anthropic] (required runtime dep as of RFC-0001 Stage 1 / feature 025)
 - **Threat model**: tree-sitter, tree-sitter-language-pack (Python/JS/Go/YAML grammars)
 - **Attestation**: sigstore, in-toto (optional)
-- **Config**: TOML framework configs, `.project/project.yaml` (YAML), `.baseline.toml` (user overrides)
+- **Config**: TOML framework configs, operator configuration TOML (user-level, tool settings), `.project/project.yaml` + `.project/darnit.yaml` (YAML, project data and claims)
 - **Storage**: Filesystem only (Markdown, JSON, YAML output files; no database)
 
 ## Active Technologies

@@ -149,7 +149,7 @@ async def builtin_audit(
     metadata = audit_report_metadata(operator_config, str(repo_path), target, _framework_name)
     warning = registration_scope_warning(repo_path)
     if warning:
-        metadata["warnings"] = [warning]
+        metadata.setdefault("warnings", []).append(warning)
 
     # Format output
     if output_format == "json":
