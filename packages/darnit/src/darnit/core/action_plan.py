@@ -224,6 +224,44 @@ class HarnessState(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Engine-produced audit results (feature 041)
+# ---------------------------------------------------------------------------
+
+
+class EngineAuditResult(dict):
+    """An ``audit`` step's result as the engine produced it.
+
+    ``submit_result`` accepts audit results only in this form, so per-control
+    statuses cannot arrive from a client: a result deserialized from JSON (an
+    MCP payload) is a plain dict. Build one with ``run_audit_step``.
+    """
+
+
+def run_audit_step(state: HarnessState) -> EngineAuditResult:
+    """Run the audit for ``state`` and return the result to submit for its ``audit`` step."""
+    from darnit.agent.graph import audit
+
+    audit_state = audit(state.to_audit_state())
+    return EngineAuditResult(
+        audit_results=list(audit_state.audit_results),
+        feedback_questions=[
+            {
+                "control_id": q.control_id,
+                "context_key": q.context_key,
+                "question": q.question,
+                "answer": q.answer,
+                "answered": q.answered,
+            }
+            for q in audit_state.feedback_questions
+        ],
+        owner=audit_state.owner,
+        repo=audit_state.repo,
+        default_branch=audit_state.default_branch,
+        error=audit_state.error,
+    )
+
+
+# ---------------------------------------------------------------------------
 # ActionPlan protocol -- pure state transitions
 # ---------------------------------------------------------------------------
 
@@ -311,9 +349,9 @@ def submit_result(
         OutOfOrderSubmission: if ``step_id`` does not match the currently
             expected step (as computed by ``next_action``).
         ResultSchemaMismatch: if ``result`` violates the step's declared
-            ``result_schema``. Stage 1 uses coarse pipeline steps with no
-            declared schema; this raises only when a step explicitly
-            declares one and the payload fails validation.
+            ``result_schema``, or an ``audit`` step's result is not an
+            ``EngineAuditResult`` (feature 041: per-control statuses come
+            only from the engine; judgments go through ``submit_judgment``).
     """
     expected = next_action(state)
     if expected is None:
@@ -333,10 +371,20 @@ def submit_result(
     if schema is not None:
         _validate_result_against_schema(step_id, result, schema)
 
+    integration = expected.step.integration
+    if integration == "audit" and not isinstance(result, EngineAuditResult):
+        raise ResultSchemaMismatch(
+            step_id=step_id,
+            offending_fields=sorted(result) or ["audit_results"],
+            message=(
+                "the audit step's results are produced by the engine (run_audit_step); a client "
+                "cannot supply per-control statuses. Submit model judgments with submit_judgment."
+            ),
+        )
+
     # Deep-copy the state so the input remains untouched.
     new_state = state.model_copy(deep=True)
 
-    integration = expected.step.integration
     if integration == "audit":
         # Result from an audit run: replaces audit_results + feedback_questions.
         new_state.audit_results = list(result.get("audit_results", []))

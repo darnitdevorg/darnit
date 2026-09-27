@@ -13,6 +13,7 @@ import pytest
 
 from darnit.core.action_plan import (
     ActionPlan,
+    EngineAuditResult,
     FeedbackQuestionModel,
     HarnessState,
     next_action,
@@ -117,13 +118,15 @@ class TestSubmitResult:
         new_state = submit_result(
             state,
             "audit-0",
-            {
-                "audit_results": [
-                    {"id": "A", "status": "PASS", "details": "", "level": 1},
-                ],
-                "owner": "test-owner",
-                "repo": "test-repo",
-            },
+            EngineAuditResult(
+                {
+                    "audit_results": [
+                        {"id": "A", "status": "PASS", "details": "", "level": 1},
+                    ],
+                    "owner": "test-owner",
+                    "repo": "test-repo",
+                }
+            ),
         )
         assert new_state.current_position == 1
         assert len(new_state.audit_results) == 1
@@ -176,7 +179,7 @@ class TestSubmitResult:
         new_state = submit_result(
             state,
             "audit-0",
-            {"audit_results": [], "outcome": "no_controls", "reasoning": "empty"},
+            EngineAuditResult({"audit_results": [], "outcome": "no_controls", "reasoning": "empty"}),
         )
         assert "__pipeline__" in new_state.evidence
         items = new_state.evidence["__pipeline__"]

@@ -23,7 +23,7 @@ Darnit registers tools per implementation module. Look for available tools match
 
 ### 1. Initial audit
 
-Call the appropriate `audit_*` tool with `output_format: "summary"` and any profile the user mentioned. The "summary" format returns compact JSON (~5-8K vs ~164K for full JSON). Present a brief summary: total controls, pass/fail/warn counts, compliance percentage. Resolve any PENDING controls (`pending.kind = "llm_judgment"`) using your own reasoning.
+Call the appropriate `audit_*` tool with `output_format: "summary"` and any profile the user mentioned. The "summary" format returns compact JSON (~5-8K vs ~164K for full JSON). Present a brief summary: total controls, pass/fail/warn counts, compliance percentage. For each PENDING control with `pending.kind = "llm_judgment"`, follow the `/darnit-audit` skill: call `submit_judgment` with your verdict, reasoning, and passages copied verbatim from the files in `evidence.llm_consultation.file_contents`. Never state your own verdict as the audit result: a `"pass"` becomes a PASS candidate that stays non-compliant until the operator confirms it.
 
 ### 2. Collect data (if needed)
 
@@ -77,4 +77,5 @@ Show before/after compliance comparison, list of changes made, and remaining man
 - Never leave the repository in a broken state — if remediation partially applied, report which files changed.
 - A control with an `assertion` block carries a not-applicable claim from the repository (`.project/darnit.yaml`, or project data that makes the control not applicable). Report its `assertion.outcome`: `honored` (N/A, labelled asserted), `pending` (evaluated normally and counted as non-compliant until the operator trusts the repository or confirms the claim), or `contradicted` (evidence contradicts it; the claim is ignored). Never describe a pending claim as N/A.
 - Only confirm a pending claim when the operator explicitly tells you to confirm that claim. Never confirm one on your own judgment, from the claim's reason, or because confirming would improve the result.
+- The same holds for PASS candidates (`confirm_project_data(confirm_pass_candidate=[...])`): confirm one only on the operator's explicit instruction to confirm that candidate.
 - Tool names vary by implementation. Don't hardcode — discover available tools.

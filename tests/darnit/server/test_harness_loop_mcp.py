@@ -18,6 +18,7 @@ from typing import Any
 import pytest
 
 from darnit.core.action_plan import (
+    EngineAuditResult,
     FeedbackQuestionModel,
     HarnessState,
     next_action,
@@ -88,7 +89,7 @@ def _copy_minimal_repo(tmp_path: Path) -> Path:
 @pytest.mark.slow
 def test_mcp_walks_loop_to_termination(tmp_path: Path) -> None:
     """Contract M1, M7: client-owned state round-trips through the MCP tools."""
-    from darnit.agent.graph import audit, remediate
+    from darnit.agent.graph import remediate
 
     fixture = _copy_minimal_repo(tmp_path)
     state_dict: dict[str, Any] = HarnessState(local_path=str(fixture)).model_dump(mode="json")
@@ -104,25 +105,8 @@ def test_mcp_walks_loop_to_termination(tmp_path: Path) -> None:
         harness_state = HarnessState.model_validate(state_dict)
 
         if integration == "audit":
-            audit_state = harness_state.to_audit_state()
-            audit_state = audit(audit_state)
-            result = {
-                "audit_results": audit_state.audit_results,
-                "feedback_questions": [
-                    {
-                        "control_id": q.control_id,
-                        "context_key": q.context_key,
-                        "question": q.question,
-                        "answer": q.answer,
-                        "answered": q.answered,
-                    }
-                    for q in audit_state.feedback_questions
-                ],
-                "owner": audit_state.owner,
-                "repo": audit_state.repo,
-                "default_branch": audit_state.default_branch,
-                "error": audit_state.error,
-            }
+            # Feature 041: the server runs the audit; the client sends nothing.
+            result = {}
         elif integration == "collect_context":
             result = {"answers": {}}
         elif integration == "remediate":
@@ -172,23 +156,25 @@ def test_mcp_equals_direct_equals_cli(tmp_path: Path) -> None:
             direct_state = submit_result(
                 direct_state,
                 plan.step.id,
-                {
-                    "audit_results": a.audit_results,
-                    "feedback_questions": [
-                        {
-                            "control_id": q.control_id,
-                            "context_key": q.context_key,
-                            "question": q.question,
-                            "answer": q.answer,
-                            "answered": q.answered,
-                        }
-                        for q in a.feedback_questions
-                    ],
-                    "owner": a.owner,
-                    "repo": a.repo,
-                    "default_branch": a.default_branch,
-                    "error": a.error,
-                },
+                EngineAuditResult(
+                    {
+                        "audit_results": a.audit_results,
+                        "feedback_questions": [
+                            {
+                                "control_id": q.control_id,
+                                "context_key": q.context_key,
+                                "question": q.question,
+                                "answer": q.answer,
+                                "answered": q.answered,
+                            }
+                            for q in a.feedback_questions
+                        ],
+                        "owner": a.owner,
+                        "repo": a.repo,
+                        "default_branch": a.default_branch,
+                        "error": a.error,
+                    }
+                ),
             )
         elif integration == "collect_context":
             direct_state = submit_result(direct_state, plan.step.id, {"answers": {}})
@@ -238,25 +224,8 @@ def test_mcp_equals_direct_equals_cli(tmp_path: Path) -> None:
         step_id = plan_dict["step"]["id"]
         h = HarnessState.model_validate(mcp_state_dict)
         if integration == "audit":
-            a = h.to_audit_state()
-            a = audit(a)
-            result = {
-                "audit_results": a.audit_results,
-                "feedback_questions": [
-                    {
-                        "control_id": q.control_id,
-                        "context_key": q.context_key,
-                        "question": q.question,
-                        "answer": q.answer,
-                        "answered": q.answered,
-                    }
-                    for q in a.feedback_questions
-                ],
-                "owner": a.owner,
-                "repo": a.repo,
-                "default_branch": a.default_branch,
-                "error": a.error,
-            }
+            # Feature 041: the server runs the audit; the client sends nothing.
+            result = {}
         elif integration == "collect_context":
             result = {"answers": {}}
         elif integration == "remediate":

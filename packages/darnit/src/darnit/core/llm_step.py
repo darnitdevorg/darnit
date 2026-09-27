@@ -50,6 +50,13 @@ class LLMJudgment(BaseModel):
     confidence: float
     reasoning: str
     raw_response: dict[str, Any] = {}
+    # Feature 041: verbatim excerpts of the content the model was given. A
+    # positive judgment without them, or citing text that is not there,
+    # produces no PASS candidate.
+    cited_evidence: list[str] = []
+    # Filled in by the LLM step from its provider, not by the model.
+    model: str = ""
+    model_version: str = ""
 
 
 @runtime_checkable
@@ -102,8 +109,12 @@ class PydanticAILLMStep:
                 "matching the LLMJudgment schema. Outcomes: 'yes' (evidence "
                 "supports the claim), 'no' (evidence contradicts it), "
                 "'inconclusive' (insufficient evidence). Include reasoning "
-                "citing the specific evidence you saw. Confidence is your "
-                "self-reported certainty (0.0-1.0); do NOT inflate it."
+                "citing the specific evidence you saw, and put each passage "
+                "you rely on in cited_evidence, copied verbatim from the "
+                "file contents given to you; a 'yes' without verbatim "
+                "excerpts is discarded. Leave model and model_version empty. "
+                "Confidence is your self-reported certainty (0.0-1.0); do "
+                "NOT inflate it."
             ),
         )
 
@@ -135,8 +146,11 @@ class PydanticAILLMStep:
 
         result = await self._agent.run(user_prompt)
         # pydantic_ai returns a RunResult whose `.output` is the structured
-        # output cast to LLMJudgment.
-        return result.output  # type: ignore[no-any-return]
+        # output cast to LLMJudgment; the provider, not the model, says which
+        # model answered.
+        response = getattr(result, "response", None)
+        model_version = getattr(response, "model_name", None) or self.model.partition(":")[2] or self.model
+        return result.output.model_copy(update={"model": self.model, "model_version": model_version})
 
 
 class MockLLMStep:

@@ -283,6 +283,14 @@ class SieveOrchestrator:
                 logger.warning("MCP pool teardown during reset raised: %s", err)
             self._mcp_pool = None
 
+    def record_result(self, result: SieveResult) -> None:
+        """Make ``result`` the control's result for controls verified after it.
+
+        For a result settled outside ``verify`` (a confirmed PASS candidate),
+        so ``inferred_from`` and dependency evidence see what was reported.
+        """
+        self._dependency_results[result.control_id] = result
+
     def _evaluate_when(self, control_spec: ControlSpec, context: CheckContext) -> bool:
         """Evaluate when clause for conditional applicability.
 
@@ -749,88 +757,122 @@ class SieveOrchestrator:
         control_spec: ControlSpec,
         context: CheckContext,
         llm_response: LLMConsultationResponse,
+        consultation: dict[str, Any] | None = None,
+        source: str = "harness",
     ) -> SieveResult:
         """
-        Continue verification after receiving LLM response.
+        Resolve a control awaiting a model judgment (feature 041, data-model.md).
 
-        This is called after the calling LLM has analyzed the consultation request
-        and provided a structured response.
-
-        Reads LLM/manual configuration from handler_invocations metadata.
+        A judgment never concludes PASS. A positive judgment whose cited
+        excerpts all appear in ``consultation``'s judged content becomes a
+        PASS candidate (PENDING, ``pending.kind = "confirmation"``); a
+        negative one is a suggestive FAIL; an invalid or inconclusive one
+        leaves the control WARN; a model-service failure is ERROR. The
+        judgment's confidence is recorded, never used to decide.
 
         Args:
             control_spec: The control being verified
             context: Original context
-            llm_response: Parsed LLM response with status, confidence, reasoning
+            llm_response: Parsed model response
+            consultation: The ``llm_consultation`` the control's model step
+                produced; citations are checked against its content
+            source: Who produced the judgment (``harness`` or ``mcp_agent``)
 
         Returns:
             SieveResult with final status
         """
-        # Find confidence_threshold from llm_eval handler invocation
-        confidence_threshold = 0.8
-        handler_invocations = control_spec.metadata.get("handler_invocations", [])
-        for inv in handler_invocations:
-            if inv.handler == "llm_eval":
-                extra = inv.model_extra or {}
-                confidence_threshold = extra.get("confidence_threshold", 0.8)
-                break
+        from darnit.trust.judgments import Judgment, assess_judgment, candidate_result
 
-        # Feature 041: a model step's effective set is empty (llm_eval's
-        # ceiling is {} and a model judgment is never promoted), so this
-        # branch cannot conclude; it stays gated by the same rule as every
-        # other step for defense in depth.
-        llm_allowed: frozenset[str] = frozenset()
-        registry = get_sieve_handler_registry()
-        for inv in handler_invocations:
-            if inv.handler == "llm_eval":
-                info = registry.get("llm_eval")
-                llm_allowed = effective_outcomes(info, inv) if info else frozenset()
-                break
+        base_evidence: dict[str, Any] = {
+            "llm_reasoning": llm_response.reasoning,
+            "llm_evidence": llm_response.evidence_cited,
+        }
+        if consultation:
+            base_evidence["llm_consultation"] = consultation
 
-        # Determine outcome based on confidence
-        if llm_response.status in (PassOutcome.PASS, PassOutcome.FAIL):
-            outcome = "pass" if llm_response.status == PassOutcome.PASS else "fail"
-            if llm_response.confidence >= confidence_threshold and outcome in llm_allowed:
-                return SieveResult(
-                    control_id=control_spec.control_id,
-                    status=outcome.upper(),
-                    message=llm_response.reasoning,
-                    level=control_spec.level,
-                    conclusive_phase=VerificationPhase.LLM,
-                    pass_history=[],  # History from original verify call
-                    confidence=llm_response.confidence,
-                    evidence={
-                        "llm_reasoning": llm_response.reasoning,
-                        "llm_evidence": llm_response.evidence_cited,
-                    },
-                    source="sieve",
-                    authority="dispositive",
-                    concluded_by="llm_judgment",
-                )
+        if llm_response.status == PassOutcome.ERROR:
+            error_class = llm_response.error_class or "unavailable"
+            return SieveResult(
+                control_id=control_spec.control_id,
+                status="ERROR",
+                message=f"Model judgment could not be obtained: {llm_response.reasoning}",
+                level=control_spec.level,
+                conclusive_phase=VerificationPhase.LLM,
+                evidence=base_evidence,
+                source="sieve",
+                resolving_pass_handler="llm_eval",
+                authority="suggestive",
+                error_class=error_class,
+                concluded_by="llm_eval",
+                error={"class": error_class, "cause": llm_response.reasoning or "model service failure"},
+            )
 
-        # Low confidence or inconclusive - fall through to manual
-        # Find verification_steps from manual handler invocation
+        verdicts = {PassOutcome.PASS: "pass", PassOutcome.FAIL: "fail"}
+        judgment = Judgment(
+            verdict=verdicts.get(llm_response.status, "inconclusive"),
+            reasoning=llm_response.reasoning,
+            cited_evidence=tuple(llm_response.evidence_cited),
+            model=llm_response.model,
+            model_version=llm_response.model_version,
+            confidence=llm_response.confidence,
+        )
+        assessment = assess_judgment(judgment, consultation, source=source)
+
+        if assessment.kind == "finding":
+            return SieveResult(
+                control_id=control_spec.control_id,
+                status="FAIL",
+                message=f"Model finding: {llm_response.reasoning}",
+                level=control_spec.level,
+                conclusive_phase=VerificationPhase.LLM,
+                confidence=llm_response.confidence,
+                evidence=base_evidence,
+                source="sieve",
+                authority="suggestive",
+                concluded_by="llm_judgment",
+            )
+
+        if assessment.kind == "candidate":
+            pending = SieveResult(
+                control_id=control_spec.control_id,
+                status="PENDING",
+                message="",
+                level=control_spec.level,
+                confidence=llm_response.confidence,
+                evidence=base_evidence,
+                source="sieve",
+                pending={"kind": "llm_judgment"},
+            )
+            return candidate_result(pending, assessment.candidate or {})
+
         verification_steps = None
-        for inv in handler_invocations:
+        for inv in control_spec.metadata.get("handler_invocations", []):
             if inv.handler == "manual":
-                extra = inv.model_extra or {}
-                steps = extra.get("steps")
+                steps = (inv.model_extra or {}).get("steps")
                 if steps:
                     verification_steps = steps
                 break
 
+        if assessment.kind == "invalid":
+            message = f"Model judgment rejected: {assessment.reason}"
+            base_evidence["invalid_judgment"] = {
+                "verdict": judgment.verdict,
+                "reasoning": judgment.reasoning,
+                "cited_evidence": list(judgment.cited_evidence),
+                "missing_excerpts": list(assessment.missing_excerpts),
+                "model": judgment.model,
+            }
+        else:
+            message = f"Model judgment inconclusive: {llm_response.reasoning}"
+
         return SieveResult(
             control_id=control_spec.control_id,
             status="WARN",
-            message=f"LLM analysis inconclusive (confidence: {llm_response.confidence:.0%}): {llm_response.reasoning}",
+            message=message,
             level=control_spec.level,
             conclusive_phase=VerificationPhase.MANUAL,
-            pass_history=[],
             confidence=llm_response.confidence,
-            evidence={
-                "llm_reasoning": llm_response.reasoning,
-                "llm_evidence": llm_response.evidence_cited,
-            },
+            evidence=base_evidence,
             verification_steps=verification_steps
             or [
                 "Review LLM analysis above",
@@ -838,8 +880,6 @@ class SieveOrchestrator:
                 f"Control: {control_spec.control_id} - {control_spec.name}",
             ],
             source="sieve",
-            # Feature 026 bug fix: the LLM WARN fallthrough is suggestive so
-            # the report never surfaces "unknown" for a step that ran.
             authority="suggestive",
             concluded_by="none",
         )

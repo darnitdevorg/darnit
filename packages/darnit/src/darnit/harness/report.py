@@ -104,6 +104,9 @@ class HarnessReport(BaseModel):
     ignored_repository_settings: list[dict[str, str]] = Field(default_factory=list)
     unknown_assertions: list[dict[str, Any]] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    # Feature 041: level compliance from ``calculate_compliance``, the one
+    # rule every driver uses.
+    compliance: dict[int, bool] = Field(default_factory=dict)
     # exit_class NOT emitted in JSON body per RF-8; kept as an attribute
     # for the driver but excluded from serialization.
     exit_class: int = Field(default=0, exclude=True)
@@ -154,6 +157,8 @@ class HarnessReport(BaseModel):
         lines.append(f"- Warned: {s.warn}")
         lines.append(f"- N/A: {s.n_a}")
         lines.append(f"- Errored: {s.error}")
+        for level, compliant in sorted(self.compliance.items()):
+            lines.append(f"- Level {level}: {'compliant' if compliant else 'not compliant'}")
         lines.append("")
 
         # Failed controls (RF-7: empty section renders as "None.")

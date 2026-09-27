@@ -44,7 +44,8 @@ class TestVerifyWithLlmResponse:
             },
         )
 
-        # Confidence 0.85 is below 0.9 threshold → should WARN
+        # Feature 041: confidence is not a decision input; a positive
+        # judgment citing no excerpts is invalid -> WARN.
         response = LLMConsultationResponse(
             status=PassOutcome.PASS,
             confidence=0.85,
@@ -178,18 +179,21 @@ class TestVerifyWithLlmResponse:
         )
 
         result = orchestrator.verify_with_llm_response(spec, _make_context(), response)
-        # Under Stage 1, an LLM step (suggestive) can never conclude.
+        # A model judgment never concludes PASS; without verified citations
+        # it is not even a PASS candidate (feature 041, FR-010, FR-014).
         assert result.status == "WARN", (
             "LLM authority is suggestive; suggestive results cannot conclude PASS "
             "(feature 025 FR-001 / SC-001 safety property)"
         )
-        # LLM reasoning is preserved as evidence for human review.
-        assert "Verified" in result.message or "confidence" in result.message.lower()
+        assert "rejected" in result.message
+        assert result.evidence["llm_reasoning"] == "Verified"
 
     def test_high_confidence_fail(self):
-        """High confidence LLM FAIL is DOWNGRADED to WARN under RFC-0001 Stage 1.
+        """A negative model judgment is a model finding (feature 041, FR-013).
 
-        Same safety property as test_high_confidence_pass, symmetric side.
+        Before feature 041 it was downgraded to WARN. It is now FAIL labelled
+        as a model finding: authority suggestive, concluded_by llm_judgment.
+        Both are non-compliant.
         """
         orchestrator = SieveOrchestrator(stop_on_llm=True)
 
@@ -213,8 +217,9 @@ class TestVerifyWithLlmResponse:
         )
 
         result = orchestrator.verify_with_llm_response(spec, _make_context(), response)
-        # Under Stage 1, an LLM step (suggestive) can never conclude.
-        assert result.status == "WARN"
+        assert result.status == "FAIL"
+        assert result.authority == "suggestive"
+        assert result.concluded_by == "llm_judgment"
 
 
 class TestHandlerWhenClause:

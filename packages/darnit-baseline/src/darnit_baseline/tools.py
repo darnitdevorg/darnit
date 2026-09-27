@@ -625,6 +625,7 @@ def confirm_project_data(
     owner: str | None = None,
     repo: str | None = None,
     host: str | None = None,
+    confirm_pass_candidate: list[str] | None = None,
 ) -> str:
     """
     Record user-confirmed project data in .project.yaml.
@@ -645,6 +646,10 @@ def confirm_project_data(
     - `confirm_not_applicable`: Control IDs whose pending not-applicable claim the
       operator confirms, with `owner`, `repo` (and `host` when not github.com)
       naming the repository. Only on the operator's explicit instruction.
+    - `confirm_pass_candidate`: Control IDs whose PASS candidate (a positive model
+      judgment awaiting confirmation) the operator confirms for the current
+      evidence, with `owner`, `repo` (and `host`). Only on the operator's
+      explicit instruction.
 
     **Examples:**
     ```
@@ -682,6 +687,7 @@ def confirm_project_data(
         repo=repo,
         host=host,
         framework_name="openssf-baseline",
+        confirm_pass_candidate=confirm_pass_candidate,
     )
 
 

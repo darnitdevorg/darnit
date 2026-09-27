@@ -99,22 +99,22 @@
 
 ### Tests for User Story 3
 
-- [ ] T025 [P] [US3] Write judgment tests (positive + verified citations -> PENDING confirmation with candidate; unverifiable citation -> WARN, nothing stored; negative -> suggestive FAIL; model failure -> ERROR; confirmation -> asserted PASS; digest change or expiry -> lapse) in `tests/darnit/trust/test_judgments.py`
-- [ ] T026 [P] [US3] Write `submit_judgment` MCP tool tests (pass/fail/rejection; stored operator-side; next audit shows the candidate) in `tests/darnit/server/test_submit_judgment.py`
-- [ ] T027 [P] [US3] Write a test that the ActionPlan audit step rejects client-supplied per-control statuses in `tests/darnit/core/test_action_plan_verdicts.py`
-- [ ] T028 [P] [US3] Write a harness test that its report uses `calculate_compliance` and treats candidates as non-compliant in `tests/darnit/harness/test_harness_compliance.py`
+- [X] T025 [P] [US3] Write judgment tests (positive + verified citations -> PENDING confirmation with candidate; unverifiable citation -> WARN, nothing stored; negative -> suggestive FAIL; model failure -> ERROR; confirmation -> asserted PASS; digest change or expiry -> lapse) in `tests/darnit/trust/test_judgments.py`
+- [X] T026 [P] [US3] Write `submit_judgment` MCP tool tests (pass/fail/rejection; stored operator-side; next audit shows the candidate) in `tests/darnit/server/test_submit_judgment.py`
+- [X] T027 [P] [US3] Write a test that the ActionPlan audit step rejects client-supplied per-control statuses in `tests/darnit/core/test_action_plan_verdicts.py`
+- [X] T028 [P] [US3] Write a harness test that its report uses `calculate_compliance` and treats candidates as non-compliant in `tests/darnit/harness/test_harness_compliance.py`
 
 ### Implementation for User Story 3
 
-- [ ] T029 [US3] Add `cited_evidence`, `model`, `model_version` to `LLMJudgment` and populate model/version from the configured provider in `packages/darnit/src/darnit/core/llm_step.py`
-- [ ] T030 [US3] Implement `packages/darnit/src/darnit/trust/judgments.py`: whitespace-normalized citation verification, evidence digest over gathered content and the control rubric, candidate record/lookup using the feature 040 confirmation store with claim `pass_candidate`
-- [ ] T031 [US3] Replace `verify_with_llm_response` behavior in `packages/darnit/src/darnit/sieve/orchestrator.py` with the judgment state machine from data-model.md
-- [ ] T032 [US3] Apply stored candidates and confirmations to PENDING controls when assembling results in `packages/darnit/src/darnit/tools/audit.py`
-- [ ] T033 [US3] Harness: model-service failure -> ERROR; judgments through `trust/judgments.py`; compliance via `calculate_compliance`, in `packages/darnit/src/darnit/harness/driver.py`
-- [ ] T034 [US3] Implement the `submit_judgment` MCP tool in `packages/darnit/src/darnit/server/tools/judgments.py` and register it for every framework server
-- [ ] T035 [US3] Extend the confirmation tool to confirm a PASS candidate by `control_id` for the audit target in `packages/darnit/src/darnit/server/tools/project_data.py`
-- [ ] T036 [US3] Stop accepting client-supplied verdicts for the audit step in `packages/darnit/src/darnit/core/action_plan.py` and `packages/darnit/src/darnit/server/tools/harness_loop.py`
-- [ ] T037 [US3] Update skills to call `submit_judgment` for PENDING (llm_judgment) controls with verbatim excerpts and never state verdicts or confirm without the operator's instruction, in `packages/darnit/src/darnit/skills/darnit-audit/SKILL.md` and `packages/darnit/src/darnit/skills/darnit-comply/SKILL.md`
+- [X] T029 [US3] Add `cited_evidence`, `model`, `model_version` to `LLMJudgment` and populate model/version from the configured provider in `packages/darnit/src/darnit/core/llm_step.py`
+- [X] T030 [US3] Implement `packages/darnit/src/darnit/trust/judgments.py`: whitespace-normalized citation verification, evidence digest over gathered content and the control rubric, candidate record/lookup using the feature 040 confirmation store with claim `pass_candidate`
+- [X] T031 [US3] Replace `verify_with_llm_response` behavior in `packages/darnit/src/darnit/sieve/orchestrator.py` with the judgment state machine from data-model.md
+- [X] T032 [US3] Apply stored candidates and confirmations to PENDING controls when assembling results in `packages/darnit/src/darnit/tools/audit.py`
+- [X] T033 [US3] Harness: model-service failure -> ERROR; judgments through `trust/judgments.py`; compliance via `calculate_compliance`, in `packages/darnit/src/darnit/harness/driver.py`
+- [X] T034 [US3] Implement the `submit_judgment` MCP tool in `packages/darnit/src/darnit/server/tools/judgments.py` and register it for every framework server
+- [X] T035 [US3] Extend the confirmation tool to confirm a PASS candidate by `control_id` for the audit target in `packages/darnit/src/darnit/server/tools/project_data.py`
+- [X] T036 [US3] Stop accepting client-supplied verdicts for the audit step in `packages/darnit/src/darnit/core/action_plan.py` and `packages/darnit/src/darnit/server/tools/harness_loop.py`
+- [X] T037 [US3] Update skills to call `submit_judgment` for PENDING (llm_judgment) controls with verbatim excerpts and never state verdicts or confirm without the operator's instruction, in `packages/darnit/src/darnit/skills/darnit-audit/SKILL.md` and `packages/darnit/src/darnit/skills/darnit-comply/SKILL.md`
 
 **Checkpoint**: No driver can produce a PASS from a model judgment without confirmation.
 

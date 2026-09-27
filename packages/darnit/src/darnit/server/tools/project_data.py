@@ -3,7 +3,8 @@
 Allows users to record project-specific context that cannot be auto-detected,
 such as whether a project has subprojects or which CI system is used, and to
 confirm a repository's pending not-applicable claims on the operator side
-(feature 040).
+(feature 040), and to confirm PASS candidates from model judgments
+(feature 041).
 """
 
 
@@ -39,6 +40,7 @@ def confirm_project_data_impl(
     repo: str | None = None,
     host: str | None = None,
     framework_name: str | None = None,
+    confirm_pass_candidate: list[str] | None = None,
 ) -> str:
     """Record user-confirmed project data in .project.yaml.
 
@@ -65,6 +67,9 @@ def confirm_project_data_impl(
         repo: Name of the repository whose claims are confirmed.
         host: Git host of owner/repo (default github.com).
         framework_name: Framework whose controls the claims name.
+        confirm_pass_candidate: Control IDs whose PASS candidate (a positive
+                         model judgment) the operator confirms for the current
+                         evidence. Recorded operator-side, never in the repository.
 
     Returns:
         Confirmation of what was recorded
@@ -80,6 +85,11 @@ def confirm_project_data_impl(
         if confirm_not_applicable
         else ""
     )
+    if confirm_pass_candidate:
+        candidates_result = confirm_pass_candidates_impl(
+            resolved_path, confirm_pass_candidate, owner=owner, repo=repo, host=host, framework_name=framework_name
+        )
+        claims_result = f"{claims_result}\n\n{candidates_result}" if claims_result else candidates_result
 
     # Validate ci_provider if provided
     if ci_provider is not None:
@@ -310,5 +320,92 @@ def confirm_not_applicable_impl(
     lines.append("")
     lines.append(
         "A confirmation applies until it expires or the claim or its evidence changes. Re-run the audit to see it."
+    )
+    return "\n".join(lines)
+
+
+def confirm_pass_candidates_impl(
+    local_path: str,
+    control_ids: list[str],
+    *,
+    owner: str | None,
+    repo: str | None,
+    host: str | None = None,
+    framework_name: str | None,
+) -> str:
+    """Confirm stored PASS candidates in the operator-side store (feature 041, FR-011, FR-012).
+
+    Each confirmation is bound to the repository the operator names, the
+    control, claim ``pass_candidate``, and the evidence digest of the
+    control's judged content as an audit gathers it now. Only a stored
+    candidate for exactly that evidence can be confirmed; the confirmation
+    lapses on expiry or when the content or the control's rubric changes.
+    """
+    from darnit.config.operator.loader import OperatorConfigError, resolve_operator_config
+    from darnit.tools.audit import judgment_consultations
+    from darnit.trust.confirmations import load_candidates, record_confirmation
+    from darnit.trust.decision import decide_trust, target_from_owner_repo
+    from darnit.trust.judgments import PASS_CANDIDATE_CLAIM, evidence_digest
+
+    if not framework_name:
+        return "Error: no framework is configured for confirming PASS candidates."
+    try:
+        operator_config = resolve_operator_config(local_path)
+    except OperatorConfigError as e:
+        return f"Error: {e}"
+
+    target = target_from_owner_repo(owner, repo, host)
+    identity = decide_trust(target, operator_config.config, local_path).repository
+    if identity is None or not identity.trusted_eligible:
+        return (
+            "Error: name the repository whose PASS candidates you are confirming (owner, repo, and host when "
+            "not github.com). A checkout's own remotes cannot identify it."
+        )
+
+    try:
+        consultations = judgment_consultations(local_path, control_ids, framework_name, operator_config, owner, repo, target)
+    except Exception as e:  # noqa: BLE001 - reported to the operator, nothing confirmed
+        return f"Error: could not re-gather the evidence: {e}"
+
+    candidates = load_candidates(identity.canonical, checkout=local_path)
+    lines = [f"PASS candidates for {identity.canonical}:"]
+    for control_id in control_ids:
+        consultation = consultations.get(control_id)
+        if consultation is None:
+            lines.append(f"- {control_id}: does not reach a model judgment step; nothing confirmed")
+            continue
+        digest = evidence_digest(consultation)
+        candidate = next(
+            (
+                c
+                for c in candidates
+                if c.control_id == control_id and c.claim == PASS_CANDIDATE_CLAIM and c.evidence_digest == digest
+            ),
+            None,
+        )
+        if candidate is None:
+            lines.append(f"- {control_id}: no PASS candidate for the current evidence; nothing confirmed")
+            continue
+        try:
+            confirmation = record_confirmation(
+                identity.canonical,
+                control_id,
+                PASS_CANDIDATE_CLAIM,
+                digest,
+                operator_config.config,
+                checkout=local_path,
+            )
+        except (OSError, ValueError) as e:
+            lines.append(f"- {control_id}: not confirmed; {e}")
+            continue
+        lines.append(
+            f"- {control_id}: confirmed by {confirmation.confirmed_by} until {confirmation.expires_at} "
+            f"(judgment by {candidate.candidate.get('model') or 'unknown model'}: "
+            f"{candidate.candidate.get('reasoning', '')})"
+        )
+    lines.append("")
+    lines.append(
+        "A confirmation applies until it expires or the judged content or the control's rubric changes. "
+        "Re-run the audit to see it."
     )
     return "\n".join(lines)

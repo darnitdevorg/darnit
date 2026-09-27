@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 
 from darnit.agent.state import AuditState
-from darnit.core.action_plan import HarnessState, next_action, submit_result
+from darnit.core.action_plan import EngineAuditResult, HarnessState, next_action, submit_result
 
 
 def _copy_minimal_repo(tmp_path: Path) -> Path:
@@ -77,23 +77,25 @@ def _drive_action_plan(state: HarnessState) -> HarnessState:
             state = submit_result(
                 state,
                 plan.step.id,
-                {
-                    "audit_results": audit_state.audit_results,
-                    "feedback_questions": [
-                        {
-                            "control_id": q.control_id,
-                            "context_key": q.context_key,
-                            "question": q.question,
-                            "answer": q.answer,
-                            "answered": q.answered,
-                        }
-                        for q in audit_state.feedback_questions
-                    ],
-                    "owner": audit_state.owner,
-                    "repo": audit_state.repo,
-                    "default_branch": audit_state.default_branch,
-                    "error": audit_state.error,
-                },
+                EngineAuditResult(
+                    {
+                        "audit_results": audit_state.audit_results,
+                        "feedback_questions": [
+                            {
+                                "control_id": q.control_id,
+                                "context_key": q.context_key,
+                                "question": q.question,
+                                "answer": q.answer,
+                                "answered": q.answered,
+                            }
+                            for q in audit_state.feedback_questions
+                        ],
+                        "owner": audit_state.owner,
+                        "repo": audit_state.repo,
+                        "default_branch": audit_state.default_branch,
+                        "error": audit_state.error,
+                    }
+                ),
             )
 
         elif integration == "collect_context":

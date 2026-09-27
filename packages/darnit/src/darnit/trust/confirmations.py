@@ -6,6 +6,10 @@ identity, control, claim, and a digest of the claim and the evidence observed
 when it was confirmed, and it lapses when it expires or that digest changes.
 Confirmations live under the darnit data root, never in the audited
 repository.
+
+The same store holds PASS candidates (feature 041, claim ``pass_candidate``):
+positive model judgments awaiting a person. A stored candidate is never a
+confirmation; only ``record_confirmation`` makes one.
 """
 
 from __future__ import annotations
@@ -62,6 +66,16 @@ class Confirmation:
         return {"confirmed_by": self.confirmed_by, "confirmed_at": self.confirmed_at, "expires_at": self.expires_at}
 
 
+@dataclass(frozen=True)
+class StoredCandidate:
+    repository: str
+    control_id: str
+    claim: str
+    evidence_digest: str
+    recorded_at: str
+    candidate: dict[str, Any]
+
+
 def store_path() -> Path:
     return user_data_root() / "trust" / "confirmations.json"
 
@@ -78,16 +92,26 @@ def load_confirmations(repository: str | None = None, *, checkout: str | Path | 
     A store that lies inside the audited checkout is repository content and
     is not read.
     """
+    stored = _load_section("confirmations", Confirmation, checkout)
+    return [c for c in stored if repository is None or c.repository == repository]
+
+
+def load_candidates(repository: str | None = None, *, checkout: str | Path | None = None) -> list[StoredCandidate]:
+    """Stored PASS candidates, optionally only those for ``repository``."""
+    stored = _load_section("candidates", StoredCandidate, checkout)
+    return [c for c in stored if repository is None or c.repository == repository]
+
+
+def _load_section(section: str, entry_type: type, checkout: str | Path | None) -> list[Any]:
     path = store_path()
     if _inside(path, checkout) or not path.is_file():
         return []
     try:
-        entries = json.loads(path.read_text(encoding="utf-8")).get("confirmations", [])
-        stored = [Confirmation(**entry) for entry in entries]
+        entries = json.loads(path.read_text(encoding="utf-8")).get(section, [])
+        return [entry_type(**entry) for entry in entries]
     except (OSError, UnicodeDecodeError, ValueError, TypeError, AttributeError) as exc:
         logger.warning("Ignoring unreadable confirmation store %s: %s", path, exc)
         return []
-    return [c for c in stored if repository is None or c.repository == repository]
 
 
 def find_confirmation(
@@ -113,6 +137,13 @@ def find_confirmation(
         ):
             return confirmation
     return None
+
+
+def _save(path: Path, confirmations: list[Confirmation], candidates: list[StoredCandidate]) -> None:
+    data: dict[str, Any] = {"schema_version": SCHEMA_VERSION, "confirmations": [asdict(c) for c in confirmations]}
+    if candidates:
+        data["candidates"] = [asdict(c) for c in candidates]
+    _write(path, data)
 
 
 def _write(path: Path, data: dict[str, Any]) -> None:
@@ -155,5 +186,45 @@ def record_confirmation(
         expires_at=_timestamp(now + timedelta(days=operator.policy.confirmation_expiry_days)),
     )
     kept = [c for c in load_confirmations() if (c.repository, c.control_id, c.claim) != (repository, control_id, claim)]
-    _write(path, {"schema_version": SCHEMA_VERSION, "confirmations": [asdict(c) for c in [*kept, confirmation]]})
+    _save(path, [*kept, confirmation], load_candidates())
     return confirmation
+
+
+def record_candidate(
+    repository: str,
+    control_id: str,
+    claim: str,
+    evidence_digest: str,
+    candidate: dict[str, Any],
+    *,
+    checkout: str | Path | None = None,
+    now: datetime | None = None,
+) -> StoredCandidate:
+    """Store a candidate, replacing any earlier one for the same repository, control, and claim.
+
+    Confirmations of the same claim that no longer apply to ``evidence_digest``
+    (expired, or for other evidence) are removed, so a lapsed confirmation
+    cannot shadow the new candidate. A confirmation that still applies is kept.
+    """
+    path = store_path()
+    if _inside(path, checkout):
+        raise ValueError(f"refusing to store candidates at {path}: it is inside the audited repository")
+
+    now = now or datetime.now(UTC)
+    stored = StoredCandidate(
+        repository=repository,
+        control_id=control_id,
+        claim=claim,
+        evidence_digest=evidence_digest,
+        recorded_at=_timestamp(now),
+        candidate=dict(candidate),
+    )
+    key = (repository, control_id, claim)
+    confirmations = [
+        c
+        for c in load_confirmations()
+        if (c.repository, c.control_id, c.claim) != key or (c.evidence_digest == evidence_digest and not c.expired(now))
+    ]
+    candidates = [c for c in load_candidates() if (c.repository, c.control_id, c.claim) != key]
+    _save(path, confirmations, [*candidates, stored])
+    return stored

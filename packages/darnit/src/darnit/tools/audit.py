@@ -480,6 +480,43 @@ def _assess_assertions(
     return assessments
 
 
+def judgment_consultations(
+    local_path: str,
+    control_ids: list[str],
+    framework_name: str,
+    operator_config: "LoadedOperatorConfig",
+    owner: str | None,
+    repo: str | None,
+    target: str | None,
+) -> dict[str, dict[str, Any] | None]:
+    """The model step's consultation for each control, as an audit of ``local_path`` produces it now.
+
+    Used to check a submitted judgment's citations and to confirm a PASS
+    candidate against the current evidence (feature 041). A control whose
+    audit does not reach its model step maps to None.
+
+    Raises:
+        ValueError: the repository cannot be audited.
+    """
+    owner, repo, resolved_path, default_branch, error = prepare_audit(owner, repo, local_path)
+    if error:
+        raise ValueError(error)
+    results, _summary = run_sieve_audit(
+        owner or "",
+        repo or "",
+        resolved_path,
+        default_branch,
+        framework_name=framework_name,
+        operator_config=operator_config,
+        target=target,
+    )
+    by_id = {r["id"]: r for r in results}
+    return {
+        control_id: ((by_id.get(control_id) or {}).get("evidence") or {}).get("llm_consultation") or None
+        for control_id in control_ids
+    }
+
+
 def load_effective_audit_config(local_path: str, framework_name: str | None = None) -> Any | None:
     """Load the effective configuration for auditing.
 
@@ -881,19 +918,28 @@ def run_sieve_audit(
     if project_context:
         logger.info("Project context for when-clause evaluation: %s", project_context)
 
+    from darnit.trust.decision import decide_trust
+    from darnit.trust.judgments import apply_stored_judgment, load_judgment_records
+
+    trust = decide_trust(target, operator, local_path)
+
+    # Feature 041: PASS candidates and their confirmations, stored operator-side
+    # under the repository identity the operator (or CI metadata) named.
+    identity = trust.repository
+    judgment_repository = identity.canonical if identity is not None and identity.trusted_eligible else None
+    stored_candidates, candidate_confirmations = load_judgment_records(judgment_repository, checkout=local_path)
+
     # Feature 040: not-applicable claims -- explicit ones and context values
     # read from the repository that make a control not applicable -- count
     # only when honored (trusted, reasoned, uncontradicted, or confirmed).
     assessments: dict[str, Any] = {}
     if apply_user_config:
-        from darnit.trust.decision import decide_trust
-
         assessments = _assess_assertions(
             local_path,
             all_controls,
             known_control_ids,
             framework,
-            decide_trust(target, operator, local_path),
+            trust,
             owner,
             repo,
             project_context,
@@ -965,6 +1011,15 @@ def run_sieve_audit(
 
         # Run sieve verification
         sieve_result = orchestrator.verify(spec, context)
+        stored_result = apply_stored_judgment(
+            sieve_result,
+            judgment_repository,
+            candidates=stored_candidates,
+            confirmations=candidate_confirmations,
+        )
+        if stored_result is not sieve_result:
+            sieve_result = stored_result
+            orchestrator.record_result(sieve_result)
 
         # Convert to legacy dict format
         result_dict = sieve_result.to_legacy_dict()
@@ -1044,7 +1099,7 @@ def calculate_compliance(results: list[dict[str, Any]], level: int = 3) -> dict[
     compliance = {}
 
     for lvl in range(1, level + 1):
-        at_level = [r for r in results if r.get("level", 1) == lvl]
+        at_level = [r for r in results if (r.get("level") or 1) == lvl]
         pending = any((r.get("assertion") or {}).get("outcome") == "pending" for r in at_level)
         level_results = [r for r in at_level if r.get("status") != "N/A"]
         all_pass = all(r.get("status") == "PASS" for r in level_results)

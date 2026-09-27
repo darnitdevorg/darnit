@@ -4493,6 +4493,11 @@ description = """Record user-confirmed project context in .project.yaml.
   operator confirms, with `owner`, `repo` (and `host` when not github.com)
   naming the repository. Recorded operator-side. Only on the operator's
   explicit instruction; never confirm a claim on your own judgment.
+- `confirm_pass_candidate`: Control IDs whose PASS candidate (a positive model
+  judgment, status PENDING with pending.kind = "confirmation") the operator
+  confirms for the current evidence, with `owner`, `repo` (and `host`).
+  Recorded operator-side. Only on the operator's explicit instruction; never
+  confirm a candidate on your own judgment or because it would improve the result.
 
 **Examples:**
 ```
@@ -4504,6 +4509,9 @@ confirm_project_data(maintainers=["@alice", "@bob"])
 
 # Confirm a pending not-applicable claim (operator instruction only)
 confirm_project_data(confirm_not_applicable=["OSPS-BR-02.01"], owner="org", repo="name")
+
+# Confirm a PASS candidate (operator instruction only)
+confirm_project_data(confirm_pass_candidate=["OSPS-DO-01.01"], owner="org", repo="name")
 
 # Multiple context values
 confirm_project_data(

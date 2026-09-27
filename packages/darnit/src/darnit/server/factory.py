@@ -206,6 +206,12 @@ def create_server(
 
     register_harness_loop_tools(server)
 
+    # Feature 041: the one path by which a coding agent's judgment reaches an
+    # audit, bound to this server's framework.
+    from darnit.server.tools.judgments import register_judgment_tools
+
+    register_judgment_tools(server, framework_name)
+
     logger.info(
         f"Created MCP server '{server_name}' with {registered_count} tools"
     )
@@ -253,5 +259,9 @@ def create_server_from_dict(config: dict) -> FastMCP:
     from darnit.server.tools.harness_loop import register_harness_loop_tools
 
     register_harness_loop_tools(server)
+
+    from darnit.server.tools.judgments import register_judgment_tools
+
+    register_judgment_tools(server, framework_name)
 
     return server

@@ -304,10 +304,10 @@ class HarnessRun:
     ) -> LLMConsultationResponse:
         """Call the injected LLMStep for one control awaiting a model judgment.
 
-        Per research.md R6: bounded by ``per_call_timeout_s``. Any failure
-        (timeout, exception) returns an INCONCLUSIVE response with the
-        error captured in ``reasoning`` so the control routes to WARN
-        (not ERROR) -- honest degradation for a Collect-phase problem.
+        Bounded by ``per_call_timeout_s``. A model-service failure (timeout,
+        exception) returns an ERROR response with the cause in ``reasoning``
+        (feature 041): the control could not be measured, which is neither
+        a finding nor "needs verification".
         """
         control_id = consultation_request.get("control_id", "<unknown>")
         prompt = consultation_request.get("prompt", "")
@@ -338,9 +338,10 @@ class HarnessRun:
                 self.per_call_timeout_s,
             )
             return LLMConsultationResponse(
-                status=PassOutcome.INCONCLUSIVE,
+                status=PassOutcome.ERROR,
                 confidence=0.0,
                 reasoning=f"LLM call failed: timeout after {self.per_call_timeout_s}s",
+                error_class="unavailable",
             )
         except Exception as exc:
             safe_exc_msg = _redact_secrets(str(exc))
@@ -352,9 +353,12 @@ class HarnessRun:
             )
             self.llm_calls_total += 1  # counts against provider even on failure
             return LLMConsultationResponse(
-                status=PassOutcome.INCONCLUSIVE,
+                status=PassOutcome.ERROR,
                 confidence=0.0,
                 reasoning=f"LLM call failed: {type(exc).__name__}: {safe_exc_msg}",
+                # A ValueError (pydantic's ValidationError included) means the
+                # model answered but its answer could not be used.
+                error_class="evaluation" if isinstance(exc, ValueError) else "unavailable",
             )
 
         # Map LLMJudgment.outcome -> PassOutcome for the sieve.
@@ -369,6 +373,9 @@ class HarnessRun:
             status=sieve_outcome,
             confidence=judgment.confidence,
             reasoning=judgment.reasoning,
+            evidence_cited=list(judgment.cited_evidence),
+            model=judgment.model or self.llm_provider,
+            model_version=judgment.model_version,
         )
 
     async def _llm_continuation_loop(
@@ -380,9 +387,11 @@ class HarnessRun:
     ) -> list[dict[str, Any]]:
         """For each result awaiting a model judgment, dispatch the LLM and get a final result.
 
-        Feeds each response through ``SieveOrchestrator.verify_with_llm_response``
-        which applies the Stage 1 authority rule (LLM = suggestive, cannot
-        conclude). The returned result is what replaces the PENDING entry.
+        Feeds each response through ``SieveOrchestrator.verify_with_llm_response``,
+        which applies the judgment rules (feature 041): a positive judgment
+        with verified citations becomes a PASS candidate, stored operator-side
+        when the repository identity allows it; a judgment never concludes
+        PASS. The returned result is what replaces the PENDING entry.
 
         Bounded by ``total_run_timeout_s`` at the outer call site.
         """
@@ -406,6 +415,7 @@ class HarnessRun:
         )
 
         orchestrator = SieveOrchestrator(stop_on_llm=True)
+        repository = self._judgment_repository()
 
         pending = [
             r
@@ -466,8 +476,18 @@ class HarnessRun:
                 control_spec,
                 check_ctx,
                 response,
+                consultation=consultation,
+                source="harness",
             )
+            if sieve_result.candidate and repository is not None:
+                from darnit.trust.judgments import store_candidate
+
+                try:
+                    store_candidate(repository, control_id, sieve_result.candidate, checkout=self.local_path)
+                except (OSError, ValueError) as exc:
+                    logger.warning("%s PASS candidate not stored: %s", control_id, exc)
             final_dict = sieve_result.to_legacy_dict()
+            final_dict["evidence"] = {**evidence, **final_dict.get("evidence", {})}
             if "assertion" in result:
                 final_dict["assertion"] = result["assertion"]
             updated[control_id] = final_dict
@@ -483,6 +503,16 @@ class HarnessRun:
 
         # Replace pending entries with their final versions.
         return [updated.get(r["id"], r) for r in results]
+
+    def _judgment_repository(self) -> str | None:
+        """Canonical identity PASS candidates are stored under, or None when
+        the operator (or CI metadata) did not name the repository."""
+        if self.operator_config is None:
+            return None
+        from darnit.trust.decision import decide_trust
+
+        identity = decide_trust(self.target, self.operator_config.config, self.local_path).repository
+        return identity.canonical if identity is not None and identity.trusted_eligible else None
 
     # ------------------------------------------------------------------
     # Collect (T014)
@@ -874,6 +904,8 @@ class HarnessRun:
         pending_feedback: list[PendingFeedbackEntry],
         answered_feedback: list[AnsweredFeedbackEntry] | None = None,
     ) -> HarnessReport:
+        from darnit.tools.audit import calculate_compliance
+
         summary_counts = {"PASS": 0, "FAIL": 0, "WARN": 0, "N/A": 0, "ERROR": 0, "PENDING": 0}
         for r in results:
             status = r.get("status", "ERROR")
@@ -888,16 +920,21 @@ class HarnessRun:
             error=summary_counts["ERROR"],
         )
 
-        # PR #365 review fix: an all-ERROR (or all-WARN) run must NOT exit
-        # 0. Per the exit-code contract (cli.md CLI-11), SUCCESS requires
-        # "all applicable controls PASS or N/A"; anything else is
-        # AUDIT_FAILURES. Constitution II (Conservative-by-Default) also
-        # treats WARN and ERROR as non-compliant.
-        pending_claims = any((r.get("assertion") or {}).get("outcome") == "pending" for r in results)
-        if summary.fail > 0 or summary.error > 0 or summary.warn > 0 or pending_claims:
-            exit_class = HarnessExitCode.AUDIT_FAILURES
-        else:
+        # Per the exit-code contract (cli.md CLI-11), SUCCESS requires "all
+        # applicable controls PASS or N/A". Feature 041: that is decided by
+        # calculate_compliance, the rule every driver shares, for every
+        # level with an applicable control; FAIL, WARN, ERROR, PENDING
+        # (PASS candidates included), and pending claims are non-compliant.
+        levels = {r.get("level") or 1 for r in results}
+        compliance = calculate_compliance(results, level=max(levels, default=1))
+        applicable_levels = {r.get("level") or 1 for r in results if r.get("status") != "N/A"}
+        applicable_levels |= {
+            r.get("level") or 1 for r in results if (r.get("assertion") or {}).get("outcome") == "pending"
+        }
+        if all(compliance.get(lvl, False) for lvl in applicable_levels):
             exit_class = HarnessExitCode.SUCCESS
+        else:
+            exit_class = HarnessExitCode.AUDIT_FAILURES
 
         resolvers_used = [
             getattr(r, "name", "unknown") for r in self.question_resolvers
@@ -924,6 +961,7 @@ class HarnessRun:
             exit_class=int(exit_class),
             resolvers_used=resolvers_used,
             answered_feedback=answered_feedback or [],
+            compliance=compliance,
         )
 
     # ------------------------------------------------------------------

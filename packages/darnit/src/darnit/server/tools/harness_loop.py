@@ -21,9 +21,10 @@ See:
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
-from darnit.core.action_plan import HarnessState, next_action, submit_result
+from darnit.core.action_plan import HarnessState, next_action, run_audit_step, submit_result
 from darnit.core.errors import OutOfOrderSubmission, ResultSchemaMismatch
 from darnit.core.logging import get_logger
 
@@ -75,11 +76,15 @@ async def submit_action_result_tool(
 ) -> dict[str, Any]:
     """Apply the result of an executed step to the state and return the new state.
 
+    For the ``audit`` step the server runs the audit itself and records
+    only the engine's results (feature 041); ``result`` must be empty. Model
+    judgments for PENDING controls go through ``submit_judgment``.
+
     Args:
         state: JSON-shaped ``HarnessState``.
         step_id: The id of the step being submitted (must match the current
             expected step id from the last ``run_next_action_tool`` call).
-        result: The step's output payload.
+        result: The step's output payload; ``{}`` for the audit step.
 
     Returns:
         New JSON-shaped ``HarnessState``.
@@ -93,6 +98,16 @@ async def submit_action_result_tool(
         validated_state = HarnessState.model_validate(state)
     except Exception as exc:
         raise ValueError(f"Invalid HarnessState: {exc}") from exc
+
+    expected = next_action(validated_state)
+    if expected is not None and expected.step.id == step_id and expected.step.integration == "audit":
+        if result:
+            raise ValueError(
+                f"ResultSchemaMismatch: step={step_id!r}, offending_fields={sorted(result)}, message=the audit "
+                "step takes no client payload; the server runs the audit and records only its own results. "
+                "Submit model judgments with submit_judgment."
+            )
+        result = await asyncio.to_thread(run_audit_step, validated_state)
 
     try:
         new_state = submit_result(validated_state, step_id, result)
@@ -172,7 +187,9 @@ def register_harness_loop_tools(server: Any) -> None:
         name="submit_action_result",
         description=(
             "Apply the result of an executed step to a HarnessState and "
-            "return the new state. Raises OutOfOrderSubmission when step_id "
+            "return the new state. For the audit step pass result={}: the "
+            "server runs the audit and records only its own results; submit "
+            "model judgments with submit_judgment. Raises OutOfOrderSubmission when step_id "
             "doesn't match the expected next step, and ResultSchemaMismatch "
             "when the result violates a declared result_schema. Persists "
             "newly-confirmed asserted values to .project/ as a side-effect."

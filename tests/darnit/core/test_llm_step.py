@@ -58,6 +58,31 @@ class TestPydanticAILLMStep:
             _run(step.evaluate(ConsultationRequest(control_id="X", prompt="Q")))
         assert "ANTHROPIC_API_KEY" in str(excinfo.value)
 
+    def test_model_and_version_come_from_the_provider(self) -> None:
+        """Feature 041 T029: the model cannot name itself; the step records what answered."""
+
+        class _Response:
+            model_name = "claude-sonnet-5-20260801"
+
+        class _Result:
+            output = LLMJudgment(
+                outcome="yes", confidence=0.9, reasoning="r", cited_evidence=["quote"], model="spoofed"
+            )
+            response = _Response()
+
+        class _Agent:
+            async def run(self, prompt: str) -> _Result:
+                return _Result()
+
+        step = PydanticAILLMStep()
+        step._agent = _Agent()
+
+        judgment = _run(step.evaluate(ConsultationRequest(control_id="X", prompt="Q")))
+
+        assert judgment.model == "anthropic:claude-sonnet-5"
+        assert judgment.model_version == "claude-sonnet-5-20260801"
+        assert judgment.cited_evidence == ["quote"]
+
 
 class TestLLMStepProtocol:
     def test_mock_satisfies_protocol(self) -> None:

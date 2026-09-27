@@ -458,29 +458,37 @@ confidence_threshold = 0.8
 | `prompt_file` | `str` | Path to prompt file (alternative to inline) |
 | `files_to_include` | `list[str]` | Files to include in LLM context. Supports `$FOUND_FILE` to reference the file discovered by a preceding `file_exists` handler. |
 | `analysis_hints` | `list[str]` | Hints to guide analysis |
-| `confidence_threshold` | `float` | Minimum confidence for conclusive result (default: 0.8) |
+| `confidence_threshold` | `float` | Passed to the model with the consultation. Since feature 041 a judgment's confidence is recorded with it but is never a decision input: a judgment never concludes a control. |
 
 **`files_to_include` resolution**: The handler MUST resolve `$FOUND_FILE` entries by looking up `found_file` in `context.gathered_evidence`. Each resolved file path MUST be read (up to 10KB per file, max 5 files) and included as `file_contents` in the `consultation_request`. File paths that are not absolute MUST be resolved relative to `context.local_path`. Files that cannot be read MUST be silently skipped.
 
 **Ceiling**: `{}`. The handler returns INCONCLUSIVE with a `consultation_request`; with `stop_on_llm` the control becomes `PENDING` with `pending.kind = "llm_judgment"` (section 5.4). A model judgment never concludes PASS. No promotion to conclude PASS exists for a model judgment.
 
+**Judged content and evidence digest.** The content a judgment is checked against is the step's `file_contents` (the files it read, as capped above). The evidence digest is `sha256:` followed by the SHA-256 of a canonical JSON encoding of that content together with the step's rubric (`prompt` and `analysis_hints`), so a confirmation lapses when either the files or the rubric change. Other gathered evidence (earlier steps' outputs, other controls' statuses) is not part of the digest.
+
+**Citations.** A judgment carries `cited_evidence`: verbatim excerpts of the judged content. An excerpt is found when, after collapsing every run of whitespace to one space in both, it occurs in one of the judged files. A positive judgment MUST cite at least one excerpt. Any cited excerpt that is not found makes the judgment invalid, whatever its verdict.
+
 #### Scenario: Positive judgment
 - **WHEN** a model judgment says the evidence satisfies the control
-- **AND** every excerpt it cites appears verbatim (whitespace-normalized) in the content it was given
+- **AND** it cites at least one excerpt and every excerpt it cites appears verbatim (whitespace-normalized) in the content it was given
 - **THEN** the control MUST be `PENDING` with `pending.kind = "confirmation"` and a `candidate` block (a PASS candidate)
 - **AND** it MUST count as non-compliant until an operator confirms it
 
 #### Scenario: Unverifiable citation
-- **WHEN** a positive judgment cites an excerpt not present in the content it was given
-- **THEN** no PASS candidate MUST be produced and the control MUST be WARN
+- **WHEN** a judgment cites an excerpt not present in the content it was given, or a positive judgment cites nothing
+- **THEN** no PASS candidate MUST be produced, nothing MUST be stored, and the control MUST be WARN, naming the excerpts not found
 
 #### Scenario: Negative judgment
 - **WHEN** a model judgment says the evidence does not satisfy the control
 - **THEN** the control MUST be FAIL with authority `suggestive` and `concluded_by = "llm_judgment"`
 
+#### Scenario: Inconclusive judgment
+- **WHEN** a model judgment says the evidence is insufficient to decide
+- **THEN** the control MUST be WARN
+
 #### Scenario: Model service failure
 - **WHEN** the model service times out or errors
-- **THEN** the control MUST be ERROR with the cause, never FAIL
+- **THEN** the control MUST be ERROR with the cause (class `unavailable`, or `evaluation` when the model's answer could not be used), never WARN or FAIL
 
 ### 3.6 manual Handler
 
@@ -810,10 +818,9 @@ return SieveResult(status="WARN", authority="suggestive", concluded_by="none")
 - **AND** each invocation MUST be dispatched to its registered handler via the `SieveHandlerRegistry`
 
 #### Scenario: LLM config read from handler invocations
-- **WHEN** `verify_with_llm_response` processes an LLM evaluation
-- **THEN** it MUST read `confidence_threshold` from the `llm_eval` handler invocation config
-- **AND** it MUST read `verification_steps` from the `manual` handler invocation config
-- **AND** it MUST default `confidence_threshold` to `0.8` when not specified
+- **WHEN** `verify_with_llm_response` processes a model judgment that leaves the control WARN
+- **THEN** it MUST read `verification_steps` from the `manual` handler invocation config
+- **AND** it MUST NOT use the judgment's confidence to decide the result (section 3.5)
 
 ### 5.2 Result Statuses
 
@@ -870,10 +877,35 @@ When an LLM pass is reached and `stop_on_llm=True`:
 
 1. Orchestrator returns `PENDING` with `pending.kind = "llm_judgment"` and the consultation request in `evidence.llm_consultation`
 2. A judgment arrives from the headless harness's model step or from a coding agent through the `submit_judgment` MCP tool; both paths apply the same rules
-3. A positive judgment with verified citations becomes a PASS candidate (`PENDING`, `pending.kind = "confirmation"`), stored operator-side in the feature 040 confirmation store with claim `pass_candidate`; a negative judgment is a suggestive FAIL; an unverifiable citation leaves the control WARN; a model-service failure is ERROR
+3. A positive judgment with verified citations becomes a PASS candidate (`PENDING`, `pending.kind = "confirmation"`), stored operator-side in the feature 040 confirmation store with claim `pass_candidate`; a negative judgment is a suggestive FAIL; an unverifiable citation leaves the control WARN; a model-service failure is ERROR (section 3.5)
 4. An operator confirms a candidate through the confirmation flow; later audits report PASS with authority `asserted`, `concluded_by = "confirmation"`, and the confirmer and time, until the evidence digest changes or the confirmation expires
 
 No driver records a verdict for a judgment-requiring control by any other path; the ActionPlan audit step does not accept client-supplied per-control statuses.
+
+**Stored candidates and confirmations.** The confirmation store (`<data root>/trust/confirmations.json`) holds candidates beside confirmations. A candidate is keyed by canonical repository identity, control, claim `pass_candidate`, and evidence digest; it is stored only when the repository identity was named by the operator or CI metadata (never from the checkout's remotes), replaces an earlier candidate for the same repository and control, and removes that control's `pass_candidate` confirmations that no longer apply to its digest. A stored candidate is never a confirmation. When an audit leaves a control `PENDING` (`llm_judgment`), the audit pipeline computes the current evidence digest and applies the store:
+
+| Store holds, for this repository, control, and current digest | Result |
+|---|---|
+| An unexpired `pass_candidate` confirmation | PASS, authority `asserted`, `concluded_by = "confirmation"`, `confirmation` block (and the `candidate` it confirmed) |
+| Only an expired confirmation, or a confirmation for a different digest | `PENDING` (`llm_judgment`): the confirmation lapsed; a new judgment is needed |
+| A candidate and no confirmation | `PENDING` (`confirmation`) with the `candidate` block |
+| Nothing | `PENDING` (`llm_judgment`) |
+
+**MCP tools.** Every framework server registers, beside `run_next_action` and `submit_action_result`:
+
+```
+submit_judgment(
+  control_id: str, verdict: "pass" | "fail", reasoning: str,
+  cited_evidence: list[str], model: str, model_version: str,
+  owner: str, repo: str, host: str = "github.com", local_path: str = "."
+) -> {status: "candidate" | "finding" | "rejected" | "error", candidate | finding | rejection | error}
+```
+
+It re-runs the audit for `local_path` to re-gather the control's judged content (the client's copy is never trusted), applies section 3.5, and for a valid positive judgment records the candidate (`source = "mcp_agent"`). A negative judgment returns a suggestive FAIL finding and stores nothing; an invalid one returns a rejection naming the excerpts not found and stores nothing. A control that does not reach its model step is rejected.
+
+An operator confirms candidates through the framework's confirmation tool (for OpenSSF Baseline, `confirm_project_data(confirm_pass_candidate=[control_id, ...], owner=..., repo=..., host=...)`), which re-gathers the evidence and confirms only a stored candidate whose digest matches the current evidence, recording `confirmed_by`, `confirmed_at`, and `expires_at` (operator policy `confirmation_expiry_days`).
+
+**ActionPlan.** For the `audit` step, `submit_action_result` accepts no client payload: the server runs the audit itself and records only the results the engine produced. In-process drivers submit the engine's result object (`run_audit_step`); a plain mapping carrying audit results is rejected with `ResultSchemaMismatch`.
 
 ### 5.5 Adversarial Fixture Corpus
 
