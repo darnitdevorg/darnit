@@ -517,8 +517,8 @@ class TestIssueTemplateGlobbingRegression:
         """OSPS-DO-02.01 should find and match reasonable bug template filenames.
 
         Feature 041: a pattern match is evidence, not a PASS, so the control
-        is WARN (needs verification) rather than PASS; this test pins the
-        globbing, which is what the regression was about.
+        waits for a model judgment (PENDING) rather than PASS; this test pins
+        the globbing, which is what the regression was about.
         """
         from pathlib import Path
 
@@ -557,7 +557,7 @@ body:
         )
         result = orchestrator.verify(control, context)
 
-        assert result.status == "WARN"
+        assert result.status == "PENDING"
         # After feature 020, DO-02.01's file_exists pass was removed as
         # redundant with the pattern pass (see openssf-baseline.toml
         # comment above the DO-02.01 pattern pass). Evidence is now
@@ -569,7 +569,10 @@ body:
 
     @pytest.mark.unit
     def test_osps_do_02_01_warns_for_feature_only_template(self, tmp_path):
-        """OSPS-DO-02.01 should warn when only a feature template exists.
+        """OSPS-DO-02.01 must not PASS when only a feature template exists.
+
+        Feature 041: no step concludes, so the control waits for a model
+        judgment (PENDING); before the llm_eval step was added it ended WARN.
 
         End-to-end result is unchanged by feature 020 (still WARN), but the
         internal path differs: pre-020 pass 1 (file_exists) returned FAIL,
@@ -614,7 +617,7 @@ body:
         )
         result = orchestrator.verify(control, context)
 
-        assert result.status == "WARN"
+        assert result.status == "PENDING"
 
     @pytest.mark.unit
     def test_osps_do_02_01_matches_contributing_md_with_bug_link(self, tmp_path):
@@ -650,5 +653,5 @@ body:
         )
         result = orchestrator.verify(control, context)
 
-        assert result.status == "WARN"
+        assert result.status == "PENDING"
         assert result.evidence["any_match"] is True

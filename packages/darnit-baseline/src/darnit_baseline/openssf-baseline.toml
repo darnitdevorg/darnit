@@ -412,27 +412,19 @@ detect = [
 # Shared Handlers (cached across controls within a single audit run)
 # =============================================================================
 
+# gh_api (feature 041): a referencing step declares fail_on_status and
+# concludes itself; `gh api` exit 1 is never read as FAIL.
 [shared_handlers.branch_protection_api]
-handler = "exec"
-command = ["gh", "api", "/repos/$OWNER/$REPO/branches/$BRANCH/protection"]
-pass_exit_codes = [0]
-fail_exit_codes = [1]
-output_format = "json"
-timeout = 30
+handler = "gh_api"
+endpoint = "/repos/$OWNER/$REPO/branches/$BRANCH/protection"
 
 [shared_handlers.repo_info_api]
-handler = "exec"
-command = ["gh", "api", "/repos/$OWNER/$REPO"]
-pass_exit_codes = [0]
-output_format = "json"
-timeout = 30
+handler = "gh_api"
+endpoint = "/repos/$OWNER/$REPO"
 
 [shared_handlers.release_list_api]
-handler = "exec"
-command = ["gh", "release", "list", "--repo", "$OWNER/$REPO", "--json", "tagName,isLatest,publishedAt", "--limit", "5"]
-pass_exit_codes = [0]
-output_format = "json"
-timeout = 30
+handler = "gh_api"
+endpoint = "/repos/$OWNER/$REPO/releases?per_page=5"
 
 # =============================================================================
 # Level 1 Controls - Access Control (AC)
@@ -470,23 +462,15 @@ enforcement when the repository sits inside an organization.
 - [GitHub Org 2FA Requirements](https://docs.github.com/en/organizations/keeping-your-organization-secure/managing-two-factor-authentication-for-your-organization)
 """
 
-# ExecPass: Use gh CLI to check MFA requirement
 location_hint = ".github/settings.yml"
 
+# gh_api (feature 041): 404 (a user, not an org) and 401/403 are ERROR,
+# never FAIL. No has() guard: the field is only visible to org owners, so
+# an absent field is an evaluation ERROR (unmeasured), not a FAIL.
 [[controls."OSPS-AC-01.01".passes]]
-handler = "exec"
-command = ["gh", "api", "/orgs/$OWNER"]
-pass_exit_codes = [0]
-# Intentionally NOT setting fail_exit_codes: when the repo owner isn't an
-# org (user-owned repos), `gh api /orgs/<user>` returns 404 and gh exits
-# non-zero. We want that case to be INCONCLUSIVE so the sieve falls
-# through to the /user pass below, not a definitive FAIL. The CEL expr
-# below evaluates only when the command succeeded (exit 0); a real org
-# without 2FA enforcement returns exit 0 with the field present-and-false,
-# which still flips this pass to FAIL via the expr.
-output_format = "json"
-expr = 'has(output.json.two_factor_requirement_enabled) && output.json.two_factor_requirement_enabled == true'
-timeout = 30
+handler = "gh_api"
+endpoint = "/orgs/$OWNER"
+expr = 'response.body.two_factor_requirement_enabled == true'
 
 # Fallback for user-owned repos: org enforcement isn't possible (the owner
 # isn't an org), so check whether the authenticated maintainer has 2FA
@@ -494,23 +478,19 @@ timeout = 30
 # so the token can read the `two_factor_authentication` field on /user.
 #
 # This is a deliberately liberal interpretation: the canonical spec is
-# org-scoped, and this fallback can produce a false positive on an
-# *org*-owned repo where the org doesn't enforce 2FA but the maintainer
-# running the audit happens to. Tolerable for solo-maintainer / user-owned
-# repos (the common case it's intended to cover); narrowing the trigger
-# to user-owned repos is tracked separately and will move when darnit
-# auto-detects owner type.
+# org-scoped, and this fallback measures the account running the audit.
+# It runs only when the org check above did not conclude (the owner is
+# not an org, or the org field is not visible to this token). Narrowing
+# the trigger to user-owned repos is tracked separately.
 #
-# Same fail_exit_codes omission as above: if /user fails (no read:user
-# scope, auth error), fall through to the manual handler instead of
-# marking the control FAIL outright.
+# No has() guard for the same reason as above: without the read:user
+# scope the field is absent and the step is ERROR. The auditor lacking 2FA
+# does not show the project fails, so this step never concludes FAIL.
 [[controls."OSPS-AC-01.01".passes]]
-handler = "exec"
-command = ["gh", "api", "/user"]
-pass_exit_codes = [0]
-output_format = "json"
-expr = 'has(output.json.two_factor_authentication) && output.json.two_factor_authentication == true'
-timeout = 30
+handler = "gh_api"
+endpoint = "/user"
+expr = 'response.body.two_factor_authentication == true'
+concludes = ["pass"]
 
 [[controls."OSPS-AC-01.01".passes]]
 handler = "manual"
@@ -548,7 +528,6 @@ description = "Allow repository forking for public collaboration"
 tags = { level = 1, domain = "AC", access-control = true, collaboration = true }
 when = { platform = "github" }
 
-# ExecPass: Check if forking is allowed via GitHub API
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-AC-02.01"
 location_hint = ".github/settings.yml"
 help_md = """Configure repository to use minimal default permissions.
@@ -562,20 +541,15 @@ help_md = """Configure repository to use minimal default permissions.
 - [GitHub Repository Permissions](https://docs.github.com/en/organizations/managing-user-access-to-your-organizations-repositories/repository-roles-for-an-organization)
 """
 
-[[controls."OSPS-AC-02.01".passes]]
-handler = "exec"
-command = ["gh", "api", "/repos/$OWNER/$REPO"]
-pass_exit_codes = [0]
-fail_exit_codes = [1]
-output_format = "json"
-expr = 'output.json.allow_forking == true'
-timeout = 30
-
+# The former allow_forking check was removed (feature 041): forking says
+# nothing about the permissions a new collaborator receives, and it
+# concluded PASS on the adversarial corpus where the requirement is unmet.
+# No automated step measures this requirement yet.
 [[controls."OSPS-AC-02.01".passes]]
 handler = "manual"
 steps = [
-    "Navigate to Repository Settings → General",
-    "Under 'Features', verify 'Allow forking' is enabled",
+    "For an organization-owned repository: Organization Settings -> Member privileges, verify 'Base permissions' is 'No permission' or 'Read'",
+    "Verify new collaborators are added with an explicitly assigned role, not a default above the lowest privilege",
 ]
 
 [controls."OSPS-AC-02.01".remediation]
@@ -761,12 +735,11 @@ output_format = "json"
 expr = '!output.json.exists(f, f.ident == "template-injection")'
 timeout = 60
 
-# Fallback: grep scan for common injection patterns (used when zizmor is
-# not installed). We use `sh -c '! grep ...'` so the exec handler's exit
-# code directly encodes compliance: 0 means grep found no injection
-# patterns (clean, PASS); 1 means grep found at least one (unsafe, FAIL).
-# This avoids the CEL-inversion idiom (handler FAIL + CEL negation -> PASS)
-# that feature 020 no longer supports; see contracts/cel-post-step.md.
+# Keyword scan for common injection expressions, evidence only (feature
+# 041): no match misses other untrusted fields (comment.body, review.body,
+# commits.*.message), and a match includes safe uses such as
+# pull_request.number or an `if:` condition. It also exits 0 when there is
+# no .github/workflows directory.
 [[controls."OSPS-BR-01.01".passes]]
 handler = "exec"
 command = [
@@ -776,6 +749,7 @@ command = [
 pass_exit_codes = [0]
 fail_exit_codes = [1]
 timeout = 10
+concludes = []
 
 [[controls."OSPS-BR-01.01".passes]]
 handler = "manual"
@@ -819,7 +793,6 @@ description = "Branch names are handled safely in workflows"
 tags = { level = 1, domain = "BR", build = true, security = true, deprecated = true }
 when = { ci_provider = "github" }
 
-# Exec: grep for unsafe ${{ github.head_ref }} — exit code 1 (no matches) = PASS
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-BR-01.02"
 location_hint = ".github/workflows"
 help_md = """Sanitize branch names before use in CI/CD pipelines.
@@ -839,11 +812,15 @@ run: |
 ```
 """
 
+# Keyword absence, evidence only (feature 041): not finding github.head_ref
+# does not show branch names are handled safely (github.ref_name and event
+# payload fields carry them too).
 [[controls."OSPS-BR-01.02".passes]]
 handler = "exec"
 command = ["grep", "-rln", "github.head_ref", ".github/workflows/"]
 pass_exit_codes = [1]
 timeout = 10
+concludes = []
 
 [[controls."OSPS-BR-01.02".passes]]
 handler = "manual"
@@ -977,7 +954,6 @@ description = "Repository URL uses HTTPS"
 tags = { level = 1, domain = "BR", build = true, security = true }
 when = { platform = "github" }
 
-# ExecPass: Verify repository URL uses HTTPS
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-BR-03.01"
 location_hint = "README.md"
 help_md = """Ensure all project URIs use HTTPS.
@@ -991,14 +967,14 @@ help_md = """Ensure all project URIs use HTTPS.
 - All official channels should use TLS/HTTPS
 """
 
+# FAIL only (feature 041): html_url is always https on GitHub, so it can
+# prove an unencrypted channel (an http:// homepage) but not that every
+# official channel is encrypted.
 [[controls."OSPS-BR-03.01".passes]]
-handler = "exec"
-command = ["gh", "api", "/repos/$OWNER/$REPO", "--jq", ".html_url"]
-pass_exit_codes = [0]
-fail_exit_codes = [1]
-output_format = "text"
-expr = 'output.stdout.startsWith("https://")'
-timeout = 30
+handler = "gh_api"
+endpoint = "/repos/$OWNER/$REPO"
+expr = 'response.body.html_url.startsWith("https://") && !(type(response.body.homepage) == string && response.body.homepage.startsWith("http://"))'
+concludes = ["fail"]
 
 [[controls."OSPS-BR-03.01".passes]]
 handler = "manual"
@@ -1101,7 +1077,6 @@ tags = { level = 2, domain = "BR", build = true, releases = true }
 when = { has_releases = true, platform = "github" }
 contradicted_by = { context = "has_releases", when_value = true }
 
-# ExecPass: Check GitHub releases have unique version tags
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-BR-02.01"
 help_md = """Use semantic versioning for releases.
 
@@ -1111,13 +1086,14 @@ help_md = """Use semantic versioning for releases.
 3. Ensure no duplicate version numbers
 """
 
+# PASS only: no GitHub release, or a tag that is not version-like, does
+# not show releases lack unique identifiers (they may be published
+# elsewhere or use another scheme).
 [[controls."OSPS-BR-02.01".passes]]
-handler = "exec"
-command = ["gh", "release", "list", "--json", "tagName", "--limit", "10"]
-pass_exit_codes = [0]
-output_format = "json"
-expr = 'size(output.json) > 0 && output.json[0].tagName.matches("^v?[0-9]")'
-timeout = 30
+handler = "gh_api"
+endpoint = "/repos/$OWNER/$REPO/releases?per_page=10"
+expr = 'size(response.body) > 0 && response.body[0].tag_name.matches("^v?[0-9]")'
+concludes = ["pass"]
 
 [[controls."OSPS-BR-02.01".passes]]
 handler = "manual"
@@ -1169,19 +1145,34 @@ project_path = "documentation.changelog"
 discover = ["CHANGELOG.md", "CHANGES.md", "HISTORY.md", "NEWS.md"]
 kind = "file"
 
-# Pass 1: Check GitHub releases for release notes
+# Evidence only (feature 041): release notes or a changelog being present
+# does not show they describe functional and security changes, and either
+# one being absent is not a failure while the other exists.
 [[controls."OSPS-BR-04.01".passes]]
-handler = "exec"
-command = ["gh", "api", "/repos/$OWNER/$REPO/releases?per_page=5"]
-pass_exit_codes = [0]
-output_format = "json"
-expr = 'size(output.json) > 0 && has(output.json[0].body) && output.json[0].body != ""'
-timeout = 30
+handler = "gh_api"
+endpoint = "/repos/$OWNER/$REPO/releases?per_page=5"
+expr = 'size(response.body) > 0 && type(response.body[0].body) == string && response.body[0].body != ""'
+concludes = []
 
-# Pass 2: Fallback — check for CHANGELOG.md or equivalent
 [[controls."OSPS-BR-04.01".passes]]
 handler = "file_exists"
 use_locator = true
+concludes = []
+
+[[controls."OSPS-BR-04.01".passes]]
+handler = "llm_eval"
+prompt = """Evaluate whether this changelog is a descriptive log of the functional and security modifications in each release:
+1. Does it have an entry per released version?
+2. Does each entry describe what changed functionally, not only a version number or date?
+3. Are security-relevant changes identifiable?
+A file with only headings, placeholders, or version numbers MUST fail."""
+files_to_include = ["$FOUND_FILE", "CHANGELOG.md", "CHANGES.md", "HISTORY.md", "NEWS.md"]
+confidence_threshold = 0.7
+analysis_hints = [
+    "Release notes published only on the platform are not included here; judge only the files given",
+    "Auto-generated lists of commit titles can count if they describe changes",
+    "TODO placeholders do not count as real content",
+]
 
 [[controls."OSPS-BR-04.01".passes]]
 handler = "manual"
@@ -1461,6 +1452,20 @@ bug_reporting_link = '(?i)(report|submit|file).{0,30}(bug|issue|defect).{0,30}(h
 issue_template_yaml = '(?i)^name:\s+.*(bug|defect|issue)'
 
 [[controls."OSPS-DO-02.01".passes]]
+handler = "llm_eval"
+prompt = """Evaluate whether this documentation is a guide for reporting defects:
+1. Does it say where to report a bug (issue tracker, template, address)?
+2. Does it say what a report should contain (steps to reproduce, expected and actual behavior, version)?
+A template or section with only TODO placeholders or a bare heading MUST fail."""
+files_to_include = ["$RESOLVED_FILES"]
+confidence_threshold = 0.7
+analysis_hints = [
+    "Issue templates with reproduction and expected/actual fields count",
+    "A link to the issue tracker alone, without guidance, is weak evidence",
+    "TODO placeholders do not count as real content",
+]
+
+[[controls."OSPS-DO-02.01".passes]]
 handler = "manual"
 steps = [
     "Check if project documentation clearly explains how to report defects",
@@ -1514,6 +1519,21 @@ files = ["README.md", "CONTRIBUTING.md", "docs/dependencies.md", "DEPENDENCIES.m
 
 [controls."OSPS-DO-06.01".passes.pattern.patterns]
 dependency_docs = "(dependenc|package|library).*(select|obtain|track|manage|update|policy)"
+
+[[controls."OSPS-DO-06.01".passes]]
+handler = "llm_eval"
+prompt = """Evaluate whether this documentation describes how the project selects, obtains, and tracks its dependencies:
+1. Does it say how dependencies are chosen or approved?
+2. Does it say where they are obtained from (registries, mirrors, vendoring)?
+3. Does it say how they are tracked and updated (lockfiles, update bots, review)?
+A document with only TODO placeholders or a list of dependency names MUST fail."""
+files_to_include = ["$RESOLVED_FILES", "docs/dependency-policy.md"]
+confidence_threshold = 0.7
+analysis_hints = [
+    "All three aspects (select, obtain, track) should be covered",
+    "A package manager install command alone is not a description of the process",
+    "TODO placeholders do not count as real content",
+]
 
 [[controls."OSPS-DO-06.01".passes]]
 handler = "manual"
@@ -1571,6 +1591,20 @@ files = ["README.md", "README.rst", "BUILD.md", "INSTALL.md", "CONTRIBUTING.md",
 build_section_header = "(?im)^#+\\s*(building|build|install|installation|getting\\s+started|setup|compile|compiling)\\b"
 
 [[controls."OSPS-DO-07.01".passes]]
+handler = "llm_eval"
+prompt = """Evaluate whether this documentation explains how to build the software:
+1. Does it list the required libraries, frameworks, SDKs, toolchains, or dependencies?
+2. Does it give the command or steps that produce a working build?
+A build or install heading with no instructions beneath it MUST fail."""
+files_to_include = ["$RESOLVED_FILES"]
+confidence_threshold = 0.7
+analysis_hints = [
+    "Instructions for installing a published package are not build instructions unless they build from source",
+    "Makefile or script targets count when the documentation tells the reader to run them",
+    "TODO placeholders do not count as real content",
+]
+
+[[controls."OSPS-DO-07.01".passes]]
 handler = "manual"
 steps = [
     "Open README.md (or the project's main documentation entry point).",
@@ -1602,7 +1636,6 @@ description = "Enable public discussion mechanisms"
 tags = { level = 1, domain = "GV", governance = true, community = true }
 when = { platform = "github" }
 
-# ExecPass: Check if Issues or Discussions are enabled
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-GV-02.01"
 location_hint = "CONTRIBUTING.md"
 help_md = """Enable public discussion channels.
@@ -1613,14 +1646,14 @@ help_md = """Enable public discussion channels.
 3. Consider adding a mailing list or chat channel
 """
 
+# PASS only: issues or discussions on a public repository are a public
+# discussion mechanism; neither being enabled does not show the project
+# has none (mailing lists, forums, chat).
 [[controls."OSPS-GV-02.01".passes]]
-handler = "exec"
-command = ["gh", "api", "/repos/$OWNER/$REPO", "--jq", ".has_issues or .has_discussions"]
-pass_exit_codes = [0]
-fail_exit_codes = [1]
-output_format = "text"
-expr = 'output.stdout.startsWith("true")'
-timeout = 30
+handler = "gh_api"
+endpoint = "/repos/$OWNER/$REPO"
+expr = 'response.body.private == false && (response.body.has_issues == true || (has(response.body.has_discussions) && response.body.has_discussions == true))'
+concludes = ["pass"]
 
 [[controls."OSPS-GV-02.01".passes]]
 handler = "manual"
@@ -1669,6 +1702,19 @@ pass_if_any = true
 steps_with_pr = '(?si)(step|1\.|fork|clone|branch).{20,}(pull request|PR|submit|merge)'
 pr_guidelines = '(?si)(pull request|PR).{0,60}(guideline|require|ensure|should|must)'
 how_to_contribute = '(?si)(how to contribute|getting started|development setup).{20,}'
+
+[[controls."OSPS-GV-03.01".passes]]
+handler = "llm_eval"
+prompt = """Evaluate whether this documentation explains the contribution process:
+1. Does it say how to propose a change (fork, branch, pull request, patch)?
+2. Does it say how changes are reviewed and accepted?
+A contributing file with only TODO placeholders or a single sentence MUST fail."""
+files_to_include = ["$FOUND_FILE", "CONTRIBUTING.md", ".github/CONTRIBUTING.md", "docs/CONTRIBUTING.md", "README.md"]
+confidence_threshold = 0.7
+analysis_hints = [
+    "Look for step-by-step instructions a new contributor could follow",
+    "TODO placeholders do not count as real content",
+]
 
 [[controls."OSPS-GV-03.01".passes]]
 handler = "manual"
@@ -1780,7 +1826,6 @@ description = "License is OSI-approved"
 tags = { level = 1, domain = "LE", legal = true, license = true }
 when = { platform = "github" }
 
-# ExecPass: Check if license is OSI-approved via GitHub's license detection
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-LE-02.01"
 location_hint = "LICENSE"
 help_md = """Use an OSI-approved open source license.
@@ -1803,15 +1848,14 @@ pass_if_any = true
 expr = 'output.any_match'
 description = "Check for SPDX license identifier in project files"
 
-# Fallback: Check via GitHub API if local check is inconclusive
+# Fallback: GitHub's license detection. PASS only: the list below is a
+# subset of OSI/FSF licenses, and NOASSERTION means undetected, not
+# non-free.
 [[controls."OSPS-LE-02.01".passes]]
-handler = "exec"
-command = ["gh", "api", "/repos/$OWNER/$REPO", "--jq", ".license.spdx_id // \"none\""]
-pass_exit_codes = [0]
-fail_exit_codes = [1]
-output_format = "text"
-expr = 'output.stdout.matches("^(MIT|Apache-2\\.0|GPL-[23]\\.0|LGPL-[23]\\.[01]|BSD-[23]-Clause|MPL-2\\.0|ISC|Unlicense|0BSD|AGPL-3\\.0|EPL-[12]\\.0|CC0-1\\.0)\\n?$")'
-timeout = 30
+handler = "gh_api"
+endpoint = "/repos/$OWNER/$REPO"
+expr = 'type(response.body.license) == map && type(response.body.license.spdx_id) == string && response.body.license.spdx_id.matches("^(MIT|Apache-2\\.0|GPL-[23]\\.0|LGPL-[23]\\.[01]|BSD-[23]-Clause|MPL-2\\.0|ISC|Unlicense|0BSD|AGPL-3\\.0|EPL-[12]\\.0|CC0-1\\.0)$")'
+concludes = ["pass"]
 
 [[controls."OSPS-LE-02.01".passes]]
 handler = "manual"
@@ -1852,9 +1896,11 @@ name = "ReleaseLicense"
 description = "Releases include license information"
 tags = { level = 1, domain = "LE", legal = true, license = true }
 when = { platform = "github" }
-inferred_from = "OSPS-LE-03.01"  # GitHub auto-generates source archives that include the repo's LICENSE for every release; if LE-03.01 passes, the release contains license info by construction.
+# Released source archives carry the repository's license, so an
+# OSI-approved source license (LE-02.01) covers them. Inferring from
+# LE-03.01 (a license file exists) would not show the license is OSI/FSF.
+inferred_from = "OSPS-LE-02.01"
 
-# Check that releases have license info (via release notes or included files)
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-LE-02.02"
 location_hint = "LICENSE"
 help_md = """Include OSI-approved license with releases.
@@ -1865,23 +1911,14 @@ help_md = """Include OSI-approved license with releases.
 3. Document license in package metadata
 """
 
-# Primary: GitHub's own license detector (licensee server-side) returns an SPDX id.
-# Nonzero exit falls through to the next pass so auth/network failures don't masquerade as FAIL.
+# GitHub's license detector. PASS only, and only for an OSI/FSF license
+# id (feature 041: any detected id, or a license keyword in the release
+# notes, does not show the license meets the definition).
 [[controls."OSPS-LE-02.02".passes]]
-handler = "exec"
-command = ["gh", "api", "/repos/$OWNER/$REPO/license"]
-pass_exit_codes = [0]
-output_format = "json"
-expr = 'has(output.json.license) && output.json.license.spdx_id != "" && output.json.license.spdx_id != "NOASSERTION"'
-timeout = 30
-
-[[controls."OSPS-LE-02.02".passes]]
-handler = "exec"
-command = ["gh", "release", "view", "--json", "body,assets"]
-pass_exit_codes = [0]
-output_format = "json"
-expr = 'output.json.body.matches("(?i)(licen[cs]e|apache|mit\\s|bsd|gpl|mpl|isc|unlicense)") || output.json.assets.exists(a, a.name.matches("(?i)^(license|copying|notice)"))'
-timeout = 30
+handler = "gh_api"
+endpoint = "/repos/$OWNER/$REPO/license"
+expr = 'type(response.body.license) == map && type(response.body.license.spdx_id) == string && response.body.license.spdx_id.matches("^(MIT|Apache-2\\.0|GPL-[23]\\.0|LGPL-[23]\\.[01]|BSD-[23]-Clause|MPL-2\\.0|ISC|Unlicense|0BSD|AGPL-3\\.0|EPL-[12]\\.0|CC0-1\\.0)$")'
+concludes = ["pass"]
 
 [[controls."OSPS-LE-02.02".passes]]
 handler = "manual"
@@ -1919,12 +1956,15 @@ kind = "file"
 handler = "file_exists"
 use_locator = true
 
-# Content validation: LICENSE should contain actual license grant language
+# Existence requirement (feature 041): license grant language in the
+# license file concludes PASS. The file_exists step above does not, since
+# a LICENSE that says only TODO is not a license.
 [[controls."OSPS-LE-03.01".passes]]
 handler = "regex"
 file = "$FOUND_FILE"
 pattern = '(?i)(licensed under|permission is hereby granted|redistribute|subject to the terms|provided "as is"|without warranty)'
 min_matches = 2
+existence = true
 
 [[controls."OSPS-LE-03.01".passes]]
 handler = "manual"
@@ -1967,7 +2007,6 @@ when = { has_releases = true, platform = "github" }
 contradicted_by = { context = "has_releases", when_value = true }
 inferred_from = "OSPS-LE-03.01"  # If LICENSE exists in repo, GitHub auto-includes it in source archives
 
-# Check that release assets include license file
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-LE-03.02"
 location_hint = "LICENSE"
 help_md = """Include license file in release artifacts.
@@ -1980,22 +2019,18 @@ help_md = """Include license file in release artifacts.
 
 # Primary: GitHub's own license detector. A PASS here means GitHub has identified a
 # recognized SPDX license in the repo, and every auto-generated source archive for a
-# release therefore includes it. Falls through on nonzero exit (auth/network/no-detection).
+# release therefore includes it. PASS only: no detection is not proof of absence.
 [[controls."OSPS-LE-03.02".passes]]
-handler = "exec"
-command = ["gh", "api", "/repos/$OWNER/$REPO/license"]
-pass_exit_codes = [0]
-output_format = "json"
-expr = 'has(output.json.license) && output.json.license.spdx_id != "" && output.json.license.spdx_id != "NOASSERTION"'
-timeout = 30
+handler = "gh_api"
+endpoint = "/repos/$OWNER/$REPO/license"
+expr = 'type(response.body.license) == map && type(response.body.license.spdx_id) == string && response.body.license.spdx_id != "" && response.body.license.spdx_id != "NOASSERTION"'
+concludes = ["pass"]
 
 [[controls."OSPS-LE-03.02".passes]]
-handler = "exec"
-command = ["gh", "release", "view", "--json", "assets"]
-pass_exit_codes = [0]
-output_format = "json"
-expr = 'output.json.assets.exists(a, a.name.matches("(?i)^(license|copying|notice)"))'
-timeout = 30
+handler = "gh_api"
+endpoint = "/repos/$OWNER/$REPO/releases/latest"
+expr = 'response.body.assets.exists(a, a.name.matches("(?i)^(license|copying|notice)"))'
+concludes = ["pass"]
 
 [[controls."OSPS-LE-03.02".passes]]
 handler = "manual"
@@ -2015,7 +2050,6 @@ description = "Repository is publicly accessible"
 tags = { level = 1, domain = "QA", quality = true, transparency = true }
 when = { platform = "github" }
 
-# ExecPass: Use gh CLI to check repository visibility
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-QA-01.01"
 help_md = """Ensure repository is publicly accessible.
 
@@ -2026,13 +2060,9 @@ help_md = """Ensure repository is publicly accessible.
 """
 
 [[controls."OSPS-QA-01.01".passes]]
-handler = "exec"
-command = ["gh", "api", "/repos/$OWNER/$REPO"]
-pass_exit_codes = [0]
-fail_exit_codes = [1]
-output_format = "json"
-expr = 'output.json.private == false'
-timeout = 30
+handler = "gh_api"
+endpoint = "/repos/$OWNER/$REPO"
+expr = 'response.body.private == false'
 
 [[controls."OSPS-QA-01.01".passes]]
 handler = "manual"
@@ -2068,7 +2098,6 @@ description = "Commit history is publicly visible"
 tags = { level = 1, domain = "QA", quality = true, transparency = true }
 when = { platform = "github" }
 
-# ExecPass: Check that commit history is accessible
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-QA-01.02"
 help_md = """Maintain public git history.
 
@@ -2078,12 +2107,14 @@ help_md = """Maintain public git history.
 3. Maintain author attribution in commits
 """
 
+# A public GitHub repository exposes its full git history (changes,
+# authors, timestamps). Commits being readable with the audit's token does
+# not show they are public, so the former commit-count check was replaced
+# (feature 041).
 [[controls."OSPS-QA-01.02".passes]]
-handler = "exec"
-command = ["gh", "api", "/repos/$OWNER/$REPO/commits", "--jq", "length"]
-pass_exit_codes = [0]
-expr = 'output.stdout.matches("^[1-9][0-9]*")'
-timeout = 30
+handler = "gh_api"
+endpoint = "/repos/$OWNER/$REPO"
+expr = 'response.body.private == false'
 
 [[controls."OSPS-QA-01.02".passes]]
 handler = "manual"
@@ -2127,9 +2158,12 @@ discover = [
 ]
 kind = "file"
 
+# Existence requirement (feature 041): a dependency manifest being present
+# is what the requirement asks for, so this step may conclude PASS.
 [[controls."OSPS-QA-02.01".passes]]
 handler = "file_exists"
 use_locator = true
+existence = true
 # max_depth = 2 lets us discover manifests nested in conventional layouts
 # (e.g. src/app/package.json) without incurring full recursive-glob cost
 max_depth = 2
@@ -2186,6 +2220,19 @@ files = ["README.md", "docs/**/*.md"]
 subprojects = "(subproject|module|package|workspace|monorepo)"
 
 [[controls."OSPS-QA-04.01".passes]]
+handler = "llm_eval"
+prompt = """Evaluate whether this documentation lists the codebases (repositories or subprojects) that are part of the project:
+1. Is there an explicit list of the repositories or subprojects?
+2. Does each entry identify where the codebase lives?
+Mentions of the words module or package without a list MUST fail."""
+files_to_include = ["README.md", "$RESOLVED_FILES"]
+confidence_threshold = 0.7
+analysis_hints = [
+    "A table or bullet list of repositories or workspace members counts",
+    "TODO placeholders do not count as real content",
+]
+
+[[controls."OSPS-QA-04.01".passes]]
 handler = "manual"
 steps = [
     "Check if project has subprojects or is a monorepo",
@@ -2222,10 +2269,13 @@ help_md = """Remove generated executables from repository.
 3. Use releases for distributing binaries
 """
 
+# Existence requirement (feature 041): the requirement is that these
+# files do not exist, so absence concludes PASS and presence FAIL.
 [[controls."OSPS-QA-05.01".passes]]
 handler = "pattern"
 exclude_files = ["**/*.exe", "**/*.dll", "**/*.so", "**/*.dylib", "**/*.bin"]
 expr = 'output.files_found == 0'
+existence = true
 
 [[controls."OSPS-QA-05.01".passes]]
 handler = "manual"
@@ -2264,10 +2314,12 @@ help_md = """Remove unreviewable binary files from repository.
 3. Document any required binaries
 """
 
+# Existence requirement (feature 041), as for OSPS-QA-05.01.
 [[controls."OSPS-QA-05.02".passes]]
 handler = "pattern"
 exclude_files = ["**/*.jar", "**/*.war", "**/*.pyc", "**/*.class", "**/*.o", "**/*.exe", "**/*.dll", "**/*.so", "**/*.dylib", "**/*.whl", "**/*.egg", "**/*.bin", "**/*.db", "**/*.sqlite"]
 expr = 'output.files_found == 0'
+existence = true
 
 [[controls."OSPS-QA-05.02".passes]]
 handler = "manual"
@@ -2546,6 +2598,19 @@ roles = "(maintainer|contributor|reviewer|owner)"
 responsibilities = "(responsibil|duties|role)"
 
 [[controls."OSPS-GV-01.02".passes]]
+handler = "llm_eval"
+prompt = """Evaluate whether this documentation describes the roles and responsibilities of project members:
+1. Does it name the roles (for example maintainer, reviewer, contributor)?
+2. Does it say what each role is responsible for or allowed to do?
+A document that only lists names, or mentions roles without responsibilities, MUST fail."""
+files_to_include = ["$RESOLVED_FILES", "README.md"]
+confidence_threshold = 0.7
+analysis_hints = [
+    "Look for a section per role with duties or permissions",
+    "TODO placeholders do not count as real content",
+]
+
+[[controls."OSPS-GV-01.02".passes]]
 handler = "manual"
 steps = [
     "Check GOVERNANCE.md, MAINTAINERS.md, or CONTRIBUTING.md",
@@ -2593,6 +2658,19 @@ files = ["CONTRIBUTING.md"]
 [controls."OSPS-GV-03.02".passes.pattern.patterns]
 requirements = "(requirement|must|should|need to)"
 process = "(pull request|PR|submit|review)"
+
+[[controls."OSPS-GV-03.02".passes]]
+handler = "llm_eval"
+prompt = """Evaluate whether this contributor guide states requirements for acceptable contributions:
+1. Does it list concrete requirements a contribution must meet (tests, style, sign-off, review, documentation)?
+2. Are the requirements specific enough that a contributor could check their change against them?
+Generic encouragement without requirements, or TODO placeholders, MUST fail."""
+files_to_include = ["$RESOLVED_FILES", ".github/CONTRIBUTING.md", "docs/CONTRIBUTING.md"]
+confidence_threshold = 0.7
+analysis_hints = [
+    "Words like must or should are not enough on their own; look for actual criteria",
+    "TODO placeholders do not count as real content",
+]
 
 [[controls."OSPS-GV-03.02".passes]]
 handler = "manual"
@@ -2778,6 +2856,19 @@ disclosure = "(disclos|report|contact)"
 process = "(process|procedure|timeline)"
 
 [[controls."OSPS-VM-01.01".passes]]
+handler = "llm_eval"
+prompt = """Evaluate whether this documentation includes a policy for coordinated vulnerability disclosure with a clear timeframe for response:
+1. Does it describe how reported vulnerabilities are handled and disclosed?
+2. Does it give a concrete response timeframe (for example acknowledgement within N days)?
+A policy without any timeframe, or one that states there is no process, MUST fail."""
+files_to_include = ["SECURITY.md", ".github/SECURITY.md", "docs/SECURITY.md", "README.md"]
+confidence_threshold = 0.7
+analysis_hints = [
+    "Both a disclosure process and a response timeframe are required",
+    "TODO placeholders do not count as real content",
+]
+
+[[controls."OSPS-VM-01.01".passes]]
 handler = "manual"
 steps = [
     "Check SECURITY.md for disclosure policy section",
@@ -2825,15 +2916,14 @@ search_for = "private reporting, security email, PGP key, confidential"
 check_files = ["README.md"]
 look_for_urls = false
 
-# ExecPass: Check if GitHub private vulnerability reporting is enabled
+# PASS only: private vulnerability reporting enabled is a private channel
+# to the project; disabled does not show there is none (a security email
+# in SECURITY.md also satisfies the requirement).
 [[controls."OSPS-VM-03.01".passes]]
-handler = "exec"
-command = ["gh", "api", "/repos/$OWNER/$REPO/private-vulnerability-reporting"]
-pass_exit_codes = [0]
-fail_exit_codes = [1]
-output_format = "json"
-expr = 'has(output.json.enabled) && output.json.enabled == true'
-timeout = 30
+handler = "gh_api"
+endpoint = "/repos/$OWNER/$REPO/private-vulnerability-reporting"
+expr = 'response.body.enabled == true'
+concludes = ["pass"]
 
 # PatternPass: Check for private contact methods in SECURITY.md
 [[controls."OSPS-VM-03.01".passes]]
@@ -2842,6 +2932,19 @@ files = ["SECURITY.md", ".github/SECURITY.md"]
 
 [controls."OSPS-VM-03.01".passes.pattern.patterns]
 private_contact = "(private|confidential|security advisory|PGP|GPG|security@|email)"
+
+[[controls."OSPS-VM-03.01".passes]]
+handler = "llm_eval"
+prompt = """Evaluate whether this documentation provides a means for reporting vulnerabilities privately and directly to the project's security contacts:
+1. Does it give a private channel (security email, private advisory form, encrypted contact)?
+2. Does it direct reporters away from public issues for vulnerabilities?
+Directing reporters only to public issues, or stating there is no contact, MUST fail."""
+files_to_include = ["SECURITY.md", ".github/SECURITY.md", "docs/SECURITY.md", "README.md"]
+confidence_threshold = 0.7
+analysis_hints = [
+    "A link to the repository's private vulnerability reporting form counts",
+    "TODO placeholders do not count as real content",
+]
 
 [[controls."OSPS-VM-03.01".passes]]
 handler = "manual"
@@ -2878,7 +2981,6 @@ description = "Repository supports security advisories"
 tags = { level = 2, domain = "VM", security = true, vulnerability-management = true }
 when = { platform = "github" }
 
-# ExecPass: Check if security advisories are supported (requires Issues enabled)
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-VM-04.01"
 location_hint = "SECURITY.md"
 help_md = """Publish vulnerability information.
@@ -2889,14 +2991,29 @@ help_md = """Publish vulnerability information.
 3. Include security fixes in changelogs
 """
 
+# The former has_issues check was replaced (feature 041): issues being
+# enabled does not show vulnerability data is published, and it concluded
+# PASS on the adversarial corpus where the requirement is unmet. A
+# published security advisory does show it. PASS only: none published may
+# mean none were discovered, or they are published elsewhere.
 [[controls."OSPS-VM-04.01".passes]]
-handler = "exec"
-command = ["gh", "api", "/repos/$OWNER/$REPO", "--jq", ".has_issues"]
-pass_exit_codes = [0]
-fail_exit_codes = [1]
-output_format = "text"
-expr = 'output.stdout.startsWith("true")'
-timeout = 30
+handler = "gh_api"
+endpoint = "/repos/$OWNER/$REPO/security-advisories?state=published&per_page=1"
+expr = 'size(response.body) > 0'
+concludes = ["pass"]
+
+[[controls."OSPS-VM-04.01".passes]]
+handler = "llm_eval"
+prompt = """Evaluate whether this documentation shows that the project publicly publishes data about discovered vulnerabilities:
+1. Does it say where vulnerability information is published (security advisories, a changelog security section, a CVE list)?
+2. Is that location public?
+Enabling an issue tracker, or a promise to fix issues, without published vulnerability data MUST fail."""
+files_to_include = ["SECURITY.md", ".github/SECURITY.md", "docs/SECURITY.md", "README.md", "CHANGELOG.md"]
+confidence_threshold = 0.7
+analysis_hints = [
+    "Look for links to published advisories or a documented advisory process",
+    "TODO placeholders do not count as real content",
+]
 
 [[controls."OSPS-VM-04.01".passes]]
 handler = "manual"
@@ -3011,7 +3128,6 @@ description = "Clearly associate all release assets with release identifiers"
 tags = { level = 3, domain = "BR", build = true, releases = true }
 when = { platform = "github" }
 
-# ExecPass: Check that releases have assets associated with tags
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-BR-02.02"
 help_md = """Ensure release assets are properly versioned.
 
@@ -3028,16 +3144,15 @@ help_md = """Ensure release assets are properly versioned.
 # control could never PASS on any repo. The right shape uses the underlying
 # REST endpoint, which DOES return per-release `assets` on each item.
 [[controls."OSPS-BR-02.02".passes]]
-handler = "exec"
-command = ["gh", "api", "/repos/$OWNER/$REPO/releases?per_page=5"]
-pass_exit_codes = [0]
-output_format = "json"
+handler = "gh_api"
+endpoint = "/repos/$OWNER/$REPO/releases?per_page=5"
 # Each release in the response array has an `assets` array (objects with
 # name, browser_download_url, …). The control's intent is "release assets
 # are clearly associated with release IDs" — satisfied when at least one
-# release has ≥1 asset listed beneath its tag.
-expr = 'output.json.exists(r, size(r.assets) > 0)'
-timeout = 30
+# release has at least one asset listed beneath its tag. PASS only: no
+# assets on GitHub does not show assets elsewhere are unassociated.
+expr = 'response.body.exists(r, size(r.assets) > 0)'
+concludes = ["pass"]
 
 [[controls."OSPS-BR-02.02".passes]]
 handler = "manual"
@@ -3082,6 +3197,20 @@ files = ["SECURITY.md", "docs/security.md", "docs/SECRETS-POLICY.md", "CONTRIBUT
 
 [controls."OSPS-BR-07.02".passes.pattern.patterns]
 secrets_policy = "(secret|credential|token|key).*(management|policy|handling|rotation)"
+
+[[controls."OSPS-BR-07.02".passes]]
+handler = "llm_eval"
+prompt = """Evaluate whether this documentation defines a policy for managing the project's secrets and credentials:
+1. Does it say how secrets and credentials are stored?
+2. Does it say who may access them and how?
+3. Does it say how and when they are rotated or revoked?
+A passing mention of secrets, or advice to users about their own tokens, MUST fail."""
+files_to_include = ["$RESOLVED_FILES"]
+confidence_threshold = 0.7
+analysis_hints = [
+    "The policy is about secrets the project itself uses (CI tokens, signing keys, registry credentials)",
+    "TODO placeholders do not count as real content",
+]
 
 [[controls."OSPS-BR-07.02".passes]]
 handler = "manual"
@@ -3291,6 +3420,19 @@ files = ["README.md", "CONTRIBUTING.md", "docs/testing.md", "docs/TESTING.md"]
 test_docs = "(run.*test|test.*instruction|how to test)"
 
 [[controls."OSPS-QA-06.02".passes]]
+handler = "llm_eval"
+prompt = """Evaluate whether this documentation clearly documents when and how tests are run:
+1. Does it give the command or steps to run the tests?
+2. Does it say when tests run (locally before a pull request, in CI on each change, before release)?
+A heading about testing with no instructions MUST fail."""
+files_to_include = ["$RESOLVED_FILES"]
+confidence_threshold = 0.7
+analysis_hints = [
+    "Both how and when should be covered",
+    "TODO placeholders do not count as real content",
+]
+
+[[controls."OSPS-QA-06.02".passes]]
 handler = "manual"
 steps = [
     "Check README.md or CONTRIBUTING.md for test instructions",
@@ -3366,6 +3508,19 @@ files = ["CONTRIBUTING.md", "docs/TEST-REQUIREMENTS.md"]
 test_req = "(test.*required|must.*test|include.*test)"
 
 [[controls."OSPS-QA-06.03".passes]]
+handler = "llm_eval"
+prompt = """Evaluate whether this documentation includes a policy that major changes to the software should add or update tests in an automated test suite:
+1. Does it state that changes are expected to include new or updated tests?
+2. Does it apply to major or functional changes, not only to bug reports?
+Instructions for running tests without an expectation to add them MUST fail."""
+files_to_include = ["$RESOLVED_FILES", ".github/CONTRIBUTING.md", ".github/PULL_REQUEST_TEMPLATE.md"]
+confidence_threshold = 0.7
+analysis_hints = [
+    "A pull request checklist item requiring tests counts",
+    "TODO placeholders do not count as real content",
+]
+
+[[controls."OSPS-QA-06.03".passes]]
 handler = "manual"
 steps = [
     "Review CONTRIBUTING.md for test requirements",
@@ -3425,6 +3580,19 @@ files = ["SECURITY.md", ".github/SECURITY.md", "docs/VEX-POLICY.md"]
 vex_policy = "(vex|vulnerability.exploitability|exploitability.exchange)"
 
 [[controls."OSPS-VM-04.02".passes]]
+handler = "llm_eval"
+prompt = """Evaluate whether this documentation shows that vulnerabilities in the project's components that do not affect the project are accounted for in a VEX document:
+1. Does it say where VEX documents or statements are published?
+2. Does it describe when a not-affected status is recorded and with what justification?
+A mention of the word VEX without a publication location or process MUST fail."""
+files_to_include = ["$RESOLVED_FILES"]
+confidence_threshold = 0.7
+analysis_hints = [
+    "OpenVEX, CSAF VEX, or CycloneDX VEX documents all count",
+    "TODO placeholders do not count as real content",
+]
+
+[[controls."OSPS-VM-04.02".passes]]
 handler = "manual"
 steps = [
     "Verify SECURITY.md has a VEX policy section",
@@ -3478,6 +3646,19 @@ files = ["SECURITY.md", "docs/security.md", "docs/SCA-POLICY.md"]
 sca_policy = "(dependency|SCA|software composition|remediat)"
 
 [[controls."OSPS-VM-05.01".passes]]
+handler = "llm_eval"
+prompt = """Evaluate whether this documentation includes a policy that defines a threshold for remediating software composition analysis (SCA) findings about vulnerabilities and licenses:
+1. Does it define which findings must be remediated (for example by severity or license category)?
+2. Does it give a threshold or timeframe for remediation?
+A general statement that dependencies are kept up to date MUST fail."""
+files_to_include = ["$RESOLVED_FILES", "docs/dependency-policy.md"]
+confidence_threshold = 0.7
+analysis_hints = [
+    "Both vulnerability and license findings should be addressed",
+    "TODO placeholders do not count as real content",
+]
+
+[[controls."OSPS-VM-05.01".passes]]
 handler = "manual"
 steps = [
     "Check SECURITY.md for SCA remediation policy",
@@ -3520,21 +3701,29 @@ help_md = """Require SCA checks before release.
 3. Document release gating criteria
 """
 
-# GitHub App detection — Kusari Inspector provides SCA as a GitHub App,
-# so it won't appear in workflow files. Check the org installations API.
-[[controls."OSPS-VM-05.02".passes]]
-handler = "exec"
-command = ["gh", "api", "/orgs/$OWNER/installations", "--paginate", "--jq", ".installations[].app_slug"]
-pass_exit_codes = [0]
-expr = 'output.stdout.contains("kusari-inspector") || output.stdout.contains("snyk") || output.stdout.contains("socket-security")'
-timeout = 15
-
+# The former org app-installation check was removed (feature 041): an SCA
+# app being installed does not show a documented policy to address SCA
+# violations before release, which is what the requirement asks for. The
+# workflow scan below is evidence only.
 [[controls."OSPS-VM-05.02".passes]]
 handler = "pattern"
 files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
 
 [controls."OSPS-VM-05.02".passes.pattern.patterns]
 sca_tool = "(dependency-review-action|kusari|trivy|snyk|dependabot)"
+
+[[controls."OSPS-VM-05.02".passes]]
+handler = "llm_eval"
+prompt = """Evaluate whether this documentation includes a policy to address SCA (software composition analysis) violations before any release:
+1. Does it require that dependency vulnerability or license violations are resolved or explicitly accepted before a release?
+2. Is it stated as a policy, not only as the presence of a scanning tool?
+A description of a scanning tool without a pre-release requirement MUST fail."""
+files_to_include = ["SECURITY.md", "docs/security.md", "docs/SCA-POLICY.md", "CONTRIBUTING.md", "RELEASE.md"]
+confidence_threshold = 0.7
+analysis_hints = [
+    "A release checklist item requiring a clean dependency scan counts",
+    "TODO placeholders do not count as real content",
+]
 
 [[controls."OSPS-VM-05.02".passes]]
 handler = "manual"
@@ -3684,6 +3873,19 @@ files = ["SECURITY.md", "docs/SAST-POLICY.md"]
 sast_policy = "(SAST|static analysis|code scan|remediat)"
 
 [[controls."OSPS-VM-06.01".passes]]
+handler = "llm_eval"
+prompt = """Evaluate whether this documentation includes a policy that defines a threshold for remediating static analysis (SAST) findings:
+1. Does it define which SAST findings must be remediated (for example by severity)?
+2. Does it give a threshold or timeframe for remediation?
+A mention that static analysis runs, without a remediation threshold, MUST fail."""
+files_to_include = ["$RESOLVED_FILES", "docs/security.md"]
+confidence_threshold = 0.7
+analysis_hints = [
+    "Look for severity levels paired with required actions or deadlines",
+    "TODO placeholders do not count as real content",
+]
+
+[[controls."OSPS-VM-06.01".passes]]
 handler = "manual"
 steps = [
     "Check SECURITY.md for SAST remediation policy",
@@ -3726,15 +3928,9 @@ help_md = """Enable automated SAST in CI.
 3. Block PRs on high severity findings
 """
 
-# GitHub App detection — Kusari Inspector provides SAST as a GitHub App,
-# so it won't appear in workflow files. Check the org installations API.
-[[controls."OSPS-VM-06.02".passes]]
-handler = "exec"
-command = ["gh", "api", "/orgs/$OWNER/installations", "--paginate", "--jq", ".installations[].app_slug"]
-pass_exit_codes = [0]
-expr = 'output.stdout.contains("kusari-inspector") || output.stdout.contains("sonarcloud")'
-timeout = 15
-
+# The former org app-installation check was removed (feature 041): a SAST
+# app being installed does not show every change is evaluated and blocked
+# on violations. The workflow scan below is evidence only.
 [[controls."OSPS-VM-06.02".passes]]
 handler = "pattern"
 files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
@@ -3823,6 +4019,20 @@ handler = "regex"
 file = "$FOUND_FILE"
 pattern = '(?i)(support|help|issue|question)'
 min_matches = 1
+
+[[controls."OSPS-DO-03.01".passes]]
+handler = "llm_eval"
+prompt = """Evaluate whether this documentation contains instructions to verify the integrity and authenticity of the project's release assets:
+1. Does it explain how to check a checksum, signature, or attestation for a downloaded release asset?
+2. Does it name the tool or command to use and where the expected hash, key, or identity is published?
+A statement that releases are signed without verification instructions MUST fail."""
+files_to_include = ["README.md", "SECURITY.md", "docs/releases.md", "docs/RELEASE-VERIFICATION.md", "$FOUND_FILE"]
+confidence_threshold = 0.7
+analysis_hints = [
+    "Look for commands such as sha256sum -c, gpg --verify, cosign verify-blob, gh attestation verify",
+    "General support or help text does not satisfy this requirement",
+    "TODO placeholders do not count as real content",
+]
 
 [[controls."OSPS-DO-03.01".passes]]
 handler = "manual"
@@ -4068,6 +4278,20 @@ codeowners_assignment = '^\S+\s+@\S+'
 review_policy = '(?si)(review|collaborator|maintainer).{0,60}(policy|process|requirement|must|shall)'
 
 [[controls."OSPS-GV-04.01".passes]]
+handler = "llm_eval"
+prompt = """Evaluate whether this documentation has a policy that code collaborators are reviewed before they are granted escalated permissions to sensitive resources:
+1. Does it describe how someone becomes a maintainer or gains write/admin access?
+2. Does it require a review, vote, or approval of the person before that access is granted?
+A CODEOWNERS file on its own assigns code review of changes, not review of collaborators, and MUST NOT be treated as this policy."""
+files_to_include = ["GOVERNANCE.md", "CONTRIBUTING.md", "MAINTAINERS.md", "SECURITY.md", "$RESOLVED_FILES"]
+confidence_threshold = 0.7
+analysis_hints = [
+    "Look for a maintainer or committer promotion process",
+    "Code review of pull requests is a different requirement",
+    "TODO placeholders do not count as real content",
+]
+
+[[controls."OSPS-GV-04.01".passes]]
 handler = "manual"
 steps = [
     "Check GOVERNANCE.md or CONTRIBUTING.md for review policy",
@@ -4267,19 +4491,32 @@ help_md = """Perform and document security assessment.
 """
 
 [[controls."OSPS-SA-03.01".passes]]
+handler = "pattern"
+files = ["SECURITY.md", "docs/security.md", "CONTRIBUTING.md", "docs/SECURITY-ASSESSMENT.md"]
+
+[controls."OSPS-SA-03.01".passes.pattern.patterns]
+security_assessment = "(security.*(assessment|review|audit)|pre-release.*security)"
+
+[[controls."OSPS-SA-03.01".passes]]
+handler = "llm_eval"
+prompt = """Evaluate whether this documentation shows the project performs a security assessment to understand the most likely and impactful potential security problems in the software:
+1. Is there an assessment, or a documented process that produces one, before releases?
+2. Does it identify concrete potential security problems, not only state that security matters?
+A statement of intent without an assessment or process MUST fail."""
+files_to_include = ["$RESOLVED_FILES", "docs/threatmodel/SUMMARY.md"]
+confidence_threshold = 0.7
+analysis_hints = [
+    "A threat model or security review document counts as an assessment",
+    "TODO placeholders do not count as real content",
+]
+
+[[controls."OSPS-SA-03.01".passes]]
 handler = "manual"
 steps = [
     "Verify that security assessments are performed before major releases",
     "Check for evidence of security review process (checklists, sign-offs, etc.)",
     "Confirm that security findings are addressed before release",
 ]
-
-[[controls."OSPS-SA-03.01".passes]]
-handler = "pattern"
-files = ["SECURITY.md", "docs/security.md", "CONTRIBUTING.md", "docs/SECURITY-ASSESSMENT.md"]
-
-[controls."OSPS-SA-03.01".passes.pattern.patterns]
-security_assessment = "(security.*(assessment|review|audit)|pre-release.*security)"
 
 [controls."OSPS-SA-03.01".remediation]
 safe = true

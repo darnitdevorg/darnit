@@ -22,7 +22,7 @@ tests/darnit_baseline/corpus/
 |-- runner.py               # loads fixtures, runs the sieve, measures steps
 |-- test_corpus.py          # the gate for openssf-baseline
 |-- test_runner.py          # runner self-tests on a synthetic framework
-|-- known_false_pass.toml   # false PASS results tolerated until US5 removes them
+|-- known_false_pass.toml   # tolerated false PASS results (empty since US5)
 `-- <fixture>/
     |-- labels.toml         # expected outcomes and platform recordings (required)
     `-- <repository files>  # the fixture's file tree, as a plain directory
@@ -132,6 +132,7 @@ directories point into the scratch directory.
 
 A run fails if any step allowed to conclude PASS produces a false PASS,
 naming the framework, control, step, and fixture. `known_false_pass.toml`
-lists the false PASS results the shipped Baseline TOML produces today, each
-with the task that removes it. An entry that no longer occurs also fails the
-gate, so the list only shrinks; User Story 5 empties it.
+lists tolerated false PASS results, each with the task that removes it. An
+entry that no longer occurs also fails the gate, so the list only shrinks.
+User Story 5 emptied it, and `tests/darnit_baseline/test_baseline_authority.py`
+keeps it empty for `openssf-baseline` (SC-001).

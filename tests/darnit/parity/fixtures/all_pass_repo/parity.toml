@@ -2,7 +2,10 @@
 category = "all_pass"
 has_pending_llm = false
 strict = false
-control_ids = ["OSPS-DO-01.01", "OSPS-LE-03.01"]
+# Feature 041: OSPS-DO-01.01 is a content control and no longer concludes
+# PASS from README presence (it waits for a model judgment), so the
+# all-pass subset uses two existence controls instead.
+control_ids = ["OSPS-LE-03.01", "OSPS-QA-05.01"]
 
 [expected.counts]
 pass = 2

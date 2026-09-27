@@ -1,36 +1,20 @@
-# False PASS results the shipped Baseline TOML produces on this corpus today.
+# False PASS results the shipped Baseline TOML produces on this corpus.
 #
 # The corpus gate (test_corpus.py) fails on any false PASS by a step allowed
 # to conclude PASS, except the entries listed here. An entry that no longer
 # occurs also fails the gate, so this list can only shrink. User Story 5
-# (Baseline re-declaration, T045-T047) must empty it; SC-001 requires zero.
+# (Baseline re-declaration, T045-T047) emptied it; SC-001 requires it to
+# stay empty for openssf-baseline (tests/darnit_baseline/test_baseline_authority.py).
 #
 # Each entry names the framework, fixture, control, step index (the
 # control's pass index; omit for inferred_from), the concluding handler, the
-# task that removes it, and why the PASS is false.
-
-[[known]]
-framework = "openssf-baseline"
-fixture = "platform-no-protection"
-control = "OSPS-AC-02.01"
-step = 0
-handler = "exec"
-task = "T046"
-why = """exec + gh api + CEL concludes PASS on allow_forking == true. AC-02.01 \
-requires least-privilege defaults for new collaborators, which allow_forking \
-does not measure; moving the step to gh_api keeps the false PASS unless the \
-step is also narrowed to concludes = ["fail"] or replaced by a check of the \
-actual requirement."""
-
-[[known]]
-framework = "openssf-baseline"
-fixture = "platform-no-protection"
-control = "OSPS-VM-04.01"
-step = 0
-handler = "exec"
-task = "T046"
-why = """exec + gh api --jq .has_issues concludes PASS when issues are enabled. \
-VM-04.01 requires publishing data about discovered vulnerabilities, which \
-has_issues does not measure; moving the step to gh_api keeps the false PASS \
-unless the step is also narrowed to concludes = ["fail"] or replaced by a \
-check of the actual requirement."""
+# task that removes it, and why the PASS is false:
+#
+# [[known]]
+# framework = "openssf-baseline"
+# fixture = "<fixture directory>"
+# control = "OSPS-XX-00.00"
+# step = 0
+# handler = "<handler>"
+# task = "<task id>"
+# why = "<why the PASS is false>"

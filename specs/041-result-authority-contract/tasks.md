@@ -150,15 +150,15 @@
 
 ### Tests for User Story 5
 
-- [ ] T044 [P] [US5] Write a test that every Baseline control's steps load under the new validation and that the corpus reports zero false PASS for `openssf-baseline`, in `tests/darnit_baseline/test_baseline_authority.py`
+- [X] T044 [P] [US5] Write a test that every Baseline control's steps load under the new validation and that the corpus reports zero false PASS for `openssf-baseline`, in `tests/darnit_baseline/test_baseline_authority.py`
 
 ### Implementation for User Story 5
 
-- [ ] T045 [US5] Re-declare presence and pattern steps in `packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml`: `existence = true` only for LE-03.01, QA-02.01, QA-05.01, QA-05.02; all others FAIL-only; add `fail_on_miss` only where a miss genuinely proves failure
-- [ ] T046 [US5] Move platform checks written as `exec` + `gh api` + CEL to the `gh_api` handler with `fail_on_status` where a status proves failure, in `packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml`
-- [ ] T047 [US5] Ensure every content control ends with an `llm_eval` step (PASS candidate) before `manual`, in `packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml`
-- [ ] T048 [US5] Regenerate goldens that pin old results (error-class baseline in `tests/darnit/sieve/`, CLI e2e expectations in `tests/darnit/cli/`, parity expectations in `tests/darnit/parity/fixtures/`) and explain each class of change in the commit message
-- [ ] T049 [US5] Audit this repository and one other real repository before and after; record the categorized differences (SC-006) in `specs/041-result-authority-contract/quickstart.md` under a "Validation log" section
+- [X] T045 [US5] Re-declare presence and pattern steps in `packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml`: `existence = true` only for LE-03.01, QA-02.01, QA-05.01, QA-05.02; all others FAIL-only; add `fail_on_miss` only where a miss genuinely proves failure
+- [X] T046 [US5] Move platform checks written as `exec` + `gh api` + CEL to the `gh_api` handler with `fail_on_status` where a status proves failure, in `packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml`
+- [X] T047 [US5] Ensure every content control ends with an `llm_eval` step (PASS candidate) before `manual`, in `packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml`
+- [X] T048 [US5] Regenerate goldens that pin old results (error-class baseline in `tests/darnit/sieve/`, CLI e2e expectations in `tests/darnit/cli/`, parity expectations in `tests/darnit/parity/fixtures/`) and explain each class of change in the commit message
+- [X] T049 [US5] Audit this repository and one other real repository before and after; record the categorized differences (SC-006) in `specs/041-result-authority-contract/quickstart.md` under a "Validation log" section
 
 **Checkpoint**: Baseline follows the contract.
 
