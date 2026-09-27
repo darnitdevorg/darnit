@@ -116,7 +116,7 @@ class TestHandlerRegistry:
 
         registry.register(
             "test_handler", "deterministic", handler_fn, "A test handler",
-            default_authority="dispositive",
+            ceiling={"pass", "fail"},
         )
 
         info = registry.get("test_handler")
@@ -137,7 +137,7 @@ class TestHandlerRegistry:
         registry = SieveHandlerRegistry()
         registry.register(
             "file_check", "deterministic", _make_handler(HandlerResultStatus.PASS),
-            default_authority="dispositive",
+            ceiling={"pass", "fail"},
         )
         # Should log a warning but not raise
         registry.validate_phase("file_check", "pattern")
@@ -148,12 +148,12 @@ class TestHandlerRegistry:
         registry = SieveHandlerRegistry()
         registry.register(
             "h1", "deterministic", _make_handler(HandlerResultStatus.PASS),
-            default_authority="dispositive",
+            ceiling={"pass", "fail"},
         )
         # Re-register without plugin context — should log warning
         registry.register(
             "h1", "deterministic", _make_handler(HandlerResultStatus.FAIL),
-            default_authority="dispositive",
+            ceiling={"pass", "fail"},
         )
         # Latest registration wins
         info = registry.get("h1")
@@ -166,13 +166,13 @@ class TestHandlerRegistry:
         registry = SieveHandlerRegistry()
         registry.register(
             "file_exists", "deterministic", _make_handler(HandlerResultStatus.PASS),
-            default_authority="dispositive",
+            ceiling={"pass", "fail"},
         )
 
         registry.set_plugin_context("my-plugin")
         registry.register(
             "file_exists", "deterministic", _make_handler(HandlerResultStatus.FAIL),
-            default_authority="dispositive",
+            ceiling={"pass", "fail"},
         )
         registry.set_plugin_context(None)
 
@@ -185,15 +185,15 @@ class TestHandlerRegistry:
         registry = SieveHandlerRegistry()
         registry.register(
             "h1", "deterministic", _make_handler(HandlerResultStatus.PASS),
-            default_authority="dispositive",
+            ceiling={"pass", "fail"},
         )
         registry.register(
             "h2", "pattern", _make_handler(HandlerResultStatus.PASS),
-            default_authority="dispositive",
+            ceiling={"pass", "fail"},
         )
         registry.register(
             "h3", "deterministic", _make_handler(HandlerResultStatus.PASS),
-            default_authority="dispositive",
+            ceiling={"pass", "fail"},
         )
 
         det = registry.list_handlers(phase="deterministic")
@@ -207,12 +207,12 @@ class TestHandlerRegistry:
         registry = SieveHandlerRegistry()
         registry.register(
             "core_h", "deterministic", _make_handler(HandlerResultStatus.PASS),
-            default_authority="dispositive",
+            ceiling={"pass", "fail"},
         )
         registry.set_plugin_context("baseline")
         registry.register(
             "plugin_h", "pattern", _make_handler(HandlerResultStatus.PASS),
-            default_authority="dispositive",
+            ceiling={"pass", "fail"},
         )
         registry.set_plugin_context(None)
 
@@ -231,7 +231,7 @@ class TestHandlerRegistry:
         registry = SieveHandlerRegistry()
         registry.register(
             "h1", "deterministic", _make_handler(HandlerResultStatus.PASS),
-            default_authority="dispositive",
+            ceiling={"pass", "fail"},
         )
         assert registry.get("h1") is not None
 
@@ -516,6 +516,7 @@ class TestInferredFrom:
             status="PASS",
             message="Source passed",
             level=1,
+            authority="dispositive",
         )
 
         control = _make_control("T-01", inferred_from="SRC-01")
@@ -523,6 +524,22 @@ class TestInferredFrom:
         assert result is not None
         assert result.status == "PASS"
         assert "Inferred from SRC-01" in result.message
+        assert result.concluded_by == "inferred_from"
+        assert result.authority == "dispositive"
+
+    @pytest.mark.unit
+    def test_inferred_runs_normally_when_source_pass_was_not_concluded(self):
+        """Feature 041: a PASS without concluding authority is not inherited."""
+        orchestrator = SieveOrchestrator()
+        orchestrator._dependency_results["SRC-01"] = SieveResult(
+            control_id="SRC-01",
+            status="PASS",
+            message="Source passed",
+            level=1,
+        )
+
+        control = _make_control("T-01", inferred_from="SRC-01")
+        assert orchestrator._check_inferred_from(control) is None
 
     @pytest.mark.unit
     def test_inferred_runs_normally_when_source_fails(self):
@@ -581,14 +598,13 @@ class TestSharedHandlerCache:
                 evidence={"found": True},
             )
 
-        # Register with default_authority="dispositive" so counting_handler's
-        # PASS can conclude the control under RFC-0001 Stage 1's authority
-        # rule (feature 025). Without this, the default "suggestive" would
-        # downgrade to WARN and the shared-cache test would fail for reasons
+        # Register with ceiling={"pass", "fail"} so counting_handler's
+        # PASS can conclude the control (feature 041). Without this, the
+        # default empty ceiling would downgrade to WARN and the shared-cache test would fail for reasons
         # unrelated to caching behavior.
         registry.register(
             "shared_check", "deterministic", counting_handler,
-            default_authority="dispositive",
+            ceiling={"pass", "fail"},
         )
 
         orchestrator = SieveOrchestrator()
@@ -623,7 +639,7 @@ class TestSharedHandlerCache:
 
         registry.register(
             "shared_check", "deterministic", counting_handler,
-            default_authority="dispositive",
+            ceiling={"pass", "fail"},
         )
 
         orchestrator = SieveOrchestrator()
@@ -658,7 +674,7 @@ class TestSharedHandlerCache:
 
         registry.register(
             "h", "deterministic", counting_handler,
-            default_authority="dispositive",
+            ceiling={"pass", "fail"},
         )
 
         orchestrator = SieveOrchestrator()
@@ -687,7 +703,7 @@ class TestSharedHandlerCache:
             "failing_handler",
             "deterministic",
             _make_handler(HandlerResultStatus.ERROR, "API error"),
-            default_authority="dispositive",
+            ceiling={"pass", "fail"},
         )
 
         orchestrator = SieveOrchestrator()
@@ -922,7 +938,7 @@ class TestNAReportSection:
                 "evidence": {"when": {"has_releases": True}},
             },
         ]
-        summary = {"PASS": 0, "FAIL": 0, "WARN": 0, "N/A": 1, "ERROR": 0, "PENDING_LLM": 0, "total": 1}
+        summary = {"PASS": 0, "FAIL": 0, "WARN": 0, "N/A": 1, "ERROR": 0, "PENDING": 0, "total": 1}
         compliance = {1: True, 2: True}
 
         md = format_results_markdown("org", "repo", results, summary, compliance, 2)
@@ -942,7 +958,7 @@ class TestNAReportSection:
                 "level": 1,
             },
         ]
-        summary = {"PASS": 0, "FAIL": 0, "WARN": 0, "N/A": 1, "ERROR": 0, "PENDING_LLM": 0, "total": 1}
+        summary = {"PASS": 0, "FAIL": 0, "WARN": 0, "N/A": 1, "ERROR": 0, "PENDING": 0, "total": 1}
         compliance = {1: True}
 
         md = format_results_markdown("org", "repo", results, summary, compliance, 1)
@@ -964,7 +980,7 @@ class TestNAReportSection:
                 "evidence": {"when": {"has_releases": True}},
             },
         ]
-        summary = {"PASS": 1, "FAIL": 1, "WARN": 0, "N/A": 1, "ERROR": 0, "PENDING_LLM": 0, "total": 3}
+        summary = {"PASS": 1, "FAIL": 1, "WARN": 0, "N/A": 1, "ERROR": 0, "PENDING": 0, "total": 3}
         compliance = {1: False}
 
         md = format_results_markdown("org", "repo", results, summary, compliance, 1)
@@ -989,21 +1005,20 @@ class TestEndToEndIntegration:
 
         registry = get_sieve_handler_registry()
 
-        # Register test handlers with default_authority="dispositive" so
-        # their PASS/FAIL outcomes conclude the control under RFC-0001
-        # Stage 1's authority rule (feature 025). Without this the default
-        # "suggestive" would downgrade to WARN.
+        # Register test handlers with ceiling={"pass", "fail"} so
+        # their PASS/FAIL outcomes conclude the control (feature 041).
+        # Without this the default empty ceiling would downgrade to WARN.
         registry.register(
             "always_pass",
             "deterministic",
             _make_handler(HandlerResultStatus.PASS, "Always passes", {"found": True}),
-            default_authority="dispositive",
+            ceiling={"pass", "fail"},
         )
         registry.register(
             "always_fail",
             "deterministic",
             _make_handler(HandlerResultStatus.FAIL, "Always fails"),
-            default_authority="dispositive",
+            ceiling={"pass", "fail"},
         )
 
         orchestrator = SieveOrchestrator()
@@ -1078,7 +1093,7 @@ class TestEndToEndIntegration:
                 "level": 1,
             },
         ]
-        summary = {"PASS": 2, "FAIL": 0, "WARN": 0, "N/A": 0, "ERROR": 0, "PENDING_LLM": 0, "total": 2}
+        summary = {"PASS": 2, "FAIL": 0, "WARN": 0, "N/A": 0, "ERROR": 0, "PENDING": 0, "total": 2}
         compliance = {1: True}
 
         md = format_results_markdown("org", "repo", results, summary, compliance, 1)

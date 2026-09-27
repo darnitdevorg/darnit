@@ -90,8 +90,16 @@ class LLMConsultationResponse:
 
 # The six string labels used across the sieve orchestrator, tools/audit.py, and
 # the JSON/MCP/SARIF wire formats. "N/A" (with slash) is the excluded-control
-# label emitted by tools/audit.py:495.
-CheckStatus = Literal["PASS", "FAIL", "WARN", "N/A", "ERROR", "PENDING_LLM"]
+# label emitted by tools/audit.py:495. Feature 041: PENDING replaces
+# PENDING_LLM and always carries ``pending.kind``.
+CheckStatus = Literal["PASS", "FAIL", "WARN", "N/A", "ERROR", "PENDING"]
+
+CHECK_STATUSES: frozenset[str] = frozenset(("PASS", "FAIL", "WARN", "N/A", "ERROR", "PENDING"))
+
+# What a PENDING result is waiting for: a model judgment, or an operator
+# confirmation of a PASS candidate.
+PendingKind = Literal["llm_judgment", "confirmation"]
+PENDING_KINDS: frozenset[str] = frozenset(("llm_judgment", "confirmation"))
 
 
 class PassHistoryResult(TypedDict):
@@ -161,6 +169,16 @@ class CheckResult(TypedDict):
     # may carry a value this version's Literal does not know.
     error_class: NotRequired[str]
 
+    # Feature 041. What concluded the result (a step handler name,
+    # "llm_judgment", "confirmation", "inferred_from", or "none"); the ERROR
+    # cause; what a PENDING result awaits; the PASS candidate awaiting
+    # confirmation; and the confirmation behind an asserted PASS.
+    concluded_by: NotRequired[str]
+    error: NotRequired[dict[str, str]]
+    pending: NotRequired[dict[str, str]]
+    candidate: NotRequired[dict[str, Any]]
+    confirmation: NotRequired[dict[str, Any]]
+
     # Attached post-hoc at tools/audit.py:530.
     when: NotRequired[str]
 
@@ -170,7 +188,7 @@ class SieveResult:
     """Complete result from sieve verification."""
 
     control_id: str
-    status: CheckStatus  # PASS, FAIL, WARN, N/A, ERROR, PENDING_LLM
+    status: CheckStatus  # PASS, FAIL, WARN, N/A, ERROR, PENDING
     message: str
     level: int
 
@@ -198,6 +216,35 @@ class SieveResult:
     # supersedes an earlier environmental failure. The per-pass trail
     # already lives in `pass_history`.
     error_class: str | None = None
+
+    # Feature 041 (data-model.md "Result").
+    concluded_by: str | None = None
+    error: dict[str, str] | None = None
+    pending: dict[str, str] | None = None
+    candidate: dict[str, Any] | None = None
+    confirmation: dict[str, Any] | None = None
+
+    def __post_init__(self) -> None:
+        """Enforce the feature 041 result invariants.
+
+        ERROR always carries ``error {class, cause}`` (derived from
+        ``error_class`` and the message when not given). PENDING always
+        carries a known ``pending.kind``, and a PASS candidate awaiting
+        confirmation always carries its ``candidate`` block.
+        """
+        if self.status not in CHECK_STATUSES:
+            raise ValueError(f"status={self.status!r} is not one of {sorted(CHECK_STATUSES)}")
+        if self.status == "ERROR":
+            if self.error is None:
+                self.error = {"class": self.error_class or "evaluation", "cause": self.message}
+            elif not self.error.get("class") or not self.error.get("cause"):
+                raise ValueError("an ERROR result's error block needs both 'class' and 'cause'")
+        if self.status == "PENDING":
+            kind = (self.pending or {}).get("kind")
+            if kind not in PENDING_KINDS:
+                raise ValueError(f"a PENDING result needs pending.kind in {sorted(PENDING_KINDS)}, got {kind!r}")
+            if kind == "confirmation" and not self.candidate:
+                raise ValueError("a PENDING result awaiting confirmation needs its candidate block")
 
     def to_legacy_dict(self) -> CheckResult:
         """Convert to legacy result format for backward compatibility.
@@ -229,6 +276,16 @@ class SieveResult:
             result["authority"] = self.authority
         if self.error_class is not None:
             result["error_class"] = self.error_class
+        if self.concluded_by is not None:
+            result["concluded_by"] = self.concluded_by
+        if self.error is not None:
+            result["error"] = dict(self.error)
+        if self.pending is not None:
+            result["pending"] = dict(self.pending)
+        if self.candidate is not None:
+            result["candidate"] = dict(self.candidate)
+        if self.confirmation is not None:
+            result["confirmation"] = dict(self.confirmation)
         if self.pass_history:
             result["pass_history"] = [
                 {

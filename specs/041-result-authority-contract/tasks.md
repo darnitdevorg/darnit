@@ -24,8 +24,8 @@
 ## Phase 1: Setup (Shared Infrastructure)
 
 - [X] T001 In a separate change based on main (not this branch), narrow the parity guard so it applies only to changes to the parity harness (tier1/tier2 code), not to fixture and expectation updates under `tests/darnit/parity/fixtures/`, in `tests/darnit/parity/tier1/test_no_product_changes.py` (research R8); rebase this branch on it once merged (opened as #509)
-- [ ] T002 Update `docs/architecture/framework-design.md` first: step ceilings and declarations (`concludes`, `existence`, `fail_on_miss`, `fail_on_status`, `promotion`), the `gh_api` handler, the result statuses (PENDING replaces PENDING_LLM; ERROR with cause), PASS candidates and confirmation, and the corpus gate; add `gh_api` to the handler-name registry so `scripts/validate_sync.py` passes
-- [ ] T003 [P] Create the corpus skeleton `tests/darnit_baseline/corpus/README.md` (fixture layout and `labels.toml` format per data-model.md) and an empty `tests/darnit_baseline/corpus/__init__.py`
+- [X] T002 Update `docs/architecture/framework-design.md` first: step ceilings and declarations (`concludes`, `existence`, `fail_on_miss`, `fail_on_status`, `promotion`), the `gh_api` handler, the result statuses (PENDING replaces PENDING_LLM; ERROR with cause), PASS candidates and confirmation, and the corpus gate; add `gh_api` to the handler-name registry so `scripts/validate_sync.py` passes
+- [X] T003 [P] Create the corpus skeleton `tests/darnit_baseline/corpus/README.md` (fixture layout and `labels.toml` format per data-model.md) and an empty `tests/darnit_baseline/corpus/__init__.py`
 
 ---
 
@@ -33,14 +33,14 @@
 
 **CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T004 [P] Write result-model tests (statuses PASS, FAIL, WARN, N/A, ERROR, PENDING; ERROR requires `error {class, cause}`; PENDING requires `pending.kind`; PENDING_LLM no longer produced) in `tests/darnit/sieve/test_result_model.py`
-- [ ] T005 [P] Write ceiling and declaration tests (registry ceilings per data-model.md; effective set = ceiling narrowed by `concludes`, widened only by `promotion`; `existence` only on presence/pattern; `fail_on_miss` requires fail; `fail_on_status` only on `gh_api`; load-time errors name framework, control, step index, outcome) in `tests/darnit/sieve/test_step_ceilings.py`
-- [ ] T006 [P] Write a test that authority validation runs on every control-loading path, including `load_controls_from_framework` used by the MCP audit path, in `tests/darnit/config/test_authority_validation_paths.py`
-- [ ] T007 Replace `PENDING_LLM` with `PENDING` plus `pending.kind`, and add `error`, `pending`, `candidate`, `confirmation`, and `concluded_by` fields to results in `packages/darnit/src/darnit/sieve/models.py`; update every in-repo consumer (CLI, harness report, formatters, `tools/audit.py`) in the same change
-- [ ] T008 Replace scalar `default_authority` with a ceiling set and optional `existence_ceiling` in `packages/darnit/src/darnit/sieve/handler_registry.py`; register ceilings for built-ins in `packages/darnit/src/darnit/sieve/builtin_handlers.py` per data-model.md (plugin handlers without a ceiling default to `{}`)
-- [ ] T009 Add step fields `concludes`, `existence`, `fail_on_miss`, `fail_on_status`, `promotion` to the pass/handler-invocation model in `packages/darnit/src/darnit/config/framework_schema.py`
-- [ ] T010 Consolidate authority validation into one function called from every control-loading path after plugin handlers register (including `load_controls_from_framework` in `packages/darnit/src/darnit/tools/audit.py` and `control_from_effective` in `packages/darnit/src/darnit/config/control_loader.py`)
-- [ ] T011 Change `resolve_step_result` and the effective-authority computation in `packages/darnit/src/darnit/sieve/orchestrator.py` to conclude only when the step's outcome is in its effective set; otherwise record the result as evidence and continue; route `inferred_from` through the same rule
+- [X] T004 [P] Write result-model tests (statuses PASS, FAIL, WARN, N/A, ERROR, PENDING; ERROR requires `error {class, cause}`; PENDING requires `pending.kind`; PENDING_LLM no longer produced) in `tests/darnit/sieve/test_result_model.py`
+- [X] T005 [P] Write ceiling and declaration tests (registry ceilings per data-model.md; effective set = ceiling narrowed by `concludes`, widened only by `promotion`; `existence` only on presence/pattern; `fail_on_miss` requires fail; `fail_on_status` only on `gh_api`; load-time errors name framework, control, step index, outcome) in `tests/darnit/sieve/test_step_ceilings.py`
+- [X] T006 [P] Write a test that authority validation runs on every control-loading path, including `load_controls_from_framework` used by the MCP audit path, in `tests/darnit/config/test_authority_validation_paths.py`
+- [X] T007 Replace `PENDING_LLM` with `PENDING` plus `pending.kind`, and add `error`, `pending`, `candidate`, `confirmation`, and `concluded_by` fields to results in `packages/darnit/src/darnit/sieve/models.py`; update every in-repo consumer (CLI, harness report, formatters, `tools/audit.py`) in the same change
+- [X] T008 Replace scalar `default_authority` with a ceiling set and optional `existence_ceiling` in `packages/darnit/src/darnit/sieve/handler_registry.py`; register ceilings for built-ins in `packages/darnit/src/darnit/sieve/builtin_handlers.py` per data-model.md (plugin handlers without a ceiling default to `{}`)
+- [X] T009 Add step fields `concludes`, `existence`, `fail_on_miss`, `fail_on_status`, `promotion` to the pass/handler-invocation model in `packages/darnit/src/darnit/config/framework_schema.py`
+- [X] T010 Consolidate authority validation into one function called from every control-loading path after plugin handlers register (including `load_controls_from_framework` in `packages/darnit/src/darnit/tools/audit.py` and `control_from_effective` in `packages/darnit/src/darnit/config/control_loader.py`)
+- [X] T011 Change `resolve_step_result` and the effective-authority computation in `packages/darnit/src/darnit/sieve/orchestrator.py` to conclude only when the step's outcome is in its effective set; otherwise record the result as evidence and continue; route `inferred_from` through the same rule
 
 **Checkpoint**: Foundation ready.
 
@@ -54,15 +54,15 @@
 
 ### Tests for User Story 1
 
-- [ ] T012 [P] [US1] Write tests: presence step on a content control with the file present does not conclude PASS; with the file missing concludes FAIL; with `existence = true` concludes PASS, in `tests/darnit/sieve/test_presence_authority.py`
-- [ ] T013 [P] [US1] Write tests: pattern match on a content control does not conclude PASS; a miss is INCONCLUSIVE unless `fail_on_miss = true`, in `tests/darnit/sieve/test_pattern_authority.py`
-- [ ] T014 [P] [US1] Write an end-to-end test auditing a placeholder-docs scratch repository (README "TODO", SECURITY.md denying a process, placeholder governance files) asserting no content control is PASS, in `tests/darnit_baseline/test_weak_evidence.py`
+- [X] T012 [P] [US1] Write tests: presence step on a content control with the file present does not conclude PASS; with the file missing concludes FAIL; with `existence = true` concludes PASS, in `tests/darnit/sieve/test_presence_authority.py`
+- [X] T013 [P] [US1] Write tests: pattern match on a content control does not conclude PASS; a miss is INCONCLUSIVE unless `fail_on_miss = true`, in `tests/darnit/sieve/test_pattern_authority.py`
+- [X] T014 [P] [US1] Write an end-to-end test auditing a placeholder-docs scratch repository (README "TODO", SECURITY.md denying a process, placeholder governance files) asserting no content control is PASS, in `tests/darnit_baseline/test_weak_evidence.py`
 
 ### Implementation for User Story 1
 
-- [ ] T015 [US1] Implement pattern-miss INCONCLUSIVE and `fail_on_miss` in the regex/pattern handler in `packages/darnit/src/darnit/sieve/builtin_handlers.py`
-- [ ] T016 [US1] Make `file_exists` honor `existence` via the registry's `existence_ceiling` (no handler logic change beyond reporting) in `packages/darnit/src/darnit/sieve/builtin_handlers.py`
-- [ ] T017 [US1] Update the existing handler/authority tests that encode per-handler dispositive behavior (`tests/darnit/sieve/test_authority_terminates.py`, `tests/darnit/sieve/test_handler_authority_regression.py`, `tests/darnit/sieve/test_builtin_handlers.py`) to the new rules, listing each changed assertion in the commit message
+- [X] T015 [US1] Implement pattern-miss INCONCLUSIVE and `fail_on_miss` in the regex/pattern handler in `packages/darnit/src/darnit/sieve/builtin_handlers.py`
+- [X] T016 [US1] Make `file_exists` honor `existence` via the registry's `existence_ceiling` (no handler logic change beyond reporting) in `packages/darnit/src/darnit/sieve/builtin_handlers.py`
+- [X] T017 [US1] Update the existing handler/authority tests that encode per-handler dispositive behavior (`tests/darnit/sieve/test_authority_terminates.py`, `tests/darnit/sieve/test_handler_authority_regression.py`, `tests/darnit/sieve/test_builtin_handlers.py`) to the new rules, listing each changed assertion in the commit message
 
 **Checkpoint**: Weak evidence cannot conclude PASS.
 

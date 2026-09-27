@@ -52,10 +52,8 @@ class TestLLMOnlyCannotConclude:
         registry = get_sieve_handler_registry()
 
         # Register a stand-in for llm_eval that returns PASS deterministically.
-        # It inherits the default_authority="suggestive" from the llm_eval
-        # registration if it uses that handler name; using a distinct name
-        # with the same suggestive default proves the RULE, not any specific
-        # handler's behavior.
+        # Using a distinct name with the same empty ceiling as llm_eval proves
+        # the RULE, not any specific handler's behavior.
         def fake_llm(config, context):
             return HandlerResult(
                 status=HandlerResultStatus.PASS,
@@ -68,7 +66,7 @@ class TestLLMOnlyCannotConclude:
             "fake_llm_for_sc001",
             "llm",
             fake_llm,
-            default_authority="suggestive",
+            ceiling=set(),
         )
 
         control = _make_control(
@@ -107,8 +105,8 @@ class TestLLMOnlyCannotConclude:
                 evidence={"file": "/path"},
             )
 
-        registry.register("fake_llm_2", "llm", fake_llm, default_authority="suggestive")
-        registry.register("fake_dispositive_2", "deterministic", fake_file_exists, default_authority="dispositive")
+        registry.register("fake_llm_2", "llm", fake_llm, ceiling=set())
+        registry.register("fake_dispositive_2", "deterministic", fake_file_exists, ceiling={"pass", "fail"})
 
         control = _make_control(
             "MIX-01",
@@ -151,8 +149,8 @@ class TestLLMOnlyCannotConclude:
                 confidence=0.95,
             )
 
-        registry.register("fake_exec_err", "deterministic", fake_exec, default_authority="dispositive")
-        registry.register("fake_llm_err_test", "llm", fake_llm, default_authority="suggestive")
+        registry.register("fake_exec_err", "deterministic", fake_exec, ceiling={"pass", "fail"})
+        registry.register("fake_llm_err_test", "llm", fake_llm, ceiling=set())
 
         control = _make_control(
             "ERR-01",
@@ -195,7 +193,7 @@ class TestPromptInjectionSafety:
             "injection_captured_llm",
             "llm",
             injection_captured_llm,
-            default_authority="suggestive",
+            ceiling=set(),
         )
 
         control = _make_control(

@@ -6,7 +6,7 @@ Every `llm_eval` pass in `openssf-baseline.toml` previously declared
 matched -- the `$FOUND_FILE` variable was never bound, so llm_eval
 fired with `file_contents = {}` and the LLM had nothing to reason
 about. In a 29-repo survey the LLM tier produced 9 non-answers, one
-per PENDING_LLM consultation.
+per PENDING consultation.
 
 Fix (issue #402 option 1, TOML-only): every `llm_eval` pass now
 enumerates real candidate paths so the handler's on-disk skip logic

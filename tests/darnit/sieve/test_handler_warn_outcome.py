@@ -55,6 +55,9 @@ def _ctx() -> CheckContext:
     )
 
 
+_CEILINGS = {"dispositive": {"pass", "fail"}, "suggestive": set()}
+
+
 def _register(name: str, authority: str, **result_kwargs) -> None:
     def handler(config, context):
         return HandlerResult(
@@ -63,29 +66,31 @@ def _register(name: str, authority: str, **result_kwargs) -> None:
             **result_kwargs,
         )
 
-    get_sieve_handler_registry().register(name, "deterministic", handler, default_authority=authority)
+    get_sieve_handler_registry().register(name, "deterministic", handler, ceiling=_CEILINGS[authority])
 
 
 class TestDispositionRule:
-    """Contract C-2. The WARN row of the table is the PASS/FAIL row."""
+    """Contract C-2, feature 041: a WARN concludes under the permission to conclude FAIL."""
 
     @pytest.mark.unit
-    @pytest.mark.parametrize("authority", ["dispositive", "asserted"])
-    def test_terminal_authority_concludes_warn(self, authority: str) -> None:
-        assert resolve_step_result(HandlerResultStatus.WARN, authority, False) is (StepDisposition.CONCLUDE_WARN)
+    @pytest.mark.parametrize("allowed", [{"pass", "fail"}, {"fail"}])
+    def test_step_that_may_conclude_fail_concludes_warn(self, allowed) -> None:
+        assert resolve_step_result(HandlerResultStatus.WARN, frozenset(allowed), False) is (
+            StepDisposition.CONCLUDE_WARN
+        )
 
     @pytest.mark.unit
-    @pytest.mark.parametrize("authority", ["suggestive", None])
-    def test_non_terminal_authority_continues(self, authority) -> None:
+    @pytest.mark.parametrize("allowed", [set(), {"pass"}])
+    def test_step_that_may_not_conclude_fail_continues(self, allowed) -> None:
         """An LLM must not be able to halt verification with a WARN any more
         than it can manufacture a PASS."""
-        assert resolve_step_result(HandlerResultStatus.WARN, authority, False) is (
+        assert resolve_step_result(HandlerResultStatus.WARN, frozenset(allowed), False) is (
             StepDisposition.ATTACH_EVIDENCE_AND_CONTINUE
         )
 
     @pytest.mark.unit
-    def test_non_terminal_warn_on_last_step_is_inconclusive(self) -> None:
-        assert resolve_step_result(HandlerResultStatus.WARN, "suggestive", True) is (
+    def test_non_concluding_warn_on_last_step_is_inconclusive(self) -> None:
+        assert resolve_step_result(HandlerResultStatus.WARN, frozenset(), True) is (
             StepDisposition.TERMINATE_INCONCLUSIVE
         )
 
@@ -93,7 +98,7 @@ class TestDispositionRule:
     def test_inconclusive_behaviour_is_unchanged(self) -> None:
         """Principle V: INCONCLUSIVE still continues. WARN did not displace it."""
         assert (
-            resolve_step_result(HandlerResultStatus.INCONCLUSIVE, "dispositive", False)
+            resolve_step_result(HandlerResultStatus.INCONCLUSIVE, frozenset({"pass", "fail"}), False)
             is StepDisposition.ATTACH_EVIDENCE_AND_CONTINUE
         )
 
@@ -119,7 +124,7 @@ class TestEndToEnd:
             return HandlerResult(status=HandlerResultStatus.PASS, message="file exists", confidence=1.0)
 
         get_sieve_handler_registry().register(
-            "pass_after_warn", "deterministic", passes, default_authority="dispositive"
+            "pass_after_warn", "deterministic", passes, ceiling={"pass", "fail"}
         )
         result = SieveOrchestrator().verify(
             _control(

@@ -1,18 +1,83 @@
 [
   {
-    "authority": "dispositive",
-    "confidence": 1.0,
-    "details": "Required file found: README.md",
+    "authority": "suggestive",
+    "concluded_by": "none",
+    "details": "LLM consultation required",
     "evidence": {
-      "files_checked": [
-        "README.md",
-        "README.rst",
-        "README.txt",
-        "README",
-        "readme.md"
-      ],
+      "any_match": false,
+      "files_checked": 1,
       "found_file": "<FIXTURE>/README.md",
-      "relative_path": "README.md"
+      "llm_consultation": {
+        "analysis_hints": [
+          "Check for project description beyond just the name",
+          "Look for install/setup instructions",
+          "Look for usage examples or code snippets",
+          "TODO placeholders do not count as real content"
+        ],
+        "confidence_threshold": 0.7,
+        "control_id": "OSPS-DO-01.01",
+        "file_contents": {
+          "README.md": "# mixed parity fixture\n\nHas a README (satisfies `OSPS-DO-01.01`) but intentionally omits the\nLICENSE file (fails `OSPS-LE-03.01`). Produces one PASS and one FAIL.\n"
+        },
+        "gathered_evidence": {
+          "any_match": false,
+          "files_checked": 1,
+          "found_file": "<FIXTURE>/README.md",
+          "patterns_checked": [
+            "heading_with_content",
+            "rst_heading_with_content"
+          ],
+          "relative_path": "README.md",
+          "resolved_files": [
+            "<FIXTURE>/README.md"
+          ],
+          "results": [
+            {
+              "file": "<FIXTURE>/README.md",
+              "match_count": 0,
+              "matched": false,
+              "matches_preview": [],
+              "pattern": "(?si)^#\\s+\\S.*\\n\\n.{200,}",
+              "pattern_name": "heading_with_content"
+            },
+            {
+              "file": "<FIXTURE>/README.md",
+              "match_count": 0,
+              "matched": false,
+              "matches_preview": [],
+              "pattern": "(?si)^[=\\-~]{3,}\\n.+\\n[=\\-~]{3,}\\n\\n.{200,}",
+              "pattern_name": "rst_heading_with_content"
+            }
+          ]
+        },
+        "prompt": "Evaluate whether this README adequately documents the project:\n1. Does it explain what the project does?\n2. Does it include installation or setup instructions?\n3. Does it provide usage examples or getting-started guidance?\nA README with only TODO placeholders or a single heading MUST fail."
+      },
+      "patterns_checked": [
+        "heading_with_content",
+        "rst_heading_with_content"
+      ],
+      "relative_path": "README.md",
+      "resolved_files": [
+        "<FIXTURE>/README.md"
+      ],
+      "results": [
+        {
+          "file": "<FIXTURE>/README.md",
+          "match_count": 0,
+          "matched": false,
+          "matches_preview": [],
+          "pattern": "(?si)^#\\s+\\S.*\\n\\n.{200,}",
+          "pattern_name": "heading_with_content"
+        },
+        {
+          "file": "<FIXTURE>/README.md",
+          "match_count": 0,
+          "matched": false,
+          "matches_preview": [],
+          "pattern": "(?si)^[=\\-~]{3,}\\n.+\\n[=\\-~]{3,}\\n\\n.{200,}",
+          "pattern_name": "rst_heading_with_content"
+        }
+      ]
     },
     "id": "OSPS-DO-01.01",
     "level": 1,
@@ -28,15 +93,41 @@
           "message": "Required file found: README.md",
           "outcome": "pass"
         }
+      },
+      {
+        "checks_performed": [
+          "handler:regex"
+        ],
+        "duration_ms": "<SCRUBBED-DURATION>",
+        "phase": "pattern",
+        "result": {
+          "confidence": 0.7,
+          "message": "Pattern not found in any file",
+          "outcome": "inconclusive"
+        }
+      },
+      {
+        "checks_performed": [
+          "handler:llm_eval"
+        ],
+        "duration_ms": "<SCRUBBED-DURATION>",
+        "phase": "llm",
+        "result": {
+          "confidence": null,
+          "message": "LLM consultation requested",
+          "outcome": "inconclusive"
+        }
       }
     ],
-    "resolving_pass_handler": "file_exists",
-    "resolving_pass_index": 0,
-    "sieve_phase": "deterministic",
-    "status": "PASS"
+    "pending": {
+      "kind": "llm_judgment"
+    },
+    "sieve_phase": "llm",
+    "status": "PENDING"
   },
   {
     "authority": "dispositive",
+    "concluded_by": "file_exists",
     "details": "None of the required files found: ['LICENSE', 'LICENSE.md', 'LICENSE.txt', 'LICENCE', 'LICENCE.md', 'LICENCE.txt', 'COPYING', 'COPYING.md', 'COPYING.txt']",
     "evidence": {
       "files_checked": [

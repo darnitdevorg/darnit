@@ -65,9 +65,9 @@ class HandlerResultStatus(str, Enum):
     # a requirements.txt that pins direct dependencies while its transitive
     # dependencies float, for instance.
     #
-    # Like PASS and FAIL, a WARN concludes the control only under terminal
-    # authority (dispositive or asserted); see resolve_step_result. A WARN
-    # counts as FAIL for compliance (Constitution Principle II).
+    # A WARN concludes the control only when the step may conclude FAIL
+    # (feature 041); see resolve_step_result. A WARN counts as FAIL for
+    # compliance (Constitution Principle II).
     WARN = "warn"
     INCONCLUSIVE = "inconclusive"
     ERROR = "error"
@@ -84,13 +84,11 @@ class HandlerResult:
             Deterministic handlers typically return 1.0 for pass/fail, None for inconclusive.
         evidence: Key-value evidence produced by the handler (e.g., found_file, exit_code).
         details: Additional metadata for debugging or reporting.
-        authority: RFC-0001 Stage 1 (feature 025). Optional per-call authority
-            override. When None (the common case), the orchestrator falls back
-            to the handler's registered ``default_authority`` from
-            ``SieveHandlerInfo``. Set this only when a handler's specific call
-            legitimately produces a different-authority result than its default
-            (rare). NEVER set ``"asserted"`` from code alone -- asserted is
-            human-only per Constitution Principle IV.
+        authority: RFC-0001 Stage 1 (feature 025). Optional per-call
+            narrowing: ``"suggestive"`` makes this result evidence only, even
+            when the step may otherwise conclude its outcome (feature 041).
+            Any other value leaves the step's effective set unchanged; a
+            handler can never widen what its step may conclude.
         error_class: Feature 036. Set ONLY when the handler could not run to
             completion for an environmental reason (network unreachable, auth
             expired, subprocess timeout, missing binary, unexpected crash).
@@ -173,6 +171,18 @@ class HandlerContext:
 # Handler callable signature: (config, context) -> HandlerResult
 HandlerFn = Callable[[dict[str, Any], HandlerContext], HandlerResult]
 
+# Feature 041: the outcomes a step may conclude. WARN concludes under the
+# same permission as FAIL (both are non-compliant conclusions).
+OUTCOMES: frozenset[str] = frozenset(("pass", "fail"))
+
+
+def _outcome_set(values: Any, what: str) -> frozenset[str]:
+    outcomes = frozenset(values)
+    unknown = outcomes - OUTCOMES
+    if unknown:
+        raise ValueError(f"{what} contains unknown outcome(s) {sorted(unknown)}; expected a subset of {sorted(OUTCOMES)}")
+    return outcomes
+
 
 @dataclass
 class SieveHandlerInfo:
@@ -184,12 +194,11 @@ class SieveHandlerInfo:
         fn: The handler callable.
         plugin: Name of the plugin that registered this handler (None for core).
         description: Human-readable description of what the handler does.
-        default_authority: RFC-0001 Stage 1 (feature 025). The authority the
-            orchestrator uses when a handler returns a ``HandlerResult`` with
-            ``authority=None`` and the TOML step declares no explicit
-            ``authority``. Defaults to ``"suggestive"`` -- the safe default
-            (never concludes). Registration MUST set this explicitly for any
-            handler that legitimately produces authoritative results.
+        ceiling: Feature 041. The outcomes (``pass``, ``fail``) a step of this
+            type can at most conclude. Empty means evidence only.
+        existence_ceiling: Feature 041. The ceiling when a step declares
+            ``existence = true`` (its control's requirement is literally that
+            a file exists or does not). None for step types without one.
     """
 
     name: str
@@ -197,7 +206,8 @@ class SieveHandlerInfo:
     fn: HandlerFn
     plugin: str | None = None
     description: str = ""
-    default_authority: Authority = "suggestive"
+    ceiling: frozenset[str] = frozenset()
+    existence_ceiling: frozenset[str] | None = None
 
 
 class SieveHandlerRegistry:
@@ -229,7 +239,8 @@ class SieveHandlerRegistry:
         handler_fn: HandlerFn,
         description: str = "",
         *,
-        default_authority: Authority,
+        ceiling: Any = frozenset(),
+        existence_ceiling: Any = None,
     ) -> None:
         """Register a sieve handler.
 
@@ -238,26 +249,17 @@ class SieveHandlerRegistry:
             phase: Phase affinity as string or HandlerPhase enum.
             handler_fn: Callable with signature (config, context) -> HandlerResult.
             description: Human-readable description.
-            default_authority: RFC-0001 Stage 1 (feature 025). Authority the
-                orchestrator uses for results from this handler when neither
-                the ``HandlerResult`` nor the TOML step declares one.
-                REQUIRED (keyword-only, no default). Use ``"dispositive"``
-                for handlers that observe ground truth (file_exists, exec,
-                api_call, pattern matching, gittuf verification, etc.),
-                ``"suggestive"`` for handlers that propose candidates
-                (llm_extract, llm_eval), and ``"asserted"`` for
-                manual/confirmation handlers.
-
-                Making this a REQUIRED keyword prevents the pattern that
-                caused PR #365's silent PASS->WARN regression across every
-                plugin control: a plugin author registers a
-                ground-truth-observing handler, forgets the authority
-                argument, gets the ``"suggestive"`` default, and the
-                handler's PASS results silently downgrade to WARN because
-                a suggestive result never terminates the Check phase.
-                Explicit-required forces the plugin author to name the
-                authority; a missing argument is a ``TypeError`` at
-                registration, not a silent runtime regression.
+            ceiling: Feature 041. Outcomes (``"pass"``, ``"fail"``) a step
+                of this type can at most conclude. A handler that registers
+                no ceiling is evidence only: its results never conclude a
+                control. Handlers that observe ground truth for the whole
+                claim (``exec``, platform API checks, cryptographic
+                verification) register ``{"pass", "fail"}``; presence and
+                pattern handlers register ``{"fail"}``; model and manual
+                handlers register nothing.
+            existence_ceiling: Feature 041. Ceiling for steps that declare
+                ``existence = true``. Only presence and pattern handlers
+                register one.
         """
         if isinstance(phase, str):
             phase = HandlerPhase(phase)
@@ -285,7 +287,12 @@ class SieveHandlerRegistry:
             fn=handler_fn,
             plugin=self._plugin_context,
             description=description or handler_fn.__doc__ or "",
-            default_authority=default_authority,
+            ceiling=_outcome_set(ceiling, f"ceiling of handler {name!r}"),
+            existence_ceiling=(
+                None
+                if existence_ceiling is None
+                else _outcome_set(existence_ceiling, f"existence_ceiling of handler {name!r}")
+            ),
         )
         self._handlers[name] = info
         logger.debug(
@@ -336,6 +343,30 @@ class SieveHandlerRegistry:
         """Clear all registrations. Used in tests."""
         self._handlers.clear()
         self._plugin_context = None
+
+
+def effective_outcomes(info: SieveHandlerInfo, step: Any) -> frozenset[str]:
+    """Outcomes a step may conclude for its control (feature 041).
+
+    (existence ceiling if the step declares ``existence``, else ceiling),
+    intersected with ``concludes`` when given, union the promoted outcome
+    when a promotion exists (never for a model step: a model judgment is
+    not promoted to conclude PASS). The legacy step ``authority = "suggestive"`` is
+    ``concludes = []``. Computed at dispatch as well as validated at load, so
+    a declaration that escaped validation still cannot widen the ceiling.
+    """
+    allowed = info.ceiling
+    if getattr(step, "existence", False) and info.existence_ceiling is not None:
+        allowed = info.existence_ceiling
+    if getattr(step, "authority", None) == "suggestive":
+        allowed = frozenset()
+    concludes = getattr(step, "concludes", None)
+    if concludes is not None:
+        allowed = allowed & frozenset(concludes)
+    promotion = getattr(step, "promotion", None)
+    if promotion is not None and info.phase != HandlerPhase.LLM:
+        allowed = allowed | {promotion.outcome}
+    return frozenset(allowed)
 
 
 # Global singleton

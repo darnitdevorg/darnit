@@ -38,7 +38,7 @@ class TestCalculateCompliance:
         assert calculate_compliance([_r("A", "PASS"), _r("B", "PASS", "contradicted")], 1) == {1: True}
         assert calculate_compliance([_r("A", "PASS"), _r("B", "FAIL", "contradicted")], 1) == {1: False}
 
-    @pytest.mark.parametrize("status", ["WARN", "ERROR", "PENDING_LLM", "FAIL"])
+    @pytest.mark.parametrize("status", ["WARN", "ERROR", "PENDING", "FAIL"])
     def test_unverified_statuses_are_non_compliant(self, status: str) -> None:
         assert calculate_compliance([_r("A", "PASS"), _r("B", status)], 1) == {1: False}
 

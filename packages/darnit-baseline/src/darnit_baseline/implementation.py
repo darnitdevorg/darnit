@@ -230,18 +230,18 @@ class OSPSBaselineImplementation:
             handler_fn=generate_threat_model_handler,
             description="Generate dynamic STRIDE threat model",
             # RFC-0001 Stage 1: threat-model generation observes ground
-            # truth (file produced or not). Explicitly dispositive.
-            default_authority="dispositive",
+            # truth (file produced or not).
+            ceiling={"pass", "fail"},
         )
         # Feature 032: ruleset-aware branch-protection verdict. Observes
-        # ground truth (queries GitHub for protection state) so results
-        # are dispositive by default.
+        # ground truth (queries GitHub for protection state), so it may
+        # conclude either way (feature 041 data-model.md).
         sieve_registry.register(
             "github_branch_protection",
             phase="deterministic",
             handler_fn=github_branch_protection_handler,
             description="Ruleset-aware branch-protection verdict",
-            default_authority="dispositive",
+            ceiling={"pass", "fail"},
         )
         sieve_registry.set_plugin_context(None)
 

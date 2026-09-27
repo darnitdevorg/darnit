@@ -5,8 +5,8 @@ through both the direct sieve path and the MCP surface, verifying:
 
 - First run (no SECURITY.md): the dispositive file_exists step FAILs the
   control; the suggestive llm_extract step attaches evidence.
-- Confirmation persists: adding SECURITY.md and re-auditing produces PASS
-  from dispositive file_exists.
+- Adding SECURITY.md does not produce a PASS from file_exists: the control
+  is about a security contact, so presence is evidence only (feature 041).
 - CLI and MCP paths produce equal per-control status + authority (SC-004).
 
 Uses a mocked LLM step to avoid live API calls.
@@ -70,13 +70,13 @@ class TestSecurityMdReferenceControl:
         # file_exists ran and recorded the paths it checked.
         assert "files_checked" in (result.evidence or {})
 
-    def test_second_run_reports_pass_when_security_md_present(
+    def test_second_run_does_not_pass_on_presence_alone(
         self,
         tmp_path: Path,
     ) -> None:
-        """US4 acceptance #3: with SECURITY.md present, dispositive
-        file_exists concludes PASS. The earlier suggestive LLM contribution
-        is still recorded but is not the authority for the PASS.
+        """Feature 041 (was US4 acceptance #3 of feature 025): with SECURITY.md
+        present, file_exists may not conclude PASS for a content control; the
+        control is WARN with the found file recorded as evidence.
         """
         (tmp_path / "README.md").write_text("# proj\n")
         (tmp_path / "SECURITY.md").write_text(
@@ -93,8 +93,10 @@ class TestSecurityMdReferenceControl:
         orch = SieveOrchestrator(stop_on_llm=False)
         result = orch.verify(control, _make_ctx(tmp_path))
 
-        assert result.status == "PASS"
-        assert result.authority == "dispositive"
+        assert result.status == "WARN"
+        assert result.authority == "suggestive"
+        assert result.concluded_by == "none"
+        assert result.evidence["relative_path"] == "SECURITY.md"
 
     def test_cli_and_direct_produce_equal_authority(self, tmp_path: Path) -> None:
         """US4 acceptance #4 + SC-004 (partial): the same control run two

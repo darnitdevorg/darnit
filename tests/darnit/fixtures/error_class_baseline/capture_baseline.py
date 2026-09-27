@@ -88,6 +88,25 @@ def scrub(text: str, fixture: Path) -> str:
     return text
 
 
+def drop_case_aliases(results: list[dict]) -> None:
+    """Drop file_contents entries that alias an earlier name by case only.
+
+    A PENDING control's consultation bundles the files named in its
+    ``files_to_include``. OSPS-DO-01.01 lists both ``README.md`` and
+    ``readme.md``; on a case-insensitive filesystem (macOS, Windows) both
+    open the same file, on Linux only one exists. Keeping the first name
+    makes the baseline independent of the filesystem it was captured on.
+    """
+    for result in results:
+        consultation = (result.get("evidence") or {}).get("llm_consultation") or {}
+        contents = consultation.get("file_contents") or {}
+        seen: set[str] = set()
+        for name in list(contents):
+            if name.lower() in seen:
+                del contents[name]
+            seen.add(name.lower())
+
+
 def main() -> int:
     fixture = Path(tempfile.gettempdir()) / "darnit-036-baseline-fixture"
     build_fixture(fixture)
@@ -121,6 +140,7 @@ def main() -> int:
 
     # Sort for stability -- run_sieve_audit's ordering follows the registry.
     results = sorted(results, key=lambda r: r["id"])
+    drop_case_aliases(results)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 

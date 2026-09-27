@@ -4,7 +4,7 @@
 file fails deterministically (no reason to consult the model about a file that is
 not there), while a file that exists is handed to the LLM for a content-quality
 judgment. It is registered in the sieve handler registry with the ``llm`` phase so
-the orchestrator's PENDING_LLM branch fires for the present-file case. darnit
+the orchestrator's PENDING (llm_judgment) branch fires for the present-file case. darnit
 imports this package during framework/implementation discovery, so the handler is
 available in both the CLI audit path and `darnit serve`.
 """
@@ -29,7 +29,7 @@ def csl_llm_if_present(config: dict[str, Any], context: HandlerContext) -> Handl
     Uses the same ``files_to_include`` list as the LLM check, so list every
     candidate path for the control. When at least one exists, delegation to
     ``llm_eval_handler`` yields the INCONCLUSIVE + consultation result, which the
-    orchestrator turns into PENDING_LLM (this handler is registered in the ``llm``
+    orchestrator turns into PENDING (this handler is registered in the ``llm``
     phase). When none exist, this returns a conclusive FAIL and the sieve never
     reaches the model.
     """
@@ -42,7 +42,6 @@ def csl_llm_if_present(config: dict[str, Any], context: HandlerContext) -> Handl
     return HandlerResult(
         status=HandlerResultStatus.FAIL,
         message="Required file is missing.",
-        authority="dispositive",
     )
 
 
@@ -51,5 +50,5 @@ get_sieve_handler_registry().register(
     phase="llm",
     handler_fn=csl_llm_if_present,
     description="Fail if the target file is missing; otherwise defer to the LLM content check.",
-    default_authority="suggestive",
+    ceiling={"fail"},
 )

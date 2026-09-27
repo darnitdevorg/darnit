@@ -45,6 +45,8 @@ location_hint = "06-contributing.md or CONTRIBUTING.md"
 
 [[controls."CSL-OPT-01".passes]]
 handler = "file_exists"
+# Presence is the requirement (feature 041).
+existence = true
 files = [
     "governance/06-contributing.md",
     "license/06-contributing.md",
@@ -66,6 +68,8 @@ location_hint = "07-spec-template.md"
 
 [[controls."CSL-OPT-02".passes]]
 handler = "file_exists"
+# Presence is the requirement (feature 041).
+existence = true
 files = [
     "governance/07-spec-template.md",
     "license/07-spec-template.md",
@@ -87,6 +91,8 @@ location_hint = "08-code-of-conduct.md or CODE_OF_CONDUCT.md"
 
 [[controls."CSL-OPT-03".passes]]
 handler = "file_exists"
+# Presence is the requirement (feature 041).
+existence = true
 files = [
     "governance/08-code-of-conduct.md",
     "license/08-code-of-conduct.md",

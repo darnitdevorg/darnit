@@ -192,7 +192,7 @@ class TestAllInconclusiveWarnFallback:
                 name,
                 "deterministic",
                 lambda config, ctx, _r=result: _r,
-                default_authority="suggestive",
+                ceiling=set(),
             )
             invocations.append(HandlerInvocation(handler=name))
 

@@ -148,10 +148,9 @@ class TestVerifyWithLlmResponse:
     def test_high_confidence_pass(self):
         """High confidence LLM PASS is DOWNGRADED to WARN under RFC-0001 Stage 1.
 
-        Feature 025 (Slice A): `llm_eval` registers with default_authority =
-        "suggestive". `is_terminal_authority("suggestive")` is False, so
-        `resolve_step_result` refuses to CONCLUDE_PASS regardless of the
-        LLM's confidence. The LLM's output is preserved as evidence but the
+        Feature 025 (Slice A), feature 041: `llm_eval` registers an empty
+        ceiling, so the step may conclude nothing and a PASS is refused
+        regardless of the LLM's confidence. The LLM's output is preserved as evidence but the
         control status is WARN (inconclusive) -- the SAFETY property FR-001
         establishes. This test previously pinned the OLD unsafe behavior
         (high-confidence LLM concluding PASS); it now pins the NEW safe
@@ -219,7 +218,11 @@ class TestVerifyWithLlmResponse:
 
 
 class TestHandlerWhenClause:
-    """Test handler-level when clause in dispatch_handler_invocations."""
+    """Test handler-level when clause in dispatch_handler_invocations.
+
+    The file_exists steps declare ``existence = true`` so that a found file
+    concludes PASS (feature 041); these tests are about whether a step runs.
+    """
 
     def test_handler_skipped_when_condition_false(self, tmp_path):
         """Handler with when={primary_language: 'go'} is skipped when context is 'python'."""
@@ -237,6 +240,7 @@ class TestHandlerWhenClause:
                     HandlerInvocation(
                         handler="file_exists",
                         files=["README.md"],
+                        existence=True,
                         when={"primary_language": "go"},
                     ),
                 ],
@@ -267,6 +271,7 @@ class TestHandlerWhenClause:
                     HandlerInvocation(
                         handler="file_exists",
                         files=["README.md"],
+                        existence=True,
                         when={"primary_language": "go"},
                     ),
                 ],
@@ -296,6 +301,7 @@ class TestHandlerWhenClause:
                     HandlerInvocation(
                         handler="file_exists",
                         files=["README.md"],
+                        existence=True,
                     ),
                 ],
             },
@@ -324,6 +330,7 @@ class TestHandlerWhenClause:
                     HandlerInvocation(
                         handler="file_exists",
                         files=["README.md"],
+                        existence=True,
                         when={"languages": "go"},
                     ),
                 ],
@@ -358,6 +365,7 @@ class TestHandlerWhenClause:
                     HandlerInvocation(
                         handler="file_exists",
                         files=["README.md"],
+                        existence=True,
                     ),
                 ],
             },
@@ -394,15 +402,14 @@ class TestExecutionContextPropagation:
             return HandlerResult(status=HandlerResultStatus.PASS, message="Spy done")
 
         registry = get_sieve_handler_registry()
-        # Register with default_authority="dispositive" so the spy's PASS
-        # concludes the control. Under RFC-0001 Stage 1 (feature 025), a
-        # handler that omits default_authority defaults to "suggestive" and
-        # its PASS is downgraded to WARN. This test cares about
+        # Register with ceiling={"pass", "fail"} so the spy's PASS
+        # concludes the control. A handler that registers no ceiling is
+        # evidence only (feature 041) and its PASS is downgraded to WARN. This test cares about
         # ExecutionContext propagation, not the verdict rule, so dispositive
         # is the honest label for a spy that observes ground truth.
         registry.register(
             "spy_tool", phase="deterministic", handler_fn=spy_handler,
-            default_authority="dispositive",
+            ceiling={"pass", "fail"},
         )
 
         # Inject our spy handler into the control spec

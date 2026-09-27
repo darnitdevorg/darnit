@@ -1,4 +1,4 @@
-"""Regression test for PR #365 review blocker (feature 025).
+"""Regression test for PR #365 review blocker (feature 025), under feature 041.
 
 The `handler_registry.register()` API used to have a
 `default_authority = "suggestive"` fallback. Every plugin handler in
@@ -7,13 +7,11 @@ without the argument -- so every observation-based control from every
 plugin silently regressed PASS -> WARN because a suggestive result
 never terminates the Check phase.
 
-The API is now keyword-only-required. A plugin that forgets the argument
-gets a TypeError at registration time, not a silent audit-status
-regression. This test guards the invariant.
-
-Reviewer's request verbatim: "a regression test asserting no registered
-handler falls back to the default implicitly, so the next plugin
-doesn't reintroduce this."
+Feature 041 replaced the scalar authority with a registered ceiling; per
+contracts/step-declarations.md rule 5 a handler that registers no ceiling is
+evidence only. The guard against the #365 regression is therefore the
+curated list below: every ground-truth observer must register a ceiling
+that lets it conclude PASS and FAIL.
 """
 
 from __future__ import annotations
@@ -33,25 +31,23 @@ def _noop_handler(config, context):  # noqa: ANN001, ARG001
     return HandlerResult(status="PASS", details="noop")
 
 
-class TestRegisterRequiresExplicitAuthority:
-    """The API refuses to accept an implicit default."""
+class TestRegisterCeiling:
+    """Registration records the ceiling a plugin declares."""
 
-    def test_missing_default_authority_raises_type_error(self) -> None:
-        """A plugin that forgets `default_authority` fails at
-        registration time -- BEFORE any audit runs and reports the wrong
-        status."""
+    def test_missing_ceiling_is_evidence_only(self) -> None:
+        """A plugin that declares no ceiling can never conclude a control:
+        the conservative default (contracts/step-declarations.md rule 5)."""
         reg = SieveHandlerRegistry()
-        with pytest.raises(TypeError):
-            reg.register(  # type: ignore[call-arg]
-                "test_handler",
-                phase="deterministic",
-                handler_fn=_noop_handler,
-                description="handler that forgets authority",
-            )
+        reg.register(
+            "test_handler",
+            phase="deterministic",
+            handler_fn=_noop_handler,
+            description="handler that declares no ceiling",
+        )
+        assert reg.get("test_handler").ceiling == frozenset()
 
-    def test_positional_default_authority_rejected(self) -> None:
-        """Prevent the argument from being passed positionally --
-        keyword-only forces the plugin author to spell the intent."""
+    def test_positional_ceiling_rejected(self) -> None:
+        """Keyword-only forces the plugin author to spell the intent."""
         reg = SieveHandlerRegistry()
         with pytest.raises(TypeError):
             reg.register(  # type: ignore[misc]
@@ -59,31 +55,31 @@ class TestRegisterRequiresExplicitAuthority:
                 "deterministic",
                 _noop_handler,
                 "description",
-                "dispositive",  # positional -- must be keyword
+                {"pass", "fail"},  # positional -- must be keyword
             )
 
-    def test_explicit_dispositive_accepted(self) -> None:
+    def test_explicit_ceiling_accepted(self) -> None:
         reg = SieveHandlerRegistry()
         reg.register(
             "test_handler",
             phase="deterministic",
             handler_fn=_noop_handler,
-            description="handler with explicit authority",
-            default_authority="dispositive",
+            description="handler with explicit ceiling",
+            ceiling={"pass", "fail"},
         )
         info = reg.get("test_handler")
         assert info is not None
-        assert info.default_authority == "dispositive"
+        assert info.ceiling == frozenset({"pass", "fail"})
 
 
 class TestPluginHandlersAreDispositive:
-    """Each ground-truth-observing plugin handler MUST be registered
-    dispositive so its PASS conclusion terminates the Check phase.
+    """Each ground-truth-observing plugin handler MUST register the
+    {pass, fail} ceiling so its PASS conclusion terminates the Check phase.
 
     This test loads every registered plugin's sieve handlers via the
-    live registry and asserts the ground-truth observers are dispositive.
+    live registry and asserts the ground-truth observers may conclude.
     If a future plugin author registers `gittuf_verify_policy` (or any
-    other observation-based handler) as `suggestive`, this test fails.
+    other observation-based handler) without a ceiling, this test fails.
     """
 
     # Handlers that observe ground truth: file presence, exec output,
@@ -102,6 +98,7 @@ class TestPluginHandlersAreDispositive:
         "repro_bit_for_bit",
         # darnit-baseline
         "generate_threat_model",
+        "github_branch_protection",
     }
 
     def test_every_expected_dispositive_handler_is_dispositive(self) -> None:
@@ -117,12 +114,12 @@ class TestPluginHandlersAreDispositive:
                     f"handler {name!r} not registered in this environment; "
                     "the plugin package may not be installed",
                 )
-            assert info.default_authority == "dispositive", (
-                f"Handler {name!r} defaults to authority "
-                f"{info.default_authority!r}. A ground-truth observer must "
-                "be `dispositive` so its PASS terminates the Check phase. "
-                "Fix by adding `default_authority=\"dispositive\"` to the "
-                "handler's `registry.register(...)` call in its plugin's "
+            assert info.ceiling == frozenset({"pass", "fail"}), (
+                f"Handler {name!r} registers ceiling {sorted(info.ceiling)!r}. "
+                "A ground-truth observer must register {pass, fail} so its "
+                "PASS terminates the Check phase. Fix by adding "
+                "`ceiling={\"pass\", \"fail\"}` to the handler's "
+                "`registry.register(...)` call in its plugin's "
                 "`register_sieve_handlers()`."
             )
 

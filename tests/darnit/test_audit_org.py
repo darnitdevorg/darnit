@@ -290,7 +290,7 @@ class TestFormatOrgResults:
                 "results": [
                     {"id": "OSPS-AC-01.01", "status": "PASS", "details": "ok", "level": 1},
                 ],
-                "summary": {"PASS": 1, "FAIL": 0, "WARN": 0, "N/A": 0, "ERROR": 0, "PENDING_LLM": 0, "total": 1},
+                "summary": {"PASS": 1, "FAIL": 0, "WARN": 0, "N/A": 0, "ERROR": 0, "PENDING": 0, "total": 1},
             },
             {
                 "repo": "repo-b",

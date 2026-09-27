@@ -253,8 +253,8 @@ class TestFlatListOrdering:
         # to WARN. These integration tests are about orchestrator ordering,
         # not authority semantics, so we register with "dispositive" so the
         # ordering assertion is not obscured by the authority downgrade.
-        registry.register("h_first", "deterministic", first_handler, default_authority="dispositive")
-        registry.register("h_second", "manual", second_handler, default_authority="dispositive")
+        registry.register("h_first", "deterministic", first_handler, ceiling={"pass", "fail"})
+        registry.register("h_second", "manual", second_handler, ceiling={"pass", "fail"})
 
         orchestrator = SieveOrchestrator()
         invocations = [
@@ -288,8 +288,8 @@ class TestFlatListOrdering:
                 confidence=0.8,
             )
 
-        registry.register("h_inconclusive", "deterministic", inconclusive_handler, default_authority="dispositive")
-        registry.register("h_pass", "pattern", pass_handler, default_authority="dispositive")
+        registry.register("h_inconclusive", "deterministic", inconclusive_handler, ceiling={"pass", "fail"})
+        registry.register("h_pass", "pattern", pass_handler, ceiling={"pass", "fail"})
 
         orchestrator = SieveOrchestrator()
         invocations = [
@@ -323,8 +323,8 @@ class TestFlatListOrdering:
                 message="Manual steps",
             )
 
-        registry.register("h_fail", "deterministic", fail_handler, default_authority="dispositive")
-        registry.register("h_manual", "manual", manual_handler, default_authority="asserted")
+        registry.register("h_fail", "deterministic", fail_handler, ceiling={"pass", "fail"})
+        registry.register("h_manual", "manual", manual_handler, ceiling=set())
 
         orchestrator = SieveOrchestrator()
         invocations = [
@@ -365,9 +365,9 @@ class TestFlatListOrdering:
                 evidence={"verification_steps": ["Check settings"]},
             )
 
-        registry.register("h_exec", "deterministic", exec_handler, default_authority="dispositive")
-        registry.register("h_pattern", "pattern", pattern_handler, default_authority="dispositive")
-        registry.register("h_manual", "manual", manual_handler, default_authority="asserted")
+        registry.register("h_exec", "deterministic", exec_handler, ceiling={"pass", "fail"})
+        registry.register("h_pattern", "pattern", pattern_handler, ceiling={"pass", "fail"})
+        registry.register("h_manual", "manual", manual_handler, ceiling=set())
 
         orchestrator = SieveOrchestrator()
         invocations = [
@@ -405,8 +405,8 @@ class TestFlatListOrdering:
                 evidence={"checked_file": found},
             )
 
-        registry.register("h_file", "deterministic", file_handler, default_authority="dispositive")
-        registry.register("h_pattern", "pattern", pattern_handler, default_authority="dispositive")
+        registry.register("h_file", "deterministic", file_handler, ceiling={"pass", "fail"})
+        registry.register("h_pattern", "pattern", pattern_handler, ceiling={"pass", "fail"})
 
         orchestrator = SieveOrchestrator()
         invocations = [
@@ -513,8 +513,13 @@ class TestIssueTemplateGlobbingRegression:
             "bug.yaml",
         ],
     )
-    def test_osps_do_02_01_passes_for_bug_template(self, tmp_path, template_filename):
-        """OSPS-DO-02.01 should pass for reasonable bug template filenames."""
+    def test_osps_do_02_01_finds_bug_template(self, tmp_path, template_filename):
+        """OSPS-DO-02.01 should find and match reasonable bug template filenames.
+
+        Feature 041: a pattern match is evidence, not a PASS, so the control
+        is WARN (needs verification) rather than PASS; this test pins the
+        globbing, which is what the regression was about.
+        """
         from pathlib import Path
 
         from darnit.config import load_controls_from_effective, load_effective_config_by_name
@@ -552,7 +557,7 @@ body:
         )
         result = orchestrator.verify(control, context)
 
-        assert result.status == "PASS"
+        assert result.status == "WARN"
         # After feature 020, DO-02.01's file_exists pass was removed as
         # redundant with the pattern pass (see openssf-baseline.toml
         # comment above the DO-02.01 pattern pass). Evidence is now
@@ -612,12 +617,13 @@ body:
         assert result.status == "WARN"
 
     @pytest.mark.unit
-    def test_osps_do_02_01_passes_for_contributing_md_with_bug_link(self, tmp_path):
-        """OSPS-DO-02.01 should pass when CONTRIBUTING.md contains a defect-reporting link.
+    def test_osps_do_02_01_matches_contributing_md_with_bug_link(self, tmp_path):
+        """OSPS-DO-02.01 should match when CONTRIBUTING.md contains a defect-reporting link.
 
         Covers the pattern handler path: a project whose contributing guide
         tells users to 'report a bug, file an issue at https://github.com/x/y/issues'
-        satisfies the control even without a .github/ISSUE_TEMPLATE/bug* file.
+        is evidence for the control even without a .github/ISSUE_TEMPLATE/bug*
+        file. Feature 041: that match is evidence, not a PASS.
         """
         from pathlib import Path
 
@@ -644,4 +650,5 @@ body:
         )
         result = orchestrator.verify(control, context)
 
-        assert result.status == "PASS"
+        assert result.status == "WARN"
+        assert result.evidence["any_match"] is True

@@ -71,7 +71,7 @@ def format_result_text(result: dict) -> str:
         "WARN": "⚠",
         "ERROR": "!",
         "N/A": "-",
-        "PENDING_LLM": "~",
+        "PENDING": "~",
     }
     icon = status_icons.get(status, "?")
 
@@ -80,8 +80,10 @@ def format_result_text(result: dict) -> str:
     # unannotated FAIL means fix the repo.
     error_class = result.get("error_class")
     ec_tag = f" [{error_class}]" if error_class else ""
+    pending_kind = (result.get("pending") or {}).get("kind")
+    pending_tag = f" ({pending_kind})" if pending_kind else ""
 
-    return f"  {icon} {control_id}: {status}{ec_tag} - {details}"
+    return f"  {icon} {control_id}: {status}{pending_tag}{ec_tag} - {details}"
 
 
 def format_results_text(results: list[CheckResult], framework_name: str, show_all: bool = False) -> str:
@@ -101,11 +103,11 @@ def format_results_text(results: list[CheckResult], framework_name: str, show_al
     warned = len(by_status.get("WARN", []))
     na = len(by_status.get("N/A", []))
     errored = len(by_status.get("ERROR", []))
-    pending_llm = len(by_status.get("PENDING_LLM", []))
+    pending = len(by_status.get("PENDING", []))
 
     lines.append(
         f"Total: {total} | Pass: {passed} | Fail: {failed} | Warn: {warned} | "
-        f"N/A: {na} | Error: {errored} | Pending LLM: {pending_llm}\n"
+        f"N/A: {na} | Error: {errored} | Pending: {pending}\n"
     )
 
     # Show failures first
@@ -114,10 +116,10 @@ def format_results_text(results: list[CheckResult], framework_name: str, show_al
         for r in by_status["FAIL"]:
             lines.append(format_result_text(r))
 
-    # Show pending LLM
-    if "PENDING_LLM" in by_status:
-        lines.append(f"\n--- Pending LLM ({len(by_status['PENDING_LLM'])}) ---")
-        for r in by_status["PENDING_LLM"]:
+    # Show pending (model judgment or confirmation)
+    if "PENDING" in by_status:
+        lines.append(f"\n--- Pending ({len(by_status['PENDING'])}) ---")
+        for r in by_status["PENDING"]:
             lines.append(format_result_text(r))
 
     # Show warnings
@@ -148,7 +150,7 @@ def format_results_text(results: list[CheckResult], framework_name: str, show_al
     # documents every check for conformance evidence.
     if show_all:
         for status, group in by_status.items():
-            if status in ("FAIL", "WARN", "PASS", "ERROR", "PENDING_LLM"):
+            if status in ("FAIL", "WARN", "PASS", "ERROR", "PENDING"):
                 continue
             lines.append(f"\n--- {status} ({len(group)}) ---")
             for r in group:
@@ -172,7 +174,7 @@ def format_results_json(
             "warn": len([r for r in results if r.get("status") == "WARN"]),
             "na": len([r for r in results if r.get("status") == "N/A"]),
             "error": len([r for r in results if r.get("status") == "ERROR"]),
-            "pending_llm": len([r for r in results if r.get("status") == "PENDING_LLM"]),
+            "pending": len([r for r in results if r.get("status") == "PENDING"]),
         },
     }
     return json.dumps(output, indent=2)
@@ -1497,7 +1499,7 @@ def create_parser() -> argparse.ArgumentParser:
         description=(
             "End-to-end audit driver with in-band LLM dispatch. Reads "
             "ANTHROPIC_API_KEY from env; dispatches LLM steps itself so "
-            "no control ends up PENDING_LLM in the report. Non-interactive; "
+            "no control ends up awaiting a model judgment in the report. Non-interactive; "
             "batch answers via --answers or auto-discovered .project/project.yaml."
         ),
     )

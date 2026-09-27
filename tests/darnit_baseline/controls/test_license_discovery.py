@@ -49,18 +49,24 @@ def _make_ctx(local_path: Path, control_id: str) -> CheckContext:
     "filename",
     ["LICENSE", "LICENSE.md", "LICENSE.txt", "LICENCE", "LICENCE.md", "LICENCE.txt", "COPYING"],
 )
-def test_license_filename_variants_pass(
+def test_license_filename_variants_found(
     tmp_path: Path,
     control_id: str,
     filename: str,
 ) -> None:
-    """Both controls accept US and British spellings and common suffixes."""
+    """Both controls accept US and British spellings and common suffixes.
+
+    Feature 041: finding the file is evidence; whether it concludes PASS
+    depends on the control's step declarations, so this asserts discovery
+    (not FAIL, and the file recorded), not the final verdict.
+    """
     (tmp_path / filename).write_text(MIT_TEXT, encoding="utf-8")
 
     control = _load_control(control_id)
     result = SieveOrchestrator(stop_on_llm=False).verify(control, _make_ctx(tmp_path, control_id))
 
-    assert result.status == "PASS", f"{control_id} failed on {filename}: {result.details}"
+    assert result.status != "FAIL", f"{control_id} failed on {filename}: {result.details}"
+    assert result.evidence["relative_path"] == filename
 
 
 @pytest.mark.parametrize("control_id", LICENSE_CONTROLS)

@@ -410,6 +410,10 @@ def regex_handler(config: dict[str, Any], context: HandlerContext) -> HandlerRes
         files: list[str] - File paths/globs to search
         pattern: dict - With nested ``patterns`` dict of named regexes
         pass_if_any: bool - True = PASS if ANY file×pattern matches (default: true)
+        fail_on_miss: bool - A miss proves failure: FAIL instead of
+            INCONCLUSIVE when the patterns do not match (default: false).
+            Declared on the step (feature 041); requires ``fail`` in the
+            step's effective set.
 
     **Exclude mode** (returns evidence for CEL evaluation)::
 
@@ -467,6 +471,7 @@ def regex_handler(config: dict[str, Any], context: HandlerContext) -> HandlerRes
         patterns,
         min_matches,
         pass_if_any,
+        fail_on_miss=bool(config.get("fail_on_miss", False)),
     )
 
 
@@ -645,8 +650,14 @@ def _regex_match_files(
     patterns: dict[str, str],
     min_matches: int,
     pass_if_any: bool,
+    fail_on_miss: bool = False,
 ) -> HandlerResult:
-    """Match patterns across files and return a result."""
+    """Match patterns across files and return a result.
+
+    A miss is INCONCLUSIVE unless ``fail_on_miss``: a keyword being absent
+    rarely proves a control is unmet (feature 041, FR-004).
+    """
+    miss_status = HandlerResultStatus.FAIL if fail_on_miss else HandlerResultStatus.INCONCLUSIVE
     all_results: list[dict[str, Any]] = []
     any_match = False
 
@@ -699,7 +710,7 @@ def _regex_match_files(
                 evidence=evidence,
             )
         return HandlerResult(
-            status=HandlerResultStatus.FAIL,
+            status=miss_status,
             message="Pattern not found in any file",
             confidence=0.7,
             evidence=evidence,
@@ -716,7 +727,7 @@ def _regex_match_files(
         )
     failed = [r for r in all_results if not r["matched"]]
     return HandlerResult(
-        status=HandlerResultStatus.FAIL,
+        status=miss_status,
         message=f"{len(failed)} of {len(all_results)} pattern checks failed",
         confidence=0.7,
         evidence=evidence,
@@ -818,9 +829,9 @@ def llm_extract_handler(config: dict[str, Any], context: HandlerContext) -> Hand
     ``llm_extract`` asks the LLM to extract a VALUE from repository content
     (e.g., "propose a security contact by scanning README and docs").
 
-    Registration default_authority is ``suggestive`` (T009 migration table):
-    the extracted value is a proposal for human confirmation, never authority
-    for concluding a control. This matches the RFC's Constitution Principle IV
+    Registered with an empty ceiling (feature 041): the extracted value is a
+    proposal for human confirmation, never authority for concluding a
+    control. This matches the RFC's Constitution Principle IV
     (never conclude a user-judgment value from code alone).
 
     Config fields:
@@ -860,7 +871,7 @@ def llm_extract_handler(config: dict[str, Any], context: HandlerContext) -> Hand
                 continue
 
     # Feature 026: also emit `consultation_request` so the sieve's
-    # PENDING_LLM branch triggers when a driver runs with stop_on_llm=True.
+    # PENDING (llm_judgment) branch triggers when a driver runs with stop_on_llm=True.
     # This makes llm_extract a first-class participant in the harness's
     # LLM dispatch loop (research.md R1) -- same shape llm_eval uses.
     # `extraction_request` is kept for backward-compat with existing tests.
@@ -1368,10 +1379,11 @@ def _eval_cel_over_result(
 def register_builtin_handlers() -> None:
     """Register all built-in sieve handlers with the global registry.
 
-    Default authority per handler (RFC-0001 Stage 1, feature 025 T009): see
-    ``specs/025-rfc0001-stage1/data-model.md`` section 2. `dispositive` for
-    handlers that observe ground truth; `suggestive` for LLM-backed handlers;
-    `asserted` for manual/confirmation handlers.
+    Ceilings per step type (feature 041, data-model.md "HandlerCeiling"):
+    presence and pattern steps prove only absence ({fail}; {pass, fail} when
+    the step declares ``existence``); command and MCP observations may
+    conclude either way; model, manual, and remediation handlers conclude
+    nothing.
     """
     registry = get_sieve_handler_registry()
 
@@ -1381,69 +1393,68 @@ def register_builtin_handlers() -> None:
         phase="deterministic",
         handler_fn=file_exists_handler,
         description="Check file existence from a list of paths",
-        default_authority="dispositive",
+        ceiling={"fail"},
+        existence_ceiling={"pass", "fail"},
     )
     registry.register(
         "exec",
         phase="deterministic",
         handler_fn=exec_handler,
         description="Run external command, evaluate exit code / CEL expr",
-        default_authority="dispositive",
+        ceiling={"pass", "fail"},
     )
     registry.register(
         "regex",
         phase="pattern",
         handler_fn=regex_handler,
         description="Match regex patterns in file content",
-        default_authority="dispositive",
+        ceiling={"fail"},
+        existence_ceiling={"pass", "fail"},
     )
     registry.register(
         "pattern",
         phase="pattern",
         handler_fn=regex_handler,
         description="Alias for regex handler (match regex patterns in file content)",
-        default_authority="dispositive",
+        ceiling={"fail"},
+        existence_ceiling={"pass", "fail"},
     )
     registry.register(
         "llm_eval",
         phase="llm",
         handler_fn=llm_eval_handler,
         description="AI evaluation with confidence threshold",
-        default_authority="suggestive",
     )
     # RFC-0001 Stage 1 (feature 025 T045): llm_extract for value extraction.
-    # Same suggestive-only authority as llm_eval; never concludes a control.
+    # Like llm_eval, it never concludes a control.
     registry.register(
         "llm_extract",
         phase="llm",
         handler_fn=llm_extract_handler,
         description="LLM-backed value extraction (suggestive; never concludes a control)",
-        default_authority="suggestive",
     )
     registry.register(
         "manual_steps",
         phase="manual",
         handler_fn=manual_steps_handler,
         description="Human verification checklist",
-        default_authority="asserted",
     )
     registry.register(
         "manual",
         phase="manual",
         handler_fn=manual_steps_handler,
         description="Alias for manual_steps handler (human verification checklist)",
-        default_authority="asserted",
     )
-    # Feature 031: external MCP server as observation source. Dispositive
-    # because the tool observes ground truth (a real subprocess reports
-    # its state); the trust label separately surfaces whether the binary
-    # was Sigstore-verified or operator-trusted-on-PATH.
+    # Feature 031: external MCP server as observation source. It may
+    # conclude either way because the tool observes ground truth (a real
+    # subprocess reports its state); the trust label separately surfaces
+    # whether the binary was Sigstore-verified or operator-trusted-on-PATH.
     registry.register(
         "mcp",
         phase="deterministic",
         handler_fn=mcp_handler,
         description="Call a tool on an external MCP server; evaluate CEL over result.*",
-        default_authority="dispositive",
+        ceiling={"pass", "fail"},
     )
 
     # Remediation handlers
@@ -1452,26 +1463,22 @@ def register_builtin_handlers() -> None:
         phase="deterministic",
         handler_fn=file_create_handler,
         description="Create a file from a template or content",
-        default_authority="dispositive",
     )
     registry.register(
         "api_call",
         phase="deterministic",
         handler_fn=api_call_handler,
         description="Make an HTTP API call",
-        default_authority="dispositive",
     )
     registry.register(
         "project_update",
         phase="deterministic",
         handler_fn=project_update_handler,
         description="Update .project/project.yaml values",
-        default_authority="asserted",  # writes user-confirmed values
     )
     registry.register(
         "yaml_inject",
         phase="deterministic",
         handler_fn=yaml_inject_handler,
         description="Inject a top-level key into YAML files that lack it",
-        default_authority="dispositive",
     )

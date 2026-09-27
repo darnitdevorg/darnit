@@ -150,12 +150,12 @@ def _neutralize_warn() -> None:
 
     original = orchestrator.resolve_step_result
 
-    def patched(handler_status, effective_authority, is_last_step=False):
+    def patched(handler_status, allowed, is_last_step=False):
         if handler_status == HandlerResultStatus.WARN:
             return original(
-                HandlerResultStatus.INCONCLUSIVE, effective_authority, is_last_step
+                HandlerResultStatus.INCONCLUSIVE, allowed, is_last_step
             )
-        return original(handler_status, effective_authority, is_last_step)
+        return original(handler_status, allowed, is_last_step)
 
     orchestrator.resolve_step_result = patched
     orchestrator.SieveOrchestrator.__module__  # touch, keeps linters honest

@@ -334,24 +334,24 @@ class TestRegexHandler:
         assert result.status == HandlerResultStatus.PASS
         assert result.evidence["any_match"] is True
 
-    def test_fail_when_pattern_not_found(self, tmp_path, ctx):
+    def test_inconclusive_when_pattern_not_found(self, tmp_path, ctx):
+        """Feature 041 (FR-004): a miss is inconclusive unless fail_on_miss."""
         (tmp_path / "SECURITY.md").write_text("No contact info here")
-        result = regex_handler(
-            {"file": "SECURITY.md", "pattern": r"[\w.]+@[\w.]+"},
-            ctx,
-        )
-        assert result.status == HandlerResultStatus.FAIL
+        config = {"file": "SECURITY.md", "pattern": r"[\w.]+@[\w.]+"}
+        assert regex_handler(config, ctx).status == HandlerResultStatus.INCONCLUSIVE
+        assert regex_handler({**config, "fail_on_miss": True}, ctx).status == HandlerResultStatus.FAIL
 
-    def test_fail_when_below_min_matches(self, tmp_path, ctx):
+    def test_inconclusive_when_below_min_matches(self, tmp_path, ctx):
         (tmp_path / "CODE.py").write_text("# Copyright 2024\n# Some code\n")
-        result = regex_handler(
-            {"file": "CODE.py", "pattern": r"Copyright \d{4}", "min_matches": 3},
-            ctx,
-        )
-        assert result.status == HandlerResultStatus.FAIL
+        config = {"file": "CODE.py", "pattern": r"Copyright \d{4}", "min_matches": 3}
+        assert regex_handler(config, ctx).status == HandlerResultStatus.INCONCLUSIVE
+        assert regex_handler({**config, "fail_on_miss": True}, ctx).status == HandlerResultStatus.FAIL
 
     def test_cel_not_any_match_inconclusive_when_absent(self, tmp_path, ctx):
-        """expr = '!(output.any_match)' with handler FAIL -> INCONCLUSIVE.
+        """expr = '!(output.any_match)' on a miss -> INCONCLUSIVE.
+
+        Feature 041: the miss itself is INCONCLUSIVE, which CEL does not
+        refine. Before that, the handler returned FAIL and CEL disagreed.
 
         Feature 020 (issue #343) narrowed CEL semantics: handler and CEL
         must agree for a conclusive verdict. Handler FAIL + CEL truthy is
@@ -471,17 +471,15 @@ class TestRegexHandler:
         )
         assert result.status == HandlerResultStatus.PASS
 
-    def test_named_patterns_fail_when_none_match(self, tmp_path, ctx):
-        """FAIL when no named patterns match."""
+    def test_named_patterns_inconclusive_when_none_match(self, tmp_path, ctx):
+        """INCONCLUSIVE when no named patterns match; FAIL with fail_on_miss."""
         (tmp_path / "empty.yml").write_text("key: value")
-        result = regex_handler(
-            {
-                "files": ["empty.yml"],
-                "pattern": {"patterns": {"missing": "nonexistent_pattern"}},
-            },
-            ctx,
-        )
-        assert result.status == HandlerResultStatus.FAIL
+        config = {
+            "files": ["empty.yml"],
+            "pattern": {"patterns": {"missing": "nonexistent_pattern"}},
+        }
+        assert regex_handler(config, ctx).status == HandlerResultStatus.INCONCLUSIVE
+        assert regex_handler({**config, "fail_on_miss": True}, ctx).status == HandlerResultStatus.FAIL
 
     # --- pass_if_any ---
 
@@ -499,18 +497,16 @@ class TestRegexHandler:
         assert result.status == HandlerResultStatus.PASS
 
     def test_pass_if_any_false_requires_all(self, tmp_path, ctx):
-        """pass_if_any=False requires ALL file×pattern combos to match."""
+        """pass_if_any=False requires ALL file x pattern combos to match; a partial miss is a miss."""
         (tmp_path / "a.md").write_text("match_here")
         (tmp_path / "b.md").write_text("no luck")
-        result = regex_handler(
-            {
-                "files": ["a.md", "b.md"],
-                "pattern": {"patterns": {"target": "match_here"}},
-                "pass_if_any": False,
-            },
-            ctx,
-        )
-        assert result.status == HandlerResultStatus.FAIL
+        config = {
+            "files": ["a.md", "b.md"],
+            "pattern": {"patterns": {"target": "match_here"}},
+            "pass_if_any": False,
+        }
+        assert regex_handler(config, ctx).status == HandlerResultStatus.INCONCLUSIVE
+        assert regex_handler({**config, "fail_on_miss": True}, ctx).status == HandlerResultStatus.FAIL
 
     def test_pass_if_any_false_all_match(self, tmp_path, ctx):
         """pass_if_any=False passes when all match."""

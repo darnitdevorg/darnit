@@ -138,10 +138,14 @@ def test_claim_is_reported_pending_and_control_evaluated(
 
 
 @pytest.mark.integration
-def test_passing_control_keeps_its_status(tmp_path: Path) -> None:
+def test_evaluated_control_keeps_its_status(tmp_path: Path) -> None:
+    # Feature 041: a README's presence no longer concludes DO-01.01; the
+    # control awaits a model judgment, and the pending claim does not replace
+    # that status.
     result = _result(_run_sieve(_repo(tmp_path, readme=True, claim_file="project")))
 
-    assert result["status"] == "PASS"
+    assert result["status"] == "PENDING"
+    assert result["pending"] == {"kind": "llm_judgment"}
     assert result["assertion"]["outcome"] == "pending"
 
 
@@ -163,7 +167,7 @@ def test_markdown_names_the_claim() -> None:
             "assertion": _expected_assertion("project"),
         }
     ]
-    summary = {"PASS": 0, "FAIL": 1, "WARN": 0, "N/A": 0, "ERROR": 0, "PENDING_LLM": 0, "total": 1}
+    summary = {"PASS": 0, "FAIL": 1, "WARN": 0, "N/A": 0, "ERROR": 0, "PENDING": 0, "total": 1}
 
     md = format_results_markdown("example", "repo", results, summary, {1: False}, 1)
 
@@ -188,7 +192,7 @@ def test_markdown_shows_each_outcome_with_its_evidence() -> None:
             **_expected_assertion("project"), "outcome": "contradicted", "contradiction": contradiction}},
         {"id": "C", "status": "PASS", "details": "", "level": 1, "assertion": _expected_assertion("project")},
     ]
-    summary = {"PASS": 1, "FAIL": 1, "WARN": 0, "N/A": 1, "ERROR": 0, "PENDING_LLM": 0, "total": 3}
+    summary = {"PASS": 1, "FAIL": 1, "WARN": 0, "N/A": 1, "ERROR": 0, "PENDING": 0, "total": 3}
 
     md = format_results_markdown("example", "repo", results, summary, {1: False}, 1)
 

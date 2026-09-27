@@ -41,7 +41,7 @@ def operator_config(tmp_path: Path) -> Path:
         f"""schema_version = 1
 
 [controls."{CONTROL}"]
-passes = [{{ handler = "file_exists", files = ["OPERATOR_README.txt"] }}]
+passes = [{{ handler = "file_exists", files = ["OPERATOR_README.txt"], existence = true }}]
 """,
         encoding="utf-8",
     )

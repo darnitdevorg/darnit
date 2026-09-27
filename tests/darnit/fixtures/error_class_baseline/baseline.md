@@ -10,10 +10,10 @@
 
 | Status | Count | Meaning |
 |--------|-------|---------|
-| ✅ Pass | 1 | Control satisfied |
+| ✅ Pass | 0 | Control satisfied |
 | ❌ Fail | 1 | **Control NOT satisfied - action required** |
 | ⚠️ Needs Verification | 0 | **Could not verify automatically - manual review required** |
-| 🤖 Pending LLM | 0 | Awaiting LLM analysis |
+| 🤖 Pending | 1 | Awaiting a model judgment or an operator confirmation |
 | ➖ N/A | 0 | Not applicable to this project |
 | 🔴 Error | 0 | Check could not run |
 | **Total** | 2 | |
@@ -34,7 +34,7 @@
 
 ## Level Compliance
 
-- **Level 1:** ❌ Not Compliant (1 failed)
+- **Level 1:** ❌ Not Compliant (1 failed, 1 error/pending)
 
 ## Detailed Results
 
@@ -54,12 +54,12 @@
   > 3. GitHub will auto-detect standard licenses
 
 
-### ✅ PASS (1)
+### 🤖 PENDING - Judgment or Confirmation Required (1)
 
-*These controls are satisfied:*
+*These controls await a model judgment or an operator confirmation; they are not compliant until resolved:*
 
-- **OSPS-DO-01.01** (L1): Required file found: README.md
-  - *Resolved by:* `file_exists` (pass #0)
+- **OSPS-DO-01.01** (L1): LLM consultation required
+  - *Pass history:* deterministic:pass → pattern:inconclusive → llm:inconclusive
 
 ---
 

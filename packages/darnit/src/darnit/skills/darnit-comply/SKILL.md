@@ -23,7 +23,7 @@ Darnit registers tools per implementation module. Look for available tools match
 
 ### 1. Initial audit
 
-Call the appropriate `audit_*` tool with `output_format: "summary"` and any profile the user mentioned. The "summary" format returns compact JSON (~5-8K vs ~164K for full JSON). Present a brief summary: total controls, pass/fail/warn counts, compliance percentage. Resolve any PENDING_LLM controls using your own reasoning.
+Call the appropriate `audit_*` tool with `output_format: "summary"` and any profile the user mentioned. The "summary" format returns compact JSON (~5-8K vs ~164K for full JSON). Present a brief summary: total controls, pass/fail/warn counts, compliance percentage. Resolve any PENDING controls (`pending.kind = "llm_judgment"`) using your own reasoning.
 
 ### 2. Collect data (if needed)
 

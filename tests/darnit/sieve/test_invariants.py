@@ -102,7 +102,7 @@ class TestInconclusiveNeverPromotesToPass:
 
     def test_sieve_result_statuses_are_valid(self):
         """SieveResult status is always a valid string from the allowed set."""
-        valid_statuses = {"PASS", "FAIL", "WARN", "ERROR", "N/A", "PENDING_LLM"}
+        valid_statuses = {"PASS", "FAIL", "WARN", "ERROR", "N/A", "PENDING"}
 
         result = SieveResult(
             control_id="TEST-01",

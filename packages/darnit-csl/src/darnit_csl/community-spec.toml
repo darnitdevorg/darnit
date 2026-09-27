@@ -17,7 +17,8 @@
 # Each control follows the same 7 steps:
 #   1. Look in .project/ for confirmed context
 #   2. Does the file exist (governance/, license/, or repo root)?
-#   3. Is the content valid (no leftover template placeholders)?  -> PASS, done
+#   3. Is the content valid (no leftover template placeholders)?  -> a
+#      placeholder FAILs; filled content needs a judgment (feature 041)
 #   4. If not, collect data and ask the user (requires_context prompts)
 #   5. Persist answers to .project/ (project_update + context store_as)
 #   6. Generate the file from a template (file_create)
@@ -208,6 +209,8 @@ specification is developed.
 # filename. Match the CSL CLA heading in any likely location.
 [[controls."CSL-01.01".passes]]
 handler = "regex"
+# The requirement is that the CLA document exists; its heading identifies it (feature 041).
+existence = true
 files = [
     "CLA.md", "CLA",
     "governance/*.md", "license/*.md",
@@ -263,10 +266,12 @@ help_md = """Add the Community Specification License 1.0 text to the spec repo.
 
 # Content/title detection FIRST: the CSL license may be stored under any
 # filename (e.g. TUF ships it as LICENSE.md). Match the CSL heading in any
-# likely location. PASS if found, FAIL if a license-ish file exists but is not
-# CSL, INCONCLUSIVE if no candidate files (falls through to the name check).
+# likely location. PASS if found; otherwise INCONCLUSIVE and the name check
+# below decides (feature 041: a pattern miss does not prove failure).
 [[controls."CSL-01.02".passes]]
 handler = "regex"
+# The requirement is that the license document exists; its heading identifies it (feature 041).
+existence = true
 files = [
     "LICENSE.md", "LICENSE", "LICENSE.txt", "LICENSE-CSL.md", "COPYING", "COPYING.md",
     "governance/*.md", "license/*.md",
@@ -322,7 +327,7 @@ Group's scope (the agent can draft this from the repository for your review)."""
 
 # Step 3 (content): under `darnit serve` the LLM judges the scope FIRST, so it
 # catches weak or off-topic scopes that regex cannot. Under `darnit audit`
-# (no LLM) the sieve stops here and reports PENDING_LLM; the deterministic
+# (no LLM) the sieve stops here and reports PENDING; the deterministic
 # regex/existence passes below still answer non-LLM callers.
 [[controls."CSL-02.01".passes]]
 handler = "csl_llm_if_present"
@@ -333,10 +338,12 @@ is too vague to bound a patent commitment. Otherwise PASS."""
 files_to_include = ["governance/02-scope.md", "license/02-scope.md", "02-scope.md"]
 confidence_threshold = 0.7
 
-# Deterministic fallback: PASS only if the file exists AND no longer contains the
-# bracketed template placeholder. (Missing file -> INCONCLUSIVE -> next pass.)
+# Deterministic fallback: FAIL if the file still contains the bracketed template
+# placeholder. (Missing file -> INCONCLUSIVE -> next pass.)
 [[controls."CSL-02.01".passes]]
 handler = "regex"
+# A miss proves failure; a match is evidence only, not a PASS (feature 041).
+fail_on_miss = true
 files = ["governance/02-scope.md", "license/02-scope.md", "02-scope.md"]
 
 [controls."CSL-02.01".passes.pattern.patterns]
@@ -387,7 +394,7 @@ complaints (org-first: point at an existing project/org Code of Conduct; otherwi
 **Remediation:** create `governance/03-notices.md` and set the CoC contact(s)."""
 
 # Step 3 (content): under `darnit serve` the LLM judges the CoC contact FIRST.
-# Under `darnit audit` (no LLM) the sieve stops here (PENDING_LLM); the
+# Under `darnit audit` (no LLM) the sieve stops here (PENDING); the
 # deterministic passes below still answer non-LLM callers.
 [[controls."CSL-03.01".passes]]
 handler = "csl_llm_if_present"
@@ -401,10 +408,12 @@ still present, or neither a contact nor such a reference is given."""
 files_to_include = ["governance/03-notices.md", "license/03-notices.md", "03-notices.md"]
 confidence_threshold = 0.7
 
-# Deterministic fallback: PASS only if the file exists AND the CoC contact line
-# is filled (no 5+ underscore blank). Missing -> INCONCLUSIVE -> next pass.
+# Deterministic fallback: FAIL if the CoC contact line is not filled (a 5+
+# underscore blank or leftover guidance). Missing -> INCONCLUSIVE -> next pass.
 [[controls."CSL-03.01".passes]]
 handler = "regex"
+# A miss proves failure; a match is evidence only, not a PASS (feature 041).
+fail_on_miss = true
 files = ["governance/03-notices.md", "license/03-notices.md", "03-notices.md"]
 
 [controls."CSL-03.01".passes.pattern.patterns]
@@ -504,7 +513,7 @@ governance (e.g. CNCF) - reference that and document the CSL roles on top of it.
 # Under `darnit serve` the LLM judges governance FIRST: is this genuinely CSL
 # governance (roles, decision-making, an umbrella reference) rather than a
 # passing mention. Under `darnit audit` (no LLM) the sieve stops here
-# (PENDING_LLM); the deterministic content/existence passes below answer
+# (PENDING); the deterministic content/existence passes below answer
 # non-LLM callers.
 [[controls."CSL-05.01".passes]]
 handler = "csl_llm_if_present"
@@ -529,6 +538,8 @@ confidence_threshold = 0.7
 # does not, so it FAILs (the email calls for reconciling existing governance).
 [[controls."CSL-05.01".passes]]
 handler = "regex"
+# A miss proves failure; a match is evidence only, not a PASS (feature 041).
+fail_on_miss = true
 files = [
     "governance/05-governance.md",
     "license/05-governance.md",
@@ -610,6 +621,8 @@ in the README."""
 
 [[controls."CSL-06.01".passes]]
 handler = "regex"
+# A miss proves failure; a match is evidence only, not a PASS (feature 041).
+fail_on_miss = true
 files = ["README.md", "readme.md", "README.rst"]
 pass_if_any = false
 

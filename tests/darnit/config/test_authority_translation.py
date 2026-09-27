@@ -1,26 +1,25 @@
-"""Legacy TOML authority auto-inference tests (feature 025 T013b, SC-006).
+"""Legacy TOML ``authority`` step field under per-claim authority.
 
-Under RFC-0001 Stage 1, existing controls that omit an explicit `authority`
-on their pass steps rely on the handler's registered `default_authority` as
-the effective value at dispatch time. This test suite verifies that:
+Feature 025 T013b / SC-006 introduced a per-step ``authority``; feature 041
+replaced per-handler authority with registered ceilings. This suite verifies
+the legacy field still loads with a well-defined meaning:
 
-1. Loading a legacy-shape TOML control produces HandlerInvocation objects
-   with `authority=None` (unset).
-2. The orchestrator's effective-authority resolution consults the handler's
-   `default_authority` when the invocation's authority is None.
-3. Loosening (a step declaring an authority STRONGER than the handler's
-   default) is rejected at load time with `AuthorityViolation`.
-4. Tightening (a step declaring an authority WEAKER-or-equal to the default)
-   is accepted.
-
-Covers spec.md FR-015 + SC-006.
+1. Steps that omit ``authority`` load cleanly; the step type's ceiling
+   applies at dispatch time.
+2. ``authority = "suggestive"`` narrows a step to evidence only (always
+   accepted).
+3. ``authority = "dispositive"`` is accepted where the ceiling is non-empty
+   and rejected where the step type concludes nothing (the false-PASS lever
+   Stage 1 removed).
+4. ``authority = "asserted"`` is rejected: no step type is a person's
+   confirmation.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from darnit.config.control_loader import _validate_and_log_authority
+from darnit.config.control_loader import validate_step_authority
 from darnit.config.framework_schema import HandlerInvocation
 from darnit.core.errors import AuthorityViolation
 from darnit.sieve.handler_registry import get_sieve_handler_registry
@@ -28,36 +27,36 @@ from darnit.sieve.handler_registry import get_sieve_handler_registry
 
 class TestAuthorityAutoInference:
     """Case (a): a control TOML without explicit authority loads cleanly and
-    the orchestrator uses the handler's default at dispatch time."""
+    the orchestrator uses the step type's ceiling at dispatch time."""
 
     def test_single_file_exists_step_no_explicit_authority(self) -> None:
         """A single-step control using file_exists loads with authority=None
-        on the invocation; handler default (dispositive) is used at dispatch."""
+        on the invocation; the file_exists ceiling applies at dispatch."""
         registry = get_sieve_handler_registry()
         info = registry.get("file_exists")
         assert info is not None
-        assert info.default_authority == "dispositive"
+        assert info.ceiling == frozenset({"fail"})
 
         inv = HandlerInvocation(handler="file_exists", files=["README.md"])
         assert inv.authority is None
 
         # Load-time validation: no explicit authority -> passes silently.
-        _validate_and_log_authority("TEST-01", [inv])
+        validate_step_authority(None, "TEST-01", [inv])
 
     def test_mixed_phases_no_explicit_authority(self) -> None:
         """A control with file_exists -> llm_eval -> manual loads cleanly;
-        each step's effective authority derives from its handler default."""
+        each step's effective set derives from its step type's ceiling."""
         inv_file = HandlerInvocation(handler="file_exists", files=["SECURITY.md"])
         inv_llm = HandlerInvocation(handler="llm_eval", prompt="Check security")
         inv_manual = HandlerInvocation(handler="manual", steps=["Confirm"])
 
-        _validate_and_log_authority("TEST-02", [inv_file, inv_llm, inv_manual])
+        validate_step_authority(None, "TEST-02", [inv_file, inv_llm, inv_manual])
 
-        # Handler defaults per feature 025 migration table
+        # Ceilings per feature 041 data-model.md
         registry = get_sieve_handler_registry()
-        assert registry.get("file_exists").default_authority == "dispositive"
-        assert registry.get("llm_eval").default_authority == "suggestive"
-        assert registry.get("manual").default_authority == "asserted"
+        assert registry.get("file_exists").ceiling == frozenset({"fail"})
+        assert registry.get("llm_eval").ceiling == frozenset()
+        assert registry.get("manual").ceiling == frozenset()
 
     def test_regex_step_no_explicit_authority(self) -> None:
         """A control using the regex/pattern handler loads cleanly."""
@@ -66,50 +65,48 @@ class TestAuthorityAutoInference:
             files=["**/*.py"],
             pattern="secret",
         )
-        _validate_and_log_authority("TEST-03", [inv])
+        validate_step_authority(None, "TEST-03", [inv])
 
 
 class TestAuthorityTightening:
-    """Case (d): a step MAY declare an authority WEAKER-or-equal to the
-    handler's default (tightening = more cautious). Verify accepted."""
+    """Case (d): a step MAY narrow what it concludes (tightening = more
+    cautious). Verify accepted."""
 
     def test_dispositive_handler_marked_suggestive_step(self) -> None:
-        """file_exists (default: dispositive) marked suggestive at TOML: allowed."""
+        """file_exists marked suggestive at TOML: allowed (evidence only)."""
         inv = HandlerInvocation(
             handler="file_exists",
             files=["README.md"],
             authority="suggestive",
         )
         # Should not raise.
-        _validate_and_log_authority("TEST-TIGHTEN-01", [inv])
+        validate_step_authority(None, "TEST-TIGHTEN-01", [inv])
 
     def test_dispositive_handler_marked_dispositive_step(self) -> None:
-        """Explicit same-authority declaration: allowed."""
+        """dispositive on a step type with a non-empty ceiling: allowed, no change."""
         inv = HandlerInvocation(
             handler="file_exists",
             files=["README.md"],
             authority="dispositive",
         )
-        _validate_and_log_authority("TEST-TIGHTEN-02", [inv])
+        validate_step_authority(None, "TEST-TIGHTEN-02", [inv])
 
     def test_asserted_handler_marked_suggestive_step(self) -> None:
-        """manual (default: asserted) marked suggestive at TOML: allowed
-        (still tighter than asserted)."""
+        """manual marked suggestive at TOML: allowed (it concludes nothing anyway)."""
         inv = HandlerInvocation(
             handler="manual",
             steps=["Check"],
             authority="suggestive",
         )
-        _validate_and_log_authority("TEST-TIGHTEN-03", [inv])
+        validate_step_authority(None, "TEST-TIGHTEN-03", [inv])
 
 
 class TestAuthorityLoosening:
-    """Case (c): a step MUST NOT declare an authority STRONGER than the
-    handler's default (loosening = claiming more authority than the handler
-    has). Verify rejected with AuthorityViolation."""
+    """Case (c): a step MUST NOT claim to conclude what its step type cannot
+    (loosening). Verify rejected with AuthorityViolation."""
 
     def test_llm_eval_marked_dispositive_rejected(self) -> None:
-        """llm_eval (default: suggestive) marked dispositive at TOML: rejected.
+        """llm_eval (ceiling: nothing) marked dispositive at TOML: rejected.
 
         This is the exact false-PASS lever RFC-0001 Stage 1 removes. A TOML
         author cannot claim an LLM output is dispositive.
@@ -120,7 +117,7 @@ class TestAuthorityLoosening:
             authority="dispositive",
         )
         with pytest.raises(AuthorityViolation) as excinfo:
-            _validate_and_log_authority("BAD-LLM-01", [inv])
+            validate_step_authority(None, "BAD-LLM-01", [inv])
         assert excinfo.value.control_id == "BAD-LLM-01"
         assert "llm_eval" in str(excinfo.value)
         assert "dispositive" in str(excinfo.value)
@@ -133,17 +130,17 @@ class TestAuthorityLoosening:
             authority="asserted",
         )
         with pytest.raises(AuthorityViolation):
-            _validate_and_log_authority("BAD-LLM-02", [inv])
+            validate_step_authority(None, "BAD-LLM-02", [inv])
 
     def test_file_exists_marked_asserted_rejected(self) -> None:
-        """A dispositive handler marked asserted (stronger): rejected."""
+        """A presence step marked asserted: rejected (asserted is a person's confirmation)."""
         inv = HandlerInvocation(
             handler="file_exists",
             files=["X"],
             authority="asserted",
         )
         with pytest.raises(AuthorityViolation):
-            _validate_and_log_authority("BAD-FILE-01", [inv])
+            validate_step_authority(None, "BAD-FILE-01", [inv])
 
 
 class TestUnknownHandler:
@@ -153,4 +150,4 @@ class TestUnknownHandler:
     def test_unknown_handler_does_not_raise_at_validation(self) -> None:
         inv = HandlerInvocation(handler="nonexistent_handler_xyz")
         # No AuthorityViolation; orchestrator handles unknown handlers.
-        _validate_and_log_authority("TEST-UNKNOWN", [inv])
+        validate_step_authority(None, "TEST-UNKNOWN", [inv])

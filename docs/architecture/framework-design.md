@@ -2,7 +2,7 @@
 
 > **Version**: 1.0.0-alpha.8
 > **Status**: Authoritative
-> **Last Updated**: 2026-02-16
+> **Last Updated**: 2026-09-27
 
 This specification defines the authoritative design of the Darnit framework, including the sieve orchestrator, TOML schema, built-in pass types, remediation actions, and plugin protocol.
 
@@ -168,56 +168,111 @@ steps = ["Verify branch protection in repository settings"]
 
 ## 3. Built-in Pass Types
 
-The sieve orchestrator executes passes in declaration order, dispatching each to its named handler. Execution stops at the first conclusive result.
+The sieve orchestrator executes passes in declaration order, dispatching each to its named handler. Execution stops at the first conclusive result. A result is conclusive only when its outcome is in the step's effective set (section 3.0.1): what a step may conclude depends on what it proves about the specific control, not on the kind of step (RFC-0001 September 2026 revision, "Authority is per claim, not per handler").
 
 #### Scenario: Pass execution follows declaration order
 - **WHEN** a control has multiple `[[passes]]` entries
 - **THEN** the orchestrator MUST execute them in the order they appear in the TOML file
-- **AND** the orchestrator MUST stop at the first conclusive result (PASS, FAIL, WARN, or ERROR)
-- **AND** INCONCLUSIVE results MUST cause the orchestrator to continue to the next pass
+- **AND** the orchestrator MUST stop at the first conclusive result
+- **AND** INCONCLUSIVE results, and results whose outcome the step may not conclude, MUST cause the orchestrator to continue to the next pass
 
 ### 3.0 Handler Outcomes
 
-A handler returns one of five outcomes. Four are conclusive under the rules below; INCONCLUSIVE never is.
+A handler returns one of five outcomes. INCONCLUSIVE never concludes; PASS, FAIL, and WARN conclude only when the step may conclude them.
 
 | Outcome | Meaning | Concludes the control? |
 |---------|---------|------------------------|
-| `PASS` | The control is satisfied. | Yes, under terminal authority |
-| `FAIL` | The control is not satisfied. | Yes, under terminal authority |
-| `WARN` | The handler read the evidence, understood it, and determined it is insufficient to pass. | Yes, under terminal authority |
+| `PASS` | The control is satisfied. | Yes, when `pass` is in the step's effective set |
+| `FAIL` | The control is not satisfied. | Yes, when `fail` is in the step's effective set |
+| `WARN` | The handler read the evidence, understood it, and determined it is insufficient to pass. | Yes, when `fail` is in the step's effective set |
 | `INCONCLUSIVE` | The handler determined nothing. | No -- the pipeline continues |
-| `ERROR` | The handler did not complete. | Yes, terminal regardless of authority |
+| `ERROR` | The handler did not complete. | Yes, terminal regardless of the effective set |
 
 `WARN` differs from `INCONCLUSIVE` in kind, not in degree. INCONCLUSIVE means a later pass may still determine something. WARN means the answer has been determined and the answer is "not enough". A handler MUST NOT return WARN to mean "I am unsure".
 
-A WARN counts as FAIL for compliance calculations (Constitution Principle II). A WARN carries the handler's own message; it MUST NOT be replaced by a generic string.
+A WARN counts as FAIL for compliance calculations (Constitution Principle II), which is why a WARN concludes under the same permission as FAIL. A WARN carries the handler's own message; it MUST NOT be replaced by a generic string.
 
 #### Scenario: A handler concludes WARN
-- **WHEN** a handler returns WARN and the effective authority is `dispositive` or `asserted`
+- **WHEN** a handler returns WARN and `fail` is in the step's effective set
 - **THEN** the orchestrator MUST conclude the control as WARN
 - **AND** the resulting message MUST be the handler's own message
 - **AND** the pass history MUST record the pass outcome as WARN, not INCONCLUSIVE
 
-#### Scenario: A non-authoritative WARN does not conclude
-- **WHEN** a handler returns WARN and the effective authority is `suggestive` or absent
+#### Scenario: A WARN the step may not conclude
+- **WHEN** a handler returns WARN and `fail` is not in the step's effective set
 - **THEN** the orchestrator MUST NOT conclude the control
 - **AND** it MUST attach evidence and continue, or terminate INCONCLUSIVE if this was the last step
 
-### 3.0.1 Step Disposition Table
+### 3.0.1 Step Ceilings and Declarations
 
-The disposition applied to each step, by handler outcome and effective authority:
+Every step type registers a **ceiling**: the set of outcomes (`pass`, `fail`) it can at most conclude. Presence and pattern step types also register an **existence ceiling**, used when a step declares that its control's requirement is literally about existence.
 
-| Handler outcome | Terminal authority | Non-terminal, not last | Non-terminal, last step |
-|-----------------|--------------------|------------------------|-------------------------|
+| Step type | Ceiling | Existence ceiling |
+|-----------|---------|-------------------|
+| `file_exists` | `{fail}` | `{pass, fail}` |
+| `regex` / `pattern` | `{fail}` | `{pass, fail}` |
+| `exec` | `{pass, fail}` | -- |
+| `gh_api` | `{pass, fail}` | -- |
+| `mcp` | `{pass, fail}` | -- |
+| `llm_eval`, `llm_extract` | `{}` | -- |
+| `manual`, `manual_steps` | `{}` | -- |
+| remediation handlers (`file_create`, `api_call`, `project_update`, `yaml_inject`) | `{}` | -- |
+
+A plugin handler registers its ceiling with the handler (`registry.register(..., ceiling={"pass", "fail"})`). A plugin handler that registers no ceiling has the ceiling `{}`: its results are evidence only.
+
+**Step fields** (on any `[[controls."ID".passes]]` entry; none are passed to the handler except `fail_on_miss` and `fail_on_status`):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `concludes` | `list["pass" \| "fail"]` | Narrows the ceiling for this control. Default: the ceiling. |
+| `existence` | `bool` | Presence and pattern steps only. The control's requirement is literally that a file exists (or does not); selects the existence ceiling. |
+| `fail_on_miss` | `bool` | Pattern steps only. A pattern miss proves failure (section 3.4). Requires `fail` in the effective set. |
+| `fail_on_status` | `list[int]` | `gh_api` steps only. HTTP statuses that prove failure (section 3.8). |
+| `promotion` | `{outcome = "pass", corpus = str, note = str}` | Permission to conclude PASS beyond the ceiling, justified by a corpus measurement (section 5.5). |
+| `authority` | `str` | Legacy (feature 025). `"suggestive"` is the same as `concludes = []`. `"dispositive"` does not change the effective set and is rejected on a step type whose ceiling is empty. `"asserted"` is rejected: no step type is a human confirmation. |
+
+**Effective set** = (existence ceiling if `existence = true`, else ceiling), intersected with `concludes` when given, union the promoted outcome when a promotion exists.
+
+**Validation** runs when controls are loaded, on every control-loading path (framework-only and effective/merged), after plugin handlers register. It rejects, naming the framework, control, step index, and outcome:
+
+1. `existence` on a step type without an existence ceiling;
+2. `fail_on_miss` on a non-pattern step, or without `fail` in the effective set;
+3. `fail_on_status` on a step type other than `gh_api`;
+4. any `concludes` outcome outside the (existence) ceiling without a promotion for that outcome;
+5. a promotion whose outcome is not `pass`, or that lacks `corpus`.
+
+The orchestrator computes the effective set from the registry at dispatch time as well, so a step that escaped validation still cannot conclude an outcome outside its ceiling without a promotion.
+
+#### Scenario: Presence proves only absence
+- **WHEN** a `file_exists` step without `existence = true` finds the file
+- **THEN** its PASS MUST be recorded as evidence and evaluation MUST continue
+- **AND** when it finds no file, its FAIL MUST conclude the control
+
+#### Scenario: Existence requirement
+- **WHEN** a `file_exists` step declares `existence = true` and finds the file
+- **THEN** it MUST conclude the control PASS
+
+#### Scenario: Widening without a promotion
+- **WHEN** a step declares `concludes = ["pass"]` on a step type whose ceiling does not include `pass`, without a promotion
+- **THEN** loading the framework configuration MUST fail with an error naming the framework, control, step index, and outcome
+
+### 3.0.2 Step Disposition Table
+
+The disposition applied to each step, by handler outcome and whether the outcome is in the step's effective set:
+
+| Handler outcome | In effective set | Not in effective set, not last | Not in effective set, last step |
+|-----------------|------------------|--------------------------------|---------------------------------|
 | `ERROR` | TERMINATE_ERROR | TERMINATE_ERROR | TERMINATE_ERROR |
 | `PASS` | CONCLUDE_PASS | ATTACH_EVIDENCE_AND_CONTINUE | TERMINATE_INCONCLUSIVE |
 | `FAIL` | CONCLUDE_FAIL | ATTACH_EVIDENCE_AND_CONTINUE | TERMINATE_INCONCLUSIVE |
-| `WARN` | CONCLUDE_WARN | ATTACH_EVIDENCE_AND_CONTINUE | TERMINATE_INCONCLUSIVE |
+| `WARN` | CONCLUDE_WARN (when `fail` is in the set) | ATTACH_EVIDENCE_AND_CONTINUE | TERMINATE_INCONCLUSIVE |
 | `INCONCLUSIVE` | ATTACH_EVIDENCE_AND_CONTINUE | ATTACH_EVIDENCE_AND_CONTINUE | TERMINATE_INCONCLUSIVE |
 
-The WARN row is deliberately identical to the PASS and FAIL rows. A WARN is a conclusion, so the RFC-0001 Stage 1 authority invariant covers it: LLM output alone cannot manufacture a WARN that halts verification, just as it cannot manufacture a PASS.
+A step that concludes within its effective set records authority `dispositive` and `concluded_by` = the step's handler name. A control no step concludes is WARN with authority `suggestive` and `concluded_by = "none"`, carrying the evidence gathered.
 
-The CEL post-step (section 3.6) does not modify a WARN result. Its transition table is defined for PASS and FAIL only; there is no "CEL disagrees with WARN" cell, because WARN already asserts that the evidence is incomplete.
+`inferred_from` (a control that passes when another control passed) follows the same rule: the inferred PASS is produced only when the source control's PASS was itself concluded (authority `dispositive` or `asserted`), and it records `concluded_by = "inferred_from"`.
+
+The CEL post-step (section 3.7) does not modify a WARN result. Its transition table is defined for PASS and FAIL only; there is no "CEL disagrees with WARN" cell, because WARN already asserts that the evidence is incomplete.
 
 ### 3.1 Pass Execution Order
 
@@ -257,6 +312,8 @@ files = ["SECURITY.md", ".github/SECURITY.md"]
 **Behavior**:
 1. If any file in `files` matches → PASS
 2. If no file matches → FAIL
+
+**Ceiling**: `{fail}`; `{pass, fail}` with `existence = true` (section 3.0.1). A file being present says nothing about its content, so a presence step concludes PASS only for a control whose requirement is literally that the file exists.
 
 #### Scenario: File found
 - **WHEN** a `file_must_exist` handler is invoked
@@ -331,7 +388,7 @@ patterns = {
     "has_disclosure" = "(?i)disclos|report|vulnerabilit"
 }
 pass_if_any = true
-fail_if_no_match = false
+fail_on_miss = false
 ```
 
 **Fields**:
@@ -342,15 +399,29 @@ fail_if_no_match = false
 | `files` | `list[str]` | File patterns to search |
 | `patterns` | `dict[str, str]` | Named patterns (name → regex) |
 | `pass_if_any` | `bool` | PASS if any pattern matches (default: true) |
-| `fail_if_no_match` | `bool` | FAIL instead of INCONCLUSIVE on no match |
+| `fail_on_miss` | `bool` | FAIL instead of INCONCLUSIVE on no match (default: false). Step field; requires `fail` in the step's effective set. |
+
+**Ceiling**: `{fail}`; `{pass, fail}` with `existence = true` (section 3.0.1). A keyword match is evidence that a document mentions something, not that it satisfies the control.
+
+**Behavior** (match mode):
+1. Match per `pass_if_any` -> PASS
+2. No match -> INCONCLUSIVE, unless `fail_on_miss = true` -> FAIL
+3. No files resolved -> INCONCLUSIVE
+
+Exclude mode (`exclude_files`) is unchanged: no files found -> PASS, files found -> FAIL, usually refined by `expr`.
 
 #### Scenario: Pattern match found
 - **WHEN** a `regex` handler is invoked with `pass_if_any = true`
 - **AND** at least one pattern matches in any file
 - **THEN** the handler MUST return PASS
 
-#### Scenario: No match with fail_if_no_match
-- **WHEN** a `regex` handler is invoked with `fail_if_no_match = true`
+#### Scenario: No match without fail_on_miss
+- **WHEN** a `regex` handler is invoked without `fail_on_miss`
+- **AND** no patterns match in any file
+- **THEN** the handler MUST return INCONCLUSIVE and evaluation MUST continue
+
+#### Scenario: No match with fail_on_miss
+- **WHEN** a `regex` handler is invoked with `fail_on_miss = true`
 - **AND** no patterns match in any file
 - **THEN** the handler MUST return FAIL
 
@@ -387,15 +458,25 @@ confidence_threshold = 0.8
 
 **`files_to_include` resolution**: The handler MUST resolve `$FOUND_FILE` entries by looking up `found_file` in `context.gathered_evidence`. Each resolved file path MUST be read (up to 10KB per file, max 5 files) and included as `file_contents` in the `consultation_request`. File paths that are not absolute MUST be resolved relative to `context.local_path`. Files that cannot be read MUST be silently skipped.
 
-#### Scenario: LLM confidence above threshold
-- **WHEN** an `llm_eval` handler receives an LLM response
-- **AND** the confidence score meets or exceeds `confidence_threshold`
-- **THEN** the handler MUST return the LLM's pass/fail determination
+**Ceiling**: `{}`. The handler returns INCONCLUSIVE with a `consultation_request`; with `stop_on_llm` the control becomes `PENDING` with `pending.kind = "llm_judgment"` (section 5.4). A model judgment never concludes PASS. No promotion to conclude PASS exists for a model judgment.
 
-#### Scenario: LLM confidence below threshold
-- **WHEN** an `llm_eval` handler receives an LLM response
-- **AND** the confidence score is below `confidence_threshold`
-- **THEN** the handler MUST return INCONCLUSIVE
+#### Scenario: Positive judgment
+- **WHEN** a model judgment says the evidence satisfies the control
+- **AND** every excerpt it cites appears verbatim (whitespace-normalized) in the content it was given
+- **THEN** the control MUST be `PENDING` with `pending.kind = "confirmation"` and a `candidate` block (a PASS candidate)
+- **AND** it MUST count as non-compliant until an operator confirms it
+
+#### Scenario: Unverifiable citation
+- **WHEN** a positive judgment cites an excerpt not present in the content it was given
+- **THEN** no PASS candidate MUST be produced and the control MUST be WARN
+
+#### Scenario: Negative judgment
+- **WHEN** a model judgment says the evidence does not satisfy the control
+- **THEN** the control MUST be FAIL with authority `suggestive` and `concluded_by = "llm_judgment"`
+
+#### Scenario: Model service failure
+- **WHEN** the model service times out or errors
+- **THEN** the control MUST be ERROR with the cause, never FAIL
 
 ### 3.6 manual Handler
 
@@ -479,6 +560,48 @@ expr = 'output.json.status == "pass" && size(output.json.issues) == 0'
 #### Scenario: CEL expression precedence
 - **WHEN** both `expr` and legacy fields (e.g., `pass_if_json_path`) are defined
 - **THEN** the `expr` field MUST take precedence
+
+### 3.8 gh_api Handler
+
+**Purpose**: Status-aware platform API checks. `gh api` exits 1 for 401, 403, 404, and 429 alike, so an `exec` step cannot tell "does not exist" from "not permitted to see". `gh_api` sees the HTTP status and only statuses the step declares in `fail_on_status` may prove failure.
+
+**TOML Schema**:
+```toml
+[[controls."EXAMPLE".passes]]
+handler = "gh_api"
+endpoint = "/repos/$OWNER/$REPO/branches/$BRANCH/protection"
+fail_on_status = [404]
+expr = 'response.body.required_pull_request_reviews != null'
+```
+
+**Fields**:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `handler` | `str` | MUST be `"gh_api"` |
+| `endpoint` | `str` | API path (supports `$OWNER`, `$REPO`, `$BRANCH`) |
+| `fail_on_status` | `list[int]` | HTTP statuses that prove failure (step field) |
+| `expr` | `str` | CEL over `response.status_code` and `response.body`; `true` -> PASS, `false` -> FAIL |
+
+**Ceiling**: `{pass, fail}`.
+
+**Behavior**:
+1. 2xx: `expr` decides (no `expr`: PASS)
+2. A status in `fail_on_status` -> FAIL
+3. 401 / 403 -> ERROR, class `auth`
+4. 429 (or a rate-limit 403) -> ERROR, class `rate_limit`
+5. 5xx, transport failure, or any other status not declared -> ERROR, class `unavailable`
+6. `gh` not installed -> ERROR, class `missing_tool`
+
+A response that is ambiguous between "not found" and "not permitted to see" is ERROR unless the step declares otherwise.
+
+#### Scenario: Declared status proves failure
+- **WHEN** a `gh_api` step with `fail_on_status = [404]` receives 404
+- **THEN** the handler MUST return FAIL
+
+#### Scenario: Undeclared status is a broken measurement
+- **WHEN** a `gh_api` step receives 404 without declaring it, or receives 401, 403, 429, or 5xx
+- **THEN** the handler MUST return ERROR with the cause
 
 ---
 
@@ -645,23 +768,24 @@ calling `gh repo view`, etc.).
 
 ### 5.1 Execution Model
 
-The orchestrator dispatches handler invocations sequentially, stopping at first conclusive result:
+The orchestrator dispatches handler invocations sequentially, stopping at the first result the step may conclude:
 
 ```python
 for invocation in control.metadata["handler_invocations"]:
     handler = registry.get(invocation.handler)
     result = handler(invocation.config, context)
+    allowed = effective_set(handler, invocation)   # section 3.0.1
 
-    if result.outcome == PASS:
-        return SieveResult(status="PASS", ...)
-    elif result.outcome == FAIL:
-        return SieveResult(status="FAIL", ...)
-    elif result.outcome == ERROR:
-        return SieveResult(status="ERROR", ...)
-    # INCONCLUSIVE → continue to next handler
+    if result.outcome == ERROR:
+        return SieveResult(status="ERROR", error={"class": ..., "cause": ...})
+    if result.outcome == PASS and "pass" in allowed:
+        return SieveResult(status="PASS", authority="dispositive", concluded_by=invocation.handler)
+    if result.outcome in (FAIL, WARN) and "fail" in allowed:
+        return SieveResult(status=result.outcome, authority="dispositive", concluded_by=invocation.handler)
+    # anything else is evidence -> continue to next handler
 
-# All handlers inconclusive
-return SieveResult(status="WARN", verification_steps=manual_steps)
+# No step concluded
+return SieveResult(status="WARN", authority="suggestive", concluded_by="none")
 ```
 
 #### Scenario: Handler dispatch replaces pass execution
@@ -677,13 +801,34 @@ return SieveResult(status="WARN", verification_steps=manual_steps)
 
 ### 5.2 Result Statuses
 
-| Status | Description | Conclusive |
-|--------|-------------|------------|
-| `PASS` | Control verified compliant | Yes |
-| `FAIL` | Control verified non-compliant | Yes |
-| `ERROR` | Check execution failed | Yes |
-| `WARN` | Manual verification required | No |
-| `PENDING_LLM` | Awaiting LLM consultation | No |
+| Status | Description | Compliant |
+|--------|-------------|-----------|
+| `PASS` | Control verified compliant, by a step allowed to conclude PASS or by a confirmed PASS candidate | Yes |
+| `N/A` | Not applicable (control `when` false, or an honored not-applicable claim, feature 040) | Excluded |
+| `FAIL` | Control verified non-compliant, or a negative model finding | No |
+| `WARN` | Needs verification: no step concluded, or a step concluded the evidence is insufficient | No |
+| `ERROR` | Broken measurement: platform or API error, missing tool, evaluation error | No |
+| `PENDING` | Awaiting a model judgment (`pending.kind = "llm_judgment"`) or an operator confirmation of a PASS candidate (`pending.kind = "confirmation"`) | No |
+
+`PENDING` replaces the former `PENDING_LLM` status.
+
+Result fields beyond `status`:
+
+| Field | Description |
+|-------|-------------|
+| `authority` | `dispositive` (a step concluded within its effective set), `suggestive` (no step concluded, or a model finding), `asserted` (a person confirmed it) |
+| `concluded_by` | Step handler name, `llm_judgment`, `confirmation`, `inferred_from`, or `none` |
+| `error` | `{class, cause}`; present on every ERROR. Classes include `auth`, `rate_limit`, `unavailable`, `missing_tool`, `evaluation`, and the feature 036 classes |
+| `pending` | `{kind}`; present on every PENDING |
+| `candidate` | Present with `pending.kind = "confirmation"`: `verdict = "pass"`, `reasoning`, `cited_evidence`, `model`, `model_version`, `evidence_digest`, `source` (`harness` or `mcp_agent`) |
+| `confirmation` | Present on a PASS from a confirmed candidate: `confirmed_by`, `confirmed_at`, `expires_at` |
+
+**Compliance** is computed in one place (`calculate_compliance`) for every driver, report format, and attestation: a level is compliant only if every applicable control is PASS (N/A excluded per feature 040). FAIL, WARN, ERROR, and PENDING, including a PASS candidate, are non-compliant.
+
+#### Scenario: ERROR is never FAIL
+- **WHEN** a step could not measure (API authorization or rate-limit error, missing tool, evaluation error)
+- **THEN** the result MUST be ERROR with `error.class` and `error.cause`
+- **AND** it MUST NOT be reported as FAIL
 
 ### 5.3 Evidence Accumulation
 
@@ -698,9 +843,16 @@ context.gathered_evidence["file_found"] = "/path/to/SECURITY.md"
 
 When an LLM pass is reached and `stop_on_llm=True`:
 
-1. Orchestrator returns `PENDING_LLM` with consultation request
-2. Calling LLM analyzes and returns `LLMConsultationResponse`
-3. Orchestrator continues with `verify_with_llm_response()`
+1. Orchestrator returns `PENDING` with `pending.kind = "llm_judgment"` and the consultation request in `evidence.llm_consultation`
+2. A judgment arrives from the headless harness's model step or from a coding agent through the `submit_judgment` MCP tool; both paths apply the same rules
+3. A positive judgment with verified citations becomes a PASS candidate (`PENDING`, `pending.kind = "confirmation"`), stored operator-side in the feature 040 confirmation store with claim `pass_candidate`; a negative judgment is a suggestive FAIL; an unverifiable citation leaves the control WARN; a model-service failure is ERROR
+4. An operator confirms a candidate through the confirmation flow; later audits report PASS with authority `asserted`, `concluded_by = "confirmation"`, and the confirmer and time, until the evidence digest changes or the confirmation expires
+
+No driver records a verdict for a judgment-requiring control by any other path; the ActionPlan audit step does not accept client-supplied per-control statuses.
+
+### 5.5 Adversarial Fixture Corpus
+
+A corpus of small fixture repositories with human-labelled expected outcomes per control (`tests/darnit_baseline/corpus/<fixture>/labels.toml`: `PASS`, `FAIL`, `NOT_PASS`, or `N/A`) measures every step. A corpus run reports, per step and outcome, the correct and incorrect conclusions against the labels, and fails if any step allowed to conclude PASS produces a false PASS, naming the step and fixture. A step not allowed to conclude PASS is eligible for a `promotion` (section 3.0.1) only with zero false PASS results; the promotion's `corpus` field records the corpus version that justified it. Adding a fixture requires only its files and labels.
 
 ---
 

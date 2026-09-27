@@ -72,7 +72,7 @@ class TestMarkdownHeaderIncludesMetadata:
             repo="widget",
             results=[],
             summary={
-                "PASS": 0, "FAIL": 0, "WARN": 0, "PENDING_LLM": 0,
+                "PASS": 0, "FAIL": 0, "WARN": 0, "PENDING": 0,
                 "N/A": 0, "ERROR": 0, "total": 0,
             },
             compliance={1: True, 2: True, 3: True},
@@ -98,7 +98,7 @@ class TestJsonOutputIncludesMetadata:
         with patch(
             "darnit.tools.audit.run_sieve_audit",
             return_value=([], {
-                "PASS": 0, "FAIL": 0, "WARN": 0, "PENDING_LLM": 0,
+                "PASS": 0, "FAIL": 0, "WARN": 0, "PENDING": 0,
                 "N/A": 0, "ERROR": 0, "total": 0,
             }),
         ), patch(

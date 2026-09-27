@@ -1,6 +1,6 @@
 [
   {
-    "level": "note",
+    "level": "warning",
     "locations": [
       {
         "physicalLocation": {
@@ -16,10 +16,10 @@
       }
     ],
     "message": {
-      "text": "Required file found: README.md"
+      "text": "LLM consultation required"
     },
     "partialFingerprints": {
-      "primaryLocationLineHash": "e84bb6a1069e86f7"
+      "primaryLocationLineHash": "ecb26296f4888ee5"
     },
     "properties": {
       "ospsLevel": 1,
@@ -35,11 +35,33 @@
             "message": "Required file found: README.md",
             "outcome": "pass"
           }
+        },
+        {
+          "checks_performed": [
+            "handler:regex"
+          ],
+          "duration_ms": "<SCRUBBED-DURATION>",
+          "phase": "pattern",
+          "result": {
+            "confidence": 0.7,
+            "message": "Pattern not found in any file",
+            "outcome": "inconclusive"
+          }
+        },
+        {
+          "checks_performed": [
+            "handler:llm_eval"
+          ],
+          "duration_ms": "<SCRUBBED-DURATION>",
+          "phase": "llm",
+          "result": {
+            "confidence": null,
+            "message": "LLM consultation requested",
+            "outcome": "inconclusive"
+          }
         }
       ],
-      "resolvingPassHandler": "file_exists",
-      "resolvingPassIndex": 0,
-      "status": "PASS"
+      "status": "PENDING"
     },
     "ruleId": "OSPS-DO-01.01",
     "ruleIndex": 0

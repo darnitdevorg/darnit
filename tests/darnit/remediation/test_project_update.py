@@ -85,7 +85,7 @@ class TestExecutorProjectUpdate:
 
         registry.register(
             "_test_pu_handler", "deterministic", _test_handler,
-            default_authority="dispositive",
+            ceiling={"pass", "fail"},
         )
 
         try:

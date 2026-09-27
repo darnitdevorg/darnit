@@ -127,9 +127,9 @@ class TestGoldenPath:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """Pins C10/C11/C12/C13: Passed+Failed+Warned <= Total, with the
-        remainder going to N/A/ERROR/PENDING_LLM (contract C14).
+        remainder going to N/A/ERROR/PENDING (contract C14).
 
-        Controls in no printed bucket are N/A, ERROR, or PENDING_LLM.
+        Controls in no printed bucket are N/A, ERROR, or PENDING.
         """
         _exit, stdout, _stderr = invoke_cmd_run(
             [str(minimal_repo_tree), "--feedback", "noninteractive"],
@@ -138,7 +138,7 @@ class TestGoldenPath:
         counts = _parse_counts(stdout)
         bucketed = counts["passed"] + counts["failed"] + counts["warned"]
         # Total must be >= the sum of the three named buckets (C14 remainder
-        # goes to N/A/ERROR/PENDING_LLM which are not printed as separate lines).
+        # goes to N/A/ERROR/PENDING which are not printed as separate lines).
         assert bucketed <= counts["total"], (
             f"printed buckets exceed total: bucketed={bucketed} > total={counts['total']}"
         )

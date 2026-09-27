@@ -98,21 +98,21 @@ class GittufImplementation:
         registry.set_plugin_context(self.name)
 
         # RFC-0001 Stage 1: both handlers observe ground truth
-        # (gittuf verify-ref and commit signature presence). Explicitly
-        # dispositive so a passing result concludes the control.
+        # (gittuf verify-ref and commit signature presence). They register
+        # the {pass, fail} ceiling so a passing result concludes the control.
         registry.register(
             "gittuf_verify_policy",
             phase="deterministic",
             handler_fn=handlers.gittuf_verify_policy_handler,
             description="Run gittuf verify-ref HEAD",
-            default_authority="dispositive",
+            ceiling={"pass", "fail"},
         )
         registry.register(
             "gittuf_commits_signed",
             phase="deterministic",
             handler_fn=handlers.gittuf_commits_signed_handler,
             description="Check last 5 commits for cryptographic signatures",
-            default_authority="dispositive",
+            ceiling={"pass", "fail"},
         )
 
         registry.set_plugin_context(None)

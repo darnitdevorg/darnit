@@ -3,7 +3,7 @@
 The sieve system implements a 4-phase verification pipeline:
 1. DETERMINISTIC - File existence, API checks, config lookups
 2. PATTERN - Regex matching, content analysis
-3. LLM - LLM-assisted analysis (returns PENDING_LLM for consultation)
+3. LLM - LLM-assisted analysis (returns PENDING for consultation)
 4. MANUAL - Always returns WARN with verification steps
 
 Usage:

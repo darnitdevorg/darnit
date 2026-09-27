@@ -44,6 +44,15 @@ logger = get_logger("config.control_loader")
 # =============================================================================
 
 
+def _step_declarations(invocation: HandlerInvocation) -> dict[str, Any]:
+    """Declared (non-handler-config) fields to carry across a rebuild."""
+    return {
+        name: getattr(invocation, name)
+        for name in HandlerInvocation.model_fields
+        if name not in ("handler", "shared", "use_locator") and name in invocation.model_fields_set
+    }
+
+
 def _resolve_shared_handler(
     invocation: HandlerInvocation,
     shared_handlers: dict[str, SharedHandlerConfig],
@@ -82,7 +91,7 @@ def _resolve_shared_handler(
         handler=handler,
         shared=invocation.shared,
         use_locator=invocation.use_locator,
-        **merged,
+        **{**merged, **_step_declarations(invocation)},
     )
 
 
@@ -121,6 +130,7 @@ def _resolve_use_locator(
         shared=invocation.shared,
         use_locator=True,
         **extra,
+        **_step_declarations(invocation),
     )
 
 
@@ -210,12 +220,14 @@ def _validate_control_references(
 def control_from_effective(
     control_id: str,
     effective: EffectiveControl,
+    framework: str | None = None,
 ) -> ControlSpec:
     """Convert EffectiveControl to ControlSpec.
 
     Args:
         control_id: Control identifier
         effective: Merged effective control
+        framework: Framework name, for load-time validation errors
 
     Returns:
         Executable ControlSpec
@@ -260,14 +272,7 @@ def control_from_effective(
             HandlerInvocation(**p) if isinstance(p, dict) else p
             for p in effective.passes_config
         ]
-        # RFC-0001 Stage 1 (feature 025 T013 + T014): validate authority
-        # declarations and log auto-inference for TOML steps that omit
-        # `authority`. Load-time validation catches "loosening" (a step
-        # claiming a higher authority than its handler's default) so a
-        # broken control cannot ship.
-        _validate_and_log_authority(
-            control_id, metadata["handler_invocations"],
-        )
+        validate_step_authority(framework, control_id, metadata["handler_invocations"])
 
     return ControlSpec(
         control_id=control_id,
@@ -284,6 +289,7 @@ def control_from_framework(
     control_id: str,
     control_config: Any,  # ControlConfig from framework_schema
     shared_handlers: dict[str, SharedHandlerConfig] | None = None,
+    framework: str | None = None,
 ) -> ControlSpec:
     """Convert ControlConfig from framework to ControlSpec.
 
@@ -296,6 +302,7 @@ def control_from_framework(
         control_id: Control identifier
         control_config: Framework control configuration
         shared_handlers: Top-level shared handler definitions for resolution
+        framework: Framework name, for load-time validation errors
 
     Returns:
         Executable ControlSpec
@@ -352,6 +359,7 @@ def control_from_framework(
 
     # Carry handler invocations through metadata for orchestrator dispatch
     if control_config.passes:
+        validate_step_authority(framework, control_id, control_config.passes)
         metadata["handler_invocations"] = control_config.passes
 
     # Carry remediation handler invocations if present
@@ -396,7 +404,7 @@ def load_controls_from_effective(config: EffectiveConfig) -> list[ControlSpec]:
 
     for control_id, effective in config.controls.items():
         try:
-            control = control_from_effective(control_id, effective)
+            control = control_from_effective(control_id, effective, framework=config.framework_name)
             controls.append(control)
         except (TypeError, ValueError, KeyError) as e:
             logger.warning(f"Could not load control {control_id}: {e}")
@@ -426,7 +434,7 @@ def load_controls_from_framework(config: FrameworkConfig) -> list[ControlSpec]:
     for control_id, control_config in config.controls.items():
         try:
             control = control_from_framework(
-                control_id, control_config, shared_handlers=shared_handlers
+                control_id, control_config, shared_handlers=shared_handlers, framework=config.metadata.name
             )
             controls.append(control)
         except (TypeError, ValueError, KeyError) as e:
@@ -515,87 +523,67 @@ def register_controls_from_config(
 
 
 # =============================================================================
-# RFC-0001 Stage 1 (feature 025 T013 + T014): authority validation
+# Feature 041: step authority validation (contracts/step-declarations.md)
 # =============================================================================
 
-# Authority "strength" ordering for the loosening check. A step MAY declare
-# an authority weaker-or-equal to the handler's default; MUST NOT declare a
-# stronger one. Rationale: a control author can be MORE cautious than the
-# handler ("this control's `file_exists` step is only suggestive here") but
-# cannot claim MORE authority than the handler itself has ("this llm_eval
-# result is dispositive" is exactly the false-PASS lever Stage 1 removes).
-_AUTHORITY_STRENGTH: dict[str, int] = {
-    "suggestive": 1,
-    "dispositive": 2,
-    "asserted": 3,
-}
+_LEGACY_AUTHORITIES = frozenset(("dispositive", "suggestive", "asserted"))
 
 
-def _validate_and_log_authority(control_id: str, invocations: list) -> None:
-    """Enforce authority rules on TOML step declarations at control load.
+def validate_step_authority(framework: str | None, control_id: str, invocations: list) -> None:
+    """Reject step declarations that break the per-claim authority rules.
 
-    - Log at DEBUG when a step omits `authority` (auto-inferred from handler
-      default at run time).
-    - Raise ``AuthorityViolation`` when a step declares an authority
-      STRONGER than the handler's default (loosening safety is forbidden).
-    - Tightening (weaker or equal) is allowed and silently accepted.
-
-    Does NOT modify invocations; the orchestrator resolves effective
-    authority at dispatch time (see orchestrator._dispatch_handler_invocations).
+    Called from every control-loading path (``control_from_framework`` and
+    ``control_from_effective``) after plugin handlers register. Raises
+    ``AuthorityViolation`` naming the framework, control, step index, and
+    outcome. A step whose handler is not registered is skipped here; the
+    orchestrator warns and skips it at dispatch, and computes the effective
+    set from the registry there too, so nothing unvalidated can widen.
     """
     from darnit.core.errors import AuthorityViolation
-    from darnit.sieve.handler_registry import get_sieve_handler_registry
+    from darnit.sieve.handler_registry import HandlerPhase, effective_outcomes, get_sieve_handler_registry
 
     registry = get_sieve_handler_registry()
+    where = f"framework {framework or '<unknown>'!r}"
+
     for idx, inv in enumerate(invocations):
-        step_authority = getattr(inv, "authority", None)
-        handler_info = registry.get(inv.handler) if hasattr(inv, "handler") else None
-        if handler_info is None:
-            # Unknown handler; the orchestrator will warn and skip at dispatch
-            # time. Nothing to validate here.
+        info = registry.get(inv.handler) if hasattr(inv, "handler") else None
+        if info is None:
             continue
-        handler_default = handler_info.default_authority
-        if step_authority is None:
-            logger.debug(
-                "Control %s pass[%d] handler=%s: authority auto-inferred as %r "
-                "from handler default",
-                control_id, idx, inv.handler, handler_default,
-            )
-            continue
-        # Explicit authority: enforce no-loosening rule.
-        # PR #365 review fix: reject unknown authority literals up front
-        # instead of silently coercing them to strength 0 (which would let
-        # any typo through as "weaker than everything").
-        if step_authority not in _AUTHORITY_STRENGTH:
-            raise AuthorityViolation(
-                control_id=control_id,
-                step_id=f"pass[{idx}]:{inv.handler}",
-                message=(
-                    f"step declares authority={step_authority!r} which is not "
-                    f"one of {sorted(_AUTHORITY_STRENGTH)!r}."
-                ),
-            )
-        if handler_default not in _AUTHORITY_STRENGTH:
-            raise AuthorityViolation(
-                control_id=control_id,
-                step_id=f"pass[{idx}]:{inv.handler}",
-                message=(
-                    f"handler {inv.handler!r} registered with unknown "
-                    f"default_authority={handler_default!r}. Registration "
-                    f"must use one of {sorted(_AUTHORITY_STRENGTH)!r}."
-                ),
-            )
-        step_strength = _AUTHORITY_STRENGTH[step_authority]
-        default_strength = _AUTHORITY_STRENGTH[handler_default]
-        if step_strength > default_strength:
-            raise AuthorityViolation(
-                control_id=control_id,
-                step_id=f"pass[{idx}]:{inv.handler}",
-                message=(
-                    f"step declares authority={step_authority!r} but handler "
-                    f"{inv.handler!r} defaults to {handler_default!r}. TOML "
-                    f"steps may not LOOSEN (claim stronger authority than the "
-                    f"handler). Only tighten (mark a dispositive handler as "
-                    f"suggestive in a specific control's list) is allowed."
-                ),
-            )
+        step_id = f"pass[{idx}]:{inv.handler}"
+
+        def reject(message: str, _step_id: str = step_id) -> None:
+            raise AuthorityViolation(control_id=control_id, step_id=_step_id, message=f"{where}: {message}")
+
+        existence = bool(getattr(inv, "existence", False))
+        if existence and info.existence_ceiling is None:
+            reject(f"existence = true is only for presence and pattern steps; {inv.handler!r} has no existence ceiling")
+        ceiling = info.existence_ceiling if existence else info.ceiling
+
+        legacy = getattr(inv, "authority", None)
+        if legacy is not None:
+            if legacy not in _LEGACY_AUTHORITIES:
+                reject(f"step declares authority={legacy!r} which is not one of {sorted(_LEGACY_AUTHORITIES)!r}")
+            if legacy == "asserted":
+                reject("step declares authority='asserted'; asserted is a person's confirmation, not a step type")
+            if legacy == "dispositive" and not ceiling:
+                reject(f"step declares authority='dispositive' but {inv.handler!r} may not conclude any outcome")
+
+        promotion = getattr(inv, "promotion", None)
+        if promotion is not None and info.phase == HandlerPhase.LLM:
+            reject(f"outcome {promotion.outcome!r}: a model judgment is never promoted to conclude it")
+        promoted = {promotion.outcome} if promotion is not None else set()
+        for outcome in getattr(inv, "concludes", None) or []:
+            if outcome not in ceiling and outcome not in promoted:
+                reject(
+                    f"outcome {outcome!r} is outside the {inv.handler!r} ceiling {sorted(ceiling)} "
+                    "and the step records no promotion for it"
+                )
+
+        if getattr(inv, "fail_on_miss", False):
+            if inv.handler not in ("regex", "pattern"):
+                reject(f"fail_on_miss is only for pattern steps, not {inv.handler!r}")
+            if "fail" not in effective_outcomes(info, inv):
+                reject("fail_on_miss requires outcome 'fail' in the step's effective set")
+
+        if getattr(inv, "fail_on_status", None) is not None and inv.handler != "gh_api":
+            reject(f"fail_on_status is only for gh_api steps, not {inv.handler!r}")

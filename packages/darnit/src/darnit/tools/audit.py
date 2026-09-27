@@ -596,7 +596,7 @@ class AuditOptions:
     auto_init_config: bool = True
     output_format: str = "markdown"  # markdown, json, sarif
     include_evidence: bool = True
-    stop_on_llm: bool = True  # Return PENDING_LLM for LLM consultation
+    stop_on_llm: bool = True  # Return PENDING (llm_judgment) for LLM consultation
 
 
 def prepare_audit(
@@ -669,7 +669,7 @@ def run_checks(
         local_path: Path to repository
         default_branch: Default branch name
         level: Maximum level to check (1, 2, or 3)
-        stop_on_llm: Return PENDING_LLM for LLM consultation
+        stop_on_llm: Return PENDING (llm_judgment) for LLM consultation
         apply_user_config: Apply .baseline.toml user config overrides
         framework_name: Explicit framework name (e.g., "openssf-baseline").
             If None, resolved from .baseline.toml in the repo.
@@ -726,7 +726,7 @@ def run_sieve_audit(
     This implements the 4-phase verification model:
     1. DETERMINISTIC - File existence, API checks, config lookups, external commands
     2. PATTERN - Regex matching, content analysis
-    3. LLM - LLM-assisted analysis (returns PENDING_LLM for consultation)
+    3. LLM - LLM-assisted analysis (returns PENDING for consultation)
     4. MANUAL - Always returns WARN with verification steps
 
     Args:
@@ -743,7 +743,7 @@ def run_sieve_audit(
             changing ``.project/`` context values) and report each with the
             claimed control's result. When False, claims are ignored and
             every control is evaluated normally.
-        stop_on_llm: Return PENDING_LLM for LLM consultation.
+        stop_on_llm: Return PENDING (llm_judgment) for LLM consultation.
         framework_name: Explicit framework name (e.g., "openssf-baseline").
             Required when controls is None and multiple implementations are
             installed. If None, resolved from .baseline.toml in the repo.
@@ -1027,7 +1027,8 @@ def calculate_compliance(results: list[dict[str, Any]], level: int = 3) -> dict[
 
     A level is compliant only when every applicable control at that level
     has explicitly PASSED.  Controls that are WARN (needs verification),
-    FAIL, ERROR, or PENDING_LLM are all treated as non-compliant because
+    FAIL, ERROR, or PENDING (including a PASS candidate awaiting
+    confirmation) are all treated as non-compliant because
     we cannot confirm the control is satisfied.  Only N/A controls are
     excluded from the calculation; a not-applicable claim is N/A only when
     honored.  A level with a pending claim is not compliant until the claim
@@ -1067,7 +1068,7 @@ def summarize_results(results: list[CheckResult]) -> dict[str, int]:
         "WARN": 0,
         "N/A": 0,
         "ERROR": 0,
-        "PENDING_LLM": 0,  # Sieve: awaiting LLM consultation
+        "PENDING": 0,  # Sieve: awaiting a model judgment or a confirmation
         "total": len(results),
     }
 
@@ -1173,7 +1174,7 @@ def format_results_markdown(
         f"| ✅ Pass | {summary['PASS']} | Control satisfied |",
         f"| ❌ Fail | {summary['FAIL']} | **Control NOT satisfied - action required** |",
         f"| ⚠️ Needs Verification | {summary['WARN']} | **Could not verify automatically - manual review required** |",
-        f"| 🤖 Pending LLM | {summary.get('PENDING_LLM', 0)} | Awaiting LLM analysis |",
+        f"| 🤖 Pending | {summary.get('PENDING', 0)} | Awaiting a model judgment or an operator confirmation |",
         f"| ➖ N/A | {summary['N/A']} | Not applicable to this project |",
         f"| 🔴 Error | {summary['ERROR']} | Check could not run |",
         f"| **Total** | {summary['total']} | |",
@@ -1234,10 +1235,10 @@ def format_results_markdown(
             "label": "FAIL - Action Required",
             "description": "These controls are NOT satisfied and must be addressed:",
         },
-        "PENDING_LLM": {
+        "PENDING": {
             "icon": "🤖",
-            "label": "PENDING LLM ANALYSIS",
-            "description": "These controls require LLM-assisted analysis. Review the consultation prompts below:",
+            "label": "PENDING - Judgment or Confirmation Required",
+            "description": "These controls await a model judgment or an operator confirmation; they are not compliant until resolved:",
         },
         "WARN": {
             "icon": "⚠️",
@@ -1254,7 +1255,7 @@ def format_results_markdown(
     }
 
     # Group by status
-    for status in ["FAIL", "PENDING_LLM", "WARN", "ERROR", "PASS", "N/A"]:
+    for status in ["FAIL", "PENDING", "WARN", "ERROR", "PASS", "N/A"]:
         status_results = [r for r in results if r.get("status") == status]
         if status_results:
             config = status_config.get(status, {"icon": "", "label": status, "description": ""})

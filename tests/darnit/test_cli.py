@@ -277,7 +277,7 @@ class TestFormatting:
                     "level": 1,
                     "error_class": "not_found",
                 },
-                {"id": "PENDING-01", "status": "PENDING_LLM", "details": "", "level": 1},
+                {"id": "PENDING-01", "status": "PENDING", "pending": {"kind": "llm_judgment"}, "details": "", "level": 1},
             ],
             "openssf-baseline",
         )
@@ -292,10 +292,10 @@ class TestFormatting:
             "warn": 1,
             "na": 1,
             "error": 1,
-            "pending_llm": 1,
+            "pending": 1,
         }
         assert payload["summary"]["error"] == 1
-        assert payload["summary"]["pending_llm"] == 1
+        assert payload["summary"]["pending"] == 1
 
 
 @pytest.mark.unit
@@ -350,7 +350,7 @@ def _mixed_results() -> list[dict]:
         },
         {
             "id": "OSPS-LLM-01.01",
-            "status": "PENDING_LLM",
+            "status": "PENDING", "pending": {"kind": "llm_judgment"},
             "details": "Awaiting LLM analysis",
             "level": 1,
         },
@@ -369,11 +369,11 @@ def test_format_results_text_shows_errors_without_show_all():
 
 
 @pytest.mark.unit
-def test_format_results_text_shows_pending_llm_without_show_all():
-    """PENDING_LLM results are shown without --show-all."""
+def test_format_results_text_shows_pending_without_show_all():
+    """PENDING results are shown without --show-all."""
     rendered = format_results_text(_mixed_results(), "openssf-baseline")
 
-    assert "--- Pending LLM (1) ---" in rendered
+    assert "--- Pending (1) ---" in rendered
     assert "OSPS-LLM-01.01" in rendered
     assert "Awaiting LLM analysis" in rendered
 
@@ -383,19 +383,19 @@ def test_format_results_text_summary_counts_account_for_total():
     """The summary includes every status count."""
     rendered = format_results_text(_mixed_results(), "openssf-baseline")
 
-    assert "Total: 6 | Pass: 1 | Fail: 1 | Warn: 1 | N/A: 1 | Error: 1 | Pending LLM: 1" in rendered
+    assert "Total: 6 | Pass: 1 | Fail: 1 | Warn: 1 | N/A: 1 | Error: 1 | Pending: 1" in rendered
 
 
 @pytest.mark.unit
 def test_format_results_text_show_all_does_not_duplicate_sections():
-    """--show-all does not duplicate ERROR or PENDING_LLM results."""
+    """--show-all does not duplicate ERROR or PENDING results."""
     rendered = format_results_text(_mixed_results(), "openssf-baseline", show_all=True)
 
     assert rendered.count("OSPS-BR-01.01") == 1
     assert rendered.count("OSPS-LLM-01.01") == 1
     assert rendered.count("--- Errors (1) ---") == 1
-    assert rendered.count("--- Pending LLM (1) ---") == 1
+    assert rendered.count("--- Pending (1) ---") == 1
     assert "--- ERROR (" not in rendered
-    assert "--- PENDING_LLM (" not in rendered
+    assert "--- PENDING (" not in rendered
     assert "--- N/A (1) ---" in rendered
     assert rendered.count("OSPS-NA-01.01") == 1

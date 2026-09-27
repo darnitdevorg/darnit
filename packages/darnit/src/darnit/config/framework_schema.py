@@ -221,6 +221,21 @@ AdapterConfig = (
 # =============================================================================
 
 
+class Promotion(BaseModel):
+    """Recorded permission for a step to conclude PASS beyond its ceiling (feature 041, FR-020).
+
+    Reviewable in the framework TOML diff. ``corpus`` names the corpus
+    version whose measurement justified it (zero false PASS); the corpus run
+    fails independently if a promoted step later produces a false PASS.
+    """
+
+    outcome: Literal["pass"]
+    corpus: str = Field(min_length=1)
+    note: str = ""
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class HandlerInvocation(BaseModel):
     """A single handler call within a pipeline phase.
 
@@ -256,14 +271,23 @@ class HandlerInvocation(BaseModel):
     # Consumed by orchestrator/executor before dispatch; NOT passed to the handler
     when: dict[str, Any] | None = None
 
-    # RFC-0001 Stage 1 (feature 025 T014). Optional per-step authority override.
-    # When None, the orchestrator uses the handler's registered default_authority.
-    # Values: "dispositive" | "suggestive" | "asserted". A step may TIGHTEN
-    # (e.g., mark a handler that defaults to dispositive as suggestive in a
-    # specific control's list) but MUST NOT LOOSEN (a handler defaulting to
-    # suggestive cannot be marked dispositive at the TOML level). Load-time
-    # validation in control_loader enforces the direction.
+    # RFC-0001 Stage 1 (feature 025 T014). Legacy per-step authority. Under
+    # feature 041 "suggestive" is the same as ``concludes = []``;
+    # "dispositive" leaves the effective set unchanged and is rejected on a
+    # step type that concludes nothing; "asserted" is rejected.
     authority: str | None = None
+
+    # Feature 041 step declarations (contracts/step-declarations.md). What
+    # this step may conclude for its control: the step type's ceiling,
+    # narrowed by ``concludes``, widened only by ``promotion``. ``existence``
+    # selects the presence/pattern existence ceiling. ``fail_on_miss`` and
+    # ``fail_on_status`` declare which misses and platform responses prove
+    # failure; the orchestrator passes those two to the handler.
+    concludes: list[Literal["pass", "fail"]] | None = None
+    existence: bool = False
+    fail_on_miss: bool = False
+    fail_on_status: list[int] | None = None
+    promotion: Promotion | None = None
 
     # All other fields pass through to the handler
     model_config = ConfigDict(extra="allow")

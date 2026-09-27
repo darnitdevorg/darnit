@@ -170,7 +170,7 @@ class HarnessReport(BaseModel):
         # Warned or Pending
         lines.append("## Warned or Pending Controls")
         lines.append("")
-        warned = [c for c in self.controls if c.get("status") in ("WARN", "PENDING_LLM", "ERROR")]
+        warned = [c for c in self.controls if c.get("status") in ("WARN", "PENDING", "ERROR")]
         if warned:
             for c in warned:
                 lines.append(self._format_control_line(c))

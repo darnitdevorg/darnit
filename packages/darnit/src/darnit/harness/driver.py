@@ -5,7 +5,7 @@ Feature 026 T009-T015 + T023. Consumes the same sieve entry points MCP does
 and adds a driver that dispatches LLM steps itself via the injected `LLMStep`.
 
 Per research.md R1: TWO-PASS approach preserves sieve purity. Initial pass
-returns PENDING_LLM results; the driver dispatches those through the LLM step
+returns PENDING (llm_judgment) results; the driver dispatches those through the LLM step
 and feeds each response back into the orchestrator for a final result.
 """
 
@@ -302,7 +302,7 @@ class HarnessRun:
         self,
         consultation_request: dict[str, Any],
     ) -> LLMConsultationResponse:
-        """Call the injected LLMStep for one PENDING_LLM control.
+        """Call the injected LLMStep for one control awaiting a model judgment.
 
         Per research.md R6: bounded by ``per_call_timeout_s``. Any failure
         (timeout, exception) returns an INCONCLUSIVE response with the
@@ -378,11 +378,11 @@ class HarnessRun:
         repo: str,
         default_branch: str,
     ) -> list[dict[str, Any]]:
-        """For each PENDING_LLM result, dispatch the LLM and get a final result.
+        """For each result awaiting a model judgment, dispatch the LLM and get a final result.
 
         Feeds each response through ``SieveOrchestrator.verify_with_llm_response``
         which applies the Stage 1 authority rule (LLM = suggestive, cannot
-        conclude). The returned result is what replaces the PENDING_LLM entry.
+        conclude). The returned result is what replaces the PENDING entry.
 
         Bounded by ``total_run_timeout_s`` at the outer call site.
         """
@@ -407,7 +407,11 @@ class HarnessRun:
 
         orchestrator = SieveOrchestrator(stop_on_llm=True)
 
-        pending = [r for r in results if r.get("status") == "PENDING_LLM"]
+        pending = [
+            r
+            for r in results
+            if r.get("status") == "PENDING" and (r.get("pending") or {}).get("kind") == "llm_judgment"
+        ]
         if not pending:
             return results
 
@@ -433,7 +437,7 @@ class HarnessRun:
             consultation = evidence.get("llm_consultation") or {}
             if not consultation:
                 logger.warning(
-                    "%s PENDING_LLM but no llm_consultation in evidence; skipping",
+                    "%s PENDING but no llm_consultation in evidence; skipping",
                     control_id,
                 )
                 continue
@@ -444,11 +448,11 @@ class HarnessRun:
             effective = effective_config.controls.get(control_id)
             if effective is None:
                 logger.warning(
-                    "%s PENDING_LLM but control not in framework config; skipping",
+                    "%s PENDING but control not in framework config; skipping",
                     control_id,
                 )
                 continue
-            control_spec = control_from_effective(control_id, effective)
+            control_spec = control_from_effective(control_id, effective, framework=effective_config.framework_name)
 
             check_ctx = CheckContext(
                 owner=owner,
@@ -870,7 +874,7 @@ class HarnessRun:
         pending_feedback: list[PendingFeedbackEntry],
         answered_feedback: list[AnsweredFeedbackEntry] | None = None,
     ) -> HarnessReport:
-        summary_counts = {"PASS": 0, "FAIL": 0, "WARN": 0, "N/A": 0, "ERROR": 0, "PENDING_LLM": 0}
+        summary_counts = {"PASS": 0, "FAIL": 0, "WARN": 0, "N/A": 0, "ERROR": 0, "PENDING": 0}
         for r in results:
             status = r.get("status", "ERROR")
             summary_counts[status] = summary_counts.get(status, 0) + 1
@@ -879,7 +883,7 @@ class HarnessRun:
             total=len(results),
             pass_=summary_counts["PASS"],
             fail=summary_counts["FAIL"],
-            warn=summary_counts["WARN"] + summary_counts["PENDING_LLM"],
+            warn=summary_counts["WARN"] + summary_counts["PENDING"],
             n_a=summary_counts["N/A"],
             error=summary_counts["ERROR"],
         )
@@ -1000,15 +1004,15 @@ class HarnessRun:
         for idx, r in enumerate(results, start=1):
             status = r.get("status", "unknown")
             control_id = r.get("id", "unknown")
-            # Map status -> phase verb. Explicit table so "PENDING_LLM"
-            # doesn't get mangled by string replaces.
+            # Map status -> phase verb. Explicit table so "N/A" and friends
+            # don't get mangled by string replaces.
             _phase_verb_map = {
                 "PASS": "resolved_pass",
                 "FAIL": "resolved_fail",
                 "WARN": "resolved_warn",
                 "N/A": "resolved_na",
                 "ERROR": "resolved_error",
-                "PENDING_LLM": "resolved_pending",
+                "PENDING": "resolved_pending",
             }
             phase_verb = _phase_verb_map.get(status, f"resolved_{status.lower()}")
             logger.info(

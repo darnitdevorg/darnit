@@ -461,7 +461,7 @@ class TestOrchestratorCrashClassification:
             "exploding_handler_036",
             "deterministic",
             boom,
-            default_authority="dispositive",
+            ceiling={"pass", "fail"},
         )
 
         control = ControlSpec(

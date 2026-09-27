@@ -6,18 +6,17 @@ from enum import Enum
 from typing import Any
 
 from darnit.config.when_evaluator import evaluate_when
-from darnit.core.authority import Authority, is_terminal_authority
 from darnit.core.logging import get_logger
 
 from .handler_registry import (
     HandlerContext,
     HandlerResult,
     HandlerResultStatus,
+    effective_outcomes,
     get_sieve_handler_registry,
 )
 from .models import (
     CheckContext,
-    CheckStatus,
     ControlSpec,
     LLMConsultationResponse,
     PassAttempt,
@@ -36,7 +35,8 @@ _harness_logger = logging.getLogger("darnit.harness")
 
 
 # =============================================================================
-# RFC-0001 Stage 1 (feature 025): per-phase Check execution rule
+# Check execution rule: RFC-0001 Stage 1 (feature 025), per-claim authority
+# (feature 041)
 # =============================================================================
 
 
@@ -49,7 +49,7 @@ class StepDisposition(str, Enum):
     CONCLUDE_PASS = "conclude_pass"
     CONCLUDE_FAIL = "conclude_fail"
     # Feature 037 (FR-016): the handler determined the evidence is incomplete.
-    # Conclusive, and gated by authority exactly as PASS and FAIL are.
+    # Conclusive under the same permission as FAIL (feature 041).
     CONCLUDE_WARN = "conclude_warn"
     ATTACH_EVIDENCE_AND_CONTINUE = "attach_and_continue"
     TERMINATE_INCONCLUSIVE = "terminate_inconclusive"
@@ -58,38 +58,30 @@ class StepDisposition(str, Enum):
 
 def resolve_step_result(
     handler_status: HandlerResultStatus,
-    effective_authority: Authority | None,
+    allowed: frozenset[str],
     is_last_step: bool = False,
 ) -> StepDisposition:
-    """Apply the RFC-0001 Stage 1 Check-phase execution rule to one step.
+    """Apply the Check-phase execution rule to one step.
 
-    Encodes spec FR-003 + FR-004 as a pure function. Safety invariant
-    (FR-001, FR-004): only dispositive and asserted authorities can conclude
-    PASS or FAIL. Suggestive and authority-less results attach evidence and
-    let execution continue. ERROR is terminal regardless of authority.
+    ``allowed`` is the step's effective set (feature 041): the outcomes it
+    may conclude for its control. A PASS concludes only when ``pass`` is in
+    it; a FAIL, or a WARN (a non-compliant conclusion like FAIL), only when
+    ``fail`` is in it. Anything else is evidence: execution continues, or
+    ends inconclusive on the last step. ERROR is terminal regardless.
     """
     if handler_status == HandlerResultStatus.ERROR:
         return StepDisposition.TERMINATE_ERROR
 
-    # Feature 037: WARN joins PASS and FAIL here rather than getting its own
-    # rule. A WARN is a conclusion, so the RFC-0001 Stage 1 invariant covers
-    # it: without the authority gate a suggestive LLM step could halt
-    # verification before a dispositive step ever ran. That errs toward
-    # non-compliance, which is the safe direction, but it would silently
-    # reduce how much verification actually happens.
     _CONCLUSIVE = {
-        HandlerResultStatus.PASS: StepDisposition.CONCLUDE_PASS,
-        HandlerResultStatus.FAIL: StepDisposition.CONCLUDE_FAIL,
-        HandlerResultStatus.WARN: StepDisposition.CONCLUDE_WARN,
+        HandlerResultStatus.PASS: ("pass", StepDisposition.CONCLUDE_PASS),
+        HandlerResultStatus.FAIL: ("fail", StepDisposition.CONCLUDE_FAIL),
+        HandlerResultStatus.WARN: ("fail", StepDisposition.CONCLUDE_WARN),
     }
     if handler_status in _CONCLUSIVE:
-        if is_terminal_authority(effective_authority):
-            return _CONCLUSIVE[handler_status]
-        if is_last_step:
-            return StepDisposition.TERMINATE_INCONCLUSIVE
-        return StepDisposition.ATTACH_EVIDENCE_AND_CONTINUE
+        outcome, disposition = _CONCLUSIVE[handler_status]
+        if outcome in allowed:
+            return disposition
 
-    # INCONCLUSIVE
     if is_last_step:
         return StepDisposition.TERMINATE_INCONCLUSIVE
     return StepDisposition.ATTACH_EVIDENCE_AND_CONTINUE
@@ -241,7 +233,8 @@ class SieveOrchestrator:
     stopping as soon as a handler returns a conclusive result (PASS, FAIL, ERROR).
 
     For LLM handlers, the orchestrator can either:
-    - Return a PENDING_LLM status with the consultation request (stop_on_llm=True)
+    - Return PENDING (pending.kind = llm_judgment) with the consultation
+      request (stop_on_llm=True)
     - Continue to the next handler (stop_on_llm=False)
     """
 
@@ -293,15 +286,21 @@ class SieveOrchestrator:
     def _check_inferred_from(self, control_spec: ControlSpec) -> SieveResult | None:
         """Check if this control can be auto-passed via inferred_from.
 
-        If the referenced control PASSED, return an auto-PASS result.
-        Otherwise return None to run normal verification.
+        If the referenced control's PASS was concluded (by a step allowed to
+        conclude it, or confirmed by a person), return an auto-PASS result.
+        Otherwise return None to run normal verification (feature 041: an
+        inferred PASS is held to the same rule as any other PASS).
         """
         inferred_from = control_spec.metadata.get("inferred_from")
         if not inferred_from:
             return None
 
         source_result = self._dependency_results.get(inferred_from)
-        if source_result and source_result.status == "PASS":
+        if (
+            source_result
+            and source_result.status == "PASS"
+            and source_result.authority in ("dispositive", "asserted")
+        ):
             return SieveResult(
                 control_id=control_spec.control_id,
                 status="PASS",
@@ -315,6 +314,7 @@ class SieveOrchestrator:
                 # (file_exists observed LICENSE), the inferred LE-03.02
                 # PASS is also dispositive by inheritance. Never `unknown`.
                 authority=source_result.authority,
+                concluded_by="inferred_from",
             )
 
         return None
@@ -398,6 +398,11 @@ class SieveOrchestrator:
                 # Build handler config from invocation's extra fields
                 handler_config = dict(invocation.model_extra or {})
                 handler_config["handler"] = invocation.handler
+                # Feature 041: the two step declarations a handler reads.
+                if getattr(invocation, "fail_on_miss", False):
+                    handler_config["fail_on_miss"] = True
+                if getattr(invocation, "fail_on_status", None) is not None:
+                    handler_config["fail_on_status"] = list(invocation.fail_on_status)
 
                 # Feature 031: for the built-in mcp handler, lazily
                 # construct the pool, assign it to the HandlerContext, and
@@ -488,23 +493,19 @@ class SieveOrchestrator:
                 handler_ctx.gathered_evidence.update(handler_result.evidence)
                 context.gathered_evidence.update(handler_result.evidence)
 
-            # RFC-0001 Stage 1 (feature 025): resolve effective authority in
-            # priority order: (1) TOML step explicit override, (2)
-            # HandlerResult.authority if the handler set it, (3) handler's
-            # registered default_authority. Authority-less results are
-            # treated as suggestive (FR-001 safety).
-            step_authority_str = getattr(invocation, "authority", None)
-            effective_authority: Authority | None = (
-                step_authority_str  # type: ignore[assignment]
-                or handler_result.authority
-                or handler_info.default_authority
-            )
+            # Feature 041: what this step may conclude for this control is its
+            # type's ceiling narrowed by the step's declarations (widened only
+            # by a recorded promotion). A handler may narrow its own result
+            # to evidence only; it can never widen.
+            allowed = effective_outcomes(handler_info, invocation)
+            if handler_result.authority == "suggestive":
+                allowed = frozenset()
+            effective_authority = "dispositive" if allowed else "suggestive"
 
-            # Apply Check-phase execution rule (FR-003, FR-004).
             is_last_step = pass_index == len(handler_invocations) - 1
             disposition = resolve_step_result(
                 handler_status=handler_result.status,
-                effective_authority=effective_authority,
+                allowed=allowed,
                 is_last_step=is_last_step,
             )
 
@@ -522,6 +523,7 @@ class SieveOrchestrator:
                     resolving_pass_index=pass_index,
                     resolving_pass_handler=invocation.handler,
                     authority=effective_authority,
+                    concluded_by=invocation.handler,
                 )
                 self._apply_on_pass(control_spec, context, accumulated_evidence)
                 return sieve_result
@@ -545,6 +547,7 @@ class SieveOrchestrator:
                     resolving_pass_handler=invocation.handler,
                     authority=effective_authority,
                     error_class=handler_result.error_class,
+                    concluded_by=invocation.handler,
                 )
 
             # Feature 037 (FR-016): a conclusive WARN carries the handler's
@@ -567,6 +570,7 @@ class SieveOrchestrator:
                     resolving_pass_handler=invocation.handler,
                     authority=effective_authority,
                     error_class=handler_result.error_class,
+                    concluded_by=invocation.handler,
                 )
 
             if disposition == StepDisposition.TERMINATE_ERROR:
@@ -583,6 +587,7 @@ class SieveOrchestrator:
                     resolving_pass_handler=invocation.handler,
                     authority=effective_authority,
                     error_class=handler_result.error_class,
+                    concluded_by=invocation.handler,
                 )
 
             # ATTACH_EVIDENCE_AND_CONTINUE or TERMINATE_INCONCLUSIVE fall
@@ -597,7 +602,7 @@ class SieveOrchestrator:
             ):
                 return SieveResult(
                     control_id=control_spec.control_id,
-                    status="PENDING_LLM",
+                    status="PENDING",
                     message="LLM consultation required",
                     level=control_spec.level,
                     conclusive_phase=phase,
@@ -607,6 +612,9 @@ class SieveOrchestrator:
                         "llm_consultation": handler_result.details["consultation_request"],
                     },
                     source="sieve",
+                    authority="suggestive",
+                    concluded_by="none",
+                    pending={"kind": "llm_judgment"},
                 )
 
             # Continue to next handler
@@ -635,6 +643,7 @@ class SieveOrchestrator:
             # timing out) reports a bare "manual verification required" and
             # the operator never learns their token expired.
             error_class=last_error_class,
+            concluded_by="none",
         )
 
     def verify(self, control_spec: ControlSpec, context: CheckContext) -> SieveResult:
@@ -691,6 +700,8 @@ class SieveOrchestrator:
             message="No handler invocations configured for this control",
             level=control_spec.level,
             source="sieve",
+            authority="suggestive",
+            concluded_by="none",
         )
         self._dependency_results[control_spec.control_id] = sieve_result
         return sieve_result
@@ -726,25 +737,25 @@ class SieveOrchestrator:
                 confidence_threshold = extra.get("confidence_threshold", 0.8)
                 break
 
-        # RFC-0001 Stage 1 (feature 025): LLM authority is `suggestive` by
-        # default. Per FR-001/FR-004, a suggestive result cannot conclude
-        # a control PASS or FAIL regardless of confidence. This branch is
-        # only reachable when a TOML control has explicitly overridden the
-        # llm_eval step's authority to `dispositive` -- which T014 forbids
-        # by default. Kept behind an authority check for defense in depth.
-        llm_step_authority: Authority | None = None
+        # Feature 041: a model step's effective set is empty (llm_eval's
+        # ceiling is {} and a model judgment is never promoted), so this
+        # branch cannot conclude; it stays gated by the same rule as every
+        # other step for defense in depth.
+        llm_allowed: frozenset[str] = frozenset()
+        registry = get_sieve_handler_registry()
         for inv in handler_invocations:
             if inv.handler == "llm_eval":
-                llm_step_authority = getattr(inv, "authority", None) or "suggestive"
+                info = registry.get("llm_eval")
+                llm_allowed = effective_outcomes(info, inv) if info else frozenset()
                 break
 
         # Determine outcome based on confidence
         if llm_response.status in (PassOutcome.PASS, PassOutcome.FAIL):
-            if llm_response.confidence >= confidence_threshold and is_terminal_authority(llm_step_authority):
-                status: CheckStatus = "PASS" if llm_response.status == PassOutcome.PASS else "FAIL"
+            outcome = "pass" if llm_response.status == PassOutcome.PASS else "fail"
+            if llm_response.confidence >= confidence_threshold and outcome in llm_allowed:
                 return SieveResult(
                     control_id=control_spec.control_id,
-                    status=status,
+                    status=outcome.upper(),
                     message=llm_response.reasoning,
                     level=control_spec.level,
                     conclusive_phase=VerificationPhase.LLM,
@@ -755,7 +766,8 @@ class SieveOrchestrator:
                         "llm_evidence": llm_response.evidence_cited,
                     },
                     source="sieve",
-                    authority=llm_step_authority,
+                    authority="dispositive",
+                    concluded_by="llm_judgment",
                 )
 
         # Low confidence or inconclusive - fall through to manual
@@ -788,12 +800,10 @@ class SieveOrchestrator:
                 f"Control: {control_spec.control_id} - {control_spec.name}",
             ],
             source="sieve",
-            # Feature 026 bug fix: LLM WARN fallthrough retains the step's
-            # declared authority ("suggestive"). The LLM step ran (even if
-            # inconclusive or errored); the WARN inherits its authority for
-            # provenance reporting. Preserves the (status, authority) pair
-            # so the report never surfaces "unknown" for a step that ran.
-            authority=llm_step_authority or "suggestive",
+            # Feature 026 bug fix: the LLM WARN fallthrough is suggestive so
+            # the report never surfaces "unknown" for a step that ran.
+            authority="suggestive",
+            concluded_by="none",
         )
 
     def verify_batch(

@@ -106,7 +106,10 @@ class TestHappyPathByteForByteInvariance:
             "baseline must include at least one clean FAIL so the "
             "no-annotation-on-real-findings invariant is actually covered"
         )
-        assert "PASS" in statuses, "baseline should also cover the PASS path"
+        # Feature 041: README presence no longer concludes OSPS-DO-01.01, so
+        # the baseline's non-FAIL path is PENDING until a Baseline control
+        # is declared existence-only (US5).
+        assert statuses - {"FAIL"}, "baseline should also cover a non-FAIL path"
 
 
 class TestNoWarnOnHappyPath:

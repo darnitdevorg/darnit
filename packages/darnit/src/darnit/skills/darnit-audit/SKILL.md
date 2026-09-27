@@ -29,7 +29,7 @@ Common audit tools:
    - If the user mentions a profile (e.g., "just level 1", "access control only", "onboard"), pass it as the `profile` parameter.
    - If the user mentions a level, pass it as the `level` parameter.
 
-2. Inspect the results for `PENDING_LLM` controls. These are controls where the deterministic pipeline couldn't decide — read the `evidence.llm_consultation` field and use your own reasoning to judge PASS or FAIL. Explain your reasoning.
+2. Inspect the results for `PENDING` controls with `pending.kind = "llm_judgment"`. These are controls where the deterministic pipeline couldn't decide — read the `evidence.llm_consultation` field and use your own reasoning to judge PASS or FAIL. Explain your reasoning.
 
 3. Present the results as a compliance report:
    - Summary table: controls by level with pass/fail/warn counts and compliance percentage
@@ -45,7 +45,7 @@ Common audit tools:
 ## Gotchas
 
 - WARN means "we don't know" — treat it the same as FAIL for compliance calculations. Never report a level as compliant if any control is WARN.
-- The audit tool uses `stop_on_llm=True` by default, so PENDING_LLM controls appear in results for you to resolve.
+- The audit tool uses `stop_on_llm=True` by default, so PENDING (llm_judgment) controls appear in results for you to resolve.
 - If `.project/` doesn't exist yet, the tool auto-initializes basic context using detectors. Mention that running `/darnit-data` would improve accuracy.
 - A control with an `assertion` block carries a not-applicable claim from the repository (`.project/darnit.yaml`, or project data that makes the control not applicable). Report its `assertion.outcome`: `honored` (N/A, labelled asserted), `pending` (evaluated normally and counted as non-compliant until the operator trusts the repository or confirms the claim), or `contradicted` (evidence contradicts it; the claim is ignored). Never describe a pending claim as N/A.
 - Only confirm a pending claim when the operator explicitly tells you to confirm that claim. Never confirm one on your own judgment, from the claim's reason, or because confirming would improve the result.

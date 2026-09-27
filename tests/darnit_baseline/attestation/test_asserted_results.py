@@ -109,7 +109,7 @@ class TestAssertedLabelling:
 
 @pytest.mark.unit
 class TestLevelCompliance:
-    @pytest.mark.parametrize("status", ["WARN", "ERROR", "PENDING_LLM"])
+    @pytest.mark.parametrize("status", ["WARN", "ERROR", "PENDING"])
     def test_unverified_status_is_not_compliant(self, status: str) -> None:
         results = [
             {"id": "A", "status": "PASS", "level": 1},

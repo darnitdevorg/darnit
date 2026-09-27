@@ -27,7 +27,7 @@ def _run(coro):
 
 
 # ---------------------------------------------------------------------------
-# SC-001 / US1 acceptance #1: end-to-end LLM dispatched, no PENDING_LLM
+# SC-001 / US1 acceptance #1: end-to-end LLM dispatched, no PENDING
 # ---------------------------------------------------------------------------
 
 
@@ -38,7 +38,7 @@ class TestEndToEndDispatch:
         harness_run_factory: Callable[..., HarnessRun],
     ) -> None:
         """SC-001 + SC-004: harness runs to completion; no result ends up
-        PENDING_LLM in the final report.
+        PENDING in the final report.
 
         Prior to PR #365 fix this test also asserted >=1 LLM dispatch via
         STAGE1-REF-SECURITY-01's llm_extract step. That ordering
@@ -52,9 +52,9 @@ class TestEndToEndDispatch:
         run = harness_run_factory(str(minimal_llm_repo_tree))
         report = _run(run.run())
 
-        # Every control resolved -- none left PENDING_LLM.
-        pending_llm = [c for c in report.controls if c.get("status") == "PENDING_LLM"]
-        assert not pending_llm, f"Found unresolved PENDING_LLM results: {[c['id'] for c in pending_llm]}"
+        # Every control resolved -- none left PENDING.
+        pending_llm = [c for c in report.controls if c.get("status") == "PENDING"]
+        assert not pending_llm, f"Found unresolved PENDING results: {[c['id'] for c in pending_llm]}"
 
         # Provider is always set to the mock/configured model even when
         # zero calls were made.
