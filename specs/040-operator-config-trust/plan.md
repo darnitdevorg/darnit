@@ -130,7 +130,7 @@ tests/
 
 ## Before merge
 
-- [ ] Fix the test-order dependence: two tests in `tests/darnit/cli/test_cmd_run_e2e.py` fail when `tests/darnit/config` runs before `tests/darnit/cli` on this branch (does not reproduce on main).
+- [X] Fix the test-order dependence: two tests in `tests/darnit/cli/test_cmd_run_e2e.py` fail when `tests/darnit/config` runs before `tests/darnit/cli` on this branch (does not reproduce on main).
 - [ ] Rebase onto main after the repository-configuration change is merged.
 
 ## Issues to file after merge
@@ -143,6 +143,7 @@ These describe behavior that exists only once this feature lands, so they are fi
 - The CSL audit path runs with `apply_user_config=False`, so project claims are ignored there (good first issue).
 - `plugins.trusted_publishers` / `allow_unsigned` in operator configuration are not applied yet (link to #448 / #461).
 - Before switching `BASELINE_TOML_DEPRECATION_ACTIVE` off: `darnit run` needs `--framework` (#507) and test fixtures that use `.baseline.toml` `extends` need migrating.
+- Parity corpus: switch fixture discovery from `.baseline.toml` to `parity.toml` in a separate parity-only change (the parity guard forbids mixing parity-test and product changes); also required before switching the deprecation off.
 
 ## Complexity Tracking
 
