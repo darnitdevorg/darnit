@@ -120,23 +120,27 @@ def test_no_product_source_changes() -> None:
     changed = [ln.strip() for ln in rc.stdout.splitlines() if ln.strip()]
 
     # FR-014's scope is "parity-tests PR MUST NOT modify product source",
-    # so this check only applies to PRs that actually modify parity tests.
-    # A PR that doesn't touch `tests/darnit/parity/` is not a parity-tests
-    # PR and legitimately edits product code under `packages/*/src/`
-    # (e.g., feature 030's `.project/` reader reconciliation).
+    # so this check only applies to PRs that change the parity harness --
+    # the tier1/tier2 test code. A PR that changes product behavior
+    # legitimately updates parity fixtures and their expected outcomes under
+    # `tests/darnit/parity/fixtures/`, and that alone does not make it a
+    # parity-tests PR. A PR that doesn't touch the harness is not a
+    # parity-tests PR and may edit product code under `packages/*/src/`.
     #
     # Exclude this file itself from the heuristic: a PR that only touches
     # the guard (to tune scope, adjust base-ref detection, etc.) is a
     # meta-change to the guard, not a parity-tests-feature PR.
     _SELF = "tests/darnit/parity/tier1/test_no_product_changes.py"
-    touches_parity_tests = any(
-        f.startswith("tests/darnit/parity/") and f != _SELF for f in changed
+    _FIXTURES = "tests/darnit/parity/fixtures/"
+    touches_parity_harness = any(
+        f.startswith("tests/darnit/parity/") and not f.startswith(_FIXTURES) and f != _SELF for f in changed
     )
-    if not touches_parity_tests:
+    if not touches_parity_harness:
         pytest.skip(
-            "FR-014 check skipped: PR does not modify tests/darnit/parity/ "
-            "(other than this guard itself), so it is not a parity-tests "
-            "PR and FR-014's product-code guardrail does not apply.",
+            "FR-014 check skipped: PR does not modify the parity harness "
+            "(tests/darnit/parity/ outside fixtures/, other than this guard), "
+            "so it is not a parity-tests PR and FR-014's product-code "
+            "guardrail does not apply.",
         )
 
     forbidden = [
