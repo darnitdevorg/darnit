@@ -1,0 +1,7 @@
+extends = "openssf-baseline"
+
+# Feature 028 parity fixture: expects every selected control to PASS.
+# Uses two simple dispositive file_exists controls so no LLM involvement.
+[audit_profiles.parity_subset]
+description = "Feature 028 parity fixture: 2 dispositive controls"
+controls = ["OSPS-DO-01.01", "OSPS-LE-03.01"]

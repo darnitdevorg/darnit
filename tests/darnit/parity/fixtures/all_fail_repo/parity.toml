@@ -1,7 +1,3 @@
-# Feature 028 parity fixture: expects every selected control to FAIL.
-# Same controls as all_pass_repo but the fixture omits the required files
-# so file_exists returns FAIL.
-
 [expected]
 category = "all_fail"
 has_pending_llm = false

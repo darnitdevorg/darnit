@@ -1,0 +1,10 @@
+extends = "openssf-baseline"
+
+# Feature 028 parity fixture: exercises the LLM path via STAGE1-REF-SECURITY-01.
+# Under the MCP tool path (stop_on_llm=True), this control's llm_extract
+# step stops the pipeline and the result is PENDING_LLM. Under the harness
+# path with MockLLMStep=inconclusive, it resolves to WARN via the
+# verify_with_llm_response fallthrough. That is the sole allowed drift.
+[audit_profiles.parity_subset]
+description = "Feature 028 parity fixture: LLM-required control"
+tags = { "stage1-ref" = true }

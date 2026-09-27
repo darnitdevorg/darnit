@@ -1,0 +1,7 @@
+extends = "openssf-baseline"
+
+# Feature 028 parity fixture: some controls PASS, some FAIL. Neither
+# control involves an LLM step.
+[audit_profiles.parity_subset]
+description = "Feature 028 parity fixture: mixed pass/fail"
+controls = ["OSPS-DO-01.01", "OSPS-LE-03.01"]

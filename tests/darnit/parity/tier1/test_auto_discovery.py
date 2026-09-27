@@ -9,13 +9,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tests.darnit.parity.tier1.fixture_meta import FIXTURE_MARKER, discover_fixtures
-
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 
 
 def _discovered_fixture_dirs() -> list[Path]:
-    return discover_fixtures(FIXTURES_DIR)
+    if not FIXTURES_DIR.exists():
+        return []
+    return sorted(p for p in FIXTURES_DIR.iterdir() if p.is_dir() and (p / ".baseline.toml").exists())
 
 
 def test_fixture_count_matches_directory_count() -> None:
@@ -25,10 +25,11 @@ def test_fixture_count_matches_directory_count() -> None:
     fixtures = _discovered_fixture_dirs()
     # Sanity: at least the four MVP fixtures.
     assert len(fixtures) >= 4, f"Expected at least 4 fixtures, got {len(fixtures)}: {[f.name for f in fixtures]}"
-    # Every discovered directory contains the marker file (`parity.toml`).
-    # A directory without it is silently ignored (not counted as a fixture).
+    # Every discovered directory contains a `.baseline.toml` -- the
+    # required marker file. If a maintainer adds a directory without
+    # `.baseline.toml`, it's silently ignored (not counted as a fixture).
     for fixture in fixtures:
-        assert (fixture / FIXTURE_MARKER).exists()
+        assert (fixture / ".baseline.toml").exists()
 
 
 def test_new_fixture_is_picked_up() -> None:
@@ -50,10 +51,10 @@ def test_new_fixture_is_picked_up() -> None:
         # Add a synthetic fixture.
         new_dir = tmp_root / "synthetic_extra"
         new_dir.mkdir()
-        (new_dir / FIXTURE_MARKER).write_text('[expected]\ncategory = "all_pass"\n')
+        (new_dir / ".baseline.toml").write_text('extends = "openssf-baseline"\n')
 
-        # Rediscover using the same function.
-        discovered = discover_fixtures(tmp_root)
+        # Rediscover using the same pattern.
+        discovered = sorted(p for p in tmp_root.iterdir() if p.is_dir() and (p / ".baseline.toml").exists())
         names = {p.name for p in discovered}
         assert "synthetic_extra" in names
         assert len(discovered) == len(_discovered_fixture_dirs()) + 1

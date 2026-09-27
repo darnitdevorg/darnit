@@ -31,7 +31,6 @@ import sys
 from pathlib import Path
 
 from tests.darnit.parity.tier1.comparator import AuditResult
-from tests.darnit.parity.tier1.fixture_meta import discover_fixtures
 from tests.darnit.parity.tier2.artifact_writer import write_fixture_artifacts
 from tests.darnit.parity.tier2.backends import (
     BACKEND_REGISTRY,
@@ -57,7 +56,9 @@ def _provider_filename_prefix(backend_name: str) -> str:
 
 
 def _discover_fixtures(fixture_glob: str) -> list[Path]:
-    all_fixtures = discover_fixtures(FIXTURES_DIR)
+    if not FIXTURES_DIR.exists():
+        return []
+    all_fixtures = sorted(p for p in FIXTURES_DIR.iterdir() if p.is_dir() and (p / ".baseline.toml").exists())
     if fixture_glob == "*":
         return all_fixtures
     import fnmatch

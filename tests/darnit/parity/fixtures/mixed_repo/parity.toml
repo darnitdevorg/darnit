@@ -1,6 +1,3 @@
-# Feature 028 parity fixture: some controls PASS, some FAIL. Neither
-# control involves an LLM step.
-
 [expected]
 category = "mixed"
 has_pending_llm = false

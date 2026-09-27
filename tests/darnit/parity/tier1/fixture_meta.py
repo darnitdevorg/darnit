@@ -46,19 +46,9 @@ class ParityMetadata:
     controls: tuple[ExpectedControl, ...] = ()
     # Optional per-fixture filter: if non-empty, the parity comparison
     # only considers these control IDs from both paths' outputs. If empty,
-    # every OSPS control is compared.
+    # all controls (which will be every OSPS control since neither path
+    # auto-applies audit_profiles from .baseline.toml today) are compared.
     control_ids: tuple[str, ...] = ()
-
-
-# A fixture is a directory under the corpus root holding this file.
-FIXTURE_MARKER = "parity.toml"
-
-
-def discover_fixtures(fixtures_dir: Path) -> list[Path]:
-    """Fixture directories under ``fixtures_dir``, sorted by name."""
-    if not fixtures_dir.exists():
-        return []
-    return sorted(p for p in fixtures_dir.iterdir() if p.is_dir() and (p / FIXTURE_MARKER).exists())
 
 
 def load_parity_metadata(fixture_dir: Path) -> ParityMetadata | None:
@@ -181,11 +171,9 @@ def load_parity_metadata(fixture_dir: Path) -> ParityMetadata | None:
 
 
 __all__ = (
-    "FIXTURE_MARKER",
     "Category",
     "VALID_CATEGORIES",
     "ExpectedControl",
     "ParityMetadata",
-    "discover_fixtures",
     "load_parity_metadata",
 )

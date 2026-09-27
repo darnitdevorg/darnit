@@ -1,0 +1,8 @@
+extends = "openssf-baseline"
+
+# Feature 028 parity fixture: expects every selected control to FAIL.
+# Same controls as all_pass_repo but the fixture omits the required files
+# so file_exists returns FAIL.
+[audit_profiles.parity_subset]
+description = "Feature 028 parity fixture: 2 dispositive controls, all missing"
+controls = ["OSPS-DO-01.01", "OSPS-LE-03.01"]

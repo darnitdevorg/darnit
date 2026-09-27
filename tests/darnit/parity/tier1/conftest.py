@@ -1,6 +1,6 @@
 """Tier 1 conftest: fixture auto-discovery + prepared-fixture helper (T012).
 
-Auto-discovers `tests/darnit/parity/fixtures/<name>/parity.toml` and
+Auto-discovers `tests/darnit/parity/fixtures/<name>/.baseline.toml` and
 parametrizes `fixture_dir`. Provides `prepared_fixture`, `mcp_tool_result`,
 and `harness_result` pytest fixtures that materialize a git-initialized
 copy of the fixture and run both audit paths against it.
@@ -24,7 +24,6 @@ from darnit.core.llm_step import LLMJudgment, MockLLMStep
 from darnit.harness.driver import HarnessRun
 from darnit_baseline.tools import audit_openssf_baseline
 from tests.darnit.parity.tier1.comparator import AuditResult
-from tests.darnit.parity.tier1.fixture_meta import discover_fixtures
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 
@@ -63,10 +62,16 @@ def _ensure_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")
 
 
+def _discover_fixtures() -> list[Path]:
+    if not FIXTURES_DIR.exists():
+        return []
+    return sorted(p for p in FIXTURES_DIR.iterdir() if p.is_dir() and (p / ".baseline.toml").exists())
+
+
 def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
     """Auto-discover fixtures for any test that requests `fixture_dir`."""
     if "fixture_dir" in metafunc.fixturenames:
-        fixtures = discover_fixtures(FIXTURES_DIR)
+        fixtures = _discover_fixtures()
         metafunc.parametrize(
             "fixture_dir",
             fixtures,
@@ -153,7 +158,6 @@ def harness_result(prepared_fixture: Path) -> AuditResult:
     )
     run = HarnessRun(
         local_path=str(prepared_fixture),
-        framework_name="openssf-baseline",
         level=3,
         llm_step=mock,
         per_call_timeout_s=5,
