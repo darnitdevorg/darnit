@@ -19,7 +19,7 @@ from typing import Literal
 @dataclass(frozen=True)
 class SkillControlClaim:
     id: str
-    status: Literal["PASS", "FAIL", "WARN", "N/A", "ERROR", "PENDING_LLM"]
+    status: Literal["PASS", "FAIL", "WARN", "N/A", "ERROR", "PENDING", "PENDING_LLM"]
 
 
 @dataclass(frozen=True)
@@ -61,7 +61,7 @@ class SkillReport:
             )
 
 
-_STATUS_LITERALS = ("PASS", "FAIL", "WARN", "N/A", "ERROR", "PENDING_LLM")
+_STATUS_LITERALS = ("PASS", "FAIL", "WARN", "N/A", "ERROR", "PENDING", "PENDING_LLM")
 
 
 def _extract_counts(markdown: str) -> dict[str, int] | None:

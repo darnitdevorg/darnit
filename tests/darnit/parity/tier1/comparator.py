@@ -3,9 +3,10 @@
 Diffs two `AuditResult` instances (one from the direct MCP tool call, one
 from the harness) and produces a `ParityReport` with a drift table.
 
-The single allowed drift class is: MCP tool leaves a control PENDING_LLM,
-harness resolves it via its LLM continuation loop to any non-PENDING_LLM
-status. Any other divergence is a hard failure.
+The single allowed drift class is: MCP tool leaves a control pending
+(PENDING_LLM, or PENDING once the result model renames it), harness
+resolves it via its LLM continuation loop to any non-pending status. Any
+other divergence is a hard failure.
 
 See:
   - specs/028-audit-parity-tests/data-model.md sections 3-5
@@ -20,15 +21,19 @@ from typing import TYPE_CHECKING, Any, Literal
 if TYPE_CHECKING:
     from darnit.harness.report import HarnessReport
 
-Status = Literal["PASS", "FAIL", "WARN", "N/A", "ERROR", "PENDING_LLM"]
+Status = Literal["PASS", "FAIL", "WARN", "N/A", "ERROR", "PENDING", "PENDING_LLM"]
 STATUSES: tuple[Status, ...] = (
     "PASS",
     "FAIL",
     "WARN",
     "N/A",
     "ERROR",
+    "PENDING",
     "PENDING_LLM",
 )
+# Both spellings are accepted so the product can rename PENDING_LLM to
+# PENDING without a parity-harness change in the same PR.
+PENDING_STATUSES: frozenset[str] = frozenset({"PENDING", "PENDING_LLM"})
 
 
 @dataclass(frozen=True)
@@ -116,14 +121,14 @@ class DriftEntry:
 
     @property
     def is_allowed_drift(self) -> bool:
-        """T1-8 canonical table: only PENDING_LLM (MCP) -> a resolved
+        """T1-8 canonical table: only pending (MCP) -> a resolved
         status on the harness side is allowed. A missing control on
         either side is always a HARD failure per T1-3, even if the
-        other side reads PENDING_LLM. PR #370 review fix.
+        other side reads pending. PR #370 review fix.
         """
         if self.mcp_status == "<MISSING>" or self.harness_status == "<MISSING>":
             return False
-        if self.mcp_status == "PENDING_LLM" and self.harness_status != "PENDING_LLM":
+        if self.mcp_status in PENDING_STATUSES and self.harness_status not in PENDING_STATUSES:
             return True
         return False
 
@@ -263,6 +268,7 @@ __all__ = (
     "DriftEntry",
     "ParityReport",
     "Status",
+    "PENDING_STATUSES",
     "STATUSES",
     "compare",
 )

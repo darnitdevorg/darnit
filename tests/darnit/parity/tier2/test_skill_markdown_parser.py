@@ -81,3 +81,13 @@ class TestParserRobustness:
     def test_never_raises_on_garbage(self) -> None:
         r = SkillReport.parse("\x00\x01\x02")
         assert r.parseable is False
+
+
+class TestPendingStatuses:
+    def test_pending_and_pending_llm_both_recognized(self) -> None:
+        md = "## Summary\n- Passed: 0\n- Failed: 0\n\n- OSPS-DO-01.01: PENDING\n- OSPS-GV-01.01: PENDING_LLM\n"
+        r = SkillReport.parse(md)
+        assert r.controls is not None
+        statuses = {c.id: c.status for c in r.controls}
+        assert statuses["OSPS-DO-01.01"] == "PENDING"
+        assert statuses["OSPS-GV-01.01"] == "PENDING_LLM"

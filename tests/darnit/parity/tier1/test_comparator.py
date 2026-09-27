@@ -1,7 +1,7 @@
 """Tests for the Tier 1 comparator (feature 028 T006).
 
 Covers:
-  - T1-9 mechanical enumeration: all 36 (mcp_status, harness_status) pairs
+  - T1-9 mechanical enumeration: every (mcp_status, harness_status) pair
     classified per the T1-8 canonical drift table.
   - AuditResult factories (from_mcp_json + from_harness_report) shape.
   - FR-004: format_failure_table produces fixed-width Markdown with no ANSI.
@@ -13,6 +13,7 @@ Covers:
 from __future__ import annotations
 
 from tests.darnit.parity.tier1.comparator import (
+    PENDING_STATUSES,
     STATUSES,
     AuditResult,
     Control,
@@ -34,7 +35,7 @@ class TestAllowedDriftTable:
     """T1-9: enumerate every (mcp, harness) status pair and verify
     the comparator's classification matches the T1-8 table."""
 
-    def test_all_36_pairs_classified_correctly(self) -> None:
+    def test_all_pairs_classified_correctly(self) -> None:
         for m_status in STATUSES:
             for h_status in STATUSES:
                 mcp = _make_mcp([Control(id="X", status=m_status)])
@@ -58,11 +59,11 @@ class TestAllowedDriftTable:
                 assert drift.mcp_status == m_status
                 assert drift.harness_status == h_status
 
-                # Classification: PENDING_LLM (MCP) -> non-PENDING_LLM
-                # (harness) is the sole allowed drift.
-                if m_status == "PENDING_LLM" and h_status != "PENDING_LLM":
+                # Classification: pending (MCP) -> non-pending (harness)
+                # is the sole allowed drift.
+                if m_status in PENDING_STATUSES and h_status not in PENDING_STATUSES:
                     assert drift.is_allowed_drift is True
-                    assert report.is_green, f"PENDING_LLM->{h_status} must be green"
+                    assert report.is_green, f"{m_status}->{h_status} must be green"
                 else:
                     assert drift.is_allowed_drift is False
                     assert not report.is_green, f"({m_status}, {h_status}) must NOT be green"

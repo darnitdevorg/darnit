@@ -2,7 +2,7 @@
 
 Covers SC-001 (comparator catches a seeded PASS-vs-FAIL divergence),
 SC-003 (N seeded divergences produce N table rows), and LC1 (all three
-PENDING_LLM allowed-drift resolutions).
+PENDING_LLM allowed-drift resolutions), plus the PENDING spelling.
 """
 
 from __future__ import annotations
@@ -79,6 +79,36 @@ class TestLC1AllowedDriftResolutions:
         assert report.is_green
         assert len(report.drifts) == 1
         assert report.drifts[0].is_allowed_drift
+
+
+class TestPendingSpelling:
+    """PENDING is accepted as the pending status alongside PENDING_LLM."""
+
+    def test_pending_to_pass_is_allowed(self) -> None:
+        mcp = _mcp(Control(id="X", status="PENDING"))
+        harness = _harness(Control(id="X", status="PASS"))
+        report = compare(mcp, harness, "pending")
+        assert report.is_green
+        assert report.drifts[0].is_allowed_drift
+
+    def test_pending_on_both_sides_agrees(self) -> None:
+        mcp = _mcp(Control(id="X", status="PENDING"))
+        harness = _harness(Control(id="X", status="PENDING"))
+        report = compare(mcp, harness, "pending")
+        assert report.is_green
+        assert report.agreements == 1
+
+    def test_reverse_drift_pending_from_harness_disallowed(self) -> None:
+        mcp = _mcp(Control(id="X", status="WARN"))
+        harness = _harness(Control(id="X", status="PENDING"))
+        report = compare(mcp, harness, "pending")
+        assert not report.is_green
+
+    def test_mixed_spellings_are_not_a_resolution(self) -> None:
+        mcp = _mcp(Control(id="X", status="PENDING_LLM"))
+        harness = _harness(Control(id="X", status="PENDING"))
+        report = compare(mcp, harness, "pending")
+        assert not report.is_green
 
 
 class TestDisallowedReverseDrift:
