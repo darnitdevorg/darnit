@@ -101,7 +101,7 @@ docs/architecture/framework-design.md                 # updated first: ceilings,
 
 ## Sequencing and dependencies
 
-1. **Prerequisite (separate change)**: narrow the parity guard so feature PRs may update parity expectations (R8).
+1. **Prerequisite (separate change)**: narrow the parity guard so feature PRs may update parity expectations (R8, #509).
 2. `framework-design.md` update.
 3. Result model and ceilings (models, registry, orchestrator resolution, load-time validation in every path).
 4. Handlers: pattern miss, exec/mcp errors, `gh_api`, branch-protection errors.

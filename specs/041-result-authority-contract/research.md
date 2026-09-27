@@ -71,7 +71,7 @@ Of 65 OSPS controls (plus one reference control), classified against the upstrea
 
 ## R8. Parity guard conflict
 
-- **Decision**: Before this feature merges, a separate small change narrows the parity guard (`tests/darnit/parity/tier1/test_no_product_changes.py`) so it applies to parity-test features (spec directories for the parity features) rather than to any change touching `tests/darnit/parity/`. This feature then updates parity expectations alongside the product changes that alter them.
+- **Decision**: Before this feature merges, a separate small change (#509) narrows the parity guard (`tests/darnit/parity/tier1/test_no_product_changes.py`) so it applies only when the parity harness (tier1/tier2 code) changes, not when a feature updates parity fixtures and their expected outcomes under `tests/darnit/parity/fixtures/`. This feature then updates parity expectations alongside the product changes that alter them.
 - **Rationale**: The guard's heuristic ("touches parity tests" means "is a parity PR") blocks every feature that legitimately changes results. It already forced the feature-040 parity-fixture migration into a separate change.
 
 ## R9. Baseline re-declaration
