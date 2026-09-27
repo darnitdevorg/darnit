@@ -157,6 +157,8 @@ file_must_exist → exec/regex → llm_eval → manual
 
 Each control can define passes at each phase. The orchestrator stops at the first conclusive result.
 
+A result concludes only if its outcome is in the step's effective set (feature 041): each step type has a ceiling (`file_exists`/`regex` FAIL only unless `existence = true`; `exec`/`gh_api` PASS or FAIL; `llm_eval`/`manual` nothing), narrowed by `concludes` and widened only by a corpus-backed `promotion`. Other outcomes are evidence and evaluation continues; no conclusion is WARN. ERROR (with `error.class`/`cause`) is a broken measurement, never FAIL. A positive model judgment is at most a PASS candidate (`PENDING`, `pending.kind = "confirmation"`), non-compliant until the operator confirms it; confirmed, it is PASS with `authority: asserted`. See `docs/architecture/framework-design.md` sections 3.0.1-3.0.2, 3.5, 5.2.
+
 ## Conservative-by-Default Principles
 
 This is a compliance auditing tool. Incorrect results are worse than incomplete results. Every design decision must follow these rules:

@@ -15,6 +15,16 @@ Feature 040: a result that is N/A because a not-applicable claim was honored
 carries ``authority: asserted``, ``asserted_by``, and, when a confirmation
 made it count, ``confirmed_by`` and ``confirmed_at``. Level compliance uses
 the framework's shared rule (``darnit.tools.audit.calculate_compliance``).
+
+Feature 041, additive within v1 like ``authority``: every control carries
+``concluded_by`` when the result has one; PENDING carries ``pending.kind``
+(``llm_judgment`` or ``confirmation``); a PASS candidate stays PENDING and
+carries ``candidate`` with ``confirmed: false`` and no verdict, so it never
+reads as PASS; a PASS from a confirmed candidate carries ``authority:
+asserted``, ``concluded_by: confirmation``, ``confirmation``, and the
+confirmed ``candidate``; ERROR carries ``error.class`` and ``error.cause``.
+The summary and each level add ``pending``, ``pass_candidates``,
+``warnings``, and ``errors`` counts.
 """
 
 from datetime import UTC, datetime
@@ -62,20 +72,22 @@ def build_assessment_predicate(
     warns = [r for r in results if r["status"] == "WARN"]
     nas = [r for r in results if r["status"] == "N/A"]
     errors = [r for r in results if r["status"] == "ERROR"]
+    pendings = [r for r in results if r["status"] == "PENDING"]
 
     # Calculate level compliance
     compliance = calculate_compliance(results, min(level, 3))
     levels = {}
     for lvl in [1, 2, 3]:
         if lvl <= level:
-            lvl_results = [r for r in results if r.get("level", 1) == lvl]
-            lvl_passes = len([r for r in lvl_results if r["status"] == "PASS"])
-            lvl_total = len(lvl_results)
-            lvl_fails = len([r for r in lvl_results if r["status"] == "FAIL"])
+            lvl_results = [r for r in results if (r.get("level") or 1) == lvl]
             levels[str(lvl)] = {
-                "total": lvl_total,
-                "passed": lvl_passes,
-                "failed": lvl_fails,
+                "total": len(lvl_results),
+                "passed": _count(lvl_results, "PASS"),
+                "failed": _count(lvl_results, "FAIL"),
+                "warnings": _count(lvl_results, "WARN"),
+                "errors": _count(lvl_results, "ERROR"),
+                "pending": _count(lvl_results, "PENDING"),
+                "pass_candidates": len([r for r in lvl_results if _is_pass_candidate(r)]),
                 "compliant": compliance[lvl],
             }
 
@@ -92,7 +104,7 @@ def build_assessment_predicate(
     for r in results:
         control = {
             "id": r["id"],
-            "level": r.get("level", 1),
+            "level": r.get("level") or 1,
             "category": r["id"].split("-")[1] if "-" in r["id"] else "UNKNOWN",
             "status": r["status"],
             "message": r.get("details", ""),
@@ -117,6 +129,7 @@ def build_assessment_predicate(
         # misleading claim Constitution Principle II forbids.
         if r.get("error_class") is not None:
             control["error_class"] = r["error_class"]
+        control.update(_result_contract_labels(r))
         assertion = r.get("assertion")
         if assertion and assertion.get("outcome") == "honored" and r["status"] == "N/A":
             control["authority"] = "asserted"
@@ -154,6 +167,8 @@ def build_assessment_predicate(
             "warnings": len(warns),
             "not_applicable": len(nas),
             "errors": len(errors),
+            "pending": len(pendings),
+            "pass_candidates": len([r for r in results if _is_pass_candidate(r)]),
         },
         "levels": levels,
         "controls": controls,
@@ -166,6 +181,49 @@ def build_assessment_predicate(
         predicate["trust"] = trust
 
     return predicate
+
+
+def _count(results: list[dict[str, Any]], status: str) -> int:
+    return len([r for r in results if r["status"] == status])
+
+
+def _is_pass_candidate(result: dict[str, Any]) -> bool:
+    return result["status"] == "PENDING" and (result.get("pending") or {}).get("kind") == "confirmation"
+
+
+def _candidate_label(candidate: dict[str, Any], *, confirmed: bool) -> dict[str, Any]:
+    label: dict[str, Any] = {"confirmed": confirmed}
+    for key in ("source", "model", "model_version", "evidence_digest", "reasoning"):
+        if candidate.get(key) is not None:
+            label[key] = candidate[key]
+    label["cited_evidence"] = list(candidate.get("cited_evidence") or [])
+    return label
+
+
+def _result_contract_labels(result: dict[str, Any]) -> dict[str, Any]:
+    """Feature 041 result-contract fields for one control; a candidate never reads as PASS."""
+    labels: dict[str, Any] = {}
+    status = result["status"]
+    if result.get("concluded_by") is not None:
+        labels["concluded_by"] = result["concluded_by"]
+    if status == "PENDING":
+        labels["pending"] = {"kind": (result.get("pending") or {}).get("kind", "llm_judgment")}
+        if _is_pass_candidate(result) and result.get("candidate"):
+            labels["candidate"] = _candidate_label(result["candidate"], confirmed=False)
+    elif status == "ERROR":
+        error = result.get("error") or {}
+        labels["error"] = {
+            "class": error.get("class") or result.get("error_class") or "evaluation",
+            "cause": error.get("cause") or result.get("details") or "",
+        }
+    elif status == "PASS" and result.get("concluded_by") == "confirmation":
+        confirmation = result.get("confirmation") or {}
+        labels["confirmation"] = {
+            key: confirmation.get(key) for key in ("confirmed_by", "confirmed_at", "expires_at")
+        }
+        if result.get("candidate"):
+            labels["candidate"] = _candidate_label(result["candidate"], confirmed=True)
+    return labels
 
 
 __all__ = [

@@ -10,6 +10,7 @@ This document describes security considerations, best practices, and configurati
 - [Configuration Security](#configuration-security)
 - [MCP Server Security](#mcp-server-security)
 - [Plugin Security Model](#plugin-security-model)
+- [Result Integrity](#result-integrity)
 - [Attestation Security](#attestation-security)
 - [Remediation Security](#remediation-security)
 
@@ -599,6 +600,42 @@ Darnit plugins have full Python execution capabilities and can:
 - Sign your releases with Sigstore
 - Document required permissions clearly
 - Avoid hardcoded secrets or credentials
+
+---
+
+## Result Integrity
+
+A compliance tool that reports PASS on weak evidence is worse than one that reports nothing. Darnit limits who may conclude what, separates "the project fails" from "we could not measure", and never lets a model decide a PASS on its own. The authoritative rules are in [framework-design.md](architecture/framework-design.md) sections 3.0.1, 3.0.2, 3.5, 3.8, and 5.2.
+
+### Per-Step Conclusions
+
+Each control is verified by an ordered list of steps. Every step type has a **ceiling**: the outcomes it may at most conclude for its control.
+
+| Step type | May conclude |
+|-----------|--------------|
+| `file_exists`, `regex` / `pattern` | FAIL only (absence is proof; presence of a file or keyword is not). PASS only when the step declares `existence = true` because the requirement is literally that the file exists. |
+| `exec`, `gh_api`, `github_branch_protection` | PASS or FAIL |
+| `llm_eval`, `manual` | Nothing |
+| Plugin handlers | What they register (`ceiling=...`); nothing if they register no ceiling |
+
+A step may narrow its ceiling with `concludes`, but may widen it only with a recorded `promotion` that cites a measurement on the adversarial fixture corpus (`tests/darnit_baseline/corpus/`); a widening without one is rejected when controls load. An outcome a step may not conclude is kept as evidence and evaluation continues. A pattern miss is inconclusive unless the step declares `fail_on_miss`. When no step concludes, the control is WARN (needs verification).
+
+When reviewing a framework TOML or plugin change, treat any new `existence = true`, `promotion`, `fail_on_miss`, `fail_on_status`, or plugin `ceiling` as a change to what darnit is willing to claim, and check it against the corpus report (`uv run python scripts/corpus_report.py --format markdown`). CI fails on any false PASS by a step allowed to conclude PASS.
+
+### ERROR Is Never FAIL
+
+A step that could not measure returns ERROR with a class and cause: `auth` (401/403), `rate_limit` (429 or a rate-limit 403), `unavailable` (5xx, transport failure, undeclared status), `missing_tool` (an absent binary or required MCP server), or `evaluation`. ERROR never concludes FAIL: later steps still run, and if none concludes the control ends ERROR. A platform response proves failure only when the `gh_api` step lists its status in `fail_on_status` (for example 404 for "no branch protection"), and a rate limit never does. A token that cannot read a setting therefore shows up as ERROR `[auth]`, not as a failing project. ERROR is non-compliant.
+
+### PASS Candidates Confirmed by the Operator
+
+Controls that need judgment of document content end `PENDING` (`pending.kind = "llm_judgment"`) after the deterministic steps. A judgment comes from the harness's model step or from a coding agent through the `submit_judgment` MCP tool; both follow the same rules:
+
+- A positive judgment must cite verbatim excerpts of the content the step read. If every excerpt is found, it becomes a **PASS candidate** (`PENDING`, `pending.kind = "confirmation"`), stored on the operator side and labelled with the model, version, and a digest of the judged content and rubric. A candidate is not compliant.
+- A judgment that cites text not present in the content produces no candidate and the control stays WARN.
+- A negative judgment is a model finding: FAIL with `authority: suggestive` and `concluded_by: llm_judgment`.
+- A model-service failure is ERROR.
+
+Only an operator makes a candidate count, through `confirm_project_data` (`confirm_pass_candidate`). The confirmed control then reports PASS with `authority: asserted`, `concluded_by: confirmation`, and the confirmer, time, and expiry. The confirmation lapses when the judged content or the rubric changes or it expires. Agents must never confirm a candidate without the operator's explicit instruction, and the ActionPlan audit step accepts no client-supplied results. Reports and attestations keep a candidate's status `PENDING` and label it "not compliant until confirmed".
 
 ---
 

@@ -58,6 +58,12 @@ def _resolve_version() -> str:
 # Output Formatters
 
 
+_PENDING_TAGS = {
+    "llm_judgment": "awaiting a model judgment",
+    "confirmation": "PASS candidate, not compliant until confirmed",
+}
+
+
 def format_result_text(result: dict) -> str:
     """Format a single result for text output."""
     status = result.get("status", "UNKNOWN")
@@ -81,7 +87,7 @@ def format_result_text(result: dict) -> str:
     error_class = result.get("error_class")
     ec_tag = f" [{error_class}]" if error_class else ""
     pending_kind = (result.get("pending") or {}).get("kind")
-    pending_tag = f" ({pending_kind})" if pending_kind else ""
+    pending_tag = f" ({_PENDING_TAGS.get(pending_kind, pending_kind)})" if pending_kind else ""
 
     return f"  {icon} {control_id}: {status}{pending_tag}{ec_tag} - {details}"
 

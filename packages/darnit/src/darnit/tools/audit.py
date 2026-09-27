@@ -1229,7 +1229,7 @@ def format_results_markdown(
         f"| ✅ Pass | {summary['PASS']} | Control satisfied |",
         f"| ❌ Fail | {summary['FAIL']} | **Control NOT satisfied - action required** |",
         f"| ⚠️ Needs Verification | {summary['WARN']} | **Could not verify automatically - manual review required** |",
-        f"| 🤖 Pending | {summary.get('PENDING', 0)} | Awaiting a model judgment or an operator confirmation |",
+        f"| 🤖 Pending | {summary.get('PENDING', 0)} | {_pending_meaning(results)} |",
         f"| ➖ N/A | {summary['N/A']} | Not applicable to this project |",
         f"| 🔴 Error | {summary['ERROR']} | Check could not run |",
         f"| **Total** | {summary['total']} | |",
@@ -1261,7 +1261,10 @@ def format_results_markdown(
             n_pass = sum(1 for r in lvl_results if r.get("status") == "PASS")
             n_fail = sum(1 for r in lvl_results if r.get("status") == "FAIL")
             n_warn = sum(1 for r in lvl_results if r.get("status") == "WARN")
-            n_other = len(lvl_results) - n_pass - n_fail - n_warn
+            n_error = sum(1 for r in lvl_results if r.get("status") == "ERROR")
+            n_judgment = sum(1 for r in lvl_results if _pending_kind(r) == "llm_judgment")
+            n_candidate = sum(1 for r in lvl_results if _pending_kind(r) == "confirmation")
+            n_other = len(lvl_results) - n_pass - n_fail - n_warn - n_error - n_judgment - n_candidate
             n_pending_claims = sum(
                 1
                 for r in results
@@ -1272,8 +1275,14 @@ def format_results_markdown(
                 parts.append(f"{n_fail} failed")
             if n_warn:
                 parts.append(f"{n_warn} unverified")
+            if n_error:
+                parts.append(f"{n_error} could not be measured")
+            if n_judgment:
+                parts.append(f"{n_judgment} awaiting a model judgment")
+            if n_candidate:
+                parts.append(f"{n_candidate} PASS candidate(s) awaiting confirmation")
             if n_other:
-                parts.append(f"{n_other} error/pending")
+                parts.append(f"{n_other} other")
             if n_pending_claims:
                 parts.append(f"{n_pending_claims} not-applicable claim(s) pending confirmation")
             detail = ", ".join(parts) if parts else "no controls passed"
@@ -1341,6 +1350,8 @@ def format_results_markdown(
                 resolving_index = r.get("resolving_pass_index")
                 if resolving_handler is not None:
                     lines.append(f"  - *Resolved by:* `{resolving_handler}` (pass #{resolving_index})")
+
+                lines.extend(format_result_contract_markdown(r))
 
                 assertion = r.get("assertion")
                 if assertion:
@@ -1540,6 +1551,56 @@ def _format_audit_metadata_markdown(audit_metadata: dict[str, Any] | None) -> li
         lines.append("")
         lines.extend(f"- `{a['control_id']}` in `{a['location']}` (asserted by {a['asserted_by']})" for a in unknown)
     return lines
+
+
+def _pending_kind(result: dict[str, Any]) -> str | None:
+    if result.get("status") != "PENDING":
+        return None
+    return (result.get("pending") or {}).get("kind", "llm_judgment")
+
+
+def _pending_meaning(results: list[dict[str, Any]]) -> str:
+    judgments = sum(1 for r in results if _pending_kind(r) == "llm_judgment")
+    candidates = sum(1 for r in results if _pending_kind(r) == "confirmation")
+    return (
+        f"Awaiting a model judgment ({judgments}) or an operator confirmation of a PASS candidate "
+        f"({candidates}); not compliant until resolved"
+    )
+
+
+def format_result_contract_markdown(result: dict[str, Any]) -> list[str]:
+    """Lines naming an ERROR's cause, a PENDING result's kind, and a PASS candidate (feature 041)."""
+    status = result.get("status")
+    if status == "ERROR":
+        error = result.get("error") or {}
+        error_class = error.get("class") or result.get("error_class") or "evaluation"
+        cause = error.get("cause") or ""
+        detail = f": {cause}" if cause and cause != result.get("details") else ""
+        return [f"  - *Could not measure* (`{error_class}`); this is not a finding about the project{detail}"]
+    kind = _pending_kind(result)
+    if kind == "llm_judgment":
+        return [
+            "  - *Awaiting a model judgment*: a positive judgment can at most make this a PASS candidate, "
+            "which an operator must confirm"
+        ]
+    if kind == "confirmation":
+        candidate = result.get("candidate") or {}
+        cited = len(candidate.get("cited_evidence") or [])
+        model = " ".join(str(v) for v in (candidate.get("model"), candidate.get("model_version")) if v) or "unknown"
+        return [
+            "  - *PASS candidate, not compliant until confirmed*: model judgment by "
+            f"`{model}` ({candidate.get('source', 'unknown')}), {cited} cited excerpt(s)",
+            "  - *Confirmation*: only on the operator's explicit instruction; lapses if the judged content changes",
+        ]
+    if status == "FAIL" and result.get("concluded_by") == "llm_judgment":
+        return ["  - *Model finding*: a model judged the gathered evidence does not satisfy the control"]
+    if status == "PASS" and result.get("concluded_by") == "confirmation":
+        confirmation = result.get("confirmation") or {}
+        return [
+            f"  - *Asserted*: PASS candidate confirmed by {confirmation.get('confirmed_by')} at "
+            f"{confirmation.get('confirmed_at')} (expires {confirmation.get('expires_at')})"
+        ]
+    return []
 
 
 _ASSERTION_LABELS = {

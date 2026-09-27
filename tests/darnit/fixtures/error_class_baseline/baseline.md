@@ -13,7 +13,7 @@
 | ✅ Pass | 0 | Control satisfied |
 | ❌ Fail | 1 | **Control NOT satisfied - action required** |
 | ⚠️ Needs Verification | 0 | **Could not verify automatically - manual review required** |
-| 🤖 Pending | 1 | Awaiting a model judgment or an operator confirmation |
+| 🤖 Pending | 1 | Awaiting a model judgment (1) or an operator confirmation of a PASS candidate (0); not compliant until resolved |
 | ➖ N/A | 0 | Not applicable to this project |
 | 🔴 Error | 0 | Check could not run |
 | **Total** | 2 | |
@@ -34,7 +34,7 @@
 
 ## Level Compliance
 
-- **Level 1:** ❌ Not Compliant (1 failed, 1 error/pending)
+- **Level 1:** ❌ Not Compliant (1 failed, 1 awaiting a model judgment)
 
 ## Detailed Results
 
@@ -59,6 +59,7 @@
 *These controls await a model judgment or an operator confirmation; they are not compliant until resolved:*
 
 - **OSPS-DO-01.01** (L1): LLM consultation required
+  - *Awaiting a model judgment*: a positive judgment can at most make this a PASS candidate, which an operator must confirm
   - *Pass history:* deterministic:pass → pattern:inconclusive → llm:inconclusive
 
 ---

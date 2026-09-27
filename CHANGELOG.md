@@ -65,6 +65,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `confirm_project_data` (`confirm_not_applicable`); confirmations are stored
   operator-side and lapse on expiry or when the claim or its evidence
   changes. Framework controls can declare `contradicted_by` evidence.
+- Per-step conclusions (feature 041). Each step type registers a ceiling of
+  outcomes it may conclude for its control: `file_exists` and `regex` /
+  `pattern` steps may conclude only FAIL, `exec`, `gh_api`, and
+  `github_branch_protection` may conclude PASS or FAIL, and `llm_eval` and
+  `manual` conclude nothing. A step outcome outside its effective set is
+  evidence only and evaluation continues. New step fields in framework TOML:
+  `existence` (presence or pattern step whose requirement is literally
+  existence; allows PASS), `concludes` (narrows the ceiling), `fail_on_miss`
+  (a pattern miss proves failure; otherwise a miss is inconclusive),
+  `fail_on_status` (`gh_api` HTTP statuses that prove failure), and
+  `promotion` (`{outcome = "pass", corpus, note}`, permission to conclude
+  PASS beyond the ceiling, justified by a corpus measurement). A declaration
+  that widens a ceiling without a promotion fails when controls load. Plugin
+  handlers declare their ceiling at registration; one that declares none is
+  evidence only.
+- Result statuses `ERROR` and `PENDING`. `ERROR` is a broken measurement
+  (platform authorization or rate-limit error, unavailable service, missing
+  tool, evaluation error) and carries `error: {class, cause}`; it never
+  concludes FAIL, and a later step that concludes still wins. `PENDING`
+  carries `pending.kind`: `llm_judgment` (awaiting a model judgment) or
+  `confirmation` (a PASS candidate awaiting an operator). Results also carry
+  `concluded_by`, and `candidate` / `confirmation` blocks where they apply.
+  Level compliance treats FAIL, WARN, ERROR, and PENDING, including a PASS
+  candidate, as non-compliant in every driver, report, and attestation.
+- `gh_api` step: a status-aware platform API check. Only statuses declared in
+  `fail_on_status` prove failure; 401/403 are `ERROR` (`auth`), 429 or a
+  rate-limit 403 is `ERROR` (`rate_limit`) even when declared, 5xx,
+  transport failures, and undeclared statuses are `ERROR` (`unavailable`),
+  and a missing `gh` is `ERROR` (`missing_tool`). Recorded responses let
+  tests and the corpus run platform checks offline. A missing `exec` binary
+  and a required MCP server that is missing or unusable are now `ERROR`
+  instead of FAIL.
+- PASS candidates from model judgments. A model judgment never concludes
+  PASS. A positive judgment whose cited excerpts all appear verbatim in the
+  content the step read becomes a PASS candidate (`PENDING`, kind
+  `confirmation`), stored operator-side for an operator- or CI-named
+  repository; it counts as non-compliant until the operator confirms it with
+  `confirm_project_data` (`confirm_pass_candidate`). A confirmed candidate
+  reports PASS with `authority: asserted`, `concluded_by: confirmation`, and
+  the confirmer, time, and expiry, and lapses when the judged content or the
+  control's rubric changes or the confirmation expires. A negative judgment
+  is a suggestive FAIL (`concluded_by: llm_judgment`); a judgment citing text
+  that is not there leaves the control WARN; a model-service failure is
+  `ERROR`.
+- `submit_judgment` MCP tool on every framework server: a coding agent
+  submits a judgment for a `PENDING` (`llm_judgment`) control with verbatim
+  excerpts; darnit re-gathers the evidence, verifies the excerpts, and
+  returns a PASS candidate, a model finding, or a rejection naming the
+  excerpts not found. The audit and comply skills use it and never state a
+  verdict or confirm a candidate without the operator's instruction.
+- Reports show an ERROR's class and cause, a PENDING result's kind, and a
+  PASS candidate as "not compliant until confirmed" with its model and number
+  of cited excerpts. The Baseline attestation predicate adds, within v1,
+  `concluded_by`, `pending.kind`, `candidate` (with `confirmed`; a candidate
+  keeps status `PENDING` and carries no verdict), `confirmation`, and
+  `error: {class, cause}` per control, and `pending`, `pass_candidates`,
+  `warnings`, and `errors` counts in the summary and per level.
+- Adversarial fixture corpus under `tests/darnit_baseline/corpus/`: small
+  repositories with per-control labels (placeholder docs and governance, a
+  policy denying any process, a write-all workflow, an empty repository, a
+  well-formed reference, and recorded platform scenarios). It measures every
+  executed step per control and outcome, fails on any false PASS by a step
+  allowed to conclude PASS, and reports promotion eligibility.
+  `scripts/corpus_report.py` writes the report (Markdown or JSON); CI runs
+  the gate and adds the report to the job summary. A new fixture needs only
+  its files and a `labels.toml`.
 - `docs/architecture/` directory containing the 25 rehomed architectural reference
   specs (including the authoritative `framework-design.md`), plus a one-screen
   `README.md` index. These are static reference documentation, not in-flight
@@ -76,6 +142,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING:** `PENDING_LLM` is removed; `PENDING` with
+  `pending.kind = "llm_judgment"` replaces it in every output, including MCP
+  tool results and JSON reports.
+- **BREAKING:** the ActionPlan audit step (`submit_action_result`) no longer
+  accepts client-supplied per-control results; the engine records only
+  results it produced. MCP clients submit an empty result for the audit step
+  and send judgments through `submit_judgment`.
+- **BREAKING:** OpenSSF Baseline results change. The controls are
+  re-declared under the per-step rules: many controls no longer PASS from a
+  file-presence or keyword step and now end WARN or `PENDING`; pattern misses
+  are inconclusive instead of FAIL; platform checks use `gh_api`, so token
+  and rate-limit problems are `ERROR` instead of FAIL; settings that do not
+  measure a requirement (`allow_forking`, `has_issues`, `html_url`) no longer
+  conclude PASS; 21 content controls gain an `llm_eval` step. Only license
+  presence (LE-03.01), QA-02.01, QA-05.01, and QA-05.02 keep existence steps
+  that conclude PASS. The corpus reports zero false PASS.
 - `.baseline.toml` is deprecated. In this release darnit reads its
   per-control `status`/`reason` as not-applicable claims under the same rules
   as `.project/` claims, still honors `extends` naming a registered framework,
@@ -89,7 +171,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   an operator confirmed it. Pending claims count as non-compliant and
   contradicted claims have no effect. Remediation skips only honored claims.
 - Attestation level compliance uses the same rule as audit reports: WARN,
-  ERROR, PENDING_LLM, and pending claims are non-compliant. Assertion-backed
+  ERROR, PENDING, and pending claims are non-compliant. Assertion-backed
   `N/A` results carry `authority: asserted` and `asserted_by`.
 - `darnit install --project` warns that a repository-scoped registration lets
   the repository control how darnit is launched; user scope remains the

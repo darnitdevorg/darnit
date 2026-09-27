@@ -848,6 +848,8 @@ Result fields beyond `status`:
 
 **Compliance** is computed in one place (`calculate_compliance`) for every driver, report format, and attestation: a level is compliant only if every applicable control is PASS (N/A excluded per feature 040). FAIL, WARN, ERROR, and PENDING, including a PASS candidate, are non-compliant.
 
+**Reports and attestations** carry these fields and label them for a reader: an ERROR's class and cause as a broken measurement, not a finding about the project; a PENDING result's kind; a PASS candidate as not compliant until confirmed, with its model and number of cited excerpts; a model finding; and a confirmed candidate as asserted, with the confirmer, time, and expiry. A PASS candidate MUST NOT be rendered or attested as PASS: an attestation keeps its status `PENDING` and labels its `candidate` with `confirmed = false` and no verdict. Attestation fields are additive within the current predicate version.
+
 #### Scenario: ERROR is never FAIL
 - **WHEN** a step could not measure (API authorization or rate-limit error, missing tool, evaluation error)
 - **THEN** the result MUST be ERROR with `error.class` and `error.cause`

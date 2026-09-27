@@ -284,18 +284,23 @@ class HarnessReport(BaseModel):
     def _format_control_line(control: dict[str, Any], compact: bool = False) -> str:
         """Format a single control's line for Markdown output.
 
-        Every mention includes the authority in parentheses per RF-1.
+        Every mention includes the authority in parentheses per RF-1. An
+        ERROR, PENDING result, model finding, or confirmed PASS candidate
+        gets the same detail lines as the audit report (feature 041).
         """
         control_id = control.get("id", "unknown")
         status = control.get("status", "unknown")
         authority = control.get("authority", "unknown")
+        from darnit.tools.audit import format_result_contract_markdown
+
+        detail_lines = format_result_contract_markdown(control)
         if compact:
-            return f"- {control_id} {status} ({authority})"
+            return "\n".join([f"- {control_id} {status} ({authority})", *detail_lines])
         message = control.get("details") or control.get("message") or ""
         # Truncate long messages so a Markdown list stays readable.
         if len(message) > 200:
             message = message[:200] + "..."
-        return f"- {control_id} {status} ({authority}) -- {message}"
+        return "\n".join([f"- {control_id} {status} ({authority}) -- {message}", *detail_lines])
 
 
 __all__ = [

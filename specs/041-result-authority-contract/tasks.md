@@ -166,12 +166,12 @@
 
 ## Phase 8: Polish & Cross-Cutting Concerns
 
-- [ ] T050 [P] Label PENDING, candidates, suggestive FAIL, and asserted PASS in the attestation predicate in `packages/darnit-baseline/src/darnit_baseline/attestation/predicate.py`
-- [ ] T051 [P] Render ERROR causes, PENDING kinds, and candidates in markdown and summary outputs in `packages/darnit/src/darnit/tools/audit.py`
-- [ ] T052 [P] Update CHANGELOG `[Unreleased]` (result statuses, `gh_api`, `submit_judgment`, ActionPlan change, corpus) in `CHANGELOG.md`
-- [ ] T053 [P] Update `docs/SECURITY_GUIDE.md` and CLAUDE.md Sieve Pattern section to describe per-step conclusions and PASS candidates
-- [ ] T054 Run quickstart.md end to end and record results under "Validation log" in `specs/041-result-authority-contract/quickstart.md`
-- [ ] T055 Run `uv run ruff check .`, `uv run pytest tests/ --ignore=tests/integration/ -q`, `uv run python scripts/validate_sync.py --verbose`; fix failures
+- [X] T050 [P] Label PENDING, candidates, suggestive FAIL, and asserted PASS in the attestation predicate in `packages/darnit-baseline/src/darnit_baseline/attestation/predicate.py`
+- [X] T051 [P] Render ERROR causes, PENDING kinds, and candidates in markdown and summary outputs in `packages/darnit/src/darnit/tools/audit.py`
+- [X] T052 [P] Update CHANGELOG `[Unreleased]` (result statuses, `gh_api`, `submit_judgment`, ActionPlan change, corpus) in `CHANGELOG.md`
+- [X] T053 [P] Update `docs/SECURITY_GUIDE.md` and CLAUDE.md Sieve Pattern section to describe per-step conclusions and PASS candidates
+- [X] T054 Run quickstart.md end to end and record results under "Validation log" in `specs/041-result-authority-contract/quickstart.md`
+- [X] T055 Run `uv run ruff check .`, `uv run pytest tests/ --ignore=tests/integration/ -q`, `uv run python scripts/validate_sync.py --verbose`; fix failures
 
 ---
 
