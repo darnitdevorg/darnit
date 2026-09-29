@@ -63,7 +63,7 @@ description = "List the CSL 1.0 compliance controls."
 # builtin, so it lives in the plugin.
 [mcp.tools.remediate_community_spec]
 handler = "darnit_csl.mcp_tools:remediate_community_spec"
-description = "Write the CSL 1.0 file set (governance/00..05) into a spec repo from a drafted scope and context, then re-audit. Code of Conduct is org-first: BEFORE calling, check whether the project already has one (a repo CODE_OF_CONDUCT file, the org's community or .github repo, or a foundation CoC such as CNCF, LF, or JDF). If it does, pass coc_policy='org' with coc_reference = one markdown sentence linking it; the notices will point there and name no individuals. Only when no such CoC exists, pass two named individuals in coc_contacts (never a mailing list)."
+description = "Write the CSL 1.0 file set (governance/00..05) into a spec repo from a drafted scope and context, then re-audit. Code of Conduct is org-first: BEFORE calling, check whether the project already has one (a repo CODE_OF_CONDUCT file, the org's community or .github repo, or a foundation CoC such as CNCF, LF, or JDF). If it does, pass coc_policy='org' with coc_reference = one markdown sentence linking it; the notices will point there and name no individuals. Only when no such CoC exists, pass two named individuals in coc_contacts (never a mailing list). The code license, governance mode, CoC policy, and every other parameter are the person's decisions: none has a default; an omitted one is taken from confirmed project context only, otherwise the tool writes nothing and reports confirmation required for it."
 
 # -----------------------------------------------------------------------------
 # Audit profiles

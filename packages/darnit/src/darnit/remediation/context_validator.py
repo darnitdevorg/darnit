@@ -1,28 +1,24 @@
 """Context validator for remediation requirements.
 
-This module provides a generic validator that checks context requirements before
-running remediations. Instead of hardcoding confirmation logic in each remediation
-function, requirements are declared in TOML and this validator handles prompting.
-
-The validator now integrates with the context sieve for progressive auto-detection:
-1. Check if context is already confirmed in .project.yaml
-2. If missing, use context sieve to auto-detect from multiple sources
-3. Show auto-detected values with confidence scores for user confirmation
-4. Only proceed when confidence meets threshold or user confirms
+Requirements are declared in TOML (``requires_context``) and checked here
+before a remediation runs. Values come from the context resolver
+(feature 042): a key is ready only when its value is usable -- confirmed by
+a person, or concluded in this run for an ``auto_detect = true`` key. A
+candidate (a detected value, or a stored value without a confirmation) is
+shown to the person as data and never used as the key's value.
 
 Example workflow:
     1. Orchestrator loads remediation config with `requires_context`
-    2. Validator checks storage, then tries sieve auto-detection
-    3. If not ready → return prompts WITH auto-detected suggestions
-    4. If ready → proceed with remediation
+    2. Validator resolves each required key's standing
+    3. If not ready -> return prompts with candidates for the person to review
+    4. If ready -> proceed with remediation
 """
 
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from darnit.config.context_schema import ContextSource, ContextValue
-from darnit.config.context_storage import get_context_value
+from darnit.config.context_schema import ContextSource, ContextValue, ResolvedValue, Standing
 from darnit.config.framework_schema import (
     ContextDefinitionConfig,
     ContextRequirement,
@@ -55,114 +51,105 @@ def check_context_requirements(
     framework: FrameworkConfig | None = None,
     owner: str | None = None,
     repo: str | None = None,
+    *,
+    target: str | None = None,
 ) -> ContextCheckResult:
-    """Check if all required context is confirmed for a remediation.
+    """Check whether every required context key has a usable value.
 
-    For each requirement:
-    1. Get current value from context storage
-    2. If None → try context sieve auto-detection
-    3. If AUTO_DETECTED and prompt_if_auto_detected → needs confirmation
-    4. If confidence < threshold → needs confirmation
-    5. Otherwise → ready to proceed
+    Decided by the key's standing (feature 042, FR-006), never by a stored
+    ``source`` field:
+
+    - confirmed: ready, unless the value names one of the key's hint source
+      files (a path stored instead of the values in it);
+    - concluded (an ``auto_detect = true`` key detected in this run): ready
+      unless the requirement asks to prompt for detected values or the
+      detection's confidence is below the requirement's threshold;
+    - candidate or unknown: never ready. A candidate is returned in
+      ``auto_detected`` for display only.
 
     Args:
         requirements: List of ContextRequirement from remediation config
         local_path: Path to the repository
-        framework: Optional FrameworkConfig for context definitions
-        owner: GitHub owner (optional, enables API-based auto-detection)
-        repo: GitHub repo name (optional, enables API-based auto-detection)
+        framework: FrameworkConfig for context definitions (default: the
+            repository's framework)
+        owner: Repository owner, for detection
+        repo: Repository name, for detection
+        target: Repository identity the operator named, for operator-side
+            confirmations
 
     Returns:
         ContextCheckResult with ready status and any needed prompts
     """
+    from darnit.config.context_resolve import resolve_context
+    from darnit.config.context_storage import framework_definitions, get_context_definitions
+
     result = ContextCheckResult()
+    if not requirements:
+        return result
+
+    definitions = framework_definitions(framework) if framework is not None else get_context_definitions(local_path)
+    wanted = {req.key for req in requirements}
+    resolved = resolve_context(
+        local_path,
+        {key: d for key, d in definitions.items() if key in wanted},
+        target=target,
+        owner=owner,
+        repo=repo,
+    )
 
     for req in requirements:
-        context_value = get_context_value(local_path, req.key)
-
-        # Check 0: Detect stale file references stored as values.
-        # If a previous run stored a filename like "CODEOWNERS" instead of
-        # the actual parsed values, treat it as missing so we re-detect.
-        if context_value is not None and isinstance(context_value.value, str):
-            definition = _get_context_definition(req.key, framework)
-            hint_sources = definition.hint_sources if definition else []
-            stale_names = set(hint_sources)
-            stale_names.update({
-                "CODEOWNERS", ".github/CODEOWNERS",
-                "MAINTAINERS", "MAINTAINERS.md",
-            })
-            if context_value.value in stale_names:
-                logger.info(
-                    "Stale file reference '%s' stored for '%s', treating as missing",
-                    context_value.value,
-                    req.key,
-                )
-                context_value = None
-
-        # Check 1: Is context missing entirely?
-        if context_value is None:
-            # NEW: Try context sieve auto-detection before giving up
-            detected_value = _try_sieve_detection(
-                req.key, local_path, owner, repo, framework=framework
+        value = resolved.get(req.key)
+        if _ready(value, req, _get_context_definition(req.key, framework)):
+            continue
+        result.ready = False
+        result.missing_context.append(req.key)
+        current_value = None
+        if value is not None and value.value is not None and value.standing is not Standing.CONFIRMED:
+            result.auto_detected[req.key] = value.value
+            current_value = ContextValue(
+                source=ContextSource.AUTO_DETECTED,
+                value=value.value,
+                detection_method=value.origin.method if value.origin else None,
+                confidence=value.origin.confidence if value.origin and value.origin.confidence is not None else 0.0,
             )
-
-            if detected_value is not None:
-                # Found via sieve - use it as a ContextValue for consistency
-                context_value = detected_value
-                # Store in auto_detected for prompt display
-                result.auto_detected[req.key] = detected_value.value
-                logger.debug(
-                    f"Auto-detected {req.key} via sieve: "
-                    f"{detected_value.value} ({detected_value.confidence:.0%} confidence)"
-                )
-            else:
-                # No auto-detection available
-                result.ready = False
-                result.missing_context.append(req.key)
-                prompt = format_context_prompt(
-                    context_key=req.key,
-                    definition=_get_context_definition(req.key, framework),
-                    requirement=req,
-                    current_value=None,
-                    local_path=local_path,
-                )
-                result.prompts.append(prompt)
-                continue
-
-        # Check 2: Is it auto-detected and should we prompt?
-        if context_value.source == ContextSource.AUTO_DETECTED and req.prompt_if_auto_detected:
-            result.ready = False
-            result.missing_context.append(req.key)
-            result.auto_detected[req.key] = context_value.value
-            prompt = format_context_prompt(
+        result.prompts.append(
+            format_context_prompt(
                 context_key=req.key,
                 definition=_get_context_definition(req.key, framework),
                 requirement=req,
-                current_value=context_value,
+                current_value=current_value,
                 local_path=local_path,
             )
-            result.prompts.append(prompt)
-            continue
-
-        # Check 3: Is confidence below threshold?
-        if context_value.confidence < req.confidence_threshold:
-            result.ready = False
-            result.missing_context.append(req.key)
-            if context_value.source == ContextSource.AUTO_DETECTED:
-                result.auto_detected[req.key] = context_value.value
-            prompt = format_context_prompt(
-                context_key=req.key,
-                definition=_get_context_definition(req.key, framework),
-                requirement=req,
-                current_value=context_value,
-                local_path=local_path,
-            )
-            result.prompts.append(prompt)
-            continue
-
-        # Context is confirmed and meets threshold - good to go
+        )
 
     return result
+
+
+def _ready(
+    value: ResolvedValue | None, requirement: ContextRequirement, definition: ContextDefinitionConfig | None
+) -> bool:
+    if value is None:
+        return False
+    if value.standing is Standing.CONFIRMED:
+        return not _names_hint_source(value.value, definition)
+    if value.standing is Standing.CONCLUDED:
+        confidence = value.origin.confidence if value.origin and value.origin.confidence is not None else 0.0
+        return not requirement.prompt_if_auto_detected and confidence >= requirement.confidence_threshold
+    return False
+
+
+_HINT_SOURCE_NAMES = frozenset({"CODEOWNERS", ".github/CODEOWNERS", "MAINTAINERS", "MAINTAINERS.md"})
+
+
+def _names_hint_source(value: object, definition: ContextDefinitionConfig | None) -> bool:
+    """Whether ``value`` is a file name where the key's values should have been read from."""
+    if not isinstance(value, str):
+        return False
+    names = _HINT_SOURCE_NAMES | set(definition.hint_sources if definition else [])
+    if value in names:
+        logger.info("Stored value '%s' names a file rather than its values; treating it as missing", value)
+        return True
+    return False
 
 
 def format_context_prompt(
@@ -368,72 +355,6 @@ def get_context_requirements_for_category(
             requirements.append(ContextRequirement(**req_dict))
 
     return requirements
-
-
-def _try_sieve_detection(
-    key: str,
-    local_path: str,
-    owner: str | None,
-    repo: str | None,
-    framework: FrameworkConfig | None = None,
-) -> ContextValue | None:
-    """Try to auto-detect context using the context sieve.
-
-    This is called when context is missing from storage. The sieve
-    uses progressive detection:
-    1. Deterministic (explicit files like MAINTAINERS.md)
-    2. Heuristic (git history, package.json authors)
-    3. API (GitHub collaborators)
-
-    Respects the TOML ``auto_detect`` flag: when ``auto_detect = false``
-    for a context key, sieve detection is skipped entirely.  This prevents
-    AI agents from seeing auto-detected values and blindly confirming them.
-
-    Args:
-        key: Context key to detect (e.g., "maintainers")
-        local_path: Path to the repository
-        owner: GitHub owner (optional)
-        repo: GitHub repo name (optional)
-        framework: Optional FrameworkConfig for checking auto_detect flag
-
-    Returns:
-        ContextValue with auto-detected value if found, None otherwise
-    """
-    # Check TOML auto_detect flag — if explicitly disabled, skip sieve entirely.
-    # This prevents AI agents from seeing guessed values and confirming them.
-    if framework:
-        definition = framework.context.get_definition(key)
-        if definition and not definition.auto_detect:
-            logger.debug(
-                "Skipping auto-detection for '%s' — auto_detect=false in TOML",
-                key,
-            )
-            return None
-
-    try:
-        from darnit.context import get_context_sieve
-
-        sieve = get_context_sieve()
-        result = sieve.detect(key, local_path, owner, repo)
-
-        if result.is_usable:
-            from darnit.config.context_storage import _apply_detect_filter, get_context_definitions
-
-            detected = ContextValue.auto_detected(
-                value=result.value,
-                method=f"context_sieve ({len(result.signals)} signals)",
-                confidence=result.confidence,
-            )
-            definition = (
-                framework.context.get_definition(key) if framework else get_context_definitions(local_path).get(key)
-            )
-            return _apply_detect_filter(key, definition, detected)
-    except ImportError:
-        logger.debug("Context sieve not available, skipping auto-detection")
-    except Exception as e:
-        logger.warning(f"Context sieve detection failed for '{key}': {e}")
-
-    return None
 
 
 __all__ = [

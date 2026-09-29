@@ -292,41 +292,50 @@ def audit_report_metadata(
     return metadata
 
 
-def _stored_context_locations(local_path: str, stored_context: dict[str, Any]) -> dict[str, str]:
-    """Where each stored context value was read from in the audited repository."""
-    from darnit.config.context_storage import flatten_user_context
-
-    if (Path(local_path) / ".project" / "darnit.yaml").is_file():
-        base = ".project/darnit.yaml:context"
-    else:
-        base = ".project/project.yaml:x-openssf-baseline.context"
-    return {key: f"{base}.{key}" for key in flatten_user_context(stored_context)}
-
-
 def _applicability_context(
-    local_path: str, owner: str | None, project_store: Any = None
+    local_path: str,
+    owner: str | None,
+    project_store: Any = None,
+    *,
+    target: str | None = None,
+    operator: "OperatorConfig | None" = None,
+    definitions: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, str]]:
     """Context for ``when``-clause evaluation, as an audit sees it.
 
-    Returns the project context, the values darnit detected itself, and the
-    keys of the project context whose value came from the audited
-    repository, mapped to where each was read (feature 040, FR-013a).
+    Returns the project context, the values darnit detected itself in this
+    run, and the keys of the project context whose value came from the
+    audited repository, mapped to where each was read (feature 040, FR-013a).
+
+    Context values come only from the resolver's usable mapping (feature
+    042, FR-006): a stored value without a matching confirmation is a
+    candidate and is not used. A value confirmed in the repository is the
+    repository's own statement, so a not-applicable claim it implies is
+    assessed like any other; a value the operator confirmed operator-side is
+    the operator's decision and is not a repository claim.
     """
-    # Auto-detected values (platform, ci_provider, language) are overridden
-    # by user-confirmed values from .project.yaml.
     project_context: dict[str, Any] = {}
     detected_context: dict[str, Any] = {}
     repository_values: dict[str, str] = {}
+    resolved = None
+    try:
+        from darnit.config.context_resolve import resolve_context
+
+        resolved = resolve_context(local_path, definitions, target=target, operator=operator, detect=False)
+    except Exception as e:  # noqa: BLE001 - context must not break an audit
+        logger.debug("Context resolution failed (non-fatal): %s", e)
+
     try:
         from darnit.context.auto_detect import collect_auto_context
 
-        project_context = collect_auto_context(local_path)
-        detected_context = collect_auto_context(local_path, include_stored=False)
+        detected_context = collect_auto_context(
+            local_path, include_stored=False, definitions=resolved.definitions if resolved else definitions
+        )
+        project_context.update(detected_context)
     except Exception as e:
         logger.debug("Auto-detect context failed (non-fatal): %s", e)
 
-    # Inject .project/ mapper context (between auto-detect and user-confirmed).
-    # Merge order: auto-detect < .project/ mapper < user-confirmed.
+    # Merge order: detected < .project/ mapper < usable context values.
     try:
         from darnit.context.dot_project_mapper import DotProjectMapper
 
@@ -346,19 +355,13 @@ def _applicability_context(
     except Exception as e:
         logger.debug(".project/ mapper context failed (non-fatal): %s", e)
 
-    try:
-        from darnit.config.context_storage import (
-            flatten_user_context,
-            load_context,
-        )
-
-        user_context = load_context(local_path)
-        if user_context:
-            # User-confirmed values override auto-detected and mapper ones
-            project_context.update(flatten_user_context(user_context))
-            repository_values.update(_stored_context_locations(local_path, user_context))
-    except Exception as e:
-        logger.debug("User context load failed (non-fatal): %s", e)
+    if resolved is not None:
+        usable = resolved.usable()
+        project_context.update(usable)
+        for key in usable:
+            value = resolved.values[key]
+            if value.location and value.confirmation is not None and value.confirmation.location == "repository":
+                repository_values[key] = value.location
 
     return project_context, detected_context, repository_values
 
@@ -370,6 +373,7 @@ def prepare_claim_confirmations(
     operator: "OperatorConfig",
     owner: str | None,
     repo: str | None,
+    target: str | None = None,
 ) -> dict[str, tuple[Any, str, dict[str, Any] | None]]:
     """The current claim, evidence digest, and any contradiction for each claimed control.
 
@@ -397,7 +401,11 @@ def prepare_claim_confirmations(
         for a in collect_assertions(local_path, _known_control_ids([], framework, operator))
         if a.control_id in wanted
     }
-    context, detected, repository_values = _applicability_context(local_path, owner)
+    from darnit.config.context_storage import framework_definitions
+
+    context, detected, repository_values = _applicability_context(
+        local_path, owner, target=target, operator=operator, definitions=framework_definitions(framework)
+    )
     controls_when = {
         cid: framework.controls[cid].when for cid in wanted if cid in framework.controls and framework.controls[cid].when
     }
@@ -911,8 +919,15 @@ def run_sieve_audit(
     stores_bundle = resolve_stores(stores_config, repo_path=Path(local_path))
     execution_context.stores = stores_bundle
 
+    from darnit.config.context_storage import framework_definitions
+
     project_context, detected_context, repository_values = _applicability_context(
-        local_path, owner, stores_bundle.project
+        local_path,
+        owner,
+        stores_bundle.project,
+        target=target,
+        operator=operator,
+        definitions=framework_definitions(framework) if framework is not None else None,
     )
 
     if project_context:

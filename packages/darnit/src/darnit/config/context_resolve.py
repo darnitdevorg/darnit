@@ -61,6 +61,10 @@ class ResolvedContext:
                 usable[key] = resolved.value
         return usable
 
+    def unusable_keys(self) -> frozenset[str]:
+        """Defined keys without a usable value; remediation refuses to read them (FR-007)."""
+        return frozenset(self.values) - self.usable().keys()
+
     def pending(self, control_ids: Iterable[str] | None = None) -> list[ResolvedValue]:
         """Candidate and unknown keys that affect a loaded control (or one of ``control_ids``)."""
         wanted = set(control_ids) if control_ids else None

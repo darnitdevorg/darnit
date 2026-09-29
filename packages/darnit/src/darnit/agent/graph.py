@@ -238,14 +238,21 @@ def remediate(state: AuditState, dry_run: bool = False) -> AuditState:
 
     # Issue #144 fix: build a real executor and call execute() for each control.
     # Issue #146 fix: pass context_values so ${context.*} substitution works.
+    # Feature 042: confirmed values, overlaid with this run's answers; any
+    # other context key a template reads needs confirmation.
+    from darnit.config.context_resolve import resolve_context
+    from darnit.config.context_storage import framework_definitions
+
+    resolved = resolve_context(state.local_path, framework_definitions(framework), detect=False)
     executor = RemediationExecutor(
         local_path=state.local_path,
         owner=state.owner,
         repo=state.repo,
         default_branch=state.default_branch,
         templates=framework.templates,
-        context_values=state.context_values,   # ← reads answered feedback
+        context_values={**resolved.usable(), **state.context_values},
         framework_path=_get_framework_path(state.framework_name),
+        unconfirmed_keys=resolved.unusable_keys(),
     )
 
     results: list[dict[str, Any]] = []

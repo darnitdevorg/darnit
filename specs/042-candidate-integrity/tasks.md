@@ -79,18 +79,18 @@
 
 ### Tests for User Story 2
 
-- [ ] T020 [P] [US2] Write consumer tests: audit applicability and feature 040 context-value assertions see only usable values; a detected maintainers candidate at confidence 0.95 is not used; an attestation contains no unconfirmed value (a regression guard: attestations do not carry context values today, so no implementation task is needed), in `tests/darnit/context_integrity/test_consumers_use_usable.py`
-- [ ] T021 [P] [US2] Write remediation tests: a template reading an unusable judgment key returns `confirmation required: <key>` regardless of `requires_context`; `default()` in templates does not mask it; remediation `when` evaluates against usable values, in `tests/darnit/remediation/test_confirmation_required.py`
-- [ ] T022 [P] [US2] Write CSL tests: `remediate_community_spec` without `code_license` (and other judgment parameters) uses confirmed context only and otherwise returns `confirmation required`, in `tests/darnit_csl/test_csl_judgment_params.py`
+- [X] T020 [P] [US2] Write consumer tests: audit applicability and feature 040 context-value assertions see only usable values; a detected maintainers candidate at confidence 0.95 is not used; an attestation contains no unconfirmed value (a regression guard: attestations do not carry context values today, so no implementation task is needed), in `tests/darnit/context_integrity/test_consumers_use_usable.py`
+- [X] T021 [P] [US2] Write remediation tests: a template reading an unusable judgment key returns `confirmation required: <key>` regardless of `requires_context`; `default()` in templates does not mask it; remediation `when` evaluates against usable values, in `tests/darnit/remediation/test_confirmation_required.py`
+- [X] T022 [P] [US2] Write CSL tests: `remediate_community_spec` without `code_license` (and other judgment parameters) uses confirmed context only and otherwise returns `confirmation required`, in `tests/darnit_csl/test_csl_judgment_params.py`
 
 ### Implementation for User Story 2
 
-- [ ] T023 [US2] Set `auto_detect = false` on `maintainers` and `security_contact` (keep `allow_sieve_hints` and `hint_sources`) in `packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml`
-- [ ] T024 [US2] Build audit applicability from `ResolvedContext.usable()` and feed feature 040 `context_value_assertions` only confirmed repository values, in `packages/darnit/src/darnit/tools/audit.py` and `packages/darnit/src/darnit/trust/assertions.py`
-- [ ] T025 [US2] Make `collect_auto_context` return canonical per-run detections only and read stored values via the resolver, in `packages/darnit/src/darnit/context/auto_detect.py`
-- [ ] T026 [US2] Add a guarded `context` mapping that raises `ConfirmationRequired(key)` on reading an unusable key, and turn it into a per-control "confirmation required" result, in `packages/darnit/src/darnit/remediation/executor.py`
-- [ ] T027 [US2] Build the remediation template context and `when` values from the resolver in `packages/darnit-baseline/src/darnit_baseline/remediation/orchestrator.py`; make `check_context_requirements` standing-based in `packages/darnit/src/darnit/remediation/context_validator.py`
-- [ ] T028 [US2] Default judgment parameters of `remediate_community_spec` to None and fall back to confirmed context only, in `packages/darnit-csl/src/darnit_csl/mcp_tools.py`
+- [X] T023 [US2] Set `auto_detect = false` on `maintainers` and `security_contact` (keep `allow_sieve_hints` and `hint_sources`) in `packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml`
+- [X] T024 [US2] Build audit applicability from `ResolvedContext.usable()` and feed feature 040 `context_value_assertions` only confirmed repository values, in `packages/darnit/src/darnit/tools/audit.py` and `packages/darnit/src/darnit/trust/assertions.py`
+- [X] T025 [US2] Make `collect_auto_context` return canonical per-run detections only and read stored values via the resolver, in `packages/darnit/src/darnit/context/auto_detect.py`
+- [X] T026 [US2] Add a guarded `context` mapping that raises `ConfirmationRequired(key)` on reading an unusable key, and turn it into a per-control "confirmation required" result, in `packages/darnit/src/darnit/remediation/executor.py`
+- [X] T027 [US2] Build the remediation template context and `when` values from the resolver in `packages/darnit-baseline/src/darnit_baseline/remediation/orchestrator.py`; make `check_context_requirements` standing-based in `packages/darnit/src/darnit/remediation/context_validator.py`
+- [X] T028 [US2] Default judgment parameters of `remediate_community_spec` to None and fall back to confirmed context only, in `packages/darnit-csl/src/darnit_csl/mcp_tools.py`
 
 **Checkpoint**: SC-002 holds.
 

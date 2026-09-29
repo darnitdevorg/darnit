@@ -269,8 +269,9 @@ file = "templates/test_requirements_contributing.tmpl"
 # Context storage format may change as the upstream spec evolves.
 
 [context]
-# Confidence threshold for auto-accepting detected context values without
-# user confirmation. Set to 1.0 to require manual confirmation for all fields.
+# Confidence at or above which a detected value of an auto_detect = true key
+# is concluded for the run (never stored). It never applies to user-judgment
+# keys (auto_detect = false).
 auto_accept_confidence = 0.8
 
 [context.maintainers]
@@ -280,7 +281,9 @@ hint = "Provide GitHub usernames (e.g., @user1, @user2) or path to MAINTAINERS.m
 examples = ["@user1, @user2", "MAINTAINERS.md"]
 affects = ["OSPS-GV-01.01", "OSPS-GV-01.02", "OSPS-GV-04.01"]
 store_as = "governance.maintainers"
-auto_detect = true  # Auto-detect from git/GitHub, present for user confirmation
+# A user-judgment key (feature 042, FR-005): detection may propose a candidate
+# for the person to confirm; it never concludes the value.
+auto_detect = false
 auto_detect_method = "github_collaborators"  # Used for sieve hints when allow_sieve_hints=true
 required = false
 # Authoritative files to check - if found, suggest referencing the file instead of values
@@ -295,7 +298,8 @@ hint = "Email address, URL, or reference to SECURITY.md section"
 examples = ["See SECURITY.md"]
 affects = ["OSPS-VM-01.01", "OSPS-VM-02.01", "OSPS-VM-03.01"]
 store_as = "security.contact"
-auto_detect = true
+# A user-judgment key (feature 042, FR-005); see maintainers.
+auto_detect = false
 required = false
 hint_sources = ["SECURITY.md", ".github/SECURITY.md"]
 allow_sieve_hints = true

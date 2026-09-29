@@ -7,24 +7,25 @@ with provenance tracking.
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from darnit.config.context_schema import ContextValue
+from darnit.config.context_resolve import resolve_context
+from darnit.config.context_schema import OriginKind, Standing
 from darnit.config.context_storage import (
     _run_detect_pipeline,
     get_context_definitions,
-    get_context_value,
     get_pending_context,
-    get_raw_value,
-    is_context_confirmed,
-    load_context,
-    load_stored_context,
 )
 from darnit.config.context_writes import record_value_confirmation, record_value_confirmations
 from darnit.config.operator.schema import OperatorConfig
 
 # Feature 042 (FR-002, FR-009, FR-011): save_context_value/save_context_values
 # wrote bare values with no record of who confirmed them and are gone. Values
-# are written only by the single writer, as confirmations, and read back here
-# through the legacy readers (moved onto usable values in US2).
+# are written only by the single writer, as confirmations.
+#
+# Feature 042 (FR-006): the legacy readers load_context, load_stored_context,
+# get_context_value, get_raw_value, and is_context_confirmed returned stored
+# values as user-confirmed and are gone. Stored values are read only by the
+# resolver; consumers read its usable mapping, and a stored value without a
+# confirmation record is a candidate.
 TARGET = "github.com/example-org/project"
 TRUSTING = OperatorConfig.model_validate({"schema_version": 1, "trust": {"repos": [TARGET]}})
 
@@ -39,140 +40,69 @@ def save_context_values(local_path: str, values: dict):
     return record_value_confirmations(local_path, values, target=TARGET, operator=TRUSTING, env={})
 
 
-class TestLoadContext:
-    """Tests for load_context function."""
+def _resolved(local_path: str):
+    return resolve_context(local_path, detect=False, operator=OperatorConfig.model_validate({"schema_version": 1}))
+
+
+def usable(local_path: str) -> dict:
+    return _resolved(local_path).usable()
+
+
+class TestStoredValues:
+    """Stored values are read by the resolver, under canonical names, as candidates."""
 
     def test_empty_repo(self, tmp_path: Path) -> None:
-        """Test loading from repo with no config."""
-        result = load_context(str(tmp_path))
-        assert result == {}
+        assert usable(str(tmp_path)) == {}
 
-    def test_load_legacy_context(self, tmp_path: Path) -> None:
-        """Test loading context from x-openssf-baseline format."""
-        # Create .project/ directory structure
+    def test_stored_values_are_candidates(self, tmp_path: Path) -> None:
         project_dir = tmp_path / ".project"
         project_dir.mkdir()
-        config_path = project_dir / "project.yaml"
-        config_path.write_text("""
-name: test-project
-""")
-        ext_path = project_dir / "darnit.yaml"
-        ext_path.write_text("""
+        (project_dir / "project.yaml").write_text("name: test-project\n")
+        (project_dir / "darnit.yaml").write_text("""
 context:
   has_releases: true
   has_subprojects: false
   is_library: true
   ci_provider: github
 """)
-        result = load_context(str(tmp_path))
+        resolved = _resolved(str(tmp_path))
 
-        # Should organize by category
-        assert "build" in result
-        assert "has_releases" in result["build"]
-        assert result["build"]["has_releases"].value is True
+        assert resolved.usable() == {}
+        for key, value in {
+            "has_releases": True,
+            "has_subprojects": False,
+            "is_library": True,
+            "ci_provider": "github",
+        }.items():
+            assert resolved.values[key].standing is Standing.CANDIDATE
+            assert resolved.values[key].value == value
+            assert resolved.values[key].origin.kind is OriginKind.STORED_UNCONFIRMED
 
-        assert "project" in result
-        assert "has_subprojects" in result["project"]
-        assert result["project"]["has_subprojects"].value is False
-        assert "is_library" in result["project"]
-        assert result["project"]["is_library"].value is True
-
-        assert "ci" in result
-        assert "provider" in result["ci"]
-        assert result["ci"]["provider"].value == "github"
-
-    def test_context_values_have_provenance(self, tmp_path: Path) -> None:
-        """Test that loaded values have correct provenance tracking."""
+    def test_governance_and_security_values(self, tmp_path: Path) -> None:
         project_dir = tmp_path / ".project"
         project_dir.mkdir()
         (project_dir / "project.yaml").write_text("name: test-project\n")
         (project_dir / "darnit.yaml").write_text("""
 context:
-  has_releases: true
+  maintainers:
+    - "@alice"
+    - "@bob"
+  governance_model: democracy
+  security_contact: security@real-project.org
 """)
-        result = load_context(str(tmp_path))
+        resolved = _resolved(str(tmp_path))
 
-        ctx_value = result["build"]["has_releases"]
-        assert isinstance(ctx_value, ContextValue)
-        assert ctx_value.source == "user_confirmed"
-        assert ctx_value.confidence == 1.0
+        assert resolved.values["maintainers"].value == ["@alice", "@bob"]
+        assert resolved.values["governance_model"].value == "democracy"
+        assert resolved.values["security_contact"].value == "security@real-project.org"
+        assert resolved.usable() == {}
 
-
-class TestGetContextValue:
-    """Tests for get_context_value function."""
-
-    def test_get_existing_value(self, tmp_path: Path) -> None:
-        """Test getting an existing context value."""
+    def test_maintainers_as_path(self, tmp_path: Path) -> None:
         project_dir = tmp_path / ".project"
         project_dir.mkdir()
-        (project_dir / "project.yaml").write_text("name: test-project\n")
-        (project_dir / "darnit.yaml").write_text("""
-context:
-  has_releases: true
-""")
-        value = get_context_value(str(tmp_path), "has_releases")
-        assert value is not None
-        assert value.value is True
+        (project_dir / "darnit.yaml").write_text("context:\n  maintainers: MAINTAINERS.md\n")
 
-    def test_get_missing_value(self, tmp_path: Path) -> None:
-        """Test getting a missing context value."""
-        value = get_context_value(str(tmp_path), "nonexistent")
-        assert value is None
-
-    def test_get_value_with_category(self, tmp_path: Path) -> None:
-        """Test getting a value from specific category."""
-        project_dir = tmp_path / ".project"
-        project_dir.mkdir()
-        (project_dir / "project.yaml").write_text("name: test-project\n")
-        (project_dir / "darnit.yaml").write_text("""
-context:
-  has_releases: true
-  is_library: true
-""")
-        # Search in build category
-        build_value = get_context_value(str(tmp_path), "has_releases", category="build")
-        assert build_value is not None
-
-        # Search wrong category
-        wrong_cat = get_context_value(str(tmp_path), "has_releases", category="project")
-        assert wrong_cat is None
-
-
-class TestGetRawValue:
-    """Tests for get_raw_value function."""
-
-    def test_get_raw_value(self, tmp_path: Path) -> None:
-        """Test getting raw value without provenance."""
-        project_dir = tmp_path / ".project"
-        project_dir.mkdir()
-        (project_dir / "project.yaml").write_text("name: test-project\n")
-        (project_dir / "darnit.yaml").write_text("""
-context:
-  ci_provider: gitlab
-""")
-        value = get_raw_value(str(tmp_path), "provider")
-        assert value == "gitlab"
-
-    def test_get_raw_value_default(self, tmp_path: Path) -> None:
-        """Test default value when not found."""
-        value = get_raw_value(str(tmp_path), "missing", default="default_value")
-        assert value == "default_value"
-
-
-class TestIsContextConfirmed:
-    """Tests for is_context_confirmed function."""
-
-    def test_confirmed_context(self, tmp_path: Path) -> None:
-        """Test checking confirmed context."""
-        project_dir = tmp_path / ".project"
-        project_dir.mkdir()
-        (project_dir / "project.yaml").write_text("name: test-project\n")
-        (project_dir / "darnit.yaml").write_text("""
-context:
-  has_releases: false
-""")
-        assert is_context_confirmed(str(tmp_path), "has_releases") is True
-        assert is_context_confirmed(str(tmp_path), "is_library") is False
+        assert _resolved(str(tmp_path)).values["maintainers"].value == "MAINTAINERS.md"
 
 
 class TestSaveContextValue:
@@ -188,9 +118,7 @@ class TestSaveContextValue:
         assert (tmp_path / result.file).exists()
         assert not (tmp_path / ".project" / "project.yaml").exists()
 
-        # Verify it was saved
-        value = get_raw_value(str(tmp_path), "has_releases")
-        assert value is True
+        assert usable(str(tmp_path))["has_releases"] is True
 
     def test_save_updates_existing(self, tmp_path: Path) -> None:
         """Test that saving updates existing config."""
@@ -205,9 +133,7 @@ context:
 
         save_context_value(str(tmp_path), "has_releases", True)
 
-        # Verify update
-        value = get_raw_value(str(tmp_path), "has_releases")
-        assert value is True
+        assert usable(str(tmp_path))["has_releases"] is True
 
         # Verify project.yaml untouched (FR-020, FR-021)
         assert (project_dir / "project.yaml").read_text() == "name: existing-project\n"
@@ -216,10 +142,12 @@ context:
         """A key the framework does not define is not written (FR-018; was: saved under `custom`)."""
         (tmp_path / ".git").mkdir()
 
-        result = record_value_confirmation(str(tmp_path), "unknown_key", "value", target=TARGET, operator=TRUSTING, env={})
+        result = record_value_confirmation(
+            str(tmp_path), "unknown_key", "value", target=TARGET, operator=TRUSTING, env={}
+        )
 
         assert result.outcome == "refused"
-        assert load_context(str(tmp_path)) == {}
+        assert not (tmp_path / ".project").exists()
 
 
 class TestSaveContextValues:
@@ -238,9 +166,7 @@ class TestSaveContextValues:
             },
         )
 
-        assert get_raw_value(str(tmp_path), "has_releases") is True
-        assert get_raw_value(str(tmp_path), "is_library") is False
-        assert get_raw_value(str(tmp_path), "provider") == "github"
+        assert usable(str(tmp_path)) == {"has_releases": True, "is_library": False, "ci_provider": "github"}
 
 
 class TestGetContextDefinitions:
@@ -319,61 +245,6 @@ class TestGetPendingContext:
         assert not (tmp_path / ".project").exists()
 
 
-class TestLoadContextWithNewFields:
-    """Tests for load_context with new governance and security fields."""
-
-    def test_load_governance_category(self, tmp_path: Path) -> None:
-        """Test loading context with governance category."""
-        project_dir = tmp_path / ".project"
-        project_dir.mkdir()
-        (project_dir / "project.yaml").write_text("name: test-project\n")
-        (project_dir / "darnit.yaml").write_text("""
-context:
-  maintainers:
-    - "@alice"
-    - "@bob"
-  governance_model: democracy
-""")
-        result = load_context(str(tmp_path))
-
-        assert "governance" in result
-        assert "maintainers" in result["governance"]
-        assert result["governance"]["maintainers"].value == ["@alice", "@bob"]
-        assert "governance_model" in result["governance"]
-        assert result["governance"]["governance_model"].value == "democracy"
-
-    def test_load_security_category(self, tmp_path: Path) -> None:
-        """Test loading context with security category."""
-        project_dir = tmp_path / ".project"
-        project_dir.mkdir()
-        (project_dir / "project.yaml").write_text("name: test-project\n")
-        (project_dir / "darnit.yaml").write_text("""
-context:
-  security_contact: security@example.org
-""")
-        # Placeholder address the shipped detect_filter rejects; this test is
-        # about parsing storage, so read it unfiltered.
-        result = load_stored_context(str(tmp_path))
-
-        assert "security" in result
-        assert "security_contact" in result["security"]
-        assert result["security"]["security_contact"].value == "security@example.org"
-
-    def test_load_maintainers_as_path(self, tmp_path: Path) -> None:
-        """Test loading maintainers as a file path reference."""
-        project_dir = tmp_path / ".project"
-        project_dir.mkdir()
-        (project_dir / "project.yaml").write_text("name: test-project\n")
-        (project_dir / "darnit.yaml").write_text("""
-context:
-  maintainers: MAINTAINERS.md
-""")
-        result = load_context(str(tmp_path))
-
-        assert "governance" in result
-        assert result["governance"]["maintainers"].value == "MAINTAINERS.md"
-
-
 class TestSaveNewContextFields:
     """Tests for saving new governance and security context fields."""
 
@@ -383,8 +254,7 @@ class TestSaveNewContextFields:
 
         save_context_value(str(tmp_path), "maintainers", ["@user1", "@user2"])
 
-        result = get_raw_value(str(tmp_path), "maintainers")
-        assert result == ["@user1", "@user2"]
+        assert usable(str(tmp_path))["maintainers"] == ["@user1", "@user2"]
 
     def test_save_maintainers_path(self, tmp_path: Path) -> None:
         """Test saving maintainers as a file path."""
@@ -392,24 +262,15 @@ class TestSaveNewContextFields:
 
         save_context_value(str(tmp_path), "maintainers", "MAINTAINERS.md")
 
-        result = get_raw_value(str(tmp_path), "maintainers")
-        assert result == "MAINTAINERS.md"
+        assert usable(str(tmp_path))["maintainers"] == "MAINTAINERS.md"
 
     def test_save_security_contact(self, tmp_path: Path) -> None:
-        """Test saving security contact.
-
-        The sample address is deliberately NOT `security@example.com`. That key
-        declares a `detect_filter` rejecting example.com, which has been live
-        since feature 039, so the placeholder now reads back as unset -- see
-        tests/darnit/config/test_context_filtering.py for that behaviour. This
-        test is about the save/read round-trip, not the filter.
-        """
+        """Test saving security contact."""
         (tmp_path / ".git").mkdir()
 
         save_context_value(str(tmp_path), "security_contact", "security@real-project.org")
 
-        result = get_raw_value(str(tmp_path), "security_contact")
-        assert result == "security@real-project.org"
+        assert usable(str(tmp_path))["security_contact"] == "security@real-project.org"
 
     def test_save_governance_model(self, tmp_path: Path) -> None:
         """Test saving governance model."""
@@ -417,26 +278,18 @@ class TestSaveNewContextFields:
 
         save_context_value(str(tmp_path), "governance_model", "bdfl")
 
-        result = get_raw_value(str(tmp_path), "governance_model")
-        assert result == "bdfl"
+        assert usable(str(tmp_path))["governance_model"] == "bdfl"
 
     def test_maintainers_round_trip(self, tmp_path: Path) -> None:
-        """Test that maintainers survive save → load_context round-trip."""
+        """Confirmed maintainers read back as a confirmed, usable value."""
         (tmp_path / ".git").mkdir()
         maintainers = ["@alice", "@bob", "@charlie"]
 
         save_context_value(str(tmp_path), "maintainers", maintainers)
 
-        # Load via load_context and verify category + value
-        context = load_context(str(tmp_path))
-        assert "governance" in context
-        assert "maintainers" in context["governance"]
-        assert context["governance"]["maintainers"].value == maintainers
-
-        # Also verify via get_context_value (searches all categories)
-        cv = get_context_value(str(tmp_path), "maintainers")
-        assert cv is not None
-        assert cv.value == maintainers
+        resolved = _resolved(str(tmp_path))
+        assert resolved.values["maintainers"].standing is Standing.CONFIRMED
+        assert resolved.usable()["maintainers"] == maintainers
 
 
 class TestRunDetectPipelineHasReleases:

@@ -268,42 +268,67 @@ class TestCollectAutoContext:
         assert "primary_language" not in result
 
 
-class TestCollectAutoContextWithPersisted:
-    """Tests for collect_auto_context merging persisted .project/ context (FR-4)."""
+def _confirmed(key, value):
+    from darnit.config.context_keys import value_digest
 
-    def test_returns_persisted_ci_provider(self, tmp_path):
-        """Persisted ci_provider from .project/darnit.yaml is returned."""
+    return {
+        "value_digest": value_digest(key, value),
+        "confirmed_by": "alice",
+        "confirmed_at": "2026-09-01T00:00:00Z",
+        "last_validated": "2026-09-01T00:00:00Z",
+    }
+
+
+def _write_darnit(tmp_path, context, *, confirmed=True):
+    import yaml
+
+    project_dir = tmp_path / ".project"
+    project_dir.mkdir()
+    (project_dir / "project.yaml").write_text("name: test-project\n")
+    data = {"context": context}
+    if confirmed:
+        data["confirmations"] = {key: _confirmed(key, value) for key, value in context.items()}
+    (project_dir / "darnit.yaml").write_text(yaml.safe_dump(data))
+
+
+class TestCollectAutoContextWithPersisted:
+    """collect_auto_context overlays confirmed .project/ context (FR-4).
+
+    Feature 042 (FR-006): only confirmed values are overlaid, under their
+    canonical names; a stored value without a confirmation record is a
+    candidate and is not returned (was: every stored value, under its
+    storage category name).
+    """
+
+    def test_returns_confirmed_ci_provider(self, tmp_path):
         os.system(f"git init {tmp_path} --quiet")
-        project_dir = tmp_path / ".project"
-        project_dir.mkdir()
-        (project_dir / "project.yaml").write_text("name: test-project\n")
-        (project_dir / "darnit.yaml").write_text(
-            "context:\n  ci_provider: github\n"
-        )
+        _write_darnit(tmp_path, {"ci_provider": "gitlab"})
 
         result = collect_auto_context(str(tmp_path))
-        # ci_provider is stored under "ci" category with key "provider"
-        # flatten_user_context remaps ci.provider → ci_provider
-        # But collect_auto_context uses load_context which returns category.key
-        # The key in the dict should be "provider" (the stored key)
-        assert "provider" in result or "ci_provider" in result
 
-    def test_persisted_overrides_auto_detected(self, tmp_path):
-        """Persisted platform overrides auto-detected platform."""
+        assert result["ci_provider"] == "gitlab"
+        assert "provider" not in result
+
+    def test_confirmed_overrides_auto_detected(self, tmp_path):
         os.system(f"git init {tmp_path} --quiet")
         os.system(
             f"git -C {tmp_path} remote add origin https://github.com/owner/repo.git"
         )
-        project_dir = tmp_path / ".project"
-        project_dir.mkdir()
-        (project_dir / "project.yaml").write_text("name: test-project\n")
-        (project_dir / "darnit.yaml").write_text(
-            "context:\n  platform: gitlab\n"
-        )
+        _write_darnit(tmp_path, {"platform": "gitlab"})
 
         result = collect_auto_context(str(tmp_path))
-        # Persisted "gitlab" should override auto-detected "github"
         assert result.get("platform") == "gitlab"
+
+    def test_unconfirmed_stored_value_is_not_returned(self, tmp_path):
+        os.system(f"git init {tmp_path} --quiet")
+        os.system(
+            f"git -C {tmp_path} remote add origin https://github.com/owner/repo.git"
+        )
+        _write_darnit(tmp_path, {"platform": "gitlab", "has_releases": True}, confirmed=False)
+
+        result = collect_auto_context(str(tmp_path))
+        assert result.get("platform") == "github"
+        assert "has_releases" not in result
 
     def test_works_without_project_dir(self, tmp_path):
         """Auto-detection works normally when no .project/ dir exists."""
@@ -323,13 +348,7 @@ class TestCollectAutoContextWithPersisted:
             f"git -C {tmp_path} remote add origin https://github.com/owner/repo.git"
         )
         (tmp_path / "pyproject.toml").write_text("[project]\n")
-
-        project_dir = tmp_path / ".project"
-        project_dir.mkdir()
-        (project_dir / "project.yaml").write_text("name: test-project\n")
-        (project_dir / "darnit.yaml").write_text(
-            "context:\n  has_releases: true\n"
-        )
+        _write_darnit(tmp_path, {"has_releases": True})
 
         result = collect_auto_context(str(tmp_path))
         # Persisted value

@@ -1,326 +1,22 @@
-"""Context storage abstraction layer for interactive context collection.
+"""Context definitions, the pending-context query, and detection helpers.
 
-This module provides a unified interface for reading stored context values
-and the framework's context definitions. It supports multiple storage formats:
-
-1. Legacy: .project.yaml x-openssf-baseline.context section
-2. CNCF: .project/project.yaml extensions.openssf-baseline.config.context section
-
-The abstraction layer isolates the rest of the codebase from storage format changes
-as the CNCF .project/ specification evolves.
-
-Note: The CNCF .project/ specification is still under development (PR #131).
-This module may need updates as the upstream spec evolves.
-
-Nothing here writes. Context values and confirmation records are written only
-by :mod:`darnit.config.context_writes` (feature 042).
+Stored context values are read only by :mod:`darnit.config.context_resolve`,
+whose usable mapping is the only source of values for consumers (feature 042,
+FR-006). Nothing here writes. Context values and confirmation records are
+written only by :mod:`darnit.config.context_writes`.
 """
 
 from typing import Any
 
 from darnit.config.context_schema import (
-    ContextByCategory,
     ContextDefinition,
     ContextPromptRequest,
     ContextSource,
     ContextValue,
 )
-from darnit.config.loader import load_project_config_checked
-from darnit.config.schema import BaselineExtension
 from darnit.core.logging import get_logger
 
 logger = get_logger("config.context_storage")
-
-
-# =============================================================================
-# Context Loading
-# =============================================================================
-
-
-def _parse_context_value(val: Any) -> ContextValue | None:
-    """Helper to reconstruct ContextValue from a raw dictionary or wrap a native value."""
-    if val is None:
-        return None
-    if isinstance(val, dict) and "value" in val and "source" in val:
-        try:
-            return ContextValue.model_validate(val)
-        except Exception:
-            pass
-    if isinstance(val, ContextValue):
-        return val
-    # Wrap primitive in a USER_CONFIRMED context value
-    # primitives found natively or untracked are considered user-confirmed overrides
-    return ContextValue(
-        source=ContextSource.USER_CONFIRMED,
-        value=val,
-        confidence=1.0,
-    )
-
-
-def load_context(local_path: str) -> ContextByCategory:
-    """Load usable context values: stored values re-checked against detect_filter.
-
-    Every consumer of context -- audit, remediation, auto-detect, the harness,
-    and pending-key calculation -- reads through here, so a stored value that
-    fails its key's filter is dropped for all of them at once (FR-014). Use
-    load_stored_context only when the raw on-disk contents are needed.
-    """
-    return _filter_context(local_path, load_stored_context(local_path))
-
-
-def load_stored_context(local_path: str) -> ContextByCategory:
-    """Load all context values with provenance from project config, unfiltered.
-
-    This function abstracts the storage format and returns context values
-    organized by category with full provenance tracking.
-
-    Priority order:
-    1. CNCF format: .project/project.yaml native fields
-    2. darnit's extension file: .project/darnit.yaml context
-
-    Args:
-        local_path: Path to the repository
-
-    Returns:
-        Dict of category -> {key -> ContextValue}
-        Categories include: governance, security, build, project, ci, custom
-    """
-    files = load_project_config_checked(local_path)
-    config = files.config
-    extension = (
-        BaselineExtension.model_validate(files.extension.data)
-        if files.extension.state == "valid" and files.extension.data
-        else None
-    )
-    if config is None and extension is None:
-        return {}
-
-    context_by_category: ContextByCategory = {}
-
-    def _add_context(category: str, key: str, value: Any) -> None:
-        ctx_val = _parse_context_value(value)
-        if ctx_val is not None:
-            if category not in context_by_category:
-                context_by_category[category] = {}
-            context_by_category[category][key] = ctx_val
-
-    # 1. Native CNCF Fields Mapping
-    if config is not None and (contact := config.get_security_contact()):
-        _add_context("security", "security_contact", contact)
-
-    # Note: Other native mappings (like governance_model native equivalent) would go here
-    # once they are merged upstream into the CNCF spec.
-
-    # 2. Extensions / Legacy Mapping (darnit.yaml context), read even without a project.yaml
-    if extension is not None and extension.context:
-        ctx = extension.context
-
-        # Build category
-        _add_context("build", "has_releases", ctx.has_releases)
-        _add_context("build", "has_compiled_assets", ctx.has_compiled_assets)
-
-        # Project category
-        _add_context("project", "has_subprojects", ctx.has_subprojects)
-        _add_context("project", "is_library", ctx.is_library)
-
-        # CI category
-        _add_context("ci", "provider", ctx.ci_provider)
-
-        # Platform category
-        _add_context("platform", "platform", ctx.platform)
-        _add_context("platform", "primary_language", ctx.primary_language)
-        _add_context("platform", "languages", ctx.languages)
-
-        # Governance category
-        _add_context("governance", "maintainers", ctx.maintainers)
-        _add_context("governance", "governance_model", ctx.governance_model)
-
-        # Security category (fallback if native not found)
-        if ctx.security_contact is not None and "security_contact" not in context_by_category.get("security", {}):
-            _add_context("security", "security_contact", ctx.security_contact)
-
-        # Dynamically load unmapped arbitrary fields into 'custom' category
-        known_keys = {
-            "has_releases",
-            "has_compiled_assets",
-            "has_subprojects",
-            "is_library",
-            "ci_provider",
-            "platform",
-            "primary_language",
-            "languages",
-            "maintainers",
-            "governance_model",
-            "security_contact",
-        }
-        for key, val in ctx.model_dump(exclude_unset=True).items():
-            if key not in known_keys and val is not None:
-                _add_context("custom", key, val)
-
-    return context_by_category
-
-
-def flatten_user_context(context_by_category: ContextByCategory) -> dict[str, Any]:
-    """Flatten categorized context into bare keys for ``when`` clause evaluation.
-
-    The ``when`` clause system uses bare keys like ``ci_provider``, ``has_releases``,
-    ``platform``, etc.  But :func:`load_context` returns categories like
-    ``{"ci": {"provider": ContextValue(...)}, "build": {"has_releases": ...}}``.
-
-    This helper resolves the mismatch by mapping ``category.key`` → bare key:
-    - ``ci.provider`` → ``ci_provider``
-    - Everything else keeps its stored key as-is (already bare)
-
-    Returns:
-        Flat dict mapping bare key → raw value.
-    """
-    flat: dict[str, Any] = {}
-    # Mapping of (category, stored_key) → bare key used in when clauses
-    remap = {
-        ("ci", "provider"): "ci_provider",
-    }
-    for category_name, category_values in context_by_category.items():
-        for stored_key, ctx_value in category_values.items():
-            bare_key = remap.get((category_name, stored_key), stored_key)
-            flat[bare_key] = ctx_value.value
-    return flat
-
-
-def get_context_value(
-    local_path: str,
-    key: str,
-    category: str | None = None,
-) -> ContextValue | None:
-    """Get a specific context value with provenance.
-
-    Args:
-        local_path: Path to the repository
-        key: Context key to retrieve (e.g., "has_releases", "maintainers")
-        category: Optional category to search in (e.g., "build", "governance")
-                 If not specified, searches all categories
-
-    Returns:
-        ContextValue if found, None otherwise
-    """
-    context = load_context(local_path)
-
-    stored: ContextValue | None = None
-    if category:
-        # Search specific category
-        cat_context = context.get(category, {})
-        stored = cat_context.get(key)
-    else:
-        # Search all categories
-        for cat_context in context.values():
-            if key in cat_context:
-                stored = cat_context[key]
-                break
-
-    return stored
-
-
-def get_raw_value(
-    local_path: str,
-    key: str,
-    default: Any = None,
-) -> Any:
-    """Get a context value without provenance (just the raw value).
-
-    This is a convenience function for when you only need the value,
-    not the full ContextValue with provenance.
-
-    Args:
-        local_path: Path to the repository
-        key: Context key to retrieve
-        default: Default value if not found
-
-    Returns:
-        The raw value, or default if not found
-    """
-    ctx_value = get_context_value(local_path, key)
-    if ctx_value:
-        return ctx_value.value
-    return default
-
-
-def _filter_context(local_path: str, context: ContextByCategory) -> ContextByCategory:
-    if not context:
-        return context
-    try:
-        definitions = get_context_definitions(local_path)
-    except Exception as exc:  # noqa: BLE001 - a read must not fail on config
-        logger.debug("Could not load context definitions to filter stored context: %s", exc)
-        return context
-
-    filtered: ContextByCategory = {}
-    for category, values in context.items():
-        for key, stored in values.items():
-            kept = _filter_stored_value(definitions, key, stored)
-            if kept is not None:
-                filtered.setdefault(category, {})[key] = kept
-    return filtered
-
-
-def _filter_stored_value(
-    definitions: dict[str, ContextDefinition], key: str, stored: ContextValue
-) -> ContextValue | None:
-    """Re-evaluate a stored value against its key's detect_filter (FR-014).
-
-    The read path performed no validation before feature 039, so a value
-    auto-accepted while the filter was not running persists indefinitely -- and
-    the repositories most likely to hold one are exactly those audited while
-    the guard was off. Without this, the fix protects only repositories that
-    have never been audited.
-
-    This runs inside load_context rather than being opted into by callers. An
-    opt-in would mean any future caller silently skips the guard, which is the
-    defect class this feature exists to close.
-
-    Nothing is written (FR-015). A stored value may carry a human confirmation,
-    and Principle IV makes confirmation the transition that grants usability --
-    the framework reports that a stored value now fails its filter; it does not
-    silently revoke what a person put there.
-    """
-    from darnit.context.detect_filter import FilterDecision, apply_filter
-
-    definition = definitions.get(key)
-    expression = getattr(definition, "detect_filter", None) if definition else None
-    if not expression:
-        return stored
-
-    outcome = apply_filter(expression, stored.value, key)
-    if outcome.decision is FilterDecision.KEEP:
-        if outcome.discarded:
-            logger.info(
-                "Context '%s': stored value had %d element(s) removed by "
-                "detect_filter on read; stored context is unchanged",
-                key,
-                len(outcome.discarded),
-            )
-            stored.value = outcome.value
-        return stored
-
-    logger.warning(
-        "Context '%s': the stored value fails this key's detect_filter and is "
-        "treated as unset (%s). Stored context is NOT modified; correct or "
-        "remove it in .project/ if it is wrong.",
-        key,
-        outcome.reason,
-    )
-    return None
-
-
-def is_context_confirmed(local_path: str, key: str) -> bool:
-    """Check if a context key has been confirmed by the user.
-
-    Args:
-        local_path: Path to the repository
-        key: Context key to check
-
-    Returns:
-        True if the context value has been set
-    """
-    return get_context_value(local_path, key) is not None
 
 
 # =============================================================================
@@ -352,6 +48,11 @@ def _runtime_definition(defn: Any) -> ContextDefinition:
     )
 
 
+def framework_definitions(framework: Any) -> dict[str, ContextDefinition]:
+    """The runtime context definitions of a ``FrameworkConfig``."""
+    return {key: _runtime_definition(defn) for key, defn in framework.context.definitions.items()}
+
+
 def get_context_definitions(local_path: str) -> dict[str, ContextDefinition]:
     """Get context definitions from the framework TOML.
 
@@ -373,13 +74,7 @@ def get_context_definitions(local_path: str) -> dict[str, ContextDefinition]:
         if framework is None:
             return {}
 
-        definitions: dict[str, ContextDefinition] = {}
-
-        for key, defn in framework.context.definitions.items():
-            # Convert ContextDefinitionConfig to ContextDefinition
-            definitions[key] = _runtime_definition(defn)
-
-        return definitions
+        return framework_definitions(framework)
     except Exception as e:
         logger.warning(f"Could not load context definitions: {e}")
         return {}

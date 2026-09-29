@@ -80,8 +80,18 @@ class TestAuditMapperIntegration:
         project_dir.mkdir()
         (project_dir / "project.yaml").write_text("name: from-project-yaml\n")
 
-        # Mock load_context to return user-confirmed values that override
-        with patch("darnit.context.dot_project_mapper.DotProjectMapper") as mock_mapper_cls:
+        # Feature 042 (FR-006): context values come from the resolver's usable
+        # mapping (confirmed values), merged after mapper values; the legacy
+        # load_context reader this test patched is gone.
+        from darnit.config.context_resolve import ResolvedContext
+        from darnit.config.context_schema import ResolvedValue, Standing
+
+        confirmed = ResolvedContext(
+            values={"project.name": ResolvedValue(key="project.name", standing=Standing.CONFIRMED, value="from-user")}
+        )
+        with patch("darnit.context.dot_project_mapper.DotProjectMapper") as mock_mapper_cls, patch(
+            "darnit.config.context_resolve.resolve_context", return_value=confirmed
+        ):
             mock_mapper = MagicMock()
             mock_mapper.get_context.return_value = {
                 "project.name": "from-mapper",
@@ -89,22 +99,13 @@ class TestAuditMapperIntegration:
             }
             mock_mapper_cls.return_value = mock_mapper
 
-            # Patch load_context to return overriding values
-            with patch(
-                "darnit.config.context_storage.load_context"
-            ) as mock_load:
-                mock_load.return_value = {"project.name": "from-user"}
-                with patch(
-                    "darnit.config.context_storage.flatten_user_context",
-                    return_value={"project.name": "from-user"},
-                ):
-                    results, summary = run_sieve_audit(
-                        owner="test-org",
-                        repo="test-repo",
-                        local_path=str(tmp_path),
-                        default_branch="main",
-                        level=1,
-                    )
+            results, summary = run_sieve_audit(
+                owner="test-org",
+                repo="test-repo",
+                local_path=str(tmp_path),
+                default_branch="main",
+                level=1,
+            )
 
             # Verify mapper was called with correct owner. Feature 033
             # injects a `project_store` kwarg (any ProjectStateStore),

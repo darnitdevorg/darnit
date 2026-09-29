@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+from collections.abc import Collection, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -48,6 +49,44 @@ from darnit.remediation.helpers import (
 logger = get_logger("remediation.executor")
 
 
+class ConfirmationRequired(Exception):
+    """A remediation read a context key that has no usable value (feature 042, FR-007)."""
+
+    def __init__(self, key: str) -> None:
+        super().__init__(f"confirmation required: {key}")
+        self.key = key
+
+
+class GuardedContext(Mapping[str, Any]):
+    """Context values for templates and ``when`` clauses.
+
+    Reading a key in ``unconfirmed`` that has no value raises
+    :class:`ConfirmationRequired`. It is not a ``LookupError``, so Jinja does
+    not turn it into an undefined value, and a template's ``default()`` or
+    membership test cannot stand in for the missing value.
+    """
+
+    def __init__(self, values: Mapping[str, Any], unconfirmed: Collection[str]) -> None:
+        self._values = dict(values)
+        self._unconfirmed = frozenset(unconfirmed) - self._values.keys()
+
+    def __getitem__(self, key: str) -> Any:
+        if key in self._unconfirmed:
+            raise ConfirmationRequired(key)
+        return self._values[key]
+
+    def __contains__(self, key: object) -> bool:
+        if key in self._unconfirmed:
+            raise ConfirmationRequired(str(key))
+        return key in self._values
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._values)
+
+    def __len__(self) -> int:
+        return len(self._values)
+
+
 @dataclass
 class RemediationResult:
     """Result of a remediation execution."""
@@ -59,6 +98,7 @@ class RemediationResult:
     dry_run: bool
     details: dict[str, Any]
     needs_review: bool = False  # True when safe=false — changes may alter behavior
+    confirmation_required: str | None = None  # Context key that needs a person's confirmation
 
     def to_markdown(self) -> str:
         """Format result as markdown."""
@@ -113,7 +153,8 @@ class RemediationExecutor:
       cadence is slow enough that PR diffs stay stable within a calendar
       year -- see Determinism Tier 1 note in _get_template_context)
     - << CONTROL >> - Control ID being remediated
-    - << context.KEY >> - Confirmed project context values
+    - << context.KEY >> - Usable project context values; reading a key in
+      ``unconfirmed_keys`` stops the remediation with "confirmation required"
     - << project.KEY >> - Values from .project/project.yaml
     - << scan.KEY >> - Repo scanner results
     - << scan.KEY | default('fallback') >> - With Jinja2 default filter
@@ -131,6 +172,7 @@ class RemediationExecutor:
         scan_values: dict[str, Any] | None = None,
         framework_path: str | None = None,
         now_provider: Callable[[], datetime] | None = None,
+        unconfirmed_keys: Collection[str] = (),
     ):
         """Initialize the executor.
 
@@ -140,7 +182,8 @@ class RemediationExecutor:
             repo: Repository name (auto-detected if not provided)
             default_branch: Default branch name
             templates: Template definitions from framework config
-            context_values: Confirmed context values for ${context.*} substitution
+            context_values: Usable context values for ${context.*} substitution
+                and ``when`` clauses
             project_values: Flattened .project/project.yaml for ${project.*} substitution
             scan_values: Repo scan values for ${scan.*} substitution.
                 Populated by the implementation's repo scanner with detected
@@ -152,6 +195,10 @@ class RemediationExecutor:
                 used to derive ``<< YEAR >>`` in template output. Defaults
                 to :func:`datetime.now`. Parameterized so tests can inject
                 a fixed clock (Determinism Tier 1, #418).
+            unconfirmed_keys: Context keys without a usable value
+                (``ResolvedContext.unusable_keys()``). A template or ``when``
+                clause that reads one stops the remediation with
+                "confirmation required" (feature 042, FR-007).
         """
         self.local_path = os.path.abspath(local_path)
         self.templates = templates or {}
@@ -161,6 +208,7 @@ class RemediationExecutor:
         self._project_values = project_values or {}
         self._scan_values = scan_values or {}
         self._now_provider = now_provider or datetime.now
+        self._unconfirmed_keys = frozenset(unconfirmed_keys)
 
         # Auto-detect owner/repo if not provided
         if not owner or not repo:
@@ -211,7 +259,7 @@ class RemediationExecutor:
                     context_ns[key] = " ".join(sorted(str(v) for v in value))
                 elif value is not None:
                     context_ns[key] = str(value)
-        ctx["context"] = context_ns
+        ctx["context"] = GuardedContext(context_ns, self._unconfirmed_keys)
 
         project_ns: dict[str, str] = {}
         if self._project_values:
@@ -293,7 +341,7 @@ class RemediationExecutor:
         # Namespace vars as ${namespace.key}
         for ns in ("context", "project", "scan"):
             ns_dict = ctx.get(ns, {})
-            if isinstance(ns_dict, dict):
+            if isinstance(ns_dict, Mapping):
                 for key, value in ns_dict.items():
                     if value:
                         subs[f"${{{ns}.{key}}}"] = value
@@ -391,7 +439,23 @@ class RemediationExecutor:
                 details={},
             )
 
-        result = self._execute_handler_invocations(control_id, config, dry_run)
+        try:
+            if not dry_run:
+                # Render every template and evaluate every ``when`` first, so a
+                # key that needs confirmation stops the remediation before any
+                # handler has run.
+                self._execute_handler_invocations(control_id, config, dry_run=True)
+            result = self._execute_handler_invocations(control_id, config, dry_run)
+        except ConfirmationRequired as needed:
+            return RemediationResult(
+                success=False,
+                message=str(needed),
+                control_id=control_id,
+                remediation_type="handler_pipeline",
+                dry_run=dry_run,
+                details={},
+                confirmation_required=needed.key,
+            )
 
         # Apply project_update if the primary remediation succeeded
         if result.success and not dry_run and config.project_update:
@@ -434,12 +498,12 @@ class RemediationExecutor:
             project_context=dict(self._project_values),
         )
 
-        # Assemble flat context for when-clause evaluation
-        when_context: dict[str, Any] = dict(self._project_values)
-        when_context.update(self._context_values)
-        # Include scan values so when-clauses can match on detected CI tools
-        # (e.g., scan.ci_sast_tools, scan.ci_sca_tools)
-        when_context.update(self._scan_values)
+        # Assemble flat context for when-clause evaluation. Scan values let
+        # when-clauses match on detected CI tools (e.g., scan.ci_sast_tools).
+        when_values: dict[str, Any] = dict(self._project_values)
+        when_values.update(self._context_values)
+        when_values.update(self._scan_values)
+        when_context = GuardedContext(when_values, self._unconfirmed_keys)
 
         results: list[dict[str, Any]] = []
         all_success = True
@@ -839,6 +903,8 @@ def _try_construct_nested(parent: object, field_name: str, remaining_parts: list
 
 
 __all__ = [
+    "ConfirmationRequired",
+    "GuardedContext",
     "RemediationExecutor",
     "RemediationResult",
     "apply_project_update",

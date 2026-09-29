@@ -54,23 +54,43 @@ def _find_existing_coc(repo: Path) -> str | None:
     return None
 
 
+_PARAMETERS = {
+    "csl_spec_name": "spec_name",
+    "csl_working_group_scope": "scope",
+    "csl_coc_contacts": "coc_contacts",
+    "csl_code_license": "code_license",
+    "csl_governance_mode": "governance_mode",
+    "csl_governance_reference": "governance_reference",
+    "csl_coc_policy": "coc_policy",
+    "csl_coc_reference": "coc_reference",
+}
+
 _ORDER = ["CSL-01.01", "CSL-01.02", "CSL-02.01", "CSL-03.01", "CSL-04.01", "CSL-05.01"]
 
 
 async def remediate_community_spec(
     local_path: str,
-    scope: str = "",
-    coc_contacts: str = "",
-    code_license: str = "MIT",
-    governance_mode: str = "csl",
-    governance_reference: str = "",
-    coc_policy: str = "csl",
-    coc_reference: str = "",
-    spec_name: str = "",
+    scope: str | None = None,
+    coc_contacts: str | None = None,
+    code_license: str | None = None,
+    governance_mode: str | None = None,
+    governance_reference: str | None = None,
+    coc_policy: str | None = None,
+    coc_reference: str | None = None,
+    spec_name: str | None = None,
     add_readme_links: bool = True,
 ) -> str:
-    """Write the Community Specification License (CSL 1.0) file set into a repo."""
+    """Write the Community Specification License (CSL 1.0) file set into a repo.
+
+    Each parameter other than ``local_path`` and ``add_readme_links`` is a
+    person's decision recorded under a CSL context key. An omitted one is
+    taken from confirmed project context only; if that has none either, the
+    tool writes nothing and reports ``confirmation required: <key>``
+    (feature 042, FR-008).
+    """
     from darnit.config import load_framework_config
+    from darnit.config.context_resolve import resolve_context
+    from darnit.config.context_storage import framework_definitions
     from darnit.remediation.executor import RemediationExecutor
     from darnit.tools.audit import run_sieve_audit
 
@@ -78,7 +98,25 @@ async def remediate_community_spec(
     if not repo.exists():
         return f"Error: repository path not found: {repo}"
 
-    coc_policy = (coc_policy or "csl").strip().lower()
+    fw_path = Path(__file__).parent / "community-spec.toml"
+    fw = load_framework_config(fw_path)
+    resolved = resolve_context(str(repo), framework_definitions(fw), detect=False)
+    confirmed = resolved.usable()
+
+    def decided(value: str | None, key: str) -> str | None:
+        return value if value is not None else confirmed.get(key)
+
+    scope = decided(scope, "csl_working_group_scope")
+    coc_contacts = decided(coc_contacts, "csl_coc_contacts")
+    code_license = decided(code_license, "csl_code_license")
+    governance_mode = decided(governance_mode, "csl_governance_mode")
+    governance_reference = decided(governance_reference, "csl_governance_reference")
+    coc_policy = decided(coc_policy, "csl_coc_policy")
+    coc_reference = decided(coc_reference, "csl_coc_reference")
+    spec_name = decided(spec_name, "csl_spec_name")
+
+    if coc_policy is not None:
+        coc_policy = coc_policy.strip().lower()
 
     # Org-first: a project that already has a Code of Conduct (its own file,
     # an org community repo, or a foundation CoC such as CNCF / LF / JDF)
@@ -93,7 +131,7 @@ async def remediate_community_spec(
         )
 
     if coc_policy == "org":
-        if _looks_like_placeholder(coc_reference) or not _URL_RE.search(coc_reference):
+        if coc_reference is None or _looks_like_placeholder(coc_reference) or not _URL_RE.search(coc_reference):
             return (
                 "Error: coc_policy='org' requires coc_reference: one markdown "
                 "sentence linking the project's existing Code of Conduct (the "
@@ -104,7 +142,7 @@ async def remediate_community_spec(
             )
         # The linked CoC defines the reporting procedure; no inline contacts.
         coc_contacts = ""
-    else:
+    elif coc_contacts is not None:
         if _looks_like_placeholder(coc_contacts):
             return (
                 f"Error: coc_contacts looks like a placeholder ({coc_contacts!r}). "
@@ -124,15 +162,13 @@ async def remediate_community_spec(
     # "Any changes of Scope are not retroactive." line. A caller that drafts a
     # full scope document will include both, so strip them here rather than
     # emitting each one twice.
-    scope = re.sub(r"\A#\s*Scope\s*\n+", "", scope.strip())
-    scope = re.sub(
-        r"\n*Any changes of Scope are not retroactive\.\s*\Z", "", scope
-    ).strip()
+    if scope is not None:
+        scope = re.sub(r"\A#\s*Scope\s*\n+", "", scope.strip())
+        scope = re.sub(
+            r"\n*Any changes of Scope are not retroactive\.\s*\Z", "", scope
+        ).strip()
 
-    fw_path = Path(__file__).parent / "community-spec.toml"
-    fw = load_framework_config(fw_path)
-
-    context_values = {
+    decisions = {
         "csl_spec_name": spec_name,
         "csl_working_group_scope": scope,
         "csl_coc_contacts": coc_contacts,
@@ -142,21 +178,39 @@ async def remediate_community_spec(
         "csl_coc_policy": coc_policy,
         "csl_coc_reference": coc_reference,
     }
+    context_values = {key: value for key, value in decisions.items() if value is not None}
 
     executor = RemediationExecutor(
         local_path=str(repo), owner="", repo="",
         templates=fw.templates, context_values=context_values,
         framework_path=str(fw_path),
+        unconfirmed_keys=resolved.unusable_keys(),
     )
+
+    remediations = [
+        (cid, fw.controls[cid].remediation)
+        for cid in _ORDER
+        if cid in fw.controls and fw.controls[cid].remediation is not None
+    ]
+    needed = sorted({
+        planned.confirmation_required
+        for cid, remediation in remediations
+        if (planned := executor.execute(cid, remediation, dry_run=True)).confirmation_required
+    })
+    if needed:
+        return "\n".join([
+            "Error: these decisions are needed before any file is written. Ask the "
+            "person for each one and pass their answer as the named parameter; do "
+            "not choose a value for them.",
+            *(f"- confirmation required: {key} (parameter {_PARAMETERS[key]})" for key in needed),
+            "Nothing was written.",
+        ])
 
     written: list[str] = []
     errors: list[str] = []
-    for cid in _ORDER:
-        control = fw.controls.get(cid)
-        if control is None or control.remediation is None:
-            continue
+    for cid, remediation in remediations:
         try:
-            res = executor.execute(cid, control.remediation, dry_run=False)
+            res = executor.execute(cid, remediation, dry_run=False)
             (written if res.success else errors).append(
                 cid if res.success else f"{cid}: {res.message}"
             )

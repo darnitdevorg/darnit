@@ -193,7 +193,8 @@ def confirm_not_applicable_impl(
     except OperatorConfigError as e:
         return f"Error: {e}"
 
-    decision = decide_trust(target_from_owner_repo(owner, repo, host), operator_config.config, local_path)
+    target = target_from_owner_repo(owner, repo, host)
+    decision = decide_trust(target, operator_config.config, local_path)
     identity = decision.repository
     if identity is None or not identity.trusted_eligible:
         return (
@@ -203,7 +204,7 @@ def confirm_not_applicable_impl(
 
     try:
         prepared = prepare_claim_confirmations(
-            local_path, control_ids, framework_name, operator_config.config, owner, repo
+            local_path, control_ids, framework_name, operator_config.config, owner, repo, target
         )
     except ValueError as e:
         return f"Error: {e}"

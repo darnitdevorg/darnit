@@ -1132,6 +1132,8 @@ prompt_if_auto_detected = true
 warning = "GitHub collaborators are not necessarily project maintainers"
 ```
 
+A requirement is met by the key's standing (7.4): a `confirmed` value is ready (unless it only names one of the key's `hint_sources` files); a `concluded` value is ready unless `prompt_if_auto_detected` is set or its detection confidence is below `confidence_threshold`; a `candidate` or `unknown` key is never ready, and its candidate is shown for review only. `requires_context` decides when to ask up front; it does not limit which keys a template may read (7.11).
+
 ### 7.4 Context Value Standing
 
 The framework SHALL resolve project context through one resolver (`darnit.config.context_resolve.resolve_context`) that gives every context key exactly one standing (see `specs/042-candidate-integrity/`):
@@ -1210,6 +1212,20 @@ The observable payloads of `get_pending_data` and `confirm_project_data` are def
 
 - `get_pending_data` is read-only. Each question carries its candidate as data (`candidate: {value, origin, digest, label}`); no `command_template` or answer mapping contains a candidate value or a configuration example; enum questions list every allowed value in `allowed_values`; the response lists `stored_unconfirmed` values with their locations.
 - `confirm_project_data` takes a parameter for every context key the framework defines (generated from the definitions), plus `accept_candidates` (`{key: candidate digest}`; confirms the current candidate only if its digest still matches, recording it as the basis), `confirm_stored` and `reject_stored` (review of stored values: a rejected `.project/darnit.yaml` value is deleted; a rejected `.project/project.yaml` value is reported with its file and field and the file is left unchanged), `expires_at` (`{key: date}`), and `owner`, `repo`, `host`, which are required and decide the record location (7.5).
+
+### 7.11 Consumers of Context Values
+
+Every consumer reads context values from the resolver's usable mapping (7.4) and nothing else:
+
+- **Audit applicability** (`when` clauses): this run's filesystem detections of keys that are not judgment keys, then `.project/project.yaml` mapper values, then usable values. The audit resolves without running the framework's detection pipelines; its only detections are those filesystem detections. Only usable values confirmed in the repository count as repository data for not-applicable claims (14.3).
+- **Remediation**: templates and remediation `when` clauses see this run's detections of keys that are not judgment keys, overlaid with usable values. The `context` namespace is guarded: reading a defined context key that has no usable value (by attribute, index, `get`, or membership test) raises `ConfirmationRequired`, so a template `default()` cannot stand in for it, and the same applies to a key named in a handler's `when`. Templates and `when` clauses are evaluated for every handler before any handler runs; a `ConfirmationRequired` becomes that control's result, `confirmation required: <key>`, and nothing is written. This applies whether or not the control lists the key in `requires_context`. Keys that are not context keys render as empty.
+- **Tool parameters that are judgment values** have no default. An omitted parameter is taken from confirmed context only; otherwise the tool writes nothing and reports `confirmation required: <key>` (for example `remediate_community_spec`, whose parameters map to the CSL `csl_*` keys).
+- **Attestations** carry no context values.
+- **Detection helpers** (`collect_auto_context`) return canonical key names, drop a detection of any key its definition marks as a judgment key, and overlay only usable values.
+
+#### Scenario: Unconfirmed security contact in a remediation template
+- **WHEN** a remediation template reads `<< context.security_contact | default('security@example.org') >>` and `security_contact` has no usable value
+- **THEN** that control's remediation returns `confirmation required: security_contact` and writes nothing
 
 ---
 
@@ -1450,7 +1466,7 @@ Explicit `on_pass` configurations always take precedence over auto-derivation.
 ### 11.3 Template Variable Context References
 
 Template variable substitution SHALL support:
-- `${context.<key>}` -- resolves to usable context values (7.4); an unusable user-judgment key stops the remediation with "confirmation required"
+- `${context.<key>}` -- resolves to usable context values (7.4); reading a defined context key without a usable value stops the remediation with "confirmation required" (7.11)
 - `${project.<dotted.path>}` — resolves to project configuration values
 
 Unresolved references SHALL be replaced with an empty string and logged at debug level.
@@ -1490,7 +1506,7 @@ Design principle: **the audited repository is untrusted input in its entirety, i
 
 ### 14.3 Project assertions
 
-- Project assertions (for example "this control is not applicable, reason X") live in `.project/` (darnit's extension file for anything upstream `.project/` cannot express). Project data that changes a control's applicability is treated as an assertion.
+- Project assertions (for example "this control is not applicable, reason X") live in `.project/` (darnit's extension file for anything upstream `.project/` cannot express). Project data that changes a control's applicability is treated as an assertion. For a context value that is only a value confirmed in the repository (7.5): an unconfirmed stored value is a candidate and has no effect (7.4), and a value the operator confirmed operator-side is the operator's decision, not a repository assertion.
 - An assertion-backed not-applicable result is **honored** only for a trusted repository with a reason and no contradicting evidence; otherwise it is **pending** (non-compliant until the operator confirms it) or **contradicted** (ignored, with the evidence reported). Controls MAY declare `contradicted_by` evidence in framework TOML.
 - Confirmations are stored on the operator side, keyed by repository identity, claim, and evidence digest, and lapse on expiry or when the evidence changes. Confirmations of project context values follow Section 7.5 instead.
 - Reports and attestations label every assertion-backed N/A as asserted, with the asserter and any confirmer.

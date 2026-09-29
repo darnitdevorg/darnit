@@ -490,12 +490,18 @@ def create_security_policy(
         except Exception:
             pass
 
+        from darnit.config.context_resolve import resolve_context
+        from darnit.config.context_storage import framework_definitions
+
+        resolved = resolve_context(str(repo_path), framework_definitions(framework), detect=False)
         executor = RemediationExecutor(
             local_path=str(repo_path),
             owner=owner,
             repo=repo,
             templates=framework.templates or {},
+            context_values=resolved.usable(),
             framework_path=fw_path,
+            unconfirmed_keys=resolved.unusable_keys(),
         )
 
         result = executor.execute(
@@ -504,6 +510,11 @@ def create_security_policy(
             dry_run=False,
         )
 
+        if result.confirmation_required:
+            return (
+                f"Error: SECURITY.md was not created: {result.message}. Ask the person for "
+                f"`{result.confirmation_required}` and record their answer with confirm_project_data."
+            )
         if result.success:
             return f"✅ Created SECURITY.md at {repo_path}/SECURITY.md"
         else:

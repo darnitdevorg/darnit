@@ -81,11 +81,31 @@ class TestContextValueAssertions:
         assert [(c.control_id, c.origin) for c in claims] == [("A", "context_value:platform")]
 
 
-def _repo(tmp_path: Path) -> Path:
+def _repo(tmp_path: Path, *, confirmed: bool = True) -> Path:
+    """A repository stating ``has_releases: false``.
+
+    Feature 042 (FR-006): only a value confirmed in the repository is
+    repository data a claim can be implied from (was: any stored value); the
+    confirmation record here is the project's own statement.
+    """
+    import yaml
+
+    from darnit.config.context_keys import value_digest
+
     path = tmp_path / "repo"
     (path / ".project").mkdir(parents=True)
     (path / ".project" / "project.yaml").write_text("name: repo\n", encoding="utf-8")
-    (path / ".project" / "darnit.yaml").write_text("context:\n  has_releases: false\n", encoding="utf-8")
+    data: dict = {"context": {"has_releases": False}}
+    if confirmed:
+        data["confirmations"] = {
+            "has_releases": {
+                "value_digest": value_digest("has_releases", False),
+                "confirmed_by": "maintainer",
+                "confirmed_at": "2026-09-01T00:00:00Z",
+                "last_validated": "2026-09-01T00:00:00Z",
+            }
+        }
+    (path / ".project" / "darnit.yaml").write_text(yaml.safe_dump(data), encoding="utf-8")
     subprocess.run(["git", "init", "--initial-branch=main", "-q"], cwd=path, check=True)
     subprocess.run(["git", "remote", "add", "origin", "https://github.com/example/repo.git"], cwd=path, check=True)
     return path
@@ -145,6 +165,14 @@ class TestAuditedContextValues:
 
         for control_id in RELEASE_CONTROLS:
             assert results[control_id]["assertion"]["outcome"] == "pending"
+            assert results[control_id]["status"] != "N/A"
+
+    def test_unconfirmed_stored_value_implies_no_claim(self, tmp_path: Path) -> None:
+        """Feature 042 (FR-006): an unconfirmed stored value is a candidate and has no effect."""
+        results = _audit(_repo(tmp_path, confirmed=False))
+
+        for control_id in RELEASE_CONTROLS:
+            assert "assertion" not in results[control_id]
             assert results[control_id]["status"] != "N/A"
 
     def test_claims_ignored_when_user_config_is_not_applied(self, tmp_path: Path) -> None:

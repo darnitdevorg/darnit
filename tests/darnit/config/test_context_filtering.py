@@ -20,6 +20,7 @@ import pytest
 import yaml
 
 from darnit.config import context_storage
+from darnit.config.context_schema import Standing
 from darnit.config.context_storage import (
     ContextSource,
     ContextValue,
@@ -174,13 +175,14 @@ class TestReporting:
 
 
 class TestStoredValues:
-    """FR-014 and FR-015 (DF-9).
+    """FR-014 and FR-015 (DF-9), as feature 042 (FR-006) now provides them.
 
     Before feature 039 the read path performed no validation, so a value
-    auto-accepted while the filter was not running persists indefinitely. The
-    repositories most likely to hold one are exactly those audited while the
-    guard was off, so without re-evaluation this fix would protect only
-    repositories that have never been audited.
+    auto-accepted while the filter was not running persists indefinitely.
+    Feature 039 dropped such a value on read, in every legacy reader. Feature
+    042 replaced those readers with the resolver: a stored value without a
+    confirmation record is a candidate, so it reaches no consumer whether or
+    not it passes its filter, and it stays visible for review.
     """
 
     def _store(self, tmp_path: Path, key: str, value: object) -> bytes:
@@ -199,68 +201,40 @@ class TestStoredValues:
         (project_dir / "darnit.yaml").write_text(yaml.safe_dump({"context": {key: value}}), encoding="utf-8")
         return (project_dir / "project.yaml").read_bytes()
 
+    def _resolved(self, tmp_path: Path):
+        from darnit.config.context_resolve import resolve_context
+
+        return resolve_context(str(tmp_path), detect=False)
+
     @pytest.mark.unit
-    def test_stored_value_failing_its_filter_reads_as_unset(self, tmp_path: Path) -> None:
+    def test_stored_value_failing_its_filter_is_not_usable(self, tmp_path: Path) -> None:
         """DF-9, first half."""
         self._store(tmp_path, "security_contact", PLACEHOLDER)
-        assert context_storage.get_context_value(str(tmp_path), "security_contact") is None
+        assert "security_contact" not in self._resolved(tmp_path).usable()
 
     @pytest.mark.unit
     def test_project_file_is_not_modified(self, tmp_path: Path) -> None:
-        """DF-9, second half. FR-015.
-
-        A stored value may carry a human confirmation, and Principle IV makes
-        confirmation the transition that grants usability. The framework
-        reports; it does not silently revoke.
-        """
+        """DF-9, second half. FR-015."""
         before = self._store(tmp_path, "security_contact", PLACEHOLDER)
-        context_storage.get_context_value(str(tmp_path), "security_contact")
+        self._resolved(tmp_path)
         after = (tmp_path / ".project" / "project.yaml").read_bytes()
         assert before == after
 
     @pytest.mark.unit
-    def test_stored_value_passing_its_filter_reads_normally(self, tmp_path: Path) -> None:
-        self._store(tmp_path, "security_contact", "security@real.org")
-        value = context_storage.get_context_value(str(tmp_path), "security_contact")
-        assert value is not None
-        assert value.value == "security@real.org"
-
-    @pytest.mark.unit
-    def test_rejection_on_read_is_reported(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    def test_stored_value_is_a_candidate_for_review(self, tmp_path: Path) -> None:
+        """Write-verification and review need what is actually on disk."""
         self._store(tmp_path, "security_contact", PLACEHOLDER)
-        with caplog.at_level(logging.WARNING):
-            context_storage.get_context_value(str(tmp_path), "security_contact")
-        assert "security_contact" in caplog.text
-        assert "NOT modified" in caplog.text
+        value = self._resolved(tmp_path).values["security_contact"]
+        assert value.standing is Standing.CANDIDATE
+        assert value.value == PLACEHOLDER
 
     @pytest.mark.unit
-    def test_key_without_a_filter_is_unaffected_on_read(self, tmp_path: Path) -> None:
-        """FR-009 / SC-007: `has_releases` declares no filter and must behave
-        exactly as it did before this feature."""
+    def test_key_without_a_filter_is_a_candidate_too(self, tmp_path: Path) -> None:
+        """FR-009 / SC-007: `has_releases` declares no filter; unconfirmed, it is not usable either."""
         self._store(tmp_path, "has_releases", True)
-        value = context_storage.get_context_value(str(tmp_path), "has_releases")
-        assert value is not None
-        assert value.value is True
-
-    @pytest.mark.unit
-    def test_load_context_drops_failing_stored_value(self, tmp_path: Path) -> None:
-        """FR-014 for every reader, not just get_context_value.
-
-        The audit, remediation, auto-detect, and harness paths all read through
-        load_context. Filtering only in get_context_value left each of them
-        consuming the rejected value -- a remediated SECURITY.md would still
-        name the placeholder address.
-        """
-        self._store(tmp_path, "security_contact", PLACEHOLDER)
-        flat = context_storage.flatten_user_context(context_storage.load_context(str(tmp_path)))
-        assert "security_contact" not in flat
-
-    @pytest.mark.unit
-    def test_load_stored_context_is_unfiltered(self, tmp_path: Path) -> None:
-        """Write-verification needs what is actually on disk."""
-        self._store(tmp_path, "security_contact", PLACEHOLDER)
-        flat = context_storage.flatten_user_context(context_storage.load_stored_context(str(tmp_path)))
-        assert flat["security_contact"] == PLACEHOLDER
+        resolved = self._resolved(tmp_path)
+        assert resolved.values["has_releases"].value is True
+        assert "has_releases" not in resolved.usable()
 
     @pytest.mark.unit
     def test_collect_auto_context_does_not_consume_failing_stored_value(self, tmp_path: Path) -> None:

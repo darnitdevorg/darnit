@@ -14,13 +14,14 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from darnit.core.logging import get_logger
 
 if TYPE_CHECKING:
-    from darnit.config.context_schema import ContextValue
+    from darnit.config.context_schema import ContextDefinition, ContextValue
 
 logger = get_logger("context.auto_detect")
 
@@ -335,62 +336,69 @@ _LANGUAGE_TO_ECOSYSTEM: dict[str, str] = {
 }
 
 
-def collect_auto_context(local_path: str, *, include_stored: bool = True) -> dict[str, Any]:
-    """Collect all auto-detectable context. Returns flat dict with bare keys.
+def collect_auto_context(
+    local_path: str,
+    *,
+    include_stored: bool = True,
+    definitions: Mapping[str, ContextDefinition] | None = None,
+) -> dict[str, Any]:
+    """Collect all auto-detectable context. Returns flat dict with canonical keys.
 
     Only includes keys where detection succeeded. Keys use the same names
-    as ``when`` clause keys (e.g. ``platform``, ``ci_provider``).
+    as ``when`` clause keys (e.g. ``platform``, ``ci_provider``). A
+    detection of a key its definition marks as requiring judgment
+    (``auto_detect = false``) is dropped: detection never concludes such a
+    key (feature 042, FR-004).
 
-    Persisted context from ``.project/darnit.yaml`` is loaded first and takes
-    precedence over auto-detection. This ensures that user-confirmed values
-    from ``confirm_project_context`` are used in subsequent audits.
+    With ``include_stored`` (the default), usable values from the context
+    resolver (confirmed values) take precedence over detection. Stored
+    values without a confirmation are candidates and are never returned
+    (feature 042, FR-006). With ``include_stored=False`` only this run's
+    detections are returned (feature 040, FR-013a).
 
-    With ``include_stored=False`` only detected values are returned; stored
-    values are repository content (feature 040, FR-013a).
+    Args:
+        local_path: Repository root.
+        include_stored: Overlay the resolver's usable values.
+        definitions: Context definitions (default: the framework's).
     """
+    if definitions is None:
+        from darnit.config.context_storage import get_context_definitions
+
+        definitions = get_context_definitions(local_path)
+
     context: dict[str, Any] = {}
+    if include_stored:
+        from darnit.config.context_resolve import resolve_context
 
-    # Load persisted context first (user-confirmed values take precedence)
-    try:
-        from darnit.config.context_storage import load_context
+        context.update(resolve_context(local_path, definitions, detect=False).usable())
 
-        stored = load_context(local_path) if include_stored else {}
-        for category_values in stored.values():
-            for key, ctx_val in category_values.items():
-                context[key] = ctx_val.value
-    except (OSError, KeyError, AttributeError):
-        pass  # Graceful degradation if no .project/ config exists
+    detected: dict[str, Any] = {}
+    platform = detect_platform(local_path)
+    if platform:
+        detected["platform"] = platform
 
-    # Auto-detect (only for keys not already persisted)
-    if "platform" not in context:
-        platform = detect_platform(local_path)
-        if platform:
-            context["platform"] = platform
+    ci_provider = detect_ci_provider(local_path)
+    if ci_provider:
+        detected["ci_provider"] = ci_provider
 
-    if "ci_provider" not in context:
-        ci_provider = detect_ci_provider(local_path)
-        if ci_provider:
-            context["ci_provider"] = ci_provider
+    primary_language = detect_primary_language(local_path)
+    if primary_language:
+        detected["primary_language"] = primary_language
+        ecosystem = _LANGUAGE_TO_ECOSYSTEM.get(primary_language)
+        if ecosystem:
+            detected["detected_ecosystem"] = ecosystem
 
-    if "primary_language" not in context:
-        primary_language = detect_primary_language(local_path)
-        if primary_language:
-            context["primary_language"] = primary_language
-            # Derive ecosystem from primary language
-            if "detected_ecosystem" not in context:
-                ecosystem = _LANGUAGE_TO_ECOSYSTEM.get(primary_language)
-                if ecosystem:
-                    context["detected_ecosystem"] = ecosystem
+    # Always include languages (even empty list) so when clauses can evaluate
+    detected["languages"] = detect_languages(local_path)
 
-    if "languages" not in context:
-        languages = detect_languages(local_path)
-        # Always include languages (even empty list) so when clauses can evaluate
-        context["languages"] = languages
+    license_type = detect_license_type(local_path)
+    if license_type:
+        detected["license_type"] = license_type
 
-    if "license_type" not in context:
-        license_type = detect_license_type(local_path)
-        if license_type:
-            context["license_type"] = license_type
+    for key, value in detected.items():
+        definition = definitions.get(key)
+        if key not in context and (definition is None or definition.auto_detect):
+            context[key] = value
 
     if context:
         logger.debug("Auto-detected context: %s", context)

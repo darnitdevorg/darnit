@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
-from darnit.config.context_schema import ContextSource, ContextValue
+from darnit.config.context_schema import ContextSource, ContextValue, Standing
 from darnit.config.framework_schema import ContextDefinitionConfig, ContextRequirement
 from darnit.remediation.context_validator import (
     ContextCheckResult,
@@ -59,8 +59,27 @@ class TestContextCheckResult:
         assert result.auto_detected["maintainers"] == ["@user1"]
 
 
+def _resolved(key, standing, value=None, confidence=None):
+    """A resolver result with one key; patched in for ``resolve_context``."""
+    from darnit.config.context_resolve import ResolvedContext
+    from darnit.config.context_schema import Origin, OriginKind, ResolvedValue
+
+    origin = Origin(kind=OriginKind.DETECTOR, method="test", confidence=confidence) if confidence is not None else None
+    return ResolvedContext(values={key: ResolvedValue(key=key, standing=standing, value=value, origin=origin)})
+
+
+def _check(requirement, resolved, temp_repo):
+    with patch("darnit.config.context_resolve.resolve_context", return_value=resolved):
+        return check_context_requirements(requirements=[requirement], local_path=temp_repo, framework=None)
+
+
 class TestCheckContextRequirements:
-    """Tests for check_context_requirements function."""
+    """Tests for check_context_requirements function.
+
+    Feature 042 (FR-006): readiness is decided by the resolver's standing,
+    not by a stored ``source`` field and confidence (was: a USER_CONFIRMED
+    source, or an AUTO_DETECTED one at or above the threshold, was ready).
+    """
 
     def test_returns_ready_when_no_requirements(self, temp_repo):
         """Empty requirements list should return ready=True."""
@@ -72,16 +91,8 @@ class TestCheckContextRequirements:
         assert result.ready is True
         assert result.missing_context == []
 
-    @patch("darnit.remediation.context_validator.get_context_value")
-    def test_returns_ready_when_context_confirmed(self, mock_get_context, temp_repo):
-        """Should return ready=True when context is USER_CONFIRMED."""
-        # Mock confirmed context
-        mock_get_context.return_value = ContextValue(
-            value=["@alice", "@bob"],
-            source=ContextSource.USER_CONFIRMED,
-            confidence=1.0,
-        )
-
+    def test_returns_ready_when_context_confirmed(self, temp_repo):
+        """A confirmed value is ready."""
         requirement = ContextRequirement(
             key="maintainers",
             required=True,
@@ -89,20 +100,13 @@ class TestCheckContextRequirements:
             prompt_if_auto_detected=True,
         )
 
-        result = check_context_requirements(
-            requirements=[requirement],
-            local_path=temp_repo,
-            framework=None,
-        )
+        result = _check(requirement, _resolved("maintainers", Standing.CONFIRMED, ["@alice", "@bob"]), temp_repo)
 
         assert result.ready is True
         assert result.missing_context == []
 
-    @patch("darnit.remediation.context_validator.get_context_value")
-    def test_returns_not_ready_when_context_missing(self, mock_get_context, temp_repo):
-        """Should return ready=False with prompts when context is missing."""
-        mock_get_context.return_value = None
-
+    def test_returns_not_ready_when_context_missing(self, temp_repo):
+        """Should return ready=False with prompts when context is unknown."""
         requirement = ContextRequirement(
             key="maintainers",
             required=True,
@@ -110,26 +114,56 @@ class TestCheckContextRequirements:
             prompt_if_auto_detected=True,
         )
 
-        result = check_context_requirements(
-            requirements=[requirement],
-            local_path=temp_repo,
-            framework=None,
-        )
+        result = _check(requirement, _resolved("maintainers", Standing.UNKNOWN), temp_repo)
 
         assert result.ready is False
         assert "maintainers" in result.missing_context
         assert len(result.prompts) == 1
 
-    @patch("darnit.remediation.context_validator.get_context_value")
-    def test_respects_confidence_threshold(self, mock_get_context, temp_repo):
-        """Low confidence values should trigger prompt."""
-        # Mock low-confidence auto-detected context
-        mock_get_context.return_value = ContextValue(
-            value=["@user1"],
-            source=ContextSource.USER_CONFIRMED,  # Even confirmed but low confidence
-            confidence=0.5,  # Below 0.9 threshold
+    def test_respects_confidence_threshold(self, temp_repo):
+        """A value concluded below the requirement's threshold is not ready."""
+        requirement = ContextRequirement(
+            key="has_releases",
+            required=True,
+            confidence_threshold=0.9,
+            prompt_if_auto_detected=False,
         )
 
+        result = _check(requirement, _resolved("has_releases", Standing.CONCLUDED, True, 0.85), temp_repo)
+
+        assert result.ready is False
+        assert "has_releases" in result.missing_context
+
+    def test_prompt_if_auto_detected_flag(self, temp_repo):
+        """A concluded value still prompts when the requirement asks to."""
+        requirement = ContextRequirement(
+            key="has_releases",
+            required=True,
+            confidence_threshold=0.9,
+            prompt_if_auto_detected=True,
+        )
+
+        result = _check(requirement, _resolved("has_releases", Standing.CONCLUDED, True, 0.95), temp_repo)
+
+        assert result.ready is False
+        assert "has_releases" in result.missing_context
+        assert result.auto_detected["has_releases"] is True
+
+    def test_concluded_value_allowed_when_flag_false(self, temp_repo):
+        """A concluded value at or above the threshold proceeds if prompt_if_auto_detected=False."""
+        requirement = ContextRequirement(
+            key="has_releases",
+            required=True,
+            confidence_threshold=0.9,
+            prompt_if_auto_detected=False,
+        )
+
+        result = _check(requirement, _resolved("has_releases", Standing.CONCLUDED, True, 0.95), temp_repo)
+
+        assert result.ready is True
+
+    def test_candidate_is_never_ready(self, temp_repo):
+        """A candidate at any confidence is shown, never used."""
         requirement = ContextRequirement(
             key="maintainers",
             required=True,
@@ -137,65 +171,10 @@ class TestCheckContextRequirements:
             prompt_if_auto_detected=False,
         )
 
-        result = check_context_requirements(
-            requirements=[requirement],
-            local_path=temp_repo,
-            framework=None,
-        )
+        result = _check(requirement, _resolved("maintainers", Standing.CANDIDATE, ["@user1"], 1.0), temp_repo)
 
         assert result.ready is False
-        assert "maintainers" in result.missing_context
-
-    @patch("darnit.remediation.context_validator.get_context_value")
-    def test_prompt_if_auto_detected_flag(self, mock_get_context, temp_repo):
-        """Auto-detected values should prompt if flag is set."""
-        # Mock high-confidence auto-detected context
-        mock_get_context.return_value = ContextValue(
-            value=["@user1"],
-            source=ContextSource.AUTO_DETECTED,
-            confidence=0.95,  # Above threshold
-        )
-
-        requirement = ContextRequirement(
-            key="maintainers",
-            required=True,
-            confidence_threshold=0.9,
-            prompt_if_auto_detected=True,  # Should still prompt
-        )
-
-        result = check_context_requirements(
-            requirements=[requirement],
-            local_path=temp_repo,
-            framework=None,
-        )
-
-        assert result.ready is False
-        assert "maintainers" in result.missing_context
         assert result.auto_detected["maintainers"] == ["@user1"]
-
-    @patch("darnit.remediation.context_validator.get_context_value")
-    def test_auto_detected_allowed_when_flag_false(self, mock_get_context, temp_repo):
-        """Auto-detected values should proceed if prompt_if_auto_detected=False."""
-        mock_get_context.return_value = ContextValue(
-            value=["@user1"],
-            source=ContextSource.AUTO_DETECTED,
-            confidence=0.95,
-        )
-
-        requirement = ContextRequirement(
-            key="maintainers",
-            required=True,
-            confidence_threshold=0.9,
-            prompt_if_auto_detected=False,  # Allow auto-detected
-        )
-
-        result = check_context_requirements(
-            requirements=[requirement],
-            local_path=temp_repo,
-            framework=None,
-        )
-
-        assert result.ready is True
 
 
 class TestFormatContextPrompt:
@@ -271,7 +250,6 @@ class TestFormatContextPrompt:
         assert "Provide GitHub usernames" in prompt
         assert "@user1, @user2" in prompt
 
-
     def test_prompt_with_hint_file_shows_parsed_values_and_placeholder(self, temp_repo):
         """When a hint file exists, prompt should show parsed values but use placeholder command."""
         # Create a CODEOWNERS file
@@ -304,7 +282,7 @@ class TestFormatContextPrompt:
         assert "@bob" in prompt
         assert "@charlie" in prompt
         # Should use a placeholder in the command, NOT the filename or actual values
-        assert 'confirm_project_data(maintainers=<user-confirmed values>)' in prompt
+        assert "confirm_project_data(maintainers=<user-confirmed values>)" in prompt
         # Should NOT suggest passing the filename
         assert 'maintainers="CODEOWNERS"' not in prompt
 
@@ -338,89 +316,34 @@ class TestFormatContextPrompt:
         assert "@detected1" in prompt
         assert "@detected2" in prompt
         # Should use a placeholder in the command, NOT the actual detected values
-        assert 'confirm_project_data(maintainers=<user-confirmed values>)' in prompt
+        assert "confirm_project_data(maintainers=<user-confirmed values>)" in prompt
         # Should NOT have executable command with actual values
         assert "['@detected1', '@detected2']" not in prompt
 
 
 class TestStaleValueDetection:
-    """Tests for stale file reference detection in check_context_requirements."""
+    """A confirmed value that names a hint source file is treated as missing."""
 
-    @patch("darnit.remediation.context_validator.get_context_value")
-    def test_stale_codeowners_string_treated_as_missing(self, mock_get_context, temp_repo):
-        """Stored 'CODEOWNERS' string should be treated as missing context."""
-        # Simulate a previous run that stored the filename instead of values
-        mock_get_context.return_value = ContextValue(
-            value="CODEOWNERS",
-            source=ContextSource.USER_CONFIRMED,
-            confidence=1.0,
-        )
-
-        requirement = ContextRequirement(
+    def _requirement(self):
+        return ContextRequirement(
             key="maintainers",
             required=True,
             confidence_threshold=0.9,
             prompt_if_auto_detected=True,
         )
 
-        result = check_context_requirements(
-            requirements=[requirement],
-            local_path=temp_repo,
-            framework=None,
-        )
-
-        # Should be not ready — the stale value should be rejected
-        assert result.ready is False
-        assert "maintainers" in result.missing_context
-
-    @patch("darnit.remediation.context_validator.get_context_value")
-    def test_github_codeowners_path_treated_as_stale(self, mock_get_context, temp_repo):
-        """Stored '.github/CODEOWNERS' path should also be treated as stale."""
-        mock_get_context.return_value = ContextValue(
-            value=".github/CODEOWNERS",
-            source=ContextSource.USER_CONFIRMED,
-            confidence=1.0,
-        )
-
-        requirement = ContextRequirement(
-            key="maintainers",
-            required=True,
-            confidence_threshold=0.9,
-            prompt_if_auto_detected=True,
-        )
-
-        result = check_context_requirements(
-            requirements=[requirement],
-            local_path=temp_repo,
-            framework=None,
-        )
+    @pytest.mark.parametrize("value", ["CODEOWNERS", ".github/CODEOWNERS"])
+    def test_file_name_treated_as_missing(self, temp_repo, value):
+        result = _check(self._requirement(), _resolved("maintainers", Standing.CONFIRMED, value), temp_repo)
 
         assert result.ready is False
         assert "maintainers" in result.missing_context
 
-    @patch("darnit.remediation.context_validator.get_context_value")
-    def test_actual_list_value_not_treated_as_stale(self, mock_get_context, temp_repo):
-        """Actual maintainer list should not be treated as stale."""
-        mock_get_context.return_value = ContextValue(
-            value=["@alice", "@bob"],
-            source=ContextSource.USER_CONFIRMED,
-            confidence=1.0,
+    def test_actual_list_value_not_treated_as_stale(self, temp_repo):
+        result = _check(
+            self._requirement(), _resolved("maintainers", Standing.CONFIRMED, ["@alice", "@bob"]), temp_repo
         )
 
-        requirement = ContextRequirement(
-            key="maintainers",
-            required=True,
-            confidence_threshold=0.9,
-            prompt_if_auto_detected=True,
-        )
-
-        result = check_context_requirements(
-            requirements=[requirement],
-            local_path=temp_repo,
-            framework=None,
-        )
-
-        # List value should pass through fine
         assert result.ready is True
         assert result.missing_context == []
 
@@ -443,11 +366,13 @@ class TestGetContextRequirementsForCategory:
         registry = {
             "codeowners": {
                 "description": "Create CODEOWNERS",
-                "requires_context": [{
-                    "key": "maintainers",
-                    "required": True,
-                    "confidence_threshold": 0.9,
-                }],
+                "requires_context": [
+                    {
+                        "key": "maintainers",
+                        "required": True,
+                        "confidence_threshold": 0.9,
+                    }
+                ],
             },
         }
 
@@ -530,7 +455,7 @@ class TestOrchestratorContextIntegration:
 
 
 class TestSieveDetectionIsFiltered:
-    """FR-003/FR-004: remediation's own sieve route must not bypass detect_filter."""
+    """FR-003/FR-004: remediation's detection (now the resolver's) must not bypass detect_filter."""
 
     class _Result:
         is_usable = True
@@ -544,18 +469,20 @@ class TestSieveDetectionIsFiltered:
         result = self._Result(value)
         return type("Sieve", (), {"detect": lambda self, *a, **k: result})()
 
+    def _detect(self, value, temp_repo):
+        from darnit.config.context_resolve import _detect
+        from darnit.config.context_storage import get_context_definitions
+
+        definition = get_context_definitions(".")["security_contact"]
+        with patch("darnit.context.get_context_sieve", return_value=self._sieve(value)):
+            return _detect("security_contact", definition, temp_repo, None, None)
+
     @pytest.mark.unit
     def test_placeholder_is_not_offered(self, temp_repo):
-        from darnit.remediation.context_validator import _try_sieve_detection
-
-        with patch("darnit.context.get_context_sieve", return_value=self._sieve("security@example.com")):
-            assert _try_sieve_detection("security_contact", temp_repo, None, None) is None
+        assert self._detect("security@example.com", temp_repo) == (None, None)
 
     @pytest.mark.unit
     def test_real_value_is_offered(self, temp_repo):
-        from darnit.remediation.context_validator import _try_sieve_detection
-
-        with patch("darnit.context.get_context_sieve", return_value=self._sieve("security@real.org")):
-            detected = _try_sieve_detection("security_contact", temp_repo, None, None)
+        detected, _ = self._detect("security@real.org", temp_repo)
         assert detected is not None
         assert detected.value == "security@real.org"

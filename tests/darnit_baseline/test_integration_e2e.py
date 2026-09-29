@@ -75,7 +75,30 @@ class TestRemediationE2EFlow:
     @pytest.mark.integration
     def test_security_policy_creates_security_md(self, temp_git_repo):
         """Test that vulnerability_management domain creates SECURITY.md."""
+        import yaml
+
+        from darnit.config.context_keys import value_digest
         from darnit_baseline.remediation.orchestrator import remediate_audit_findings
+
+        # Feature 042 (FR-007): the SECURITY.md template reads security_contact,
+        # which must be confirmed (was: rendered empty).
+        contact = "security@test-project.dev"
+        (Path(temp_git_repo) / ".project").mkdir()
+        (Path(temp_git_repo) / ".project" / "darnit.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "context": {"security_contact": contact},
+                    "confirmations": {
+                        "security_contact": {
+                            "value_digest": value_digest("security_contact", contact),
+                            "confirmed_by": "maintainer",
+                            "confirmed_at": "2026-09-01T00:00:00Z",
+                            "last_validated": "2026-09-01T00:00:00Z",
+                        }
+                    },
+                }
+            )
+        )
 
         remediate_audit_findings(
             local_path=temp_git_repo,
@@ -87,6 +110,7 @@ class TestRemediationE2EFlow:
 
         content = (Path(temp_git_repo) / "SECURITY.md").read_text()
         assert "Security" in content or "Vulnerability" in content
+        assert contact in content
 
     @pytest.mark.integration
     def test_vex_policy_returns_manual_guidance(self, temp_git_repo):

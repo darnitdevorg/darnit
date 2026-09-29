@@ -316,6 +316,7 @@ def _apply_control_remediation(
     repo: str | None = None,
     dry_run: bool = True,
     enhance_with_llm: bool = False,
+    target: str | None = None,
 ) -> dict[str, Any]:
     """Apply remediation for a single control, driven entirely by TOML.
 
@@ -326,6 +327,8 @@ def _apply_control_remediation(
         repo: Repository name
         dry_run: If True, only show what would be done
         enhance_with_llm: If True, enrich complex docs with LLM after generation
+        target: Repository identity the operator named, for operator-side
+            context confirmations
 
     Returns:
         Dict with control_id, status, and result details
@@ -365,6 +368,7 @@ def _apply_control_remediation(
             framework=framework,
             owner=owner,
             repo=repo,
+            target=target,
         )
 
         if not check_result.ready:
@@ -396,6 +400,7 @@ def _apply_control_remediation(
             description=description,
             requires_api=remediation_config.requires_api,
             enhance_with_llm=enhance_with_llm,
+            target=target,
         )
         # Tag unsafe remediations for review
         if not remediation_config.safe:
@@ -433,8 +438,14 @@ def _apply_declarative_remediation(
     description: str = "",
     requires_api: bool = False,
     enhance_with_llm: bool = False,
+    target: str | None = None,
 ) -> dict[str, Any]:
     """Apply a declarative remediation from TOML config.
+
+    Templates and ``when`` clauses read only usable context values: this
+    run's detections of keys that may be concluded, overlaid with confirmed
+    values. Reading a defined context key without a usable value stops the
+    remediation with "confirmation required" (feature 042, FR-006, FR-007).
 
     Args:
         control_id: The control ID being remediated
@@ -446,30 +457,25 @@ def _apply_declarative_remediation(
         dry_run: If True, only show what would be done
         description: Human-readable control description
         requires_api: Whether this remediation needs API access
+        target: Repository identity the operator named, for operator-side
+            context confirmations
 
     Returns:
         Dict with control_id, status, and result details
     """
     try:
-        # Start with auto-detected context (platform, ci_provider,
-        # detected_ecosystem, license_type) so that ``when`` clauses on
-        # remediation handlers can match without explicit user confirmation.
-        context_values: dict[str, Any] = {}
-        try:
-            from darnit.context.auto_detect import collect_auto_context
-            context_values = collect_auto_context(local_path)
-        except Exception as exc:
-            logger.warning(f"Auto-detection of context values failed: {exc}")
+        from darnit.config.context_resolve import resolve_context
+        from darnit.config.context_storage import framework_definitions
+        from darnit.context.auto_detect import collect_auto_context
 
-        # Confirmed context overrides auto-detected values
-        try:
-            from darnit.config.context_storage import load_context
-            all_context = load_context(local_path)
-            for _category, values in all_context.items():
-                for key, ctx_val in values.items():
-                    context_values[key] = ctx_val.value
-        except Exception as exc:
-            logger.warning(f"Context loading failed: {exc}")
+        framework = _get_framework_config()
+        resolved = resolve_context(
+            local_path, framework_definitions(framework) if framework else None, target=target, detect=False
+        )
+        context_values: dict[str, Any] = collect_auto_context(
+            local_path, include_stored=False, definitions=resolved.definitions
+        )
+        context_values.update(resolved.usable())
 
         # Resolve framework TOML path for template file resolution
         fw_path: str | None = None
@@ -525,6 +531,7 @@ def _apply_declarative_remediation(
             scan_values=scan_values,
             project_values=project_values,
             framework_path=fw_path,
+            unconfirmed_keys=resolved.unusable_keys(),
         )
 
         # Execute the remediation
@@ -533,6 +540,20 @@ def _apply_declarative_remediation(
             config=remediation_config,
             dry_run=dry_run,
         )
+
+        if result.confirmation_required:
+            return {
+                "control_id": control_id,
+                "status": "needs_confirmation",
+                "description": description,
+                "controls": [control_id],
+                "missing_context": [result.confirmation_required],
+                "result": (
+                    f"{result.message}. Ask the person for `{result.confirmation_required}`; "
+                    "record their answer with confirm_project_data, then re-run remediation."
+                ),
+                "declarative": True,
+            }
 
         if dry_run:
             return {
@@ -674,6 +695,7 @@ def _preflight_context_check(
     local_path: str,
     owner: str | None,
     repo: str | None,
+    target: str | None = None,
 ) -> tuple[bool, dict[str, Any]]:
     """Pre-flight check for all context requirements across controls.
 
@@ -720,6 +742,7 @@ def _preflight_context_check(
         framework=framework,
         owner=owner,
         repo=repo,
+        target=target,
     )
 
     # Build control mapping for context keys
@@ -1005,6 +1028,7 @@ def remediate_audit_findings(
         local_path=local_path,
         owner=owner,
         repo=repo,
+        target=target,
     )
 
     if not context_ready:
@@ -1030,6 +1054,7 @@ def remediate_audit_findings(
             repo=repo,
             dry_run=dry_run,
             enhance_with_llm=enhance_with_llm,
+            target=target,
         )
         results.append(result)
 
