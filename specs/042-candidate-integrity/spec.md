@@ -143,8 +143,8 @@ A project maintains its own `.project/project.yaml`. If darnit cannot parse or v
 - A confirmed value's confirmation record exists but the value in the file was edited by hand: the new value is not confirmed by the old record (User Story 4, scenario 4).
 - A key is marked as requiring judgment in one framework and as detectable in another loaded framework: the stricter rule applies.
 - A repository is audited by an operator who does not trust it (feature 040): values from its `.project/` still load, but not-applicable implications continue to follow the feature 040 trust outcomes.
-- A value that is not a user-judgment key (for example the detected primary language) may still be concluded from detection when the framework allows it, and is recorded with its origin.
-- Harness runs with an answers file: answers supplied there are treated as the operator's confirmations for that run (feature 027 `asserted` answers) and are persisted only if the operator asks.
+- A value that is not a user-judgment key (for example the detected primary language) may still be concluded from detection when the framework allows it; it is carried with its origin in results and is not persisted.
+- Harness runs with an answers file: answers supplied there are treated as the operator's answers for that run (feature 027 `asserted` answers); they are used for that run only and are not persisted. The same applies to context answers a coding agent submits through the ActionPlan: they are never recorded as confirmations.
 - The platform reports releases exist but lists none visible to the token: treated as unknown, not as "no releases".
 
 ## Requirements *(mandatory)*
@@ -154,11 +154,11 @@ A project maintains its own `.project/project.yaml`. If darnit cannot parse or v
 **No side effects from reading**
 
 - **FR-001**: Auditing, listing pending data, generating reports, previewing remediation (dry run), and the harness collect phase MUST NOT create, modify, or delete any file in the audited repository.
-- **FR-002**: Only an explicit confirmation action by a person (directly, or by an agent acting on the person's explicit instruction) and an applied (non-dry-run) remediation MAY write project context into the repository.
+- **FR-002**: Only an explicit confirmation action by a person (directly, or by an agent acting on the person's explicit instruction), an explicit initialization request, and an applied (non-dry-run) remediation MAY write project context into the repository. Answers a coding agent submits as part of a workflow step are not a confirmation and MUST NOT be persisted as one.
 
 **Candidates versus confirmed values**
 
-- **FR-003**: Every context value MUST carry its standing: confirmed (with who, when, and basis), candidate (with origin), or concluded-by-detection (only for keys that do not require judgment, with origin).
+- **FR-003**: Every context value MUST carry its standing: confirmed (with who, when, and basis), candidate (with origin), or concluded-by-detection (only for keys that do not require judgment, with origin; held for the run and never persisted).
 - **FR-004**: For a key that requires judgment, no detection route, confidence threshold, or framework setting MAY produce a confirmed value; only a person's confirmation MAY.
 - **FR-005**: The OpenSSF Baseline configuration MUST mark maintainers and security contact as requiring judgment (candidates may still be proposed).
 - **FR-006**: Control verification, compliance calculations, remediation inputs, attestations, and persisted project context MUST consume only confirmed values (or concluded values for keys that do not require judgment). An unconfirmed user-judgment key counts as unverified.
@@ -196,7 +196,7 @@ A project maintains its own `.project/project.yaml`. If darnit cannot parse or v
 - **Context key**: A named piece of project data (maintainers, security contact, CI provider, release status, governance model, ...), with one canonical name, a vocabulary or shape, and a flag saying whether it requires a person's judgment.
 - **Candidate**: A value produced by detection, with its origin (which detector, from what source). Never consumed as the key's value when the key requires judgment.
 - **Confirmation**: A person's decision on a key's value: the value, who, when, the candidate it was based on, when it was last validated, and an optional expiration. Makes the value usable; applies only while the stored value matches and no validity limit has passed.
-- **Concluded value**: A detected value for a key that does not require judgment, accepted under the framework's rules and recorded with its origin.
+- **Concluded value**: A detected value for a key that does not require judgment, accepted under the framework's rules for the current run and carried with its origin; never persisted.
 - **Project file / extension file**: The repository's upstream-format project data file (owned by the project) and darnit's own extension file beside it.
 
 ## Success Criteria *(mandatory)*

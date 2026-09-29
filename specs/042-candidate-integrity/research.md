@@ -11,7 +11,7 @@ Decisions, rationale, and alternatives. Codebase references are to the `042-cand
 - Prompt builders embed candidates in executable calls: `_build_context_question` (`darnit_baseline/tools.py:915-922`), `answer_mapping.value_map["Yes"]` (`:815-833`), `_format_preflight_prompt` (`remediation/orchestrator.py:787-813`), and `context_validator.format_context_prompt` (`remediation/context_validator.py:284-286`, which embeds `examples[0]`). `_build_ask_user_params` truncates enums to 4 options and turns free-text `examples` into options (`tools.py:1002-1042`).
 - Consumers never consult provenance: audit applicability (`tools/audit.py:306-363`), the remediation template context (`remediation/orchestrator.py:425-560`, `remediation/executor.py:175-234`), and `ProjectYamlAnswerSource` (`harness/answer_sources.py:109-157`). `context_validator` checks `source == AUTO_DETECTED`, which the typed-field collapse defeats.
 - `remediate_community_spec` defaults `code_license="MIT"`, `governance_mode="csl"`, `coc_policy="csl"` (`darnit_csl/mcp_tools.py:60-71`).
-- Explicit write paths that remain legitimate: `confirm_project_data`, the CLI `darnit run` collect step (`agent/graph.py:156`), and ActionPlan `collect_context` answers submitted over MCP (`server/tools/harness_loop.py:146`).
+- Explicit write paths that remain legitimate: `confirm_project_data` and the CLI `darnit run` collect step (`agent/graph.py:156`, a person typing answers). ActionPlan `collect_context` answers submitted over MCP (`server/tools/harness_loop.py:146`) are persisted today as USER_CONFIRMED; they come from the coding agent and are not a person's confirmation (R12).
 
 ## R1. Reads have no side effects
 
@@ -84,8 +84,9 @@ Decisions, rationale, and alternatives. Codebase references are to the `042-cand
 
 ## R12. Harness and ActionPlan
 
-- **Decision**: `ProjectYamlAnswerSource` supplies only `usable()` values. Harness collect never persists (answers from `--answers` or interactive resolvers stay in-run, as feature 027 `asserted` answers). ActionPlan `collect_context` answers submitted over MCP and CLI `darnit run` answers are persisted only through the R1 writer as confirmations (confirmed_by = operator identity, basis origin `answer`), with the same trust-based location as R3.
-- **Rationale**: FR-001, FR-002; edge case on harness answers.
+- **Decision**: `ProjectYamlAnswerSource` supplies only `usable()` values. Harness collect never persists (answers from `--answers` or interactive resolvers stay in-run, as feature 027 `asserted` answers). ActionPlan `collect_context` answers submitted over MCP are used for that run only (in the ActionPlan state, as `asserted` answers) and are never persisted: they come from the coding agent, and Principle IV makes a person's confirmation the only transition to usable. Persisting a value requires `confirm_project_data`, which the skills call only on the person's explicit instruction. CLI `darnit run` answers, typed by a person at the terminal, are persisted through the R1 writer as confirmations (confirmed_by = operator identity, basis origin `answer`), with the same trust-based location as R3.
+- **Rationale**: FR-001, FR-002; Principle IV; edge case on harness answers.
+- **Alternatives**: persisting ActionPlan answers as confirmations (records an agent's answer, possibly a detected guess, as a person's decision).
 
 ## R13. Framework configuration changes
 

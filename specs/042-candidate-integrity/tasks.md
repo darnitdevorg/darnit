@@ -57,7 +57,7 @@
 ### Tests for User Story 1
 
 - [ ] T013 [P] [US1] Write no-write tests on `R-maint`, `R-ci`, `R-legacy`, and an empty repository for `audit_openssf_baseline`, the builtin audit, `get_pending_data`, `remediate_audit_findings(dry_run=True)`, and a harness run with `MockLLMStep`, using the tree-snapshot helper, in `tests/darnit/context_integrity/test_reads_do_not_write.py`
-- [ ] T014 [P] [US1] Write a structural test that only `config/context_writes.py`, `remediation/executor.py` (applied remediation), and `config/loader.py` itself call the `.project/` write helpers, in `tests/darnit/context_integrity/test_single_writer.py`
+- [ ] T014 [P] [US1] Write a structural test that only `config/context_writes.py` (context values and records), `remediation/executor.py` (applied remediation), `locate/locator.py` and `config/resolver.py` (file-location references, not context values), and `config/loader.py` itself call the `.project/` write helpers, in `tests/darnit/context_integrity/test_single_writer.py`
 
 ### Implementation for User Story 1
 
@@ -65,7 +65,7 @@
 - [ ] T016 [US1] Stop `init_project_config` from seeding detected values and make it build nothing on disk; fix the `init_project_config` MCP tool to create only an empty `.project/darnit.yaml` through the writer when `.project/` is absent (and report instead of overwriting when present), in `packages/darnit/src/darnit/config/loader.py` and `packages/darnit-baseline/src/darnit_baseline/tools.py`
 - [ ] T017 [US1] Make the audit next-steps section, `get_pending_data`, and the `remediate_audit_findings` guard (in every mode) use only read functions, in `packages/darnit/src/darnit/tools/audit.py` and `packages/darnit-baseline/src/darnit_baseline/tools.py`
 - [ ] T018 [US1] Harness: `_enumerate_framework_pending` uses the pure pending list; `ProjectYamlAnswerSource` supplies only `usable()` values; collect never persists answers, in `packages/darnit/src/darnit/harness/driver.py` and `packages/darnit/src/darnit/harness/answer_sources.py`
-- [ ] T019 [US1] Route the remaining implicit writers through `context_writes` as explicit confirmations (ActionPlan `collect_context` answers over MCP and CLI `darnit run` collect; basis origin `answer`), in `packages/darnit/src/darnit/server/tools/harness_loop.py` and `packages/darnit/src/darnit/agent/graph.py`; delete `save_context_value`/`save_context_values` once they have no callers
+- [ ] T019 [US1] Stop persisting ActionPlan `collect_context` answers submitted over MCP (keep them in the run's ActionPlan state as `asserted` answers only; remove `_persist_new_asserted_values`) in `packages/darnit/src/darnit/server/tools/harness_loop.py`; route CLI `darnit run` collect answers (typed by a person) through `context_writes` as confirmations with basis origin `answer` in `packages/darnit/src/darnit/agent/graph.py`; delete `save_context_value`/`save_context_values` once they have no callers; add a test that an MCP `collect_context` submission writes nothing and records no confirmation, in `tests/darnit/context_integrity/test_actionplan_answers_not_persisted.py`
 
 **Checkpoint**: SC-001 holds; no read path writes.
 
@@ -79,7 +79,7 @@
 
 ### Tests for User Story 2
 
-- [ ] T020 [P] [US2] Write consumer tests: audit applicability and feature 040 context-value assertions see only usable values; a detected maintainers candidate at confidence 0.95 is not used; an attestation contains no unconfirmed value, in `tests/darnit/context_integrity/test_consumers_use_usable.py`
+- [ ] T020 [P] [US2] Write consumer tests: audit applicability and feature 040 context-value assertions see only usable values; a detected maintainers candidate at confidence 0.95 is not used; an attestation contains no unconfirmed value (a regression guard: attestations do not carry context values today, so no implementation task is needed), in `tests/darnit/context_integrity/test_consumers_use_usable.py`
 - [ ] T021 [P] [US2] Write remediation tests: a template reading an unusable judgment key returns `confirmation required: <key>` regardless of `requires_context`; `default()` in templates does not mask it; remediation `when` evaluates against usable values, in `tests/darnit/remediation/test_confirmation_required.py`
 - [ ] T022 [P] [US2] Write CSL tests: `remediate_community_spec` without `code_license` (and other judgment parameters) uses confirmed context only and otherwise returns `confirmation required`, in `tests/darnit_csl/test_csl_judgment_params.py`
 
@@ -104,7 +104,7 @@
 
 ### Tests for User Story 3
 
-- [ ] T029 [P] [US3] Write payload tests for `get_pending_data`: `candidate {value, origin, digest, label}`; no candidate value or configuration example in any `command_template` or answer mapping; `value_map["Yes"]` is `accept_candidates` with the digest; all enum values in `allowed_values` (no truncation); examples only as `format_hint`, in `tests/darnit_baseline/test_pending_payload.py`
+- [ ] T029 [P] [US3] Write payload tests for `get_pending_data`: `candidate {value, origin, digest, label}`; no candidate value or configuration example in any `command_template` or answer mapping; `value_map["Yes"]` is the `accept_candidates` form with a placeholder referring to `candidate.digest`, not the digest itself; all enum values in `allowed_values` (no truncation); examples only as `format_hint`, in `tests/darnit_baseline/test_pending_payload.py`
 - [ ] T030 [P] [US3] Write tests for `confirm_project_data(accept_candidates=...)`: matching digest confirms with basis; mismatched digest refuses and writes nothing, in `tests/darnit/context_integrity/test_accept_candidates.py`
 - [ ] T031 [P] [US3] Write prompt tests for the remediation preflight and `format_context_prompt`: candidates as labelled data, placeholder-only command templates, in `tests/darnit/remediation/test_placeholder_prompts.py`
 
@@ -113,7 +113,7 @@
 - [ ] T032 [US3] Rewrite `_build_context_question`, `_build_ask_user_params`, and the `answer_mapping` in `get_pending_data` per the contract (no truncation, examples as hints, accept by digest), in `packages/darnit-baseline/src/darnit_baseline/tools.py`
 - [ ] T033 [US3] Generate `confirm_project_data` parameters from the framework's context definitions (adds `platform` and CSL keys) and add `accept_candidates`, in `packages/darnit-baseline/src/darnit_baseline/tools.py` and `packages/darnit/src/darnit/server/tools/project_data.py`; update the tool descriptions in `packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml`
 - [ ] T034 [US3] Replace value-embedding in `_format_preflight_prompt` with candidate data and placeholders in `packages/darnit-baseline/src/darnit_baseline/remediation/orchestrator.py`, and in `format_context_prompt` in `packages/darnit/src/darnit/remediation/context_validator.py`; remove the unused `_format_context_collection_step` and its tests in `packages/darnit/src/darnit/tools/audit.py` and `tests/darnit/test_audit_next_steps.py`
-- [ ] T035 [US3] Update the darnit-data skill: accept candidates by digest, never type a detected value, the review flow, correct file locations (`.project/darnit.yaml`), no manual-edit advice that contradicts the tools, in `packages/darnit/src/darnit/skills/darnit-data/SKILL.md`
+- [ ] T035 [US3] Update the darnit-data skill: accept candidates by digest only after the person has answered (fill `candidate.digest` into the `accept_candidates` placeholder at that point, never before), never type a detected value, never submit context answers through the ActionPlan expecting them to be saved, the review flow, correct file locations (`.project/darnit.yaml`), no manual-edit advice that contradicts the tools, in `packages/darnit/src/darnit/skills/darnit-data/SKILL.md`
 
 **Checkpoint**: SC-003 holds.
 
@@ -171,7 +171,7 @@
 
 ### Implementation for User Story 6
 
-- [ ] T045 [US6] Replace every `load_project_config() or init_project_config()` write pattern with `load_project_config_checked` and a refusal on invalid, in `packages/darnit/src/darnit/server/tools/project_data.py`, `packages/darnit/src/darnit/config/resolver.py`, and `packages/darnit/src/darnit/locate/locator.py`
+- [ ] T045 [US6] Replace every `load_project_config() or init_project_config()` write pattern with `load_project_config_checked` and a refusal on invalid, and make the remaining `save_project_config` writers use the loader's round-trip helper, in `packages/darnit/src/darnit/server/tools/project_data.py`, `packages/darnit/src/darnit/config/resolver.py`, and `packages/darnit/src/darnit/locate/locator.py`
 - [ ] T046 [US6] Make `apply_project_update` patch only the targeted `project.yaml` fields through the round-trip helper (and refuse on invalid, as today) in `packages/darnit/src/darnit/remediation/executor.py`
 
 **Checkpoint**: SC-005 holds.
@@ -180,7 +180,7 @@
 
 ## Phase 9: Polish & Cross-Cutting Concerns
 
-- [ ] T047 [P] Update tests that pinned the old behaviour (bare values read as `user_confirmed`, auto-accept writes, enum truncation, `_CONTEXT_KEY_ORDER` of eight keys, value-embedding prompts, asserted submissions persisted as bare values) in `tests/darnit/config/test_context_storage.py`, `tests/darnit_baseline/test_get_pending_context.py`, `tests/darnit/remediation/test_context_validator.py`, `tests/darnit/server/test_harness_loop_mcp.py`, `tests/darnit/harness/test_answer_sources.py`, and the other files listed in research.md "Current state"; each change states which requirement replaced the pinned behaviour
+- [ ] T047 [P] Update tests that pinned the old behaviour (bare values read as `user_confirmed`, auto-accept writes, enum truncation, `_CONTEXT_KEY_ORDER` of eight keys, value-embedding prompts, asserted submissions persisted as bare values) in `tests/darnit/config/test_context_storage.py`, `tests/darnit_baseline/test_get_pending_context.py`, `tests/darnit/remediation/test_context_validator.py`, `tests/darnit/server/test_harness_loop_mcp.py`, `tests/darnit/harness/test_answer_sources.py`, `tests/darnit/config/test_context_filtering.py`, `tests/darnit/config/test_loader.py`, `tests/darnit/config/test_framework_context.py`, `tests/darnit/sieve/test_invariants.py`, `tests/darnit/test_audit_next_steps.py`, `tests/darnit/context/test_context_sieve.py`, `tests/darnit/context/test_auto_detect.py`, `tests/darnit/context/test_detectors.py`, `tests/darnit_baseline/test_context_validation_dry_run.py`, `tests/darnit_baseline/test_integration_e2e.py`, `tests/darnit/harness/test_driver.py`, `tests/darnit/harness/conftest.py`, `tests/darnit/agent/test_graph.py`, `tests/darnit/core/test_action_plan_equivalence.py`, `tests/darnit/remediation/test_executor.py`, `tests/darnit/remediation/test_project_update.py`, `tests/darnit_baseline/remediation/test_template_rendering.py`, `tests/darnit_baseline/remediation/test_all_templates.py`, `tests/darnit_baseline/test_remediation_project_integration.py`, `tests/darnit_csl/test_csl.py`, and `tests/integration/test_mcp_server.py`; each change states which requirement replaced the pinned behaviour
 - [ ] T048 [P] Update CHANGELOG `[Unreleased]`: context standing and confirmation records; BREAKING: stored values without a record become candidates (review with `confirm_stored`/`reject_stored`); BREAKING: `confirm_project_data` requires owner/repo and accepts candidates by digest; BREAKING: `remediate_community_spec` judgment parameters no longer default; reads never write, in `CHANGELOG.md`
 - [ ] T049 [P] Update the "Context System" section of `CLAUDE.md` and `docs/` pages that describe context storage or auto-acceptance, to match framework-design.md
 - [ ] T050 Run quickstart.md sections 1-6 and record results under a "Validation log" section in `specs/042-candidate-integrity/quickstart.md` (scratch repositories only; no real organization's settings)
