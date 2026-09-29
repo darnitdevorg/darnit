@@ -412,8 +412,8 @@ def submit_result(
             else:
                 new_questions.append(q)
         new_state.feedback_questions = new_questions
-        # Merge answers into context_values (in-memory half of the confirmation
-        # persistence hook; the DRIVER writes to .project/ via save_context_values).
+        # Merge answers into context_values for this run. Only answers a person
+        # typed into `darnit run` are recorded as confirmations (feature 042).
         new_state.context_values = {**new_state.context_values, **answers}
         # Clear audit_results to signal a re-audit is required.
         new_state.audit_results = []

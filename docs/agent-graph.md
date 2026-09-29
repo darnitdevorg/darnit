@@ -171,9 +171,11 @@ return `"end"` and the caller can inspect `state.error` for diagnostics.
 3. Rebuilds `state.context_values` from **all** answered questions (not
    just the ones answered in this call), giving downstream nodes a complete
    flat map.
-4. Persists `state.context_values` to `.project/project.yaml` via
-   `save_context_values()`. This is non-fatal: if the write fails, the
-   in-memory values are still set and the node continues.
+4. Records this call's answers, which a person typed, as confirmations via
+   `darnit.config.context_writes.record_value_confirmations()` (basis origin
+   `answer`): in `.project/darnit.yaml` when the operator trusts the target
+   repository, otherwise operator-side. This is non-fatal: a refused or failed
+   write leaves the answers in this run's state only.
 5. **Clears `state.audit_results`** to signal that a re-audit is needed.
    `route()` detects the empty list and returns `"audit"`.
 
@@ -286,8 +288,8 @@ collect_context(state, answers={"has_releases": "yes"})
     │
     ├─ state.feedback_questions[i].answered = True
     ├─ state.context_values = {"has_releases": "yes"}
-    ├─ save_context_values(local_path, {"has_releases": "yes"})
-    │       └─ writes .project/project.yaml
+    |- record_value_confirmations(local_path, {"has_releases": "yes"}, ...)
+    |       `- writes .project/darnit.yaml (trusted) or the operator-side store
     └─ state.audit_results = []          ← triggers re-audit
 
 route(state) → "audit"

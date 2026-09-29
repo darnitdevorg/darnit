@@ -1,7 +1,7 @@
 """Context storage abstraction layer for interactive context collection.
 
-This module provides a unified interface for loading and saving context values
-with provenance tracking. It supports multiple storage formats:
+This module provides a unified interface for reading stored context values
+and the framework's context definitions. It supports multiple storage formats:
 
 1. Legacy: .project.yaml x-openssf-baseline.context section
 2. CNCF: .project/project.yaml extensions.openssf-baseline.config.context section
@@ -11,9 +11,11 @@ as the CNCF .project/ specification evolves.
 
 Note: The CNCF .project/ specification is still under development (PR #131).
 This module may need updates as the upstream spec evolves.
+
+Nothing here writes. Context values and confirmation records are written only
+by :mod:`darnit.config.context_writes` (feature 042).
 """
 
-from pathlib import Path
 from typing import Any
 
 from darnit.config.context_schema import (
@@ -23,15 +25,8 @@ from darnit.config.context_schema import (
     ContextSource,
     ContextValue,
 )
-from darnit.config.loader import (
-    init_project_config,
-    load_project_config,
-    save_project_config,
-)
-from darnit.config.schema import (
-    BaselineExtension,
-    ProjectContext,
-)
+from darnit.config.loader import load_project_config_checked
+from darnit.config.schema import BaselineExtension
 from darnit.core.logging import get_logger
 
 logger = get_logger("config.context_storage")
@@ -80,8 +75,8 @@ def load_stored_context(local_path: str) -> ContextByCategory:
     organized by category with full provenance tracking.
 
     Priority order:
-    1. CNCF format: .project/project.yaml native fields + extensions.openssf-baseline.config.context
-    2. Legacy format: .project.yaml x-openssf-baseline.context
+    1. CNCF format: .project/project.yaml native fields
+    2. darnit's extension file: .project/darnit.yaml context
 
     Args:
         local_path: Path to the repository
@@ -90,8 +85,14 @@ def load_stored_context(local_path: str) -> ContextByCategory:
         Dict of category -> {key -> ContextValue}
         Categories include: governance, security, build, project, ci, custom
     """
-    config = load_project_config(local_path)
-    if not config:
+    files = load_project_config_checked(local_path)
+    config = files.config
+    extension = (
+        BaselineExtension.model_validate(files.extension.data)
+        if files.extension.state == "valid" and files.extension.data
+        else None
+    )
+    if config is None and extension is None:
         return {}
 
     context_by_category: ContextByCategory = {}
@@ -104,15 +105,15 @@ def load_stored_context(local_path: str) -> ContextByCategory:
             context_by_category[category][key] = ctx_val
 
     # 1. Native CNCF Fields Mapping
-    if contact := config.get_security_contact():
+    if config is not None and (contact := config.get_security_contact()):
         _add_context("security", "security_contact", contact)
 
     # Note: Other native mappings (like governance_model native equivalent) would go here
     # once they are merged upstream into the CNCF spec.
 
-    # 2. Extensions / Legacy Mapping (x_openssf_baseline.context)
-    if config.x_openssf_baseline and config.x_openssf_baseline.context:
-        ctx = config.x_openssf_baseline.context
+    # 2. Extensions / Legacy Mapping (darnit.yaml context), read even without a project.yaml
+    if extension is not None and extension.context:
+        ctx = extension.context
 
         # Build category
         _add_context("build", "has_releases", ctx.has_releases)
@@ -323,123 +324,32 @@ def is_context_confirmed(local_path: str, key: str) -> bool:
 
 
 # =============================================================================
-# Context Saving
-# =============================================================================
-
-
-def save_context_value(
-    local_path: str,
-    key: str,
-    value: Any,
-    source: ContextSource = ContextSource.USER_CONFIRMED,
-    category: str | None = None,
-    detection_method: str | None = None,
-    confidence: float = 1.0,
-) -> str:
-    """Save a context value with provenance tracking.
-
-    This function saves the value to the appropriate storage format
-    and tracks how the value was obtained.
-
-    Args:
-        local_path: Path to the repository
-        key: Context key to save (e.g., "has_releases", "maintainers")
-        value: The value to save
-        source: How the value was obtained
-        category: Category for organization (e.g., "build", "governance")
-        detection_method: How auto-detected values were found
-        confidence: Confidence score (0.0-1.0)
-
-    Returns:
-        Path to the saved config file
-
-    Raises:
-        ValueError: If the key is not a known context key
-    """
-    resolved_path = Path(local_path).resolve()
-
-    # Load existing config or create new one
-    config = load_project_config(str(resolved_path))
-    if config is None:
-        config = init_project_config(str(resolved_path))
-
-    # Ensure baseline extension exists
-    if config.x_openssf_baseline is None:
-        config.x_openssf_baseline = BaselineExtension()
-
-    # Ensure context exists
-    if config.x_openssf_baseline.context is None:
-        config.x_openssf_baseline.context = ProjectContext()
-
-    ctx = config.x_openssf_baseline.context
-
-    # Normalize key (e.g. provider -> ci_provider)
-    if key == "provider" and category == "ci":
-        key = "ci_provider"
-
-    # 1. Native CNCF Fields mapping (value is saved without provenance in native fields)
-    if key == "security_contact":
-        from darnit.config.schema import SecurityConfig
-
-        if config.security is None:
-            config.security = SecurityConfig()
-        config.security.contact = value  # Unwrapped primitive
-
-    # 2. Extensions Framework mapping (with provenance)
-    from datetime import datetime
-
-    kwargs = {
-        "source": source,
-        "value": value,
-        "confidence": confidence,
-    }
-    if source == ContextSource.AUTO_DETECTED:
-        kwargs["detected_at"] = datetime.now()
-        kwargs["detection_method"] = detection_method
-    elif source == ContextSource.USER_CONFIRMED:
-        kwargs["confirmed_at"] = datetime.now()
-
-    ctx_val = ContextValue(**kwargs)
-
-    # Store complete provenance struct under baseline context for dynamic fields,
-    # and just the raw primitive for strictly typed fields.
-    if key in ctx.__class__.model_fields:
-        setattr(ctx, key, value)
-    else:
-        setattr(ctx, key, ctx_val.model_dump(exclude_none=True))
-
-    # Log provenance (even though we can't store it in legacy format)
-    logger.info(f"Saved context {key}={value} (source={source.value}, confidence={confidence})")
-
-    # Save config
-    config_path = save_project_config(config, str(resolved_path))
-    return config_path
-
-
-def save_context_values(
-    local_path: str,
-    values: dict[str, Any],
-    source: ContextSource = ContextSource.USER_CONFIRMED,
-) -> str:
-    """Save multiple context values at once.
-
-    Args:
-        local_path: Path to the repository
-        values: Dict of key -> value to save
-
-    Returns:
-        Path to the saved config file
-    """
-    config_path = None
-    for key, value in values.items():
-        if value is not None:
-            config_path = save_context_value(local_path, key, value, source)
-    return config_path or str(Path(local_path) / ".project.yaml")
-
-
-# =============================================================================
 # Context Definitions
 # =============================================================================
+
+
+def _runtime_definition(defn: Any) -> ContextDefinition:
+    """The runtime ContextDefinition for a framework ``ContextDefinitionConfig``."""
+    from darnit.config.context_schema import ContextType
+
+    return ContextDefinition(
+        type=ContextType(defn.type),
+        prompt=defn.prompt,
+        hint=defn.hint,
+        no_detect_hint=defn.no_detect_hint,
+        examples=defn.examples,
+        values=defn.values,
+        affects=defn.affects,
+        store_as=defn.store_as,
+        auto_detect=defn.auto_detect,
+        auto_detect_method=defn.auto_detect_method,
+        required=defn.required,
+        detect_filter=defn.detect_filter,
+        allow_sieve_hints=defn.allow_sieve_hints,
+        hint_sources=defn.hint_sources,
+        validity_days=defn.validity_days,
+        detect=defn.detect,
+    )
 
 
 def get_context_definitions(local_path: str) -> dict[str, ContextDefinition]:
@@ -454,7 +364,6 @@ def get_context_definitions(local_path: str) -> dict[str, ContextDefinition]:
     Returns:
         Dict of context_key -> ContextDefinition
     """
-    from darnit.config.context_schema import ContextDefinition, ContextType
     from darnit.config.merger import load_effective_config_auto
 
     try:
@@ -468,20 +377,7 @@ def get_context_definitions(local_path: str) -> dict[str, ContextDefinition]:
 
         for key, defn in framework.context.definitions.items():
             # Convert ContextDefinitionConfig to ContextDefinition
-            definitions[key] = ContextDefinition(
-                type=ContextType(defn.type),
-                prompt=defn.prompt,
-                hint=defn.hint,
-                no_detect_hint=defn.no_detect_hint,
-                examples=defn.examples,
-                values=defn.values,
-                affects=defn.affects,
-                store_as=defn.store_as,
-                auto_detect=defn.auto_detect,
-                auto_detect_method=defn.auto_detect_method,
-                required=defn.required,
-                detect_filter=defn.detect_filter,
-            )
+            definitions[key] = _runtime_definition(defn)
 
         return definitions
     except Exception as e:
@@ -503,7 +399,6 @@ def get_context_definitions_with_detect(
     Returns:
         Dict of context_key -> (ContextDefinition, detect_pipeline_or_None)
     """
-    from darnit.config.context_schema import ContextDefinition, ContextType
     from darnit.config.merger import load_effective_config_auto
 
     try:
@@ -515,22 +410,8 @@ def get_context_definitions_with_detect(
         result: dict[str, tuple[ContextDefinition, list | None]] = {}
 
         for key, defn in framework.context.definitions.items():
-            definition = ContextDefinition(
-                type=ContextType(defn.type),
-                prompt=defn.prompt,
-                hint=defn.hint,
-                no_detect_hint=defn.no_detect_hint,
-                examples=defn.examples,
-                values=defn.values,
-                affects=defn.affects,
-                store_as=defn.store_as,
-                auto_detect=defn.auto_detect,
-                auto_detect_method=defn.auto_detect_method,
-                required=defn.required,
-                detect_filter=defn.detect_filter,
-            )
-            detect_pipeline = defn.detect if hasattr(defn, "detect") else None
-            result[key] = (definition, detect_pipeline)
+            definition = _runtime_definition(defn)
+            result[key] = (definition, definition.detect)
 
         return result
     except Exception as e:
@@ -541,52 +422,33 @@ def get_context_definitions_with_detect(
 def get_pending_context(
     local_path: str,
     control_ids: list[str] | None = None,
-    level: int = 3,
     owner: str | None = None,
     repo: str | None = None,
+    *,
+    target: str | None = None,
 ) -> list[ContextPromptRequest]:
-    """Get list of context values that would improve audit accuracy.
+    """Context keys that are candidates or unknown and affect a loaded control.
 
-    Returns context prompt requests sorted by priority (number of controls affected).
-    For context keys with auto_detect=true, attempts to auto-detect values
-    and includes them in the response for user confirmation.
-
-    Detection priority:
-    1. Handler-based detect pipeline (if defined in TOML [context.key].detect)
-    2. Context sieve (hardcoded Python detectors)
-    3. No detection (prompt user directly)
+    Pure: nothing is written (feature 042, FR-001). Each request carries the
+    key's candidate, if any, with its origin; a candidate is shown to a
+    person and never used as the key's value.
 
     Args:
         local_path: Path to the repository
-        control_ids: Optional list of control IDs to check (default: all applicable)
-        level: Maximum level to consider (1, 2, or 3)
-        owner: GitHub owner (auto-detected from git if not provided)
-        repo: GitHub repo name (auto-detected from git if not provided)
+        control_ids: Optional list of control IDs to check (default: all)
+        owner: Repository owner, for detection (auto-detected from git if not provided)
+        repo: Repository name, for detection (auto-detected from git if not provided)
+        target: Repository identity the operator named, for operator-side confirmations
 
     Returns:
         List of ContextPromptRequest sorted by priority (highest first)
     """
-    # Get context definitions with detect pipelines from framework
-    definitions_with_detect = get_context_definitions_with_detect(local_path)
-    if not definitions_with_detect:
-        # Fallback to definitions without detect info
-        definitions = get_context_definitions(local_path)
-        if not definitions:
-            return []
-        definitions_with_detect = {k: (v, None) for k, v in definitions.items()}
+    from darnit.config.context_resolve import resolve_context
 
-    # Get current context values
-    current_context = load_context(local_path)
+    definitions = get_context_definitions(local_path)
+    if not definitions:
+        return []
 
-    # Flatten current context keys (both stored keys and definition keys)
-    confirmed_keys: set = set()
-    for category_name, category_values in current_context.items():
-        for stored_key in category_values:
-            confirmed_keys.add(stored_key)
-            # Also add "category.stored_key" for store_as reverse lookup
-            confirmed_keys.add(f"{category_name}.{stored_key}")
-
-    # Auto-detect owner/repo if not provided
     if owner is None or repo is None:
         from darnit.core.utils import detect_owner_repo
 
@@ -594,102 +456,32 @@ def get_pending_context(
         owner = owner or detected_owner or None
         repo = repo or detected_repo or None
 
-    # Load auto_accept_confidence threshold from framework config
-    auto_accept_threshold = 0.8
-    try:
-        from darnit.config.merger import load_effective_config_auto
-
-        effective_config = load_effective_config_auto(Path(local_path))
-        framework = effective_config._framework_config
-        if framework is not None:
-            auto_accept_threshold = framework.context.auto_accept_confidence
-    except Exception:
-        pass  # Use default threshold
+    resolved = resolve_context(local_path, definitions, target=target, owner=owner, repo=repo)
 
     pending: list[ContextPromptRequest] = []
-    auto_accepted_keys: list[str] = []
-
-    for key, (definition, detect_pipeline) in definitions_with_detect.items():
-        # Skip if already confirmed (check both definition key and store_as target)
-        if key in confirmed_keys:
-            continue
-        if definition.store_as and definition.store_as in confirmed_keys:
-            continue
-
-        # Determine affected controls
-        affected = definition.affects
-        if control_ids:
-            # Filter to only specified controls
-            affected = [c for c in affected if c in control_ids]
-
-        if not affected:
-            continue
-
-        # Auto-detect value using handler pipeline or context sieve
+    for candidate in resolved.pending(control_ids):
+        definition = resolved.definitions[candidate.key]
+        affected = [c for c in definition.affects if not control_ids or c in control_ids]
         current_value = None
-        if detect_pipeline:
-            # Primary: handler-based detection from TOML detect pipeline
-            current_value = _run_detect_pipeline(key, detect_pipeline, local_path, owner, repo)
-        if current_value is None and definition.auto_detect:
-            # Fallback: context sieve (hardcoded Python detectors)
-            current_value = _try_sieve_detection(key, local_path, owner, repo)
-
-        # Feature 039 (#165, #150): apply the key's detect_filter here, where
-        # both detection routes have converged, and BEFORE the auto-accept
-        # threshold below. Filtering inside each route separately would be two
-        # call sites to keep in step, and the sieve fallback is the older path
-        # most likely to be forgotten. Filtering after the threshold would
-        # already have written the rejected value.
-        if current_value is not None:
-            current_value = _apply_detect_filter(key, definition, current_value)
-
-        # Auto-accept high-confidence detections without user prompting
-        if current_value is not None and current_value.confidence >= auto_accept_threshold:
-            current_value.auto_accepted = True
-            auto_accepted_keys.append(key)
-            logger.debug(
-                "Auto-accepted context '%s' (confidence: %.0f%%, threshold: %.0f%%)",
-                key,
-                current_value.confidence * 100,
-                auto_accept_threshold * 100,
+        if candidate.value is not None and candidate.origin is not None:
+            current_value = ContextValue(
+                source=ContextSource.AUTO_DETECTED,
+                value=candidate.value,
+                detection_method=f"{candidate.origin.kind.value}:{candidate.origin.method or ''}".rstrip(":"),
+                confidence=candidate.origin.confidence if candidate.origin.confidence is not None else 0.0,
             )
-            # Save auto-accepted value directly
-            try:
-                save_context_value(
-                    local_path,
-                    key,
-                    current_value.value,
-                    source=ContextSource.AUTO_DETECTED,
-                    detection_method=current_value.detection_method,
-                    confidence=current_value.confidence,
-                )
-            except Exception as e:
-                logger.debug("Failed to save auto-accepted '%s': %s", key, e)
-                # Fall through to pending if save fails
-                current_value.auto_accepted = False
-                auto_accepted_keys.pop()
-
-        if key not in auto_accepted_keys:
-            pending.append(
-                ContextPromptRequest(
-                    key=key,
-                    definition=definition,
-                    control_ids=affected,
-                    current_value=current_value,
-                    priority=len(affected),  # Priority = number of controls affected
-                )
+        pending.append(
+            ContextPromptRequest(
+                key=candidate.key,
+                definition=definition,
+                control_ids=affected,
+                current_value=current_value,
+                candidate=candidate,
+                priority=len(affected),
             )
-
-    if auto_accepted_keys:
-        logger.info(
-            "Auto-accepted %d context field(s): %s",
-            len(auto_accepted_keys),
-            ", ".join(auto_accepted_keys),
         )
 
-    # Sort by priority (highest first)
     pending.sort(key=lambda x: x.priority, reverse=True)
-
     return pending
 
 

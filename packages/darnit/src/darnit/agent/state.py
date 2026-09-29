@@ -104,7 +104,7 @@ class AuditState:
         """Build a {context_key: answer} dict from all answered questions.
 
         Called by collect_context after answers are recorded so the result can
-        be stored in context_values and persisted via save_context_values.
+        be stored in context_values and recorded as confirmations.
         """
         return {
             q.context_key: q.answer

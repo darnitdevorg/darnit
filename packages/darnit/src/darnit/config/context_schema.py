@@ -11,13 +11,16 @@ as designed in docs/design/CONTEXT_PROMPTS.md.
 
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
 class ContextSource(str, Enum):
-    """Source/provenance of a context value.
+    """Source/provenance of a context value, as found in stored data.
+
+    Parsing only (feature 042): whether a value is usable is its
+    :class:`Standing`, never its stored ``source``.
 
     Indicates how a context value was obtained:
     - user_confirmed: Explicitly set by user via MCP tool
@@ -176,6 +179,10 @@ class ContextDefinition(BaseModel):
     required: bool = False
     presentation_hint: str | None = None  # e.g., "[y/N]", "[1-3]"
     allowed_values: list[str] | None = None  # Display values (distinct from validation `values`)
+    allow_sieve_hints: bool = False
+    hint_sources: list[str] = Field(default_factory=list)
+    validity_days: int | None = Field(default=None, gt=0)
+    detect: list[Any] | None = Field(default=None, exclude=True)
 
     @property
     def computed_presentation_hint(self) -> str | None:
@@ -210,11 +217,66 @@ class ContextPromptRequest(BaseModel):
     definition: ContextDefinition
     control_ids: list[str]  # Controls that need this context
     current_value: ContextValue | None = None  # If auto-detected
+    candidate: "ResolvedValue | None" = None
     priority: int = 0  # Higher = more important (usually len(control_ids))
 
 
 # Type alias for context organized by category
 ContextByCategory = dict[str, dict[str, ContextValue]]
+
+
+class Standing(str, Enum):
+    """Whether a context value may be used (feature 042, FR-003)."""
+
+    CONFIRMED = "confirmed"
+    CANDIDATE = "candidate"
+    CONCLUDED = "concluded"
+    UNKNOWN = "unknown"
+
+
+class OriginKind(str, Enum):
+    """How a candidate or concluded value was produced."""
+
+    DETECTOR = "detector"
+    SIEVE_HINT = "sieve_hint"
+    STORED_UNCONFIRMED = "stored_unconfirmed"
+    EXPIRED_CONFIRMATION = "expired_confirmation"
+    ANSWER = "answer"
+
+
+class Origin(BaseModel):
+    """Where a value came from. ``confidence`` is informational only."""
+
+    kind: OriginKind
+    method: str | None = None
+    confidence: float | None = None
+
+
+class ConfirmationRecord(BaseModel):
+    """A person's confirmation of one key's value (data-model.md)."""
+
+    value_digest: str
+    confirmed_by: str
+    confirmed_at: str
+    last_validated: str
+    expires_at: str | None = None
+    basis: dict[str, Any] | None = None
+    location: Literal["repository", "operator"] = Field(default="repository", exclude=True)
+
+
+class ResolvedValue(BaseModel):
+    """One key's value and standing for this run."""
+
+    key: str
+    standing: Standing
+    value: Any = None
+    origin: Origin | None = None
+    confirmation: ConfirmationRecord | None = None
+    lapsed: ConfirmationRecord | None = None
+    location: str | None = None
+
+
+ContextPromptRequest.model_rebuild()
 
 
 class ContextCategory(BaseModel):

@@ -8,15 +8,6 @@ confirm a repository's pending not-applicable claims on the operator side
 """
 
 
-from darnit.config.loader import (
-    init_project_config,
-    load_project_config,
-    save_project_config,
-)
-from darnit.config.schema import (
-    BaselineExtension,
-    ProjectContext,
-)
 from darnit.core.utils import validate_local_path
 
 VALID_CI_PROVIDERS = ["github", "gitlab", "jenkins", "circleci", "azure", "travis", "none", "other"]
@@ -42,10 +33,12 @@ def confirm_project_data_impl(
     framework_name: str | None = None,
     confirm_pass_candidate: list[str] | None = None,
 ) -> str:
-    """Record user-confirmed project data in .project.yaml.
+    """Record a person's confirmation of project data values.
 
-    Updates the x-openssf-baseline.context section with user-confirmed values
-    that affect how controls are evaluated.
+    Each value is recorded with who confirmed it and when (feature 042): in
+    ``.project/darnit.yaml`` when the operator trusts the repository named by
+    ``owner``/``repo``/``host``, otherwise operator-side. Without a repository
+    identity from the operator or CI, values are refused.
 
     Args:
         local_path: Path to the repository
@@ -63,8 +56,8 @@ def confirm_project_data_impl(
                          Options: bdfl, meritocracy, democracy, corporate, foundation, committee, other
         confirm_not_applicable: Control IDs whose pending not-applicable claim
                          the operator confirms. Recorded operator-side, never in the repository.
-        owner: Owner of the repository whose claims are confirmed.
-        repo: Name of the repository whose claims are confirmed.
+        owner: Owner of the repository whose values or claims are confirmed.
+        repo: Name of the repository whose values or claims are confirmed.
         host: Git host of owner/repo (default github.com).
         framework_name: Framework whose controls the claims name.
         confirm_pass_candidate: Control IDs whose PASS candidate (a positive
@@ -103,31 +96,21 @@ def confirm_project_data_impl(
             return f"❌ Invalid governance_model: {governance_model}. Valid options: {', '.join(VALID_GOVERNANCE_MODELS)}"
         governance_model = governance_model.lower()
 
-    # Check if any values were provided
-    updates = []
-    if has_subprojects is not None:
-        updates.append(f"  - has_subprojects: {has_subprojects}")
-    if has_releases is not None:
-        updates.append(f"  - has_releases: {has_releases}")
-    if is_library is not None:
-        updates.append(f"  - is_library: {is_library}")
-    if has_compiled_assets is not None:
-        updates.append(f"  - has_compiled_assets: {has_compiled_assets}")
-    if ci_provider is not None:
-        updates.append(f"  - ci_provider: {ci_provider}")
-    if maintainers is not None:
-        if isinstance(maintainers, list):
-            updates.append(f"  - maintainers: {maintainers}")
-        else:
-            updates.append(f"  - maintainers: {maintainers}")
-    if security_contact is not None:
-        updates.append(f"  - security_contact: {security_contact}")
-    if governance_model is not None:
-        updates.append(f"  - governance_model: {governance_model}")
+    values = {
+        "has_subprojects": has_subprojects,
+        "has_releases": has_releases,
+        "is_library": is_library,
+        "has_compiled_assets": has_compiled_assets,
+        "ci_provider": ci_provider,
+        "maintainers": maintainers,
+        "security_contact": security_contact,
+        "governance_model": governance_model,
+    }
+    values = {key: value for key, value in values.items() if value is not None}
 
-    if not updates and claims_result:
+    if not values and claims_result:
         return claims_result
-    if not updates:
+    if not values:
         return """ℹ️ No data values provided.
 
 **Usage:**
@@ -154,103 +137,32 @@ confirm_project_data(
 - `governance_model`: Governance model - bdfl, meritocracy, democracy, corporate, foundation, committee, other
 """
 
-    # Load existing config or create new one
-    config = load_project_config(resolved_path)
-    if config is None:
-        config = init_project_config(resolved_path)
+    from darnit.config.context_writes import record_value_confirmations
+    from darnit.config.operator.loader import OperatorConfigError, resolve_operator_config
+    from darnit.trust.decision import target_from_owner_repo
 
-    # Ensure baseline extension exists
-    if config.x_openssf_baseline is None:
-        config.x_openssf_baseline = BaselineExtension()
-
-    # Ensure context exists
-    if config.x_openssf_baseline.context is None:
-        config.x_openssf_baseline.context = ProjectContext()
-
-    context = config.x_openssf_baseline.context
-
-    # Update data values (only those provided)
-    if has_subprojects is not None:
-        context.has_subprojects = has_subprojects
-    if has_releases is not None:
-        context.has_releases = has_releases
-    if is_library is not None:
-        context.is_library = is_library
-    if has_compiled_assets is not None:
-        context.has_compiled_assets = has_compiled_assets
-    if ci_provider is not None:
-        context.ci_provider = ci_provider
-    if maintainers is not None:
-        context.maintainers = maintainers
-    if security_contact is not None:
-        context.security_contact = security_contact
-    if governance_model is not None:
-        context.governance_model = governance_model
-
-    # Save config
     try:
-        config_path = save_project_config(config, resolved_path)
-    except Exception as e:
-        return f"❌ Error saving config: {e}"
+        operator_config = resolve_operator_config(resolved_path)
+    except OperatorConfigError as e:
+        return f"Error: {e}"
 
-    # Round-trip verification: read back persisted values to catch path-mismatch bugs
-    from darnit.config.context_storage import load_stored_context
-
-    verified_values: list[str] = []
-    try:
-        readback = load_stored_context(resolved_path)
-        # Flatten all categories into a single dict of key -> value
-        all_values: dict[str, object] = {}
-        for cat_values in readback.values():
-            for k, v in cat_values.items():
-                all_values[k] = v.value
-
-        # Check each value we just saved
-        check_pairs: list[tuple[str, object]] = []
-        if has_subprojects is not None:
-            check_pairs.append(("has_subprojects", has_subprojects))
-        if has_releases is not None:
-            check_pairs.append(("has_releases", has_releases))
-        if is_library is not None:
-            check_pairs.append(("is_library", is_library))
-        if has_compiled_assets is not None:
-            check_pairs.append(("has_compiled_assets", has_compiled_assets))
-        if ci_provider is not None:
-            # ci_provider is stored as "provider" in the ci category
-            check_pairs.append(("provider", ci_provider))
-        if maintainers is not None:
-            check_pairs.append(("maintainers", maintainers))
-        if security_contact is not None:
-            check_pairs.append(("security_contact", security_contact))
-        if governance_model is not None:
-            check_pairs.append(("governance_model", governance_model))
-
-        for key, expected in check_pairs:
-            actual = all_values.get(key)
-            if actual == expected:
-                verified_values.append(f"  - ✅ `{key}`: {actual}")
-            else:
-                verified_values.append(f"  - ❌ `{key}`: expected {expected!r}, got {actual!r}")
-    except Exception as e:
-        verified_values.append(f"  - ⚠️ Round-trip verification failed: {e}")
-
-    updates_str = '\n'.join(updates)
-    verified_str = '\n'.join(verified_values)
+    results = record_value_confirmations(
+        resolved_path, values, target=target_from_owner_repo(owner, repo, host), operator=operator_config.config
+    )
+    lines = ["Project data:"]
+    for result in results:
+        if result.outcome == "confirmed" and result.location == "repository":
+            lines.append(f"- {result.key}: confirmed, recorded in {result.file}")
+        elif result.outcome == "confirmed":
+            lines.append(f"- {result.key}: confirmed, recorded operator-side (nothing written to the repository)")
+        else:
+            lines.append(f"- {result.key}: refused: {result.reason}")
+            lines.extend(f"  - {error}" for error in result.errors)
+    if any(result.outcome == "confirmed" for result in results):
+        lines.append("")
+        lines.append(f'Re-run the audit to see the updated status: `audit_openssf_baseline(local_path="{resolved_path}")`')
     claims_section = f"{claims_result}\n\n" if claims_result else ""
-    return claims_section + f"""✅ Project data updated in .project.yaml
-
-**Recorded:**
-{updates_str}
-
-**Verified (round-trip read-back):**
-{verified_str}
-
-**File:** {config_path}
-
-These values improve audit accuracy and are used by remediation to generate project-specific files.
-Re-run the audit to see the updated status:
-`audit_openssf_baseline(local_path="{resolved_path}")`
-"""
+    return claims_section + "\n".join(lines)
 
 
 def confirm_not_applicable_impl(

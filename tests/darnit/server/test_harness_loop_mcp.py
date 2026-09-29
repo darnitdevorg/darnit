@@ -380,25 +380,21 @@ def _get_registered_tool_descriptions(server) -> dict[str, str]:
 
 
 # ===========================================================================
-# T042b: MCP-side persistence hook
+# T042b: MCP-side answers are not persisted
 # ===========================================================================
 
 
 @pytest.mark.slow
-def test_mcp_asserted_submission_persists_to_project_yaml(tmp_path: Path) -> None:
-    """Persistence hook: an asserted submission via MCP writes to .project/.
+def test_mcp_asserted_submission_is_not_persisted(tmp_path: Path) -> None:
+    """Feature 042 (FR-002, research R12) replaced the T042b persistence hook.
 
-    Simulates a scenario where a Collect step's asserted result adds a
-    context value. The MCP wrapper's ``_persist_new_asserted_values`` hook
-    must call save_context_values on the new key, causing the change to
-    land in ``.project/project.yaml``.
+    An answer a coding agent submits to a Collect step stays in the returned
+    state for this run; nothing is written to ``.project/``. A person confirms
+    values with ``confirm_project_data``.
     """
-    # Build a fixture with a .project/project.yaml the save routine can write to.
     (tmp_path / ".project").mkdir()
     (tmp_path / ".project" / "project.yaml").write_text("name: test-repo\n")
 
-    # Start state with an unanswered feedback question so next_action returns
-    # a collect_context step.
     state = HarnessState(
         local_path=str(tmp_path),
         audit_results=[{"id": "A", "status": "WARN", "details": "", "level": 1}],
@@ -413,14 +409,12 @@ def test_mcp_asserted_submission_persists_to_project_yaml(tmp_path: Path) -> Non
     )
     state_dict = state.model_dump(mode="json")
 
-    # Confirm what the next action is.
     plan_dict = _run(run_next_action_tool(state_dict))
     assert plan_dict is not None
     assert plan_dict["step"]["integration"] == "collect_context"
     step_id = plan_dict["step"]["id"]
 
-    # Submit an asserted answer.
-    _run(
+    new_state = _run(
         submit_action_result_tool(
             state_dict,
             step_id,
@@ -428,13 +422,6 @@ def test_mcp_asserted_submission_persists_to_project_yaml(tmp_path: Path) -> Non
         )
     )
 
-    # .project/project.yaml MUST now contain the confirmed value.
-    # save_context_values (feature 018) applies its schema mapping when
-    # persisting, so "security_contact" flattens into the nested
-    # `security: { contact: ... }` structure of .project/project.yaml.
-    # The invariant we care about here is that the VALUE landed on disk;
-    # the exact YAML key placement is feature 018's contract.
-    yaml_content = (tmp_path / ".project" / "project.yaml").read_text()
-    assert "sec@example.com" in yaml_content, (
-        f"Persistence hook did not write the confirmed value to disk.\nYAML content:\n{yaml_content}"
-    )
+    assert new_state["context_values"] == {"security_contact": "sec@example.com"}
+    assert (tmp_path / ".project" / "project.yaml").read_text() == "name: test-repo\n"
+    assert not (tmp_path / ".project" / "darnit.yaml").exists()

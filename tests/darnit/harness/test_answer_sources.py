@@ -182,13 +182,31 @@ class TestProjectYamlAnswerSource:
         assert src.known_keys() == set()
         assert src.get_answer("security_contact") is None
 
-    def test_reads_security_contact_from_project_yaml(self, tmp_path: Path) -> None:
+    def test_reads_confirmed_security_contact_from_project_yaml(self, tmp_path: Path) -> None:
+        from darnit.config.context_keys import value_digest
+
+        (tmp_path / ".project").mkdir()
+        (tmp_path / ".project" / "project.yaml").write_text(
+            "name: test-repo\nsecurity:\n  contact: sec@real.org\n",
+        )
+        (tmp_path / ".project" / "darnit.yaml").write_text(
+            "confirmations:\n  security_contact:\n"
+            f"    value_digest: '{value_digest('security_contact', 'sec@real.org')}'\n"
+            "    confirmed_by: alice\n    confirmed_at: '2026-09-01T00:00:00Z'\n"
+            "    last_validated: '2026-09-01T00:00:00Z'\n",
+        )
+        src = ProjectYamlAnswerSource(str(tmp_path))
+        assert src.get_answer("security_contact") == "sec@real.org"
+
+    def test_does_not_answer_with_unconfirmed_stored_value(self, tmp_path: Path) -> None:
+        """Feature 042 (FR-006, FR-010): a stored value without a confirmation
+        record is a candidate, not an answer (was: every stored value answered)."""
         (tmp_path / ".project").mkdir()
         (tmp_path / ".project" / "project.yaml").write_text(
             "name: test-repo\nsecurity:\n  contact: sec@real.org\n",
         )
         src = ProjectYamlAnswerSource(str(tmp_path))
-        assert src.get_answer("security_contact") == "sec@real.org"
+        assert src.get_answer("security_contact") is None
 
     def test_does_not_answer_with_value_failing_detect_filter(self, tmp_path: Path) -> None:
         """FR-014: a stored placeholder must not be handed out as an answer."""

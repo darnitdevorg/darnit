@@ -30,7 +30,7 @@ class TestRemediationE2EFlow:
     """Test the complete remediation flow end-to-end."""
 
     @pytest.mark.integration
-    def test_governance_full_flow_prompts_then_creates(self, temp_git_repo):
+    def test_governance_full_flow_prompts_then_creates(self, temp_git_repo, trusted_target):
         """Test complete governance flow: prompt -> confirm -> create."""
         from darnit.server.tools.project_data import confirm_project_data_impl
         from darnit_baseline.remediation.orchestrator import remediate_audit_findings
@@ -46,12 +46,16 @@ class TestRemediationE2EFlow:
         assert "confirm_project_data" in result1
         assert not (Path(temp_git_repo) / "GOVERNANCE.md").exists()
 
-        # Step 2: Confirm maintainers
+        # Step 2: Confirm maintainers for the named, trusted repository
+        # (feature 042, FR-011: a confirmation names its repository).
+        owner, repo = trusted_target
         confirm_result = confirm_project_data_impl(
             local_path=temp_git_repo,
             maintainers=["@alice", "@bob"],
+            owner=owner,
+            repo=repo,
         )
-        assert "✅" in confirm_result
+        assert "maintainers: confirmed, recorded in .project/darnit.yaml" in confirm_result
 
         # Step 3: Run remediation again - should create file
         result2 = remediate_audit_findings(

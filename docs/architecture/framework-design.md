@@ -1099,7 +1099,13 @@ store_as = "governance.maintainers"
 auto_detect = false
 hint_sources = ["CODEOWNERS", "MAINTAINERS.md"]
 allow_sieve_hints = true
+validity_days = 365          # optional; see 7.6
 ```
+
+- `auto_detect = false` marks a **user-judgment key**: its value requires a person's decision. `auto_detect = true` marks an observable key whose value MAY be concluded from a detection that ran to completion.
+- `allow_sieve_hints = true` lets detection propose a candidate for a judgment key. It never makes the candidate usable.
+- `values` is the key's only vocabulary (enum keys). `examples` are format hints only and SHALL NOT be offered as answers.
+- `validity_days` (optional, positive integer) limits how long a confirmation of this key stays valid, measured from its `last_validated` time (7.6).
 
 ### 7.2 Context Types
 
@@ -1125,6 +1131,85 @@ confidence_threshold = 0.9
 prompt_if_auto_detected = true
 warning = "GitHub collaborators are not necessarily project maintainers"
 ```
+
+### 7.4 Context Value Standing
+
+The framework SHALL resolve project context through one resolver (`darnit.config.context_resolve.resolve_context`) that gives every context key exactly one standing (see `specs/042-candidate-integrity/`):
+
+| Standing | Meaning | Usable |
+|----------|---------|--------|
+| `confirmed` | A person confirmed this exact value; a confirmation record (7.5) matches the current value and has not lapsed | Yes |
+| `concluded` | An `auto_detect = true` key whose detection ran to completion in this run with confidence at or above `[context].auto_accept_confidence` | Yes, for this run only; never persisted |
+| `candidate` | A value with an origin (`detector`, `sieve_hint`, `stored_unconfirmed`, `expired_confirmation`, `answer`) that no person has confirmed | No |
+| `unknown` | No value | No |
+
+- A judgment key (`auto_detect = false`) SHALL NOT be `concluded` by any detection route, confidence threshold, or framework setting.
+- A value stored in `.project/` without a matching confirmation record is a `candidate` with origin `stored_unconfirmed` and the file and field it was read from. It is never silently upgraded to `confirmed`.
+- Consumers (control applicability and verification, compliance calculation, remediation inputs, attestations, the harness answer source) SHALL read values only from the resolver's usable mapping: confirmed values plus concluded values of `auto_detect = true` keys. A candidate is shown to a person, labelled unconfirmed with its origin; it is never consumed as the key's value. An unusable key is unverified, and unverified counts as FAIL.
+
+#### Scenario: Detected maintainers are only proposed
+- **WHEN** `maintainers` (`auto_detect = false`, `allow_sieve_hints = true`) is detected from MAINTAINERS.md at confidence 0.95
+- **THEN** its standing is `candidate` with origin `sieve_hint`, and it is absent from the usable mapping
+
+#### Scenario: Legacy stored value
+- **WHEN** `.project/darnit.yaml` has `context.maintainers` and no `confirmations.maintainers`
+- **THEN** `maintainers` is a `candidate` with origin `stored_unconfirmed` and location `.project/darnit.yaml:context.maintainers`
+
+### 7.5 Confirmation Records
+
+A confirmation records a person's decision on one key's value: `value_digest`, `confirmed_by`, `confirmed_at`, `last_validated`, optional `expires_at`, and optional `basis` (the candidate value and origin it was based on; absent when the person typed the value).
+
+- **Value digest**: `"sha256:" + sha256(canonical JSON of the normalized value)`, where normalization applies the canonical vocabulary (7.8) and sorts list values whose order is not meaningful (`maintainers`). A record applies only while the digest of the current value equals its `value_digest`.
+- **In-repository records** live in `.project/darnit.yaml` under a top-level `confirmations:` map keyed by context key; the confirmed value lives under `context:`. They count as confirmed whether or not the operator trusts the repository: they are the project's own statement.
+- **Operator-side records** live in the feature 040 store (`trust/confirmations.json` under the darnit data root) as confirmations with claim `context_value`, `control_id` = the context key, and `evidence_digest` = the value digest; the confirmed value and basis are kept in a sibling `context_bases` section. They apply only to that operator's runs and only for the repository identity they name.
+- **Location**: a confirmation is written in-repository when the operator trusts the target repository (14.2) at confirmation time; otherwise operator-side, which requires a repository identity from the operator's target or CI metadata. Nothing is written into a repository the operator does not trust.
+- **Precedence**: when both an in-repository and an operator-side record match the current value, the in-repository record is reported.
+- Only an explicit confirmation by a person creates a record: the `confirm_project_data` tool (on the person's explicit instruction) and answers a person types into `darnit run` (basis origin `answer`). Answers a coding agent submits to an ActionPlan `collect_context` step and harness answers are used for that run only and are never persisted.
+
+```yaml
+# .project/darnit.yaml
+context:
+  maintainers: ["@alice", "@bob"]
+confirmations:
+  maintainers:
+    value_digest: "sha256:..."
+    confirmed_by: "alice"
+    confirmed_at: "2026-09-29T15:00:00Z"
+    last_validated: "2026-09-29T15:00:00Z"
+    expires_at: "2027-09-29T00:00:00Z"     # optional
+    basis:                                   # optional
+      value: ["@alice", "@bob"]
+      origin: {kind: sieve_hint, method: MAINTAINERS.md}
+```
+
+#### Scenario: Hand edit
+- **WHEN** a confirmed value is edited by hand
+- **THEN** the key is a `candidate` (origin `stored_unconfirmed`) and the earlier record is reported as lapsed
+
+### 7.6 Confirmation Lapse
+
+A confirmation lapses at the earliest of its `expires_at` and `last_validated + validity_days` (the key's framework setting). With neither it does not lapse. Unparseable timestamps count as lapsed. A lapsed confirmation makes the key a `candidate` with origin `expired_confirmation` and the previous value; re-confirming updates `last_validated` and keeps a recorded `expires_at` unless a new one is supplied. Operator-local settings (for example `policy.confirmation_expiry_days`, which governs feature 040 claims and feature 041 PASS candidates) SHALL NOT change when a context confirmation lapses.
+
+### 7.7 Detection Fallbacks
+
+A detection step's `value_if_fail` applies only when the step ran to completion and answered negatively and no earlier step failed to run. A step that errored or could not decide produces no value. Release status is never `false` unless a successful platform answer showed no releases.
+
+### 7.8 Canonical Key Names and Vocabularies
+
+Each context key has one canonical name and one vocabulary, taken from the framework TOML. Stored legacy names and spellings are read as the canonical form (`ci.provider` and bare `provider` read as `ci_provider`; `github_actions` -> `github`, `gitlab_ci` -> `gitlab`, `azure_pipelines` -> `azure`, `bitbucket_pipelines` -> `other`, `unknown` -> no value). The framework writes only canonical names and values.
+
+### 7.9 Reads Never Write; One Writer
+
+- Auditing (every driver), listing pending data, report generation, remediation in dry run, the remediation context guard in every mode, and the harness collect phase SHALL NOT create, modify, or delete any file in the audited repository.
+- `darnit.config.context_writes` is the only code that writes context values and in-repository confirmation records. It writes only `.project/darnit.yaml` (never `.project/project.yaml`), preserves sections and comments it does not change (including feature 040 `controls:` claims), and refuses every write, returning the errors, when `.project/project.yaml` or `.project/darnit.yaml` is present but unparseable or invalid. The loader distinguishes absent, valid, and invalid files (`load_project_config_checked`).
+- `init_project_config` (MCP) creates only an empty `.project/darnit.yaml` when `.project/` is absent, and reports instead of overwriting when it is present.
+
+### 7.10 Confirmation Tool Contract
+
+The observable payloads of `get_pending_data` and `confirm_project_data` are defined in `specs/042-candidate-integrity/contracts/context-confirmation-tools.md`:
+
+- `get_pending_data` is read-only. Each question carries its candidate as data (`candidate: {value, origin, digest, label}`); no `command_template` or answer mapping contains a candidate value or a configuration example; enum questions list every allowed value in `allowed_values`; the response lists `stored_unconfirmed` values with their locations.
+- `confirm_project_data` takes a parameter for every context key the framework defines (generated from the definitions), plus `accept_candidates` (`{key: candidate digest}`; confirms the current candidate only if its digest still matches, recording it as the basis), `confirm_stored` and `reject_stored` (review of stored values: a rejected `.project/darnit.yaml` value is deleted; a rejected `.project/project.yaml` value is reported with its file and field and the file is left unchanged), `expires_at` (`{key: date}`), and `owner`, `repo`, `host`, which are required and decide the record location (7.5).
 
 ---
 
@@ -1365,7 +1450,7 @@ Explicit `on_pass` configurations always take precedence over auto-derivation.
 ### 11.3 Template Variable Context References
 
 Template variable substitution SHALL support:
-- `${context.<key>}` — resolves to confirmed context values from `.project/project.yaml`
+- `${context.<key>}` -- resolves to usable context values (7.4); an unusable user-judgment key stops the remediation with "confirmation required"
 - `${project.<dotted.path>}` — resolves to project configuration values
 
 Unresolved references SHALL be replaced with an empty string and logged at debug level.
@@ -1407,7 +1492,7 @@ Design principle: **the audited repository is untrusted input in its entirety, i
 
 - Project assertions (for example "this control is not applicable, reason X") live in `.project/` (darnit's extension file for anything upstream `.project/` cannot express). Project data that changes a control's applicability is treated as an assertion.
 - An assertion-backed not-applicable result is **honored** only for a trusted repository with a reason and no contradicting evidence; otherwise it is **pending** (non-compliant until the operator confirms it) or **contradicted** (ignored, with the evidence reported). Controls MAY declare `contradicted_by` evidence in framework TOML.
-- Confirmations are stored on the operator side, keyed by repository identity, claim, and evidence digest, and lapse on expiry or when the evidence changes.
+- Confirmations are stored on the operator side, keyed by repository identity, claim, and evidence digest, and lapse on expiry or when the evidence changes. Confirmations of project context values follow Section 7.5 instead.
 - Reports and attestations label every assertion-backed N/A as asserted, with the asserter and any confirmer.
 
 ### 14.4 Repository-level .baseline.toml
@@ -1473,6 +1558,7 @@ The following requirements have been superseded by the handler dispatch architec
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.9 | 2026-09-29 | Context value standing, confirmation records, lapse, canonical keys, reads never write, confirmation tool contract (Sections 7.4-7.10, feature 042) |
 | 1.0.0-alpha.8 | 2026-02-16 | Added audit result cache (Section 10.4): audit writes cache, remediate reads cache, post-remediation invalidation |
 | 1.0.0-alpha.7 | 2026-02-13 | Migrated to handler dispatch architecture: pass classes replaced by named handlers, passes use TOML array-of-tables syntax, register_controls() becomes no-op, removed legacy pass classes (Appendix C) |
 | 1.0.0-alpha.5 | 2026-02-08 | Added locator integration (Section 11), handler registry (Section 12) |

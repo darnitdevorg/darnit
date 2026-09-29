@@ -818,7 +818,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 answers = {k: v for k, v in answers.items() if v}
                 if not answers:
                     break  # nothing answered — avoid re-routing forever
-                state = collect_context(state, answers)
+                state = collect_context(state, answers, operator=operator_config.config)
                 state = audit(state)  # re-audit with confirmed context
             elif step == "remediate":
                 state = remediate(state, dry_run=getattr(args, "dry_run", False))

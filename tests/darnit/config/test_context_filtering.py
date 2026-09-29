@@ -5,9 +5,9 @@ reporting requirements FR-007 and FR-008.
 
 The load-bearing assertion in this file is that filtering happens BEFORE the
 auto-accept confidence threshold. `security_contact` carries
-`auto_detect = true`, and a detected value at or above 0.8 is written to
-`.project/` with no prompt (`context_storage.py`). Filtering after that check
-would still have stored the rejected value, which is why DF-7 asserts at
+`auto_detect = true`, and a detected value at or above 0.8 is concluded for
+the run (feature 042: concluded, never written). Filtering after that check
+would still have concluded the rejected value, which is why DF-7 asserts at
 confidence 1.0.
 """
 
@@ -17,6 +17,7 @@ import logging
 from pathlib import Path
 
 import pytest
+import yaml
 
 from darnit.config import context_storage
 from darnit.config.context_storage import (
@@ -183,15 +184,20 @@ class TestStoredValues:
     """
 
     def _store(self, tmp_path: Path, key: str, value: object) -> bytes:
-        context_storage.save_context_value(
-            str(tmp_path),
-            key,
-            value,
-            source=ContextSource.AUTO_DETECTED,
-            detection_method="regex",
-            confidence=0.8,
-        )
-        return (tmp_path / ".project" / "project.yaml").read_bytes()
+        """Write ``.project/`` as an earlier darnit version's auto-accept did.
+
+        Feature 042 removed that write (FR-001, FR-002), so the stored value is
+        laid down directly: the security contact in ``project.yaml`` and every
+        value under ``darnit.yaml`` ``context``.
+        """
+        project_dir = tmp_path / ".project"
+        project_dir.mkdir(exist_ok=True)
+        project = {"name": "stored"}
+        if key == "security_contact":
+            project["security"] = {"contact": value}
+        (project_dir / "project.yaml").write_text(yaml.safe_dump(project), encoding="utf-8")
+        (project_dir / "darnit.yaml").write_text(yaml.safe_dump({"context": {key: value}}), encoding="utf-8")
+        return (project_dir / "project.yaml").read_bytes()
 
     @pytest.mark.unit
     def test_stored_value_failing_its_filter_reads_as_unset(self, tmp_path: Path) -> None:

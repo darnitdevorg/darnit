@@ -4697,17 +4697,23 @@ description = "Enable branch protection rules on GitHub repository"
 
 [mcp.tools.init_project_config]
 handler = "init_project_config"
-description = "Initialize a new .project.yaml configuration file"
+description = "Create an empty .project/darnit.yaml when the repository has no .project/ directory. Detects and pre-fills nothing; an existing .project/ is reported, never overwritten."
 
 [mcp.tools.confirm_project_data]
 handler = "confirm_project_data"
-description = """Record user-confirmed project context in .project.yaml.
+description = """Record a person's confirmation of project context values. Only on the person's
+explicit instruction; never pass a detected value the person has not confirmed.
+
+`owner` and `repo` (and `host` when not github.com) are required with context values:
+they name the repository. Values are recorded in .project/darnit.yaml when the operator
+trusts that repository, otherwise operator-side with nothing written to the repository.
 
 **IMPORTANT**: This is the ONLY way to set project context. DO NOT directly edit
 .project/ files - always use this tool instead.
 
 **Parameters:**
 - `local_path`: Path to repository (default: ".")
+- `owner`, `repo`, `host`: The repository the values or claims are for
 - `maintainers`: Project maintainers - list ["@user1", "@user2"] OR file reference "CODEOWNERS"
 - `security_contact`: Security contact email or file reference
 - `governance_model`: One of: bdfl, meritocracy, democracy, corporate, foundation, committee, other
@@ -4729,10 +4735,10 @@ description = """Record user-confirmed project context in .project.yaml.
 **Examples:**
 ```
 # Reference existing CODEOWNERS file (RECOMMENDED)
-confirm_project_data(maintainers="CODEOWNERS")
+confirm_project_data(maintainers="CODEOWNERS", owner="org", repo="name")
 
 # Explicit maintainer list
-confirm_project_data(maintainers=["@alice", "@bob"])
+confirm_project_data(maintainers=["@alice", "@bob"], owner="org", repo="name")
 
 # Confirm a pending not-applicable claim (operator instruction only)
 confirm_project_data(confirm_not_applicable=["OSPS-BR-02.01"], owner="org", repo="name")
@@ -4744,7 +4750,9 @@ confirm_project_data(confirm_pass_candidate=["OSPS-DO-01.01"], owner="org", repo
 confirm_project_data(
     maintainers="CODEOWNERS",
     security_contact="security@example.com",
-    ci_provider="github"
+    ci_provider="github",
+    owner="org",
+    repo="name",
 )
 ```
 """

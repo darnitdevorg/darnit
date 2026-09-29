@@ -10,6 +10,12 @@ repository.
 The same store holds PASS candidates (feature 041, claim ``pass_candidate``):
 positive model judgments awaiting a person. A stored candidate is never a
 confirmation; only ``record_confirmation`` makes one.
+
+It also holds operator-side confirmations of project context values
+(feature 042, claim ``context_value``) for repositories the operator does not
+trust; the confirmed value and the candidate it was based on are kept in the
+``context_bases`` section. Their expiry is explicit, never the operator's
+``confirmation_expiry_days`` policy.
 """
 
 from __future__ import annotations
@@ -33,6 +39,9 @@ if TYPE_CHECKING:
 logger = get_logger("trust.confirmations")
 
 SCHEMA_VERSION = 1
+CONTEXT_VALUE_CLAIM = "context_value"
+
+_POLICY_EXPIRY: Any = object()
 
 
 def _timestamp(moment: datetime) -> str:
@@ -55,13 +64,15 @@ class Confirmation:
     evidence_digest: str
     confirmed_by: str
     confirmed_at: str
-    expires_at: str
+    expires_at: str | None
 
     def expired(self, now: datetime) -> bool:
+        if self.expires_at is None:
+            return False
         expires = _parse_timestamp(self.expires_at)
         return expires is None or now >= expires
 
-    def report(self) -> dict[str, str]:
+    def report(self) -> dict[str, str | None]:
         """The ``assertion.confirmation`` block (contracts/asserted-results.md)."""
         return {"confirmed_by": self.confirmed_by, "confirmed_at": self.confirmed_at, "expires_at": self.expires_at}
 
@@ -74,6 +85,17 @@ class StoredCandidate:
     evidence_digest: str
     recorded_at: str
     candidate: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class ContextBasis:
+    """The value an operator-side context confirmation confirmed, and the candidate origin it was based on."""
+
+    repository: str
+    key: str
+    value_digest: str
+    value: Any
+    origin: dict[str, Any] | None = None
 
 
 def store_path() -> Path:
@@ -100,6 +122,12 @@ def load_candidates(repository: str | None = None, *, checkout: str | Path | Non
     """Stored PASS candidates, optionally only those for ``repository``."""
     stored = _load_section("candidates", StoredCandidate, checkout)
     return [c for c in stored if repository is None or c.repository == repository]
+
+
+def load_context_bases(repository: str | None = None, *, checkout: str | Path | None = None) -> list[ContextBasis]:
+    """Stored values of operator-side context confirmations, optionally only those for ``repository``."""
+    stored = _load_section("context_bases", ContextBasis, checkout)
+    return [b for b in stored if repository is None or b.repository == repository]
 
 
 def _load_section(section: str, entry_type: type, checkout: str | Path | None) -> list[Any]:
@@ -139,10 +167,18 @@ def find_confirmation(
     return None
 
 
-def _save(path: Path, confirmations: list[Confirmation], candidates: list[StoredCandidate]) -> None:
+def _save(
+    path: Path,
+    confirmations: list[Confirmation],
+    candidates: list[StoredCandidate],
+    bases: list[ContextBasis] | None = None,
+) -> None:
     data: dict[str, Any] = {"schema_version": SCHEMA_VERSION, "confirmations": [asdict(c) for c in confirmations]}
     if candidates:
         data["candidates"] = [asdict(c) for c in candidates]
+    bases = load_context_bases() if bases is None else bases
+    if bases:
+        data["context_bases"] = [asdict(b) for b in bases]
     _write(path, data)
 
 
@@ -169,13 +205,20 @@ def record_confirmation(
     *,
     checkout: str | Path | None = None,
     now: datetime | None = None,
+    expires_at: datetime | None = _POLICY_EXPIRY,
 ) -> Confirmation:
-    """Store a confirmation, replacing any earlier one for the same repository, control, and claim."""
+    """Store a confirmation, replacing any earlier one for the same repository, control, and claim.
+
+    ``expires_at`` defaults to the operator's ``confirmation_expiry_days``
+    policy; pass a time, or None for no expiry, to set it explicitly.
+    """
     path = store_path()
     if _inside(path, checkout):
         raise ValueError(f"refusing to store confirmations at {path}: it is inside the audited repository")
 
     now = now or datetime.now(UTC)
+    if expires_at is _POLICY_EXPIRY:
+        expires_at = now + timedelta(days=operator.policy.confirmation_expiry_days)
     confirmation = Confirmation(
         repository=repository,
         control_id=control_id,
@@ -183,10 +226,39 @@ def record_confirmation(
         evidence_digest=evidence_digest,
         confirmed_by=operator.operator.identity or getpass.getuser(),
         confirmed_at=_timestamp(now),
-        expires_at=_timestamp(now + timedelta(days=operator.policy.confirmation_expiry_days)),
+        expires_at=None if expires_at is None else _timestamp(expires_at),
     )
     kept = [c for c in load_confirmations() if (c.repository, c.control_id, c.claim) != (repository, control_id, claim)]
     _save(path, [*kept, confirmation], load_candidates())
+    return confirmation
+
+
+def record_context_confirmation(
+    repository: str,
+    key: str,
+    value_digest: str,
+    value: Any,
+    origin: dict[str, Any] | None,
+    operator: OperatorConfig,
+    *,
+    expires_at: datetime | None = None,
+    checkout: str | Path | None = None,
+    now: datetime | None = None,
+) -> Confirmation:
+    """Store an operator-side confirmation of a context value (claim ``context_value``) and its value."""
+    confirmation = record_confirmation(
+        repository,
+        key,
+        CONTEXT_VALUE_CLAIM,
+        value_digest,
+        operator,
+        checkout=checkout,
+        now=now,
+        expires_at=expires_at,
+    )
+    basis = ContextBasis(repository=repository, key=key, value_digest=value_digest, value=value, origin=origin)
+    bases = [b for b in load_context_bases() if (b.repository, b.key) != (repository, key)]
+    _save(store_path(), load_confirmations(), load_candidates(), [*bases, basis])
     return confirmation
 
 

@@ -7,8 +7,6 @@ with provenance tracking.
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import yaml
-
 from darnit.config.context_schema import ContextValue
 from darnit.config.context_storage import (
     _run_detect_pipeline,
@@ -19,9 +17,26 @@ from darnit.config.context_storage import (
     is_context_confirmed,
     load_context,
     load_stored_context,
-    save_context_value,
-    save_context_values,
 )
+from darnit.config.context_writes import record_value_confirmation, record_value_confirmations
+from darnit.config.operator.schema import OperatorConfig
+
+# Feature 042 (FR-002, FR-009, FR-011): save_context_value/save_context_values
+# wrote bare values with no record of who confirmed them and are gone. Values
+# are written only by the single writer, as confirmations, and read back here
+# through the legacy readers (moved onto usable values in US2).
+TARGET = "github.com/example-org/project"
+TRUSTING = OperatorConfig.model_validate({"schema_version": 1, "trust": {"repos": [TARGET]}})
+
+
+def save_context_value(local_path: str, key: str, value: object):
+    result = record_value_confirmation(local_path, key, value, target=TARGET, operator=TRUSTING, env={})
+    assert result.outcome == "confirmed", result
+    return result
+
+
+def save_context_values(local_path: str, values: dict):
+    return record_value_confirmations(local_path, values, target=TARGET, operator=TRUSTING, env={})
 
 
 class TestLoadContext:
@@ -168,9 +183,10 @@ class TestSaveContextValue:
         # Initialize git repo for detection
         (tmp_path / ".git").mkdir()
 
-        config_path = save_context_value(str(tmp_path), "has_releases", True)
+        result = save_context_value(str(tmp_path), "has_releases", True)
 
-        assert Path(config_path).exists()
+        assert (tmp_path / result.file).exists()
+        assert not (tmp_path / ".project" / "project.yaml").exists()
 
         # Verify it was saved
         value = get_raw_value(str(tmp_path), "has_releases")
@@ -193,21 +209,17 @@ context:
         value = get_raw_value(str(tmp_path), "has_releases")
         assert value is True
 
-        # Verify name preserved in project.yaml
-        with open(project_dir / "project.yaml") as f:
-            data = yaml.safe_load(f)
-        assert data["name"] == "existing-project"
+        # Verify project.yaml untouched (FR-020, FR-021)
+        assert (project_dir / "project.yaml").read_text() == "name: existing-project\n"
 
-    def test_save_unknown_key_succeeds(self, tmp_path: Path) -> None:
-        """Test that saving unknown key succeeds (dynamically extending CNCF format)."""
+    def test_save_unknown_key_is_refused(self, tmp_path: Path) -> None:
+        """A key the framework does not define is not written (FR-018; was: saved under `custom`)."""
         (tmp_path / ".git").mkdir()
 
-        save_context_value(str(tmp_path), "unknown_key", "value")
+        result = record_value_confirmation(str(tmp_path), "unknown_key", "value", target=TARGET, operator=TRUSTING, env={})
 
-        # Verify it was loaded back
-        ctx = load_context(str(tmp_path))
-        assert "custom" in ctx
-        assert ctx["custom"]["unknown_key"].value == "value"
+        assert result.outcome == "refused"
+        assert load_context(str(tmp_path)) == {}
 
 
 class TestSaveContextValues:
@@ -276,14 +288,7 @@ class TestGetPendingContext:
     def test_excludes_confirmed_context(self, tmp_path: Path) -> None:
         """Test that confirmed context is excluded from pending."""
         (tmp_path / ".git").mkdir()
-        project_dir = tmp_path / ".project"
-        project_dir.mkdir()
-        (project_dir / "project.yaml").write_text("name: test-project\n")
-        (project_dir / "darnit.yaml").write_text("""
-context:
-  has_releases: true
-  ci_provider: github
-""")
+        save_context_values(str(tmp_path), {"has_releases": True, "ci_provider": "github"})
 
         pending = get_pending_context(str(tmp_path))
 
@@ -291,6 +296,27 @@ context:
         pending_keys = [p.key for p in pending]
         assert "has_releases" not in pending_keys
         assert "ci_provider" not in pending_keys
+
+    def test_stored_values_without_records_stay_pending(self, tmp_path: Path) -> None:
+        """Feature 042 (FR-010): a bare stored value is a candidate, not a confirmation."""
+        (tmp_path / ".git").mkdir()
+        project_dir = tmp_path / ".project"
+        project_dir.mkdir()
+        (project_dir / "darnit.yaml").write_text("context:\n  governance_model: bdfl\n  maintainers: ['@a']\n")
+
+        pending = {p.key: p for p in get_pending_context(str(tmp_path))}
+
+        assert pending["maintainers"].candidate.origin.kind == "stored_unconfirmed"
+        assert pending["governance_model"].candidate.value == "bdfl"
+
+    def test_writes_nothing(self, tmp_path: Path) -> None:
+        """Feature 042 (FR-001): listing pending context never writes."""
+        (tmp_path / ".git").mkdir()
+        (tmp_path / ".github" / "workflows").mkdir(parents=True)
+
+        get_pending_context(str(tmp_path))
+
+        assert not (tmp_path / ".project").exists()
 
 
 class TestLoadContextWithNewFields:

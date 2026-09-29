@@ -107,12 +107,13 @@ class AnswerResolver:
 
 
 class ProjectYamlAnswerSource:
-    """MVP file adapter: reads ``.project/project.yaml`` via feature 018.
+    """MVP file adapter: confirmed project values from ``.project/``.
 
-    Flattens the loaded ProjectConfig into ``{context_key: str_value}`` using
-    the same schema mapping ``darnit.config.context_storage.load_context``
-    already uses. A missing or unparseable file yields an empty source (no
-    exception; adapter returns None from every ``get_answer``).
+    Supplies only usable values (feature 042, FR-006): values a person
+    confirmed, with a matching confirmation record. A stored value without a
+    record is a candidate and is not an answer. A missing or unreadable
+    ``.project/`` yields an empty source (no exception; adapter returns None
+    from every ``get_answer``).
     """
 
     name = "project_yaml"
@@ -123,31 +124,22 @@ class ProjectYamlAnswerSource:
         self._load()
 
     def _load(self) -> None:
-        """Attempt to load .project/project.yaml. Silent on failure."""
+        """Read confirmed values. Silent on failure."""
         try:
-            from darnit.config.context_storage import load_context
+            from darnit.config.context_resolve import resolve_context
 
-            context_by_category = load_context(self._local_path)
+            usable = resolve_context(self._local_path, detect=False).usable()
         except Exception as exc:
             logger.debug(
-                "ProjectYamlAnswerSource(%s): load_context failed: %s",
+                "ProjectYamlAnswerSource(%s): resolve_context failed: %s",
                 self._local_path,
                 exc,
             )
             return
 
-        # Flatten category -> {key -> ContextValue} into a single {key: str}
-        # dict. Feature 018's load_context returns per-category namespaces;
-        # we accept ANY category's key (last write wins across categories,
-        # which is a documented edge case since context_keys are meant to
-        # be globally unique).
-        for _category, keyed in context_by_category.items():
-            for key, ctx_val in keyed.items():
-                # ContextValue.value can be any type; coerce to str for the
-                # AnswerSource shape which promises str | None.
-                if ctx_val.value is None:
-                    continue
-                self._answers[key] = str(ctx_val.value)
+        # Values can be any type; coerce to str for the AnswerSource shape,
+        # which promises str | None.
+        self._answers = {key: str(value) for key, value in usable.items() if value is not None}
 
     def get_answer(self, context_key: str) -> str | None:
         return self._answers.get(context_key)

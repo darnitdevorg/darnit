@@ -528,7 +528,7 @@ class HarnessRun:
         try:
             from darnit.config.context_storage import get_pending_context
 
-            return list(get_pending_context(self.local_path, level=self.level))
+            return list(get_pending_context(self.local_path, target=self.target))
         except Exception as exc:
             logger.debug("get_pending_context failed: %s", exc)
             return []

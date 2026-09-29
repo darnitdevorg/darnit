@@ -899,6 +899,10 @@ class ContextDefinitionConfig(BaseModel):
     #   detect_filter = "!value.contains('example.com')"
     detect_filter: str | None = None
 
+    # Days a confirmation of this key stays valid, measured from its
+    # last_validated time (feature 042, FR-022). None: no framework limit.
+    validity_days: int | None = Field(default=None, gt=0)
+
     model_config = ConfigDict(extra="allow")
 
 

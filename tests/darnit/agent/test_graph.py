@@ -1,7 +1,7 @@
 """Tests for darnit.agent.graph — the audit/collect_context/remediate nodes.
 
 These tests use mocking to isolate each node from its external dependencies
-(prepare_audit, run_checks, RemediationExecutor, save_context_values) so they
+(prepare_audit, run_checks, RemediationExecutor, record_value_confirmations) so they
 run without a real repository or framework installation.
 """
 
@@ -116,7 +116,7 @@ class TestCollectContextNode:
             FeedbackQuestion("CTRL-01", "has_releases", "Has releases?"),
         ]
 
-        with patch("darnit.agent.graph.save_context_values"):
+        with patch("darnit.agent.graph.record_value_confirmations"):
             state = collect_context(state, answers={"has_releases": "yes"})
 
         assert state.feedback_questions[0].answered is True
@@ -130,7 +130,7 @@ class TestCollectContextNode:
             FeedbackQuestion("CTRL-02", "is_library", "Q2?"),
         ]
 
-        with patch("darnit.agent.graph.save_context_values"):
+        with patch("darnit.agent.graph.record_value_confirmations"):
             state = collect_context(
                 state,
                 answers={"has_releases": "yes", "is_library": "no"},
@@ -146,24 +146,33 @@ class TestCollectContextNode:
             FeedbackQuestion("CTRL-01", "has_releases", "Q?"),
         ]
 
-        with patch("darnit.agent.graph.save_context_values"):
+        with patch("darnit.agent.graph.record_value_confirmations"):
             state = collect_context(state, answers={"has_releases": "yes"})
 
         assert state.audit_results == []
 
-    def test_calls_save_context_values_with_answers(self):
-        """Issue #145: answers must be persisted so re-audit sees them."""
+    def test_records_answers_as_confirmations(self):
+        """Issue #145: answers must be persisted so re-audit sees them.
+
+        Feature 042 (FR-009, research R12): a person typed them, so they are
+        recorded as confirmations with basis origin ``answer`` through the
+        single writer (was: save_context_values wrote bare values).
+        """
         state = _make_state()
         state.feedback_questions = [
             FeedbackQuestion("CTRL-01", "has_releases", "Q?"),
         ]
+        operator = MagicMock()
 
-        with patch("darnit.agent.graph.save_context_values") as mock_save:
-            collect_context(state, answers={"has_releases": "yes"})
+        with patch("darnit.agent.graph.record_value_confirmations") as mock_save:
+            collect_context(state, answers={"has_releases": "yes"}, operator=operator)
 
         mock_save.assert_called_once_with(
-            local_path="/repo",
-            values={"has_releases": "yes"},
+            "/repo",
+            {"has_releases": "yes"},
+            target=state.target,
+            operator=operator,
+            bases={"has_releases": {"value": "yes", "origin": {"kind": "answer", "method": "darnit run"}}},
         )
 
     def test_noop_when_empty_answers(self):
@@ -174,7 +183,7 @@ class TestCollectContextNode:
         original_results = [_make_pass_result("CTRL-01", "WARN")]
         state.audit_results = original_results.copy()
 
-        with patch("darnit.agent.graph.save_context_values") as mock_save:
+        with patch("darnit.agent.graph.record_value_confirmations") as mock_save:
             state = collect_context(state, answers={})
 
         # Nothing should change
@@ -188,20 +197,20 @@ class TestCollectContextNode:
         q2 = FeedbackQuestion("CTRL-02", "maintainers", "Q2?")
         state.feedback_questions = [q1, q2]
 
-        with patch("darnit.agent.graph.save_context_values"):
+        with patch("darnit.agent.graph.record_value_confirmations"):
             state = collect_context(state, answers={"has_releases": "yes"})
 
         assert "has_releases" in state.context_values
         assert "maintainers" not in state.context_values
 
-    def test_does_not_crash_when_save_context_values_raises(self):
-        """save_context_values failure should be non-fatal."""
+    def test_does_not_crash_when_recording_raises(self):
+        """A recording failure should be non-fatal."""
         state = _make_state()
         state.feedback_questions = [
             FeedbackQuestion("CTRL-01", "has_releases", "Q?"),
         ]
 
-        with patch("darnit.agent.graph.save_context_values", side_effect=ValueError("bad key")):
+        with patch("darnit.agent.graph.record_value_confirmations", side_effect=ValueError("bad key")):
             # Should not raise
             state = collect_context(state, answers={"has_releases": "yes"})
 
@@ -237,7 +246,7 @@ class TestCollectContextNode:
         state = _make_state()
         state.feedback_questions = [FeedbackQuestion("CTRL-01", "policy_path", "Q?")]
 
-        with patch("darnit.agent.graph.save_context_values"):
+        with patch("darnit.agent.graph.record_value_confirmations"):
             state = collect_context(state, answers={"policy_path": "docs/SECURITY.md"})
 
         assert state.context_values["policy_path"] == "docs/SECURITY.md"

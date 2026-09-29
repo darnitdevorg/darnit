@@ -577,37 +577,36 @@ def enable_branch_protection(
 # =============================================================================
 
 
-def init_project_config(
-    local_path: str = ".",
-    project_name: str | None = None,
-    project_type: str = "software",
-) -> str:
+def init_project_config(local_path: str = ".") -> str:
     """
-    Initialize a new OpenSSF Baseline configuration file (.project.yaml).
+    Create an empty .project/darnit.yaml when the repository has no .project/ directory.
 
-    Creates a .project.yaml with discovered file locations.
+    Nothing is detected or pre-filled: project values are recorded only when a
+    person confirms them with confirm_project_data(). An existing .project/
+    directory is reported, never overwritten.
 
     Args:
         local_path: Path to repository
-        project_name: Project name (auto-detected if not provided)
-        project_type: Type of project (software, library, framework, specification)
 
     Returns:
-        Success message with created configuration
+        What was created, or why nothing was
     """
-    from darnit.config import config_exists
-    from darnit.config import init_project_config as _init
+    from darnit.config.context_writes import create_extension_file
 
     repo_path = Path(local_path).resolve()
-
-    if config_exists(repo_path):
-        return "⚠️ .project.yaml already exists. Use get_project_config() to view it."
+    project_dir = repo_path / ".project"
+    if project_dir.exists():
+        present = sorted(p.name for p in project_dir.iterdir()) if project_dir.is_dir() else []
+        return (
+            f"{project_dir} already exists ({', '.join(present) or 'empty'}); nothing was changed. "
+            "Use get_project_config() to view it."
+        )
 
     try:
-        _init(repo_path, project_name=project_name)
-        return f"✅ Created .project.yaml at {repo_path}"
-    except Exception as e:
-        return f"❌ Error creating config: {e}"
+        result = create_extension_file(str(repo_path))
+    except OSError as e:
+        return f"Error creating {project_dir / 'darnit.yaml'}: {e}"
+    return f"Created an empty {repo_path / result.file}"
 
 
 def confirm_project_data(
@@ -628,13 +627,18 @@ def confirm_project_data(
     confirm_pass_candidate: list[str] | None = None,
 ) -> str:
     """
-    Record user-confirmed project data in .project.yaml.
+    Record a person's confirmation of project data values.
+
+    Values are recorded in .project/darnit.yaml when the operator trusts the
+    repository named by `owner`/`repo` (and `host`), otherwise operator-side;
+    without them, values are refused.
 
     **IMPORTANT**: This is the ONLY way to set project data. DO NOT directly edit
     .project/ files - always use this tool instead.
 
     **Parameters:**
     - `local_path`: Path to repository (default: ".")
+    - `owner`, `repo`, `host`: The repository the values or claims are for (required)
     - `maintainers`: Project maintainers - list ["@user1", "@user2"] OR file reference "CODEOWNERS"
     - `security_contact`: Security contact email or file reference
     - `governance_model`: One of: bdfl, meritocracy, democracy, corporate, foundation, committee, other
@@ -753,8 +757,10 @@ def get_pending_data(
         answer_mapping for confirm_project_data, and a progress indicator.
     """
     from darnit.config.context_storage import get_pending_context as _get_pending
+    from darnit.trust.decision import target_from_owner_repo
 
     repo_path = Path(local_path).resolve()
+    target = target_from_owner_repo(owner, repo)
 
     # Auto-detect owner/repo from git
     if owner is None or repo is None:
@@ -768,9 +774,9 @@ def get_pending_data(
         pending = _get_pending(
             str(repo_path),
             control_ids=control_ids,
-            level=level,
             owner=owner,
             repo=repo,
+            target=target,
         )
 
         if not pending:
