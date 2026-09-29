@@ -625,6 +625,9 @@ def confirm_project_data(
     local_path: str = ".",
     *,
     accept_candidates: dict[str, str] | None = None,
+    confirm_stored: list[str] | None = None,
+    reject_stored: list[str] | None = None,
+    expires_at: dict[str, str] | None = None,
     confirm_not_applicable: list[str] | None = None,
     owner: str | None = None,
     repo: str | None = None,
@@ -643,13 +646,19 @@ def confirm_project_data(
     **Parameters:**
     - `local_path`: Path to repository (default: ".")
     - `owner`, `repo`, `host`: The repository the values or claims are for (required)
-    - One parameter per context key an installed framework defines (for
-      example `maintainers`, `governance_model`, `platform`, `csl_code_license`):
-      the person's answer. Enum keys accept only their allowed values.
+    - One parameter per context key OpenSSF Baseline defines (for example
+      `maintainers`, `governance_model`, `platform`): the person's answer.
+      Enum keys accept only their allowed values.
     - `accept_candidates`: `{key: candidate digest}` for candidates
       get_pending_data showed the person and the person accepted. A candidate
       is confirmed only if its digest still matches, and its value and origin
       are recorded as the basis.
+    - `confirm_stored` / `reject_stored`: keys from get_pending_data's
+      `stored_unconfirmed` list whose stored value the person confirms or
+      rejects. A rejected .project/darnit.yaml value is deleted (trusted
+      repository only); a .project/project.yaml value is reported with the
+      field to edit and left unchanged.
+    - `expires_at`: `{key: date}` optional expiry recorded with a key's confirmation.
     - `confirm_not_applicable`: Control IDs whose pending not-applicable claim the
       operator confirms. Only on the operator's explicit instruction.
     - `confirm_pass_candidate`: Control IDs whose PASS candidate (a positive model
@@ -664,6 +673,9 @@ def confirm_project_data(
     return confirm_project_data_impl(
         local_path=local_path,
         accept_candidates=accept_candidates,
+        confirm_stored=confirm_stored,
+        reject_stored=reject_stored,
+        expires_at=expires_at,
         confirm_not_applicable=confirm_not_applicable,
         owner=owner,
         repo=repo,
@@ -675,7 +687,7 @@ def confirm_project_data(
 
 
 def confirm_project_data_tool():
-    """``confirm_project_data`` with a parameter for every context key an installed framework defines."""
+    """``confirm_project_data`` with a parameter for every context key OpenSSF Baseline defines."""
     from darnit.server.tools.project_data import confirmable_definitions, with_context_parameters
 
     return with_context_parameters(confirm_project_data, confirmable_definitions(_FRAMEWORK_NAME))
@@ -753,9 +765,12 @@ def get_pending_data(
 
     Returns:
         JSON with the questions, ask_user_batch (for AskUserQuestion),
-        answer_mapping for confirm_project_data, and a progress indicator.
+        answer_mapping for confirm_project_data, a progress indicator, and
+        stored_unconfirmed: values stored in .project/ without a confirmation,
+        with their locations, for review with confirm_stored / reject_stored.
     """
     from darnit.config.context_storage import get_pending_context as _get_pending
+    from darnit.server.tools.project_data import stored_unconfirmed
     from darnit.trust.decision import target_from_owner_repo
 
     repo_path = Path(local_path).resolve()
@@ -778,12 +793,17 @@ def get_pending_data(
             target=target,
         )
 
+        stored = stored_unconfirmed(str(repo_path), target=target)
+
         if not pending:
-            return json.dumps({
+            complete: dict = {
                 "status": "complete",
                 "message": "All context has been confirmed. No additional input needed.",
                 "questions": [],
-            }, indent=2)
+            }
+            if stored:
+                complete["stored_unconfirmed"] = stored
+            return json.dumps(complete, indent=2)
 
         total = len(pending)
 
@@ -833,6 +853,7 @@ def get_pending_data(
                 "total": total,
             },
             "questions": questions,
+            "stored_unconfirmed": stored,
         }
 
         if batch_questions:

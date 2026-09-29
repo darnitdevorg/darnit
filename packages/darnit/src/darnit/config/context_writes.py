@@ -263,6 +263,7 @@ def record_value_confirmations(
     operator: OperatorConfig,
     bases: Mapping[str, Mapping[str, Any]] | None = None,
     definitions: Mapping[str, ContextDefinition] | None = None,
+    expires_at: Mapping[str, datetime] | None = None,
     now: datetime | None = None,
     env: Mapping[str, str] | None = None,
 ) -> list[WriteResult]:
@@ -277,6 +278,7 @@ def record_value_confirmations(
             operator=operator,
             definitions=definitions,
             basis=(bases or {}).get(key),
+            expires_at=(expires_at or {}).get(key),
             now=now,
             env=env,
         )
@@ -294,6 +296,7 @@ def accept_candidates(
     definitions: Mapping[str, ContextDefinition] | None = None,
     owner: str | None = None,
     repo: str | None = None,
+    expires_at: Mapping[str, datetime] | None = None,
     now: datetime | None = None,
     env: Mapping[str, str] | None = None,
 ) -> list[WriteResult]:
@@ -342,10 +345,130 @@ def accept_candidates(
                 operator=operator,
                 definitions=definitions,
                 basis={"value": current.value, "origin": origin},
+                expires_at=(expires_at or {}).get(key),
                 now=now,
                 env=env,
             )
         )
+    return results
+
+
+def confirm_stored_values(
+    local_path: str,
+    keys: list[str],
+    *,
+    target: str | None,
+    operator: OperatorConfig,
+    definitions: Mapping[str, ContextDefinition] | None = None,
+    expires_at: Mapping[str, datetime] | None = None,
+    now: datetime | None = None,
+    env: Mapping[str, str] | None = None,
+) -> list[WriteResult]:
+    """Confirm the value currently stored in ``.project/`` for each key (review, FR-010).
+
+    The basis is the stored value with the origin it was read with
+    (``stored_unconfirmed``, or ``expired_confirmation`` for a lapsed record).
+    """
+    from darnit.config.context_resolve import resolve_context
+    from darnit.config.context_schema import OriginKind
+
+    definitions = _definitions(local_path, definitions)
+    wanted = [canonical_key(key) for key in keys]
+    resolved = resolve_context(
+        local_path,
+        {key: definitions[key] for key in wanted if key in definitions},
+        target=target,
+        operator=operator,
+        detect=False,
+        now=now,
+        env=env,
+    )
+
+    results = []
+    for key in wanted:
+        if key not in definitions:
+            results.append(WriteResult(key, "refused", reason=f"{key!r} is not a context key the framework defines"))
+            continue
+        current = resolved.get(key)
+        if current is None or current.value is None or current.location is None:
+            results.append(WriteResult(key, "refused", reason="no stored value"))
+            continue
+        origin = (
+            current.origin.model_dump(mode="json", exclude_none=True)
+            if current.origin
+            else {"kind": OriginKind.STORED_UNCONFIRMED.value, "method": current.location}
+        )
+        results.append(
+            record_value_confirmation(
+                local_path,
+                key,
+                current.value,
+                target=target,
+                operator=operator,
+                definitions=definitions,
+                basis={"value": current.value, "origin": origin},
+                expires_at=(expires_at or {}).get(key),
+                now=now,
+                env=env,
+            )
+        )
+    return results
+
+
+def reject_stored_value(
+    local_path: str,
+    key: str,
+    *,
+    target: str | None,
+    operator: OperatorConfig,
+    definitions: Mapping[str, ContextDefinition] | None = None,
+    env: Mapping[str, str] | None = None,
+) -> list[WriteResult]:
+    """Reject the value stored for ``key`` (review, FR-010).
+
+    A value in ``.project/darnit.yaml`` is deleted when the operator trusts
+    the target repository; otherwise nothing is written and the result names
+    the field for the person to edit. A value in ``.project/project.yaml`` is
+    never edited: the result names its file and field.
+    """
+    from darnit.config.context_resolve import resolve_context
+
+    key = canonical_key(key)
+    definitions = _definitions(local_path, definitions)
+    if key not in definitions:
+        return [WriteResult(key, "refused", reason=f"{key!r} is not a context key the framework defines")]
+    refused = _refuse_invalid(local_path, key)
+    if refused is not None:
+        return [refused]
+
+    def location() -> str | None:
+        resolved = resolve_context(local_path, {key: definitions[key]}, operator=operator, detect=False, env=env)
+        return resolved.get(key).location
+
+    stored = location()
+    if stored is None:
+        return [WriteResult(key, "refused", reason="no stored value")]
+    if stored.startswith(f"{PROJECT_FILE}:"):
+        return [WriteResult(key, "edit_required", file=PROJECT_FILE, reason=stored.split(":", 1)[1])]
+
+    from darnit.trust.decision import decide_trust
+
+    if not decide_trust(target, operator, local_path, env).trusted:
+        return [
+            WriteResult(
+                key,
+                "refused",
+                reason=(
+                    "the operator does not trust this repository, so darnit writes nothing to it; "
+                    f"edit {stored} yourself"
+                ),
+            )
+        ]
+
+    results = [delete_stored_value(local_path, key)]
+    remaining = location()
+    if results[0].outcome == "deleted" and remaining is not None and remaining.startswith(f"{PROJECT_FILE}:"):
+        results.append(WriteResult(key, "edit_required", file=PROJECT_FILE, reason=remaining.split(":", 1)[1]))
     return results
 
 

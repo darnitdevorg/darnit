@@ -55,7 +55,7 @@ class TestRemediationE2EFlow:
             owner=owner,
             repo=repo,
         )
-        assert "maintainers: confirmed, recorded in .project/darnit.yaml" in confirm_result
+        assert "maintainers: confirmed (in-repository), recorded in .project/darnit.yaml" in confirm_result
 
         # Step 3: Run remediation again - should create file
         result2 = remediate_audit_findings(

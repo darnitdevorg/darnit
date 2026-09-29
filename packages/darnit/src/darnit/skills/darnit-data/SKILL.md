@@ -4,7 +4,7 @@ description: Collect missing project data to improve audit accuracy. Use when th
 compatibility: Requires darnit MCP server running (darnit serve)
 metadata:
   author: kusari-oss
-  version: "1.2"
+  version: "1.3"
 ---
 
 # Project Data Collection
@@ -28,8 +28,13 @@ Guide the user through providing missing project data that darnit needs for accu
 
 4. Call `get_pending_data` again. If `status` is `"complete"`, move to step 5. Otherwise repeat from step 2.
 
-5. Summarize what was collected:
-   - Values confirmed (accepted candidates and values the user gave)
+5. Review stored values. If the response lists `stored_unconfirmed` (values in `.project/` with no confirmation, each with its `key`, `value`, and `location`), show the whole list to the user, labelled unconfirmed, and ask which to keep and which to reject. Then make one `confirm_project_data` call with `confirm_stored=[<keys the user keeps>]` and `reject_stored=[<keys the user rejects>]` (plus `owner`/`repo`). Only keys the user named; leave the rest as they are.
+   - A rejected value in `.project/darnit.yaml` is deleted (when the operator trusts the repository).
+   - A rejected value in `.project/project.yaml` comes back as `edit required: <file>:<field>`; the file is not changed. Tell the user which field to edit; until they do, the value stays an unconfirmed candidate.
+
+6. Summarize what was collected:
+   - Values confirmed (accepted candidates, values the user gave, and stored values the user kept)
+   - Values rejected, and any `edit required` fields the user still has to change
    - Skipped questions
    - Which controls are now unblocked
    - Suggest running `/darnit-audit` to see improved results
@@ -40,7 +45,9 @@ Guide the user through providing missing project data that darnit needs for accu
 - Command templates and `answer_mapping` hold placeholders only (`<the person's answer>`, `<candidate.digest>`). Replace a placeholder only with what the user actually answered.
 - Answers submitted to an ActionPlan `collect_context` step (`submit_action_result`) are used for that run only and are never saved. To record a value, use `confirm_project_data`.
 - Confirmed values are recorded in `.project/darnit.yaml` (the value under `context:` and who confirmed it, when, and on what basis under `confirmations:`) when the operator trusts the repository; otherwise they are recorded operator-side and nothing is written to the repository. `.project/project.yaml` is never written by this workflow.
-- A value in `.project/` without a confirmation record is a candidate too (origin `stored_unconfirmed`, with its file and field). Show it to the user and confirm or correct it like any other candidate; a hand edit to a confirmed value makes it a candidate again.
+- A value in `.project/` without a confirmation record is a candidate too (origin `stored_unconfirmed`, with its file and field). Review it with the user (step 5), or correct it by passing the user's answer; a hand edit to a confirmed value makes it a candidate again.
+- `expires_at={"<key>": "<date the user gave>"}` records an expiry with a confirmation, only when the user asks for one. With no expiry a confirmation stays valid until the value changes or the framework's validity period for the key passes.
+- Each framework's server has its own `confirm_project_data`, covering only that framework's keys (for example `csl_*` keys on the Community Specification server). Use the tool of the server whose framework asked the question.
 - Register darnit's MCP server at user scope (`darnit install` does this by default), not in a configuration file committed to the repository; a repository-scoped `uv run darnit serve` runs the repository's own copy of darnit.
 - Project data that makes a control not applicable (for example "no releases") is a not-applicable claim. It counts only when the operator trusts the repository and no evidence contradicts it; otherwise the audit reports it as pending and the control counts as non-compliant.
 - Pending claims can be confirmed with `confirm_project_data` (`confirm_not_applicable` plus `owner`/`repo`); the confirmation is stored on the operator's machine, not in the repository. Only do this when the operator explicitly tells you to confirm that specific claim. Never confirm a claim on your own, and never treat a user's answer to a data question as a confirmation of a claim.

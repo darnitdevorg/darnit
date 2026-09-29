@@ -4719,15 +4719,21 @@ trusts that repository, otherwise operator-side with nothing written to the repo
 **Parameters:**
 - `local_path`: Path to repository (default: ".")
 - `owner`, `repo`, `host`: The repository the values or claims are for
-- One parameter per context key an installed framework defines (for example
-  `maintainers`, `security_contact`, `governance_model`, `ci_provider`, `platform`,
-  and the Community Specification `csl_*` keys): the person's answer. Each parameter's
-  schema names what it asks; an enum key accepts only its listed values.
+- One parameter per context key OpenSSF Baseline defines (for example `maintainers`,
+  `security_contact`, `governance_model`, `ci_provider`, `platform`): the person's answer.
+  Each parameter's schema names what it asks; an enum key accepts only its listed values.
+  Other frameworks' keys are confirmed on their own server's confirm_project_data.
 - `accept_candidates`: {key: candidate digest} for a candidate get_pending_data showed
   the person and the person accepted. Fill in the question's `candidate.digest` only
   after the person answered yes. The candidate is confirmed only if its digest still
   matches (detection runs again); its value and origin are recorded as the basis.
   A mismatch is refused and nothing is written.
+- `confirm_stored` / `reject_stored`: keys from get_pending_data's `stored_unconfirmed`
+  list whose stored value the person confirms or rejects, any number in one call. A
+  rejected .project/darnit.yaml value is deleted (trusted repository only); a rejected
+  .project/project.yaml value is reported as `edit required: <file>:<field>` and the file
+  is left unchanged.
+- `expires_at`: {key: date} optional expiry recorded with a key's confirmation.
 - `confirm_not_applicable`: Control IDs whose pending not-applicable claim the
   operator confirms, with `owner`, `repo` (and `host` when not github.com)
   naming the repository. Recorded operator-side. Only on the operator's
@@ -4742,6 +4748,7 @@ trusts that repository, otherwise operator-side with nothing written to the repo
 ```
 confirm_project_data(<key>=<the person's answer>, owner=..., repo=...)
 confirm_project_data(accept_candidates={"<key>": "<candidate digest if the person accepts it>"}, owner=..., repo=...)
+confirm_project_data(confirm_stored=["<key the person confirms>"], reject_stored=["<key the person rejects>"], owner=..., repo=...)
 confirm_project_data(confirm_not_applicable=["<control id the operator named>"], owner=..., repo=...)
 confirm_project_data(confirm_pass_candidate=["<control id the operator named>"], owner=..., repo=...)
 ```
@@ -4765,6 +4772,10 @@ MANDATORY WORKFLOW - your next action after calling this tool MUST be calling As
 3. After the person answers, use "answer_mapping" to call confirm_project_data(). A "Yes" on a
    candidate becomes accept_candidates with that question's candidate.digest, filled in only now.
 4. Call this tool again for the next batch. Repeat until status is "complete".
+
+`stored_unconfirmed` lists values stored in .project/ without a confirmation (key, value,
+location). Show them to the person; confirm or reject the ones the person names in one
+confirm_project_data call with `confirm_stored` / `reject_stored`.
 
 Do NOT pre-fill or suggest answers. Never type a detected value as an answer.
 """

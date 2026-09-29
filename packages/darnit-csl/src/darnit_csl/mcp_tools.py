@@ -204,6 +204,8 @@ async def remediate_community_spec(
             "not choose a value for them.",
             *(f"- confirmation required: {key} (parameter {_PARAMETERS[key]})" for key in needed),
             "Nothing was written.",
+            "To keep an answer for later runs, record it with this server's "
+            "confirm_project_data(<key>=<the person's answer>, owner=..., repo=...).",
         ])
 
     written: list[str] = []

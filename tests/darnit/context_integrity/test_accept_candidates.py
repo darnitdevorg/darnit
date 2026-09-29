@@ -52,7 +52,7 @@ class TestMatchingDigest:
 
         message = _accept(r_maint, {"maintainers": value_digest("maintainers", candidate.value)})
 
-        assert "maintainers: confirmed, recorded in .project/darnit.yaml" in message
+        assert "maintainers: confirmed (in-repository), recorded in .project/darnit.yaml" in message
         data = yaml.safe_load((r_maint / ".project" / "darnit.yaml").read_text())
         record = data["confirmations"]["maintainers"]
         assert record["basis"]["value"] == candidate.value
@@ -68,7 +68,7 @@ class TestMatchingDigest:
 
         message = _accept(r_maint, {"maintainers": value_digest("maintainers", candidate.value)})
 
-        assert "maintainers: confirmed, recorded operator-side" in message
+        assert "maintainers: confirmed (operator-side), nothing written to the repository" in message
         assert_unchanged(r_maint, before)
         [basis] = load_context_bases(IDENTITY)
         assert basis.value == candidate.value
@@ -138,8 +138,9 @@ class TestValuesAgainstVocabulary:
         assert "platform: refused:" in message
         assert_unchanged(r_maint, before)
 
-    def test_key_of_another_installed_framework_is_confirmed(self, r_maint: Path, tmp_path: Path) -> None:
+    def test_key_of_another_installed_framework_is_refused(self, r_maint: Path, tmp_path: Path) -> None:
         write_operator_config(tmp_path / "operator.toml", trusted=[IDENTITY])
+        before = snapshot(r_maint)
 
         message = confirm_project_data_impl(
             local_path=str(r_maint),
@@ -149,7 +150,8 @@ class TestValuesAgainstVocabulary:
             framework_name="openssf-baseline",
         )
 
-        assert "csl_coc_policy: confirmed, recorded in .project/darnit.yaml" in message
+        assert "csl_coc_policy: refused:" in message
+        assert_unchanged(r_maint, before)
 
 
 BASELINE_KEYS = {
@@ -177,12 +179,13 @@ CSL_KEYS = {
 
 @pytest.mark.unit
 class TestGeneratedParameters:
-    def test_tool_exposes_every_context_key_and_accept_candidates(self) -> None:
+    def test_tool_exposes_every_baseline_key_and_accept_candidates(self) -> None:
         from darnit_baseline.tools import confirm_project_data_tool
 
         parameters = set(inspect.signature(confirm_project_data_tool()).parameters)
 
-        assert BASELINE_KEYS | CSL_KEYS | {"accept_candidates", "owner", "repo", "host"} <= parameters
+        assert BASELINE_KEYS | {"accept_candidates", "owner", "repo", "host"} <= parameters
+        assert not parameters & CSL_KEYS
 
     def test_mcp_schema_exposes_them(self) -> None:
         from importlib.resources import files
@@ -193,6 +196,7 @@ class TestGeneratedParameters:
         [tool] = [t for t in asyncio.run(server.list_tools()) if t.name == "confirm_project_data"]
 
         properties = tool.inputSchema["properties"]
-        assert BASELINE_KEYS | CSL_KEYS | {"accept_candidates"} <= set(properties)
+        assert BASELINE_KEYS | {"accept_candidates"} <= set(properties)
+        assert not set(properties) & CSL_KEYS
         for value in ("github", "gitlab", "bitbucket", "other"):
             assert value in properties["platform"]["description"]

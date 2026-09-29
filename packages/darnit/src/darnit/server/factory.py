@@ -212,6 +212,12 @@ def create_server(
 
     register_judgment_tools(server, framework_name)
 
+    # Feature 042: a framework whose TOML does not define its own
+    # confirm_project_data gets the framework-neutral one for its context keys.
+    from darnit.server.tools.project_data import register_confirmation_tool
+
+    register_confirmation_tool(server, framework_name, registry.tools)
+
     logger.info(
         f"Created MCP server '{server_name}' with {registered_count} tools"
     )
@@ -263,5 +269,9 @@ def create_server_from_dict(config: dict) -> FastMCP:
     from darnit.server.tools.judgments import register_judgment_tools
 
     register_judgment_tools(server, framework_name)
+
+    from darnit.server.tools.project_data import register_confirmation_tool
+
+    register_confirmation_tool(server, framework_name, registry.tools)
 
     return server
