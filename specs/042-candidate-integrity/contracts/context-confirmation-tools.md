@@ -53,6 +53,12 @@ Result lists, per key: `confirmed (in-repository | operator-side)`, `rejected`, 
 
 Refusals write nothing. A present-but-invalid `project.yaml` or `darnit.yaml` refuses every write and returns the validation errors.
 
+## Which server exposes it (decided 2026-09-29)
+
+- Each server's confirmation tool covers only the keys of the framework that server is bound to; it does not take the union of installed plugins.
+- A framework whose server does not define its own `confirm_project_data` (for example Community Specification) gets a framework-neutral builtin `confirm_project_data`, registered the same way as `submit_judgment` and `confirm_pass_candidate` (feature 041), bound to that framework's context definitions. It accepts the per-key parameters, `accept_candidates`, `confirm_stored`, `reject_stored`, `expires_at`, `owner`, `repo`, `host`, and `local_path`. Claim confirmations (`confirm_not_applicable`) and PASS candidates stay on their existing tools.
+- The OpenSSF Baseline server keeps its own `confirm_project_data` (which also carries claim confirmations), with parameters generated from its own definitions only.
+
 ## remediate_audit_findings / remediation preflight
 
 - Dry run writes nothing.

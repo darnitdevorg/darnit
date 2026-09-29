@@ -135,6 +135,8 @@
 - [ ] T038 [US4] Rewrite the context branch of `confirm_project_data_impl` to require owner/repo, validate against the vocabulary, decide location via `decide_trust`, and write through `context_writes` with who, when, basis, `last_validated`, and optional `expires_at`; fix the result message to name the file actually written, in `packages/darnit/src/darnit/server/tools/project_data.py`
 - [ ] T039 [US4] Add `confirm_stored`, `reject_stored`, and `expires_at` to `confirm_project_data` and the `stored_unconfirmed` list to `get_pending_data`, in `packages/darnit-baseline/src/darnit_baseline/tools.py` and `packages/darnit/src/darnit/server/tools/project_data.py`
 
+- [ ] T039a [US4] Scope generated `confirm_project_data` parameters to the server's bound framework only (drop the union across installed frameworks), and register a framework-neutral builtin `confirm_project_data` (context values only: per-key parameters, `accept_candidates`, `confirm_stored`, `reject_stored`, `expires_at`, owner/repo/host, local_path) on every server whose framework does not define its own, the same way `register_judgment_tools` registers `submit_judgment`, in `packages/darnit/src/darnit/server/tools/project_data.py` and `packages/darnit/src/darnit/server/factory.py`; document it in `docs/architecture/framework-design.md` first; test that a CSL-only server exposes it with only `csl_*` keys and that the Baseline tool no longer exposes other frameworks' keys, in `tests/darnit/server/test_confirm_tool_per_framework.py`
+
 **Checkpoint**: SC-006 holds; legacy repositories can be repaired in one call.
 
 ---
