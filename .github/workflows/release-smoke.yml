@@ -76,7 +76,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [darnit, darnit-baseline, darnit-gittuf, darnit-mcp]
+        package: [darnit-core, darnit-baseline, darnit-csl, darnit-gittuf, darnit-reproducibility, darnit-mcp]
     steps:
       - name: Checkout (for public-packages.txt sanity check)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
@@ -145,8 +145,14 @@ jobs:
             "darnit-baseline")
               "$venv/bin/python" -c "import darnit_baseline; print('darnit_baseline imports OK')"
               ;;
+            "darnit-csl")
+              "$venv/bin/python" -c "import darnit_csl; print('darnit_csl imports OK')"
+              ;;
             "darnit-gittuf")
               "$venv/bin/python" -c "import darnit_gittuf; print('darnit_gittuf imports OK')"
+              ;;
+            "darnit-reproducibility")
+              "$venv/bin/python" -c "import darnit_reproducibility; print('darnit_reproducibility imports OK')"
               ;;
             *)
               echo "::error::No smoke recipe defined for package '$PKG'"

@@ -11,9 +11,9 @@
 # venv + the runtime CLIs darnit's controls need (git, gh) — no build
 # toolchain, no apt cache, no pip cache.
 #
-# Build arg: VERSION — the exact darnit-mcp release version to install.
-# The release workflow passes the tagged version; for local testing,
-# override with --build-arg VERSION=<version>.
+# Build args:
+#   VERSION — the exact darnit-mcp release version to install.
+#   dist/ — release.yml copies this run's built wheels into the Docker context.
 
 # Base image is pinned to the major-minor tag rather than a digest. Pinning
 # to a digest is stronger but requires per-release digest churn; we accept
@@ -33,12 +33,24 @@ RUN test -n "$VERSION" || (echo "ERROR: --build-arg VERSION is required" >&2 && 
 # darnit packages are pure Python or arrive with prebuilt wheels.
 
 WORKDIR /opt
+COPY dist /tmp/dist
 
-# Install darnit-mcp from PyPI at the pinned version into a venv. The
-# venv gets copied wholesale into the runtime stage.
+# Install the Darnit wheels produced by this release run into a venv. External
+# dependencies still resolve from PyPI, but Darnit packages never come from
+# TestPyPI during rc image builds.
 RUN python -m venv /opt/venv \
     && /opt/venv/bin/pip install --no-cache-dir --upgrade pip \
-    && /opt/venv/bin/pip install --no-cache-dir "darnit-mcp==${VERSION}"
+    && for pkg in darnit-core darnit-baseline darnit-gittuf darnit-reproducibility darnit-mcp; do \
+         test -f /tmp/dist/${pkg}/*-${VERSION}-*.whl || (echo "ERROR: missing ${pkg} wheel for ${VERSION}" >&2 && exit 1); \
+       done \
+    && /opt/venv/bin/pip install --no-cache-dir \
+         --index-url https://pypi.org/simple/ \
+         --pre \
+         /tmp/dist/darnit-core/*-${VERSION}-*.whl \
+         /tmp/dist/darnit-baseline/*-${VERSION}-*.whl \
+         /tmp/dist/darnit-gittuf/*-${VERSION}-*.whl \
+         /tmp/dist/darnit-reproducibility/*-${VERSION}-*.whl \
+         /tmp/dist/darnit-mcp/*-${VERSION}-*.whl
 
 # ---- Stage 2: runtime ------------------------------------------------------
 FROM python:3.12-slim-bookworm
@@ -47,11 +59,11 @@ ARG VERSION
 
 LABEL org.opencontainers.image.title="darnit"
 LABEL org.opencontainers.image.description="AI-powered compliance auditing framework"
-LABEL org.opencontainers.image.source="https://github.com/kusari-oss/darnit"
+LABEL org.opencontainers.image.source="https://github.com/darnitdevorg/darnit"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 LABEL org.opencontainers.image.vendor="Kusari"
-LABEL org.opencontainers.image.url="https://github.com/kusari-oss/darnit"
-LABEL org.opencontainers.image.documentation="https://github.com/kusari-oss/darnit/blob/main/docs/install/container.md"
+LABEL org.opencontainers.image.url="https://github.com/darnitdevorg/darnit"
+LABEL org.opencontainers.image.documentation="https://github.com/darnitdevorg/darnit/blob/main/docs/install/container.md"
 
 # Install runtime CLIs the audit controls invoke (git for repo inspection;
 # gh for GitHub API calls). Pin to apt's stable channel; the GitHub CLI
