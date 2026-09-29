@@ -198,7 +198,7 @@ class OSPSBaselineImplementation:
             ("create_security_policy", tools.create_security_policy),
             ("enable_branch_protection", tools.enable_branch_protection),
             ("init_project_config", tools.init_project_config),
-            ("confirm_project_data", tools.confirm_project_data),
+            ("confirm_project_data", tools.confirm_project_data_tool()),
             ("get_pending_data", tools.get_pending_data),
             ("generate_threat_model", tools.generate_threat_model),
             ("generate_attestation", tools.generate_attestation),

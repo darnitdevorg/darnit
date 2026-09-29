@@ -187,7 +187,11 @@ class TestFileReferenceRecommendation:
     def test_prompt_recommends_file_reference_when_codeowners_exists(
         self, temp_repo_with_codeowners
     ):
-        """When CODEOWNERS exists, prompt should show parsed values and placeholder command."""
+        """When CODEOWNERS exists, the prompt names it and the command holds placeholders only.
+
+        Feature 042 (FR-013): the command template is `<the person's answer>`
+        (was `<user-confirmed values>`, next to values parsed from the file).
+        """
         from darnit_baseline.remediation.orchestrator import remediate_audit_findings
 
         result = remediate_audit_findings(
@@ -196,9 +200,8 @@ class TestFileReferenceRecommendation:
             dry_run=True,
         )
 
-        assert "CODEOWNERS" in result
-        assert "authoritative" in result.lower()
-        assert 'maintainers=<user-confirmed values>' in result
+        assert "`CODEOWNERS`" in result
+        assert "maintainers=<the person's answer>" in result
         assert 'maintainers="CODEOWNERS"' not in result
 
     @pytest.mark.unit

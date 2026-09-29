@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
-from darnit.config.context_schema import ContextSource, ContextValue, Standing
+from darnit.config.context_schema import Origin, OriginKind, ResolvedValue, Standing
 from darnit.config.framework_schema import ContextDefinitionConfig, ContextRequirement
 from darnit.remediation.context_validator import (
     ContextCheckResult,
@@ -194,43 +194,40 @@ class TestFormatContextPrompt:
             context_key="maintainers",
             definition=None,
             requirement=requirement,
-            current_value=None,
         )
 
         assert "maintainers" in prompt
         assert "GitHub collaborators are not project maintainers" in prompt
         assert "confirm_project_data" in prompt
 
-    def test_maintainers_does_not_show_auto_detected_value(self):
-        """Maintainers prompt should NOT show auto-detected values (security measure).
-
-        Auto-detected values for maintainers are intentionally hidden to prevent
-        AI agents from guessing. The prompt should ask the user instead.
+    def test_candidate_is_shown_as_unconfirmed_data(self):
+        """Replaces "maintainers hides detected values": a candidate is shown as labelled,
+        unconfirmed data with its origin, and never in a command (feature 042, FR-013).
         """
         requirement = ContextRequirement(key="maintainers")
-        current_value = ContextValue(
+        candidate = ResolvedValue(
+            key="maintainers",
+            standing=Standing.CANDIDATE,
             value=["@alice", "@bob"],
-            source=ContextSource.AUTO_DETECTED,
-            confidence=0.7,
+            origin=Origin(kind=OriginKind.SIEVE_HINT, method="git history", confidence=0.7),
         )
 
         prompt = format_context_prompt(
             context_key="maintainers",
             definition=None,
             requirement=requirement,
-            current_value=current_value,
+            candidate=candidate,
         )
 
-        # Should NOT show auto-detected values for maintainers
-        assert "@alice" not in prompt
-        assert "@bob" not in prompt
-        assert "Auto-detected" not in prompt
-        # Should instead ask user to provide the information
-        assert "Ask the user" in prompt
+        assert "UNCONFIRMED" in prompt
+        assert "@alice" in prompt
+        assert "sieve_hint (git history)" in prompt
+        commands = prompt.split("```")[1]
+        assert "@alice" not in commands
         assert "MUST ask" in prompt  # AI instruction
 
     def test_includes_definition_hints(self):
-        """Prompt should include hints from definition."""
+        """Prompt includes the definition's prompt and hint; examples only as a format."""
         requirement = ContextRequirement(key="maintainers")
         definition = ContextDefinitionConfig(
             type="list_or_path",
@@ -243,16 +240,16 @@ class TestFormatContextPrompt:
             context_key="maintainers",
             definition=definition,
             requirement=requirement,
-            current_value=None,
         )
 
         assert "Who are the project maintainers?" in prompt
         assert "Provide GitHub usernames" in prompt
-        assert "@user1, @user2" in prompt
+        assert "Format (not an answer): @user1, @user2" in prompt
 
-    def test_prompt_with_hint_file_shows_parsed_values_and_placeholder(self, temp_repo):
-        """When a hint file exists, prompt should show parsed values but use placeholder command."""
-        # Create a CODEOWNERS file
+    def test_prompt_with_hint_file_names_it_and_uses_placeholder(self, temp_repo):
+        """Replaces "shows values parsed from the hint file": the file is named, and only the
+        resolver's candidate is shown, so a digest accepts what the person saw (feature 042, R6).
+        """
         codeowners_path = Path(temp_repo) / "CODEOWNERS"
         codeowners_path.write_text("* @alice @bob\ndocs/ @charlie\n")
 
@@ -273,52 +270,13 @@ class TestFormatContextPrompt:
             context_key="maintainers",
             definition=definition,
             requirement=requirement,
-            current_value=None,
             local_path=temp_repo,
         )
 
-        # Should show the parsed values from the file
-        assert "@alice" in prompt
-        assert "@bob" in prompt
-        assert "@charlie" in prompt
-        # Should use a placeholder in the command, NOT the filename or actual values
-        assert "confirm_project_data(maintainers=<user-confirmed values>)" in prompt
-        # Should NOT suggest passing the filename
+        assert "`CODEOWNERS`" in prompt
+        assert "@charlie" not in prompt
+        assert "confirm_project_data(maintainers=<the person's answer>, owner=..., repo=...)" in prompt
         assert 'maintainers="CODEOWNERS"' not in prompt
-
-    def test_prompt_with_sieve_hints_uses_placeholder_command(self):
-        """When sieve hints exist, prompt should show detected values but use placeholder command."""
-        definition = ContextDefinitionConfig(
-            type="list_or_path",
-            prompt="Who are the project maintainers?",
-            allow_sieve_hints=True,
-        )
-        requirement = ContextRequirement(
-            key="maintainers",
-            required=True,
-            confidence_threshold=0.9,
-            prompt_if_auto_detected=True,
-        )
-        current_value = ContextValue(
-            value=["@detected1", "@detected2"],
-            source=ContextSource.AUTO_DETECTED,
-            confidence=0.7,
-        )
-
-        prompt = format_context_prompt(
-            context_key="maintainers",
-            definition=definition,
-            requirement=requirement,
-            current_value=current_value,
-        )
-
-        # Should show the detected values as hints
-        assert "@detected1" in prompt
-        assert "@detected2" in prompt
-        # Should use a placeholder in the command, NOT the actual detected values
-        assert "confirm_project_data(maintainers=<user-confirmed values>)" in prompt
-        # Should NOT have executable command with actual values
-        assert "['@detected1', '@detected2']" not in prompt
 
 
 class TestStaleValueDetection:

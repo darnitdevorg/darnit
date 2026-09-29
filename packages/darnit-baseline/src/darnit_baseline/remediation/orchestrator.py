@@ -732,7 +732,7 @@ def _preflight_context_check(
                 all_requirements[req.key] = (control_id, req)
 
     if not all_requirements:
-        return True, {"missing_context": [], "auto_detected": {}, "prompts": []}
+        return True, {"missing_context": [], "auto_detected": {}, "candidates": {}, "prompts": []}
 
     # Check all requirements at once
     requirements_list = [req for _, req in all_requirements.values()]
@@ -755,6 +755,7 @@ def _preflight_context_check(
     return check_result.ready, {
         "missing_context": check_result.missing_context,
         "auto_detected": check_result.auto_detected,
+        "candidates": check_result.candidates,
         "prompts": check_result.prompts,
         "key_to_controls": key_to_controls,
     }
@@ -766,13 +767,19 @@ def _format_preflight_prompt(
 ) -> str:
     """Format the pre-flight context check results as a user-friendly prompt.
 
+    Each key's prompt shows its candidate, if any, as unconfirmed data with
+    origin and digest (feature 042, FR-013); the command below holds
+    placeholders only.
+
     Args:
-        context_info: Dict with missing_context, auto_detected, prompts, key_to_controls
+        context_info: Dict with missing_context, candidates, prompts, key_to_controls
         local_path: Path to repository
 
     Returns:
         Markdown-formatted prompt for user
     """
+    from darnit.config.context_resolve import ANSWER_PLACEHOLDER, DIGEST_PLACEHOLDER
+
     md = []
     md.append("# BLOCKED: Remediation Cannot Proceed")
     md.append("")
@@ -807,39 +814,27 @@ def _format_preflight_prompt(
                 md.append(f"- `{key}`: {', '.join(controls)}")
         md.append("")
 
-    # Build a ready-to-use confirm_project_data() call from auto-detected values
-    auto_detected = context_info.get("auto_detected", {})
     missing = context_info.get("missing_context", [])
-    tool_args = []
-    for key in missing:
-        if key in auto_detected:
-            value = auto_detected[key]
-            if isinstance(value, str):
-                tool_args.append(f'{key}="{value}"')
-            elif isinstance(value, bool):
-                tool_args.append(f"{key}={value}")
-            elif isinstance(value, list):
-                formatted = [f'"{v}"' for v in value]
-                tool_args.append(f"{key}=[{', '.join(formatted)}]")
-            else:
-                tool_args.append(f"{key}={value!r}")
+    candidates = context_info.get("candidates", {})
+    accepted = [key for key in missing if key in candidates]
+    answered = [key for key in missing if key not in candidates]
 
     md.append("---")
     md.append("")
-    md.append("🛑 **AI Agents:** You MUST ask the user for the missing values above.")
-    md.append("Do NOT guess or infer from repository owner, git history, or other sources.")
+    md.append("**AI Agents:** You MUST ask the user for the missing values above, showing each candidate")
+    md.append("as unconfirmed data. Do NOT guess or infer from repository owner, git history, or other sources.")
     md.append("")
-    if tool_args:
-        md.append("**After the user provides values, run this to confirm, then re-run remediation:**")
-        md.append("```python")
-        args_str = ",\n    ".join(tool_args)
-        md.append(f'confirm_project_data(\n    local_path="{local_path}",\n    {args_str}\n)')
-        md.append("```")
-    else:
-        md.append("**After the user provides values, confirm them, then re-run remediation:**")
-        md.append("```python")
-        md.append(f'confirm_project_data(local_path="{local_path}", ...)')
-        md.append("```")
+    md.append("**After the user answers, confirm the answers, then re-run remediation.** For a key with a")
+    md.append("candidate, either accept it by its digest (only if the user accepted it) or pass the user's answer:")
+    md.append("```python")
+    args = [f'local_path="{local_path}"']
+    if accepted:
+        pairs = ", ".join(f'"{key}": "{DIGEST_PLACEHOLDER}"' for key in accepted)
+        args.append(f"accept_candidates={{{pairs}}}")
+    args += [f"{key}={ANSWER_PLACEHOLDER}" for key in answered]
+    args += ["owner=...", "repo=..."]
+    md.append("confirm_project_data(\n    " + ",\n    ".join(args) + "\n)")
+    md.append("```")
 
     return "\n".join(md)
 

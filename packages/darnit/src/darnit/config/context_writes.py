@@ -285,6 +285,70 @@ def record_value_confirmations(
     ]
 
 
+def accept_candidates(
+    local_path: str,
+    digests: Mapping[str, str],
+    *,
+    target: str | None,
+    operator: OperatorConfig,
+    definitions: Mapping[str, ContextDefinition] | None = None,
+    owner: str | None = None,
+    repo: str | None = None,
+    now: datetime | None = None,
+    env: Mapping[str, str] | None = None,
+) -> list[WriteResult]:
+    """Confirm each key's current candidate if its digest still matches (research R6).
+
+    Detection runs again; the candidate the person accepted is recorded only
+    when the digest of the current candidate equals the one given, with the
+    candidate's value and origin as the basis. Otherwise nothing is written
+    for that key.
+    """
+    from darnit.config.context_resolve import resolve_context
+    from darnit.config.context_schema import Standing
+
+    definitions = _definitions(local_path, definitions)
+    wanted = {canonical_key(key): digest for key, digest in digests.items()}
+    known = {key: definitions[key] for key in wanted if key in definitions}
+    resolved = resolve_context(
+        local_path, known, target=target, operator=operator, owner=owner, repo=repo, now=now, env=env
+    )
+
+    results = []
+    for key, digest in wanted.items():
+        if key not in known:
+            results.append(WriteResult(key, "refused", reason=f"{key!r} is not a context key the framework defines"))
+            continue
+        current = resolved.get(key)
+        if current is None or current.value is None or current.standing not in (Standing.CANDIDATE, Standing.CONCLUDED):
+            results.append(WriteResult(key, "refused", reason="no candidate to accept; ask the person for the value"))
+            continue
+        if value_digest(key, current.value) != digest:
+            results.append(
+                WriteResult(
+                    key,
+                    "refused",
+                    reason="the candidate changed since it was shown (digest mismatch); show the current one and ask again",
+                )
+            )
+            continue
+        origin = current.origin.model_dump(mode="json", exclude_none=True) if current.origin else {}
+        results.append(
+            record_value_confirmation(
+                local_path,
+                key,
+                current.value,
+                target=target,
+                operator=operator,
+                definitions=definitions,
+                basis={"value": current.value, "origin": origin},
+                now=now,
+                env=env,
+            )
+        )
+    return results
+
+
 def delete_stored_value(local_path: str, key: str) -> WriteResult:
     """Remove a stored value (and its record) from ``.project/darnit.yaml``.
 

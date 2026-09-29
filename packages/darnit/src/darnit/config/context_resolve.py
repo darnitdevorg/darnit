@@ -40,6 +40,35 @@ EXTENSION_FILE = f"{PROJECT_DIR}/darnit.yaml"
 PROJECT_FILE = f"{PROJECT_DIR}/project.yaml"
 DEFAULT_AUTO_ACCEPT_CONFIDENCE = 0.8
 
+CANDIDATE_LABEL = "UNCONFIRMED candidate - show it to the person; do not confirm without their answer"
+ANSWER_PLACEHOLDER = "<the person's answer>"
+DIGEST_PLACEHOLDER = "<candidate digest if the person accepts it>"
+
+
+def candidate_payload(resolved: ResolvedValue | None) -> dict[str, Any] | None:
+    """A value no person has confirmed, as data to show one (FR-013): value, origin, digest, label.
+
+    The digest is what ``confirm_project_data(accept_candidates=...)`` checks
+    the current candidate against.
+    """
+    if resolved is None or resolved.value is None or resolved.standing not in (Standing.CANDIDATE, Standing.CONCLUDED):
+        return None
+    return {
+        "value": resolved.value,
+        "origin": resolved.origin.model_dump(mode="json") if resolved.origin else None,
+        "digest": value_digest(resolved.key, resolved.value),
+        "label": CANDIDATE_LABEL,
+    }
+
+
+def confirmation_template(key: str, *, candidate: bool) -> str:
+    """The ``confirm_project_data`` call(s) for ``key`` with placeholders only, never a value (FR-013)."""
+    answer = f"confirm_project_data({key}={ANSWER_PLACEHOLDER}, owner=..., repo=...)"
+    if not candidate:
+        return answer
+    accept = f'confirm_project_data(accept_candidates={{"{key}": "{DIGEST_PLACEHOLDER}"}}, owner=..., repo=...)'
+    return f"{accept}  OR  {answer}"
+
 
 @dataclass
 class ResolvedContext:

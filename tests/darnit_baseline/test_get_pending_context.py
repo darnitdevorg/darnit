@@ -12,14 +12,26 @@ from darnit.config.context_schema import (
     ContextDefinition,
     ContextPromptRequest,
     ContextType,
-    ContextValue,
+    Origin,
+    OriginKind,
+    ResolvedValue,
+    Standing,
 )
 from darnit_baseline.tools import (
-    _CONTEXT_KEY_ORDER,
     _LLM_DIRECTIVE_PREFIX,
     _build_context_question,
+    _context_key_order,
     get_pending_data,
 )
+
+
+def _detected(key: str, value: object) -> ResolvedValue:
+    return ResolvedValue(
+        key=key,
+        standing=Standing.CANDIDATE,
+        value=value,
+        origin=Origin(kind=OriginKind.DETECTOR, method="workflow directory", confidence=0.9),
+    )
 
 
 def _make_pending(count: int) -> list[ContextPromptRequest]:
@@ -43,13 +55,7 @@ def _make_pending(count: int) -> list[ContextPromptRequest]:
 def _parse_json_from_result(result: str) -> dict:
     """Strip directive prefix/footer and parse JSON from get_pending_data result."""
     # The directive prefix ends with "---\n", JSON starts after that
-    if "---\n" in result:
-        # Find the JSON portion (starts with '{')
-        idx = result.index("{")
-        json_str = result[idx:]
-    else:
-        json_str = result
-    return json.loads(json_str)
+    return json.loads(result.split("\n---\n", 1)[-1])
 
 
 class TestGetPendingContextPagination:
@@ -240,12 +246,13 @@ class TestAskUserParams:
         assert ask["options"][1]["label"] == "No"
         assert ask["multiSelect"] is False
 
-    def test_enum_question_has_ask_user_with_values(self) -> None:
-        """Enum question includes ask_user with value options (max 4)."""
+    def test_enum_question_with_more_than_four_values_has_no_selector(self) -> None:
+        """Replaces "max 4 options shown": every allowed value must be reachable (feature 042, FR-015)."""
+        values = ["github", "gitlab", "jenkins", "circleci", "azure", "travis"]
         defn = ContextDefinition(
             type=ContextType.ENUM,
             prompt="What CI/CD system does this project use?",
-            values=["github", "gitlab", "jenkins", "circleci", "azure", "travis"],
+            values=values,
             affects=["CTRL-01"],
         )
         req = ContextPromptRequest(
@@ -256,16 +263,13 @@ class TestAskUserParams:
         )
         question = _build_context_question(req)
 
-        assert "ask_user" in question
-        ask = question["ask_user"]
-        assert ask["header"] == "Ci Provider"
-        # Max 4 options shown
-        assert len(ask["options"]) == 4
-        assert ask["options"][0]["label"] == "github"
-        assert ask["options"][3]["label"] == "circleci"
+        assert "ask_user" not in question
+        assert question["allowed_values"] == values
+        for value in values:
+            assert value in question["prompt"]
 
     def test_confirm_question_has_ask_user_accept_reject(self) -> None:
-        """Auto-detected confirm question includes ask_user with Accept/Reject."""
+        """A detected candidate is asked as Yes/No; the options name its origin, not its value (feature 042, FR-013)."""
         defn = ContextDefinition(
             type=ContextType.STRING,
             prompt="What CI provider?",
@@ -277,20 +281,19 @@ class TestAskUserParams:
             definition=defn,
             control_ids=["CTRL-01"],
             priority=1,
-            current_value=ContextValue.auto_detected(
-                value="github", method="detected from .github/workflows/"
-            ),
+            candidate=_detected("ci_provider", "github"),
         )
         question = _build_context_question(req)
 
         assert "ask_user" in question
         ask = question["ask_user"]
         assert ask["options"][0]["label"] == "Yes"
-        assert "github" in ask["options"][0]["description"]
+        assert "github" not in json.dumps(ask)
+        assert "workflow directory" in ask["options"][0]["description"]
         assert ask["options"][1]["label"] == "No"
 
-    def test_free_text_with_examples_has_ask_user(self) -> None:
-        """Free text question with examples includes ask_user using examples as options."""
+    def test_free_text_examples_are_a_format_hint_not_options(self) -> None:
+        """Replaces "examples as options": examples are never offered as answers (feature 042, FR-014)."""
         defn = ContextDefinition(
             type=ContextType.STRING,
             prompt="Security contact?",
@@ -305,10 +308,8 @@ class TestAskUserParams:
         )
         question = _build_context_question(req)
 
-        assert "ask_user" in question
-        ask = question["ask_user"]
-        assert len(ask["options"]) == 2
-        assert ask["options"][0]["label"] == "security@example.com"
+        assert "ask_user" not in question
+        assert question["format_hint"] == "security@example.com or See SECURITY.md"
 
     def test_free_text_without_examples_has_no_ask_user(self) -> None:
         """Free text question without examples has no ask_user field."""
@@ -413,8 +414,8 @@ class TestAskUserBatch:
 
     @patch("darnit_baseline.tools.Path")
     @patch("darnit.config.context_storage.get_pending_context")
-    def test_confirm_answer_mapping_has_detected_value(self, mock_get, mock_path) -> None:
-        """Confirm questions include value_map with detected value for Yes."""
+    def test_confirm_answer_mapping_accepts_by_digest_placeholder(self, mock_get, mock_path) -> None:
+        """Replaces "Yes maps to the detected value": Yes accepts the candidate by digest (feature 042, R6)."""
         mock_path.return_value.resolve.return_value = "/tmp/repo"
         defn = ContextDefinition(
             type=ContextType.STRING,
@@ -427,14 +428,14 @@ class TestAskUserBatch:
             definition=defn,
             control_ids=["CTRL-01"],
             priority=1,
-            current_value=ContextValue.auto_detected(value="github", method="detected"),
+            candidate=_detected("ci_provider", "github"),
         )]
 
         result = get_pending_data(local_path="/tmp/repo")
         data = _parse_json_from_result(result)
 
         mapping = data["answer_mapping"][0]
-        assert mapping["value_map"]["Yes"] == "github"
+        assert mapping["value_map"]["Yes"] == {"accept_candidates": {"ci_provider": "<candidate.digest>"}}
         assert mapping["value_map"]["No"] == "ASK_USER_FOR_VALUE"
 
     @patch("darnit_baseline.tools.Path")
@@ -522,8 +523,9 @@ class TestTomlDefinitionOrder:
         keys = [m["context_key"] for m in data["answer_mapping"]]
         assert keys == ["maintainers", "custom_key"]
 
-    def test_context_key_order_has_all_eight_keys(self) -> None:
-        """_CONTEXT_KEY_ORDER contains all 8 expected context keys."""
-        assert len(_CONTEXT_KEY_ORDER) == 8
-        assert _CONTEXT_KEY_ORDER[0] == "maintainers"
-        assert _CONTEXT_KEY_ORDER[-1] == "ci_provider"
+    def test_context_key_order_is_every_framework_key(self) -> None:
+        """Replaces the fixed list of eight keys: the order comes from the definitions (feature 042, R7)."""
+        order = _context_key_order()
+        assert order[0] == "maintainers"
+        assert "platform" in order
+        assert len(order) == len(set(order)) == 9

@@ -348,13 +348,12 @@ class TestIntegrationWithValidator:
 
     @pytest.mark.unit
     def test_validator_uses_sieve_for_detection(self, temp_repo):
-        """Validator uses sieve detection but prompts for authoritative file reference.
+        """Validator uses sieve detection and names the hint source file.
 
-        When an authoritative file (MAINTAINERS.md) exists and is listed in the
-        context definition's hint_sources, the prompt should suggest referencing
-        that file rather than showing sieve-detected values. The sieve still
-        runs and populates auto_detected, but the prompt prioritizes the
-        authoritative file as the primary source.
+        When a hint source file (MAINTAINERS.md) exists, the prompt names it.
+        Feature 042 (FR-013, research R6) replaced the "authoritative source"
+        section: the sieve's candidate is shown as unconfirmed data with its
+        digest, the only thing an agent may accept on the person's answer.
         """
         # Create a MAINTAINERS.md - this is an authoritative source
         (Path(temp_repo) / "MAINTAINERS.md").write_text("""
@@ -391,10 +390,9 @@ class TestIntegrationWithValidator:
         # Sieve may populate auto_detected (now allowed via allow_sieve_hints=true)
         # Key behavior: maintainers should still be in missing_context (needs confirmation)
         assert "maintainers" in result.missing_context
-        # Prompt should reference the authoritative file
         assert len(result.prompts) >= 1
-        assert "MAINTAINERS.md" in result.prompts[0]
-        assert "authoritative" in result.prompts[0].lower()
+        assert "`MAINTAINERS.md`" in result.prompts[0]
+        assert "UNCONFIRMED" in result.prompts[0]
 
     @pytest.mark.unit
     def test_validator_prompts_for_low_confidence(self, temp_repo):

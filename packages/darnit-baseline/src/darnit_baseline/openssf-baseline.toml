@@ -4706,7 +4706,8 @@ description = "Create an empty .project/darnit.yaml when the repository has no .
 [mcp.tools.confirm_project_data]
 handler = "confirm_project_data"
 description = """Record a person's confirmation of project context values. Only on the person's
-explicit instruction; never pass a detected value the person has not confirmed.
+explicit instruction; never pass a detected value the person has not confirmed, and never
+type a candidate's value as an answer.
 
 `owner` and `repo` (and `host` when not github.com) are required with context values:
 they name the repository. Values are recorded in .project/darnit.yaml when the operator
@@ -4718,14 +4719,15 @@ trusts that repository, otherwise operator-side with nothing written to the repo
 **Parameters:**
 - `local_path`: Path to repository (default: ".")
 - `owner`, `repo`, `host`: The repository the values or claims are for
-- `maintainers`: Project maintainers - list ["@user1", "@user2"] OR file reference "CODEOWNERS"
-- `security_contact`: Security contact email or file reference
-- `governance_model`: One of: bdfl, meritocracy, democracy, corporate, foundation, committee, other
-- `ci_provider`: One of: github, gitlab, jenkins, circleci, azure, travis, none, other
-- `has_subprojects`: Boolean - does project have subprojects?
-- `has_releases`: Boolean - does project make official releases?
-- `is_library`: Boolean - is this a library consumed by other projects?
-- `has_compiled_assets`: Boolean - does project release compiled binaries?
+- One parameter per context key an installed framework defines (for example
+  `maintainers`, `security_contact`, `governance_model`, `ci_provider`, `platform`,
+  and the Community Specification `csl_*` keys): the person's answer. Each parameter's
+  schema names what it asks; an enum key accepts only its listed values.
+- `accept_candidates`: {key: candidate digest} for a candidate get_pending_data showed
+  the person and the person accepted. Fill in the question's `candidate.digest` only
+  after the person answered yes. The candidate is confirmed only if its digest still
+  matches (detection runs again); its value and origin are recorded as the basis.
+  A mismatch is refused and nothing is written.
 - `confirm_not_applicable`: Control IDs whose pending not-applicable claim the
   operator confirms, with `owner`, `repo` (and `host` when not github.com)
   naming the repository. Recorded operator-side. Only on the operator's
@@ -4736,28 +4738,12 @@ trusts that repository, otherwise operator-side with nothing written to the repo
   Recorded operator-side. Only on the operator's explicit instruction; never
   confirm a candidate on your own judgment or because it would improve the result.
 
-**Examples:**
+**Call forms (placeholders only):**
 ```
-# Reference existing CODEOWNERS file (RECOMMENDED)
-confirm_project_data(maintainers="CODEOWNERS", owner="org", repo="name")
-
-# Explicit maintainer list
-confirm_project_data(maintainers=["@alice", "@bob"], owner="org", repo="name")
-
-# Confirm a pending not-applicable claim (operator instruction only)
-confirm_project_data(confirm_not_applicable=["OSPS-BR-02.01"], owner="org", repo="name")
-
-# Confirm a PASS candidate (operator instruction only)
-confirm_project_data(confirm_pass_candidate=["OSPS-DO-01.01"], owner="org", repo="name")
-
-# Multiple context values
-confirm_project_data(
-    maintainers="CODEOWNERS",
-    security_contact="security@example.com",
-    ci_provider="github",
-    owner="org",
-    repo="name",
-)
+confirm_project_data(<key>=<the person's answer>, owner=..., repo=...)
+confirm_project_data(accept_candidates={"<key>": "<candidate digest if the person accepts it>"}, owner=..., repo=...)
+confirm_project_data(confirm_not_applicable=["<control id the operator named>"], owner=..., repo=...)
+confirm_project_data(confirm_pass_candidate=["<control id the operator named>"], owner=..., repo=...)
 ```
 """
 
@@ -4765,15 +4751,22 @@ confirm_project_data(
 handler = "get_pending_data"
 limit = 4
 append_directive = true
-description = """Batch context collection wizard. Returns up to 4 questions at a time.
+description = """Batch context collection wizard. Writes nothing. Returns up to 4 questions at a time.
 
-MANDATORY WORKFLOW — your next action after calling this tool MUST be calling AskUserQuestion:
-1. Call this tool. It returns "ask_user_batch" — an array of AskUserQuestion-compatible question objects.
-2. Call AskUserQuestion with questions=<ask_user_batch>. Pass the array VERBATIM. Do NOT render as text.
-3. After the user answers, use "answer_mapping" to call confirm_project_data() for EACH answer.
+Each question carries its candidate, if any, as data: `candidate: {value, origin, digest, label}`,
+labelled UNCONFIRMED. Command templates and answer mappings hold placeholders only;
+`allowed_values` lists every allowed value of an enum; `format_hint` is a format, never an answer.
+
+MANDATORY WORKFLOW - your next action after calling this tool MUST be calling AskUserQuestion:
+1. Call this tool. It returns "questions" and "ask_user_batch" (AskUserQuestion-compatible objects).
+2. Show the person each question's candidate value and origin, labelled unconfirmed. Then call
+   AskUserQuestion with questions=<ask_user_batch>, VERBATIM. Ask the questions that have no
+   ask_user entry after that, listing every allowed value.
+3. After the person answers, use "answer_mapping" to call confirm_project_data(). A "Yes" on a
+   candidate becomes accept_candidates with that question's candidate.digest, filled in only now.
 4. Call this tool again for the next batch. Repeat until status is "complete".
 
-Do NOT pre-fill or suggest answers. Do NOT summarize questions as text. ALWAYS use AskUserQuestion.
+Do NOT pre-fill or suggest answers. Never type a detected value as an answer.
 """
 
 [mcp.tools.generate_threat_model]

@@ -1,37 +1,142 @@
-"""Project data confirmation tool for OpenSSF Baseline.
+"""Project data confirmation tool.
 
-Allows users to record project-specific context that cannot be auto-detected,
-such as whether a project has subprojects or which CI system is used, and to
-confirm a repository's pending not-applicable claims on the operator side
-(feature 040), and to confirm PASS candidates from model judgments
-(feature 041).
+Records a person's confirmation of project context values (feature 042):
+the person's answer for any context key an installed framework defines, or
+acceptance of a candidate by its digest. Also confirms a repository's
+pending not-applicable claims on the operator side (feature 040) and PASS
+candidates from model judgments (feature 041).
 """
 
+import functools
+import inspect
+from collections.abc import Callable, Mapping
+from typing import Annotated, Any
 
+from pydantic import Field
+
+from darnit.config.context_keys import canonical_key, vocabulary
+from darnit.config.context_resolve import ANSWER_PLACEHOLDER, DIGEST_PLACEHOLDER
+from darnit.config.context_schema import ContextDefinition
+from darnit.core.logging import get_logger
 from darnit.core.utils import validate_local_path
 
-VALID_CI_PROVIDERS = ["github", "gitlab", "jenkins", "circleci", "azure", "travis", "none", "other"]
-VALID_GOVERNANCE_MODELS = ["bdfl", "meritocracy", "democracy", "corporate", "foundation", "committee", "other"]
+logger = get_logger("server.tools.project_data")
+
+_LIST_TYPES = ("list", "list_or_path")
+
+
+def confirmable_definitions(framework_name: str | None) -> dict[str, ContextDefinition]:
+    """Context definitions of ``framework_name``, then of every other installed framework.
+
+    Every framework's context lives in the same ``.project/darnit.yaml``, so
+    one confirmation tool records values for all of them. A key defined by
+    more than one framework keeps its first definition.
+    """
+    from darnit.config.context_storage import framework_definitions
+    from darnit.config.merger import load_framework_by_name
+    from darnit.core.registry import get_plugin_registry
+
+    names = [framework_name] if framework_name else []
+    names += sorted(name for name in get_plugin_registry().list_frameworks() if name != framework_name)
+    definitions: dict[str, ContextDefinition] = {}
+    for name in names:
+        try:
+            loaded = framework_definitions(load_framework_by_name(name))
+        except Exception as exc:  # noqa: BLE001 - one broken framework must not hide the others' keys
+            logger.warning("Context keys of framework %r are not confirmable: %s", name, exc)
+            continue
+        for key, definition in loaded.items():
+            definitions.setdefault(canonical_key(key), definition)
+    return definitions
+
+
+def _annotation(definition: ContextDefinition) -> Any:
+    if definition.type == "boolean":
+        kind: Any = bool
+    elif definition.type in _LIST_TYPES:
+        kind = list[str] | str
+    else:
+        kind = str
+    description = definition.prompt
+    allowed = vocabulary(definition)
+    if allowed:
+        description += f" One of: {', '.join(allowed)}."
+    return Annotated[kind | None, Field(description=description)]
+
+
+def context_parameters(definitions: Mapping[str, ContextDefinition]) -> list[inspect.Parameter]:
+    """One keyword parameter per context key, typed from its definition."""
+    return [
+        inspect.Parameter(key, inspect.Parameter.KEYWORD_ONLY, default=None, annotation=_annotation(definition))
+        for key, definition in definitions.items()
+    ]
+
+
+def with_context_parameters(
+    tool: Callable[..., str], definitions: Mapping[str, ContextDefinition]
+) -> Callable[..., str]:
+    """``tool``, which takes context values as ``**values``, exposed with one parameter per context key.
+
+    The MCP schema is built from the signature, so the tool accepts exactly
+    the keys the frameworks define (research R7).
+    """
+    signature = inspect.signature(tool, eval_str=True)
+    fixed = [p for p in signature.parameters.values() if p.kind is not inspect.Parameter.VAR_KEYWORD]
+    names = {p.name for p in fixed}
+
+    @functools.wraps(tool)
+    def exposed(**kwargs: Any) -> str:
+        return tool(**kwargs)
+
+    exposed.__signature__ = signature.replace(  # type: ignore[attr-defined]
+        parameters=[*fixed, *(p for p in context_parameters(definitions) if p.name not in names)]
+    )
+    return exposed
+
+
+def _usage(definitions: Mapping[str, ContextDefinition]) -> str:
+    lines = [
+        "No data values provided.",
+        "",
+        "Pass the person's answer for a key, or accept the candidate get_pending_data showed them by its digest,",
+        "with owner and repo (and host when not github.com) naming the repository:",
+        "",
+        f"    confirm_project_data(<key>={ANSWER_PLACEHOLDER}, owner=..., repo=...)",
+        f'    confirm_project_data(accept_candidates={{"<key>": "{DIGEST_PLACEHOLDER}"}}, owner=..., repo=...)',
+        "",
+        "Keys:",
+    ]
+    for key, definition in definitions.items():
+        allowed = vocabulary(definition)
+        kind = f"one of: {', '.join(allowed)}" if allowed else str(definition.type)
+        lines.append(f"- `{key}` ({kind}): {definition.prompt}")
+    return "\n".join(lines)
+
+
+def _result_line(result: Any, accepted: bool) -> list[str]:
+    if result.outcome != "confirmed":
+        return [f"- {result.key}: refused: {result.reason}", *(f"  - {error}" for error in result.errors)]
+    where = (
+        f"recorded in {result.file}"
+        if result.location == "repository"
+        else "recorded operator-side (nothing written to the repository)"
+    )
+    origin = ((result.record.basis or {}).get("origin") or {}) if result.record else {}
+    basis = f"; basis: the candidate from {origin.get('kind')} ({origin.get('method')})" if accepted else ""
+    return [f"- {result.key}: confirmed, {where}{basis}"]
 
 
 def confirm_project_data_impl(
     local_path: str = ".",
-    # Existing parameters (backward compatible)
-    has_subprojects: bool | None = None,
-    has_releases: bool | None = None,
-    is_library: bool | None = None,
-    has_compiled_assets: bool | None = None,
-    ci_provider: str | None = None,
-    # New parameters for governance and security
-    maintainers: list[str] | str | None = None,
-    security_contact: str | None = None,
-    governance_model: str | None = None,
+    *,
+    accept_candidates: dict[str, str] | None = None,
     confirm_not_applicable: list[str] | None = None,
     owner: str | None = None,
     repo: str | None = None,
     host: str | None = None,
     framework_name: str | None = None,
     confirm_pass_candidate: list[str] | None = None,
+    **values: Any,
 ) -> str:
     """Record a person's confirmation of project data values.
 
@@ -42,30 +147,24 @@ def confirm_project_data_impl(
 
     Args:
         local_path: Path to the repository
-        has_subprojects: Does this project have subprojects or related repositories?
-        has_releases: Does this project make official releases?
-        is_library: Is this a library/framework consumed by other projects?
-        has_compiled_assets: Does this project release compiled binaries?
-        ci_provider: What CI/CD system does this project use?
-                    Options: github, gitlab, jenkins, circleci, azure, travis, none, other
-        maintainers: Project maintainers - list of GitHub usernames or path to MAINTAINERS file.
-                    Examples: ["@user1", "@user2"] or "MAINTAINERS.md"
-        security_contact: Security contact for vulnerability reports.
-                         Email address, URL, or reference to SECURITY.md section.
-        governance_model: Governance model used by this project.
-                         Options: bdfl, meritocracy, democracy, corporate, foundation, committee, other
+        accept_candidates: ``{key: candidate digest}`` for candidates the person
+                         accepted; each is confirmed only if the current
+                         candidate still has that digest, with its value and
+                         origin recorded as the basis.
         confirm_not_applicable: Control IDs whose pending not-applicable claim
                          the operator confirms. Recorded operator-side, never in the repository.
         owner: Owner of the repository whose values or claims are confirmed.
         repo: Name of the repository whose values or claims are confirmed.
         host: Git host of owner/repo (default github.com).
-        framework_name: Framework whose controls the claims name.
+        framework_name: Framework whose controls the claims name; its context
+                         keys come first (see ``confirmable_definitions``).
         confirm_pass_candidate: Control IDs whose PASS candidate (a positive
                          model judgment) the operator confirms for the current
                          evidence. Recorded operator-side, never in the repository.
+        **values: The person's answer per context key.
 
     Returns:
-        Confirmation of what was recorded
+        What was recorded or refused, per key
     """
     resolved_path, error = validate_local_path(local_path)
     if error:
@@ -84,60 +183,14 @@ def confirm_project_data_impl(
         )
         claims_result = f"{claims_result}\n\n{candidates_result}" if claims_result else candidates_result
 
-    # Validate ci_provider if provided
-    if ci_provider is not None:
-        if ci_provider.lower() not in VALID_CI_PROVIDERS:
-            return f"❌ Invalid ci_provider: {ci_provider}. Valid options: {', '.join(VALID_CI_PROVIDERS)}"
-        ci_provider = ci_provider.lower()
+    values = {canonical_key(key): value for key, value in values.items() if value is not None}
+    accepted = {canonical_key(key): digest for key, digest in (accept_candidates or {}).items()}
 
-    # Validate governance_model if provided
-    if governance_model is not None:
-        if governance_model.lower() not in VALID_GOVERNANCE_MODELS:
-            return f"❌ Invalid governance_model: {governance_model}. Valid options: {', '.join(VALID_GOVERNANCE_MODELS)}"
-        governance_model = governance_model.lower()
+    if not values and not accepted:
+        return claims_result or _usage(confirmable_definitions(framework_name))
 
-    values = {
-        "has_subprojects": has_subprojects,
-        "has_releases": has_releases,
-        "is_library": is_library,
-        "has_compiled_assets": has_compiled_assets,
-        "ci_provider": ci_provider,
-        "maintainers": maintainers,
-        "security_contact": security_contact,
-        "governance_model": governance_model,
-    }
-    values = {key: value for key, value in values.items() if value is not None}
-
-    if not values and claims_result:
-        return claims_result
-    if not values:
-        return """ℹ️ No data values provided.
-
-**Usage:**
-```python
-confirm_project_data(
-    local_path=".",
-    has_subprojects=False,  # No related repos
-    has_releases=True,      # We make releases
-    ci_provider="gitlab",   # Using GitLab CI instead of GitHub Actions
-    maintainers=["@user1", "@user2"],  # Project maintainers
-    security_contact="security@example.com",  # Security contact
-    governance_model="meritocracy",  # Governance model
-)
-```
-
-**Available data keys:**
-- `has_subprojects`: Does this project have subprojects or related repositories?
-- `has_releases`: Does this project make official releases?
-- `is_library`: Is this a library/framework consumed by other projects?
-- `has_compiled_assets`: Does this project release compiled binaries?
-- `ci_provider`: What CI/CD system? Options: github, gitlab, jenkins, circleci, azure, travis, none, other
-- `maintainers`: Project maintainers - list of GitHub usernames or path to MAINTAINERS file
-- `security_contact`: Security contact for vulnerability reports (email, URL, or file reference)
-- `governance_model`: Governance model - bdfl, meritocracy, democracy, corporate, foundation, committee, other
-"""
-
-    from darnit.config.context_writes import record_value_confirmations
+    from darnit.config.context_writes import WriteResult, record_value_confirmations
+    from darnit.config.context_writes import accept_candidates as accept
     from darnit.config.operator.loader import OperatorConfigError, resolve_operator_config
     from darnit.trust.decision import target_from_owner_repo
 
@@ -146,18 +199,35 @@ confirm_project_data(
     except OperatorConfigError as e:
         return f"Error: {e}"
 
-    results = record_value_confirmations(
-        resolved_path, values, target=target_from_owner_repo(owner, repo, host), operator=operator_config.config
+    definitions = confirmable_definitions(framework_name)
+    target = target_from_owner_repo(owner, repo, host)
+    both = sorted(set(values) & set(accepted))
+    results = [
+        WriteResult(key, "refused", reason="both an answer and an accepted candidate were given; give one")
+        for key in both
+    ]
+    results += record_value_confirmations(
+        resolved_path,
+        {key: value for key, value in values.items() if key not in both},
+        target=target,
+        operator=operator_config.config,
+        definitions=definitions,
     )
+    to_accept = {key: digest for key, digest in accepted.items() if key not in both}
+    if to_accept:
+        results += accept(
+            resolved_path,
+            to_accept,
+            target=target,
+            operator=operator_config.config,
+            definitions=definitions,
+            owner=owner,
+            repo=repo,
+        )
+
     lines = ["Project data:"]
     for result in results:
-        if result.outcome == "confirmed" and result.location == "repository":
-            lines.append(f"- {result.key}: confirmed, recorded in {result.file}")
-        elif result.outcome == "confirmed":
-            lines.append(f"- {result.key}: confirmed, recorded operator-side (nothing written to the repository)")
-        else:
-            lines.append(f"- {result.key}: refused: {result.reason}")
-            lines.extend(f"  - {error}" for error in result.errors)
+        lines.extend(_result_line(result, result.key in to_accept))
     if any(result.outcome == "confirmed" for result in results):
         lines.append("")
         lines.append(f'Re-run the audit to see the updated status: `audit_openssf_baseline(local_path="{resolved_path}")`')
