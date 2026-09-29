@@ -12,6 +12,8 @@ __pycache__/
 .coverage
 .mypy_cache/
 dist/
+!dist/
+!dist/**
 build/
 node_modules/
 *.log

@@ -33,9 +33,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/kusari-oss/darnit"
-Repository = "https://github.com/kusari-oss/darnit"
-Issues = "https://github.com/kusari-oss/darnit/issues"
+Homepage = "https://github.com/darnitdevorg/darnit"
+Repository = "https://github.com/darnitdevorg/darnit"
+Issues = "https://github.com/darnitdevorg/darnit/issues"
 
 [project.entry-points."darnit.implementations"]
 openssf-baseline = "darnit_baseline:register"

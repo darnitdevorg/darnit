@@ -90,7 +90,7 @@ Two reasons this doesn't work today:
 1. The **workspace root** (`darnit-mcp`) is a virtual package — it has `[tool.uv.workspace]` but no source of its own. `setuptools` errors out trying to build it directly.
 2. Installing a **single package by `subdirectory=`** works structurally, but its workspace-sibling dependencies (`darnit-baseline`, `darnit-gittuf`) aren't on PyPI yet. uv tries to resolve them from PyPI, gets 404, fails.
 
-After v0.1.0 puts all four packages on PyPI, `uv tool install darnit-mcp` works in one shot — no clone needed.
+After v0.1.0 puts the public packages on PyPI, `uv tool install darnit-mcp` works in one shot — no clone needed.
 
 ## See also
 
