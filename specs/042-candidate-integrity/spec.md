@@ -28,8 +28,11 @@ Feature 040 already gates not-applicable claims (explicit or implied by a contex
 
 ### Session 2026-09-28
 
-- Q: How are values already stored without a confirmation record treated? -> A: Every such value of a user-judgment key is a candidate until a person confirms it, with a one-step review to confirm or remove all of them at once (FR-010).
+- Q: How are values already stored without a confirmation record treated? -> A: Every such value of a user-judgment key is a candidate until a person confirms it, with a one-step review to confirm or reject all of them at once (FR-010).
 - Q: Where are context confirmations recorded? -> A: In the repository's darnit extension file for repositories the operator controls (trusted), otherwise in the operator-side store from feature 040; never written into a repository the operator does not control (FR-011).
+- Q: When auditing a repository the operator does not trust, do confirmation records committed inside that repository count as confirmed? -> A: Yes. In-repository records are the project's own statement and always count; operators are expected to run darnit only against repositories they trust (FR-011).
+- Q: Should confirmations of project values expire? -> A: No expiry by default; the framework configuration may set a validity period per key, applied the same way for every operator. Each confirmation record also carries when it was last validated and may carry its own optional expiration, set by the project (FR-022).
+- Q: During the one-step review, what happens to a stored value the person rejects? -> A: darnit deletes it from its own extension file; for the project's upstream-format file it leaves the file untouched and reports the exact field for the person to edit, and until they do, the value stays an unconfirmed candidate (FR-010).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -97,7 +100,7 @@ A person confirms a value through the confirmation tool. darnit records who conf
 
 1. **Given** a person confirms a value, **When** context is later loaded, **Then** the value is confirmed and carries who, when, and the candidate it was based on.
 2. **Given** a value stored without a confirmation record, **When** context is loaded, **Then** it is a candidate (origin: stored without confirmation) and is never silently upgraded to confirmed.
-3. **Given** values stored without confirmation records, **When** the person asks to review them, **Then** darnit lists them with their current values so the person can confirm or remove each one, in one step for many keys.
+3. **Given** values stored without confirmation records, **When** the person asks to review them, **Then** darnit lists them with their current values and locations so the person can confirm or reject each one, in one step for many keys; rejected values are deleted from darnit's extension file, and for the project's own file darnit names the field to edit without changing the file.
 4. **Given** a confirmed value, **When** the person changes the underlying data by hand, **Then** the changed value is not reported as confirmed by the earlier confirmation.
 
 ---
@@ -135,6 +138,7 @@ A project maintains its own `.project/project.yaml`. If darnit cannot parse or v
 
 ### Edge Cases
 
+- A confirmation lapses (framework validity period or the record's own expiration passed): the key reads as a candidate with origin "expired confirmation" and the previous value, and controls treat it as unverified until re-confirmed.
 - A detector returns a value identical to a previously confirmed value: the key stays confirmed under the existing record; no new record is created from detection alone.
 - A confirmed value's confirmation record exists but the value in the file was edited by hand: the new value is not confirmed by the old record (User Story 4, scenario 4).
 - A key is marked as requiring judgment in one framework and as detectable in another loaded framework: the stricter rule applies.
@@ -164,9 +168,10 @@ A project maintains its own `.project/project.yaml`. If darnit cannot parse or v
 **Recording confirmations**
 
 - **FR-009**: A confirmation MUST record who confirmed, when, the confirmed value, and the candidate (value and origin) it was based on, if any. Confirmations MUST remain distinguishable from candidates on every later read and in every process.
-- **FR-010**: A value of a user-judgment key found in stored project data without a confirmation record (in either the project file or darnit's extension file) MUST be treated as a candidate (origin: stored without confirmation) until a person confirms it. darnit MUST offer a one-step review that lists every such value, with its current value and location, so a person can confirm or remove any number of them in a single action.
-- **FR-011**: Confirmation records MUST be stored in the repository's darnit extension file when the confirmation is made for a repository the operator controls (a repository in the operator's trusted list from feature 040), so that everyone who clones it sees the same confirmations; otherwise they MUST be stored in the operator-side store from feature 040, keyed by the repository's canonical identity, and MUST NOT write into the repository. When both exist for a key, the in-repository record for the current value takes precedence; an operator-side record applies only to that operator's runs.
+- **FR-010**: A value of a user-judgment key found in stored project data without a confirmation record (in either the project file or darnit's extension file) MUST be treated as a candidate (origin: stored without confirmation) until a person confirms it. darnit MUST offer a one-step review that lists every such value, with its current value and location, so a person can confirm or reject any number of them in a single action. A rejected value MUST be deleted from darnit's extension file; a rejected value in the project's upstream-format file MUST NOT be edited by darnit: darnit reports the exact file and field for the person to change, and until it changes the value remains an unconfirmed candidate that nothing consumes.
+- **FR-011**: Confirmation records MUST be stored in the repository's darnit extension file when the confirmation is made for a repository the operator controls (a repository in the operator's trusted list from feature 040), so that everyone who clones it sees the same confirmations; otherwise they MUST be stored in the operator-side store from feature 040, keyed by the repository's canonical identity, and MUST NOT write into the repository. When both exist for a key, the in-repository record for the current value takes precedence; an operator-side record applies only to that operator's runs. In-repository confirmation records count as confirmed whether or not the operator trusts the repository: they are the project's own statement, and darnit is meant to be run against trusted repositories.
 - **FR-012**: A confirmation MUST apply only to the value that was confirmed; if the stored value later differs, the key is unconfirmed.
+- **FR-022**: Every confirmation record MUST carry when the value was last validated and MAY carry an expiration set by whoever recorded it (for example the project, in its own `.project/` data). The framework configuration MAY set a validity period per key, measured from the last validation and applied identically for every operator. A confirmation is valid until the earliest applicable limit; with no limit it does not expire. When it lapses, the value becomes a candidate again (origin: expired confirmation) and must be re-confirmed; re-confirming updates the last-validated time. Operator-local settings MUST NOT change when a confirmation expires.
 
 **Questions and prompts**
 
@@ -190,7 +195,7 @@ A project maintains its own `.project/project.yaml`. If darnit cannot parse or v
 
 - **Context key**: A named piece of project data (maintainers, security contact, CI provider, release status, governance model, ...), with one canonical name, a vocabulary or shape, and a flag saying whether it requires a person's judgment.
 - **Candidate**: A value produced by detection, with its origin (which detector, from what source). Never consumed as the key's value when the key requires judgment.
-- **Confirmation**: A person's decision on a key's value: the value, who, when, and the candidate it was based on. Makes the value usable; applies only while the stored value matches.
+- **Confirmation**: A person's decision on a key's value: the value, who, when, the candidate it was based on, when it was last validated, and an optional expiration. Makes the value usable; applies only while the stored value matches and no validity limit has passed.
 - **Concluded value**: A detected value for a key that does not require judgment, accepted under the framework's rules and recorded with its origin.
 - **Project file / extension file**: The repository's upstream-format project data file (owned by the project) and darnit's own extension file beside it.
 
@@ -209,7 +214,7 @@ A project maintains its own `.project/project.yaml`. If darnit cannot parse or v
 
 - Features 040 (operator configuration, trust, confirmation store) and 041 (result contract, PASS candidates) are in place; this feature builds on them and does not change their rules.
 - Release status and CI provider are observable facts: they may be concluded from a successful detection without a person, but never from a failed one. Maintainers, security contact, and governance model require judgment.
-- Confirmations of context values do not expire by default; an expiry policy, if wanted, is a follow-up (the constitution permits but does not require one).
+- Confirmations of context values do not expire unless the framework sets a per-key validity period or the record carries its own expiration (FR-022).
 - Adopting upstream `.project/` schema conformance in full (#498) is out of scope; this feature only guarantees darnit does not break or replace the project's own file.
 - Remediation atomicity, dry-run fidelity, and the other remediation safety issues (#472-#475, #483) are a separate feature; this feature covers only which values remediation may use.
 - ASCII-only text; no reference to unpublished security advisories.
