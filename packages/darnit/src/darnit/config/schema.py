@@ -19,6 +19,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl
 
+from darnit.config.context_keys import canonical_key, normalize_value
+
 # =============================================================================
 # Enums
 # =============================================================================
@@ -637,15 +639,25 @@ class ProjectConfig(BaseModel):
         return self.audits
 
     def get_ci_provider(self) -> str | None:
-        """Get CI provider name."""
-        # Check extension first
-        if self.x_openssf_baseline and self.x_openssf_baseline.ci:
-            return self.x_openssf_baseline.ci.provider
+        """CI provider in the canonical ``ci_provider`` vocabulary (feature 042, FR-018).
 
-        # Check context
-        if self.x_openssf_baseline and self.x_openssf_baseline.context:
-            return self.x_openssf_baseline.context.ci_provider
-
+        Read like the context resolver: ``context.ci_provider``, then legacy
+        names under ``context``, then ``ci.provider``.
+        """
+        extension = self.x_openssf_baseline
+        if extension is None:
+            return None
+        stored: list[Any] = []
+        if extension.context:
+            context = extension.context.model_dump(exclude_none=True)
+            names = sorted(context, key=lambda name: name != "ci_provider")
+            stored += [context[name] for name in names if canonical_key(name) == "ci_provider"]
+        if extension.ci:
+            stored.append(extension.ci.provider)
+        for raw in stored:
+            value = normalize_value("ci_provider", raw)
+            if value is not None:
+                return value
         return None
 
     def get_contributor_agreement_type(self) -> str | None:

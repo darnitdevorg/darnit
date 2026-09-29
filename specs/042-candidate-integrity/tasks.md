@@ -149,13 +149,13 @@
 
 ### Tests for User Story 5
 
-- [ ] T040 [P] [US5] Write detection tests: `value_if_fail` applies only on a concluded negative; ERROR and INCONCLUSIVE yield no value; `has_releases` with a failing `gh` (recorded response) is unknown and release-gated controls match the unknown case (SC-004), in `tests/darnit/context_integrity/test_detection_failures.py`
-- [ ] T041 [P] [US5] Write CI provider tests: confirming an unrelated key on `R-ci` stores nothing for `ci_provider` or stores `github`; legacy `github_actions` reads as `github`; CI controls stay applicable, in `tests/darnit/context_integrity/test_ci_provider_canonical.py`
+- [X] T040 [P] [US5] Write detection tests: `value_if_fail` applies only on a concluded negative; ERROR and INCONCLUSIVE yield no value; `has_releases` with a failing `gh` (recorded response) is unknown and release-gated controls match the unknown case (SC-004), in `tests/darnit/context_integrity/test_detection_failures.py`
+- [X] T041 [P] [US5] Write CI provider tests: confirming an unrelated key on `R-ci` stores nothing for `ci_provider` or stores `github`; legacy `github_actions` reads as `github`; CI controls stay applicable, in `tests/darnit/context_integrity/test_ci_provider_canonical.py`
 
 ### Implementation for User Story 5
 
-- [ ] T042 [US5] Remove the non-strict mode from `_run_detect_pipeline` (keep the feature 040 strict semantics for all callers) in `packages/darnit/src/darnit/config/context_storage.py`; update `observe_context_evidence` callers accordingly in `packages/darnit/src/darnit/trust/assertions.py`
-- [ ] T043 [US5] Remove `detect_ci` in favour of `detect_ci_provider` and route every read of the CI provider through `context_keys`, in `packages/darnit/src/darnit/context/detectors.py`, `packages/darnit/src/darnit/config/context_storage.py`, and `packages/darnit/src/darnit/config/schema.py` (`get_ci_provider`)
+- [X] T042 [US5] Remove the non-strict mode from `_run_detect_pipeline` (keep the feature 040 strict semantics for all callers) in `packages/darnit/src/darnit/config/context_storage.py`; update `observe_context_evidence` callers accordingly in `packages/darnit/src/darnit/trust/assertions.py`
+- [X] T043 [US5] Remove `detect_ci` in favour of `detect_ci_provider` and route every read of the CI provider through `context_keys`, in `packages/darnit/src/darnit/context/detectors.py`, `packages/darnit/src/darnit/config/context_storage.py`, and `packages/darnit/src/darnit/config/schema.py` (`get_ci_provider`)
 
 **Checkpoint**: SC-004 holds.
 
@@ -169,12 +169,12 @@
 
 ### Tests for User Story 6
 
-- [ ] T044 [P] [US6] Write tests on `R-hand`: audit and `confirm_project_data` leave `project.yaml` byte-identical and return the validation errors; an unparseable `darnit.yaml` blocks writes instead of being rewritten without its `controls:`; an applied remediation updating one field of a valid hand-written `project.yaml` preserves comments, order, and other fields (SC-005), in `tests/darnit/context_integrity/test_user_files_survive.py`
+- [X] T044 [P] [US6] Write tests on `R-hand`: audit and `confirm_project_data` leave `project.yaml` byte-identical and return the validation errors; an unparseable `darnit.yaml` blocks writes instead of being rewritten without its `controls:`; an applied remediation updating one field of a valid hand-written `project.yaml` preserves comments, order, and other fields (SC-005), in `tests/darnit/context_integrity/test_user_files_survive.py`
 
 ### Implementation for User Story 6
 
-- [ ] T045 [US6] Replace every `load_project_config() or init_project_config()` write pattern with `load_project_config_checked` and a refusal on invalid, and make the remaining `save_project_config` writers use the loader's round-trip helper, in `packages/darnit/src/darnit/server/tools/project_data.py`, `packages/darnit/src/darnit/config/resolver.py`, and `packages/darnit/src/darnit/locate/locator.py`
-- [ ] T046 [US6] Make `apply_project_update` patch only the targeted `project.yaml` fields through the round-trip helper (and refuse on invalid, as today) in `packages/darnit/src/darnit/remediation/executor.py`
+- [X] T045 [US6] Replace every `load_project_config() or init_project_config()` write pattern with `load_project_config_checked` and a refusal on invalid, and make the remaining `save_project_config` writers use the loader's round-trip helper, in `packages/darnit/src/darnit/server/tools/project_data.py`, `packages/darnit/src/darnit/config/resolver.py`, and `packages/darnit/src/darnit/locate/locator.py`
+- [X] T046 [US6] Make `apply_project_update` patch only the targeted `project.yaml` fields through the round-trip helper (and refuse on invalid, as today) in `packages/darnit/src/darnit/remediation/executor.py`
 
 **Checkpoint**: SC-005 holds.
 

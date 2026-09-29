@@ -369,7 +369,7 @@ def observe_context_evidence(
     observed_at = datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
     if not detect_pipeline:
         return Evidence(source=source, value=None, observed_at=observed_at)
-    detected = _run_detect_pipeline(contradicted_by.context, detect_pipeline, local_path, owner, repo, strict=True)
+    detected = _run_detect_pipeline(contradicted_by.context, detect_pipeline, local_path, owner, repo)
     if detected is None:
         return Evidence(source=source, value=None, observed_at=observed_at)
     return Evidence(source=source, value=detected.value, observed_at=observed_at, method=detected.detection_method)

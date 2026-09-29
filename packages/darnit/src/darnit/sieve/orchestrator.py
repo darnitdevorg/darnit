@@ -934,23 +934,18 @@ class SieveOrchestrator:
         context: CheckContext,
         evidence: dict[str, Any],
     ) -> None:
-        """Apply on_pass project_update when a control passes.
+        """Record the control's on_pass project_update as a proposal in its evidence.
 
-        Reads on_pass config from control_spec.metadata and updates
-        .project/project.yaml with the specified values.
+        An audit never writes to the repository (feature 042, FR-001): the
+        resolved update is reported under ``evidence["proposed_project_update"]``
+        for a person or an applied remediation to act on.
 
         Values can reference evidence using $EVIDENCE.<key> syntax.
-
-        Args:
-            control_spec: The control that passed
-            context: Check context with local_path
-            evidence: Accumulated evidence from passes
         """
         on_pass = control_spec.metadata.get("on_pass")
         if not on_pass:
             return
 
-        # on_pass can be an OnPassConfig pydantic model or a dict
         if hasattr(on_pass, "project_update"):
             updates = on_pass.project_update
         elif isinstance(on_pass, dict):
@@ -961,7 +956,6 @@ class SieveOrchestrator:
         if not updates:
             return
 
-        # Substitute $EVIDENCE references
         resolved: dict[str, Any] = {}
         for key, value in updates.items():
             if isinstance(value, str) and value.startswith("$EVIDENCE."):
@@ -970,24 +964,7 @@ class SieveOrchestrator:
             else:
                 resolved[key] = value
 
-        # Apply updates to .project/project.yaml
-        local_path = context.local_path
-        if not local_path:
-            return
-
-        try:
-            from darnit.remediation.executor import (
-                ProjectUpdateRemediationConfig,
-                apply_project_update,
-            )
-
-            config = ProjectUpdateRemediationConfig(set=resolved)
-            apply_project_update(local_path, config, control_spec.control_id)
-            logger.debug(f"Applied on_pass for {control_spec.control_id}: set {len(resolved)} values")
-        except ImportError:
-            logger.debug("Remediation executor not available for on_pass")
-        except Exception as e:
-            logger.warning(f"Failed to apply on_pass for {control_spec.control_id}: {e}")
+        evidence["proposed_project_update"] = resolved
 
 
 # =============================================================================

@@ -261,8 +261,11 @@ def audit_report_metadata(
     ``unknown_assertions`` lists not-applicable claims about controls
     ``framework_name`` does not define (they have no effect), and
     ``warnings`` (present only when non-empty) carries the ``.baseline.toml``
-    deprecation warnings, which are also logged.
+    deprecation warnings and the errors of a ``.project/`` file that is
+    present but invalid (not read, and never written; feature 042, FR-019),
+    which are also logged.
     """
+    from darnit.config.loader import load_project_config_checked
     from darnit.config.merger import baseline_toml_warnings, find_ignored_repository_settings
     from darnit.trust.assertions import unknown_assertions
     from darnit.trust.decision import decide_trust
@@ -285,6 +288,10 @@ def audit_report_metadata(
         ],
     }
     warnings = baseline_toml_warnings(Path(local_path))
+    warnings += [
+        f"Invalid project file, not read and not written: {error}"
+        for error in load_project_config_checked(local_path).errors
+    ]
     for warning in warnings:
         logger.warning(warning)
     if warnings:

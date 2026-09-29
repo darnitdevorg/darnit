@@ -12,8 +12,7 @@ and .project/ configuration.
 import os
 
 from darnit.config.discovery import _set_config_path, discover_files
-from darnit.config.loader import load_project_config, save_project_config
-from darnit.config.schema import create_minimal_config
+from darnit.config.loader import load_project_config, load_project_config_checked, update_project_config
 from darnit.core.logging import get_logger
 
 logger = get_logger("config.resolver")
@@ -114,33 +113,22 @@ def update_config_after_file_create(
 
     section, field = parts
 
-    # Load existing config or create minimal one
-    config = load_project_config(local_path)
-    if config is None:
-        # Create a minimal config with discovered project name
-        from darnit.config.discovery import discover_project_name
-
-        project_name = discover_project_name(local_path) or "unnamed"
-        config = create_minimal_config(
-            name=project_name,
-            project_type="software",
-        )
-        config.local_path = local_path
-        logger.info(f"Created new .project/ configuration for {project_name}")
-
-    # Check if reference already exists
-    existing_path = config.get_path(section, field)
-    if existing_path == created_file_path:
+    files = load_project_config_checked(local_path)
+    if files.invalid:
+        logger.warning(f"Not updating .project/ for {control_id}: {'; '.join(files.errors)}")
+        return False
+    config = files.config
+    if config is not None and config.get_path(section, field) == created_file_path:
         logger.debug(
             f"Control {control_id}: .project/ reference already set to {created_file_path}"
         )
         return False  # Already set, no change needed
 
-    # Set the path reference
-    _set_config_path(config, section, field, created_file_path)
-
-    # Save the config
-    save_project_config(config, local_path)
+    written = update_project_config(
+        local_path, [ref_path], lambda config: _set_config_path(config, section, field, created_file_path)
+    )
+    if not written:
+        return False
     logger.info(
         f"Updated .project/ with {section}.{field} = {created_file_path}"
     )

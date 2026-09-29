@@ -15,6 +15,7 @@ WRITE_HELPERS = frozenset(
         "_write_yaml_file",
         "update_yaml_file",
         "update_extension_file",
+        "update_project_config",
         "save_context_value",
         "save_context_values",
     }

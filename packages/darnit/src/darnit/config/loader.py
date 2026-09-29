@@ -38,6 +38,14 @@ logger = get_logger("config.loader")
 PROJECT_DIR = ".project"
 PROJECT_FILE = "project.yaml"
 
+PROJECT_FILE_HEADER = [
+    ".project/project.yaml - CNCF Project Configuration",
+    "https://github.com/cncf/automation/tree/main/utilities/dot-project",
+    "",
+    "This file contains standard CNCF .project fields.",
+    "Extension fields are in separate files (darnit.yaml, etc.)",
+]
+
 # CNCF standard fields (go in project.yaml)
 CNCF_STANDARD_FIELDS = {
     "name", "description", "schema_version", "type",
@@ -324,17 +332,7 @@ def save_project_config(config: ProjectConfig, local_path: str) -> str:
 
     # Write project.yaml (CNCF standard fields)
     project_path = os.path.join(project_dir, PROJECT_FILE)
-    _write_yaml_file(
-        project_path,
-        project_data,
-        [
-            ".project/project.yaml - CNCF Project Configuration",
-            "https://github.com/cncf/automation/tree/main/utilities/dot-project",
-            "",
-            "This file contains standard CNCF .project fields.",
-            "Extension fields are in separate files (darnit.yaml, etc.)",
-        ]
-    )
+    _write_yaml_file(project_path, project_data, PROJECT_FILE_HEADER)
 
     # Write each extension file
     for ext in EXTENSION_REGISTRY:
@@ -346,11 +344,35 @@ def save_project_config(config: ProjectConfig, local_path: str) -> str:
     return project_path
 
 
-def update_yaml_file(path: str, mutate: Callable[[Any], None], header_lines: list[str] | None = None) -> None:
+def _block_indentation(text: str) -> tuple[int, int]:
+    """(mapping indent, sequence dash offset) of a block-style YAML document; (2, 0) when it shows neither."""
+    mapping: int | None = None
+    offset: int | None = None
+    parent: tuple[int, bool] | None = None
+    for line in text.splitlines():
+        content = line.split(" #", 1)[0].rstrip()
+        stripped = content.lstrip(" ")
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(content) - len(stripped)
+        is_item = stripped == "-" or stripped.startswith("- ")
+        if parent is not None and indent > parent[0] and not parent[1]:
+            if is_item and offset is None:
+                offset = indent - parent[0]
+            elif not is_item and mapping is None:
+                mapping = indent - parent[0]
+        parent = (indent, is_item) if stripped.endswith(":") else None
+        if mapping is not None and offset is not None:
+            break
+    return mapping or 2, offset or 0
+
+
+def update_yaml_file(path: str, mutate: Callable[[Any], Any], header_lines: list[str] | None = None) -> bool:
     """Round-trip ``path`` through ruamel.yaml, changing only what ``mutate`` changes.
 
-    Comments, ordering, and keys ``mutate`` does not touch are preserved. A
-    new file starts with ``header_lines`` as comments.
+    Comments, ordering, indentation, and keys ``mutate`` does not touch are
+    preserved. A new file starts with ``header_lines`` as comments. Nothing
+    is written when ``mutate`` returns False; returns whether the file was written.
     """
     from io import StringIO
 
@@ -365,6 +387,8 @@ def update_yaml_file(path: str, mutate: Callable[[Any], None], header_lines: lis
     if os.path.exists(path):
         with open(path, encoding="utf-8") as f:
             text = f.read()
+        mapping, offset = _block_indentation(text)
+        yaml_rt.indent(mapping=mapping, sequence=offset + 2, offset=offset)
         data = yaml_rt.load(text)
         if data is None:
             prefix = text
@@ -372,7 +396,8 @@ def update_yaml_file(path: str, mutate: Callable[[Any], None], header_lines: lis
         prefix = "".join(f"# {line}".rstrip() + "\n" for line in header_lines) + "\n"
     if data is None:
         data = CommentedMap()
-    mutate(data)
+    if mutate(data) is False:
+        return False
 
     body = StringIO()
     if data:
@@ -382,6 +407,7 @@ def update_yaml_file(path: str, mutate: Callable[[Any], None], header_lines: lis
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(prefix + body.getvalue())
+    return True
 
 
 def update_extension_file(local_path: str, mutate: Callable[[Any], None]) -> str:
@@ -390,6 +416,103 @@ def update_extension_file(local_path: str, mutate: Callable[[Any], None]) -> str
     path = os.path.join(local_path, PROJECT_DIR, extension.filename)
     update_yaml_file(path, mutate, extension.header)
     return path
+
+
+class ProjectFilesInvalid(ValueError):
+    """A ``.project/`` file is present but unreadable or invalid; nothing was written (FR-019)."""
+
+    def __init__(self, errors: list[str]) -> None:
+        self.errors = errors
+        super().__init__("; ".join(errors))
+
+
+def _set_path(node: Any, source: Any, parts: list[str]) -> bool:
+    """Copy ``source``'s value at ``parts`` into ``node``, creating only the missing keys; True if ``node`` changed."""
+    for i, part in enumerate(parts):
+        if not isinstance(source, dict) or part not in source:
+            return False
+        source = source[part]
+        if i == len(parts) - 1 or not isinstance(node.get(part), dict):
+            if node.get(part) == source:
+                return False
+            node[part] = source
+            return True
+        node = node[part]
+    return False
+
+
+def _set_paths(targets: list[tuple[list[str], Any]]) -> Callable[[Any], bool]:
+    def mutate(data: Any) -> bool:
+        changed = [_set_path(data, source, parts) for parts, source in targets]
+        return any(changed)
+
+    return mutate
+
+
+def update_project_config(
+    local_path: str,
+    paths: list[str],
+    mutate: Callable[[ProjectConfig], None],
+    *,
+    create: bool = True,
+) -> list[str]:
+    """Write only the dotted ``paths`` that ``mutate`` sets on the project configuration (FR-019, FR-020).
+
+    ``mutate`` receives the current :class:`ProjectConfig` (for coercion to the
+    schema's types, e.g. a path string to ``{path: ...}``). Each path is then
+    written into the file it belongs to -- CNCF fields to ``project.yaml``,
+    everything else to ``darnit.yaml`` -- through :func:`update_yaml_file`, so
+    comments, ordering, and fields darnit does not own are preserved. An
+    absent ``project.yaml`` is created (with ``name`` only) when ``create``.
+
+    Returns:
+        The files written.
+
+    Raises:
+        ProjectFilesInvalid: a ``.project/`` file is present but invalid.
+    """
+    files = load_project_config_checked(local_path)
+    if files.invalid:
+        raise ProjectFilesInvalid(files.errors)
+    extension = get_default_extension()
+    if files.project.state == "absent":
+        if not create:
+            return []
+        from darnit.config.discovery import discover_project_name
+
+        name = discover_project_name(local_path) or "unnamed"
+        config = ProjectConfig.model_validate({"name": name, extension.schema_key: files.extension.data or {}})
+        paths = ["name", *paths]
+    else:
+        config = files.config
+        if config is None:
+            raise ProjectFilesInvalid([f"{files.project.path}: does not validate together with {extension.filename}"])
+
+    mutate(config)
+    dumped = config.model_dump(mode="json", by_alias=True, exclude_none=True, exclude_unset=True)
+
+    in_extension = dumped.get(extension.schema_key, {})
+    project_targets: list[tuple[list[str], Any]] = []
+    extension_targets: list[tuple[list[str], Any]] = []
+    for path in paths:
+        parts = path.split(".")
+        if parts[0] in CNCF_STANDARD_FIELDS:
+            project_targets.append((parts, dumped))
+        elif parts[0] == extension.schema_key:
+            extension_targets.append((parts[1:], in_extension))
+        else:
+            extension_targets.append((parts, dumped if parts[0] in dumped else in_extension))
+
+    written = []
+    for targets, path, header in (
+        (project_targets, os.path.join(local_path, PROJECT_DIR, PROJECT_FILE), PROJECT_FILE_HEADER),
+        (extension_targets, os.path.join(local_path, PROJECT_DIR, extension.filename), extension.header),
+    ):
+        if not targets:
+            continue
+        if update_yaml_file(path, _set_paths(targets), header):
+            written.append(path)
+    return written
 
 
 # =============================================================================

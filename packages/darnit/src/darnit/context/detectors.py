@@ -30,30 +30,6 @@ def detect_forge(local_path: str) -> str:
         return "unknown"
 
 
-def detect_ci(local_path: str) -> str:
-    """
-    Figures out what CI system the project uses by checking for well-known
-    config files. Returns the name of the first one found, or "unknown".
-    """
-    path = Path(local_path)
-
-    checks = [
-        (path / ".github" / "workflows", "github_actions"),
-        (path / ".circleci" / "config.yml", "circleci"),
-        (path / "Jenkinsfile", "jenkins"),
-        (path / ".gitlab-ci.yml", "gitlab_ci"),
-        (path / "azure-pipelines.yml", "azure_pipelines"),
-        (path / ".travis.yml", "travis"),
-        (path / "bitbucket-pipelines.yml", "bitbucket_pipelines"),
-    ]
-
-    for file_or_dir, ci_name in checks:
-        if file_or_dir.exists():
-            return ci_name
-
-    return "unknown"
-
-
 def detect_build_system(local_path: str) -> str:
     """
     Figures out what language/build tool the project uses by checking for

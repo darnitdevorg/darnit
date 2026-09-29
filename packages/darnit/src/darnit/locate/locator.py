@@ -11,8 +11,8 @@ import os
 
 from darnit.config.discovery import _set_config_path, discover_files
 from darnit.config.framework_schema import LocatorConfig
-from darnit.config.loader import load_project_config, save_project_config
-from darnit.config.schema import ProjectConfig, create_minimal_config
+from darnit.config.loader import load_project_config, load_project_config_checked, update_project_config
+from darnit.config.schema import ProjectConfig
 from darnit.core.logging import get_logger
 
 from .models import FoundEvidence, LocateResult
@@ -270,33 +270,26 @@ class UnifiedLocator:
 
         section, field = parts
 
-        # Load or create config
+        files = load_project_config_checked(self.local_path)
+        if files.invalid:
+            logger.warning(f"Not updating .project/ for {control_id}: {'; '.join(files.errors)}")
+            return False
+
         config = self.project_config
-        if config is None:
-            from darnit.config.discovery import discover_project_name
-
-            project_name = discover_project_name(self.local_path) or "unnamed"
-            config = create_minimal_config(
-                name=project_name,
-                project_type="software",
-            )
-            config.local_path = self.local_path
-            self._project_config = config
-            logger.info(f"Created new .project/ configuration for {project_name}")
-
-        # Check if already set to same value
-        existing_path = config.get_path(section, field)
-        if existing_path == found.path:
+        if config is not None and config.get_path(section, field) == found.path:
             logger.debug(
                 f"Control {control_id}: .project/{section}.{field} already set to {found.path}"
             )
             return False
 
-        # Set the path reference
-        _set_config_path(config, section, field, found.path)
-
-        # Save the config
-        save_project_config(config, self.local_path)
+        written = update_project_config(
+            self.local_path,
+            [locator_config.project_path],
+            lambda config: _set_config_path(config, section, field, found.path),
+        )
+        self._config_loaded = False
+        if not written:
+            return False
         logger.info(
             f"Updated .project/ with {section}.{field} = {found.path}"
         )

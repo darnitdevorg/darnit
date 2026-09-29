@@ -1194,17 +1194,23 @@ A confirmation lapses at the earliest of its `expires_at` and `last_validated + 
 
 ### 7.7 Detection Fallbacks
 
-A detection step's `value_if_fail` applies only when the step ran to completion and answered negatively and no earlier step failed to run. A step that errored or could not decide produces no value. Release status is never `false` unless a successful platform answer showed no releases.
+A detection step's `value_if_fail` applies only when the step ran to completion and answered negatively (a `FAIL`, or a successful command whose CEL `expr` evaluated false) and no earlier step failed to run. A step that errored (missing tool, timeout, unknown handler) or could not decide (an exit code the step does not declare) produces no value, and later steps still run. The same rule applies to every caller: the context resolver, pending-data questions, and the evidence that contradicts a not-applicable claim (14.3). Release status is never `false` unless a successful platform answer showed no releases; a failing `gh release list` leaves `has_releases` unknown.
+
+#### Scenario: Failing release lookup
+- **WHEN** no local release evidence exists and `gh release list` exits non-zero (authorization, rate limit, network, no such repository)
+- **THEN** `has_releases` is `unknown`, it is listed as pending data, and release-gated controls are evaluated exactly as if it had never been looked up
 
 ### 7.8 Canonical Key Names and Vocabularies
 
-Each context key has one canonical name and one vocabulary, taken from the framework TOML. Stored legacy names and spellings are read as the canonical form (`ci.provider` and bare `provider` read as `ci_provider`; `github_actions` -> `github`, `gitlab_ci` -> `gitlab`, `azure_pipelines` -> `azure`, `bitbucket_pipelines` -> `other`, `unknown` -> no value). The framework writes only canonical names and values.
+Each context key has one canonical name and one vocabulary, taken from the framework TOML. Stored legacy names and spellings are read as the canonical form (`ci.provider` and bare `provider` read as `ci_provider`; `github_actions` -> `github`, `gitlab_ci` -> `gitlab`, `azure_pipelines` -> `azure`, `bitbucket_pipelines` -> `other`, `unknown` -> no value). The framework writes only canonical names and values. Every read of the CI provider goes through this normalization (`darnit.config.context_keys`), including `ProjectConfig.get_ci_provider()`, and the framework has one CI detector (`detect_ci_provider`), which returns canonical values.
 
 ### 7.9 Reads Never Write; One Writer
 
 - Auditing (every driver), listing pending data, report generation, remediation in dry run, the remediation context guard in every mode, and the harness collect phase SHALL NOT create, modify, or delete any file in the audited repository.
 - `darnit.config.context_writes` is the only code that writes context values and in-repository confirmation records. It writes only `.project/darnit.yaml` (never `.project/project.yaml`), preserves sections and comments it does not change (including feature 040 `controls:` claims), and refuses every write, returning the errors, when `.project/project.yaml` or `.project/darnit.yaml` is present but unparseable or invalid. The loader distinguishes absent, valid, and invalid files (`load_project_config_checked`).
 - `init_project_config` (MCP) creates only an empty `.project/darnit.yaml` when `.project/` is absent, and reports instead of overwriting when it is present.
+- An applied remediation's `project_update` and the file-reference sync after a remediation creates a file (`update_config_after_file_create`, `UnifiedLocator.sync_to_project`) write only the dotted paths they target, through the loader's round-trip helper (`update_project_config`): CNCF fields to `.project/project.yaml`, other fields to `.project/darnit.yaml`, preserving comments, ordering, indentation, and fields darnit does not own. An absent `.project/project.yaml` is created with `name` and the targeted fields only. No darnit code replaces a whole project file. When either file is present but invalid they write nothing: `apply_project_update` raises with the validation errors (an applied remediation reports `project_update: failed: <errors>`), and the sync functions return false.
+- An audit reads nothing from a present-but-invalid `.project/` file and reports each validation error in the report's `warnings` (JSON) and as a warning line (Markdown).
 
 ### 7.10 Confirmation Tool Contract
 
@@ -1219,7 +1225,7 @@ The observable payloads of `get_pending_data` and `confirm_project_data` are def
 
 Every consumer reads context values from the resolver's usable mapping (7.4) and nothing else:
 
-- **Audit applicability** (`when` clauses): this run's filesystem detections of keys that are not judgment keys, then `.project/project.yaml` mapper values, then usable values. The audit resolves without running the framework's detection pipelines; its only detections are those filesystem detections. Only usable values confirmed in the repository count as repository data for not-applicable claims (14.3).
+- **Audit applicability** (`when` clauses): this run's filesystem detections of keys that are not judgment keys, then `.project/project.yaml` mapper values, then usable values. The audit resolves without running the framework's detection pipelines; its only detections are those filesystem detections. Only usable values confirmed in the repository count as repository data for not-applicable claims (14.3). Values the detection pipelines would conclude (for example `has_releases`) are therefore used by the audit only once confirmed: a missing key leaves its control applicable, so a concluded positive changes nothing, and the only effect a concluded negative could have is to make controls not applicable from a network answer (an empty `gh release list` does not show that a project makes no official releases, which it may publish elsewhere). Pending-data questions do run the pipelines, and a person can confirm the proposed value.
 - **Remediation**: templates and remediation `when` clauses see this run's detections of keys that are not judgment keys, overlaid with usable values. The `context` namespace is guarded: reading a defined context key that has no usable value (by attribute, index, `get`, or membership test) raises `ConfirmationRequired`, so a template `default()` cannot stand in for it, and the same applies to a key named in a handler's `when`. Templates and `when` clauses are evaluated for every handler before any handler runs; a `ConfirmationRequired` becomes that control's result, `confirmation required: <key>`, and nothing is written. This applies whether or not the control lists the key in `requires_context`. Keys that are not context keys render as empty.
 - **Tool parameters that are judgment values** have no default. An omitted parameter is taken from confirmed context only; otherwise the tool writes nothing and reports `confirmation required: <key>` (for example `remediate_community_spec`, whose parameters map to the CSL `csl_*` keys).
 - **Attestations** carry no context values.
@@ -1465,6 +1471,8 @@ When a control has a `locator` with `project_path` AND a deterministic `file_exi
 
 Explicit `on_pass` configurations always take precedence over auto-derivation.
 
+An audit never applies an `on_pass` update (feature 042, FR-001): when the control passes, the resolved update is reported in the result's evidence as `proposed_project_update` and nothing is written. Writing it is an explicit action (an applied remediation or a person's confirmation).
+
 ### 11.3 Template Variable Context References
 
 Template variable substitution SHALL support:
@@ -1576,7 +1584,7 @@ The following requirements have been superseded by the handler dispatch architec
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.0.0-alpha.9 | 2026-09-29 | Context value standing, confirmation records, lapse, canonical keys, reads never write, confirmation tool contract (Sections 7.4-7.10, feature 042) |
+| 1.0.0-alpha.9 | 2026-09-29 | Context value standing, confirmation records, lapse, detection fallbacks, canonical keys, reads never write, targeted project-file writes, confirmation tool contract (Sections 7.4-7.11, feature 042) |
 | 1.0.0-alpha.8 | 2026-02-16 | Added audit result cache (Section 10.4): audit writes cache, remediate reads cache, post-remediation invalidation |
 | 1.0.0-alpha.7 | 2026-02-13 | Migrated to handler dispatch architecture: pass classes replaced by named handlers, passes use TOML array-of-tables syntax, register_controls() becomes no-op, removed legacy pass classes (Appendix C) |
 | 1.0.0-alpha.5 | 2026-02-08 | Added locator integration (Section 11), handler registry (Section 12) |

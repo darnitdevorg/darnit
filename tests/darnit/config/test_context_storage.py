@@ -346,14 +346,11 @@ class TestRunDetectPipelineHasReleases:
         result = _run_detect_pipeline("has_releases", pipeline, str(tmp_path), "owner", "repo")
         assert result is None
 
-    def test_value_if_fail_fires_on_last_detector_fail(self, tmp_path: Path) -> None:
-        """When the last detector fails and has value_if_fail, it fires.
+    def test_value_if_fail_does_not_fire_when_the_last_detector_could_not_decide(self, tmp_path: Path) -> None:
+        """An undeclared exit code is not an answer: no value (feature 042, FR-016, FR-017).
 
-        Reproducibility fix: a flaky `gh release list` (non-zero exit, empty
-        stdout with an expr, or ERROR) previously left the key missing from
-        context, which caused when-clause matching to skip controls
-        nondeterministically across audit runs. With value_if_fail wired,
-        the failure resolves to a stable false.
+        A failing `gh release list` (auth, rate limit, network) leaves
+        has_releases unknown instead of concluding false.
         """
         pipeline = [
             self._make_invocation(handler="file_exists", files=[".github/workflows/release*"], value_if_pass=True),
@@ -367,9 +364,7 @@ class TestRunDetectPipelineHasReleases:
             ),
         ]
         result = _run_detect_pipeline("has_releases", pipeline, str(tmp_path), "owner", "repo")
-        assert result is not None
-        assert result.value is False
-        assert "fail_fallback" in result.detection_method
+        assert result is None
 
     def test_value_if_fail_fires_when_expr_evaluates_false(self, tmp_path: Path) -> None:
         """PASS-with-expr-false (INCONCLUSIVE post-CEL) also triggers value_if_fail.
@@ -396,13 +391,11 @@ class TestRunDetectPipelineHasReleases:
         assert result.value is False
         assert "fail_fallback" in result.detection_method
 
-    def test_value_if_fail_short_circuits_middle_detector(self, tmp_path: Path) -> None:
-        """value_if_fail on a middle detector fires and skips subsequent detectors.
+    def test_undecided_middle_detector_does_not_short_circuit(self, tmp_path: Path) -> None:
+        """A middle detector that could not decide yields no value; later detectors still run.
 
-        Documents the short-circuit semantic: if a TOML author sets
-        value_if_fail on a non-last detector, later detectors are not tried
-        when that detector fails. If a chain-level fallback is desired
-        instead, put value_if_fail on the last detector.
+        Feature 042, FR-016: value_if_fail applies only to a step that ran
+        to completion and answered negatively.
         """
         (tmp_path / "CHANGELOG.md").write_text("# changelog\n")
         pipeline = [
@@ -413,12 +406,11 @@ class TestRunDetectPipelineHasReleases:
                 value_if_pass=True,
                 value_if_fail=False,
             ),
-            # This later detector WOULD pass but should not be reached.
             self._make_invocation(handler="file_exists", files=["CHANGELOG.md"], value_if_pass=True),
         ]
         result = _run_detect_pipeline("has_releases", pipeline, str(tmp_path), "owner", "repo")
         assert result is not None
-        assert result.value is False, "short-circuit: middle detector's value_if_fail must fire"
+        assert result.value is True
 
     def test_earlier_pass_still_wins_over_later_value_if_fail(self, tmp_path: Path) -> None:
         """PASS-first-wins semantics preserved: earlier detector's success skips fail-fallback.

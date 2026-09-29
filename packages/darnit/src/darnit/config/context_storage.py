@@ -237,8 +237,6 @@ def _run_detect_pipeline(
     local_path: str,
     owner: str | None,
     repo: str | None,
-    *,
-    strict: bool = False,
 ) -> ContextValue | None:
     """Run handler-based context detection pipeline.
 
@@ -246,7 +244,11 @@ def _run_detect_pipeline(
     the sieve handler registry, following the confidence gradient:
     deterministic handlers first, then pattern, then llm, then manual/confirm.
 
-    Stops at the first handler that produces a usable result.
+    Stops at the first handler that produces a usable result. A step's
+    ``value_if_fail`` applies only when that step ran to completion and
+    answered negatively (FAIL, or a CEL ``expr`` that evaluated false) and no
+    earlier step failed to run; a step that errored or could not decide
+    produces no value (feature 042, FR-016, FR-017).
 
     Args:
         key: Context key being detected (e.g., "maintainers")
@@ -254,10 +256,6 @@ def _run_detect_pipeline(
         local_path: Path to the repository
         owner: GitHub owner (optional)
         repo: GitHub repo name (optional)
-        strict: Used when the result is evidence (feature 040, FR-017). A
-            ``value_if_fail`` fallback is taken only from a handler that ran
-            and concluded, and only when no earlier handler failed to run;
-            otherwise nothing is returned.
 
     Returns:
         ContextValue with auto-detected value if found, None otherwise
@@ -339,11 +337,6 @@ def _run_detect_pipeline(
                         confidence=result.confidence,
                     )
 
-            # Non-PASS: apply value_if_fail as a stable fallback if the TOML
-            # author set one. Short-circuits the chain -- subsequent handlers
-            # are not tried. This is the mechanism that makes flaky network
-            # detectors (e.g., `gh release list`) produce a deterministic
-            # false rather than a missing key when they can't conclude.
             if result.status in (
                 HandlerResultStatus.FAIL,
                 HandlerResultStatus.INCONCLUSIVE,
@@ -352,20 +345,20 @@ def _run_detect_pipeline(
                 concluded = result.status == HandlerResultStatus.FAIL or (
                     result.status == HandlerResultStatus.INCONCLUSIVE and "expr" in (result.evidence or {})
                 )
-                if strict and not concluded:
+                if not concluded:
                     incomplete = True
                     continue
                 value_if_fail = handler_config.get("value_if_fail")
                 if value_if_fail is not None:
-                    if strict and incomplete:
+                    if incomplete:
                         return None
                     return ContextValue.auto_detected(
                         value=value_if_fail,
                         method=f"detect_pipeline:{invocation.handler}:fail_fallback",
-                        # Handlers that FAIL / ERROR / INCONCLUSIVE frequently
-                        # leave confidence unset (None); fall back to
-                        # auto_detected's own default rather than passing None
-                        # into a numeric comparison.
+                        # A concluded negative frequently leaves confidence
+                        # unset (None); fall back to auto_detected's own
+                        # default rather than passing None into a numeric
+                        # comparison.
                         confidence=result.confidence if result.confidence is not None else 0.8,
                     )
 

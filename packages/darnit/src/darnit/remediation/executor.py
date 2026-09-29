@@ -636,10 +636,12 @@ def apply_project_update(
     project_update: ProjectUpdateRemediationConfig,
     control_id: str,
 ) -> None:
-    """Apply a project_update to .project/project.yaml.
+    """Apply a project_update to the ``.project/`` files.
 
-    Updates the project configuration with values specified in the
-    project_update config. Uses dotted paths to set nested values.
+    Sets each dotted path from ``project_update.set`` and nothing else:
+    comments, ordering, and fields darnit does not own are preserved
+    (feature 042, FR-020). CNCF fields are written to
+    ``.project/project.yaml``, other fields to ``.project/darnit.yaml``.
 
     Args:
         local_path: Path to the repository root
@@ -647,7 +649,9 @@ def apply_project_update(
         control_id: Control ID for logging context
 
     Raises:
-        RuntimeError: If .project/ cannot be created or updated
+        ValueError: A ``.project/`` file is present but unreadable or
+            invalid; nothing is written and the errors are in the message
+            (FR-019).
 
     Example:
         Given project_update.set = {"security.policy.path": "SECURITY.md"},
@@ -660,36 +664,20 @@ def apply_project_update(
     if not project_update.set:
         return
 
-    try:
-        from darnit.config.loader import load_project_config, save_project_config
-        from darnit.config.schema import ProjectConfig
-    except ImportError as e:
-        logger.warning(f"Config loader not available for project_update: {e}")
-        return
+    from darnit.config.loader import update_project_config
 
-    # Load or create project config
-    config = load_project_config(local_path)
-    if config is None:
-        project_dir = os.path.join(local_path, ".project")
-        if os.path.isdir(project_dir):
-            # .project/ exists but config failed validation — do NOT overwrite
-            # with a blank config as that would destroy existing extension data
-            # (context, ci settings, etc. in darnit.yaml)
-            logger.warning(f"Skipping project_update for {control_id}: .project/ exists but config failed validation")
-            return
-        if not project_update.create_if_missing:
-            logger.debug(f"No .project/ found for {control_id} and create_if_missing=False")
-            return
-        config = ProjectConfig(name="unknown")
+    def mutate(config: object) -> None:
+        for dotted_path, value in project_update.set.items():
+            _set_nested_value(config, dotted_path, value)
+            logger.debug(f"project_update for {control_id}: set {dotted_path} = {value}")
 
-    # Apply each dotted path update
-    for dotted_path, value in project_update.set.items():
-        _set_nested_value(config, dotted_path, value)
-        logger.debug(f"project_update for {control_id}: set {dotted_path} = {value}")
-
-    # Save
-    save_project_config(config, local_path)
-    logger.info(f"Applied project_update for {control_id}: set {len(project_update.set)} values")
+    written = update_project_config(
+        local_path, list(project_update.set), mutate, create=project_update.create_if_missing
+    )
+    if written:
+        logger.info(f"Applied project_update for {control_id}: set {len(project_update.set)} values")
+    else:
+        logger.debug(f"project_update for {control_id}: nothing to change")
 
 
 def _coerce_to_field_type(obj: object, field_name: str, value: object) -> object:
