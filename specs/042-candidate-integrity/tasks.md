@@ -186,7 +186,7 @@
 - [X] T048 [P] Update CHANGELOG `[Unreleased]`: context standing and confirmation records; BREAKING: stored values without a record become candidates (review with `confirm_stored`/`reject_stored`); BREAKING: `confirm_project_data` requires owner/repo and accepts candidates by digest; BREAKING: `remediate_community_spec` judgment parameters no longer default; reads never write, in `CHANGELOG.md`
 - [X] T049 [P] Update the "Context System" section of `CLAUDE.md` and `docs/` pages that describe context storage or auto-acceptance, to match framework-design.md
 - [X] T050 Run quickstart.md sections 1-6 and record results under a "Validation log" section in `specs/042-candidate-integrity/quickstart.md` (scratch repositories only; no real organization's settings)
-- [ ] T051 File follow-up issues for research R14 items (attestation `project_type`, CSL `coc_policy` vocabulary) without referencing unpublished advisories
+- [X] T051 File follow-up issues for research R14 items (attestation `project_type`, CSL `coc_policy` vocabulary) without referencing unpublished advisories (filed #521-#529; the email-domain handle bug is the existing #464)
 - [X] T052 Run `uv run ruff check .`, `uv run pytest tests/ --ignore=tests/integration/ -q`, `uv run python scripts/validate_sync.py --verbose`, and the corpus report; fix failures
 
 ---
