@@ -8,6 +8,7 @@
 ## Revision history
 
 - **2026-08-02**: Added "Harness as a class abstraction" section under "One core, two drivers." Named Pydantic AI as the default `LLMStep` implementation while keeping the loop hand-rolled. Expanded the "Returning to LangGraph" alternative with concrete reasoning against LangGraph 1.x's specific differentiators for this driver, and added two new alternatives entries (LangChain vs Pydantic AI for LLM invocation; hand-roll fallback). Substance derives from the research summarized in `docs/design/DRAFT-harness-orchestrator.md`, which becomes obsolete once this revision is accepted.
+- **2026-09-26**: Added "September 2026 revision" below, recording what an architecture evaluation of the post-Stage-1 code and a survey of prior art changed. In short: authority is declared per claim rather than per handler; heuristic steps may conclude FAIL but not PASS; an LLM result can never conclude PASS on its own; verdicts are computed server-side and agent submissions are untrusted; run state is held by the engine under a `run_id`; context values carry a typed candidate/confirmed envelope; audited-repository content, including its configuration, is untrusted; registries are per run; the internal evidence model is darnit's own minimal schema with exporters added only for named consumers; OpenSSF Scorecard is the primary upstream evidence source for the OpenSSF Baseline implementation; remediation gains a framework-level plan/apply/re-check loop. A correctness stage (1.5) is inserted before Stage 2. The enablement-oriented ideas that came out of the same work are split into RFC-0002.
 
 ## Summary
 
@@ -50,6 +51,93 @@ Darnit's current design (pre-0.1) proved the concept but entangles concerns the 
 - Maintaining first-party check logic that duplicates existing scanners.
 - Owning bespoke remediation scripts per project.
 - Coupling to a single LLM vendor or coding agent. Both a subscription-based coding agent and an API-billed harness must work.
+
+## September 2026 revision
+
+Stage 1 landed (feature 025). An architecture evaluation of the resulting code, with reproductions against scratch repositories, and a survey of how comparable tools work produced the changes below. Each subsection names the part of the Design it amends; where they conflict, this section wins. The individual defects are tracked in #491. This revision stays within the RFC's original scope (evidence, authority, execution, drivers). Ideas that change what darnit is for (capabilities, instrumentation, repository snapshots) are in RFC-0002.
+
+### What the evaluation found
+
+- **Heuristics conclude, and the LLM never does.** Stage 1 assigned authority per handler type, so `file_exists` and `regex` are always dispositive. Content controls PASS on a file's existence or a keyword: a README reading `# TODO` passes documentation controls, and a SECURITY.md stating that the project has no security policy passes vulnerability-disclosure controls. The `llm_eval` steps after them are unreachable. On two real repositories 92-97% of controls concluded deterministically and none reached the LLM tier.
+- **The product path bypasses the authority rule.** The agent skills ask the coding agent to judge PASS or FAIL itself, and no MCP tool routes that judgment back through the engine. The harness enforces the rule; the MCP driver does not.
+- **Guesses become confirmations.** Detection runs inside read-shaped calls, auto-accepts above a confidence threshold, and writes bare values that load back as `user_confirmed`.
+- **Global registries leak** controls and handlers across frameworks within one process.
+- **Remediation is plugin-local** and never re-checks the control after applying.
+
+None of these is a model-quality problem. They are contract problems, which is what this RFC exists to fix.
+
+### Authority is per claim, not per handler (amends "Two axes, not one")
+
+A step's authority depends on what it proves about the specific control, not on which handler implements it. "The file exists" is dispositive for "a SECURITY.md exists" and merely suggestive for "the project documents a vulnerability disclosure process." Therefore:
+
+- Each step declares, in TOML, which outcomes it may conclude: `concludes = ["fail"]`, `["pass", "fail"]`, or `[]` (evidence only). The handler supplies a ceiling; the step may only narrow it (the existing tighten-only rule).
+- **Presence and pattern steps may conclude FAIL** (the file is absent, the required field is missing) **but not PASS**, unless the requirement is literally about existence. A pattern miss is INCONCLUSIVE, not FAIL, unless the step declares otherwise.
+- **An LLM step never concludes PASS.** An LLM PASS produces a *PASS candidate* that a human confirms, at which point the result carries authority `asserted`. An LLM FAIL is reported as suggestive evidence; under conservative-by-default it is non-compliant either way. Surveyed tools converge on this: none lets a model alone clear a finding, and measured judge reliability is weakest on exactly the "partial evidence treated as full satisfaction" case that produces false PASSes.
+- **Authority can be earned.** A labelled corpus of adversarial fixture repositories (placeholder documents, policies that deny having a policy, over-permissive workflows, org settings off) is the acceptance test for every step. A step, including a Scorecard probe or an LLM judge for a specific control class, is promoted to conclude an outcome only when its measured precision on the corpus clears a published bar. Promotion is recorded per step and per outcome.
+
+### Result model (amends "Strategy lists and the execution rule")
+
+Statuses are PASS, FAIL, WARN (needs verification), N/A, ERROR, and PENDING (awaiting an LLM or human task). ERROR means a broken measurement (API unavailable, token lacks scope) and is never reported as FAIL. Level compliance is computed from results and never stored: a level is compliant only if every control at that level is PASS backed by dispositive or asserted evidence, or N/A whose applicability inputs are confirmed. Every exporter, including attestations, uses this one computation.
+
+### Verdicts are computed by the engine (amends "One core, two drivers" and "Agent trust boundary")
+
+- Both drivers answer the same typed **pending tasks**: `llm_judgment`, `human_question`, and `remediation_approval`. The harness answers them with its `LLMStep`; a coding agent answers them over MCP with a `submit_judgment`-style tool. Either way, the submission is a suggestive input the engine validates against the evidence it gathered, and the engine alone computes the verdict.
+- **Run state is held by the engine under a `run_id`**, as an append-only run log. Stage 1's ActionPlan had the client carry the whole state back on every call; that cannot enforce ordering or result validity, and it costs tokens on every step. The MCP specification's stateless core makes an explicit `run_id` argument the portable pattern.
+- **MCP surface:** one server with the framework as a parameter, on the order of eight workflow-shaped tools, compact outputs that inline small pre-gathered judgment tasks with drill-down on request. Do not route LLM judgment through MCP sampling (deprecated) or depend on the tasks extension (still changing). Use elicitation for human questions where the client supports it, with a plain-tool fallback.
+- Skills become thin walkers of the task list and never declare a verdict.
+
+### Context values (amends "Confirmation, persistence, and expiry")
+
+- Detection is a pure function returning candidates with origin and evidence. It never writes.
+- Storage holds a typed envelope for every key: candidate, confirmation (who, when, basis, expiry), or observed. A bare value read from disk is a candidate, never a confirmation.
+- One resolver answers "what is the usable value of this key, and why" for every consumer: checks, applicability conditions, remediation, the harness, and attestations. For user-judgment keys only a confirmation is usable, enforced by type rather than by convention.
+- Writes happen only through an explicit confirm or accept step.
+- `.project/` remains the primary store. Files darnit writes must conform to the upstream schema; where `.project/` cannot express what darnit needs, propose upstream changes first and keep darnit-only keys in the extension file.
+
+### Trust boundaries (amends "Adversarial inputs")
+
+- **The audited repository is untrusted input in its entirety, including any configuration files it contains.** Repository-supplied configuration may narrow scope and supply assertions, which are recorded and reported as the auditee's assertions. It may not change what darnit executes, how steps conclude, or which plugins and servers are trusted. Operator configuration lives outside the audited tree.
+- Plugin and MCP-server trust policy is operator configuration.
+- Agent submissions over MCP are untrusted (see above).
+
+### Plugins and registries (amends "Two-layer module model")
+
+- Registries (controls, handlers, integrations) are built per run from the frameworks selected for that run and passed explicitly. No module-level mutable registries.
+- A plugin entry point returns data: its TOML location and the integrations it provides. Identity comes from TOML metadata alone.
+- Integration and handler names are namespaced by plugin; built-ins cannot be replaced; collisions fail at load.
+- TOML schema models reject unknown keys. A load-time lint over every installed framework TOML (handler references resolve, parameters validate, pass sequences are well-formed) replaces the documentation-coupled sync check.
+- The dormant adapter layer and other unreachable code are deleted rather than carried (#487).
+
+### Evidence sources for the OpenSSF Baseline implementation (amends "Two-layer module model")
+
+OpenSSF Scorecard is the primary upstream evidence source for the Baseline implementation. It is integrated by invoking a pinned Scorecard CLI with probe-level output once per run. All Scorecard-derived steps start as suggestive; individual probe/control pairs are promoted per "Authority can be earned." Scorecard cannot observe many Baseline controls (documentation content, process, some organization settings), which remain darnit's own checks. Where Scorecard would need changes (reporting unobservable data as unknown rather than dropping it, provenance fields in probe output, a published probe-to-control mapping), darnit raises them upstream rather than working around them.
+
+### Evidence model and formats (amends "Owned findings model" and "Evidence, attestation, and compliance math")
+
+- The internal model is darnit's own minimal typed schema: a run (tool, invocation, target, frameworks), results (status, authority, what concluded them, steps), steps (integration and version, authority, outcome, timestamps, evidence), evidence (kind, source, digest, collected-at, producer), context values (the envelope above), and remediation plans.
+- **Exporters are added only when a named consumer exists.** Current decisions:
+  - Keep the DSSE/in-toto envelope and signing.
+  - Replace the current assessment predicate type, which uses a namespace darnit does not control, with a darnit-owned predicate type that projects the internal model.
+  - Keep SARIF for findings with real code locations (threat model); do not offer it for settings-level compliance results until there is a code-scanning integration.
+  - OSCAL, Gemara evaluation logs, and the verification-summary predicates (SVR, VSA) are not adopted now; each is revisited when a consumer that darnit users run needs it. The proposed Baseline predicate is revisited when it merges.
+  - The upstream Baseline control catalog is imported at build time and checked for drift in CI (including retired controls), not read at runtime.
+  - Security Insights import/export is welcome as a community contribution (#497); `.project/` remains primary.
+- Evidence is redacted before it leaves the engine. Raw API responses are projected to the fields a step needs, and paths are repository-relative. Attestations never contain the operator's personal data.
+
+### Remediation (amends "Remediation trust boundary")
+
+- The remediation loop is a framework capability, not plugin code: `plan()` produces a typed plan with unified diffs and settings changes; `apply()` applies it and **re-checks the affected controls**, reporting fixed, unchanged, or regressed. A control stays pending until a dispositive re-check passes.
+- A forge interface separates platform operations (pull requests, issues, status) from source control (branch, commit, push). Only the files in the plan's manifest are committed. Branch names are deterministic and an existing open pull request is updated rather than duplicated.
+- Settings changes are read-modify-write with a monotone merge, a post-write assertion that no setting was weakened, captured prior state, and a separate confirmation for each action. Additive mechanisms (for example a darnit-owned ruleset) are preferred over replacing existing configuration.
+- Unconfirmed values are refused at plan time. Any template that references a user-judgment key requires a confirmation for that key.
+
+### Staged plan changes (amends "Staged Plan")
+
+Insert **Stage 1.5 (correctness)** before Stage 2: the verdict, context-provenance, trust-boundary, and remediation-safety defects in #491, plus the adversarial fixture corpus as the acceptance gate. Stage 2 then carries the per-claim authority model, the engine-held run state and pending tasks, per-run registries, the Scorecard integration, and the minimal evidence schema. The fitness gate is unchanged.
+
+### Governance dependency (amends "Governance dependency")
+
+Two statements in project guidance need narrowing, each by its own change: the rule that TOML is the source of truth applies to *how darnit checks*, not to control catalog text imported from upstream; and the constitution's description of the sieve should describe per-claim authority and asymmetric conclusions.
 
 ## Design
 
@@ -303,6 +391,7 @@ Each stage lands as its own scoped spec/PR series with an executable acceptance 
 - **Keeping the `VerificationPhase` enum as the escalation model:** simpler to explain and already implemented, but it conflates cost with authority, which means no configuration of it can express "deterministic but unauthoritative" -- the exact case that produces false compliance claims. Rejected on safety grounds, not ergonomics.
 - **A single confidence scalar as the decision lever** (the previous draft's `confirm_threshold`): one dial operators understand, but a number cannot distinguish "I observed this" from "I am confident I guessed correctly," and it is the one input an attacker can influence. Retained only as a presentation filter in Collect and as one gate among mechanical ones in Remediate.
 - **Adopting a third-party findings schema (SARIF/OSV) as the internal model:** avoids an importer layer but binds core semantics to formats that do not cover all sources (Scorecard probes are not SARIF) and do not carry the authority and provenance fields the strategy runner needs.
+- **Adopting Gemara or OSCAL as the internal model (September 2026 revision):** both were mapped against real darnit results. Neither carries per-result authority or candidate/confirmed state without stretching the schema; OSCAL has no not-applicable or needs-review state and its consumers are government compliance pipelines; Gemara evaluation logs are written by several tools but not yet read by any to make a decision. Rejected as internal models; each remains a candidate exporter when a consumer appears.
 - **Returning to LangGraph for the harness loop:** already tried and reverted in `cmd_run` on dependency-weight grounds. Reconsidered against LangGraph 1.x (materially lighter than the 0.2.x that was pulled) and rejected again for a different reason: LangGraph's differentiators (typed state channels, conditional edges, HITL interrupts, checkpointing) do not fit this driver's needs. The state graph is four nodes; typed state is a Pydantic dataclass; conditional edges are `if/elif` in `route()`; HITL interrupts serve the coding-agent driver's mid-run pausing, whereas the harness's manual queue is post-run batched (see "Fleet mode"); checkpointing addresses the durability concern this RFC explicitly defers. Retained as a viable choice for a future `AgentHarness` or `InterruptibleHarness` subclass, but not the default.
 - **LangChain for LLM invocation instead of Pydantic AI:** proven library with mature Anthropic integration, but Claude-specific features (prompt caching, JSON mode, tool use, context compaction) are exposed less directly than in Pydantic AI, and the library carries LangGraph's transitive dependencies as a hard requirement. Rejected on ergonomics for the specific `LLMStep` slot; the Protocol keeps this reversible.
 - **Hand-rolling the LLM step with anthropic + tenacity + pydantic:** possible and lightest-weight, but ~50% more boilerplate per step (manual schema derivation, manual `cache_control`, manual `tool_choice` ceremony) with no ergonomics dividend. Kept as the fallback if Pydantic AI's API churn (see below) turns out to be prohibitive.
@@ -320,6 +409,8 @@ Still open:
 4. **Expiry defaults.** Is per-key expiry with a 180-day default right, and should authority `asserted` expire differently for slow-changing facts?
 5. **Integration contract stability.** Integrations are the primary contribution ramp. What deprecation policy applies pre-1.0 so early plugin authors are not burned by churn?
 6. **LLM vendor neutrality.** Model-agnostic client layer versus a single SDK, given both subscription-agent and API-billed paths must work.
+7. **Promotion bar (September 2026 revision).** What measured precision on the fixture corpus should promote a step to conclude PASS, and should the bar differ by control severity? Is any LLM judge ever promotable for PASS, or is that permanently human-asserted?
+8. **Corpus ownership.** Should the adversarial fixture corpus live in this repository or be published as a shared asset other tools can test against?
 
 ## Governance dependency
 
