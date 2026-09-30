@@ -125,9 +125,7 @@ class TestFileExistsHandlerDepthLimited:
         nested.mkdir(parents=True)
         (nested / "go.mod").write_text("module example")
 
-        result = file_exists_handler(
-            {"files": ["go.mod"], "max_depth": 2}, ctx
-        )
+        result = file_exists_handler({"files": ["go.mod"], "max_depth": 2}, ctx)
 
         assert result.status == HandlerResultStatus.PASS
         assert result.evidence["relative_path"] == "app-code/keys-v2/go.mod"
@@ -140,9 +138,7 @@ class TestFileExistsHandlerDepthLimited:
         nested.mkdir(parents=True)
         (nested / "go.mod").write_text("nested")
 
-        result = file_exists_handler(
-            {"files": ["go.mod"], "max_depth": 3}, ctx
-        )
+        result = file_exists_handler({"files": ["go.mod"], "max_depth": 3}, ctx)
 
         assert result.status == HandlerResultStatus.PASS
         assert result.evidence["relative_path"] == "go.mod"
@@ -163,9 +159,7 @@ class TestFileExistsHandlerDepthLimited:
         app.mkdir()
         (app / "package.json").write_text('{"name": "real"}')
 
-        result = file_exists_handler(
-            {"files": ["package.json"], "max_depth": 5}, ctx
-        )
+        result = file_exists_handler({"files": ["package.json"], "max_depth": 5}, ctx)
 
         assert result.status == HandlerResultStatus.PASS
         # The "real" app/ match wins; node_modules/some-pkg/ was pruned
@@ -178,9 +172,7 @@ class TestFileExistsHandlerDepthLimited:
         deep.mkdir(parents=True)
         (deep / "go.mod").write_text("too deep")
 
-        result = file_exists_handler(
-            {"files": ["go.mod"], "max_depth": 2}, ctx
-        )
+        result = file_exists_handler({"files": ["go.mod"], "max_depth": 2}, ctx)
 
         # max_depth=2 means root + 2 subdirs (a, a/b). a/b/c is beyond.
         assert result.status == HandlerResultStatus.FAIL
@@ -191,9 +183,7 @@ class TestFileExistsHandlerDepthLimited:
         nested.mkdir()
         (nested / "pyproject.toml").write_text("")
 
-        result = file_exists_handler(
-            {"files": ["pyproject.toml"], "max_depth": 0}, ctx
-        )
+        result = file_exists_handler({"files": ["pyproject.toml"], "max_depth": 0}, ctx)
 
         assert result.status == HandlerResultStatus.FAIL
 
@@ -208,9 +198,7 @@ class TestFileExistsHandlerDepthLimited:
         (nested / "SECURITY.md").write_text("policy")
 
         # max_depth=5 set but pattern is a glob — depth-walk is skipped
-        result = file_exists_handler(
-            {"files": ["*.md"], "max_depth": 5}, ctx
-        )
+        result = file_exists_handler({"files": ["*.md"], "max_depth": 5}, ctx)
 
         # No top-level *.md files → FAIL (glob doesn't recurse without **)
         assert result.status == HandlerResultStatus.FAIL
@@ -462,10 +450,12 @@ class TestRegexHandler:
         result = regex_handler(
             {
                 "files": ["ci.yml"],
-                "pattern": {"patterns": {
-                    "runner": "runs-on",
-                    "checkout": "actions/checkout",
-                }},
+                "pattern": {
+                    "patterns": {
+                        "runner": "runs-on",
+                        "checkout": "actions/checkout",
+                    }
+                },
             },
             ctx,
         )
@@ -619,7 +609,7 @@ class TestRegexHandlerDepthLimited:
         """Without max_depth, only the repo root is searched for plain filenames."""
         nested = tmp_path / "backend" / "app"
         nested.mkdir(parents=True)
-        (nested / "pyproject.toml").write_text("[project]\nname = \"example\"\n")
+        (nested / "pyproject.toml").write_text('[project]\nname = "example"\n')
 
         # No max_depth → root only → file not found → INCONCLUSIVE (no files resolved)
         result = regex_handler(
@@ -635,7 +625,7 @@ class TestRegexHandlerDepthLimited:
         """With max_depth set, plain filenames are found in nested directories."""
         nested = tmp_path / "backend" / "app"
         nested.mkdir(parents=True)
-        (nested / "pyproject.toml").write_text("[project]\nname = \"example\"\n")
+        (nested / "pyproject.toml").write_text('[project]\nname = "example"\n')
 
         result = regex_handler(
             {
@@ -833,6 +823,49 @@ class TestLlmEvalHandler:
         assert len(consultation["file_contents"]) == 1
         content = list(consultation["file_contents"].values())[0]
         assert "security@example.com" in content
+
+    def test_truncation_is_recorded_not_silent(self, ctx, tmp_path):
+        """Issue #485: a file cut at the char cap must say so in the payload."""
+        big = tmp_path / "BIG.md"
+        big.write_text("x" * 15000)
+
+        result = llm_eval_handler(
+            {"prompt": "Evaluate", "files_to_include": ["BIG.md"]},
+            ctx,
+        )
+        consultation = result.details["consultation_request"]
+        assert len(consultation["file_contents"]["BIG.md"]) == 10000
+        assert consultation["truncated_files"]["BIG.md"] == {
+            "original_chars": 15000,
+            "included_chars": 10000,
+        }
+        assert result.evidence["llm_eval_truncated_files"]["BIG.md"]["original_chars"] == 15000
+
+    def test_untruncated_file_is_not_marked(self, ctx, tmp_path):
+        """A file under the cap must not appear in truncated_files."""
+        small = tmp_path / "SMALL.md"
+        small.write_text("# short\n")
+
+        result = llm_eval_handler(
+            {"prompt": "Evaluate", "files_to_include": ["SMALL.md"]},
+            ctx,
+        )
+        assert result.details["consultation_request"]["truncated_files"] == {}
+
+    def test_files_beyond_cap_are_reported_not_dropped(self, ctx, tmp_path):
+        """Issue #485: the 6th file is named in files_omitted_for_cap."""
+        names = [f"DOC{i}.md" for i in range(6)]
+        for n in names:
+            (tmp_path / n).write_text(f"# {n}\n")
+
+        result = llm_eval_handler(
+            {"prompt": "Evaluate", "files_to_include": names},
+            ctx,
+        )
+        consultation = result.details["consultation_request"]
+        assert len(consultation["file_contents"]) == 5
+        assert consultation["files_omitted_for_cap"] == ["DOC5.md"]
+        assert result.evidence["llm_eval_files_omitted_for_cap"] == ["DOC5.md"]
 
     def test_files_to_include_skips_missing_files(self, ctx):
         """Missing files should be silently skipped."""
