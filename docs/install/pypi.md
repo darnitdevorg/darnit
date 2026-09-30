@@ -35,15 +35,19 @@ The `--extra-index-url` is required so dependencies of darnit that exist only on
 
 Every release attaches a [PEP 740](https://peps.python.org/pep-0740/) Sigstore attestation. The signing identity is the GitHub Actions workflow that produced the wheel; you can verify the chain back to the canonical repository without trusting anything in between.
 
-### One-step verification with pip
+### Verification with `pypi-attestations`
 
-If your pip is 25.0 or newer, `--verify-attestations` does the whole thing automatically:
+pip does not have a `--verify-attestations` flag and does not check PEP 740 attestations at install time. Use the [`pypi-attestations`](https://pypi.org/project/pypi-attestations/) tool against a downloaded wheel:
 
 ```bash
-pip install --verify-attestations darnit-mcp==0.1.0
+pip install pypi-attestations
+pip download --no-deps darnit-mcp==0.1.0
+pypi-attestations verify pypi \
+  --repository https://github.com/kusari-oss/darnit \
+  darnit_mcp-0.1.0-py3-none-any.whl
 ```
 
-pip refuses to install if the attestation is missing or fails to verify against PyPI's public certs.
+The `--repository` value must match the repository recorded in the attestation (the same identity used by the `sigstore` commands below).
 
 ### Manual verification with `sigstore`
 
