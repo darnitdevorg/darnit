@@ -60,6 +60,8 @@ Plugins SHALL declare their capabilities in package metadata.
 ### Requirement: Plugin signing with Sigstore
 The framework SHALL support Sigstore-based plugin verification.
 
+Settings live in `.baseline.toml` under `[plugins]`. When `allow_unsigned` is unset, unsigned plugins load. A per-plugin `allow_unsigned` overrides that global value; `trusted_publishers` lists are combined. Per-plugin tables use the distribution name.
+
 #### Scenario: Signed plugin verification
 - **WHEN** a plugin has a Sigstore signature
 - **AND** `allow_unsigned = false` in config
@@ -75,8 +77,8 @@ The framework SHALL support Sigstore-based plugin verification.
 #### Scenario: Unsigned plugin blocked
 - **WHEN** a plugin does not have a signature
 - **AND** `allow_unsigned = false` in config
-- **THEN** the framework SHALL refuse to load the plugin
-- **AND** SHALL report an error
+- **THEN** the framework SHALL skip the plugin
+- **AND** SHALL log a warning
 
 #### Scenario: Trusted publishers
 - **WHEN** config contains `trusted_publishers = ["openssf", "kusari-oss"]`

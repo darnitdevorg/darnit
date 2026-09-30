@@ -53,7 +53,7 @@ expr = 'output.json.status == "pass"'
 ## Plugin Security Configuration
 
 ### New Configuration
-Add to your `.baseline.toml`:
+Add plugin verification policy to `.baseline.toml`. If you omit it, unsigned plugins load. Keys under `[plugins."..."]` are installed distribution names. Set `allow_unsigned` on a plugin only when that plugin should differ from the global value.
 
 ```toml
 [plugins]
@@ -65,8 +65,7 @@ trusted_publishers = [
     "https://github.com/my-org",
 ]
 
-# Per-plugin configuration
-[plugins."my-plugin"]
+[plugins."darnit-baseline"]
 version = ">=1.0.0"
 ```
 

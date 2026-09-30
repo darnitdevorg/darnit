@@ -45,6 +45,7 @@ from .framework_schema import (
     ControlConfig,
     HandlerInvocation,
     McpServerConfig,
+    PluginsConfig,
     RemediationConfig,
     StoresConfig,
 )
@@ -268,6 +269,10 @@ class UserConfig(BaseModel):
     # set here fully replaces the framework's `[stores.<kind>]` block at
     # merge time; unset kinds inherit from the framework.
     stores: StoresConfig = Field(default_factory=StoresConfig)
+
+    # Plugin verification policy lives here, not in a framework TOML, which
+    # ships inside the plugin it would authorize.
+    plugins: PluginsConfig = Field(default_factory=PluginsConfig)
 
     model_config = ConfigDict(extra="allow")
 

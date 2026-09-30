@@ -33,11 +33,11 @@ max_parallel = 5
 # =============================================================================
 # Configure trusted publishers for plugin verification.
 # By default, kusari-oss and kusaridev are trusted.
+# Omitting allow_unsigned allows unsigned plugins.
 
 [plugins]
-# Global settings for all plugins
-# global_allow_unsigned = false              # Require signed plugins (production)
-# global_trusted_publishers = [              # Additional orgs to trust globally
+# allow_unsigned = false                     # Require signed plugins (production)
+# trusted_publishers = [                     # Additional orgs to trust
 #     "https://github.com/my-company",
 # ]
 
