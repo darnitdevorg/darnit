@@ -78,28 +78,29 @@ class TestGoldenPath:
         )
         assert exit_code == 0
 
+
     def test_golden_prints_header(
-        self,
-        minimal_repo_tree: Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """Pins the `Darnit run` header string (contract C1, C2)."""
-        _exit, stdout, _stderr = invoke_cmd_run(
-            [str(minimal_repo_tree), "--feedback", "noninteractive"],
-            capsys,
-        )
-        # C1: header appears exactly once, on its own line.
-        header_lines = [ln for ln in stdout.splitlines() if ln == "Darnit run"]
-        assert len(header_lines) == 1, (
-            f"'Darnit run' header (contract C1) not present exactly once: found {len(header_lines)} occurrences"
-        )
-        # C2: Repository and Feedback labels present with two-space indent.
-        assert re.search(rf"^  Repository : {re.escape(str(minimal_repo_tree))}\s*$", stdout, re.MULTILINE), (
-            "Repository label (C2) missing or malformed"
-        )
-        assert re.search(r"^  Feedback   : noninteractive\s*$", stdout, re.MULTILINE), (
-            "Feedback label (C2) missing or malformed"
-        )
+            self,
+            minimal_repo_tree: Path,
+            capsys: pytest.CaptureFixture[str],
+        ) -> None:
+            """Pins the `Darnit run` header string (contract C1, C2)."""
+            _exit, stdout, _stderr = invoke_cmd_run(
+                [str(minimal_repo_tree), "--feedback", "noninteractive"],
+                capsys,
+            )
+            # C1: header appears exactly once, on its own line.
+            header_lines = [ln for ln in stdout.splitlines() if ln == "Darnit run"]
+            assert len(header_lines) == 1, (
+                f"'Darnit run' header (contract C1) not present exactly once: found {len(header_lines)} occurrences"
+            )
+            # C2: Repository and Feedback labels present with two-space indent.
+            assert re.search(rf"^  Repository : {re.escape(str(minimal_repo_tree))}\s*$", stdout, re.MULTILINE), (
+                "Repository label (C2) missing or malformed"
+            )
+            assert re.search(r"^  Feedback   : noninteractive\s*$", stdout, re.MULTILINE), (
+                "Feedback label (C2) missing or malformed"
+            )
 
     def test_golden_prints_footer_and_count_lines(
         self,
@@ -437,3 +438,21 @@ class TestFailurePaths:
         question; see data-model.md section 3 deferral.
         """
         raise NotImplementedError  # pragma: no cover
+def test_run_accepts_framework_option(
+    minimal_repo_tree: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    exit_code, stdout, stderr = invoke_cmd_run(
+        [
+            str(minimal_repo_tree),
+            "--framework",
+            "testchecks",
+            "--feedback",
+            "noninteractive",
+        ],
+        capsys,
+    )
+
+
+    assert exit_code == 0
+    assert stderr == ""

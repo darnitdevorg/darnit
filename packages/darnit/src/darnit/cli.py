@@ -1210,6 +1210,11 @@ def create_parser() -> argparse.ArgumentParser:
         help="Path to repository (default: current directory)",
     )
     run_parser.add_argument(
+        "-f",
+        "--framework",
+        help="Framework to use (default: auto-detect)",
+    )
+    run_parser.add_argument(
         "--feedback",
         dest="feedback_mode",
         choices=["interactive", "noninteractive", "auto"],
