@@ -265,8 +265,12 @@ class TestAllTemplatesRender:
         variable names that couldn't be parsed). It does NOT detect silent
         empty-string substitutions for optional context variables — the executor
         uses ``undefined=jinja2.Undefined`` (silent), so a template that
-        references an unset optional key (e.g. ``<< context.security_contact >>``)
-        renders to an empty string rather than raising or leaking a raw tag.
+        references an unset key renders it as an empty string rather than
+        raising or leaking a raw tag. That holds here because no key is passed
+        as unconfirmed; in a remediation run, reading a defined key without a
+        usable value (e.g. ``<< context.security_contact >>`` before it is
+        confirmed) stops the control with "confirmation required" (feature
+        042, FR-007; tests/darnit/remediation/test_confirmation_required.py).
         """
         rendered = _render_template(template_name, rich_repo)
         leaks = re.findall(r"<<\s+[\w][\w.]*\s+>>", rendered)

@@ -43,13 +43,26 @@ The framework SHALL support a `[context]` section in the TOML config for definin
 ### Requirement: Context resolution priority
 The framework SHALL resolve context values in a defined priority order.
 
-#### Scenario: .project/ provides value
-- **WHEN** a context variable can be resolved from `.project/project.yaml`
+Resolution gives every key one standing (`confirmed`, `concluded`, `candidate`, `unknown`); see framework-design.md 7.4. Only `confirmed` and `concluded` values are used.
+
+#### Scenario: .project/ provides a confirmed value
+- **WHEN** a context variable is stored in `.project/` and a confirmation record matches the stored value
 - **THEN** that value SHALL be used without prompting the user
+
+#### Scenario: .project/ provides a value without a confirmation record
+- **WHEN** a context variable is stored in `.project/` and no confirmation record matches it
+- **THEN** the value SHALL be a candidate (origin `stored_unconfirmed`, with its file and field)
+- **AND** it SHALL NOT be used; it SHALL be offered to the user for confirmation
 
 #### Scenario: File source provides value
 - **WHEN** a context variable has a `source` file that exists and can be parsed
-- **THEN** that value SHALL be used without prompting the user
+- **AND** the variable has `auto_detect = true`
+- **THEN** that value SHALL be used for the current run without prompting the user, and SHALL NOT be persisted
+
+#### Scenario: File source provides a value for a user-judgment key
+- **WHEN** a context variable with `auto_detect = false` can be parsed from a file
+- **THEN** the value SHALL be a candidate, shown labelled as unconfirmed with its origin
+- **AND** it SHALL NOT be used until the user confirms it, at any detection confidence
 
 #### Scenario: Fallback to user prompt
 - **WHEN** a context variable cannot be resolved from .project/ or file sources
@@ -109,16 +122,24 @@ The framework SHALL allow user confirmation of auto-detected context values.
 - **THEN** the user-provided value SHALL be used
 
 ### Requirement: Persist collected context
-The framework SHALL persist user-provided context to avoid repeated prompts.
+The framework SHALL persist context a person confirmed, with a confirmation record, to avoid repeated prompts (framework-design.md 7.5, 7.9).
 
-#### Scenario: Save to .project/
-- **WHEN** user provides context via prompt
-- **AND** the context can be represented in .project/ format
-- **THEN** the framework SHALL offer to save it to `.project/project.yaml`
+#### Scenario: Save a confirmation for a trusted repository
+- **WHEN** a person confirms a value through `confirm_project_data` or by typing an answer into `darnit run`
+- **AND** the operator trusts the repository
+- **THEN** the framework SHALL write the value under `context:` and a record (who, when, basis, last validated, optional expiry) under `confirmations:` in `.project/darnit.yaml`
 
-#### Scenario: Save to .baseline.toml
-- **WHEN** user provides context that is darnit-specific
-- **THEN** the framework SHALL save it to `.baseline.toml` under `[context]`
+#### Scenario: Save a confirmation for an untrusted repository
+- **WHEN** a person confirms a value and the operator does not trust the repository
+- **THEN** the framework SHALL record the confirmation operator-side and SHALL NOT write into the repository
+
+#### Scenario: Reads and agent answers are not persisted
+- **WHEN** the framework audits, lists pending data, previews remediation, runs the harness collect phase, or receives ActionPlan answers from a coding agent
+- **THEN** it SHALL NOT write any context value or record
+
+#### Scenario: Project file is not written
+- **WHEN** a context value is persisted
+- **THEN** the framework SHALL NOT write it to `.project/project.yaml` or `.baseline.toml`
 
 ### Requirement: Context validation
 The framework SHALL validate context values against defined constraints.

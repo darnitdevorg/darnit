@@ -575,7 +575,8 @@ safe = true
 dry_run_supported = true
 strategy = "first_match"
 
-# Step 4: which governance mode? (optional; defaults to the full CSL policy.)
+# Step 4: which governance mode? A person decides; while it is unconfirmed the
+# handlers below stop with "confirmation required" (feature 042).
 [[controls."CSL-05.01".remediation.requires_context]]
 key = "csl_governance_mode"
 required = false
@@ -594,7 +595,7 @@ overwrite = false
 when = { csl_governance_mode = "umbrella" }
 llm_enhance = "If an umbrella governance was referenced, ensure governance/05-governance.md links it correctly and remove any leftover TODO placeholder. Do not restate the full umbrella policy - only reference it and keep the Community Specification roles and decision-making section."
 
-# Default: ship the full Community Specification Governance Policy.
+# Mode "csl": ship the full Community Specification Governance Policy.
 [[controls."CSL-05.01".remediation.handlers]]
 handler = "file_create"
 path = "governance/05-governance.md"

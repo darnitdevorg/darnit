@@ -3,12 +3,13 @@
 Covers contracts/detect-filter.md obligations DF-7 and DF-8, plus the
 reporting requirements FR-007 and FR-008.
 
-The load-bearing assertion in this file is that filtering happens BEFORE the
-auto-accept confidence threshold. `security_contact` carries
-`auto_detect = true`, and a detected value at or above 0.8 is concluded for
-the run (feature 042: concluded, never written). Filtering after that check
-would still have concluded the rejected value, which is why DF-7 asserts at
-confidence 1.0.
+The load-bearing assertion in this file is that filtering happens BEFORE any
+confidence threshold is applied. Feature 042 made `security_contact` a
+user-judgment key (`auto_detect = false`, FR-005): a detection only proposes
+a candidate, and a filtered value must not be proposed either. For keys with
+`auto_detect = true`, a value at or above the threshold is concluded for the
+run (never written). Filtering after that check would still have concluded or
+proposed the rejected value, which is why DF-7 asserts at confidence 1.0.
 """
 
 from __future__ import annotations

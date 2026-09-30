@@ -93,6 +93,13 @@ are rejected with a pointer to org mode. Under `serve`, content-quality
 checks run through the LLM first; under plain `darnit audit` they fall back
 to deterministic checks.
 
+`remediate_community_spec` parameters (`scope`, `code_license`,
+`governance_mode`, `coc_policy`, and the rest) are the person's decisions
+and have no defaults. An omitted one is taken from context the person
+confirmed (the server also exposes `confirm_project_data` for the `csl_*`
+keys); otherwise the tool writes nothing and reports `confirmation
+required: <key>`.
+
 ## Path 3 — local checkout, minimal
 
 `scripts/csl_manual_remediate.py` runs remediation + re-audit against a repo

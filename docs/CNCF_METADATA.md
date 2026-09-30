@@ -1,36 +1,46 @@
 # CNCF Project Metadata
 
-The context storage module natively supports reading and writing standard CNCF `.project` fields as well as baseline-specific extensions to maintain context provenance across evaluations.
+darnit reads standard CNCF `.project/` fields and keeps its own data (context values, confirmation records, and not-applicable claims) in a separate extension file, so the CNCF file stays conformant to its upstream definition. The authoritative rules are in `docs/architecture/framework-design.md` section 7 (Context Detection).
 
-## Internal Storage Format & Mapping
+## Files
 
-The project interacts with two types of metadata configurations depending on the schema specification:
+### `.project/project.yaml` (CNCF format)
 
-### 1. Legacy Formats (`.project.yaml` `x-openssf-baseline` blocks)
-Fallback configurations natively dump untracked dynamic keys or existing nested maps into an `x-openssf-baseline: context` property list.
+The project's own file. darnit reads CNCF fields from it, for example:
 
-### 2. CNCF `.project` Storage (`.project/project.yaml`)
-Native mappings conform with standard CNCF structures.
-
-For example, when saving the **Security Contact** configuration in the CLI, the module updates the underlying `.project/project.yaml` structure:
 ```yaml
 security:
-  contact: support@example.com
+  contact: security@realcorp.io
 ```
 
-Simultaneously, `context_storage.py` maps the user confirmation and context tracking (data provenance) within the `x-openssf-baseline` extension block:
+darnit never writes a context value or a confirmation into this file. Only an applied remediation's `project_update` changes it, and then only the dotted fields that update targets, preserving comments, ordering, and fields darnit does not own. If the file is present but invalid, darnit writes nothing and reports the validation errors; it never replaces the file with a scaffold.
+
+### `.project/darnit.yaml` (darnit extension)
+
+darnit-only keys and confirmation records:
 
 ```yaml
-x-openssf-baseline:
-  context:
-    security_contact:
-      value: support@example.com
-      source: "user_confirmed"
-      confidence: 1.0
-      confirmed_at: "2026-04-15"
+context:
+  security_contact: security@realcorp.io
+confirmations:
+  security_contact:
+    value_digest: "sha256:..."
+    confirmed_by: "alice"
+    confirmed_at: "2026-09-29T15:00:00Z"
+    last_validated: "2026-09-29T15:00:00Z"
 ```
-## Supported Keys
-Native Keys mapped directly to the `project.yaml` struct:
-- `security_contact` → `security.contact`
 
-All unmapped parameters (e.g. `ci_provider`, `has_releases`, etc...) are reliably populated within the runtime dictionary dynamically and nested under `context`.
+`darnit.config.context_writes` is the only writer of context values and confirmation records, and it writes only this file. It preserves sections and comments it does not change, including `controls:` claims.
+
+## Standing of a stored value
+
+A value read from either file counts only when a confirmation record matches it (same value digest, not lapsed). A value without one, such as a value written by an earlier darnit version or edited by hand, is an unconfirmed candidate (origin `stored_unconfirmed`, with the file and field it came from) and nothing consumes it. Review such values with `confirm_project_data(confirm_stored=[...], reject_stored=[...])`; a rejected `darnit.yaml` value is deleted, and a rejected `project.yaml` value is reported with its field for the person to edit.
+
+When the operator does not trust the repository, a confirmation is recorded in the operator-side store instead, and nothing is written into the repository.
+
+## Supported Keys
+
+CNCF fields mapped from `project.yaml` (read):
+- `security_contact` <- `security.contact`
+
+Other keys (for example `ci_provider`, `has_releases`, `maintainers`) live under `context:` in `darnit.yaml`. Each key has one canonical name and vocabulary; legacy spellings (for example `ci_provider: github_actions`) are read as the canonical form (`github`).

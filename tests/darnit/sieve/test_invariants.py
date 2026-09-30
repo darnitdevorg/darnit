@@ -216,27 +216,16 @@ class TestGhCliGracefulDegradation:
 
 # ---------------------------------------------------------------------------
 # T044: auto_detect=false fields never auto-filled
+#
+# Feature 042 (FR-004) replaced "detection is skipped when auto_detect is
+# false": detection may run to propose a candidate, and only a person's
+# confirmation concludes the value. Covered by
+# tests/darnit/config/test_context_resolve.py::TestDetection.
 # ---------------------------------------------------------------------------
 
 
 class TestAutoDetectFalseGuard:
     """FR-010: Fields with auto_detect=false must never be auto-filled."""
-
-    def test_sieve_detection_skipped_when_auto_detect_false(self):
-        """When auto_detect=False, _try_sieve_detection should not be called."""
-
-        # Create a mock definition with auto_detect=False
-        mock_definition = MagicMock()
-        mock_definition.auto_detect = False
-        mock_definition.auto_detect_method = None
-
-        # Even if a detector would succeed, it should not run
-        # The guard is at line 535 of context_storage.py:
-        # "if current_value is None and definition.auto_detect:"
-        # When auto_detect is False, detection is skipped entirely
-        assert not mock_definition.auto_detect, (
-            "auto_detect must be False for this test"
-        )
 
     def test_context_value_auto_accepted_false_by_default(self):
         """ContextValue defaults to auto_accepted=False."""

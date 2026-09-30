@@ -428,7 +428,7 @@ Three configuration layers, merged at runtime:
 │  Layer 3: .project/project.yaml (project context)     │
 │  Defines: maintainers, CI provider, governance model, │
 │           security contacts, release info              │
-│  Owner: populated by user confirmation + sieve passes │
+│  Owner: project; darnit writes only confirmed values  │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -436,7 +436,9 @@ At audit time, the framework merges Layer 1 + Layer 2 into an "effective config"
 
 ### Context Collection
 
-The framework TOML defines `[context.*]` sections that describe what project-specific information improves audit accuracy. Each context key has a type, prompt, hint, and list of affected controls. The `get_pending_context()` MCP tool returns unanswered prompts; the `confirm_project_context()` tool saves answers to `.project/project.yaml`.
+The framework TOML defines `[context.*]` sections that describe what project-specific information improves audit accuracy. Each context key has a type, prompt, hint, and list of affected controls. The `get_pending_data` MCP tool lists unanswered and unconfirmed keys and writes nothing; the `confirm_project_data` tool, called only on a person's explicit instruction, records the person's answer with a confirmation record (who, when, basis) in `.project/darnit.yaml` for a repository the operator trusts, otherwise operator-side. darnit never writes context values into `.project/project.yaml`.
+
+Every key resolves to one standing (`darnit.config.context_resolve.resolve_context`): `confirmed`, `concluded` (an `auto_detect = true` key detected in this run, never persisted), `candidate`, or `unknown`. Only confirmed and concluded values are consumed; a stored value without a matching confirmation record is a candidate. See `docs/architecture/framework-design.md` section 7.
 
 Context values with `auto_detect = true` can be discovered by sieve passes (e.g., detecting CI provider from `.github/workflows/` existence). Values with `auto_detect = false` require explicit user confirmation. A candidate may still be proposed for such a key when `allow_sieve_hints = true`, in which case it is shown labelled as unconfirmed, alongside its origin, for the user to accept or correct; it is never applied on its own.
 
@@ -506,7 +508,7 @@ For detailed mermaid diagrams of audit internals, remediation flow, context life
 | **Server** | `server/factory.py` | MCP server assembly from TOML + plugins |
 | | `server/tools/builtin_audit.py` | Built-in `audit` MCP tool |
 | | `server/tools/builtin_list.py` | Built-in `list_controls` MCP tool |
-| | `server/tools/project_context.py` | `get_pending_context`, `confirm_project_context` tools |
+| | `server/tools/project_data.py` | `confirm_project_data` implementation and the framework-neutral confirmation tool |
 
 ### OpenSSF Baseline (`packages/darnit-baseline/`)
 

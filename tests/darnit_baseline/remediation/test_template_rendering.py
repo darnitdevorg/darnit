@@ -381,7 +381,15 @@ class TestLLMEnhancement:
 
 
 class TestTemplateFallbackDefaults:
-    """Verify templates render sensible defaults when context is missing."""
+    """Verify template text renders sensible defaults when context is missing.
+
+    These render a template with no unconfirmed keys, so they cover the
+    template text only. In a remediation run, a template that reads a
+    defined key without a usable value (``maintainers``,
+    ``security_contact`` before confirmation) is not rendered: the control
+    stops with "confirmation required" (feature 042, FR-007; see
+    tests/darnit/remediation/test_confirmation_required.py).
+    """
 
     def test_security_policy_omits_email_when_no_contact(self, tmp_path):
         """Security policy omits the email option when no contact is confirmed.

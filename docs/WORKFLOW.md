@@ -16,12 +16,12 @@ sequenceDiagram
     MCP->>FS: Load TOML configs + .project/
     MCP-->>AI: Markdown report (PASS/FAIL/WARN)
 
-    AI->>MCP: get_pending_context()
-    MCP-->>AI: Missing context + prompts
+    AI->>MCP: get_pending_data()
+    MCP-->>AI: Questions, candidates as labelled data (writes nothing)
 
-    AI->>MCP: confirm_project_context(ci_provider="github", ...)
-    MCP->>FS: Update .project/project.yaml
-    MCP-->>AI: Confirmation
+    AI->>MCP: confirm_project_data(<the person's answers>, owner, repo)
+    MCP->>FS: Value + confirmation record in .project/darnit.yaml (trusted repo; else operator-side)
+    MCP-->>AI: Per-key result
 
     AI->>MCP: remediate_audit_findings(dry_run=true)
     MCP-->>AI: Preview of changes
@@ -135,7 +135,7 @@ flowchart TD
     C --> Pre[Preflight: check context requirements<br/>for all categories]
 
     Pre --> Pre_check{Missing context?}
-    Pre_check -->|Yes| Prompt[Return prompts<br/>AI must call confirm_project_context first]
+    Pre_check -->|Yes| Prompt[Return prompts with candidates as data<br/>person confirms via confirm_project_data first]
     Pre_check -->|No| Loop[For each category]
 
     Loop --> Cat[For each failed control in category]
@@ -178,37 +178,45 @@ flowchart TD
 
 ## 5. Context Lifecycle
 
-How `.project/project.yaml` is created, read, enriched, and fed back into subsequent audits.
+How project context is read, confirmed, and fed back into subsequent audits (framework-design.md section 7).
 
 ```mermaid
 flowchart LR
     subgraph Sources["Context Sources"]
-        User["AI calls<br/>confirm_project_context()"]
-        OnPass["Control PASS<br/>→ on_pass config"]
-        Remediation["Remediation success<br/>→ project_update config"]
+        Detect["Detection in this run<br/>(candidates; concluded only<br/>for auto_detect = true keys)"]
+        Person["Person confirms<br/>confirm_project_data or darnit run"]
+        Remediation["Applied remediation<br/>project_update (targeted fields)"]
     end
 
-    subgraph Store[".project/project.yaml"]
-        YAML["project context<br/>(maintainers, CI, governance,<br/>security policy, releases, ...)"]
+    subgraph Store[".project/"]
+        Project["project.yaml<br/>(CNCF fields; never written<br/>with context values)"]
+        Ext["darnit.yaml<br/>(context: values,<br/>confirmations: records)"]
     end
 
-    subgraph Consumers["Context Consumers"]
-        Sieve["Sieve passes<br/>(CEL expressions,<br/>context-aware checks)"]
-        Preflight["Remediation preflight<br/>(are requirements met?)"]
-        Pending["get_pending_context<br/>(what's still missing?)"]
+    Resolver["resolve_context<br/>(standing per key)"]
+
+    subgraph Consumers["Context Consumers (usable values only)"]
+        Sieve["Audit applicability<br/>and checks"]
+        Preflight["Remediation<br/>(guarded context)"]
     end
 
-    User -->|"save_project_config()"| YAML
-    OnPass -->|"apply_project_update()"| YAML
-    Remediation -->|"apply_project_update()"| YAML
+    Pending["get_pending_data<br/>(candidates and unknowns;<br/>writes nothing)"]
 
-    YAML -->|"load at audit start"| Sieve
-    YAML -->|"check before remediation"| Preflight
-    YAML -->|"diff against requirements"| Pending
+    Person -->|"context_writes (trusted repo)"| Ext
+    Remediation -->|"update_project_config"| Project
+    Remediation -->|"update_project_config"| Ext
 
-    Sieve -->|"control passes → triggers on_pass"| OnPass
-    Preflight -->|"missing? → prompt user"| User
+    Project --> Resolver
+    Ext --> Resolver
+    Detect --> Resolver
+
+    Resolver -->|"usable()"| Sieve
+    Resolver -->|"usable(); unusable key: confirmation required"| Preflight
+    Resolver -->|"candidate / unknown"| Pending
+    Pending -->|"person answers"| Person
 ```
+
+A control's `on_pass` update is not applied during an audit; it is reported as evidence `proposed_project_update`. For a repository the operator does not trust, confirmations are recorded operator-side and nothing is written into the repository.
 
 ## 6. Server Startup
 

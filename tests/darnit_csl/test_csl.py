@@ -280,8 +280,10 @@ class TestRemediation:
         out = (tmp_path / "governance" / "04-license.md").read_text()
         assert "AGPL-3.0 license" in out
 
-    def test_governance_default_is_full_policy(self, tmp_path: Path) -> None:
-        cfg, ex = _executor(tmp_path, {})
+    def test_governance_csl_mode_is_full_policy(self, tmp_path: Path) -> None:
+        """Was test_governance_default_is_full_policy: an unconfirmed mode now
+        stops with "confirmation required" (feature 042, FR-007, FR-008)."""
+        cfg, ex = _executor(tmp_path, {"csl_governance_mode": "csl"})
         ex.execute("CSL-05.01", cfg.controls["CSL-05.01"].remediation, dry_run=False)
         out = (tmp_path / "governance" / "05-governance.md").read_text()
         assert "Community Specification Governance Policy 1.0" in out

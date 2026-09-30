@@ -34,6 +34,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The "Generated docs" gate (item 4) from the Development Workflow in the
   project constitution.
 - Pre-commit hook patterns referencing the openspec path.
+- Python helpers that read or wrote raw context values: `load_context`,
+  `load_stored_context`, `flatten_user_context`, `get_context_value`,
+  `get_raw_value`, `is_context_confirmed`, `save_context_value`, and
+  `save_context_values` (`darnit.config.context_storage`), and
+  `darnit.context.detectors.detect_ci`. Use
+  `darnit.config.context_resolve.resolve_context` (read) and
+  `darnit.config.context_writes` (write); `detect_ci_provider` is the one CI
+  detector.
 
 ### Added
 
@@ -133,6 +141,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `scripts/corpus_report.py` writes the report (Markdown or JSON); CI runs
   the gate and adds the report to the job summary. A new fixture needs only
   its files and a `labels.toml`.
+- Context value standing (feature 042). Every context key resolves to one
+  standing: `confirmed` (a person confirmed this exact value), `concluded`
+  (an `auto_detect = true` key detected in this run; never persisted),
+  `candidate` (a value with an origin that no person confirmed), or
+  `unknown`. Only confirmed values and concluded values of `auto_detect =
+  true` keys reach control applicability, compliance, remediation,
+  attestations, and the harness; a candidate is shown labelled with its
+  origin and never consumed.
+- Context confirmation records: who (`confirmed_by`), when
+  (`confirmed_at`), the candidate value and origin it was based on
+  (`basis`, absent when the person typed the value), `last_validated`, and
+  an optional `expires_at`. A record applies only to the value it confirmed;
+  a hand edit makes the key a candidate again. Records go in
+  `.project/darnit.yaml` under `confirmations:` when the operator trusts the
+  repository, otherwise in the operator-side store, and nothing is written
+  into the repository. In-repository records count whether or not the
+  operator trusts the repository. Context definitions accept
+  `validity_days`; a confirmation lapses at the earliest of its `expires_at`
+  and `last_validated + validity_days`, and operator expiry policy does not
+  apply to it.
+- `confirm_project_data(confirm_stored=[...], reject_stored=[...])`
+  reviews stored values in one call: a rejected `.project/darnit.yaml` value
+  is deleted, and a rejected `.project/project.yaml` value is reported with
+  its file and field for the person to edit (the file is not changed).
+  `get_pending_data` lists these values under `stored_unconfirmed` with
+  their locations. `confirm_project_data` also accepts `expires_at`
+  (`{key: date}`).
+- Frameworks that define context keys but no `confirm_project_data` tool
+  (for example Community Specification) get a framework-neutral
+  `confirm_project_data` that records context values for that framework's
+  keys.
 - `docs/architecture/` directory containing the 25 rehomed architectural reference
   specs (including the authoritative `framework-design.md`), plus a one-screen
   `README.md` index. These are static reference documentation, not in-flight
@@ -160,6 +199,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   conclude PASS; 21 content controls gain an `llm_eval` step. Only license
   presence (LE-03.01), QA-02.01, QA-05.01, and QA-05.02 keep existence steps
   that conclude PASS. The corpus reports zero false PASS.
+- **BREAKING:** a context value stored in `.project/` without a matching
+  confirmation record, including every value written by an earlier darnit
+  version, is a candidate (origin `stored_unconfirmed`) and is no longer
+  used. Review them with `confirm_project_data(confirm_stored=[...],
+  reject_stored=[...])`.
+- **BREAKING:** `confirm_project_data` requires `owner` and `repo` for
+  context values (they decide where the record is written) and accepts a
+  detected candidate only by digest (`accept_candidates={key: digest}`);
+  detection runs again and a digest that no longer matches is refused. Its
+  per-key parameters are generated from the server's own framework
+  definitions (the Baseline server gains `platform`), and enum parameters
+  accept only the key's `values`.
+- **BREAKING:** `remediate_community_spec` judgment parameters
+  (`code_license`, `governance_mode`, `coc_policy`, `scope`, `coc_contacts`,
+  and the other `csl_*` values) no longer default (the code license used to
+  default to MIT). An omitted parameter is taken from confirmed context
+  only; otherwise the tool writes nothing and reports `confirmation
+  required: <key>`.
+- **BREAKING:** answers a coding agent submits to an ActionPlan
+  `collect_context` step over MCP are used for that run only and are no
+  longer saved. Answers a person types into `darnit run` are recorded as
+  confirmations.
+- **BREAKING:** OpenSSF Baseline `maintainers` and `security_contact` are
+  user-judgment keys (`auto_detect = false`): detection only proposes a
+  candidate, and they require a person's confirmation. A remediation
+  template or `when` clause that reads a context key without a usable value
+  stops that control with `confirmation required: <key>` and writes
+  nothing, whether or not the control lists the key in `requires_context`
+  and whatever `default()` the template uses.
+- Reads never write. Audits (every driver), `get_pending_data`, report
+  generation, `remediate_audit_findings` in dry run, and the harness collect
+  phase no longer create or modify files in the audited repository; the
+  write of high-confidence detections from pending-data listing is removed.
+  A control's `on_pass` project update (explicit or auto-derived) is no
+  longer applied during an audit and is reported as evidence
+  `proposed_project_update`. `init_project_config` no longer seeds detected
+  values; over MCP it only creates an empty `.project/darnit.yaml` when
+  `.project/` is absent.
+- `get_pending_data` questions carry a detected value only as a labelled
+  `candidate` (`value`, `origin`, `digest`, `label`); command templates and
+  answer mappings hold placeholders only. Enum questions list every allowed
+  value (no longer truncated to four), and configuration `examples` appear
+  only as `format_hint`, never as answer options. Remediation prompts follow
+  the same rules.
+- A detection step that errored or could not decide produces no value;
+  `value_if_fail` applies only to a completed negative answer. A failing
+  `gh release list` leaves `has_releases` unknown instead of storing
+  `false`, so release-gated controls stay applicable.
+- Each context key has one canonical name and vocabulary. The CI provider is
+  read and written as `github`, `gitlab`, `azure`, or `other`; stored legacy
+  spellings are read canonically (`github_actions` -> `github`, `unknown`
+  -> no value).
+- darnit writes context values only to `.project/darnit.yaml`, keeps
+  comments and sections it does not change, and patches only targeted
+  fields when a remediation updates `.project/project.yaml`. It no longer
+  replaces an invalid `.project/project.yaml` with a scaffold: when either
+  `.project/` file is present but invalid, writes are refused with the
+  validation errors, and audit reports list them as warnings.
 - `.baseline.toml` is deprecated. In this release darnit reads its
   per-control `status`/`reason` as not-applicable claims under the same rules
   as `.project/` claims, still honors `extends` naming a registered framework,

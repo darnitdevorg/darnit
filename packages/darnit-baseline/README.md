@@ -130,14 +130,14 @@ Controls gated by `platform = "github"` require the GitHub CLI (`gh`). Additiona
 
 ## Project Context
 
-Context values serve two purposes: **(1)** they gate which controls apply to your project via `when` clauses, and **(2)** they populate templates during remediation. Controls gated by context that hasn't been set show as N/A.
+Context values serve two purposes: **(1)** they gate which controls apply to your project via `when` clauses, and **(2)** they populate templates during remediation. Only confirmed values (and, for Auto-Detect keys, values detected in the current run) are used. A control gated by context that has no usable value stays applicable, and a remediation template that needs such a value stops with `confirmation required: <key>`.
 
-Set context via the `confirm_project_data` MCP tool or by editing `.project/project.yaml`.
+Confirm context with the `confirm_project_data` MCP tool, which records who confirmed it and when (in `.project/darnit.yaml` for a repository you trust, otherwise operator-side). A detected value for a key without Auto-Detect is only proposed as a candidate for you to accept or correct. A value in `.project/` without a confirmation record, including one edited by hand or written by an earlier darnit version, is a candidate until you confirm it; `get_pending_data` lists these under `stored_unconfirmed`, and `confirm_project_data(confirm_stored=[...], reject_stored=[...])` reviews them in one call.
 
 | Key | Type | Auto-Detect | Controls | Usage |
 |-----|------|-------------|----------|-------|
-| `maintainers` | list or path | Yes | GV-01.01, GV-01.02, GV-04.01 | Template variable in GOVERNANCE.md, MAINTAINERS.md, CODEOWNERS. Remediation blocks until provided. |
-| `security_contact` | string | No | VM-01.01, VM-02.01, VM-03.01 | Populates SECURITY.md template |
+| `maintainers` | list or path | No (candidate proposed) | GV-01.01, GV-01.02, GV-04.01 | Template variable in GOVERNANCE.md, MAINTAINERS.md, CODEOWNERS. Remediation blocks until confirmed. |
+| `security_contact` | string | No (candidate proposed) | VM-01.01, VM-02.01, VM-03.01 | Populates SECURITY.md template. Remediation blocks until confirmed. |
 | `governance_model` | enum | No | GV-01.01, GV-01.02 | Selects governance template variant |
 | `has_subprojects` | boolean | No | QA-04.01, QA-04.02 | When-clause: controls only run if `true` |
 | `has_releases` | boolean | Yes | BR-02.01, BR-04.01, BR-06.01, LE-03.02, SA-03.01 | When-clause: controls only run if `true` |

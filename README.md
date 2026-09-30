@@ -245,15 +245,21 @@ build:
 ### Configuration Tools
 
 ```python
-# Initialize configuration by discovering existing files
+# Create .project/darnit.yaml when .project/ is absent (seeds no values)
 init_project_config(local_path="/path/to/repo")
 
 # Get current configuration
 get_project_config(local_path="/path/to/repo")
 
-# Confirm project context for accurate audit results
-confirm_project_context(
+# List what needs a person's answer (writes nothing; detected values are
+# shown only as labelled, unconfirmed candidates)
+get_pending_data(local_path="/path/to/repo")
+
+# Record the person's answers, with who confirmed and when
+confirm_project_data(
     local_path="/path/to/repo",
+    owner="my-org",
+    repo="my-repo",
     has_releases=True,
     ci_provider="github"
 )
@@ -275,9 +281,10 @@ For implementation-level details (Python control handlers, custom MCP tools, rem
 - `generate_attestation` - Create signed attestation
 
 ### Configuration Tools
-- `init_project_config` - Initialize `.project.yaml`
+- `init_project_config` - Create an empty `.project/darnit.yaml` when `.project/` is absent
 - `get_project_config` - Get current configuration
-- `confirm_project_context` - Record project context
+- `get_pending_data` - List context that needs a person's answer
+- `confirm_project_data` - Record a person's answers as confirmed project context
 
 ### Remediation Tools
 - `remediate_audit_findings` - Auto-fix compliance gaps

@@ -218,6 +218,8 @@ The sieve system implements a 4-phase progressive verification pipeline. Each co
 
 The project context system allows users to confirm facts about their project that affect how controls are evaluated. This handles cases where automatic detection is ambiguous.
 
+> **Current rules (feature 042).** The diagrams in this section and the next predate the framework TOML and are kept for their decision logic. The authoritative rules are in `docs/architecture/framework-design.md` section 7. In short: every key resolves (`darnit.config.context_resolve.resolve_context`) to one standing, `confirmed`, `concluded` (an `auto_detect = true` key detected in this run, never persisted), `candidate`, or `unknown`. Checks, remediation, and attestations read only confirmed and concluded values. A value stored in `.project/` without a matching confirmation record is a candidate. Reads never write; only `confirm_project_data` (on a person's explicit instruction) and answers a person types into `darnit run` record confirmations.
+
 ### 3.1 Context Resolution
 
 ```text
@@ -388,6 +390,8 @@ ci_config_path = ".gitlab-ci.yml"
 
 The Context Sieve provides progressive auto-detection of project context (maintainers, security contacts, governance model) for remediation. It runs cheap/fast checks first and stops when confidence is sufficient.
 
+For a user-judgment key (`auto_detect = false`, which includes `maintainers`, `security_contact`, and `governance_model` in OpenSSF Baseline), a detection only proposes a candidate, whatever its confidence; only a person's confirmation makes the value usable. Confidence thresholds apply only to `auto_detect = true` keys.
+
 ### 4.1 Context Sieve Pipeline
 
 ```text
@@ -549,68 +553,24 @@ The Context Sieve provides progressive auto-detection of project context (mainta
 ### 4.4 Integration with Context Validator
 
 ```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│        check_context_requirements(requirements, local_path, owner, repo)     │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                      │
-                                      ▼
-                    ┌─────────────────────────────────┐
-                    │  For each ContextRequirement:    │
-                    │  { key, required, threshold,     │
-                    │    prompt_if_auto_detected }     │
-                    └─────────────────────────────────┘
-                                      │
-                                      ▼
-                    ┌─────────────────────────────────┐
-                    │  get_context_value(local_path,   │
-                    │                    key)          │
-                    └─────────────────────────────────┘
-                                      │
-                           ┌──────────┴──────────┐
-                           │                     │
-                           ▼                     ▼
-                    [Value Found]          [Value Missing]
-                    (in .project.yaml)           │
-                           │                     │
-                           │                     ▼
-                           │     ┌─────────────────────────────────┐
-                           │     │  _try_sieve_detection(          │
-                           │     │      key, local_path,           │
-                           │     │      owner, repo)               │
-                           │     │                                 │
-                           │     │  Run Context Sieve pipeline     │
-                           │     └─────────────────────────────────┘
-                           │                     │
-                           │          ┌──────────┴──────────┐
-                           │          │                     │
-                           │          ▼                     ▼
-                           │   [Sieve Found]          [Nothing Found]
-                           │   (auto-detected)              │
-                           │          │                     │
-                           │          ▼                     ▼
-                           │   Store in result.       Mark as missing,
-                           │   auto_detected          add to prompts
-                           │          │
-                           └──────────┴──────────────┐
-                                                     │
-                                                     ▼
-                              ┌─────────────────────────────────┐
-                              │  Check confidence threshold      │
-                              │                                  │
-                              │  confidence >= threshold?        │
-                              │  prompt_if_auto_detected?        │
-                              └─────────────────────────────────┘
-                                                     │
-                              ┌───────────────────────┴───────────────────────┐
-                              │                                               │
-                              ▼                                               ▼
-                  ┌──────────────────────┐                    ┌──────────────────────┐
-                  │ Ready to proceed     │                    │ Needs confirmation   │
-                  │                      │                    │                      │
-                  │ result.ready = True  │                    │ result.ready = False │
-                  │                      │                    │ Add prompt message   │
-                  └──────────────────────┘                    └──────────────────────┘
+check_context_requirements(requirements, local_path, owner, repo)
+  |
+  +-- resolve_context(local_path)          (reads only; writes nothing)
+  |
+  +-- for each requirement { key, required, confidence_threshold,
+  |                          prompt_if_auto_detected }:
+        |
+        +-- standing = confirmed  -> ready (unless the value only names
+        |                            one of the key's hint_sources files)
+        +-- standing = concluded  -> ready, unless prompt_if_auto_detected
+        |                            is set or confidence < threshold
+        +-- standing = candidate  -> not ready; the candidate is shown as
+        |                            labelled, unconfirmed data with its
+        |                            origin and digest
+        +-- standing = unknown    -> not ready; ask the person
 ```
+
+Independently of `requires_context`, a remediation template or `when` clause that reads a key without a usable value stops that control with `confirmation required: <key>` and writes nothing.
 
 ### 4.5 Supported Context Keys
 
@@ -640,57 +600,40 @@ The Context Sieve provides progressive auto-detection of project context (mainta
 ### 4.6 Example: Maintainers Detection
 
 ```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    Example: detect("maintainers", "/path/to/repo")           │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  Phase 1 (Deterministic):                                                    │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │  • Check MAINTAINERS.md → Not found                                    │ │
-│  │  • Check .github/CODEOWNERS → Found!                                   │ │
-│  │    Content: "* @alice @bob"                                            │ │
-│  │    Signal: { source: EXPLICIT_FILE, value: ["@alice", "@bob"],         │ │
-│  │              raw_confidence: 0.95 }                                    │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
-│                                                                              │
-│  confidence = 0.95 × 0.9 (EXPLICIT_FILE weight) = 0.855                     │
-│  0.855 < 0.9 threshold → Continue to Phase 2                                │
-│                                                                              │
-│  Phase 2 (Heuristic):                                                        │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │  • Check package.json → Found!                                         │ │
-│  │    Content: { "author": "Alice Smith <alice@example.com>" }            │ │
-│  │    Signal: { source: PROJECT_MANIFEST, value: ["alice"],               │ │
-│  │              raw_confidence: 0.8 }                                     │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
-│                                                                              │
-│  Phase 4 (Combine):                                                          │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │  Signals: [CODEOWNERS: @alice, @bob], [package.json: alice]            │ │
-│  │                                                                         │ │
-│  │  Agreement: "alice" appears in both → agreement_factor = 0.75          │ │
-│  │                                                                         │ │
-│  │  weighted_avg = (0.855 + 0.64) / 2 = 0.7475                            │ │
-│  │  boost = 1.2 (signals agree)                                           │ │
-│  │                                                                         │ │
-│  │  final_confidence = 0.7475 × 0.75 × 1.2 = 0.67                         │ │
-│  │                                                                         │ │
-│  │  Result: { value: ["@alice", "@bob"], confidence: 0.67,                │ │
-│  │            signals: [...], needs_confirmation: True }                  │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
-│                                                                              │
-│  Output to user:                                                             │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │  🔍 Auto-detected maintainers (confidence: 67%):                       │ │
-│  │     - @alice (from CODEOWNERS, package.json)                           │ │
-│  │     - @bob (from CODEOWNERS)                                           │ │
-│  │                                                                         │ │
-│  │  Confidence below 90% threshold. Please confirm:                       │ │
-│  │     confirm_project_context(maintainers=["@alice", "@bob"])            │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
+detect("maintainers", "/path/to/repo")
+
+Phase 1 (Deterministic):
+  .github/CODEOWNERS found: "* @alice @bob"
+  signal { source: EXPLICIT_FILE, value: ["@alice", "@bob"], raw_confidence: 0.95 }
+  confidence = 0.95 x 0.9 (EXPLICIT_FILE weight) = 0.855
+
+Phase 2 (Heuristic):
+  package.json author "Alice Smith"
+  signal { source: PROJECT_MANIFEST, value: ["alice"], raw_confidence: 0.8 }
+
+Phase 4 (Combine):
+  result { value: ["@alice", "@bob"], confidence: 0.67, signals: [...] }
+
+Standing: candidate (origin sieve_hint, method CODEOWNERS). maintainers is a
+user-judgment key, so this holds at any confidence.
 ```
+
+`get_pending_data` shows the candidate as data, never inside a command:
+
+```json
+{
+  "key": "maintainers",
+  "candidate": {
+    "value": ["@alice", "@bob"],
+    "origin": {"kind": "sieve_hint", "method": "CODEOWNERS", "confidence": 0.67},
+    "digest": "sha256:...",
+    "label": "UNCONFIRMED candidate - show it to the person; do not confirm without their answer"
+  },
+  "command_template": "confirm_project_data(accept_candidates={\"maintainers\": \"<candidate digest if the person accepts it>\"}, owner=..., repo=...)  OR  confirm_project_data(maintainers=<the person's answer>, owner=..., repo=...)"
+}
+```
+
+Only after the person accepts does the agent fill in the digest; the confirmation records who, when, and the candidate it was based on.
 
 ---
 
@@ -1579,9 +1522,10 @@ Use the provided verification script instead.
 
 | Function | Location | Purpose |
 |----------|----------|---------|
-| `is_context_confirmed()` | main.py | Check if context key is set in project.toml |
-| `get_context_value()` | main.py | Get user-confirmed context value |
-| `CONTEXT_KEYS` | main.py | Registry of context keys and affected controls |
+| `resolve_context()` | config/context_resolve.py | Every key's value and standing; `usable()` is the only mapping consumers read |
+| `get_pending_context()` | config/context_storage.py | Pending questions with candidates as data (read-only) |
+| `context_writes` | config/context_writes.py | The only writer of context values and confirmation records |
+| `[context.*]` | framework TOML | Context keys, vocabularies, and affected controls |
 
 ### Adapter Functions (Legacy)
 

@@ -91,15 +91,19 @@ governance:
 This context is automatically injected into the sieve orchestrator and available in CEL expressions via `project.*`.
 
 ### Confirming Context
-Use the `confirm_project_context` MCP tool to set context values:
+Use the `confirm_project_data` MCP tool, on the person's explicit instruction, to record context values. `owner` and `repo` are required: they decide whether the confirmation record goes in `.project/darnit.yaml` (a repository the operator trusts) or operator-side:
 
 ```python
-confirm_project_context(
+confirm_project_data(
+    owner="my-org",
+    repo="my-repo",
     maintainers="CODEOWNERS",
-    security_contact="security@example.com",
+    security_contact="security@realcorp.io",
     ci_provider="github"
 )
 ```
+
+Values stored by an earlier darnit version have no confirmation record and are treated as unconfirmed candidates. `get_pending_data` lists them under `stored_unconfirmed`; review them in one call with `confirm_project_data(confirm_stored=[...], reject_stored=[...], owner=..., repo=...)`.
 
 ## Version Compatibility
 
