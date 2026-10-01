@@ -5,7 +5,7 @@ This is the recommended install path for **CI/CD pipelines** and any environment
 ## Run a one-shot audit
 
 ```bash
-docker run --rm -v "$PWD:/repo" ghcr.io/kusari-oss/darnit:v0.1.0 audit
+docker run --rm -v "$PWD:/repo" ghcr.io/darnitdevorg/darnit:v0.1.0 audit
 ```
 
 For `podman` users, substitute `podman` for `docker` — same flags.
@@ -42,17 +42,17 @@ The entrypoint dispatches the first argument:
 
 ## Verify the image signature
 
-Every release tag is signed with cosign keyless OIDC. The signing identity binds the image to the `release.yml` workflow in `kusari-oss/darnit`.
+Every release tag is signed with cosign keyless OIDC. The signing identity binds the image to the `release.yml` workflow in `darnitdevorg/darnit`.
 
 ```bash
-cosign verify ghcr.io/kusari-oss/darnit:v0.1.0 \
-  --certificate-identity-regexp '^https://github\.com/kusari-oss/darnit/\.github/workflows/release\.yml@' \
+cosign verify ghcr.io/darnitdevorg/darnit:v0.1.0 \
+  --certificate-identity-regexp '^https://github\.com/darnitdevorg/darnit/\.github/workflows/release\.yml@' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
 A passing verification proves:
 - The image bytes match what was signed.
-- The signer was the `release.yml` workflow in `kusari-oss/darnit`.
+- The signer was the `release.yml` workflow in `darnitdevorg/darnit`.
 - The OIDC issuer was GitHub Actions.
 
 The `:edge` rolling build is **not** signed.
@@ -62,16 +62,16 @@ The `:edge` rolling build is **not** signed.
 Each signed image has an SPDX-JSON SBOM attached as a cosign attestation:
 
 ```bash
-cosign download attestation ghcr.io/kusari-oss/darnit:v0.1.0 \
+cosign download attestation ghcr.io/darnitdevorg/darnit:v0.1.0 \
   | jq -r '.payload' | base64 -d | jq '.predicate' > darnit-sbom.spdx.json
 ```
 
 Verify the SBOM's signing identity at the same time:
 
 ```bash
-cosign verify-attestation ghcr.io/kusari-oss/darnit:v0.1.0 \
+cosign verify-attestation ghcr.io/darnitdevorg/darnit:v0.1.0 \
   --type spdx \
-  --certificate-identity-regexp '^https://github\.com/kusari-oss/darnit/\.github/workflows/release\.yml@' \
+  --certificate-identity-regexp '^https://github\.com/darnitdevorg/darnit/\.github/workflows/release\.yml@' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
@@ -98,7 +98,7 @@ jobs:
           docker run --rm \
             -v "$PWD:/repo" \
             -v "${{ github.workspace }}/.audit:/audit-out" \
-            ghcr.io/kusari-oss/darnit:v0.1.0 \
+            ghcr.io/darnitdevorg/darnit:v0.1.0 \
             audit --output /audit-out/report.md
 ```
 
@@ -106,7 +106,7 @@ jobs:
 
 ```yaml
 audit:
-  image: ghcr.io/kusari-oss/darnit:v0.1.0
+  image: ghcr.io/darnitdevorg/darnit:v0.1.0
   script:
     - darnit audit
 ```
@@ -125,7 +125,7 @@ The compressed image targets **300 MiB**. Each release records the measured size
 
 | Symptom | Cause |
 |---|---|
-| `Error response from daemon: manifest unknown` | The tag does not exist. Check `gh release list --repo kusari-oss/darnit` for valid versions. |
+| `Error response from daemon: manifest unknown` | The tag does not exist. Check `gh release list --repo darnitdevorg/darnit` for valid versions. |
 | `exec format error` on Apple Silicon | The image was pulled for the wrong architecture. Use `docker pull --platform linux/arm64 ...` or let Docker pick automatically. |
 | `cosign verify` fails with "no matching signatures" | You're trying to verify an `:edge` image (unsigned) or the tag was published before this signing scheme. |
 | The audit complains about missing `git`/`gh` | The image bundles both — re-pull, since the bundled binaries might have been overridden by a previous `--volume` mount. |

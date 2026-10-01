@@ -8,15 +8,14 @@ name: Release
 # What this workflow does today:
 #   1. preflight    - tag/version parity, clean tree, tests, lint, sync
 #   2. build        - per-package wheels + sdists to a shared artifact
-#   3. publish-*    - upload each public package to PyPI via API token
+#   3. publish-*    - upload each public package to PyPI/TestPyPI via Trusted Publishing
 #   4. container    - build + push + cosign-sign the multi-arch container image
 #   5. release      - create the GitHub Release with install instructions
 #   6. finalize     - summary line to the run's step summary
 #
-# Auth model: PyPI publishes use the `PYPI_API_TOKEN` repo secret (account-
-# scoped). Trusted-publisher setup is nicer long-term but requires per-project
-# UI config in PyPI, which was blocking. Container signing uses cosign keyless
-# OIDC as before; that path does not depend on PyPI auth.
+# Auth model: PyPI publishes use PyPI Trusted Publishing (GitHub OIDC), so no
+# long-lived PyPI API token is required. Container signing uses cosign keyless
+# OIDC as before.
 #
 # Version format: `vX.Y.Z` or `vX.Y.ZrcN` (no dash before rc; matches PEP 440
 # canonical form and the preflight parse-tag regex). Pre-release tags are
@@ -218,21 +217,21 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Publish jobs use `password: ${{ secrets.PYPI_API_TOKEN }}` (account-scoped
-  # token). Migrate to project-scoped tokens once the projects exist on PyPI.
-  #
-  # Sequenced via `needs:` because darnit-baseline, darnit-gittuf,
+  # Sequenced via `needs:` because darnit-baseline, darnit-csl, darnit-gittuf,
   # darnit-reproducibility, and darnit-mcp declare `darnit-core>=...` runtime
-  # deps; darnit-mcp additionally depends on the other four. Publishing them
-  # before the deps are on the index briefly produces unresolvable wheels.
+  # deps; darnit-mcp additionally depends on baseline, gittuf, and
+  # reproducibility. Publishing them before the deps are on the index briefly
+  # produces unresolvable wheels.
 
   publish-darnit-core:
     name: Publish darnit-core to PyPI
     needs: [preflight, build]
     runs-on: ubuntu-latest
+    environment: release
     timeout-minutes: 10
     permissions:
       contents: read
+      id-token: write
     steps:
       - name: Download dist artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -244,16 +243,19 @@ jobs:
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           packages-dir: dist/darnit-core/
-          password: ${{ secrets.PYPI_API_TOKEN }}
+          repository-url: ${{ needs.preflight.outputs.is_prerelease == 'true' && 'https://test.pypi.org/legacy/' || 'https://upload.pypi.org/legacy/' }}
           skip-existing: true
+          attestations: true
 
   publish-darnit-baseline:
     name: Publish darnit-baseline to PyPI
     needs: [preflight, build, publish-darnit-core]
     runs-on: ubuntu-latest
+    environment: release
     timeout-minutes: 10
     permissions:
       contents: read
+      id-token: write
     steps:
       - name: Download dist artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -265,16 +267,43 @@ jobs:
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           packages-dir: dist/darnit-baseline/
-          password: ${{ secrets.PYPI_API_TOKEN }}
+          repository-url: ${{ needs.preflight.outputs.is_prerelease == 'true' && 'https://test.pypi.org/legacy/' || 'https://upload.pypi.org/legacy/' }}
           skip-existing: true
+          attestations: true
+
+  publish-darnit-csl:
+    name: Publish darnit-csl to PyPI
+    needs: [preflight, build, publish-darnit-core]
+    runs-on: ubuntu-latest
+    environment: release
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download dist artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish darnit-csl
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        with:
+          packages-dir: dist/darnit-csl/
+          repository-url: ${{ needs.preflight.outputs.is_prerelease == 'true' && 'https://test.pypi.org/legacy/' || 'https://upload.pypi.org/legacy/' }}
+          skip-existing: true
+          attestations: true
 
   publish-darnit-gittuf:
     name: Publish darnit-gittuf to PyPI
     needs: [preflight, build, publish-darnit-core]
     runs-on: ubuntu-latest
+    environment: release
     timeout-minutes: 10
     permissions:
       contents: read
+      id-token: write
     steps:
       - name: Download dist artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -286,16 +315,19 @@ jobs:
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           packages-dir: dist/darnit-gittuf/
-          password: ${{ secrets.PYPI_API_TOKEN }}
+          repository-url: ${{ needs.preflight.outputs.is_prerelease == 'true' && 'https://test.pypi.org/legacy/' || 'https://upload.pypi.org/legacy/' }}
           skip-existing: true
+          attestations: true
 
   publish-darnit-reproducibility:
     name: Publish darnit-reproducibility to PyPI
     needs: [preflight, build, publish-darnit-core]
     runs-on: ubuntu-latest
+    environment: release
     timeout-minutes: 10
     permissions:
       contents: read
+      id-token: write
     steps:
       - name: Download dist artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -307,8 +339,9 @@ jobs:
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           packages-dir: dist/darnit-reproducibility/
-          password: ${{ secrets.PYPI_API_TOKEN }}
+          repository-url: ${{ needs.preflight.outputs.is_prerelease == 'true' && 'https://test.pypi.org/legacy/' || 'https://upload.pypi.org/legacy/' }}
           skip-existing: true
+          attestations: true
 
   publish-darnit-mcp:
     name: Publish darnit-mcp to PyPI
@@ -316,12 +349,15 @@ jobs:
       - preflight
       - build
       - publish-darnit-baseline
+      - publish-darnit-csl
       - publish-darnit-gittuf
       - publish-darnit-reproducibility
     runs-on: ubuntu-latest
+    environment: release
     timeout-minutes: 10
     permissions:
       contents: read
+      id-token: write
     steps:
       - name: Download dist artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -333,17 +369,19 @@ jobs:
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           packages-dir: dist/darnit-mcp/
-          password: ${{ secrets.PYPI_API_TOKEN }}
+          repository-url: ${{ needs.preflight.outputs.is_prerelease == 'true' && 'https://test.pypi.org/legacy/' || 'https://upload.pypi.org/legacy/' }}
           skip-existing: true
+          attestations: true
 
-  # Build + push + cosign-sign the multi-arch container image. Depends on
-  # publish-darnit-mcp because the Dockerfile does `pip install
-  # darnit-mcp==<version>` at build time - the package must be live before
-  # the image build can resolve it.
+  # Build + push + cosign-sign the multi-arch container image. Depends on the
+  # PyPI publish jobs so the image only ships after the public package set is
+  # uploaded. The Dockerfile installs Darnit packages from this run's build
+  # artifacts and resolves only external dependencies from PyPI.
   container_build_push:
     name: Build, push, and sign container image
     needs:
       - preflight
+      - build
       - publish-darnit-mcp
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -375,6 +413,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Download dist artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist
+          path: dist/
+
       - name: Compute image tags
         id: tags
         env:
@@ -397,26 +441,6 @@ jobs:
             echo "tags=$tags"
           } >> "$GITHUB_OUTPUT"
           echo "Tagging: $tags"
-
-      - name: Wait for darnit-mcp on PyPI
-        env:
-          VERSION: ${{ needs.preflight.outputs.version }}
-        run: |
-          set -euo pipefail
-          # PyPI's CDN typically caches the index for a few minutes after a
-          # new upload. Poll up to 2 minutes so the image build is not racing
-          # publication.
-          url="https://pypi.org/pypi/darnit-mcp/${VERSION}/json"
-          for attempt in $(seq 1 24); do
-            if curl -fsSL "$url" >/dev/null 2>&1; then
-              echo "darnit-mcp ${VERSION} is visible on PyPI (attempt $attempt)"
-              exit 0
-            fi
-            echo "Waiting for darnit-mcp ${VERSION} on PyPI (attempt $attempt/24)..."
-            sleep 5
-          done
-          echo "::error::darnit-mcp ${VERSION} did not appear on PyPI within 2 minutes"
-          exit 1
 
       - name: Build and push multi-arch image
         id: build_push
@@ -469,9 +493,11 @@ jobs:
           if [ "$IS_PRERELEASE" = "true" ]; then
             flags="--prerelease"
             title="darnit ${VERSION} (pre-release)"
+            pypi_install="pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ --pre darnit-mcp==${VERSION}"
           else
             flags="--latest"
             title="darnit ${VERSION}"
+            pypi_install="pip install darnit-mcp==${VERSION}"
           fi
           body_file=$(mktemp)
           cat > "$body_file" <<EOF
@@ -482,7 +508,7 @@ jobs:
           ## Install
 
           - **MCP (Claude Code / Claude Desktop):** \`darnit install\` writes an \`uvx --from darnit-mcp\` config for you. See [docs/install/](https://github.com/${GITHUB_REPOSITORY}/tree/${TAG}/docs/install).
-          - **PyPI:** \`pip install darnit-mcp==${VERSION}\` (installs the meta-package plus \`darnit-core\`, \`darnit-baseline\`, \`darnit-gittuf\`, \`darnit-reproducibility\`).
+          - **PyPI:** \`${pypi_install}\` (installs the meta-package plus \`darnit-core\`, \`darnit-baseline\`, \`darnit-gittuf\`, and \`darnit-reproducibility\`).
           - **Container:** \`docker pull ghcr.io/${owner_lc}/darnit:${TAG}\`.
           - **Standalone binary / Homebrew:** not yet in this release. Tracked for follow-ups.
 
@@ -511,6 +537,7 @@ jobs:
       - preflight
       - publish-darnit-core
       - publish-darnit-baseline
+      - publish-darnit-csl
       - publish-darnit-gittuf
       - publish-darnit-reproducibility
       - publish-darnit-mcp
@@ -526,6 +553,7 @@ jobs:
           VERSION: ${{ needs.preflight.outputs.version }}
           PYPI_CORE: ${{ needs.publish-darnit-core.result }}
           PYPI_BASELINE: ${{ needs.publish-darnit-baseline.result }}
+          PYPI_CSL: ${{ needs.publish-darnit-csl.result }}
           PYPI_GITTUF: ${{ needs.publish-darnit-gittuf.result }}
           PYPI_REPRO: ${{ needs.publish-darnit-reproducibility.result }}
           PYPI_MCP: ${{ needs.publish-darnit-mcp.result }}
@@ -539,6 +567,7 @@ jobs:
             echo "|---|---|"
             echo "| pypi-darnit-core | $PYPI_CORE |"
             echo "| pypi-darnit-baseline | $PYPI_BASELINE |"
+            echo "| pypi-darnit-csl | $PYPI_CSL |"
             echo "| pypi-darnit-gittuf | $PYPI_GITTUF |"
             echo "| pypi-darnit-reproducibility | $PYPI_REPRO |"
             echo "| pypi-darnit-mcp | $PYPI_MCP |"
