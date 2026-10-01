@@ -1,16 +1,16 @@
-"""Tests for ReproducibilityImplementation plugin protocol compliance."""
+"""Tests for AmberImplementation plugin protocol compliance."""
 
-from darnit_reproducibility.implementation import ReproducibilityImplementation
+from darnit_amber.implementation import AmberImplementation
 
 
-class TestReproducibilityImplementation:
-    """Tests that ReproducibilityImplementation satisfies the plugin protocol."""
+class TestAmberImplementation:
+    """Tests that AmberImplementation satisfies the plugin protocol."""
 
     def setup_method(self):
-        self.impl = ReproducibilityImplementation()
+        self.impl = AmberImplementation()
 
     def test_name(self) -> None:
-        assert self.impl.name == "reproducibility"
+        assert self.impl.name == "amber"
 
     def test_display_name(self) -> None:
         assert len(self.impl.display_name) > 0
@@ -45,12 +45,15 @@ class TestReproducibilityImplementation:
             get_sieve_handler_registry,
             reset_sieve_handler_registry,
         )
+
         reset_sieve_handler_registry()
         self.impl.register_sieve_handlers()
         registry = get_sieve_handler_registry()
         expected = {
-            "repro_deps_pinned", "repro_build_env_declared",
-            "repro_hermetic_build", "repro_provenance_exists",
+            "repro_deps_pinned",
+            "repro_build_env_declared",
+            "repro_hermetic_build",
+            "repro_provenance_exists",
             "repro_bit_for_bit",
         }
         for name in expected:
@@ -61,12 +64,15 @@ class TestReproducibilityImplementation:
             get_sieve_handler_registry,
             reset_sieve_handler_registry,
         )
+
         reset_sieve_handler_registry()
         self.impl.register_sieve_handlers()
         registry = get_sieve_handler_registry()
         for name in [
-            "repro_deps_pinned", "repro_build_env_declared",
-            "repro_hermetic_build", "repro_provenance_exists",
+            "repro_deps_pinned",
+            "repro_build_env_declared",
+            "repro_hermetic_build",
+            "repro_provenance_exists",
             "repro_bit_for_bit",
         ]:
             info = registry.get(name)

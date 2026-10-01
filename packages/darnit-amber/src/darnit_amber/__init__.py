@@ -2,12 +2,12 @@
 
 from pathlib import Path
 
-from .implementation import ReproducibilityImplementation
+from .implementation import AmberImplementation
 
 
-def register() -> ReproducibilityImplementation:
+def register() -> AmberImplementation:
     """Entry point called by darnit plugin discovery."""
-    impl = ReproducibilityImplementation()
+    impl = AmberImplementation()
     impl.register_controls()
     impl.register_sieve_handlers()
     return impl
@@ -19,7 +19,7 @@ def get_framework_path() -> Path:
     # and name lookup. The 'darnit.implementations' get_framework_config_path()
     # feeds the audit path instead; both entry points are required. Delegating
     # here ensures both paths use the same importlib.resources resolver.
-    return ReproducibilityImplementation().get_framework_config_path()
+    return AmberImplementation().get_framework_config_path()
 
 
-__all__ = ["ReproducibilityImplementation", "register", "get_framework_path"]
+__all__ = ["AmberImplementation", "register", "get_framework_path"]

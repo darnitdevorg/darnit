@@ -1,7 +1,7 @@
 """Plugin sieve-handler registration and control ordering.
 
 Covers issues #427 and #428, both reported against the
-`darnit-reproducibility` plugin but rooted in the framework.
+`darnit-amber` plugin but rooted in the framework.
 
 #427: plugin-provided sieve handlers never reached the registry outside
 the MCP server path, so every control referencing one fell through to
@@ -21,7 +21,7 @@ import pytest
 from darnit.core.discovery import register_implementation_handlers
 from darnit.sieve.handler_registry import get_sieve_handler_registry
 
-# Handlers shipped by darnit-reproducibility. It is the in-tree plugin that
+# Handlers shipped by darnit-amber. It is the in-tree plugin that
 # exercises the `register_sieve_handlers` spelling (see the naming note in
 # TestProtocolMethodNaming below).
 _REPRO_HANDLERS = (
@@ -37,8 +37,8 @@ class TestRegisterImplementationHandlers:
     """#427: registration must be explicit, not a side effect of discovery."""
 
     @pytest.mark.unit
-    def test_registers_reproducibility_handlers(self) -> None:
-        assert register_implementation_handlers("reproducibility") is True
+    def test_registers_amber_handlers(self) -> None:
+        assert register_implementation_handlers("amber") is True
 
         registry = get_sieve_handler_registry()
         missing = [h for h in _REPRO_HANDLERS if registry.get(h) is None]
@@ -65,7 +65,7 @@ class TestRegisterImplementationHandlers:
         from darnit.core.discovery import discover_implementations
 
         discover_implementations()  # warm the cache first
-        assert register_implementation_handlers("reproducibility") is True
+        assert register_implementation_handlers("amber") is True
 
         registry = get_sieve_handler_registry()
         assert all(registry.get(h) is not None for h in _REPRO_HANDLERS)
@@ -82,8 +82,8 @@ class TestRegisterImplementationHandlers:
     @pytest.mark.unit
     def test_is_idempotent(self) -> None:
         """Called once per audit; repeat calls must not raise."""
-        assert register_implementation_handlers("reproducibility") is True
-        assert register_implementation_handlers("reproducibility") is True
+        assert register_implementation_handlers("amber") is True
+        assert register_implementation_handlers("amber") is True
 
     @pytest.mark.unit
     def test_plugin_exception_is_contained(self) -> None:
@@ -105,7 +105,7 @@ class TestProtocolMethodNaming:
     """Both in-tree spellings of the registration method must be honored.
 
     `CLAUDE.md` documents `register_handlers()`, and darnit-baseline
-    implements it. darnit-gittuf and darnit-reproducibility implement
+    implements it. darnit-gittuf and darnit-amber implement
     `register_sieve_handlers()` instead. Until those converge, the
     framework accepts either -- otherwise two of four in-tree plugins
     register nothing.

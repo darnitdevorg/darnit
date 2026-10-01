@@ -222,7 +222,7 @@ jobs:
   # token). Migrate to project-scoped tokens once the projects exist on PyPI.
   #
   # Sequenced via `needs:` because darnit-baseline, darnit-gittuf,
-  # darnit-reproducibility, and darnit-mcp declare `darnit-core>=...` runtime
+  # darnit-amber, and darnit-mcp declare `darnit-core>=...` runtime
   # deps; darnit-mcp additionally depends on the other four. Publishing them
   # before the deps are on the index briefly produces unresolvable wheels.
 
@@ -289,8 +289,8 @@ jobs:
           password: ${{ secrets.PYPI_API_TOKEN }}
           skip-existing: true
 
-  publish-darnit-reproducibility:
-    name: Publish darnit-reproducibility to PyPI
+  publish-darnit-amber:
+    name: Publish darnit-amber to PyPI
     needs: [preflight, build, publish-darnit-core]
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -303,10 +303,10 @@ jobs:
           name: dist
           path: dist/
 
-      - name: Publish darnit-reproducibility
+      - name: Publish darnit-amber
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
-          packages-dir: dist/darnit-reproducibility/
+          packages-dir: dist/darnit-amber/
           password: ${{ secrets.PYPI_API_TOKEN }}
           skip-existing: true
 
@@ -317,7 +317,7 @@ jobs:
       - build
       - publish-darnit-baseline
       - publish-darnit-gittuf
-      - publish-darnit-reproducibility
+      - publish-darnit-amber
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -482,7 +482,7 @@ jobs:
           ## Install
 
           - **MCP (Claude Code / Claude Desktop):** \`darnit install\` writes an \`uvx --from darnit-mcp\` config for you. See [docs/install/](https://github.com/${GITHUB_REPOSITORY}/tree/${TAG}/docs/install).
-          - **PyPI:** \`pip install darnit-mcp==${VERSION}\` (installs the meta-package plus \`darnit-core\`, \`darnit-baseline\`, \`darnit-gittuf\`, \`darnit-reproducibility\`).
+          - **PyPI:** \`pip install darnit-mcp==${VERSION}\` (installs the meta-package plus \`darnit-core\`, \`darnit-baseline\`, \`darnit-gittuf\`, \`darnit-amber\`).
           - **Container:** \`docker pull ghcr.io/${owner_lc}/darnit:${TAG}\`.
           - **Standalone binary / Homebrew:** not yet in this release. Tracked for follow-ups.
 
@@ -512,7 +512,7 @@ jobs:
       - publish-darnit-core
       - publish-darnit-baseline
       - publish-darnit-gittuf
-      - publish-darnit-reproducibility
+      - publish-darnit-amber
       - publish-darnit-mcp
       - container_build_push
       - release
@@ -527,7 +527,7 @@ jobs:
           PYPI_CORE: ${{ needs.publish-darnit-core.result }}
           PYPI_BASELINE: ${{ needs.publish-darnit-baseline.result }}
           PYPI_GITTUF: ${{ needs.publish-darnit-gittuf.result }}
-          PYPI_REPRO: ${{ needs.publish-darnit-reproducibility.result }}
+          PYPI_REPRO: ${{ needs.publish-darnit-amber.result }}
           PYPI_MCP: ${{ needs.publish-darnit-mcp.result }}
           CONTAINER: ${{ needs.container_build_push.result }}
           RELEASE: ${{ needs.release.result }}
@@ -540,7 +540,7 @@ jobs:
             echo "| pypi-darnit-core | $PYPI_CORE |"
             echo "| pypi-darnit-baseline | $PYPI_BASELINE |"
             echo "| pypi-darnit-gittuf | $PYPI_GITTUF |"
-            echo "| pypi-darnit-reproducibility | $PYPI_REPRO |"
+            echo "| pypi-darnit-amber | $PYPI_REPRO |"
             echo "| pypi-darnit-mcp | $PYPI_MCP |"
             echo "| container | $CONTAINER |"
             echo "| github-release | $RELEASE |"

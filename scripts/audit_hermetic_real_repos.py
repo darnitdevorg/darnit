@@ -15,7 +15,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from darnit_reproducibility.handlers import repro_hermetic_build_handler
+from darnit_amber.handlers import repro_hermetic_build_handler
 
 from darnit.sieve.handler_registry import HandlerContext
 

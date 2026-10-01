@@ -41,7 +41,7 @@ from typing import Any
 from darnit.core.logging import get_logger
 from darnit.sieve.handler_registry import HandlerContext
 
-logger = get_logger("darnit_reproducibility.witness_attestation")
+logger = get_logger("darnit_amber.witness_attestation")
 
 try:
     from sigstore.models import Bundle

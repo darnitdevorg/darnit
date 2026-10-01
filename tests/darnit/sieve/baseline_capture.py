@@ -54,7 +54,7 @@ PARITY_FIXTURES = REPO_ROOT / "tests" / "darnit" / "parity" / "fixtures"
 # one exercising the most handler dispatch paths. The network-dependent controls
 # that were dropped are precisely the ones the two-run diff would have excluded
 # as nondeterministic anyway, so their coverage was illusory.
-FRAMEWORK_NAMES = ("reproducibility", "openssf-baseline")
+FRAMEWORK_NAMES = ("amber", "openssf-baseline")
 FIXTURE_NAMES = ("all_pass_repo", "mixed_repo")
 
 

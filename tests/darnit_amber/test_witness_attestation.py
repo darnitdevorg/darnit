@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from darnit_reproducibility import witness_attestation as wa
+from darnit_amber import witness_attestation as wa
 
 from darnit.sieve.handler_registry import HandlerContext
 
@@ -185,7 +185,11 @@ class TestFetchCandidateFiles:
         assert "owner/name not available" in reason
 
     def test_no_run_found_propagates_reason(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(wa, "_latest_successful_run_id", lambda owner, repo, branch: (None, "no successful CI run found on branch 'main'"))
+        monkeypatch.setattr(
+            wa,
+            "_latest_successful_run_id",
+            lambda owner, repo, branch: (None, "no successful CI run found on branch 'main'"),
+        )
         files, reason = wa._fetch_candidate_files(make_ctx(), tmp_path)
         assert files == []
         assert "no successful CI run" in reason

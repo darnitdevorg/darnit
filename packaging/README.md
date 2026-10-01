@@ -95,7 +95,7 @@ Not currently used. rc tags publish directly to real PyPI as GitHub prereleases.
    - `packages/darnit/pyproject.toml` (name: `darnit-core`)
    - `packages/darnit-baseline/pyproject.toml`
    - `packages/darnit-gittuf/pyproject.toml`
-   - `packages/darnit-reproducibility/pyproject.toml`
+   - `packages/darnit-amber/pyproject.toml`
 4. **Sync and verify locally:**
    ```bash
    uv sync --all-extras

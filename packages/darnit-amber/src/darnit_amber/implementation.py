@@ -4,10 +4,10 @@ from pathlib import Path
 from typing import Any
 
 from darnit.core.plugin import ControlSpec
-from darnit_reproducibility import handlers
+from darnit_amber import handlers
 
 
-class ReproducibilityImplementation:
+class AmberImplementation:
     """Scientific reproducibility checks plugin.
 
     Provides checks for dependency pinning, build environment
@@ -17,11 +17,11 @@ class ReproducibilityImplementation:
 
     @property
     def name(self) -> str:
-        return "reproducibility"
+        return "amber"
 
     @property
     def display_name(self) -> str:
-        return "Scientific Reproducibility Checks"
+        return "Amber — Scientific Reproducibility Checks"
 
     @property
     def version(self) -> str:
@@ -93,11 +93,11 @@ class ReproducibilityImplementation:
     def get_framework_config_path(self) -> Path | None:
         from importlib.resources import files
 
-        resource = files(__package__) / "reproducibility.toml"
+        resource = files(__package__) / "amber.toml"
         path = Path(str(resource))
         if not path.is_file():
             raise FileNotFoundError(
-                f"reproducibility.toml not found in installed darnit_reproducibility "
+                f"amber.toml not found in installed darnit_amber "
                 f"package at {path}. This indicates a broken build; check the "
                 f"wheel's force-include configuration."
             )

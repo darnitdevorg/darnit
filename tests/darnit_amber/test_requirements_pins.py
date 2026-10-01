@@ -8,7 +8,7 @@ on disk and no sieve scaffolding.
 from __future__ import annotations
 
 import pytest
-from darnit_reproducibility.requirements_pins import (
+from darnit_amber.requirements_pins import (
     FileClassification,
     PinClassification,
     classify,

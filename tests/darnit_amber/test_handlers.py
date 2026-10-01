@@ -3,7 +3,7 @@
 from pathlib import Path
 
 import pytest
-from darnit_reproducibility.handlers import (
+from darnit_amber.handlers import (
     _detect_strong_hermeticity_signal,
     _iter_build_files,
     _iter_composite_action_files,
@@ -19,7 +19,7 @@ from darnit_reproducibility.handlers import (
     repro_hermetic_build_handler,
     repro_provenance_exists_handler,
 )
-from darnit_reproducibility.witness_attestation import WitnessCheckResult
+from darnit_amber.witness_attestation import WitnessCheckResult
 
 from darnit.sieve.handler_registry import HandlerContext, HandlerResultStatus
 
@@ -33,7 +33,7 @@ NO_WITNESS_EVIDENCE = WitnessCheckResult(attempted=False)
 @pytest.fixture(autouse=True)
 def _stub_witness_attestation(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "darnit_reproducibility.handlers.check_witness_attestation",
+        "darnit_amber.handlers.check_witness_attestation",
         lambda ctx: NO_WITNESS_EVIDENCE,
     )
 
@@ -267,7 +267,7 @@ class TestDetectStrongSignal:
             network_clean=True,
             detail="runtime-trace predicate recorded an empty network log",
         )
-        monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", lambda ctx: verified)
+        monkeypatch.setattr("darnit_amber.handlers.check_witness_attestation", lambda ctx: verified)
         signal, witness_result = _detect_strong_hermeticity_signal(tmp_path, [], {}, make_ctx(tmp_path), {})
         assert signal is not None
         assert "Witness" in signal
@@ -282,14 +282,14 @@ class TestDetectStrongSignal:
             network_clean=False,
             detail="runtime-trace predicate recorded 2 network event(s)",
         )
-        monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", lambda ctx: dirty)
+        monkeypatch.setattr("darnit_amber.handlers.check_witness_attestation", lambda ctx: dirty)
         signal, witness_result = _detect_strong_hermeticity_signal(tmp_path, [], {}, make_ctx(tmp_path), {})
         assert signal is None
         assert witness_result.network_clean is False
 
     def test_witness_check_disabled_via_config(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         verified = WitnessCheckResult(attempted=True, verified=True, network_clean=True, detail="clean")
-        monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", lambda ctx: verified)
+        monkeypatch.setattr("darnit_amber.handlers.check_witness_attestation", lambda ctx: verified)
         signal, witness_result = _detect_strong_hermeticity_signal(
             tmp_path, [], {}, make_ctx(tmp_path), {"verify_witness_attestations": False}
         )
@@ -358,7 +358,7 @@ class TestDetectStrongSignal:
         # text-based hint that Witness is in use (e.g. it ran via a reusable
         # workflow the caller's own CI files never name).
         verified = WitnessCheckResult(attempted=True, verified=True, network_clean=True, detail="clean")
-        monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", lambda ctx: verified)
+        monkeypatch.setattr("darnit_amber.handlers.check_witness_attestation", lambda ctx: verified)
         (tmp_path / "flake.nix").write_text("{ outputs = {}; }")
         wf = tmp_path / "ci.yml"
         wf.write_text("- run: nix build .#default\n")
@@ -398,20 +398,20 @@ class TestMaybeCheckWitnessAttestation:
             called = True
             return WitnessCheckResult(attempted=True, verified=True, network_clean=True)
 
-        monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", spy)
+        monkeypatch.setattr("darnit_amber.handlers.check_witness_attestation", spy)
         result = _maybe_check_witness_attestation(make_ctx(tmp_path), {"verify_witness_attestations": False})
         assert called is False
         assert result.attempted is False
 
     def test_enabled_by_default(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         expected = WitnessCheckResult(attempted=True, verified=True, network_clean=True)
-        monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", lambda ctx: expected)
+        monkeypatch.setattr("darnit_amber.handlers.check_witness_attestation", lambda ctx: expected)
         result = _maybe_check_witness_attestation(make_ctx(tmp_path), {})
         assert result is expected
 
     def test_explicitly_enabled_via_config(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         expected = WitnessCheckResult(attempted=True, verified=True, network_clean=True)
-        monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", lambda ctx: expected)
+        monkeypatch.setattr("darnit_amber.handlers.check_witness_attestation", lambda ctx: expected)
         result = _maybe_check_witness_attestation(make_ctx(tmp_path), {"verify_witness_attestations": True})
         assert result is expected
 
@@ -446,9 +446,7 @@ class TestRepoDepsPin:
         assert result.status == HandlerResultStatus.INCONCLUSIVE
 
     def test_fail_with_pyproject_dependencies(self, tmp_path: Path) -> None:
-        (tmp_path / "pyproject.toml").write_text(
-            "[project]\nname = 'pkg'\ndependencies = ['requests>=2.0']\n"
-        )
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'pkg'\ndependencies = ['requests>=2.0']\n")
         result = repro_deps_pinned_handler({}, make_ctx(tmp_path))
         assert result.status == HandlerResultStatus.FAIL
 
@@ -624,7 +622,7 @@ class TestRepoDepsPin:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Contract T-7. Cannot be a committed fixture: needs a runtime chmod."""
-        import darnit_reproducibility.requirements_pins as pins
+        import darnit_amber.requirements_pins as pins
 
         calls = []
         monkeypatch.setattr(
@@ -666,7 +664,7 @@ class TestRepoDepsPin:
     ) -> None:
         """FR-001 / US3: the lock file decides and the requirements contents
         are never consulted."""
-        import darnit_reproducibility.requirements_pins as pins
+        import darnit_amber.requirements_pins as pins
 
         calls: list[str] = []
         original = pins.classify
@@ -928,7 +926,7 @@ class TestHermeticBuild:
             network_clean=True,
             detail="runtime-trace predicate recorded an empty network log",
         )
-        monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", lambda ctx: verified)
+        monkeypatch.setattr("darnit_amber.handlers.check_witness_attestation", lambda ctx: verified)
         wf_dir = tmp_path / ".github" / "workflows"
         wf_dir.mkdir(parents=True)
         (wf_dir / "ci.yml").write_text("steps:\n  - uses: testifysec/witness-run-action@v0.1\n")
@@ -946,7 +944,7 @@ class TestHermeticBuild:
             detail="runtime-trace predicate recorded 1 network event(s)",
             evidence={"artifact": "witness-attestation.json"},
         )
-        monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", lambda ctx: dirty)
+        monkeypatch.setattr("darnit_amber.handlers.check_witness_attestation", lambda ctx: dirty)
         wf_dir = tmp_path / ".github" / "workflows"
         wf_dir.mkdir(parents=True)
         (wf_dir / "ci.yml").write_text("steps:\n  - run: uv sync\n")
@@ -958,7 +956,7 @@ class TestHermeticBuild:
         # Even a mocked verified/clean attestation must not produce a PASS
         # when the pass config opts out of the network round-trip.
         verified = WitnessCheckResult(attempted=True, verified=True, network_clean=True, detail="clean")
-        monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", lambda ctx: verified)
+        monkeypatch.setattr("darnit_amber.handlers.check_witness_attestation", lambda ctx: verified)
         wf_dir = tmp_path / ".github" / "workflows"
         wf_dir.mkdir(parents=True)
         (wf_dir / "ci.yml").write_text("steps:\n  - uses: testifysec/witness-run-action@v0.1\n")

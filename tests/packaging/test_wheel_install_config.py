@@ -1,7 +1,7 @@
 """Wheel-install regression test for framework config resolution (feature 021).
 
 Every darnit implementation package (darnit-baseline, darnit-gittuf,
-darnit-reproducibility) MUST resolve its framework TOML correctly when
+darnit-amber) MUST resolve its framework TOML correctly when
 installed from a built wheel, not just from an editable checkout. This
 test builds each wheel, installs it into a fresh venv, and asserts:
 
@@ -33,7 +33,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 IMPLEMENTATIONS = [
     ("darnit-baseline", "darnit_baseline", "openssf-baseline.toml"),
     ("darnit-gittuf", "darnit_gittuf", "gittuf.toml"),
-    ("darnit-reproducibility", "darnit_reproducibility", "reproducibility.toml"),
+    ("darnit-amber", "darnit_amber", "amber.toml"),
 ]
 
 
@@ -172,7 +172,7 @@ def test_framework_config_resolves_under_wheel_install(
     framework_key = {
         "darnit-baseline": "openssf-baseline",
         "darnit-gittuf": "gittuf",
-        "darnit-reproducibility": "reproducibility",
+        "darnit-amber": "amber",
     }[package_name]
     assert framework_key in combined, (
         f"{package_name}: framework key '{framework_key}' not in darnit list output\n"

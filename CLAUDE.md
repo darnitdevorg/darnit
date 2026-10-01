@@ -142,7 +142,7 @@ my-framework = "my_framework:register"
 
 ### Framework config resolution (feature 021)
 
-`get_framework_config_path()` MUST use `importlib.resources.files(__package__) / "<framework>.toml"` -- never `Path(__file__).parent.parent...`. The framework TOML MUST live INSIDE `src/<module>/` (alongside `implementation.py`), not sibling to `src/`, so hatchling's default `packages = ["src/<module>"]` includes it in the wheel and `importlib.resources` finds it under both editable and wheel installs. See `packages/darnit-baseline`, `packages/darnit-gittuf`, `packages/darnit-reproducibility` for reference layouts; `packages/darnit-hello` is the minimal template.
+`get_framework_config_path()` MUST use `importlib.resources.files(__package__) / "<framework>.toml"` -- never `Path(__file__).parent.parent...`. The framework TOML MUST live INSIDE `src/<module>/` (alongside `implementation.py`), not sibling to `src/`, so hatchling's default `packages = ["src/<module>"]` includes it in the wheel and `importlib.resources` finds it under both editable and wheel installs. See `packages/darnit-baseline`, `packages/darnit-gittuf`, `packages/darnit-amber` for reference layouts; `packages/darnit-hello` is the minimal template.
 
 ## Sieve Pattern
 
@@ -365,7 +365,7 @@ else:
 ## Active Technologies
 - Python 3.11/3.12 (workspace targets) plus bash for release scripts and GitHub Actions YAML + `shiv` (binary builder), `cosign` (image + binary signing), `syft` (SBOM generation), `docker buildx` (multi-arch images), `gh` CLI (release creation), Sigstore-action (PyPI wheel signing via `pypa/gh-action-pypi-publish`). No new runtime dependencies in any darnit Python package. (012-packaging-distribution)
 - External release surfaces only — PyPI, TestPyPI, GHCR, GitHub Releases (binary assets + attestations), `kusari-oss/homebrew-tap` repo (formula). Repo itself stores only build configs and workflow definitions. (012-packaging-distribution)
-- Python 3.11/3.12 (workspace targets — same as the rest of darnit) + `pydantic >= 2.0` (already used for `FrameworkConfig`); `packaging` for PEP 440 `SpecifierSet` (declared by `darnit-reproducibility` as of feature 037; darnit-core imports it at runtime without declaring it, which is tracked separately). `tomllib` from stdlib for TOML parsing. No new runtime dependencies. (013-plugin-composition)
+- Python 3.11/3.12 (workspace targets — same as the rest of darnit) + `pydantic >= 2.0` (already used for `FrameworkConfig`); `packaging` for PEP 440 `SpecifierSet` (declared by `darnit-amber` as of feature 037; darnit-core imports it at runtime without declaring it, which is tracked separately). `tomllib` from stdlib for TOML parsing. No new runtime dependencies. (013-plugin-composition)
 - Filesystem only. Composition is resolved in-memory at framework-config load time; no new persistent state. (013-plugin-composition)
 
 ## Recent Changes

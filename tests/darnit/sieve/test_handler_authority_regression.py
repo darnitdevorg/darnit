@@ -2,7 +2,7 @@
 
 The `handler_registry.register()` API used to have a
 `default_authority = "suggestive"` fallback. Every plugin handler in
-darnit-gittuf, darnit-reproducibility, and darnit-baseline was registered
+darnit-gittuf, darnit-amber, and darnit-baseline was registered
 without the argument -- so every observation-based control from every
 plugin silently regressed PASS -> WARN because a suggestive result
 never terminates the Check phase.
@@ -94,7 +94,7 @@ class TestPluginHandlersAreDispositive:
         # darnit-gittuf
         "gittuf_verify_policy",
         "gittuf_commits_signed",
-        # darnit-reproducibility
+        # darnit-amber
         "repro_deps_pinned",
         "repro_build_env_declared",
         "repro_hermetic_build",
@@ -144,13 +144,13 @@ class TestPluginHandlersAreDispositive:
         except Exception:
             pass
 
-        # darnit-reproducibility
+        # darnit-amber
         try:
-            from darnit_reproducibility.implementation import (
-                ReproducibilityImplementation,
+            from darnit_amber.implementation import (
+                AmberImplementation,
             )
 
-            ReproducibilityImplementation().register_sieve_handlers()
+            AmberImplementation().register_sieve_handlers()
         except Exception:
             pass
 

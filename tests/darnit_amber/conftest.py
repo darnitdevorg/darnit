@@ -36,7 +36,7 @@ def capture_deps_pinned(repo: Path) -> dict[str, Any]:
     Imported lazily so this module stays importable regardless of which
     handler internals exist at any point during the feature's implementation.
     """
-    from darnit_reproducibility.handlers import repro_deps_pinned_handler
+    from darnit_amber.handlers import repro_deps_pinned_handler
 
     result = repro_deps_pinned_handler({}, make_handler_ctx(repo))
     return {

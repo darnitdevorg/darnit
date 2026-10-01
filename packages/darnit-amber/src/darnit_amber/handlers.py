@@ -15,7 +15,7 @@ from darnit.sieve.handler_registry import HandlerContext, HandlerResult, Handler
 
 from .witness_attestation import WitnessCheckResult, check_witness_attestation
 
-logger = get_logger("darnit_reproducibility.handlers")
+logger = get_logger("darnit_amber.handlers")
 
 
 _MAX_EVIDENCE_EXAMPLES = 10
