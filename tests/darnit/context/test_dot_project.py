@@ -1975,8 +1975,8 @@ repositories: []
         assert "repositories" in missing
 
     @pytest.mark.unit
-    def test_spec_version_bumped_to_1_4_0(self):
-        """DOT_PROJECT_SPEC_VERSION MUST be 1.4.0 after the Team.Managed reconcile (issue #397)."""
+    def test_spec_version_pinned_to_1_0_0(self):
+        """DOT_PROJECT_SPEC_VERSION MUST be 1.0.0 matching upstream CNCF schema (issue #502)."""
         from darnit.context.dot_project import DOT_PROJECT_SPEC_VERSION
 
-        assert DOT_PROJECT_SPEC_VERSION == "1.4.0"
+        assert DOT_PROJECT_SPEC_VERSION == "1.0.0"
