@@ -273,28 +273,48 @@ def aggregate_org_results(
             })
             continue
 
-        pass_count = summary.get("PASS", 0)
-        fail_count = summary.get("FAIL", 0)
-        warn_count = summary.get("WARN", 0)
-        total = summary.get("total", 0)
+        check_results = result.get("results") or []
+        compliance: dict[int, bool] | None = None
 
-        # A repo is compliant only if all non-N/A controls pass
-        na_count = summary.get("N/A", 0)
-        is_compliant = fail_count == 0 and warn_count == 0 and (pass_count + na_count == total)
+        if check_results:
+            from darnit.tools.audit import calculate_compliance
+
+            compliance = calculate_compliance(check_results, level)
+            is_compliant = compliance.get(level, False)
+            if not summary:
+                from darnit.tools.audit import summarize_results
+
+                summary = summarize_results(check_results)
+        else:
+            # Fallback if check_results is not provided (e.g. legacy summary-only mocks)
+            pass_count = summary.get("PASS", 0)
+            fail_count = summary.get("FAIL", 0)
+            warn_count = summary.get("WARN", 0)
+            total = summary.get("total", 0)
+            na_count = summary.get("N/A", 0)
+            is_compliant = (
+                fail_count == 0
+                and warn_count == 0
+                and (pass_count + na_count == total)
+                and total > 0
+            )
 
         if is_compliant:
             org_summary["compliant_repos"] += 1
         else:
             org_summary["non_compliant_repos"] += 1
 
-        org_summary["repos"].append({
+        repo_entry: dict[str, Any] = {
             "repo": repo_name,
             "status": "COMPLIANT" if is_compliant else "NON_COMPLIANT",
-            "pass": pass_count,
-            "fail": fail_count,
-            "warn": warn_count,
-            "total": total,
-        })
+            "pass": summary.get("PASS", 0),
+            "fail": summary.get("FAIL", 0),
+            "warn": summary.get("WARN", 0),
+            "total": summary.get("total", 0),
+        }
+        if compliance is not None:
+            repo_entry["compliance"] = compliance
+        org_summary["repos"].append(repo_entry)
 
     return org_summary
 

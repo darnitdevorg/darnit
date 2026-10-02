@@ -277,6 +277,79 @@ class TestAggregateOrgResults:
         assert summary["non_compliant_repos"] == 1
         assert summary["compliant_repos"] == 0
 
+    def test_results_with_warn_error_and_pending_is_non_compliant(self):
+        """Results with WARN, ERROR, and PENDING controls are non-compliant."""
+        results = [
+            {
+                "repo": "troubled",
+                "status": "OK",
+                "results": [
+                    {"id": "OSPS-AC-01.01", "status": "PASS", "level": 1},
+                    {"id": "OSPS-BR-01.01", "status": "WARN", "level": 1},
+                    {"id": "OSPS-QA-01.01", "status": "ERROR", "level": 1},
+                    {"id": "OSPS-DO-01.01", "status": "PENDING_LLM", "level": 1},
+                ],
+                "summary": {
+                    "PASS": 1,
+                    "FAIL": 0,
+                    "WARN": 1,
+                    "N/A": 0,
+                    "ERROR": 1,
+                    "PENDING_LLM": 1,
+                    "total": 4,
+                },
+            },
+        ]
+        summary = aggregate_org_results("org", results, 1)
+        assert summary["compliant_repos"] == 0
+        assert summary["non_compliant_repos"] == 1
+        repo = summary["repos"][0]
+        assert repo["status"] == "NON_COMPLIANT"
+        assert repo["compliance"] == {1: False}
+
+    def test_results_with_only_pass_and_na_is_compliant(self):
+        """Results with only PASS and N/A controls are compliant."""
+        results = [
+            {
+                "repo": "clean",
+                "status": "OK",
+                "results": [
+                    {"id": "OSPS-AC-01.01", "status": "PASS", "level": 1},
+                    {"id": "OSPS-AC-02.01", "status": "PASS", "level": 1},
+                    {"id": "OSPS-BR-01.01", "status": "N/A", "level": 1},
+                ],
+                "summary": {"PASS": 2, "FAIL": 0, "WARN": 0, "N/A": 1, "total": 3},
+            },
+        ]
+        summary = aggregate_org_results("org", results, 1)
+        assert summary["compliant_repos"] == 1
+        assert summary["non_compliant_repos"] == 0
+        repo = summary["repos"][0]
+        assert repo["status"] == "COMPLIANT"
+        assert repo["compliance"] == {1: True}
+
+    def test_multi_level_compliance_calculation(self):
+        """Multi-level audit correctly calculates per-level compliance."""
+        results = [
+            {
+                "repo": "partially-compliant",
+                "status": "OK",
+                "results": [
+                    {"id": "L1-01", "status": "PASS", "level": 1},
+                    {"id": "L2-01", "status": "FAIL", "level": 2},
+                ],
+            },
+        ]
+        summary_l1 = aggregate_org_results("org", results, 1)
+        assert summary_l1["compliant_repos"] == 1
+        assert summary_l1["repos"][0]["status"] == "COMPLIANT"
+
+        summary_l2 = aggregate_org_results("org", results, 2)
+        assert summary_l2["compliant_repos"] == 0
+        assert summary_l2["non_compliant_repos"] == 1
+        assert summary_l2["repos"][0]["status"] == "NON_COMPLIANT"
+        assert summary_l2["repos"][0]["compliance"] == {1: True, 2: False}
+
 
 class TestFormatOrgResults:
     """Tests for format_org_results_markdown and format_org_results_json."""
