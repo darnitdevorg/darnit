@@ -4,7 +4,7 @@ description: Apply automated fixes for failing compliance controls. Shows a plan
 compatibility: Requires darnit MCP server running (darnit serve)
 metadata:
   author: kusari-oss
-  version: "2.0"
+  version: "2.1"
 ---
 
 # Compliance Remediation
@@ -18,19 +18,26 @@ Show a dry-run plan of fixes for failing controls, get confirmation, then apply 
 Call `remediate_audit_findings` with `dry_run: true` and any profile mentioned.
 The tool internally runs an audit (or uses cached results) — do NOT run a separate audit call.
 
+The response is a Markdown report followed by a fenced JSON block (the run record). Read the `plan` in the JSON block: each item has `file_changes`, `change_sets` (platform settings), `commands`, `previewable`, `requires_individual_approval`, and a `digest`; each change set has its own `digest`.
+
 Present the plan:
-- **Safe auto-fixes**: what will be created or modified
-- **Unsafe / manual**: why these can't be auto-fixed, what to do instead
+- **File changes**: every file that will be created or modified
+- **Platform changes**: for each change set, the target (repository or branch), every field as `before -> after`, and its `impact_notes` word for word. A high-impact change (repository visibility, organization settings) is shown on its own, with its impact, never folded into a list
+- **Needs individual approval**: items with `requires_individual_approval: true` (unsafe, cannot be previewed exactly, or high-impact), each with its digest
+- **Manual**: why these can't be auto-fixed, what to do instead
 - **No fix available**: controls without remediation handlers
 
-Ask: "Apply the safe auto-fixes? This will create a new branch."
+Ask the person which changes to apply. Ask about each platform change set and each item that needs individual approval separately; approving the file changes or "everything else" does not approve them.
 
 ### 2. Apply fixes (if confirmed)
 
 Call `remediate_audit_findings` with:
 - `dry_run: false`
+- `approve: [...]`: only the digests (change-set digests and plan-item digests) the person approved, copied from the preview's JSON block
 - `branch_name: "fix/compliance"` (or `"fix/compliance-{profile}"` if a profile was specified)
 - `auto_commit: true`
+
+`dry_run: false` is not an approval. Never pass it as a substitute for asking, and never pass a digest the person did not approve. Under the default operator policy (`prompt`), a platform change set whose digest is not in `approve` is not written; its outcome is `needs_approval`. If an outcome says `stale_preview`, the settings changed since the preview: show a new preview and ask again.
 
 This single call creates the branch, applies all remediations, and commits. Do NOT make separate calls to `create_remediation_branch` or `commit_remediation_changes`.
 
@@ -85,7 +92,9 @@ Show: branch name, controls fixed, files changed, PR URL (if created), and remai
 - Do NOT call `audit_openssf_baseline` separately — `remediate_audit_findings` handles audit internally.
 - Do NOT call `create_remediation_branch` or `commit_remediation_changes` separately — use the `branch_name` and `auto_commit` params instead.
 - If `remediate_audit_findings` fails mid-way, report which files were already changed so the user can review.
-- The tool respects the `safe` flag on remediations — only safe remediations are auto-applied. Unsafe ones are listed but excluded.
+- Unsafe remediations (`safe = false`), steps that cannot be previewed exactly, and high-impact platform changes run only when their own digest is in `approve`. Approving a batch never covers them.
+- The operator's `[remediation]` policy decides how platform changes are made: `prompt` (approve by digest), `manual` (darnit only reports the steps; give them to the person), or `auto` (applied without a digest). The report states the policy in effect. Never try to change it from the repository.
+- `enable_branch_protection` follows the same rules: it previews by default, never lowers existing settings, and applies only with `dry_run: false` and `approve` set to the change-set digest the person approved.
 - Register darnit's MCP server at user scope (`darnit install` does this by default); a repository-scoped `uv run darnit serve` runs the repository's own copy of darnit.
 - Only controls whose not-applicable claim is `honored` are skipped. Controls with a `pending` or `contradicted` claim are remediated like any other failing control. Do not confirm a pending claim to avoid a remediation; confirm one only when the operator explicitly tells you to.
 - If there are unresolved data questions, the remediation tool will block and tell you. Suggest running `/darnit-data` first.

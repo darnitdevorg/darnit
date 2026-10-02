@@ -36,10 +36,12 @@ from darnit.core.context_validation import (
 )
 from darnit.core.logging import get_logger
 from darnit.remediation.executor import RemediationExecutor
+from darnit.remediation.platform import PlatformSession, platform_repository, platform_requests, resolve_policy
 from darnit.tools.audit import prepare_audit, run_checks
 
 if TYPE_CHECKING:
     from darnit.config.operator.schema import OperatorConfig
+    from darnit.remediation.platform.policy import Approver
 
 logger = get_logger("agent.graph")
 
@@ -202,7 +204,7 @@ def collect_context(
 # =============================================================================
 
 
-def remediate(state: AuditState, dry_run: bool = False) -> AuditState:
+def remediate(state: AuditState, dry_run: bool = False, approver: Approver | None = None) -> AuditState:
     """Remediate all FAIL controls that have a remediation definition.
 
     Issue #144 fix: Previously this node only logged what it would do.
@@ -218,6 +220,10 @@ def remediate(state: AuditState, dry_run: bool = False) -> AuditState:
             audit() call. context_values should be populated if collect_context
             was run beforehand.
         dry_run: If True, show what would change without writing any files.
+        approver: Asks a person to approve each platform change set (feature
+            043). Platform changes follow the operator's remediation policy:
+            under ``prompt`` a change set is written only when the approver
+            says yes; with no approver its outcome is ``needs_approval``.
 
     Returns:
         Updated state with remediation_results populated.
@@ -244,6 +250,17 @@ def remediate(state: AuditState, dry_run: bool = False) -> AuditState:
     from darnit.config.context_storage import framework_definitions
 
     resolved = resolve_context(state.local_path, framework_definitions(framework), detect=False)
+    repository = platform_repository(state.local_path, state.owner, state.repo)
+    session = (
+        PlatformSession(
+            repository,
+            platform_requests(framework, failing_ids),
+            policy=resolve_policy(state.local_path),
+            approver=None if dry_run else approver,
+        )
+        if repository
+        else None
+    )
     executor = RemediationExecutor(
         local_path=state.local_path,
         owner=state.owner,
@@ -253,6 +270,7 @@ def remediate(state: AuditState, dry_run: bool = False) -> AuditState:
         context_values={**resolved.usable(), **state.context_values},
         framework_path=_get_framework_path(state.framework_name),
         unconfirmed_keys=resolved.unusable_keys(),
+        platform=session,
     )
 
     results: list[dict[str, Any]] = []
@@ -291,6 +309,7 @@ def remediate(state: AuditState, dry_run: bool = False) -> AuditState:
                 "message": result.message,
                 "dry_run": result.dry_run,
                 "details": result.details,
+                "platform": _platform_results(result.details),
             })
             logger.info(
                 "Remediation %s for %s: %s",
@@ -352,11 +371,20 @@ def route(state: AuditState) -> str:
 # =============================================================================
 
 
+def _platform_results(details: Any) -> list[dict[str, Any]]:
+    if not isinstance(details, dict):
+        return []
+    return [
+        platform_result
+        for handler in details.get("handlers", [])
+        for platform_result in (handler.get("evidence") or {}).get("platform_results", [])
+    ]
+
+
 def _load_framework_config(framework_name: str | None):
     """Load FrameworkConfig for the given framework name."""
     try:
-        from darnit.config.control_loader import load_framework_config
-        from darnit.config.merger import resolve_framework_path
+        from darnit.config.merger import load_framework_config, resolve_framework_path
 
         name = framework_name or "openssf-baseline"
         path = resolve_framework_path(name)

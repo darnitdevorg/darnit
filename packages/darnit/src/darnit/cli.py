@@ -821,7 +821,10 @@ def cmd_run(args: argparse.Namespace) -> int:
                 state = collect_context(state, answers, operator=operator_config.config)
                 state = audit(state)  # re-audit with confirmed context
             elif step == "remediate":
-                state = remediate(state, dry_run=getattr(args, "dry_run", False))
+                from darnit.remediation.platform import terminal_approver
+
+                approver = terminal_approver() if feedback_mode == "interactive" else None
+                state = remediate(state, dry_run=getattr(args, "dry_run", False), approver=approver)
                 break
             else:  # "audit" (no results) or "end"
                 break
@@ -845,6 +848,16 @@ def cmd_run(args: argparse.Namespace) -> int:
     print(f"  Passed : {passed}")
     print(f"  Failed : {failed}")
     print(f"  Warned : {warned}")
+
+    platform = [p for r in final_state.remediation_results for p in r.get("platform", [])]
+    if platform:
+        policy = operator_config.config.remediation
+        print(f"\nPlatform changes (policy: platform={policy.platform}, high_impact={policy.high_impact}):")
+        for result in {(p.get("change_set") or {}).get("digest") or id(p): p for p in platform}.values():
+            target = result.get("target") or {}
+            where = f"{target.get('kind', result.get('target_kind'))} {target.get('branch') or ''}".strip()
+            digest = (result.get("change_set") or {}).get("digest", "")
+            print(f"  {result['kind']:<15} {where} {result.get('reason') or ''} {digest}".rstrip())
 
     # Pending human feedback — FeedbackQuestion is a dataclass, not a dict.
     pending = [q for q in final_state.feedback_questions if not q.answered]

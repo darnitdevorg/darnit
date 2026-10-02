@@ -4,7 +4,7 @@ description: Run the full compliance pipeline — audit, collect data, remediate
 compatibility: Requires darnit MCP server running (darnit serve) and gh CLI for PR creation
 metadata:
   author: kusari-oss
-  version: "2.0"
+  version: "2.1"
 ---
 
 # Full Compliance Pipeline
@@ -36,8 +36,9 @@ If WARN controls exist due to missing data:
 
 If there are FAIL controls with auto-fixes:
 - Call `remediate_audit_findings` with `dry_run: true`
-- Present the plan, distinguishing safe auto-fixes from unsafe/manual ones
-- Ask: "Apply the safe auto-fixes?"
+- Read the fenced JSON block after the report: its `plan` lists each item's `file_changes`, `change_sets`, `requires_individual_approval`, and `digest`
+- Present every file change; every platform change set with each field as `before -> after`, its `impact_notes`, and its digest; and every item that needs individual approval. Show a high-impact change (repository visibility, organization settings) on its own with its impact
+- Ask the person which changes to apply, asking separately about each platform change set and each item that needs individual approval
 
 If no failures or no auto-fixes: report the status and list manual steps. Skip to step 6.
 
@@ -45,8 +46,11 @@ If no failures or no auto-fixes: report the status and list manual steps. Skip t
 
 Call `remediate_audit_findings` with:
 - `dry_run: false`
+- `approve: [...]`: only the digests the person approved, copied from the preview
 - `branch_name: "fix/compliance"` (or `"fix/compliance-{profile}"`)
 - `auto_commit: true`
+
+`dry_run: false` is not an approval: never pass it instead of asking, and never pass a digest the person did not approve. Report outcomes as the tool states them: `needs_approval` (not written), `manual` (give the person the steps), `unchanged` with `stale_preview` (preview again and re-ask).
 
 This single call creates the branch, applies all remediations, and commits.
 Do NOT make separate calls to `create_remediation_branch` or `commit_remediation_changes`.
@@ -72,7 +76,8 @@ Show before/after compliance comparison, list of changes made, and remaining man
 - Use `output_format: "summary"` for audits to keep token usage low.
 - Do NOT run a separate audit before calling `remediate_audit_findings` — it handles audit internally.
 - Do NOT call `create_remediation_branch` or `commit_remediation_changes` separately — use the built-in `branch_name` and `auto_commit` params.
-- Unsafe remediations (requiring API access or manual review) must be clearly excluded from automatic application.
+- Unsafe remediations, steps that cannot be previewed exactly, and high-impact platform changes run only when the person approved their own digest; a batch approval never covers them.
+- Platform changes follow the operator's `[remediation]` policy (`prompt`, `manual`, or `auto`), stated in the report. Never try to change it from the repository.
 - If any step fails, report what was accomplished and suggest continuing manually.
 - Never leave the repository in a broken state — if remediation partially applied, report which files changed.
 - A control with an `assertion` block carries a not-applicable claim from the repository (`.project/darnit.yaml`, or project data that makes the control not applicable). Report its `assertion.outcome`: `honored` (N/A, labelled asserted), `pending` (evaluated normally and counted as non-compliant until the operator trusts the repository or confirms the claim), or `contradicted` (evidence contradicts it; the claim is ignored). Never describe a pending claim as N/A.
