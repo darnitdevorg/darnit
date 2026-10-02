@@ -1306,13 +1306,26 @@ def remediate_audit_findings(
     except Exception:
         pass  # If context check fails, proceed with remediation anyway
 
+    from darnit.remediation import manifest
+
+    run_id = manifest.new_run_id()
+
+    # Feature 043 (FR-013): a requested git step is checked before any
+    # remediation is applied; an unsafe repository state changes nothing.
+    if not dry_run and (branch_name or auto_commit or create_pr):
+        from darnit.remediation.git_state import check_repository_state
+
+        refusal = check_repository_state(repo_path, branch_name)
+        if refusal:
+            return f"Error: cannot run the requested git steps: {refusal}. Nothing was changed."
+
     # Step 1: Create branch before applying (so changes land on the right branch)
     git_report: list[str] = []
     if branch_name and not dry_run:
         from darnit.server.tools.git_operations import create_remediation_branch_impl
 
         branch_result = create_remediation_branch_impl(
-            branch_name=branch_name, local_path=str(repo_path),
+            branch_name=branch_name, local_path=str(repo_path), run_id=run_id, owner=owner, repo=repo,
         )
         if "❌" in branch_result:
             return f"❌ Branch creation failed, aborting remediation.\n\n{branch_result}"
@@ -1329,6 +1342,7 @@ def remediate_audit_findings(
             profile=profile,
             enhance_with_llm=enhance_with_llm,
             approve=approve,
+            run_id=run_id,
         )
     except Exception as e:
         return f"❌ Error applying remediations: {e}"
@@ -1339,7 +1353,7 @@ def remediate_audit_findings(
             from darnit.server.tools.git_operations import commit_remediation_changes_impl
 
             commit_result = commit_remediation_changes_impl(
-                local_path=str(repo_path),
+                local_path=str(repo_path), run_id=run_id, owner=owner, repo=repo,
             )
             git_report.append(commit_result)
 
@@ -1347,7 +1361,7 @@ def remediate_audit_findings(
                 from darnit.server.tools.git_operations import create_remediation_pr_impl
 
                 pr_result = create_remediation_pr_impl(
-                    local_path=str(repo_path),
+                    local_path=str(repo_path), run_id=run_id, owner=owner, repo=repo,
                 )
                 git_report.append(pr_result)
 
@@ -1367,16 +1381,21 @@ def create_remediation_branch(
     branch_name: str = "fix/openssf-baseline-compliance",
     local_path: str = ".",
     base_branch: str | None = None,
+    run_id: str | None = None,
 ) -> str:
     """
-    Create a new branch for remediation work.
+    Create a new branch for remediation work, or switch to an existing remediation branch.
 
-    Use this before applying remediations so changes can be reviewed via PR.
+    Never stashes. A new branch is created from HEAD and uncommitted changes
+    stay in the working tree. An existing branch is used only when the
+    working tree is clean and every commit on it beyond its base was made by
+    remediation. A detached HEAD or a merge or rebase in progress is refused.
 
     Args:
-        branch_name: Name for the new branch
+        branch_name: Name for the branch
         local_path: Path to the repository
         base_branch: Branch to base off of (default: current branch)
+        run_id: Remediation run to record the branch in (default: the latest run)
 
     Returns:
         Success message with branch name or error
@@ -1387,33 +1406,36 @@ def create_remediation_branch(
         branch_name=branch_name,
         local_path=local_path,
         base_branch=base_branch,
+        run_id=run_id,
     )
 
 
 def commit_remediation_changes(
     local_path: str = ".",
     message: str | None = None,
-    add_all: bool = True,
+    run_id: str | None = None,
 ) -> str:
     """
-    Commit remediation changes with a descriptive message.
+    Commit the files a remediation run wrote, and nothing else.
 
-    Use this after applying remediations to commit the changes.
+    Stages only the run's files whose content is unchanged since remediation
+    wrote them, never ignored files, and adds a ``Darnit-Remediation-Run``
+    trailer. Other changes in the working tree are left as they are.
 
     Args:
         local_path: Path to the repository
         message: Commit message (auto-generated if not provided)
-        add_all: Whether to stage all changes (default: True)
+        run_id: Remediation run to commit (default: the latest run)
 
     Returns:
-        Success message with commit info or error
+        Success message listing every committed file, or error
     """
     from darnit.server.tools.git_operations import commit_remediation_changes_impl
 
     return commit_remediation_changes_impl(
         local_path=local_path,
         message=message,
-        add_all=add_all,
+        run_id=run_id,
     )
 
 
@@ -1423,9 +1445,10 @@ def create_remediation_pr(
     body: str | None = None,
     base_branch: str | None = None,
     draft: bool = False,
+    run_id: str | None = None,
 ) -> str:
     """
-    Create a pull request for remediation changes.
+    Create a pull request for a remediation run's branch, pushing only that branch.
 
     Use this after committing remediation changes to open a PR for review.
 
@@ -1435,6 +1458,7 @@ def create_remediation_pr(
         body: PR body/description (auto-generated if not provided)
         base_branch: Target branch for PR (default: repo default branch)
         draft: Create as draft PR (default: False)
+        run_id: Remediation run whose branch to push (default: the latest run)
 
     Returns:
         Success message with PR URL or error
@@ -1447,6 +1471,7 @@ def create_remediation_pr(
         body=body,
         base_branch=base_branch,
         draft=draft,
+        run_id=run_id,
     )
 
 

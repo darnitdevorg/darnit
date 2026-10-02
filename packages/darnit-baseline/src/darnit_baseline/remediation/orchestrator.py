@@ -933,6 +933,7 @@ def remediate_audit_findings(
     profile: str | None = None,
     enhance_with_llm: bool = False,
     approve: list[str] | None = None,
+    run_id: str | None = None,
 ) -> str:
     """Apply automated remediations for failed audit controls.
 
@@ -957,6 +958,8 @@ def remediate_audit_findings(
             descriptions after deterministic generation.  Default False.
         approve: Digests of the previewed change sets (and plan items) the
             person approved
+        run_id: Remediation run whose manifest records an apply's writes
+            (default: a new run); the git steps use the same run
 
     Returns:
         Markdown-formatted summary of applied or planned remediations
@@ -1130,7 +1133,7 @@ def remediate_audit_findings(
         policy = resolve_policy(local_path)
     except OperatorConfigError as e:
         return f"Error: remediation policy unavailable: {e}"
-    run_id = manifest.new_run_id()
+    run_id = run_id or manifest.new_run_id()
     repository = platform_repository(local_path, owner, repo) or manifest.repository_identity(local_path, owner, repo)
     session = PlatformSession(
         repository,
