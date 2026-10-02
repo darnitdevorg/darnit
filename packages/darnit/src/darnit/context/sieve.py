@@ -518,25 +518,23 @@ class ContextSieve:
     # =========================================================================
 
     def _parse_maintainers_file(self, content: str) -> list[str]:
-        """Parse maintainers from MAINTAINERS.md content.
+        """Parse maintainer handles from MAINTAINERS.md content.
 
-        Looks for:
-        - @username mentions
-        - GitHub usernames in lists
-        - Email addresses with names
+        Returns only ``@username`` handles. Email addresses are stripped
+        before matching so a domain (``realcorp`` in ``alice@realcorp.io``)
+        is never read as a handle, and display names are left out: a bare
+        name is not a GitHub handle, and GitHub rejects it as a code owner.
         """
-        maintainers = []
-
-        # Pattern for @username
-        at_mentions = re.findall(r"@([a-zA-Z0-9][-a-zA-Z0-9]*)", content)
-        maintainers.extend([f"@{m}" for m in at_mentions])
-
-        # Pattern for "Name (email)" or "Name <email>"
-        name_email = re.findall(
-            r"[-*]\s*([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*)\s*[(<]",
-            content,
+        # Strip email addresses first: the @ in alice@example.com is never a
+        # handle, and without this its domain would match the handle pattern.
+        no_emails = re.sub(
+            r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", "", content
         )
-        maintainers.extend(name_email)
+
+        # Pattern for @username. The lookbehind keeps the @ of any surviving
+        # address-like text (e.g. user@localhost) from matching as a handle.
+        at_mentions = re.findall(r"(?<![\w.])@([a-zA-Z0-9][-a-zA-Z0-9]*)", no_emails)
+        maintainers = [f"@{m}" for m in at_mentions]
 
         # Dedupe while preserving order
         seen = set()

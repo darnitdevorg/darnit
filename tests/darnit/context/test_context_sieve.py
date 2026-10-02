@@ -169,6 +169,58 @@ class TestContextSieve:
         assert result.confidence >= 0.8
 
     @pytest.mark.unit
+    def test_detect_maintainers_from_file_ignores_email_domain(self, temp_repo):
+        """An email domain must not become a maintainer handle (issue #464)."""
+        (Path(temp_repo) / "MAINTAINERS.md").write_text(
+            "# Maintainers\n\n- Alice Example <alice@realcorp.io> @alice\n"
+        )
+
+        sieve = ContextSieve()
+        result = sieve.detect("maintainers", temp_repo, "owner", "repo")
+
+        assert result.key == "maintainers"
+        assert "@alice" in result.value
+        assert not any("realcorp" in str(v).lower() for v in result.value)
+
+    @pytest.mark.unit
+    def test_parse_maintainers_file_email_domain_not_a_handle(self):
+        """The issue's exact example: only the real handle is returned."""
+        sieve = ContextSieve()
+        assert (
+            sieve._parse_maintainers_file("- Alice Example <alice@realcorp.io> @alice\n")
+            == ["@alice"]
+        )
+
+    @pytest.mark.unit
+    def test_parse_maintainers_file_name_and_email_without_handle(self):
+        """A display name plus email, with no @handle, yields no maintainers."""
+        sieve = ContextSieve()
+        assert sieve._parse_maintainers_file("- Alice Example <alice@realcorp.io>\n") == []
+
+    @pytest.mark.unit
+    def test_parse_maintainers_file_plain_email_yields_nothing(self):
+        """A bare email address contributes no handle."""
+        sieve = ContextSieve()
+        assert sieve._parse_maintainers_file("Contact: bob@example.com\n") == []
+
+    @pytest.mark.unit
+    def test_parse_maintainers_file_keeps_plain_handles(self):
+        """Ordinary @mentions still parse as before."""
+        sieve = ContextSieve()
+        assert sieve._parse_maintainers_file(
+            "- @alice - Lead maintainer\n- @bob - Core contributor\n"
+        ) == ["@alice", "@bob"]
+
+    @pytest.mark.unit
+    def test_parse_maintainers_file_handle_glued_to_email(self):
+        """A handle written directly after an email still parses."""
+        sieve = ContextSieve()
+        assert (
+            sieve._parse_maintainers_file("- Alice Example <alice@realcorp.io>@alice\n")
+            == ["@alice"]
+        )
+
+    @pytest.mark.unit
     def test_detect_maintainers_from_codeowners(self, temp_repo):
         """Detects maintainers from CODEOWNERS file."""
         # Create .github/CODEOWNERS
