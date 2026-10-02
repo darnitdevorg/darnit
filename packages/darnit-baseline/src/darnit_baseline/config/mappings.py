@@ -51,48 +51,6 @@ PROJECT_TYPE_EXCLUSIONS: dict[str, set[str]] = {
 }
 
 
-# Mapping of OSPS controls to .project.yaml reference paths
-# Format: "section.field" - resolver will check both standard and extension sections
-CONTROL_REFERENCE_MAPPING: dict[str, str] = {
-    # Security (standard .project fields)
-    # SECURITY.md addresses multiple controls (VM and DO domains)
-    "OSPS-VM-01.01": "security.policy",           # SECURITY.md - vulnerability reporting contact
-    "OSPS-VM-02.01": "security.policy",           # SECURITY.md - vulnerability reporting process
-    "OSPS-VM-03.01": "security.policy",           # SECURITY.md - response timeline
-    "OSPS-DO-02.01": "security.policy",           # SECURITY.md (documentation domain)
-    "OSPS-SA-03.02": "security.threat_model",     # Threat model
-
-    # Governance (standard .project fields)
-    # CONTRIBUTING.md addresses multiple controls
-    "OSPS-GV-03.01": "governance.contributing",   # CONTRIBUTING.md - contribution guide exists
-    "OSPS-GV-03.02": "governance.contributing",   # CONTRIBUTING.md - development process documented
-    "OSPS-DO-01.02": "governance.contributing",   # CONTRIBUTING.md (documentation domain)
-    "OSPS-GV-04.01": "governance.codeowners",     # CODEOWNERS
-
-    # Governance (extension fields - to be upstreamed)
-    "OSPS-GV-01.01": "governance.maintainers",    # MAINTAINERS.md (extension)
-    "OSPS-GV-01.02": "governance.code_of_conduct", # CODE_OF_CONDUCT.md (standard)
-
-    # Legal (standard .project fields)
-    "OSPS-LI-01.01": "legal.license",             # LICENSE
-
-    # Legal (extension fields)
-    "OSPS-LE-01.01": "legal.contributor_agreement",  # DCO/CLA (extension)
-
-    # Artifacts (extension fields)
-    "OSPS-BR-02.01": "artifacts.sbom",            # SBOM (extension)
-    "OSPS-BR-03.01": "artifacts.signing",         # Release signing (extension)
-    "OSPS-BR-03.02": "artifacts.provenance",      # Provenance (extension)
-
-    # Quality (extension fields)
-    "OSPS-DO-01.01": "quality.changelog",         # CHANGELOG (extension)
-
-    # Documentation (standard .project fields)
-    "OSPS-DO-01.03": "documentation.readme",      # README
-    "OSPS-DO-03.01": "documentation.support",     # SUPPORT.md
-}
-
-
 # Default file locations for discovery
 # These are used when no .project.yaml exists to auto-discover files
 DEFAULT_FILE_LOCATIONS: dict[str, list[str]] = {
@@ -251,6 +209,5 @@ __all__ = [
     "sync_discovered_to_config",
     # OSPS-specific
     "PROJECT_TYPE_EXCLUSIONS",
-    "CONTROL_REFERENCE_MAPPING",
     "DEFAULT_FILE_LOCATIONS",
 ]

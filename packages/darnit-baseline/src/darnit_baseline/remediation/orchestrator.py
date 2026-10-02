@@ -17,7 +17,6 @@ from typing import Any
 
 from darnit.config.framework_schema import FrameworkConfig, TemplateConfig
 from darnit.config.loader import load_project_config
-from darnit.config.resolver import update_config_after_file_create
 from darnit.core.logging import get_logger
 from darnit.core.models import AuditResult
 from darnit.core.utils import (
@@ -36,8 +35,6 @@ from darnit.tools import (
     run_checks,
     summarize_results,
 )
-
-from ..config.mappings import CONTROL_REFERENCE_MAPPING
 
 logger = get_logger("remediation.orchestrator")
 
@@ -582,6 +579,7 @@ def _apply_declarative_remediation(
                 "requires_api": requires_api,
                 "declarative": True,
                 "plan": plan_items,
+                "references": _unrecorded_references(result.details),
             }
 
         platform_results = _platform_results(result.details)
@@ -590,6 +588,7 @@ def _apply_declarative_remediation(
             "platform": platform_results,
             "file_changes": [change.model_dump(mode="json") for change in result.file_changes],
             "handlers": _handler_statuses(result.details),
+            "references": _unrecorded_references(result.details),
         }
         platform_status = _platform_status(platform_results, result.changed) if result.success else None
         if platform_status is not None:
@@ -605,23 +604,6 @@ def _apply_declarative_remediation(
 
         if result.success:
             logger.info(f"Applied declarative remediation: {control_id} ({result.remediation_type})")
-
-            # Update .project/ config with reference to created file
-            config_updated = False
-            for handler_inv in remediation_config.handlers:
-                if handler_inv.handler == "file_create":
-                    extra = handler_inv.model_extra or {}
-                    created_path = extra.get("path")
-                    if created_path:
-                        config_updated = update_config_after_file_create(
-                            local_path=local_path,
-                            control_id=control_id,
-                            created_file_path=created_path,
-                            control_reference_mapping=CONTROL_REFERENCE_MAPPING,
-                        )
-                        if config_updated:
-                            logger.info(f"Updated .project/ with reference: {created_path}")
-                        break
 
             # Optional LLM enhancement for complex documents
             enhanced = False
@@ -668,7 +650,6 @@ def _apply_declarative_remediation(
                 "remediation_type": result.remediation_type,
                 "result": result.message,
                 "declarative": True,
-                "config_updated": config_updated,
                 "enhanced": enhanced,
                 **applied_record,
             }
@@ -712,6 +693,15 @@ def _platform_results(details: dict[str, Any] | None) -> list[dict[str, Any]]:
         platform_result
         for handler in (details or {}).get("handlers", [])
         for platform_result in (handler.get("evidence") or {}).get("platform_results", [])
+    ]
+
+
+def _unrecorded_references(details: dict[str, Any] | None) -> list[str]:
+    """Why each declared ``project_reference`` was not recorded (framework-design 4.3)."""
+    return [
+        f"{note['path']} is not recorded as {note['reference']}: {note['reason']}"
+        for h in (details or {}).get("handlers", [])
+        if (note := h.get("project_reference")) and not note["recorded"]
     ]
 
 
@@ -1312,6 +1302,7 @@ def _rechecked_outcome(r: dict[str, Any], result: dict[str, Any] | None, failure
         "control_id": r.get("control_id", "?"),
         "file_changes": _written(r),
         "change_sets": _applied_change_sets(r),
+        "reason": "; ".join(r.get("references", [])) or None,
     }
     if result is None:
         cause = failure or "the re-check returned no result for this control"
@@ -1480,6 +1471,7 @@ def _preview_lines(
             md.append(f"- **Type:** {r.get('remediation_type')}")
         for item in plan.get(cid, []):
             md.extend(_plan_item_lines(item))
+        md += [f"- {note}" for note in r.get("references", [])]
         md.append("")
 
     md += _status_sections(results)

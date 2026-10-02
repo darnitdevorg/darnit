@@ -631,6 +631,49 @@ class RemediationExecutor:
         repository, run_id = self._ensure_run()
         manifest.record_change_set(repository, run_id, digest, checkout=self.local_path)
 
+    def _reference_changes(self, reference: str, path: str) -> tuple[list[FileChange], str | None]:
+        from darnit.config.resolver import render_reference_update
+
+        rendered, kept = render_reference_update(self.local_path, reference, path)
+        return _rendered_file_changes(self.local_path, rendered), kept
+
+    def _planned_references(self, changes: list[FileChange], entry: dict[str, Any]) -> list[FileChange]:
+        """The ``.project/`` changes that would record each planned create's ``project_reference``."""
+        planned: list[FileChange] = []
+        for change in changes:
+            if change.action != "create" or not change.project_reference:
+                continue
+            references, kept = self._reference_changes(change.project_reference, change.path)
+            planned += references
+            entry["project_reference"] = _reference_note(change, kept)
+        return planned
+
+    def _record_reference(self, created: FileChange, entry: dict[str, Any]) -> list[FileChange]:
+        """Record ``created.project_reference`` for a file this run created, into an empty field (FR-015).
+
+        Returns the ``.project/`` changes as applied; ``entry["project_reference"]``
+        says whether the reference was recorded, and why not.
+        """
+        assert created.project_reference is not None
+        applied: list[FileChange] = []
+        kept: str | None
+        if created.ignored:
+            kept = f"{created.path} is ignored by the repository"
+        elif not self._written_this_run(created.path):
+            kept = f"{created.path} was not created in this run"
+        else:
+            try:
+                changes, kept = self._reference_changes(created.project_reference, created.path)
+                for change in changes:
+                    applied.append(self._write(change))
+            except (WriteRefused, OSError, ValueError, LookupError) as e:
+                kept = f"the project file was not written: {e}"
+            blocked = [c.path for c in applied if not c.changes]
+            if kept is None and blocked:
+                kept = f"{', '.join(blocked)} has uncommitted changes"
+        entry["project_reference"] = _reference_note(created, kept)
+        return applied
+
     def _when_not_met(self, handler_config: dict[str, Any]) -> list[FileChange]:
         path = handler_config.get("path")
         if not isinstance(path, str):
@@ -807,6 +850,12 @@ class RemediationExecutor:
                 result_entry["message"] = f"Invalid file changes from handler '{invocation.handler}': {e}"
                 all_success = False
                 changes = []
+            reference = handler_config.get("project_reference") if invocation.handler == "file_create" else None
+            if reference:
+                changes = [
+                    c.model_copy(update={"project_reference": reference}) if c.action == "create" else c
+                    for c in changes
+                ]
 
             if mode == "apply":
                 for digest in handler_result.evidence.get("applied_change_sets") or []:
@@ -814,6 +863,7 @@ class RemediationExecutor:
                     wrote = True
 
             if mode == "plan":
+                changes = changes + self._planned_references(changes, result_entry)
                 plan_item(
                     step,
                     file_changes=changes,
@@ -833,6 +883,10 @@ class RemediationExecutor:
                         break
                     file_changes.append(applied)
                     wrote = wrote or applied.changes
+                    if applied.action == "create" and applied.project_reference:
+                        recorded = self._record_reference(applied, result_entry)
+                        file_changes.extend(recorded)
+                        wrote = wrote or any(c.changes for c in recorded)
                 # Propagate llm_enhance metadata for AI-assisted file customization
                 if result_entry["status"] != "error" and "llm_enhance" in handler_config:
                     results[-1]["llm_enhance"] = {
@@ -891,6 +945,31 @@ def _file_changes(evidence: Mapping[str, Any]) -> list[FileChange]:
     return [item if isinstance(item, FileChange) else FileChange.model_validate(item) for item in raw]
 
 
+def _reference_note(change: FileChange, kept: str | None) -> dict[str, Any]:
+    note: dict[str, Any] = {"reference": change.project_reference, "path": change.path, "recorded": kept is None}
+    if kept is not None:
+        note["reason"] = kept
+    return note
+
+
+def _rendered_file_changes(local_path: str, rendered: Mapping[str, str]) -> list[FileChange]:
+    """``FileChange`` entries for ``.project/`` files rendered by the round-trip writer (feature 042)."""
+    root = os.path.abspath(local_path)
+    changes = []
+    for path, text in rendered.items():
+        relative = os.path.relpath(path, root).replace(os.sep, "/")
+        try:
+            with open(path, "rb") as f:
+                current: bytes | None = f.read()
+        except FileNotFoundError:
+            current = None
+        if current is None:
+            changes.append(FileChange(path=relative, action="create", content=text))
+        elif current != text.encode("utf-8"):
+            changes.append(FileChange(path=relative, action="modify", content=text, before_digest=content_digest(current)))
+    return changes
+
+
 def _write_bytes_atomic(path: str, data: bytes) -> None:
     """Replace ``path`` with ``data`` via a tempfile in the same directory.
 
@@ -934,19 +1013,7 @@ def plan_project_update(local_path: str, updates: Mapping[str, Any], *, create: 
             _set_nested_value(config, dotted_path, value)
 
     root = os.path.abspath(local_path)
-    changes = []
-    for path, text in render_project_config_update(root, list(updates), mutate, create=create).items():
-        relative = os.path.relpath(path, root).replace(os.sep, "/")
-        try:
-            with open(path, "rb") as f:
-                current: bytes | None = f.read()
-        except FileNotFoundError:
-            current = None
-        if current is None:
-            changes.append(FileChange(path=relative, action="create", content=text))
-        elif current != text.encode("utf-8"):
-            changes.append(FileChange(path=relative, action="modify", content=text, before_digest=content_digest(current)))
-    return changes
+    return _rendered_file_changes(root, render_project_config_update(root, list(updates), mutate, create=create))
 
 
 def apply_project_update(

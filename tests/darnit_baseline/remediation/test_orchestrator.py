@@ -151,8 +151,7 @@ def test_apply_declarative_remediation_leaves_project_update_to_the_executor(
     )
 
     assert result["status"] == "applied"
-    written = [path.read_text() for path in (temp_git_repo / ".project").glob("*.yaml")]
-    assert not any("updated" in text for text in written)
+    assert not (temp_git_repo / ".project").exists()
 
 
 # ---------------------------------------------------------

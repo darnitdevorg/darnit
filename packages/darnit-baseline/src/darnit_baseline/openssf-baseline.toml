@@ -1325,12 +1325,10 @@ dry_run_supported = true
 [[controls."OSPS-DO-01.01".remediation.handlers]]
 handler = "file_create"
 path = "README.md"
+project_reference = "documentation.readme"
 template = "readme_basic"
 overwrite = false
 llm_enhance = "Customize this README for the project: replace the placeholder description with a real explanation of what the project does, update install instructions for the actual package manager and language, and add real usage examples based on the project's source code."
-
-[controls."OSPS-DO-01.01".remediation.project_update]
-set = { "documentation.readme.path" = "README.md" }
 
 [controls."OSPS-DO-02.01"]
 name = "BugReportingProcess"
@@ -1669,6 +1667,7 @@ dry_run_supported = true
 [[controls."OSPS-GV-03.01".remediation.handlers]]
 handler = "file_create"
 path = "CONTRIBUTING.md"
+project_reference = "governance.contributing"
 template = "contributing_standard"
 overwrite = false
 create_dirs = false
@@ -1737,6 +1736,7 @@ strategy = "first_match"
 [[controls."OSPS-LE-01.01".remediation.handlers]]
 handler = "file_create"
 path = "LICENSE"
+project_reference = "legal.license"
 template = "license_apache"
 overwrite = true
 when = { license_type = "apache-2.0" }
@@ -1744,6 +1744,7 @@ when = { license_type = "apache-2.0" }
 [[controls."OSPS-LE-01.01".remediation.handlers]]
 handler = "file_create"
 path = "LICENSE"
+project_reference = "legal.license"
 template = "license_bsd3"
 overwrite = true
 when = { license_type = "bsd-3-clause" }
@@ -1751,11 +1752,9 @@ when = { license_type = "bsd-3-clause" }
 [[controls."OSPS-LE-01.01".remediation.handlers]]
 handler = "file_create"
 path = "LICENSE"
+project_reference = "legal.license"
 template = "license_mit"
 overwrite = true
-
-[controls."OSPS-LE-01.01".remediation.project_update]
-set = { "legal.license.path" = "LICENSE" }
 
 [controls."OSPS-LE-02.01"]
 name = "OSIApprovedLicense"
@@ -1811,6 +1810,7 @@ description = "Add SPDX license identifier to LICENSE file header"
 [[controls."OSPS-LE-02.01".remediation.handlers]]
 handler = "file_create"
 path = "LICENSE"
+project_reference = "legal.license"
 template = "license_apache"
 overwrite = false
 when = { license_type = "apache-2.0" }
@@ -1818,6 +1818,7 @@ when = { license_type = "apache-2.0" }
 [[controls."OSPS-LE-02.01".remediation.handlers]]
 handler = "file_create"
 path = "LICENSE"
+project_reference = "legal.license"
 template = "license_bsd3"
 overwrite = false
 when = { license_type = "bsd-3-clause" }
@@ -1825,6 +1826,7 @@ when = { license_type = "bsd-3-clause" }
 [[controls."OSPS-LE-02.01".remediation.handlers]]
 handler = "file_create"
 path = "LICENSE"
+project_reference = "legal.license"
 template = "license_mit"
 overwrite = false
 
@@ -1919,6 +1921,7 @@ strategy = "first_match"
 [[controls."OSPS-LE-03.01".remediation.handlers]]
 handler = "file_create"
 path = "LICENSE"
+project_reference = "legal.license"
 template = "license_apache"
 overwrite = false
 when = { license_type = "apache-2.0" }
@@ -1926,6 +1929,7 @@ when = { license_type = "apache-2.0" }
 [[controls."OSPS-LE-03.01".remediation.handlers]]
 handler = "file_create"
 path = "LICENSE"
+project_reference = "legal.license"
 template = "license_bsd3"
 overwrite = false
 when = { license_type = "bsd-3-clause" }
@@ -1933,6 +1937,7 @@ when = { license_type = "bsd-3-clause" }
 [[controls."OSPS-LE-03.01".remediation.handlers]]
 handler = "file_create"
 path = "LICENSE"
+project_reference = "legal.license"
 template = "license_mit"
 overwrite = false
 
@@ -2355,6 +2360,7 @@ dry_run_supported = true
 [[controls."OSPS-VM-02.01".remediation.handlers]]
 handler = "file_create"
 path = "SECURITY.md"
+project_reference = "security.policy"
 template = "security_policy_standard"
 overwrite = false
 create_dirs = false
@@ -2498,6 +2504,7 @@ dry_run_supported = true
 [[controls."OSPS-GV-01.01".remediation.handlers]]
 handler = "file_create"
 path = "GOVERNANCE.md"
+project_reference = "governance.governance_doc"
 template = "governance_template"
 overwrite = false
 llm_enhance = "Customize this governance document: replace placeholder maintainer names with actual project maintainers, describe the real decision-making process used by the project, and adjust roles to match the project's actual governance structure."
@@ -2561,6 +2568,7 @@ dry_run_supported = true
 [[controls."OSPS-GV-01.02".remediation.handlers]]
 handler = "file_create"
 path = "MAINTAINERS.md"
+project_reference = "governance.maintainers"
 template = "maintainers_template"
 overwrite = false
 
@@ -2623,6 +2631,7 @@ dry_run_supported = true
 [[controls."OSPS-GV-03.02".remediation.handlers]]
 handler = "file_create"
 path = "CONTRIBUTING.md"
+project_reference = "governance.contributing"
 template = "contributing_standard"
 overwrite = false
 
@@ -3979,6 +3988,7 @@ dry_run_supported = true
 [[controls."OSPS-DO-03.01".remediation.handlers]]
 handler = "file_create"
 path = "SUPPORT.md"
+project_reference = "documentation.support"
 template = "support_template"
 overwrite = false
 
@@ -4096,6 +4106,7 @@ dry_run_supported = true
 [[controls."OSPS-DO-04.01".remediation.handlers]]
 handler = "file_create"
 path = "SUPPORT.md"
+project_reference = "documentation.support"
 template = "support_scope_template"
 overwrite = false
 
@@ -4161,6 +4172,7 @@ dry_run_supported = true
 [[controls."OSPS-DO-05.01".remediation.handlers]]
 handler = "file_create"
 path = "SUPPORT.md"
+project_reference = "documentation.support"
 template = "end_of_support_template"
 overwrite = false
 
@@ -4236,6 +4248,7 @@ dry_run_supported = true
 [[controls."OSPS-GV-04.01".remediation.handlers]]
 handler = "file_create"
 path = "CODEOWNERS"
+project_reference = "governance.codeowners"
 template = "codeowners_template"
 overwrite = false
 
@@ -4322,6 +4335,7 @@ dry_run_supported = true
 [[controls."OSPS-SA-01.01".remediation.handlers]]
 handler = "file_create"
 path = "ARCHITECTURE.md"
+project_reference = "documentation.architecture"
 template = "architecture_template"
 overwrite = false
 llm_enhance = "Customize this architecture document: analyze the project source code to identify real components, modules, and services; describe actual data flows based on the codebase; and identify real actors (users, admins, external systems) that interact with the software."
@@ -4398,6 +4412,7 @@ dry_run_supported = true
 [[controls."OSPS-SA-02.01".remediation.handlers]]
 handler = "file_create"
 path = "API.md"
+project_reference = "documentation.api"
 template = "api_documentation_template"
 overwrite = false
 llm_enhance = "Customize this API documentation: analyze the project source code to identify real endpoints, CLI commands, or library interfaces; document actual parameters, return types, and usage examples based on the codebase."

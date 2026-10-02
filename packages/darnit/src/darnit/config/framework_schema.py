@@ -525,6 +525,8 @@ class RemediationConfig(BaseModel):
                 raise ValueError(_API_CALL_REMOVED)
             if handler.handler == "platform_setting":
                 _validate_platform_setting(handler.model_extra or {})
+            if handler.handler == "file_create":
+                _validate_project_reference((handler.model_extra or {}).get("project_reference"))
         return handlers
 
     @model_validator(mode="after")
@@ -553,6 +555,18 @@ def _validate_platform_setting(fields: dict[str, Any]) -> None:
     if "target" not in fields or "require" not in fields:
         raise ValueError("platform_setting needs target and require")
     PlatformRequirement(target=fields["target"], require=fields["require"], branch=fields.get("branch"))
+
+
+def _validate_project_reference(reference: Any) -> None:
+    """``file_create.project_reference`` names a project path field (framework-design 4.3)."""
+    if reference is None:
+        return
+    from darnit.config.resolver import reference_key
+
+    if not isinstance(reference, str) or reference_key(reference) is None:
+        raise ValueError(
+            f"file_create project_reference {reference!r} is not a project path field (<section>.<field>)"
+        )
 
 
 class ProjectUpdateRemediationConfig(BaseModel):

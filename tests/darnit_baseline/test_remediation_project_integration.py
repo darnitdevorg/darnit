@@ -212,7 +212,9 @@ class TestConfigUpdateAfterRemediation:
         )
 
         assert result["status"] == "applied"
-        assert result.get("config_updated") is True
+        # Feature 043 (framework-design 4.3): the executor records the step's
+        # project_reference as one of the run's file changes.
+        assert ".project/project.yaml" in [c["path"] for c in result["file_changes"] if c["action"] != "none"]
 
         # Verify .project/ was updated with the reference
         clear_config_cache()
@@ -262,7 +264,9 @@ class TestConfigUpdateAfterRemediation:
         )
 
         assert result["status"] == "applied"
-        assert result.get("config_updated") is True
+        # Feature 043 (framework-design 4.3): the executor records the step's
+        # project_reference as one of the run's file changes.
+        assert ".project/project.yaml" in [c["path"] for c in result["file_changes"] if c["action"] != "none"]
 
         assert (tmp_path / ".project" / "project.yaml").exists()
 
