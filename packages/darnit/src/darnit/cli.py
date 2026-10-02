@@ -1143,6 +1143,8 @@ def cmd_config_show(args: argparse.Namespace) -> int:
         f"permission check: {loaded.permission_check}",
         f"strict: {'yes' if loaded.strict else 'no'}",
         f"searched: {', '.join(loaded.searched)}",
+        f"remediation policy: platform={loaded.config.remediation.platform} "
+        f"high_impact={loaded.config.remediation.high_impact}",
         "effective settings:",
         json.dumps(_redact_operator_settings(settings), indent=2, sort_keys=True),
     ]

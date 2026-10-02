@@ -374,6 +374,17 @@ def update_yaml_file(path: str, mutate: Callable[[Any], Any], header_lines: list
     preserved. A new file starts with ``header_lines`` as comments. Nothing
     is written when ``mutate`` returns False; returns whether the file was written.
     """
+    text = render_yaml_update(path, mutate, header_lines)
+    if text is None:
+        return False
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text)
+    return True
+
+
+def render_yaml_update(path: str, mutate: Callable[[Any], Any], header_lines: list[str] | None = None) -> str | None:
+    """The text :func:`update_yaml_file` would write to ``path``, or None when it would write nothing."""
     from io import StringIO
 
     from ruamel.yaml import YAML
@@ -397,17 +408,14 @@ def update_yaml_file(path: str, mutate: Callable[[Any], Any], header_lines: list
     if data is None:
         data = CommentedMap()
     if mutate(data) is False:
-        return False
+        return None
 
     body = StringIO()
     if data:
         yaml_rt.dump(data, body)
     if prefix and not prefix.endswith("\n"):
         prefix += "\n"
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(prefix + body.getvalue())
-    return True
+    return prefix + body.getvalue()
 
 
 def update_extension_file(local_path: str, mutate: Callable[[Any], None]) -> str:
@@ -471,13 +479,34 @@ def update_project_config(
     Raises:
         ProjectFilesInvalid: a ``.project/`` file is present but invalid.
     """
+    written = []
+    for path, text in render_project_config_update(local_path, paths, mutate, create=create).items():
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+        written.append(path)
+    return written
+
+
+def render_project_config_update(
+    local_path: str,
+    paths: list[str],
+    mutate: Callable[[ProjectConfig], None],
+    *,
+    create: bool = True,
+) -> dict[str, str]:
+    """The files :func:`update_project_config` would write, mapped to their new text; writes nothing.
+
+    Raises:
+        ProjectFilesInvalid: a ``.project/`` file is present but invalid.
+    """
     files = load_project_config_checked(local_path)
     if files.invalid:
         raise ProjectFilesInvalid(files.errors)
     extension = get_default_extension()
     if files.project.state == "absent":
         if not create:
-            return []
+            return {}
         from darnit.config.discovery import discover_project_name
 
         name = discover_project_name(local_path) or "unnamed"
@@ -503,16 +532,17 @@ def update_project_config(
         else:
             extension_targets.append((parts, dumped if parts[0] in dumped else in_extension))
 
-    written = []
+    rendered: dict[str, str] = {}
     for targets, path, header in (
         (project_targets, os.path.join(local_path, PROJECT_DIR, PROJECT_FILE), PROJECT_FILE_HEADER),
         (extension_targets, os.path.join(local_path, PROJECT_DIR, extension.filename), extension.header),
     ):
         if not targets:
             continue
-        if update_yaml_file(path, _set_paths(targets), header):
-            written.append(path)
-    return written
+        text = render_yaml_update(path, _set_paths(targets), header)
+        if text is not None:
+            rendered[path] = text
+    return rendered
 
 
 # =============================================================================

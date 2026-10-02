@@ -7,8 +7,9 @@ Locks the concrete guarantees the Tier 1 fix cluster promises:
 * Remediation template context is not wall-clock dependent beyond the
   YEAR field (which LICENSE templates require); DATE was dropped.
 * List-valued template context is sorted before Jinja2 string join.
-* Filesystem writes from the file_create and yaml_inject handlers are
-  atomic (tempfile-then-rename), leaving no partial file on crash.
+* Filesystem writes of remediation file changes are atomic
+  (tempfile-then-rename), leaving no partial file on crash. Feature 043
+  (R6) moved them from the handlers to the executor, the single writer.
 """
 
 from __future__ import annotations
@@ -20,11 +21,8 @@ from unittest.mock import patch
 
 import pytest
 
-from darnit.sieve.builtin_handlers import (
-    _atomic_write_text,
-    _walk_depth_limited,
-    file_create_handler,
-)
+from darnit.remediation.executor import _write_bytes_atomic
+from darnit.sieve.builtin_handlers import _walk_depth_limited
 from darnit.sieve.handler_registry import HandlerContext, HandlerResultStatus
 
 
@@ -43,12 +41,12 @@ def _mk_ctx(local_path: Path) -> HandlerContext:
 
 
 class TestAtomicWrite:
-    """_atomic_write_text: partial writes never leak to the target path."""
+    """The executor's atomic writer (feature 043 R6): partial writes never leak to the target path."""
 
     @pytest.mark.unit
     def test_writes_content_atomically(self, tmp_path: Path) -> None:
         target = tmp_path / "out.txt"
-        _atomic_write_text(str(target), "hello\n")
+        _write_bytes_atomic(str(target), b"hello\n")
         assert target.read_text() == "hello\n"
 
     @pytest.mark.unit
@@ -59,9 +57,9 @@ class TestAtomicWrite:
         # Force os.replace to blow up after the tempfile is written. The
         # atomic helper catches the exception, cleans the tempfile, and
         # re-raises -- the target must NOT exist.
-        with patch("darnit.sieve.builtin_handlers.os.replace", side_effect=OSError("boom")):
+        with patch("darnit.remediation.executor.os.replace", side_effect=OSError("boom")):
             with pytest.raises(OSError):
-                _atomic_write_text(str(target), "hello\n")
+                _write_bytes_atomic(str(target), b"hello\n")
 
         assert not target.exists(), "target file must not exist after failed atomic write"
         leftover = [p for p in tmp_path.iterdir() if p.name.startswith(".darnit-write-")]
@@ -69,21 +67,27 @@ class TestAtomicWrite:
 
 
 class TestFileCreateHandlerAtomic:
-    """file_create_handler goes through _atomic_write_text."""
+    """file_create writes go through the executor's atomic writer (feature 043 R6: the executor is the single writer)."""
 
     @pytest.mark.unit
     def test_file_create_leaves_no_partial_on_failure(self, tmp_path: Path) -> None:
+        from darnit.config.framework_schema import HandlerInvocation, RemediationConfig
+        from darnit.remediation.executor import RemediationExecutor
+
         target = tmp_path / "SECURITY.md"
-        with patch("darnit.sieve.builtin_handlers.os.replace", side_effect=OSError("disk full")):
-            result = file_create_handler(
-                {"handler": "file_create", "path": str(target), "content": "# Security\n"},
-                _mk_ctx(tmp_path),
+        config = RemediationConfig(
+            handlers=[HandlerInvocation(handler="file_create", path="SECURITY.md", content="# Security\n")]
+        )
+        with patch("darnit.remediation.executor.os.replace", side_effect=OSError("disk full")):
+            result = RemediationExecutor(local_path=str(tmp_path), owner="o", repo="r").execute(
+                "TEST", config, dry_run=False
             )
 
-        # Handler catches OSError and returns ERROR status; the point of
-        # this test is the *file* not the return value -- no partial file.
-        assert result.status == HandlerResultStatus.ERROR
+        # The executor catches OSError and reports the step as an error; the
+        # point of this test is the *file* not the return value -- no partial file.
+        assert not result.success
         assert not target.exists()
+        assert [p for p in tmp_path.iterdir() if p.name.startswith(".darnit-write-")] == []
 
 
 class TestWalkDepthLimitedSorted:

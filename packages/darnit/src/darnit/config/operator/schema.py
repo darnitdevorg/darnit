@@ -76,6 +76,24 @@ class PolicySettings(BaseModel):
     strict_permissions: StrictBool = False
 
 
+RemediationMode = Literal["prompt", "manual", "auto"]
+
+
+class RemediationSettings(BaseModel):
+    """Policy for platform changes made by remediation (feature 043, FR-026).
+
+    ``prompt`` asks a person and applies only an approved change; ``manual``
+    makes no platform change and reports the steps; ``auto`` applies without
+    asking. ``high_impact`` covers organization-wide settings and repository
+    visibility (FR-008); ``platform`` covers every other platform change.
+    """
+
+    model_config = _FORBID
+
+    platform: RemediationMode = "prompt"
+    high_impact: RemediationMode = "prompt"
+
+
 class OperatorConfig(BaseModel):
     """Tool configuration owned by whoever runs darnit."""
 
@@ -91,3 +109,4 @@ class OperatorConfig(BaseModel):
     llm: LlmSettings = Field(default_factory=LlmSettings)
     trust: TrustSettings = Field(default_factory=TrustSettings)
     policy: PolicySettings = Field(default_factory=PolicySettings)
+    remediation: RemediationSettings = Field(default_factory=RemediationSettings)

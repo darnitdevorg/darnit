@@ -13,14 +13,16 @@ import pytest
 def _isolate_operator_config(
     tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
 ) -> Generator[None, None, None]:
-    """Keep the developer's own operator configuration and confirmations out of every test (feature 040)."""
+    """Keep the developer's own operator configuration, confirmations, and remediation runs out of every test (040, 043)."""
     from darnit.config.operator import loader
+    from darnit.remediation import manifest
     from darnit.trust import confirmations
 
     missing = tmp_path_factory.mktemp("operator-config") / "absent"
     monkeypatch.setattr(loader, "user_config_dir", lambda: missing)
     data_root = tmp_path_factory.mktemp("data-root") / "darnit"
     monkeypatch.setattr(confirmations, "user_data_root", lambda: data_root)
+    monkeypatch.setattr(manifest, "user_data_root", lambda: data_root)
     loader.set_launch_options(None, strict=False)
     yield
     loader.set_launch_options(None, strict=False)

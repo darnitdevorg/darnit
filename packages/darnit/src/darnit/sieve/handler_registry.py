@@ -29,7 +29,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from darnit.core.authority import Authority
 from darnit.core.error_class import ERROR_CLASSES, ErrorClass
@@ -149,6 +149,11 @@ class HandlerContext:
         shared_cache: Cache for shared handler results (keyed by shared handler name).
         dependency_results: Results from dependency controls (keyed by control ID).
         execution_context: Shared context instance across the entire audit run.
+        mode: Feature 043. ``plan`` asks a remediation handler to compute its
+            changes without making any; ``apply`` is a real run. Remediation
+            handlers return their file changes in ``evidence["file_changes"]``
+            in both modes and never write themselves: the remediation executor
+            is the only writer. Verification handlers ignore it.
     """
 
     local_path: str
@@ -166,6 +171,7 @@ class HandlerContext:
     # other handler kind. A ``None`` value inside the mcp handler
     # indicates a plumbing bug and MUST resolve the pass ERROR.
     mcp_pool: Any | None = None
+    mode: Literal["plan", "apply"] = "apply"
 
 
 # Handler callable signature: (config, context) -> HandlerResult
@@ -199,6 +205,10 @@ class SieveHandlerInfo:
         existence_ceiling: Feature 041. The ceiling when a step declares
             ``existence = true`` (its control's requirement is literally that
             a file exists or does not). None for step types without one.
+        supports_plan: Feature 043. The handler honors ``HandlerContext.mode``
+            for remediation: in ``plan`` mode it has no side effects. A
+            handler without it is not previewable and is not invoked in a
+            preview.
     """
 
     name: str
@@ -208,6 +218,7 @@ class SieveHandlerInfo:
     description: str = ""
     ceiling: frozenset[str] = frozenset()
     existence_ceiling: frozenset[str] | None = None
+    supports_plan: bool = False
 
 
 class SieveHandlerRegistry:
@@ -241,6 +252,7 @@ class SieveHandlerRegistry:
         *,
         ceiling: Any = frozenset(),
         existence_ceiling: Any = None,
+        supports_plan: bool = False,
     ) -> None:
         """Register a sieve handler.
 
@@ -260,6 +272,9 @@ class SieveHandlerRegistry:
             existence_ceiling: Feature 041. Ceiling for steps that declare
                 ``existence = true``. Only presence and pattern handlers
                 register one.
+            supports_plan: Feature 043. True only for a remediation handler
+                that, given ``context.mode == "plan"``, changes nothing and
+                returns the changes it would make.
         """
         if isinstance(phase, str):
             phase = HandlerPhase(phase)
@@ -293,6 +308,7 @@ class SieveHandlerRegistry:
                 if existence_ceiling is None
                 else _outcome_set(existence_ceiling, f"existence_ceiling of handler {name!r}")
             ),
+            supports_plan=supports_plan,
         )
         self._handlers[name] = info
         logger.debug(

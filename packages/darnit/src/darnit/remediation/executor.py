@@ -4,6 +4,17 @@ This module executes remediations defined in the framework TOML files.
 Remediations use a flat ordered list of handler invocations dispatched
 through the sieve handler registry.
 
+Feature 043 (research R6): the executor is the single writer. Remediation
+handlers registered with ``supports_plan`` return the files they would change
+as :class:`~darnit.remediation.plan.FileChange` entries and never write. A
+preview (``dry_run=True``, plan mode) runs them with ``mode="plan"`` and
+returns :class:`~darnit.remediation.plan.PlanItem` entries; handlers without
+plan support are listed as not previewable and are not invoked. An apply runs
+the plan first (so a key that needs confirmation stops it before any write,
+feature 042), then runs every handler with ``mode="apply"``, writes the
+returned changes atomically, and records each in the operator-side run
+manifest.
+
 Example:
     ```python
     from darnit.remediation.executor import RemediationExecutor
@@ -24,11 +35,13 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 import subprocess
+import tempfile
 from collections.abc import Collection, Iterator, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -42,9 +55,11 @@ from darnit.config.framework_schema import (
 )
 from darnit.config.when_evaluator import evaluate_when
 from darnit.core.logging import get_logger
+from darnit.remediation import manifest
 from darnit.remediation.helpers import (
     detect_repo_from_git,
 )
+from darnit.remediation.plan import FileChange, PlanItem, content_digest, normalize_repo_path
 
 logger = get_logger("remediation.executor")
 
@@ -55,6 +70,10 @@ class ConfirmationRequired(Exception):
     def __init__(self, key: str) -> None:
         super().__init__(f"confirmation required: {key}")
         self.key = key
+
+
+class WriteRefused(Exception):
+    """The executor did not write a planned change; nothing was written for it."""
 
 
 class GuardedContext(Mapping[str, Any]):
@@ -99,6 +118,14 @@ class RemediationResult:
     details: dict[str, Any]
     needs_review: bool = False  # True when safe=false — changes may alter behavior
     confirmation_required: str | None = None  # Context key that needs a person's confirmation
+    # Feature 043. ``plan``: one item per evaluated step. ``file_changes``: the
+    # planned changes in a preview, the applied ones (and the reasons for
+    # unchanged files) in an apply. ``changed`` is True only for an apply in
+    # which every step succeeded and at least one file was written.
+    plan: list[PlanItem] = field(default_factory=list)
+    file_changes: list[FileChange] = field(default_factory=list)
+    changed: bool = False
+    run_id: str | None = None
 
     def to_markdown(self) -> str:
         """Format result as markdown."""
@@ -173,6 +200,7 @@ class RemediationExecutor:
         framework_path: str | None = None,
         now_provider: Callable[[], datetime] | None = None,
         unconfirmed_keys: Collection[str] = (),
+        run_id: str | None = None,
     ):
         """Initialize the executor.
 
@@ -199,6 +227,9 @@ class RemediationExecutor:
                 (``ResolvedContext.unusable_keys()``). A template or ``when``
                 clause that reads one stops the remediation with
                 "confirmation required" (feature 042, FR-007).
+            run_id: Remediation run whose manifest records this executor's
+                writes (feature 043). When None, the first write starts a new
+                run; every later write by this executor joins it.
         """
         self.local_path = os.path.abspath(local_path)
         self.templates = templates or {}
@@ -209,6 +240,8 @@ class RemediationExecutor:
         self._scan_values = scan_values or {}
         self._now_provider = now_provider or datetime.now
         self._unconfirmed_keys = frozenset(unconfirmed_keys)
+        self.run_id = run_id
+        self._run_ready = False
 
         # Auto-detect owner/repo if not provided
         if not owner or not repo:
@@ -415,16 +448,18 @@ class RemediationExecutor:
         config: RemediationConfig,
         dry_run: bool = True,
     ) -> RemediationResult:
-        """Execute a remediation based on its configuration.
+        """Preview (``dry_run=True``) or apply a remediation.
 
-        Dispatches handler invocations from config.handlers in order.
-        After a successful remediation, applies any project_update
-        to keep .project/project.yaml in sync.
+        A preview runs every plan-capable handler in plan mode and changes
+        nothing. An apply first computes the same plan, so a key that needs
+        confirmation stops it before any write (feature 042, FR-007), then
+        runs the handlers in apply mode and writes their file changes. After
+        a successful apply, ``config.project_update`` is written the same way.
 
         Args:
             control_id: The control ID being remediated
             config: Remediation configuration from TOML
-            dry_run: If True, show what would be done without making changes
+            dry_run: True for plan mode, False for apply mode
 
         Returns:
             RemediationResult with execution outcome
@@ -440,12 +475,8 @@ class RemediationExecutor:
             )
 
         try:
-            if not dry_run:
-                # Render every template and evaluate every ``when`` first, so a
-                # key that needs confirmation stops the remediation before any
-                # handler has run.
-                self._execute_handler_invocations(control_id, config, dry_run=True)
-            result = self._execute_handler_invocations(control_id, config, dry_run)
+            planned = self._run_steps(control_id, config, "plan")
+            result = planned if dry_run else self._run_steps(control_id, config, "apply")
         except ConfirmationRequired as needed:
             return RemediationResult(
                 success=False,
@@ -456,31 +487,115 @@ class RemediationExecutor:
                 details={},
                 confirmation_required=needed.key,
             )
+        if not dry_run:
+            result.plan = planned.plan
 
-        # Apply project_update if the primary remediation succeeded
-        if result.success and not dry_run and config.project_update:
-            try:
-                apply_project_update(self.local_path, config.project_update, control_id)
-                result.details["project_update"] = "applied"
-            except (OSError, RuntimeError, ValueError) as e:
-                logger.warning(f"Remediation for {control_id} succeeded but project_update failed: {e}")
-                result.details["project_update"] = f"failed: {e}"
-        elif result.success and dry_run and config.project_update:
-            result.details["project_update"] = f"would set: {config.project_update.set}"
+        if result.success and config.project_update and config.project_update.set:
+            self._project_update(control_id, config.project_update, result)
 
         return result
 
-    def _execute_handler_invocations(
+    def _project_update(
+        self, control_id: str, project_update: ProjectUpdateRemediationConfig, result: RemediationResult
+    ) -> None:
+        try:
+            changes = plan_project_update(
+                self.local_path, project_update.set, create=project_update.create_if_missing
+            )
+        except ValueError as e:
+            if result.dry_run:
+                result.details["project_update"] = f"would fail: {e}"
+            else:
+                logger.warning(f"Remediation for {control_id} succeeded but project_update failed: {e}")
+                result.details["project_update"] = f"failed: {e}"
+            return
+
+        if result.dry_run:
+            result.details["project_update"] = f"would set: {project_update.set}"
+            result.plan.append(
+                PlanItem(control_id=control_id, step="project_update", file_changes=changes, previewable=True)
+            )
+            result.file_changes.extend(changes)
+            return
+
+        written = False
+        for change in changes:
+            try:
+                self._write(change)
+            except (WriteRefused, OSError, ValueError, LookupError) as e:
+                logger.warning(f"Remediation for {control_id} succeeded but project_update failed: {e}")
+                result.details["project_update"] = f"failed: {e}"
+                return
+            result.file_changes.append(change)
+            written = True
+        result.details["project_update"] = "applied" if written else "unchanged"
+        if written:
+            result.changed = True
+            result.run_id = self.run_id
+
+    def _ensure_run(self) -> tuple[str, str]:
+        repository = manifest.repository_identity(self.local_path, self.owner, self.repo)
+        if not self._run_ready:
+            if self.run_id is None:
+                self.run_id = manifest.start_run(repository, checkout=self.local_path).run_id
+            elif manifest.load_run(repository, self.run_id, checkout=self.local_path) is None:
+                manifest.start_run(repository, checkout=self.local_path, run_id=self.run_id)
+            self._run_ready = True
+        assert self.run_id is not None
+        return repository, self.run_id
+
+    def _write(self, change: FileChange) -> None:
+        """Write one planned change atomically and record it in the run manifest.
+
+        Raises:
+            WriteRefused: the target is outside the repository, or no longer
+                in the state the change was planned against.
+        """
+        if not change.changes:
+            return
+        assert change.content is not None
+        root = os.path.realpath(self.local_path)
+        full_path = os.path.join(root, change.path)
+        if os.path.commonpath([root, os.path.realpath(full_path)]) != root:
+            raise WriteRefused(f"{change.path} resolves outside the repository")
+        if change.action == "create" and os.path.lexists(full_path):
+            raise WriteRefused(f"{change.path} exists; it was planned as a new file")
+        if change.action == "modify":
+            try:
+                with open(full_path, "rb") as f:
+                    current = f.read()
+            except OSError as e:
+                raise WriteRefused(f"{change.path} cannot be read: {e}") from e
+            if content_digest(current) != change.before_digest:
+                raise WriteRefused(f"{change.path} changed since it was planned")
+
+        repository, run_id = self._ensure_run()
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        _write_bytes_atomic(full_path, change.content.encode("utf-8"))
+        manifest.record_file(repository, run_id, change.path, change.after_digest or "", checkout=self.local_path)
+
+    def _when_not_met(self, handler_config: dict[str, Any]) -> list[FileChange]:
+        path = handler_config.get("path")
+        if not isinstance(path, str):
+            return []
+        try:
+            return [FileChange(path=normalize_repo_path(path), action="none", reason="when_not_met")]
+        except ValueError:
+            return []
+
+    def _run_steps(
         self,
         control_id: str,
         config: RemediationConfig,
-        dry_run: bool,
+        mode: Literal["plan", "apply"],
     ) -> RemediationResult:
-        """Execute handler-based remediation invocations.
+        """Run the handler invocations in ``mode``.
 
         Iterates config.handlers (flat list) and dispatches each through
         the sieve handler registry. Respects ``when`` clauses on individual
-        handlers and the ``strategy`` field on RemediationConfig.
+        handlers and the ``strategy`` field on RemediationConfig. In apply
+        mode, the file changes of a step are written only when the step
+        returned PASS.
         """
         from darnit.sieve.handler_registry import (
             HandlerContext,
@@ -496,6 +611,7 @@ class RemediationExecutor:
             default_branch=self.default_branch,
             control_id=control_id,
             project_context=dict(self._project_values),
+            mode=mode,
         )
 
         # Assemble flat context for when-clause evaluation. Scan values let
@@ -506,11 +622,29 @@ class RemediationExecutor:
         when_context = GuardedContext(when_values, self._unconfirmed_keys)
 
         results: list[dict[str, Any]] = []
+        plan_items: list[PlanItem] = []
+        file_changes: list[FileChange] = []
         all_success = True
+        wrote = False
         first_match = config.strategy == "first_match"
         matched_any = False
 
-        for invocation in config.handlers:
+        def plan_item(step: str, **fields: Any) -> PlanItem:
+            previewable = fields.setdefault("previewable", True)
+            item = PlanItem(
+                control_id=control_id,
+                step=step,
+                requires_individual_approval=not previewable or not config.safe,
+                **fields,
+            )
+            plan_items.append(item)
+            return item
+
+        for index, invocation in enumerate(config.handlers):
+            step = f"{invocation.handler}[{index}]"
+            handler_config = dict(invocation.model_extra or {})
+            handler_config["handler"] = invocation.handler
+
             # Evaluate when clause — skip handler if condition not met
             if invocation.when and not evaluate_when(invocation.when, when_context):
                 logger.debug(
@@ -519,10 +653,10 @@ class RemediationExecutor:
                     invocation.handler,
                     invocation.when,
                 )
+                skipped = self._when_not_met(handler_config)
+                plan_item(step, file_changes=skipped)
+                file_changes.extend(skipped)
                 continue
-
-            handler_config = dict(invocation.model_extra or {})
-            handler_config["handler"] = invocation.handler
 
             # Resolve template references to content
             if "template" in handler_config and "content" not in handler_config:
@@ -532,19 +666,9 @@ class RemediationExecutor:
                     content = self._substitute(content, control_id)
                     handler_config["content"] = content
 
-            if dry_run:
-                results.append(
-                    {
-                        "handler": invocation.handler,
-                        "status": "dry_run",
-                        "message": f"Would execute handler: {invocation.handler}",
-                        "config": handler_config,
-                    }
-                )
-                matched_any = True
-                if first_match:
-                    break
-                continue
+            matched_any = True
+            command = handler_config.get("command")
+            commands = [[str(arg) for arg in command]] if isinstance(command, list) else []
 
             handler_info = registry.get(invocation.handler)
             if not handler_info:
@@ -555,32 +679,30 @@ class RemediationExecutor:
                         "message": f"Handler '{invocation.handler}' not found",
                     }
                 )
+                plan_item(step, commands=commands, previewable=False)
                 all_success = False
-                matched_any = True
+                if first_match:
+                    break
+                continue
+
+            if mode == "plan" and not handler_info.supports_plan:
+                results.append(
+                    {
+                        "handler": invocation.handler,
+                        "status": "not_previewable",
+                        "message": (
+                            f"Cannot be previewed exactly: handler '{invocation.handler}' does not support plan mode"
+                        ),
+                        "config": handler_config,
+                    }
+                )
+                plan_item(step, commands=commands, previewable=False)
                 if first_match:
                     break
                 continue
 
             try:
                 handler_result = handler_info.fn(handler_config, handler_ctx)
-                result_entry: dict[str, Any] = {
-                    "handler": invocation.handler,
-                    "status": handler_result.status.value,
-                    "message": handler_result.message,
-                }
-                # Propagate handler evidence — needed for llm_consultation,
-                # llm_verification_required, and other handler-to-agent signals.
-                if handler_result.evidence:
-                    result_entry["evidence"] = handler_result.evidence
-                results.append(result_entry)
-                # Propagate llm_enhance metadata for AI-assisted file customization
-                if handler_result.status == HandlerResultStatus.PASS and "llm_enhance" in handler_config:
-                    results[-1]["llm_enhance"] = {
-                        "prompt": handler_config["llm_enhance"],
-                        "file_path": handler_config.get("path", ""),
-                    }
-                if handler_result.status in (HandlerResultStatus.FAIL, HandlerResultStatus.ERROR):
-                    all_success = False
             except (
                 RuntimeError,
                 ValueError,
@@ -594,11 +716,64 @@ class RemediationExecutor:
                         "message": str(e),
                     }
                 )
+                plan_item(step, commands=commands, previewable=handler_info.supports_plan)
+                all_success = False
+                if first_match:
+                    break
+                continue
+
+            result_entry: dict[str, Any] = {
+                "handler": invocation.handler,
+                "status": handler_result.status.value,
+                "message": handler_result.message,
+            }
+            # Propagate handler evidence -- needed for llm_consultation,
+            # llm_verification_required, and other handler-to-agent signals.
+            if handler_result.evidence:
+                result_entry["evidence"] = handler_result.evidence
+            results.append(result_entry)
+            if handler_result.status in (HandlerResultStatus.FAIL, HandlerResultStatus.ERROR):
                 all_success = False
 
-            matched_any = True
+            try:
+                changes = _file_changes(handler_result.evidence)
+            except ValueError as e:
+                result_entry["status"] = "error"
+                result_entry["message"] = f"Invalid file changes from handler '{invocation.handler}': {e}"
+                all_success = False
+                changes = []
+
+            if mode == "plan":
+                plan_item(
+                    step,
+                    file_changes=changes,
+                    commands=[] if handler_info.supports_plan else commands,
+                    previewable=handler_info.supports_plan,
+                )
+                file_changes.extend(changes)
+            elif handler_result.status == HandlerResultStatus.PASS and result_entry["status"] != "error":
+                for change in changes:
+                    try:
+                        self._write(change)
+                    except (WriteRefused, OSError, ValueError, LookupError) as e:
+                        result_entry["status"] = "error"
+                        result_entry["message"] = f"Not written: {e}"
+                        all_success = False
+                        break
+                    file_changes.append(change)
+                    wrote = wrote or change.changes
+                # Propagate llm_enhance metadata for AI-assisted file customization
+                if result_entry["status"] != "error" and "llm_enhance" in handler_config:
+                    results[-1]["llm_enhance"] = {
+                        "prompt": handler_config["llm_enhance"],
+                        "file_path": handler_config.get("path", ""),
+                    }
+
             if first_match:
                 break
+
+        dry_run = mode == "plan"
+        run_id = self.run_id if wrote else None
 
         # Handle first_match with no matching handlers
         if first_match and not matched_any:
@@ -615,20 +790,92 @@ class RemediationExecutor:
                 remediation_type="handler_pipeline",
                 dry_run=dry_run,
                 details={"handlers": results, "strategy": "first_match"},
+                plan=plan_items,
+                file_changes=file_changes,
             )
 
         return RemediationResult(
             success=all_success,
             message=(
-                f"Executed {len(results)} remediation handler(s)"
-                if not dry_run
-                else f"Would execute {len(results)} remediation handler(s)"
+                f"Would execute {len(results)} remediation handler(s)"
+                if dry_run
+                else f"Executed {len(results)} remediation handler(s)"
             ),
             control_id=control_id,
             remediation_type="handler_pipeline",
             dry_run=dry_run,
             details={"handlers": results},
+            plan=plan_items,
+            file_changes=file_changes,
+            changed=all_success and wrote,
+            run_id=run_id,
         )
+
+
+def _file_changes(evidence: Mapping[str, Any]) -> list[FileChange]:
+    """The ``FileChange`` entries a handler returned in ``evidence["file_changes"]``."""
+    raw = evidence.get("file_changes") or []
+    if not isinstance(raw, list):
+        raise ValueError("file_changes must be a list")
+    return [item if isinstance(item, FileChange) else FileChange.model_validate(item) for item in raw]
+
+
+def _write_bytes_atomic(path: str, data: bytes) -> None:
+    """Replace ``path`` with ``data`` via a tempfile in the same directory.
+
+    A modified file keeps its permission bits (git tracks the executable
+    bit); a new file gets the default mode for the process umask.
+    """
+    try:
+        mode = stat.S_IMODE(os.stat(path).st_mode)
+    except FileNotFoundError:
+        umask = os.umask(0)
+        os.umask(umask)
+        mode = 0o666 & ~umask
+    directory = os.path.dirname(path) or "."
+    fd, tmp = tempfile.mkstemp(dir=directory, prefix=".darnit-write-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        os.chmod(tmp, mode)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def plan_project_update(local_path: str, updates: Mapping[str, Any], *, create: bool = True) -> list[FileChange]:
+    """The ``.project/`` file changes that setting ``updates`` would make; writes nothing.
+
+    Uses the feature 042 round-trip rendering, so comments, ordering, and
+    fields darnit does not own are preserved (FR-020).
+
+    Raises:
+        ValueError: A ``.project/`` file is present but unreadable or invalid.
+    """
+    from darnit.config.loader import render_project_config_update
+
+    def mutate(config: object) -> None:
+        for dotted_path, value in updates.items():
+            _set_nested_value(config, dotted_path, value)
+
+    root = os.path.abspath(local_path)
+    changes = []
+    for path, text in render_project_config_update(root, list(updates), mutate, create=create).items():
+        relative = os.path.relpath(path, root).replace(os.sep, "/")
+        try:
+            with open(path, "rb") as f:
+                current: bytes | None = f.read()
+        except FileNotFoundError:
+            current = None
+        if current is None:
+            changes.append(FileChange(path=relative, action="create", content=text))
+        elif current != text.encode("utf-8"):
+            changes.append(FileChange(path=relative, action="modify", content=text, before_digest=content_digest(current)))
+    return changes
 
 
 def apply_project_update(
@@ -895,5 +1142,7 @@ __all__ = [
     "GuardedContext",
     "RemediationExecutor",
     "RemediationResult",
+    "WriteRefused",
     "apply_project_update",
+    "plan_project_update",
 ]

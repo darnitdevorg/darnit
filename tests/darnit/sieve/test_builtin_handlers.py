@@ -8,6 +8,7 @@ unit test coverage.
 
 import pytest
 
+from darnit.remediation.plan import FileChange
 from darnit.sieve.builtin_handlers import (
     api_call_handler,
     exec_handler,
@@ -979,43 +980,53 @@ class TestManualStepsHandler:
 
 
 class TestFileCreateHandler:
-    """Tests for the file_create remediation handler."""
+    """Tests for the file_create remediation handler.
 
-    def test_creates_file_with_content(self, tmp_path, ctx):
+    Feature 043 (research R6, FR-022): the handler returns the planned
+    FileChange and never writes; the remediation executor is the single writer.
+    """
+
+    def test_plans_file_with_content_without_writing_r6(self, tmp_path, ctx):
         result = file_create_handler(
             {"path": "NEW_FILE.md", "content": "# Created"},
             ctx,
         )
         assert result.status == HandlerResultStatus.PASS
-        assert (tmp_path / "NEW_FILE.md").read_text() == "# Created"
-        assert result.evidence["action"] == "created"
+        assert result.evidence["file_changes"] == [
+            FileChange(path="NEW_FILE.md", action="create", content="# Created").model_dump(mode="json")
+        ]
+        assert not (tmp_path / "NEW_FILE.md").exists(), "R6: the executor is the single writer"
 
-    def test_skips_existing_file(self, tmp_path, ctx):
+    def test_existing_file_is_unchanged_already_exists_fr017(self, tmp_path, ctx):
         (tmp_path / "EXISTS.md").write_text("original")
         result = file_create_handler(
             {"path": "EXISTS.md", "content": "overwritten"},
             ctx,
         )
         assert result.status == HandlerResultStatus.PASS
-        assert result.evidence["action"] == "skipped"
+        [change] = result.evidence["file_changes"]
+        assert (change["action"], change["reason"]) == ("none", "already_exists"), "FR-017: nothing changed"
         assert (tmp_path / "EXISTS.md").read_text() == "original"
 
-    def test_overwrites_when_flag_set(self, tmp_path, ctx):
+    def test_overwrite_flag_plans_a_modify_without_writing_r6(self, tmp_path, ctx):
         (tmp_path / "EXISTS.md").write_text("original")
         result = file_create_handler(
             {"path": "EXISTS.md", "content": "new content", "overwrite": True},
             ctx,
         )
         assert result.status == HandlerResultStatus.PASS
-        assert (tmp_path / "EXISTS.md").read_text() == "new content"
+        [change] = result.evidence["file_changes"]
+        assert (change["action"], change["content"]) == ("modify", "new content")
+        assert (tmp_path / "EXISTS.md").read_text() == "original", "R6: the executor is the single writer"
 
-    def test_creates_parent_directories(self, tmp_path, ctx):
+    def test_plans_nested_path_without_creating_directories_r6(self, tmp_path, ctx):
         result = file_create_handler(
             {"path": "deep/nested/FILE.md", "content": "nested"},
             ctx,
         )
         assert result.status == HandlerResultStatus.PASS
-        assert (tmp_path / "deep" / "nested" / "FILE.md").read_text() == "nested"
+        assert result.evidence["file_changes"][0]["path"] == "deep/nested/FILE.md"
+        assert not (tmp_path / "deep").exists(), "R6: the executor is the single writer"
 
     def test_error_when_no_path(self, ctx):
         result = file_create_handler({}, ctx)
@@ -1023,6 +1034,10 @@ class TestFileCreateHandler:
 
     def test_error_when_no_content(self, ctx):
         result = file_create_handler({"path": "FILE.md"}, ctx)
+        assert result.status == HandlerResultStatus.ERROR
+
+    def test_error_when_path_leaves_the_repository(self, ctx):
+        result = file_create_handler({"path": "../outside.md", "content": "x"}, ctx)
         assert result.status == HandlerResultStatus.ERROR
 
 

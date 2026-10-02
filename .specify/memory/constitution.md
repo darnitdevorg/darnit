@@ -1,6 +1,40 @@
 <!--
 Sync Impact Report
 ==================
+Version change: 1.3.0 -> 1.3.1
+Modified sections:
+  - Architecture Constraints, Layer 2 (Remediation): the list of
+    built-in remediation actions now reads `file_create`, `exec`,
+    `platform_setting`, `project_update`, `yaml_inject`. `api_call`
+    is removed; `platform_setting` and `yaml_inject` are listed.
+Modified principles: none (the five Core Principles I-V are
+  unchanged in substance).
+Rationale for PATCH rather than MINOR:
+  The amendment corrects a factual list in the Architecture
+  Constraints to match the authoritative framework specification.
+  No principle is added, removed, or redefined, and no guidance is
+  expanded. Feature 043 (remediation safety) removes the `api_call`
+  handler, which never worked (it read a field the framework
+  configuration never set), and replaces it with `platform_setting`,
+  which declares a requirement instead of a payload. `yaml_inject`
+  already shipped and was missing from the list.
+Added sections: none
+Removed sections: none
+Templates requiring updates:
+  - .specify/templates/plan-template.md -- no changes needed
+  - .specify/templates/spec-template.md -- no changes needed
+  - .specify/templates/tasks-template.md -- no changes needed
+Dependent documents:
+  - docs/architecture/framework-design.md -- updated first in the
+    same feature (Section 4, Section 15, Appendix C).
+  - CLAUDE.md, docs/USAGE_GUIDE.md, docs/SECURITY_GUIDE.md,
+    docs/IMPLEMENTATION_GUIDE.md, packages/darnit-baseline/README.md
+    -- updated later in feature 043 (task T058).
+Follow-up TODOs: none
+==================
+
+Sync Impact Report
+==================
 Version change: 1.2.0 -> 1.3.0
 Modified principles:
   - IV. Never Guess User Values: narrowed from a prohibition on
@@ -228,8 +262,8 @@ The project follows a three-layer architecture:
   (`file_must_exist`, `exec`, `pattern`, `manual`) plus plugin
   Python functions. Determines control status.
 - **Layer 2 — Remediation:** Built-in actions (`file_create`, `exec`,
-  `api_call`, `project_update`) plus plugin Python functions.
-  Fixes compliance gaps.
+  `platform_setting`, `project_update`, `yaml_inject`) plus plugin
+  Python functions. Fixes compliance gaps.
 - **Layer 3 — MCP Tools:** Built-in tools (`audit`, `remediate`,
   `list_controls`) plus custom plugin handlers registered via
   `register_handlers()`. Exposes functionality to AI assistants.
@@ -277,4 +311,4 @@ Compliance with these principles MUST be verified during code review.
 The CLAUDE.md project instructions serve as the runtime development
 guidance and MUST remain consistent with this constitution.
 
-**Version**: 1.3.0 | **Ratified**: 2026-03-08 | **Last Amended**: 2026-07-28
+**Version**: 1.3.1 | **Ratified**: 2026-03-08 | **Last Amended**: 2026-10-02

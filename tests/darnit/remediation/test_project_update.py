@@ -113,7 +113,11 @@ class TestExecutorProjectUpdate:
             registry._handlers.pop("_test_pu_handler", None)
 
     def test_project_update_dry_run_preview(self, tmp_path):
-        """Dry run shows project_update preview."""
+        """Dry run shows project_update preview.
+
+        The handler carries content: a preview runs the apply's logic, so a
+        missing template would fail it (FR-021).
+        """
         executor = RemediationExecutor(
             local_path=str(tmp_path),
             owner="testowner",
@@ -125,7 +129,7 @@ class TestExecutorProjectUpdate:
                 HandlerInvocation(
                     handler="file_create",
                     path="README.md",
-                    template="test_template",
+                    content="# Readme\n",
                 ),
             ],
             project_update=ProjectUpdateRemediationConfig(

@@ -1,8 +1,8 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.8
+> **Version**: 1.0.0-alpha.10
 > **Status**: Authoritative
-> **Last Updated**: 2026-09-27
+> **Last Updated**: 2026-10-02
 
 This specification defines the authoritative design of the Darnit framework, including the sieve orchestrator, TOML schema, built-in pass types, remediation actions, and plugin protocol.
 
@@ -44,7 +44,8 @@ Darnit is a pluggable security and compliance auditing framework that:
 │  ┌─────────────────────────────────────────────────────────┐│
 │  │ Built-in Capabilities (declarative, no Python)         ││
 │  │ - file_must_exist, exec, api_check, pattern, template  ││
-│  │ - api_call, file_create (remediation)                  ││
+│  │ - file_create, exec, platform_setting, project_update, ││
+│  │   yaml_inject (remediation)                            ││
 │  └─────────────────────────────────────────────────────────┘│
 │                                                             │
 │  ┌─────────────────────────────────────────────────────────┐│
@@ -216,7 +217,7 @@ Every step type registers a **ceiling**: the set of outcomes (`pass`, `fail`) it
 | `mcp` | `{pass, fail}` | -- |
 | `llm_eval`, `llm_extract` | `{}` | -- |
 | `manual`, `manual_steps` | `{}` | -- |
-| remediation handlers (`file_create`, `api_call`, `project_update`, `yaml_inject`) | `{}` | -- |
+| remediation handlers (`file_create`, `platform_setting`, `project_update`, `yaml_inject`) | `{}` | -- |
 
 A plugin handler registers its ceiling with the handler (`registry.register(..., ceiling={"pass", "fail"})`). A plugin handler that registers no ceiling has the ceiling `{}`: its results are evidence only.
 
@@ -609,7 +610,7 @@ A response that is ambiguous between "not found" and "not permitted to see" is E
 
 **Evidence**: `endpoint` (after substitution), `response` (`status_code`, `body`), and on a non-2xx answer the `gh` error text.
 
-**Recorded responses**: the handler calls the platform through `darnit.core.utils.gh_api_with_status`. `set_gh_api_responder(responder)` routes every such call (including the `github_branch_protection` plugin handler's) through a responder instead of `gh`; `RecordedGhApi({path: {status, body, error}})` serves recorded responses keyed by API path, answers an unrecorded path as a transport failure (status 0), and with `gh_missing = True` answers as if `gh` were not installed. Tests and the adversarial corpus (section 5.5) use it to run platform checks offline and deterministically.
+**Recorded responses**: the handler calls the platform through `darnit.core.utils.gh_api_with_status`. `set_gh_api_responder(responder)` routes every such call (including the `github_branch_protection` plugin handler's) through a responder instead of `gh`; `RecordedGhApi({path: {status, body, error}})` serves recorded responses keyed by API path, answers an unrecorded path as a transport failure (status 0), and with `gh_missing = True` answers as if `gh` were not installed. Tests and the adversarial corpus (section 5.5) use it to run platform checks offline and deterministically. Platform writes (`gh_api_write`, section 4.5) go through the same seam: the responder is called with `(method, endpoint, body)` and returns `(body, status, error)`; GET-only responders keep working, and `RecordedGhApi` also serves keys of the form `"PUT /repos/o/r/branches/main/protection"` and records each request body in `.calls`.
 
 #### Scenario: Declared status proves failure
 - **WHEN** a `gh_api` step with `fail_on_status = [404]` receives 404
@@ -634,17 +635,120 @@ Remediations can be:
 2. **Hybrid** - TOML config with Python handler reference
 3. **Custom** - Full Python implementation via plugin
 
-### 4.2 FileCreateRemediation
+A control's remediation is an ordered list of handler invocations under `[controls."ID".remediation]`. The built-in remediation handlers are `file_create` (4.3), `exec` (4.4), `platform_setting` (4.5), `project_update` and `yaml_inject` (4.6), and `manual` (4.7).
+
+```toml
+[controls."OSPS-VM-02.01".remediation]
+safe = true
+
+[[controls."OSPS-VM-02.01".remediation.handlers]]
+handler = "file_create"
+path = "SECURITY.md"
+template = "security_policy_standard"
+project_reference = "security.policy"
+```
+
+**Remediation fields** (on `[controls."ID".remediation]`):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `handlers` | array of tables | Ordered handler invocations. Each has `handler`, the handler's fields, and an optional `when` |
+| `strategy` | `"all"` \| `"first_match"` | `all` (default) runs every handler whose `when` matches; `first_match` stops after the first |
+| `requires_context` | list | Context requirements (section 7.3) |
+| `safe` | `bool` | Default `true`. `false` means every step of this remediation requires individual approval in a batch apply, under every remediation policy (section 15.3) |
+| `requires_api` | `bool` | Descriptive metadata: the remediation needs platform API access. It changes no behavior |
+
+**Removed** (feature 043): the `api_call` handler (replaced by `platform_setting`), `requires_confirmation` (replaced by `safe = false`), `dry_run_supported` and `dry_run_command` (replaced by plan mode, 4.2, and the exec `effects`/`offline` fields, 4.4). Every remediation property that concerns safety, confirmation, or preview is enforced; a property that would not be enforced is not part of the schema.
+
+#### Scenario: Removed remediation property
+- **WHEN** a framework TOML declares a remediation handler `api_call`, or `requires_confirmation`, `dry_run_supported`, or `dry_run_command` on a remediation
+- **THEN** loading the framework configuration MUST fail with an error naming the control and the replacement (`platform_setting`, `safe = false`, or plan mode with exec `effects`/`offline`)
+- **AND** `validate_sync` MUST reject the property in shipped framework TOML
+
+### 4.2 Plan/Apply Protocol
+
+Every remediation runs in one of two modes. The executor passes the mode to each handler as `HandlerContext.mode` (`Literal["plan", "apply"]`, default `"apply"`).
+
+| Mode | Purpose | Writes |
+|------|---------|--------|
+| `plan` | Preview: compute, against the current state, exactly what an apply would change | Nothing: no repository file, no platform setting, no run manifest |
+| `apply` | Carry out the plan | Only the planned changes: files by the executor, platform settings by the platform engine (4.5) |
+
+**Handler outputs.** In both modes a remediation handler returns its planned changes in its result evidence and does not write them itself:
+
+- `evidence["file_changes"]`: a list of `FileChange`;
+- `evidence["change_sets"]`: a list of `ChangeSet` (`platform_setting` only, 4.5).
+
+`FileChange` (models in `specs/043-remediation-safety/data-model.md`):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `path` | `str` | Repository-relative path |
+| `action` | `"create"` \| `"modify"` \| `"none"` | `none` carries a `reason`: `already_exists`, `user_changes_present`, or `when_not_met` |
+| `ignored` | `bool` | The path matches the repository's ignore rules: it is written but never staged or committed (15.7) |
+| `content` | `str \| None` | Resulting content for `create` and `modify` |
+| `before_digest`, `after_digest` | `str \| None` | Content digests before and after |
+| `project_reference` | `str \| None` | Project field to record after a successful create (4.3) |
+
+**Single writer.** The remediation executor (`RemediationExecutor`) is the only component that writes repository files for a declarative remediation. In apply mode it computes the plan against the current state, then writes each `FileChange` whose action is `create` or `modify`, atomically, and records it in the run manifest (15.6). Before writing a path it checks:
+
+- a path with uncommitted user changes is not written; its `FileChange` becomes `action = "none"`, `reason = "user_changes_present"`, and the outcome reports the conflict;
+- a path matched by the repository's ignore rules is written with `ignored = true` and is never staged.
+
+Platform settings are written only by the platform engine (4.5). An `exec` step writes through its command in apply mode (4.4); the executor records what it changed.
+
+**Plan support.** Handler registration takes a flag `supports_plan` (default `False`): `registry.register(..., supports_plan=True)`. The built-in `file_create`, `project_update`, `yaml_inject`, `manual`, and `platform_setting` handlers register with `supports_plan=True`; `exec` is previewable only as section 4.4 describes. A step whose handler did not register `supports_plan=True` is not run in plan mode; it is reported as "cannot be previewed exactly" (`previewable = False`) and requires individual approval (15.3). A plugin handler without plan support that writes files itself is outside the run manifest, so the git tools never commit those files (15.7).
+
+**Preview contents.** A preview is a list of `PlanItem`s, one per remediation step:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `control_id` | `str` | |
+| `step` | `str` | Handler name and index |
+| `file_changes` | `list[FileChange]` | Every file to be created or changed, with its resulting content |
+| `change_sets` | `list[ChangeSet]` | Every platform field to be changed, with before and after (4.5) |
+| `commands` | `list[list[str]]` | Every command that will run |
+| `previewable` | `bool` | `False`: "cannot be previewed exactly" |
+| `requires_individual_approval` | `bool` | `safe = false`, not previewable, or a high-impact change set under `prompt` (15.3) |
+| `digest` | `str` | Digest of the item, used to approve it individually (15.2) |
+
+Templates and `when` clauses are evaluated in plan mode exactly as in apply mode (section 7.11), so a `confirmation required: <key>` stop appears in the preview.
+
+**Preview equals apply.** A preview is computed by the same handler logic as the apply. With no intervening change, the changes an apply makes equal the changes the immediately preceding preview listed. A contract test runs every remediation in every shipped framework TOML in plan mode against a fixture repository with a filesystem snapshot and a recording platform responder, asserts zero writes, then applies and asserts that the applied changes equal the planned ones.
+
+#### Scenario: A preview writes nothing
+- **WHEN** a remediation runs with `HandlerContext.mode = "plan"`
+- **THEN** no file in the repository, no platform setting, and no run manifest MUST change
+- **AND** every handler that registered `supports_plan=True`, including `yaml_inject`, MUST return its planned changes without writing
+
+#### Scenario: Target file already present
+- **WHEN** a `file_create` step targets a file that exists and `overwrite` is false
+- **THEN** its `FileChange` MUST have `action = "none"` and `reason = "already_exists"`
+- **AND** the step MUST NOT count as a change
+
+#### Scenario: Handler without plan support
+- **WHEN** a remediation step's handler did not register `supports_plan=True`
+- **THEN** the step MUST NOT run in plan mode
+- **AND** its `PlanItem` MUST have `previewable = False` and `requires_individual_approval = True`
+- **AND** it MUST NOT run in a batch apply unless its `PlanItem.digest` was approved
+
+#### Scenario: Target file has uncommitted user changes
+- **WHEN** a planned `FileChange` targets a path with uncommitted user changes
+- **THEN** the executor MUST NOT write the path
+- **AND** the `FileChange` MUST be reported with `action = "none"` and `reason = "user_changes_present"`
+
+### 4.3 file_create
 
 **Purpose**: Create files from templates
 
 ```toml
-[controls."OSPS-VM-02.01".remediation]
-[controls."OSPS-VM-02.01".remediation.file_create]
+[[controls."OSPS-VM-02.01".remediation.handlers]]
+handler = "file_create"
 path = "SECURITY.md"
 template = "security_policy_standard"  # References [templates.security_policy_standard]
 overwrite = false
 create_dirs = true
+project_reference = "security.policy"
 ```
 
 **Fields**:
@@ -657,6 +761,11 @@ create_dirs = true
 | `overwrite` | `bool` | Overwrite existing files (default: false) |
 | `create_dirs` | `bool` | Create parent directories (default: true) |
 | `llm_enhance` | `str` | Optional prompt for AI-assisted customization of the created file |
+| `project_reference` | `str` | Optional dotted project field (`<section.field>`) that describes the created file, recorded after the file is created |
+
+**Plan output**: one `FileChange`: `create` (or `modify` with `overwrite = true`) with the rendered content, or `none` with `already_exists`.
+
+**Project references.** A reference to a created file is recorded in project data only from a `project_reference` declared on the `file_create` step that creates it; no control-to-field table exists outside the framework TOML. After apply, the executor records the reference only if the file was created in this run (it is in the run manifest) and the field is empty or already holds the same path, through the round-trip writer (section 7.9). Otherwise the field is unchanged and the outcome says why. A remediation that creates no file records no reference. An implementation validates each declared `project_reference` against the field's known file locations, so a reference field always describes the kind of file created (a bug report template is never recorded as the security policy).
 
 #### Scenario: file_create with llm_enhance
 - **WHEN** a `file_create` handler succeeds
@@ -664,53 +773,173 @@ create_dirs = true
 - **THEN** the remediation result MUST include the enhancement prompt and file path in the result details
 - **AND** the MCP layer MAY use this prompt to offer AI-assisted customization of the generated file
 
-### 4.3 ExecRemediation
+#### Scenario: Existing reference is kept
+- **WHEN** `file_create` creates a file whose `project_reference` field already holds a different reference
+- **THEN** the field MUST be unchanged
+- **AND** the outcome MUST say that the new file was not recorded and why
 
-**Purpose**: Execute commands for remediation
+#### Scenario: Skipped file records nothing
+- **WHEN** a `file_create` step's `FileChange` has `action = "none"`
+- **THEN** no project reference MUST be recorded for it
+
+### 4.4 exec (remediation)
+
+**Purpose**: Run a local tool that fixes files in the working tree
 
 ```toml
-[controls."OSPS-AC-03.01".remediation]
-[controls."OSPS-AC-03.01".remediation.exec]
-command = ["gh", "api", "-X", "PUT", "/repos/$OWNER/$REPO/branches/$BRANCH/protection"]
-stdin_template = "branch_protection_payload"
-success_exit_codes = [0]
-timeout = 300
+[[controls."OSPS-BR-01.01".remediation.handlers]]
+handler = "exec"
+command = ["zizmor", "--fix=all", "--offline", "$PATH"]
+pass_exit_codes = [0, 11, 12, 13, 14]
+timeout = 60
+effects = "working_tree"
+offline = true
 ```
 
 **Fields**:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `command` | `list[str]` | Command and arguments |
-| `stdin_template` | `str` | Template name for stdin input |
-| `stdin` | `str` | Inline stdin content |
-| `success_exit_codes` | `list[int]` | Exit codes indicating success |
+| `command` | `list[str]` | Command and arguments (variables as in section 3.3) |
+| `pass_exit_codes` | `list[int]` | Exit codes that indicate success (default: `[0]`) |
 | `timeout` | `int` | Timeout in seconds |
-| `env` | `dict` | Environment variables |
+| `env` | `dict` | Additional environment variables |
+| `effects` | `"working_tree"` | Declares that the command changes only files in the working tree. Required for the step to be previewable |
+| `offline` | `bool` | Declares that the command needs no network. `true` is required for a scratch-copy preview |
 
-### 4.4 ApiCallRemediation
+**An exec remediation never changes platform state.** It may change only files in the working tree. Platform settings change only through `platform_setting` (4.5), which reads first, never weakens, and requires approval under the remediation policy. A shipped exec remediation whose command is `gh`, `curl`, `wget`, or `git push` fails `validate_sync`.
 
-**Purpose**: GitHub API calls via `gh` CLI
+**Preview.** A step that declares both `effects = "working_tree"` and `offline = true` is previewable: in plan mode the executor copies the tracked files and the untracked files that are not ignored into a scratch directory, runs the command there, and records the difference as `FileChange`s; the checkout is not touched. A step without both declarations is "cannot be previewed exactly": it is not run in plan mode, its `PlanItem` lists the command with `previewable = False`, and it requires individual approval (15.3).
+
+**Apply.** The command runs in the checkout. The executor records every file the command created or modified in the run manifest, compares the result with the preview, and reports any difference in the outcome. A previewed path that has uncommitted user changes is a conflict: the command is not run and the outcome names the path. A file the command changed that had uncommitted user changes before the step is reported as a conflict and is not recorded in the manifest, so it is never committed. An exit code outside `pass_exit_codes` is an error; a missing binary is ERROR, class `missing_tool`; a timeout is ERROR, class `timeout`.
+
+#### Scenario: Exec remediation calling a platform command
+- **WHEN** a shipped framework TOML declares an exec remediation whose command is `gh`, `curl`, `wget`, or `git push`
+- **THEN** `validate_sync` MUST fail, naming the control
+
+#### Scenario: Exec step without preview declarations
+- **WHEN** an exec remediation step lacks `effects = "working_tree"` or `offline = true`
+- **THEN** the preview MUST label it "cannot be previewed exactly", with its command
+- **AND** a batch apply MUST NOT run it unless its `PlanItem.digest` was approved
+
+### 4.5 platform_setting
+
+**Purpose**: Change a hosting-platform setting by the smallest change that satisfies a requirement, never weakening anything already configured
+
+A `platform_setting` step declares a **requirement** on a named **target**, not a payload. One core platform engine (`darnit.remediation.platform`) serves every platform write: it reads the target's current state, decides whether the requirement already holds, plans the minimal operations, applies them under the remediation policy (section 15.1), and reads the result back.
 
 ```toml
-[controls."OSPS-AC-03.01".remediation]
-[controls."OSPS-AC-03.01".remediation.api_call]
-method = "PUT"
-endpoint = "/repos/$OWNER/$REPO/branches/$BRANCH/protection"
-payload_template = "branch_protection"
+[[controls."OSPS-QA-07.01".remediation.handlers]]
+handler = "platform_setting"
+target = "branch_protection"          # branch_protection | repository | vulnerability_reporting
+require = { require_approvals = 1 }
+branch = "release"                    # optional; default = the repository's default branch
 ```
 
 **Fields**:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `method` | `str` | HTTP method (default: PUT) |
-| `endpoint` | `str` | API endpoint with variable substitution |
-| `payload_template` | `str` | Template name for JSON payload |
-| `payload` | `dict` | Inline JSON payload |
-| `jq_filter` | `str` | JQ filter for response |
+| `handler` | `str` | MUST be `"platform_setting"` |
+| `target` | `str` | `branch_protection`, `repository`, or `vulnerability_reporting` |
+| `require` | `dict` | Requirement keys for the target (table below). Unknown keys are rejected when the framework configuration loads |
+| `branch` | `str` | `branch_protection` only. Default: the repository's default branch as reported by the platform |
 
-### 4.5 Templates
+**Targets and requirement keys**:
+
+| Target | Impact | Requirement keys | Stricter direction |
+|--------|--------|------------------|--------------------|
+| `branch_protection` | `platform` | `require_pull_request = true`, `require_approvals = N` (N >= 1), `prevent_deletion = true`, `prevent_force_push = true`, `enforce_admins = true`, `require_status_checks = [contexts]` | Booleans toward the required value; `require_approvals` is a minimum; status-check contexts must be a superset of the current set (existing ones are kept) |
+| `repository` | `high_impact` | `visibility = "public"` | Toward the required value |
+| `vulnerability_reporting` | `platform` | `enabled = true` | Toward the required value |
+
+The impact class is fixed by the target kind: repository visibility and any organization-scoped target are `high_impact`; the others are `platform`. Requirement names match the `github_branch_protection` check handler's, so a control's check and its fix use the same vocabulary.
+
+**`ChangeSet`** (one per target in a run; models in `specs/043-remediation-safety/data-model.md`):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `target` | `PlatformTarget` | `kind`, `impact`, `owner`, `repo`, `branch` |
+| `requirements` | `list[Requirement]` | Every requirement on this target in the run, merged |
+| `observed_digest` | `str` | Digest of the `ObservedState` (`fields`, `rules`, `exists`) the plan was computed from |
+| `operations` | `list[ChangeOperation]` | `method` (`PUT`, `PATCH`, `POST`), fully substituted `endpoint`, the exact JSON `body`, and `changes`: `{field, before, after}` for every field the operation changes. Empty when already satisfied |
+| `satisfied_by` | `"already"` \| `"ruleset"` \| `None` | Why no operation is needed |
+| `impact_notes` | `list[str]` | High-impact consequences shown in the preview |
+| `digest` | `str` | Digest of `{target, observed_digest, operations}` (section 15.2) |
+
+**Rules** (every remediation policy):
+
+1. **Read first.** The engine reads the target's current state before planning. If any read fails (missing permission, not found, rate limit, network), it plans nothing, writes nothing, and the step is ERROR with the feature 041 `error.class` and `cause`.
+2. **Never weaken.** Every `FieldChange.after` is equal to or stricter than its `before`. A setting already equal to or stricter than the requirement is left exactly as it is; a setting the requirement does not name is never removed, loosened, or reset.
+3. **Already satisfied, no write.** When the current state, or an active repository or organization ruleset, satisfies the requirement, the change set has no operations and `satisfied_by` says why.
+4. **One change set per target.** All requirements on one target in a run (for example `require_pull_request`, `prevent_deletion`, and `require_approvals` on the same branch) are planned together into one change set, so no write undoes another.
+5. **Default branch.** The branch is the repository's default branch as reported by the platform, unless a branch is named. If it cannot be read, the step is ERROR.
+6. **Read back.** After a write the engine reads the target again and derives the result from comparing the read-back with the requirement, never from response text. A partial write reports exactly the fields that changed.
+7. **Supported platforms.** Platform remediation exists for GitHub only. For a repository whose canonical identity is on another platform, the outcome is `manual` with the steps, and no platform call is made.
+
+**Branch protection writes**:
+
+1. `GET /repos/{o}/{r}` for the default branch; `GET .../branches/{b}`: a missing branch is ERROR; `protected = false` is the unprotected state; `protected = true` is followed by `GET .../protection`. Active rules come from `GET /repos/{o}/{r}/rules/branches/{b}`.
+2. Unprotected: one `PUT .../protection` that sets only the required settings; every other field is sent at its platform default, which equals the current, unprotected state.
+3. Protected: review requirements through `PATCH .../required_pull_request_reviews` with only the fields that must tighten (the approval count is raised to the minimum, never lowered); `enforce_admins` through `POST .../enforce_admins` only when it is off; missing status-check contexts through `POST .../required_status_checks/contexts` (or `PATCH .../required_status_checks` when none are configured), keeping existing `contexts` and `checks`; `prevent_deletion` and `prevent_force_push`, which have no granular endpoint, through one full `PUT` built by translating the current protection into the PUT shape with every existing value preserved and only the required booleans changed.
+4. The translator is total over a known field list. A protection response containing a field it does not know makes the step ERROR, "cannot preserve unknown protection setting <field>", and nothing is planned.
+
+**Platform calls.** Writes go through `darnit.core.utils.gh_api_write(method, endpoint, payload) -> (body, status, error)`, which sends the JSON body with `gh api -X METHOD --input -` and reads the status. It uses the same responder seam as `gh_api_with_status` (section 3.8).
+
+**`enable_branch_protection`** (MCP tool) is a thin wrapper over the engine: its parameters become `branch_protection` requirements, it defaults to `dry_run = True` (preview only) and `branch = None` (the default branch), and it takes `approve` (a change-set digest). `required_approvals`, `require_pull_request`, `enforce_admins`, `require_status_checks`, and `status_checks` only tighten: existing values are never lowered and existing checks are never removed. A fix declared in TOML and the tool for the same setting produce the same change set; there is no second write path.
+
+#### Scenario: Stricter existing protection is preserved
+- **WHEN** the default branch already requires two approvals, required status checks, push restrictions, code-owner review, and linear history
+- **AND** a run plans `require_pull_request`, `prevent_deletion`, and `require_approvals = 1` for it
+- **THEN** the change set MUST change only the fields the requirements tighten (here at most `allow_deletions: true -> false`)
+- **AND** any full `PUT` body MUST preserve every other existing value
+- **AND** the read-back MUST show every pre-existing setting unchanged
+
+#### Scenario: Requirement already satisfied
+- **WHEN** the current settings, or an active ruleset, satisfy every requirement on the target
+- **THEN** the change set MUST have no operations and `satisfied_by` MUST be `already` or `ruleset`
+- **AND** nothing MUST be written
+
+#### Scenario: Current settings cannot be read
+- **WHEN** any read of the target fails
+- **THEN** no change set MUST be planned and nothing MUST be written
+- **AND** the step MUST be ERROR with the cause
+
+#### Scenario: Unknown protection field
+- **WHEN** the protection response contains a field the translator does not know and the plan needs a full `PUT`
+- **THEN** the step MUST be ERROR "cannot preserve unknown protection setting <field>" and nothing MUST be written
+
+#### Scenario: Partial write
+- **WHEN** one operation of a change set succeeds and a later one is rejected
+- **THEN** the outcome MUST be `error` and MUST list exactly the fields the read-back shows changed
+- **AND** the control MUST NOT be reported `fixed`
+
+### 4.6 project_update and yaml_inject
+
+**`project_update`** sets project data fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `updates` | `dict[str, Any]` | Dotted path -> value pairs |
+
+Its plan output is one `FileChange` per project file it changes, with the resulting content. In apply mode the executor writes it through the round-trip writer, only to the dotted paths it targets (section 7.9).
+
+**`yaml_inject`** adds a top-level key to YAML files that lack it:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `files` | `str` | Glob of YAML files (relative to the repository) |
+| `key` | `str` | Top-level key to add (for example `permissions`) |
+| `value` | `str` | YAML value to add (for example `{}`) |
+| `insert_after` | `str` | Insert after this key (default `on`); otherwise after any leading comments |
+
+Its plan output is one `FileChange` (`modify`, with the resulting content) per matched file that lacks the key. It never writes; the executor does, in apply mode.
+
+### 4.7 manual (remediation)
+
+A `manual` remediation step (`steps`, `docs_url`, as in section 3.6) has no side effects. It registers `supports_plan=True`, so it is previewable and batch-eligible. A control whose remediation reaches only manual steps, whose platform change is not available through the platform's API (for example organization two-factor enforcement, which can be set only in the web UI), or whose platform change runs under the `manual` policy, has outcome `manual` with the steps; the steps state the change's impact.
+
+### 4.8 Templates
 
 Templates support variable substitution and can source their content from inline strings or external files:
 
@@ -1206,10 +1435,10 @@ Each context key has one canonical name and one vocabulary, taken from the frame
 
 ### 7.9 Reads Never Write; One Writer
 
-- Auditing (every driver), listing pending data, report generation, remediation in dry run, the remediation context guard in every mode, and the harness collect phase SHALL NOT create, modify, or delete any file in the audited repository.
+- Auditing (every driver), listing pending data, report generation, a remediation preview (plan mode, section 4.2), the remediation context guard in every mode, and the harness collect phase SHALL NOT create, modify, or delete any file in the audited repository.
 - `darnit.config.context_writes` is the only code that writes context values and in-repository confirmation records. It writes only `.project/darnit.yaml` (never `.project/project.yaml`), preserves sections and comments it does not change (including feature 040 `controls:` claims), and refuses every write, returning the errors, when `.project/project.yaml` or `.project/darnit.yaml` is present but unparseable or invalid. The loader distinguishes absent, valid, and invalid files (`load_project_config_checked`).
 - `init_project_config` (MCP) creates only an empty `.project/darnit.yaml` when `.project/` is absent, and reports instead of overwriting when it is present.
-- An applied remediation's `project_update` and the file-reference sync after a remediation creates a file (`update_config_after_file_create`, `UnifiedLocator.sync_to_project`) write only the dotted paths they target, through the loader's round-trip helper (`update_project_config`): CNCF fields to `.project/project.yaml`, other fields to `.project/darnit.yaml`, preserving comments, ordering, indentation, and fields darnit does not own. An absent `.project/project.yaml` is created with `name` and the targeted fields only. No darnit code replaces a whole project file. When either file is present but invalid they write nothing: `apply_project_update` raises with the validation errors (an applied remediation reports `project_update: failed: <errors>`), and the sync functions return false.
+- An applied remediation's `project_update` (written by the remediation executor, section 4.2) and the file-reference sync after a remediation creates a file (`update_config_after_file_create`, `UnifiedLocator.sync_to_project`) write only the dotted paths they target, through the loader's round-trip helper (`update_project_config`): CNCF fields to `.project/project.yaml`, other fields to `.project/darnit.yaml`, preserving comments, ordering, indentation, and fields darnit does not own. An absent `.project/project.yaml` is created with `name` and the targeted fields only. No darnit code replaces a whole project file. The file-reference sync after remediation records only a `project_reference` declared on the `file_create` step, only for a file created in this run, and only when the field is empty or already equal (section 4.3). When either file is present but invalid they write nothing: `apply_project_update` raises with the validation errors (an applied remediation reports `project_update: failed: <errors>`), and the sync functions return false.
 - An audit reads nothing from a present-but-invalid `.project/` file and reports each validation error in the report's `warnings` (JSON) and as a warning line (Markdown).
 
 ### 7.10 Confirmation Tool Contract
@@ -1334,10 +1563,10 @@ steps = ["Verify branch protection in repository settings"]
 [controls."OSPS-AC-03.01".remediation]
 requires_api = true
 
-[controls."OSPS-AC-03.01".remediation.api_call]
-method = "PUT"
-endpoint = "/repos/$OWNER/$REPO/branches/$BRANCH/protection"
-payload_template = "branch_protection_payload"
+[[controls."OSPS-AC-03.01".remediation.handlers]]
+handler = "platform_setting"
+target = "branch_protection"
+require = { require_pull_request = true }
 ```
 
 ---
@@ -1409,10 +1638,11 @@ The canonical `run_sieve_audit()` function SHALL write audit results to a cache 
 Cache files are stored in the system temp directory (`$TMPDIR/darnit/<repo-hash>/audit-cache.json`), keyed by a hash of the repository's absolute path. This avoids writing any files into the repository itself.
 
 #### Requirement: Canonical audit writes to cache
-- **WHEN** `run_sieve_audit()` completes successfully
+- **WHEN** `run_sieve_audit()` completes successfully and was not called with `write_cache=False`
 - **THEN** it SHALL call `write_audit_cache()` with the `results`, `summary`, `level`, and `framework` name
 - **AND** subsequent calls to `read_audit_cache()` from the same repository SHALL return the cached results (assuming no commit change)
 - **AND** audit failure (exception before completing) SHALL NOT write to the cache
+- **AND** a post-remediation re-check (`run_sieve_audit(controls=..., write_cache=False)`, section 15.5) SHALL NOT write to the cache
 
 #### Requirement: Only FAIL controls are remediated
 - **WHEN** remediation tools consume audit results (cached or fresh)
@@ -1429,7 +1659,7 @@ Cache files are stored in the system temp directory (`$TMPDIR/darnit/<repo-hash>
 - **AND** it SHALL iterate all remediation categories, letting per-control filtering exclude categories where no controls failed
 
 #### Requirement: Post-remediation cache invalidation
-- **WHEN** `remediate_audit_findings()` completes with `dry_run=False` and at least one remediation was applied
+- **WHEN** `remediate_audit_findings()` completes with `dry_run=False` and at least one outcome changed something (section 15.4)
 - **THEN** it SHALL call `invalidate_audit_cache(local_path)`
 - **WHEN** `remediate_audit_findings()` completes with `dry_run=True`
 - **THEN** it SHALL NOT call `invalidate_audit_cache()`
@@ -1487,7 +1717,7 @@ Project context from `.project/` SHALL be used to inform WHERE the sieve looks f
 
 ## 12. Handler Registry
 
-The framework SHALL provide a handler registry where handlers are registered by name with a phase affinity. Core SHALL register built-in handlers: `file_exists`, `exec`, `regex`, `llm_eval`, `manual_steps`, `file_create`, `api_call`, `project_update`. Implementations SHALL register domain-specific handlers via the existing `ComplianceImplementation.register_handlers()` method.
+The framework SHALL provide a handler registry where handlers are registered by name with a phase affinity. Core SHALL register built-in handlers: `file_exists`, `exec`, `regex`, `llm_eval`, `manual_steps`, `file_create`, `platform_setting`, `project_update`, `yaml_inject`. Remediation handlers declare plan support at registration (`supports_plan`, section 4.2). Implementations SHALL register domain-specific handlers via the existing `ComplianceImplementation.register_handlers()` method.
 
 Implementation-registered sieve handlers (non-exhaustive): `github_branch_protection` (registered by `darnit-baseline`, encapsulates the classic-branch-protection + repository-rulesets two-surface check for `OSPS-AC-03.01`, `OSPS-AC-03.02`, `OSPS-QA-03.01`, `OSPS-QA-07.01`; see `specs/032-ruleset-branch-protection/contracts/github-branch-protection-handler.md`).
 
@@ -1508,6 +1738,7 @@ Design principle: **the audited repository is untrusted input in its entirety, i
 - The framework SHALL refuse operator configuration whose resolved path lies inside the audited repository, SHALL reject unknown keys, and SHALL check file permissions (warn by default; refuse in strict mode, which is enabled at launch or by default in CI and can only be turned on, not off, by the file).
 - There is no environment variable that grants trust to repository content.
 - Every report records the operator configuration source and a digest of its content.
+- The `[remediation]` section sets the remediation policy for platform changes (section 15.1).
 
 ### 14.2 Trusted repositories and CI
 
@@ -1525,9 +1756,228 @@ Design principle: **the audited repository is untrusted input in its entirety, i
 
 The repository-level `.baseline.toml` is deprecated. During the deprecation release only its per-control status and reason are read, as assertions under 14.3; every other setting is ignored with a warning naming its new home. `darnit config migrate` moves assertions into `.project/` and proposes an operator configuration fragment.
 
+## 15. Remediation Safety
+
+Remediation is the part of darnit that changes things: files in the repository, `.project/` data, commits and pull requests, and settings on the hosting platform. Constitution Principle II applied to remediation: a damaging change is worse than no change, and a change reported but not made is worse than an honest "not fixed". This section governs what remediation may change, how it shows the change beforehand, and what it may claim afterwards. Features 040 (operator configuration, trust), 041 (result contract, ERROR), and 042 (only usable context values reach remediation, section 7.11) are unchanged by it. See `specs/043-remediation-safety/` for the full contracts.
+
+### 15.1 Remediation Policy
+
+The operator configuration (section 14.1) sets how platform changes are approved, separately for high-impact changes and for other platform changes:
+
+```toml
+# operator configuration (e.g. ~/.config/darnit/config.toml)
+[remediation]
+platform = "prompt"     # prompt | manual | auto
+high_impact = "prompt"  # prompt | manual | auto
+```
+
+| Field | Values | Default | Governs |
+|-------|--------|---------|---------|
+| `platform` | `prompt`, `manual`, `auto` | `prompt` | Platform change sets whose target impact is `platform` (section 4.5) |
+| `high_impact` | `prompt`, `manual`, `auto` | `prompt` | Change sets whose target impact is `high_impact`: organization-wide settings and repository visibility |
+
+| Value | Behavior |
+|-------|----------|
+| `prompt` | darnit previews, and writes a change set only when that change set's digest is approved (15.2) |
+| `manual` | darnit makes no platform change; the outcome is `manual` with the exact steps for a person |
+| `auto` | darnit writes without asking, and records the change and its impact in the outcome |
+
+- The policy comes only from operator configuration. A `[remediation]` setting in the audited repository (`.project/`, `.baseline.toml`, or any other file) is ignored.
+- An absent section means both values are `prompt`. Unknown keys or values stop the run (section 14.1).
+- Every `RemediationRun` records the policy in effect and the operator configuration digest; `darnit config show` prints the resolved section.
+- Every value still follows the `platform_setting` rules (section 4.5: read first, never weaken, no write when already satisfied, default branch, read back). `auto` removes only the approval step for platform change sets. It never approves an item that requires individual approval because of `safe = false` or because it cannot be previewed (15.3); those need a person's approval under every policy.
+- The policy governs only changes the platform lets darnit make. A change with no platform API (organization two-factor enforcement) is `manual` under every policy.
+
+#### Scenario: Policy in the audited repository
+- **WHEN** the audited repository's files contain a `[remediation]` setting
+- **THEN** it MUST be ignored, and only the operator configuration MUST set the policy
+
+#### Scenario: Manual policy
+- **WHEN** the policy for a change set's impact class is `manual`
+- **THEN** no platform write MUST occur
+- **AND** the outcome MUST be `manual` with the steps
+
+#### Scenario: Auto policy
+- **WHEN** the policy for a change set's impact class is `auto` and the remediation is applied
+- **THEN** darnit MUST write the change set without an approval digest
+- **AND** MUST still read first, plan the minimal non-weakening change, and read back
+- **AND** the report MUST state the policy, the change, and its impact notes
+
+#### Scenario: Prompt policy with no person to ask
+- **WHEN** the policy is `prompt`, the apply carries no approval for a change set, and no person can be asked (non-interactive, no agent)
+- **THEN** nothing MUST be written for that change set
+- **AND** the outcome MUST be `needs_approval` with the previewed change set
+
+### 15.2 Digest-Bound Approval
+
+A **digest** is `"sha256:" + hex(sha256(canonical_json(x)))`, with `canonical_json` = `json.dumps(x, sort_keys=True, separators=(",", ":"))`.
+
+- `ChangeSet.digest` covers `{target, observed_digest, operations}`, so it binds the approval to the exact change and to the observed state the change was computed from.
+- `PlanItem.digest` covers the plan item and is used to approve a repository step individually (15.3).
+
+A person approves by digest: an apply call carries the approved digests (`approve` on `remediate_audit_findings` and `enable_branch_protection`), or `darnit run` shows each change set and asks on `/dev/tty`. At apply, darnit re-reads the target and re-plans; it writes only when the recomputed digest equals an approved one. Otherwise it writes nothing for that item, the outcome is `unchanged` with reason `stale_preview`, and a new preview is needed.
+
+- A high-impact change set is applied under `prompt` only when its own digest is approved. An approval of a batch, or of other change sets, never covers it. Its preview lists its `impact_notes` (for example: all code, history, and Actions logs become publicly readable, and existing private forks are detached).
+- An apply flag alone (`dry_run = False`) never approves anything. An agent passes only the digests the person approved.
+- Approvals are single-use and are recorded only in the run record: `Approval` = `digest`, `approved_by` (the operator identity, feature 040), `approved_at`. Approvals are not confirmations and are never stored in the confirmation store (sections 5.4, 7.5).
+
+#### Scenario: Stale preview
+- **WHEN** a person approved a change set's digest and the target's settings changed before the apply
+- **THEN** darnit MUST write nothing for that change set
+- **AND** the outcome MUST be `unchanged` with reason `stale_preview`
+
+#### Scenario: Apply without approval under prompt
+- **WHEN** the policy is `prompt` and an apply carries no digest for a change set
+- **THEN** nothing MUST be written for it and its outcome MUST be `needs_approval`
+
+#### Scenario: High-impact change in a batch
+- **WHEN** a batch apply under `prompt` carries approvals for other change sets but not the digest of a high-impact change set
+- **THEN** the high-impact change set MUST NOT be applied
+
+### 15.3 Individual Approval
+
+A plan item has `requires_individual_approval = True`, and runs in a batch apply only when its own digest is approved, when:
+
+1. its remediation declares `safe = false` (every step of that remediation), under every policy;
+2. it cannot be previewed exactly (`previewable = False`: a handler without plan support, or an exec step without `effects = "working_tree"` and `offline = true`), under every policy;
+3. it holds a high-impact change set and the `high_impact` policy is `prompt`.
+
+An item that needs individual approval and has none has outcome `needs_approval`, and nothing is written for it.
+
+#### Scenario: Unsafe remediation in a batch
+- **WHEN** a batch apply includes a remediation with `safe = false` and its `PlanItem.digest` was not approved
+- **THEN** it MUST NOT be applied, under every policy including `auto`
+
+### 15.4 Remediation Outcomes
+
+Each control in an apply has exactly one `RemediationOutcome`:
+
+| `kind` | Meaning |
+|--------|---------|
+| `fixed` | Something changed and the re-check (15.5) passes |
+| `changed_not_passing` | Something changed and the re-check does not pass |
+| `changed_not_verified` | Something changed and the re-check could not run or ended ERROR |
+| `unchanged` | Nothing changed, with the reason (`already_exists`, `satisfied_by` already or ruleset, `user_changes_present`, `when_not_met`, `stale_preview`) |
+| `needs_approval` | An approval is required (15.2, 15.3); carries the previewed change |
+| `needs_confirmation` | A context value is not usable: `confirmation required: <key>` (section 7.11) |
+| `manual` | darnit made no change and reports the steps (manual-only remediation, `manual` policy, unsupported platform) |
+| `error` | A step failed; carries the feature 041 `error.class` and `cause`, and lists any partial changes |
+
+Transitions (apply mode):
+
+```text
+plan -> [confirmation missing]            -> needs_confirmation
+     -> [manual only / policy manual]     -> manual
+     -> [needs approval, none given]      -> needs_approval
+     -> [stale digest]                    -> unchanged (reason: stale_preview)
+     -> [no operations, no file changes]  -> unchanged (reason from FileChange/ChangeSet)
+     -> apply -> [any step error]         -> error (partial changes listed)
+              -> recheck -> PASS          -> fixed
+                         -> not PASS      -> changed_not_passing
+                         -> could not run -> changed_not_verified
+```
+
+- Only a definite success with a non-empty change counts as changed. INCONCLUSIVE, ERROR, a step that did not run, and `action = "none"` never count as success.
+- The run summary (counts per `kind`) is derived from the outcomes. The Markdown and JSON reports, and every downstream decision (whether to commit or open a pull request), are derived from the outcomes, never from matching symbols or words in output text.
+- If the check for unconfirmed project context cannot complete, remediation does not run and the call returns the error.
+
+**`RemediationRun`** (one per preview or apply):
+
+| Field | Description |
+|-------|-------------|
+| `run_id` | ULID |
+| `repository` | Canonical repository identity (feature 040) |
+| `mode` | `preview` or `apply` |
+| `policy` | The resolved `[remediation]` policy |
+| `operator_config_digest` | Digest of the operator configuration |
+| `approvals` | `Approval`s used by this run |
+| `plan` | `PlanItem`s |
+| `outcomes` | `RemediationOutcome`s (apply only) |
+| `summary` | Counts per outcome kind, derived from `outcomes` |
+
+**Reports** (Markdown and JSON) show, per control: the outcome `kind`, the files changed, platform fields `before -> after`, the re-check status, and the reason and error; per run: the policy, the operator configuration digest, the approvals (digest, by, at), the run id, and the summary counts. A preview of a high-impact change lists its impact notes. `remediate_audit_findings` returns the Markdown report followed by a fenced JSON block holding the `RemediationRun` (a preview carries `plan` with every digest, `previewable`, and `requires_individual_approval`; an apply carries `outcomes` and `summary`).
+
+#### Scenario: File already exists
+- **WHEN** the only step of a control's remediation is a `file_create` whose file already exists
+- **THEN** the outcome MUST be `unchanged` with reason `already_exists`, never `fixed`
+
+#### Scenario: Handler result is not a definite success
+- **WHEN** a remediation step returns INCONCLUSIVE or ERROR, or does not run
+- **THEN** the step MUST NOT count as a change or as a success
+
+#### Scenario: Context guard cannot complete
+- **WHEN** the check for unconfirmed project context raises or cannot complete
+- **THEN** remediation MUST NOT run and the error MUST be returned
+
+### 15.5 Re-check
+
+After an apply that changed something, darnit re-checks the affected controls with `run_sieve_audit(controls=<affected>, write_cache=False)`: a subset audit through the canonical pipeline (section 10.1) that does not write the audit cache (section 10.4). The sieve is unchanged. A re-check PASS gives `fixed`; FAIL, WARN, or PENDING (including a PASS candidate) gives `changed_not_passing`; ERROR, or a re-check that could not run, gives `changed_not_verified` with the error. A control whose remediation changed nothing is not re-checked and is never `fixed`.
+
+#### Scenario: Changed but still failing
+- **WHEN** a remediation changed a file and the re-check of its control is FAIL
+- **THEN** the outcome MUST be `changed_not_passing` with the re-check result
+
+#### Scenario: Re-check lookup fails
+- **WHEN** the re-check needs a platform lookup that fails
+- **THEN** the outcome MUST be `changed_not_verified` with the error, not `fixed`
+
+#### Scenario: Re-check leaves the audit cache unchanged
+- **WHEN** a re-check runs
+- **THEN** the full-audit cache file MUST be byte-identical before and after
+
+### 15.6 Run Manifest
+
+Every apply records a run manifest operator-side at `user_data_root()/remediation/<repository-identity>/<run_id>.json`, mode 0600. A manifest path inside the checkout is refused. A preview writes no manifest.
+
+| Field | Description |
+|-------|-------------|
+| `run_id`, `repository`, `created_at` | |
+| `files` | `[{path, after_digest}]` for every file the executor wrote |
+| `change_sets` | Digests of the change sets applied |
+| `branch` | Remediation branch, if one was created |
+| `commit` | Set by the commit tool |
+
+The manifest is the only record of which files remediation wrote; the git tools read it (15.7).
+
+### 15.7 Version-Control Rules
+
+The git tools `create_remediation_branch`, `commit_remediation_changes`, and `create_remediation_pr` take `run_id` (default `None`: the latest run for the repository).
+
+- **Refused states.** When any git step is requested, darnit checks the repository before applying any remediation and stops with nothing changed on a detached HEAD, a merge in progress (`MERGE_HEAD`), a rebase in progress (`rebase-merge`, `rebase-apply`), an existing remediation branch with a commit beyond its base that lacks the `Darnit-Remediation-Run` trailer, or a dirty working tree when switching to an existing branch.
+- **No stash.** Remediation never stashes, drops a stash, discards, or overwrites the user's uncommitted changes. A new branch is created with `git checkout -b` from HEAD; the user's uncommitted changes stay in the working tree untouched. Switching to an existing branch requires a clean tree.
+- **Manifest-only commits.** `commit_remediation_changes` stages only the run manifest's files, with explicit pathspecs, and only those whose current content digest equals the manifest's `after_digest`; a file edited after remediation wrote it is a conflict and is not committed. Ignored files are never staged. `add_all` does not exist.
+- **Trailer.** Every remediation commit message carries `Darnit-Remediation-Run: <run_id>`. The response lists every committed file, and the commit is recorded in the manifest.
+- **Push.** `create_remediation_pr` pushes only the remediation branch, and diffs against the branch's base.
+- **Gates.** Commit and pull request steps run only when at least one outcome changed files (15.4).
+
+#### Scenario: Unrelated work in progress
+- **WHEN** the working tree has a modified tracked file, an untracked `.env`, and a stash, and remediation creates a branch, commits, and opens a pull request
+- **THEN** the commit MUST contain exactly the manifest's files
+- **AND** the modified file and `.env` MUST remain uncommitted and byte-identical, and the stash list MUST be unchanged
+
+#### Scenario: Unsafe repository state
+- **WHEN** a git step is requested on a detached HEAD, during a merge or rebase, or with an existing branch holding a commit without the trailer
+- **THEN** darnit MUST stop before changing anything and explain why
+
+### 15.8 Entry Points
+
+Every writer goes through the executor, the platform engine, and the run manifest; there is no second write path.
+
+| Entry point | Behavior |
+|-------------|----------|
+| `remediate_audit_findings` | `dry_run = True` by default (preview); `approve: list[str] \| None` carries approved digests; returns the run id and the `RemediationRun` (15.4) |
+| `enable_branch_protection` | Thin wrapper over the platform engine (section 4.5); `dry_run = True`, `branch = None`, `approve` |
+| `create_remediation_branch`, `commit_remediation_changes`, `create_remediation_pr` | `run_id`; rules of 15.7 |
+| `remediate_community_spec` (darnit-csl) | `dry_run = True` by default; its README edit is a `FileChange` in the preview and the manifest |
+| `create_security_policy` | Writes through the executor and the manifest; keeps its explicit-create semantics |
+| `darnit run` | Platform changes follow the policy; under `prompt` with a terminal it asks on `/dev/tty`, otherwise the outcome is `needs_approval` |
+| Skills (`darnit-remediate`, `darnit-comply`) | Show the preview with before/after fields, impact notes, and digests; pass back only the digests the person approved; never pass `dry_run = false` as a substitute for approval |
+
+The `confirm_*` tools are unchanged; approvals are not confirmations. Audit results and the attestation predicate are unchanged.
+
 ## Appendix C: Removed Requirements
 
-The following requirements have been superseded by the handler dispatch architecture.
+The following requirements have been superseded: by the handler dispatch architecture, and (the last two entries) by the feature 043 remediation design.
 
 ### Removed: VerificationPassProtocol
 **Reason**: Replaced by handler dispatch architecture. Pass classes that implemented this protocol (`DeterministicPass`, `PatternPass`, `LLMPass`, `ManualPass`, `ExecPass`) are superseded by handler functions registered in `SieveHandlerRegistry`.
@@ -1578,12 +2028,25 @@ The following requirements have been superseded by the handler dispatch architec
 **Reason**: The `darnit.sieve` package previously re-exported pass class constructors (`DeterministicPass`, `PatternPass`, `LLMPass`, `ManualPass`) for convenience. These re-exports have been removed from `sieve/__init__.py`. The pass dataclass definitions in `sieve/passes.py` remain available via direct import.
 **Migration**: Import directly from `darnit.sieve.passes` if needed (e.g., `from darnit.sieve.passes import DeterministicPass`). However, new code SHOULD NOT construct pass instances directly — define passes in TOML instead.
 
+### Removed: api_call remediation handler
+**Reason**: Feature 043. The handler read a field (`url`) the framework configuration never set, so every declared use errored; its payloads were full-object replacements that would have removed existing platform settings. A payload cannot express "change only what is needed without weakening anything".
+**Migration**: Declare a requirement with `handler = "platform_setting"` (section 4.5). A platform change with no API (organization two-factor enforcement) becomes a `manual` remediation step.
+
+#### Scenario: api_call declared
+- **WHEN** a framework TOML declares a remediation handler `api_call`
+- **THEN** loading MUST fail with an error naming `platform_setting`
+
+### Removed: requires_confirmation, dry_run_supported, and dry_run_command
+**Reason**: Feature 043. They were declared but never enforced (FR-025: a safety, confirmation, or preview property is enforced or absent).
+**Migration**: Use `safe = false` instead of `requires_confirmation` (section 15.3). Previews come from plan mode (section 4.2); an exec remediation declares `effects = "working_tree"` and `offline = true` instead of a `dry_run_command` (section 4.4).
+
 ---
 
 ## Version History
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.10 | 2026-10-02 | Remediation safety (feature 043): plan/apply protocol and single writer (Section 4.2), `platform_setting` (4.5), exec `effects`/`offline` and no platform state from exec (4.4), `file_create.project_reference` (4.3), remediation policy, digest-bound approval, outcomes, re-check, run manifest, and version-control rules (Section 15); removed `api_call`, `requires_confirmation`, `dry_run_supported`, `dry_run_command` (Appendix C) |
 | 1.0.0-alpha.9 | 2026-09-29 | Context value standing, confirmation records, lapse, detection fallbacks, canonical keys, reads never write, targeted project-file writes, confirmation tool contract (Sections 7.4-7.11, feature 042) |
 | 1.0.0-alpha.8 | 2026-02-16 | Added audit result cache (Section 10.4): audit writes cache, remediate reads cache, post-remediation invalidation |
 | 1.0.0-alpha.7 | 2026-02-13 | Migrated to handler dispatch architecture: pass classes replaced by named handlers, passes use TOML array-of-tables syntax, register_controls() becomes no-op, removed legacy pass classes (Appendix C) |

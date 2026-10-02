@@ -25,7 +25,7 @@
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-- [ ] T001 Update `docs/architecture/framework-design.md` first, per contracts/remediation-interfaces.md and data-model.md. Run `uv run python scripts/validate_sync.py --verbose` afterwards.
+- [X] T001 Update `docs/architecture/framework-design.md` first, per contracts/remediation-interfaces.md and data-model.md. Run `uv run python scripts/validate_sync.py --verbose` afterwards.
   - Section 4: the plan/apply protocol for remediation handlers (`HandlerContext.mode`, the `FileChange`/`ChangeSet` outputs, the executor as single writer, `supports_plan`).
   - The new `platform_setting` handler, with requirement keys per target and the "never weaken" rule.
   - The `exec` remediation `effects`/`offline` fields, and the rule that an exec remediation never changes platform state.
@@ -36,8 +36,8 @@
   - Remediation outcome kinds and the re-check rule.
   - Git rules: manifest-only commits, no stash, refused states, the `Darnit-Remediation-Run` trailer.
   - The `exec` example that uses `gh api -X PUT` in section 4.3 must be replaced.
-- [ ] T002 [P] Extend the `gh` test seam: change the responder signature to `(method, endpoint, body) -> (body, status, error)`, keeping GET-only callers working. Make `RecordedGhApi` serve keys like `"PUT /repos/o/r/branches/main/protection"` and record request bodies in `.calls`. Files: `packages/darnit/src/darnit/core/utils.py` and `tests/darnit/core/test_gh_responder.py`.
-- [ ] T003 [P] Create platform fixtures as `RecordedGhApi` response sets in `tests/darnit/remediation/platform/conftest.py`, with an empty `tests/darnit/remediation/platform/__init__.py`. Use research R12 and quickstart V1:
+- [X] T002 [P] Extend the `gh` test seam: change the responder signature to `(method, endpoint, body) -> (body, status, error)`, keeping GET-only callers working. Make `RecordedGhApi` serve keys like `"PUT /repos/o/r/branches/main/protection"` and record request bodies in `.calls`. Files: `packages/darnit/src/darnit/core/utils.py` and `tests/darnit/core/test_gh_responder.py`.
+- [X] T003 [P] Create platform fixtures as `RecordedGhApi` response sets in `tests/darnit/remediation/platform/conftest.py`, with an empty `tests/darnit/remediation/platform/__init__.py`. Use research R12 and quickstart V1:
   - `unprotected`;
   - `stricter` (2 approvals, required checks with `checks[]`, push restrictions with users/teams/apps, code-owner review, linear history, conversation resolution);
   - `satisfied`;
@@ -48,7 +48,7 @@
   - `default_branch_release` (`default_branch = "release"`);
   - `private_repo`;
   - `pvr_disabled`.
-- [ ] T004 [P] Create scratch git repository builders in `tests/darnit/server/conftest.py`, reusing the tree-snapshot helper from `tests/darnit/context_integrity/conftest.py` (move it to `tests/conftest_helpers.py` if needed):
+- [X] T004 [P] Create scratch git repository builders in `tests/darnit/server/conftest.py`, reusing the tree-snapshot helper from `tests/darnit/context_integrity/conftest.py` (move it to `tests/conftest_helpers.py` if needed):
   - `R-dirty`: a modified tracked file, an untracked `.env`, one stash;
   - `R-detached`;
   - `R-merging`: `MERGE_HEAD` present;
@@ -61,36 +61,36 @@
 
 **CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T005 [P] Write model tests in `tests/darnit/remediation/test_plan_model.py`:
+- [X] T005 [P] Write model tests in `tests/darnit/remediation/test_plan_model.py`:
   - `FileChange`, `PlanItem`, `RemediationOutcome` and `RemediationRun` validate per data-model.md (`extra="forbid"`; outcome `kind` vocabulary);
   - digests are canonical JSON with `sort_keys` and are stable under dict reordering;
   - `RemediationRun.summary` is computed from `outcomes` only.
-- [ ] T006 [P] Write operator-config tests in `tests/darnit/config/operator/test_remediation_settings.py`:
+- [X] T006 [P] Write operator-config tests in `tests/darnit/config/operator/test_remediation_settings.py`:
   - `[remediation]` absent means `platform = "prompt"`, `high_impact = "prompt"`;
   - `manual` and `auto` are accepted;
   - unknown keys or values stop loading;
   - `darnit config show` prints the section.
-- [ ] T007 [P] Write manifest tests in `tests/darnit/remediation/test_manifest.py`:
+- [X] T007 [P] Write manifest tests in `tests/darnit/remediation/test_manifest.py`:
   - the manifest is written under `user_data_root()/remediation/<repository-identity>/<run_id>.json` with mode 0600;
   - a path inside the checkout is refused;
   - the latest run for a repository is found by `run_id=None`;
   - the file list carries `after_digest`.
-- [ ] T008 [P] Write executor plan/apply tests in `tests/darnit/remediation/test_executor_plan_apply.py`:
+- [X] T008 [P] Write executor plan/apply tests in `tests/darnit/remediation/test_executor_plan_apply.py`:
   - in `plan` mode, `file_create`, `yaml_inject` and `project_update` return `FileChange`s and the tree snapshot is unchanged (including `yaml_inject`, #166);
   - in `apply` mode the executor writes exactly the planned `FileChange`s and records them in the manifest;
   - a handler that does not declare `supports_plan` is reported as `previewable = False` and is not run in `plan` mode;
   - `file_create` on an existing file yields `action = "none"`, `reason = "already_exists"`.
-- [ ] T009 [P] Add `FileChange`, `PlanItem`, `RemediationOutcome`, `RemediationRun`, and the digest helper per data-model.md in `packages/darnit/src/darnit/remediation/plan.py`.
-- [ ] T010 [P] Add `RemediationSettings` (`platform`, `high_impact`: `Literal["prompt", "manual", "auto"]`, default `"prompt"`) to `OperatorConfig`, and print it in `darnit config show`. Files: `packages/darnit/src/darnit/config/operator/schema.py` and `packages/darnit/src/darnit/cli.py`.
-- [ ] T011 [P] Implement the operator-side run manifest in `packages/darnit/src/darnit/remediation/manifest.py`: `start_run`, `record_file`, `record_change_set`, `set_commit`, `load_run(repository, run_id=None)`. Use the 040 data root and its atomic, 0600, outside-checkout rules (pattern: `trust/confirmations.py`).
-- [ ] T012 Add `mode: Literal["plan", "apply"] = "apply"` to `HandlerContext`, and a `supports_plan: bool = False` registration flag, in `packages/darnit/src/darnit/sieve/handler_registry.py`.
-- [ ] T013 Register the `manual` remediation handler with `supports_plan=True` (it has no side effects, so manual remediations stay previewable and batch-eligible). Make `file_create`, `yaml_inject` and `project_update` compute and return their `FileChange`s in evidence (`evidence["file_changes"]`) in both modes and never write themselves, and register them with `supports_plan=True`. Include the resulting content and the reasons `already_exists` and `when_not_met`. File: `packages/darnit/src/darnit/sieve/builtin_handlers.py`.
-- [ ] T014 Rework `RemediationExecutor` as the single writer, in `packages/darnit/src/darnit/remediation/executor.py`:
+- [X] T009 [P] Add `FileChange`, `PlanItem`, `RemediationOutcome`, `RemediationRun`, and the digest helper per data-model.md in `packages/darnit/src/darnit/remediation/plan.py`.
+- [X] T010 [P] Add `RemediationSettings` (`platform`, `high_impact`: `Literal["prompt", "manual", "auto"]`, default `"prompt"`) to `OperatorConfig`, and print it in `darnit config show`. Files: `packages/darnit/src/darnit/config/operator/schema.py` and `packages/darnit/src/darnit/cli.py`.
+- [X] T011 [P] Implement the operator-side run manifest in `packages/darnit/src/darnit/remediation/manifest.py`: `start_run`, `record_file`, `record_change_set`, `set_commit`, `load_run(repository, run_id=None)`. Use the 040 data root and its atomic, 0600, outside-checkout rules (pattern: `trust/confirmations.py`).
+- [X] T012 Add `mode: Literal["plan", "apply"] = "apply"` to `HandlerContext`, and a `supports_plan: bool = False` registration flag, in `packages/darnit/src/darnit/sieve/handler_registry.py`.
+- [X] T013 Register the `manual` remediation handler with `supports_plan=True` (it has no side effects, so manual remediations stay previewable and batch-eligible). Make `file_create`, `yaml_inject` and `project_update` compute and return their `FileChange`s in evidence (`evidence["file_changes"]`) in both modes and never write themselves, and register them with `supports_plan=True`. Include the resulting content and the reasons `already_exists` and `when_not_met`. File: `packages/darnit/src/darnit/sieve/builtin_handlers.py`.
+- [X] T014 Rework `RemediationExecutor` as the single writer, in `packages/darnit/src/darnit/remediation/executor.py`:
   - `plan` mode runs handlers with `mode="plan"` and returns `PlanItem`s; this replaces the "Would execute handler" short-circuit at the dry-run branch;
   - `apply` mode runs the plan, writes the `FileChange`s atomically, and records each in the manifest;
   - the pre-render confirmation pass from 042 is kept;
   - only a definite success with a non-empty change counts as changed; INCONCLUSIVE, ERROR, not-run and `action = "none"` never count.
-- [ ] T015 Add `gh_api_write(method, endpoint, payload) -> (body, status, error)` in `packages/darnit/src/darnit/core/utils.py`. It sends JSON with `gh api -X METHOD --input -`, reads the status from `--include`, and goes through the responder seam (T002).
+- [X] T015 Add `gh_api_write(method, endpoint, payload) -> (body, status, error)` in `packages/darnit/src/darnit/core/utils.py`. It sends JSON with `gh api -X METHOD --input -`, reads the status from `--include`, and goes through the responder seam (T002).
 
 **Checkpoint**: Plan/apply and the single writer exist and pass their tests. Existing remediation callers still work through `apply` mode.
 
@@ -156,7 +156,7 @@
   - Errors use the 041 `error.class`/`cause`.
   - A repository whose canonical identity is not on GitHub gives a `manual` outcome with the steps and makes no platform call.
 - [ ] T025 [US1] Register the `platform_setting` remediation handler (`supports_plan=True`; `ChangeSet`s in evidence; apply through the engine) in `packages/darnit/src/darnit/sieve/builtin_handlers.py`. Add its schema (`target`, `require`, optional `branch`; unknown requirement keys rejected) in `packages/darnit/src/darnit/config/framework_schema.py`.
-- [ ] T025a [US1] Amend `.specify/memory/constitution.md` (PATCH, 1.3.0 to 1.3.1) so Architecture Constraints Layer 2 lists the built-in remediation actions as `file_create`, `exec`, `platform_setting`, `project_update`, `yaml_inject` (no `api_call`). Add a Sync Impact Report entry, and do it before T026.
+- [X] T025a [US1] Amend `.specify/memory/constitution.md` (PATCH, 1.3.0 to 1.3.1) so Architecture Constraints Layer 2 lists the built-in remediation actions as `file_create`, `exec`, `platform_setting`, `project_update`, `yaml_inject` (no `api_call`). Add a Sync Impact Report entry, and do it before T026.
 - [ ] T026 [US1] Remove the `api_call` handler and its schema section. A TOML that uses it fails validation with a message naming `platform_setting`. Files: `packages/darnit/src/darnit/sieve/builtin_handlers.py`, `packages/darnit/src/darnit/config/framework_schema.py`, `tests/darnit/sieve/test_builtin_handlers.py` (drop the api_call cases).
 - [ ] T027 [US1] Migrate the Baseline TOML in `packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml`:
   - AC-03.01 gets `require_pull_request`, AC-03.02 gets `prevent_deletion`, QA-07.01 gets `require_approvals = 1`, QA-01.01 gets `visibility = "public"`, and VM-03.01 gets `enabled = true`, each as a `platform_setting`;

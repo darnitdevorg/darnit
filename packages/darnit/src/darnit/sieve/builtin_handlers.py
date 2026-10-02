@@ -11,10 +11,12 @@ Built-in verification handlers:
     - llm_eval: AI evaluation with confidence threshold
     - manual_steps: Human verification checklist
 
-Built-in remediation handlers:
+Built-in remediation handlers (feature 043: they return FileChanges and
+never write; the remediation executor is the single writer):
     - file_create: Create a file from a template
     - api_call: Make an HTTP API call
     - project_update: Update .project/project.yaml values
+    - yaml_inject: Add a top-level key to YAML files that lack it
 """
 
 from __future__ import annotations
@@ -23,7 +25,6 @@ import logging
 import os
 import re
 import subprocess
-import tempfile
 from typing import Any
 
 from darnit.core.error_class import ErrorClass
@@ -107,29 +108,6 @@ def _log_environmental_failure(
         error_class,
         message,
     )
-
-
-def _atomic_write_text(path: str, content: str) -> None:
-    """Write ``content`` to ``path`` atomically via tempfile-then-rename.
-
-    Determinism Tier 1 (#418): direct ``open(path, "w").write(content)``
-    leaves a partial file behind if the process crashes or the disk fills
-    mid-write. Tempfile in the same directory + ``os.replace`` gives us
-    the same "either fully written or absent" invariant that
-    :class:`FilesystemAuditCacheStore` uses (feature 033).
-    """
-    directory = os.path.dirname(path) or "."
-    fd, tmp = tempfile.mkstemp(dir=directory, prefix=".darnit-write-", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(content)
-        os.replace(tmp, path)
-    except Exception:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
 
 
 # =============================================================================
@@ -1010,8 +988,38 @@ def manual_steps_handler(config: dict[str, Any], context: HandlerContext) -> Han
 # =============================================================================
 
 
+def _repo_path(path: str, context: HandlerContext) -> str:
+    """``path`` relative to the repository, or ValueError if it is outside it."""
+    from darnit.remediation.plan import normalize_repo_path
+
+    if os.path.isabs(path):
+        root = os.path.realpath(context.local_path)
+        resolved = os.path.realpath(path)
+        if os.path.commonpath([root, resolved]) != root:
+            raise ValueError(f"path is outside the repository: {path}")
+        path = os.path.relpath(resolved, root)
+    return normalize_repo_path(path.replace(os.sep, "/"))
+
+
+def _read_text(full_path: str) -> str | None:
+    try:
+        with open(full_path, encoding="utf-8", newline="") as f:
+            return f.read()
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def _file_changes_evidence(changes: list[Any], **extra: Any) -> dict[str, Any]:
+    return {**extra, "file_changes": [change.model_dump(mode="json") for change in changes]}
+
+
 def file_create_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResult:
-    """Create a file from a template or content.
+    """Plan the creation of a file from a template or content (feature 043: never writes).
+
+    Returns the planned :class:`~darnit.remediation.plan.FileChange` in
+    ``evidence["file_changes"]`` in both modes; the remediation executor
+    writes it. An existing file is left alone (``action = "none"``,
+    ``reason = "already_exists"``) unless ``overwrite`` is set.
 
     Config fields:
         path: str - Destination file path (relative to repo)
@@ -1019,20 +1027,28 @@ def file_create_handler(config: dict[str, Any], context: HandlerContext) -> Hand
         content: str - Direct content (used if template not specified)
         overwrite: bool - Whether to overwrite existing files (default: false)
     """
+    from darnit.remediation.plan import FileChange, content_digest
+
     path = config.get("path", "")
     if not path:
         return HandlerResult(
             status=HandlerResultStatus.ERROR,
             message="No path specified for file creation",
         )
+    try:
+        relative = _repo_path(path, context)
+    except ValueError as e:
+        return HandlerResult(status=HandlerResultStatus.ERROR, message=str(e), evidence={"path": path})
 
-    full_path = os.path.join(context.local_path, path)
+    full_path = os.path.join(context.local_path, relative)
+    exists = os.path.lexists(full_path)
 
-    if os.path.exists(full_path) and not config.get("overwrite", False):
+    if exists and not config.get("overwrite", False):
+        change = FileChange(path=relative, action="none", reason="already_exists")
         return HandlerResult(
             status=HandlerResultStatus.PASS,
-            message=f"File already exists: {path}",
-            evidence={"path": path, "action": "skipped"},
+            message=f"File already exists: {relative}",
+            evidence=_file_changes_evidence([change], path=relative, action="none"),
         )
 
     content = config.get("content", "")
@@ -1040,25 +1056,31 @@ def file_create_handler(config: dict[str, Any], context: HandlerContext) -> Hand
         # Template resolution would happen at a higher level
         return HandlerResult(
             status=HandlerResultStatus.ERROR,
-            message=f"No content or template for file creation: {path}",
-            evidence={"path": path},
+            message=f"No content or template for file creation: {relative}",
+            evidence={"path": relative},
         )
 
-    try:
-        os.makedirs(os.path.dirname(full_path), exist_ok=True)
-        _atomic_write_text(full_path, content)
-    except OSError as e:
-        return HandlerResult(
-            status=HandlerResultStatus.ERROR,
-            message=f"Failed to create file: {e}",
-            evidence={"path": path, "error": str(e)},
-        )
+    if exists:
+        current = _read_text(full_path)
+        if current is None:
+            return HandlerResult(
+                status=HandlerResultStatus.ERROR,
+                message=f"Cannot read existing file to overwrite: {relative}",
+                evidence={"path": relative},
+            )
+        if current == content:
+            change = FileChange(path=relative, action="none", reason="already_exists")
+        else:
+            change = FileChange(path=relative, action="modify", content=content, before_digest=content_digest(current))
+    else:
+        change = FileChange(path=relative, action="create", content=content)
 
+    verb = {"create": "Create", "modify": "Overwrite", "none": "Unchanged"}[change.action]
     return HandlerResult(
         status=HandlerResultStatus.PASS,
-        message=f"Created file: {path}",
+        message=f"{verb} file: {relative}",
         confidence=1.0,
-        evidence={"path": path, "action": "created"},
+        evidence=_file_changes_evidence([change], path=relative, action=change.action),
     )
 
 
@@ -1096,10 +1118,15 @@ def api_call_handler(config: dict[str, Any], context: HandlerContext) -> Handler
 
 
 def project_update_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResult:
-    """Update .project/project.yaml values.
+    """Plan an update of ``.project/`` values (feature 043: never writes).
+
+    The changed ``.project/`` files are returned in
+    ``evidence["file_changes"]``, rendered by the same round-trip writer the
+    executor uses for ``project_update`` (feature 042, FR-020).
 
     Config fields:
-        updates: dict[str, Any] - Dotted path → value pairs to set
+        updates: dict[str, Any] - Dotted path -> value pairs to set
+        create_if_missing: bool - Create ``.project/project.yaml`` if absent (default: true)
     """
     updates = config.get("updates", {})
     if not updates:
@@ -1108,19 +1135,31 @@ def project_update_handler(config: dict[str, Any], context: HandlerContext) -> H
             message="No updates specified for project_update handler",
         )
 
+    from darnit.remediation.executor import plan_project_update
+
+    try:
+        changes = plan_project_update(context.local_path, updates, create=config.get("create_if_missing", True))
+    except ValueError as e:
+        return HandlerResult(
+            status=HandlerResultStatus.ERROR,
+            message=f"Cannot update .project/: {e}",
+            evidence={"updates": updates},
+        )
+
     return HandlerResult(
         status=HandlerResultStatus.PASS,
-        message=f"Project update queued: {list(updates.keys())}",
-        evidence={"updates": updates},
+        message=f"Project update: {list(updates.keys())}",
+        evidence=_file_changes_evidence(changes, updates=updates),
         details={"project_updates": updates},
     )
 
 
 def yaml_inject_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResult:
-    """Inject a top-level key into YAML files that lack it.
+    """Plan the injection of a top-level key into YAML files that lack it (feature 043: never writes).
 
-    Designed for safe, idempotent additions — e.g., adding `permissions: {}`
-    to GitHub Actions workflows. Only modifies files that are missing the key.
+    Designed for safe, idempotent additions -- e.g., adding `permissions: {}`
+    to GitHub Actions workflows. Only files missing the key get a change;
+    files that already have it are reported with ``reason = "already_exists"``.
 
     Config fields:
         files: str - Glob pattern for YAML files (relative to repo)
@@ -1130,6 +1169,8 @@ def yaml_inject_handler(config: dict[str, Any], context: HandlerContext) -> Hand
             inserts at the top of the file after any leading comments.
     """
     import glob as glob_mod
+
+    from darnit.remediation.plan import FileChange, content_digest
 
     files_pattern = config.get("files", "")
     key = config.get("key", "")
@@ -1143,7 +1184,7 @@ def yaml_inject_handler(config: dict[str, Any], context: HandlerContext) -> Hand
         )
 
     pattern = os.path.join(context.local_path, files_pattern)
-    matched_files = glob_mod.glob(pattern)
+    matched_files = sorted(glob_mod.glob(pattern))
     if not matched_files:
         return HandlerResult(
             status=HandlerResultStatus.INCONCLUSIVE,
@@ -1151,20 +1192,22 @@ def yaml_inject_handler(config: dict[str, Any], context: HandlerContext) -> Hand
             evidence={"pattern": files_pattern},
         )
 
-    import re
-
+    changes: list[FileChange] = []
     modified = []
     skipped = []
     for filepath in matched_files:
         try:
-            with open(filepath, encoding="utf-8") as f:
-                content = f.read()
-        except OSError:
+            relative = _repo_path(filepath, context)
+        except ValueError:
+            continue
+        content = _read_text(filepath)
+        if content is None:
             continue
 
         # Skip if key already exists at the top level (not indented)
         if re.search(rf"^{re.escape(key)}\s*:", content, re.MULTILINE):
-            skipped.append(os.path.relpath(filepath, context.local_path))
+            skipped.append(relative)
+            changes.append(FileChange(path=relative, action="none", reason="already_exists"))
             continue
 
         # Find insertion point: after the insert_after key's block
@@ -1189,25 +1232,23 @@ def yaml_inject_handler(config: dict[str, Any], context: HandlerContext) -> Hand
 
         injection = f"\n{key}: {value}\n"
         lines.insert(insert_idx, injection.rstrip())
-
-        try:
-            _atomic_write_text(filepath, "\n".join(lines))
-            modified.append(os.path.relpath(filepath, context.local_path))
-        except OSError:
-            continue
+        changes.append(
+            FileChange(path=relative, action="modify", content="\n".join(lines), before_digest=content_digest(content))
+        )
+        modified.append(relative)
 
     if not modified:
         return HandlerResult(
             status=HandlerResultStatus.PASS,
             message=f"All {len(skipped)} file(s) already have '{key}:'",
-            evidence={"skipped": skipped},
+            evidence=_file_changes_evidence(changes, modified=[], skipped=skipped),
         )
 
     return HandlerResult(
         status=HandlerResultStatus.PASS,
-        message=f"Injected '{key}: {value}' into {len(modified)} file(s)",
+        message=f"Inject '{key}: {value}' into {len(modified)} file(s)",
         confidence=1.0,
-        evidence={"modified": modified, "skipped": skipped},
+        evidence=_file_changes_evidence(changes, modified=modified, skipped=skipped),
     )
 
 
@@ -1536,17 +1577,21 @@ def register_builtin_handlers() -> None:
         handler_fn=llm_extract_handler,
         description="LLM-backed value extraction (suggestive; never concludes a control)",
     )
+    # Feature 043: manual steps have no side effects, so a manual
+    # remediation stays previewable and batch-eligible.
     registry.register(
         "manual_steps",
         phase="manual",
         handler_fn=manual_steps_handler,
         description="Human verification checklist",
+        supports_plan=True,
     )
     registry.register(
         "manual",
         phase="manual",
         handler_fn=manual_steps_handler,
         description="Alias for manual_steps handler (human verification checklist)",
+        supports_plan=True,
     )
     # Feature 031: external MCP server as observation source. It may
     # conclude either way because the tool observes ground truth (a real
@@ -1560,12 +1605,15 @@ def register_builtin_handlers() -> None:
         ceiling={"pass", "fail"},
     )
 
-    # Remediation handlers
+    # Remediation handlers. Feature 043: those registered with supports_plan
+    # return FileChanges and never write; the remediation executor is the
+    # single writer.
     registry.register(
         "file_create",
         phase="deterministic",
         handler_fn=file_create_handler,
         description="Create a file from a template or content",
+        supports_plan=True,
     )
     registry.register(
         "api_call",
@@ -1578,10 +1626,12 @@ def register_builtin_handlers() -> None:
         phase="deterministic",
         handler_fn=project_update_handler,
         description="Update .project/project.yaml values",
+        supports_plan=True,
     )
     registry.register(
         "yaml_inject",
         phase="deterministic",
         handler_fn=yaml_inject_handler,
         description="Inject a top-level key into YAML files that lack it",
+        supports_plan=True,
     )

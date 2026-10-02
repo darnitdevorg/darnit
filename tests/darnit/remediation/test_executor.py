@@ -148,8 +148,8 @@ class TestRemediationExecutor:
 class TestHandlerPipelineRemediation:
     """Test handler pipeline based remediations."""
 
-    def test_handler_dry_run(self):
-        """Test handler pipeline in dry run mode."""
+    def test_handler_dry_run_fails_as_the_apply_would_fr021(self):
+        """Test handler pipeline in dry run mode: a missing template fails the preview (FR-021)."""
         with tempfile.TemporaryDirectory() as tmpdir:
             executor = RemediationExecutor(
                 local_path=tmpdir,
@@ -169,13 +169,13 @@ class TestHandlerPipelineRemediation:
 
             result = executor.execute("TEST-01", config, dry_run=True)
 
-            assert result.success
+            assert not result.success, "FR-021: the preview runs the apply's logic, which has no content to write"
             assert result.dry_run
             assert result.remediation_type == "handler_pipeline"
             assert "Would execute" in result.message
 
-    def test_multiple_handlers_dry_run(self):
-        """Test multiple handlers in dry run mode."""
+    def test_multiple_handlers_dry_run_fail_as_the_apply_would_fr021(self):
+        """Test multiple handlers in dry run mode: missing templates fail the preview (FR-021)."""
         with tempfile.TemporaryDirectory() as tmpdir:
             executor = RemediationExecutor(
                 local_path=tmpdir,
@@ -200,7 +200,7 @@ class TestHandlerPipelineRemediation:
 
             result = executor.execute("TEST-01", config, dry_run=True)
 
-            assert result.success
+            assert not result.success, "FR-021: the preview runs the apply's logic, which has no content to write"
             assert result.dry_run
             assert "2 remediation handler(s)" in result.message
 

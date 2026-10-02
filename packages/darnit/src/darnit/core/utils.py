@@ -6,7 +6,7 @@ import os
 import re
 import subprocess
 from collections.abc import Callable, Iterable, Mapping
-from typing import Any
+from typing import Any, NamedTuple
 
 from darnit.core.error_class import ErrorClass
 from darnit.core.logging import get_logger
@@ -33,16 +33,22 @@ _HTTP_STATUS_RE = re.compile(
 )
 
 GhApiResponse = tuple[dict[str, Any] | list[Any] | None, int, str]
-GhApiResponder = Callable[[str, bool], GhApiResponse]
+GhApiResponder = Callable[[str, str, Any], GhApiResponse]
 
 # Feature 041: when set, ``gh_api_with_status`` returns this responder's
 # answer instead of running ``gh``. Tests and the adversarial corpus use it
 # to serve recorded platform responses offline (see RecordedGhApi).
+# Feature 043: the responder is called as ``(method, endpoint, body)``;
+# ``gh_api_with_status`` calls it with ``("GET", endpoint, None)`` and
+# ``gh_api_write`` with the write method and its JSON payload.
 _gh_api_responder: GhApiResponder | None = None
+
+_GH_WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+_GH_METHODS = _GH_WRITE_METHODS | {"GET"}
 
 
 def set_gh_api_responder(responder: GhApiResponder | None) -> GhApiResponder | None:
-    """Route ``gh_api_with_status`` through ``responder`` (None restores ``gh``).
+    """Route ``gh_api_with_status`` and ``gh_api_write`` through ``responder`` (None restores ``gh``).
 
     Returns the previous responder so callers can restore it.
     """
@@ -52,33 +58,84 @@ def set_gh_api_responder(responder: GhApiResponder | None) -> GhApiResponder | N
     return previous
 
 
-class RecordedGhApi:
-    """A responder serving recorded platform responses keyed by API path.
+class GhApiCall(NamedTuple):
+    """One request seen by :class:`RecordedGhApi`.
 
-    ``responses`` maps an endpoint (after ``$OWNER``/``$REPO``/``$BRANCH``
-    substitution, leading slash optional) to ``{"status": int, "body": ...,
-    "error": str}``. An endpoint with no recording answers as a transport
-    failure (status 0), so an offline run never reaches the network and
-    never mistakes a missing recording for a platform answer.
-    ``gh_missing=True`` answers every call as if ``gh`` were not installed.
+    Compares equal to its recording key: the bare path (or ``"GET <path>"``)
+    for a GET, ``"<METHOD> <path>"`` for a write.
+    """
+
+    method: str
+    endpoint: str
+    body: Any = None
+
+    def _matches(self, key: str) -> bool:
+        if self.method == "GET" and key == self.endpoint:
+            return True
+        return key == f"{self.method} {self.endpoint}"
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, str):
+            return self._matches(other)
+        return tuple.__eq__(self, other)
+
+    def __ne__(self, other: object) -> bool:
+        return not self == other
+
+    def __hash__(self) -> int:
+        return hash((self.method, self.endpoint, json.dumps(self.body, sort_keys=True, default=str)))
+
+
+class RecordedGhApi:
+    """A responder serving recorded platform responses keyed by method and API path.
+
+    ``responses`` maps a key to ``{"status": int, "body": ..., "error": str}``.
+    A key is ``"<METHOD> <endpoint>"`` (e.g. ``"PUT /repos/o/r/branches/main/protection"``)
+    or a bare endpoint, which means GET; the endpoint is taken after
+    ``$OWNER``/``$REPO``/``$BRANCH`` substitution, leading slash optional.
+    A request with no recording answers as a transport failure (status 0),
+    so an offline run never reaches the network and never mistakes a
+    missing recording for a platform answer. ``gh_missing=True`` answers
+    every call as if ``gh`` were not installed. Every request is appended
+    to ``calls`` as a :class:`GhApiCall`, including the body it sent.
     """
 
     def __init__(self, responses: Mapping[str, Mapping[str, Any]] | None = None, *, gh_missing: bool = False):
-        self.responses = {self._key(k): dict(v) for k, v in (responses or {}).items()}
+        self.responses: dict[tuple[str, str], dict[str, Any]] = {}
+        for key, response in (responses or {}).items():
+            self.record(key, response)
         self.gh_missing = gh_missing
-        self.calls: list[str] = []
+        self.calls: list[GhApiCall] = []
 
     @staticmethod
-    def _key(endpoint: str) -> str:
+    def _path(endpoint: str) -> str:
         return "/" + endpoint.lstrip("/")
 
-    def __call__(self, endpoint: str, paginate: bool = False) -> GhApiResponse:
-        self.calls.append(endpoint)
+    @classmethod
+    def _key(cls, key: str) -> tuple[str, str]:
+        head, sep, rest = key.strip().partition(" ")
+        if sep and head.upper() in _GH_METHODS:
+            return head.upper(), cls._path(rest.strip())
+        return "GET", cls._path(key.strip())
+
+    def record(self, key: str, response: Mapping[str, Any]) -> None:
+        """Add or replace the recording for ``key``."""
+        self.responses[self._key(key)] = dict(response)
+
+    @property
+    def writes(self) -> list[GhApiCall]:
+        return [call for call in self.calls if call.method != "GET"]
+
+    def __call__(self, method: str, endpoint: str | None = None, body: Any = None) -> GhApiResponse:
+        if endpoint is None:
+            method, endpoint = "GET", method
+        method = method.upper()
+        self.calls.append(GhApiCall(method, endpoint, body))
         if self.gh_missing:
             return None, 0, _GH_CLI_MISSING_MESSAGE
-        recorded = self.responses.get(self._key(endpoint))
+        recorded = self.responses.get((method, self._path(endpoint)))
         if recorded is None:
-            return None, 0, f"no recorded response for {endpoint}"
+            return None, 0, f"no recorded response for {method} {endpoint}"
         status = int(recorded.get("status", 200))
         if 200 <= status < 300:
             return recorded.get("body"), status, ""
@@ -135,7 +192,7 @@ def gh_api_with_status(
     answer is returned instead (feature 041).
     """
     if _gh_api_responder is not None:
-        return _gh_api_responder(endpoint, paginate)
+        return _gh_api_responder("GET", endpoint, None)
     args = ["gh", "api"]
     if paginate:
         args.append("--paginate")
@@ -158,6 +215,77 @@ def gh_api_with_status(
         status = int(match.group(1) or match.group(2))
         return None, status, stderr
     return None, 0, stderr or f"gh api failed with exit code {result.returncode}"
+
+
+_INCLUDED_STATUS_RE = re.compile(r"^HTTP/\d(?:\.\d)?\s+(\d{3})\b")
+
+
+def _split_included(stdout: str) -> tuple[int | None, str]:
+    """Split ``gh api --include`` output into the HTTP status and the raw body."""
+    text = stdout.replace("\r\n", "\n")
+    match = _INCLUDED_STATUS_RE.match(text)
+    if match is None:
+        return None, ""
+    _headers, _sep, body = text.partition("\n\n")
+    return int(match.group(1)), body
+
+
+def _error_body_message(raw_body: str) -> str:
+    try:
+        parsed = json.loads(raw_body)
+    except json.JSONDecodeError:
+        return ""
+    return str(parsed.get("message") or "") if isinstance(parsed, dict) else ""
+
+
+def gh_api_write(method: str, endpoint: str, payload: Mapping[str, Any] | list[Any] | None = None) -> GhApiResponse:
+    """Send a write to the GitHub API via ``gh api`` and return ``(body, status, error)`` (feature 043).
+
+    ``payload`` is sent as JSON on stdin (``--input -``), never as
+    ``-f``/``-F`` fields, so booleans, numbers, nulls and nested objects
+    keep their types. The status comes from the ``--include`` status line.
+
+    * On 2xx: ``(parsed_json_or_None, status, "")``.
+    * On an HTTP error: ``(None, status, message)``; never raises.
+    * When no status can be read (``gh`` missing, transport failure, a
+      2xx body that is not JSON): ``(None, 0, message)``. Callers MUST
+      treat ``status == 0`` as unknown -- the write may or may not have
+      happened -- and read the setting back.
+
+    Raises ``ValueError`` only for a method that is not a write. When a
+    responder is installed with :func:`set_gh_api_responder`, it answers
+    ``(method, endpoint, payload)`` instead.
+    """
+    verb = method.upper()
+    if verb not in _GH_WRITE_METHODS:
+        raise ValueError(f"gh_api_write: unsupported method {method!r}")
+    if _gh_api_responder is not None:
+        return _gh_api_responder(verb, endpoint, payload)
+    args = ["gh", "api", "-X", verb, endpoint, "--include"]
+    stdin = None
+    if payload is not None:
+        args += ["--input", "-"]
+        stdin = json.dumps(payload)
+    try:
+        result = subprocess.run(args, input=stdin, capture_output=True, text=True)
+    except FileNotFoundError:
+        return None, 0, _GH_CLI_MISSING_MESSAGE
+
+    stderr = (result.stderr or "").strip()
+    status, raw_body = _split_included(result.stdout or "")
+    if status is None:
+        match = _HTTP_STATUS_RE.search(stderr)
+        if match:
+            return None, int(match.group(1) or match.group(2)), stderr
+        return None, 0, stderr or f"gh api -X {verb} {endpoint} failed with exit code {result.returncode}"
+
+    if 200 <= status < 300:
+        try:
+            body = json.loads(raw_body) if raw_body.strip() else None
+        except json.JSONDecodeError as err:
+            return None, 0, f"GitHub API returned invalid JSON for {verb} {endpoint}: {err}"
+        return body, status, ""
+    return None, status, stderr or _error_body_message(raw_body) or f"HTTP {status}"
 
 
 def gh_api(endpoint: str) -> dict[str, Any]:
