@@ -2,365 +2,357 @@
 
 These tools provide a controlled interface for git operations during
 remediation, ensuring proper error handling and workflow guidance.
+
+Feature 043 (framework-design.md 15.7): each tool works on one remediation
+run, read from the operator-side run manifest (``run_id``, default the
+latest run for the repository). The branch tool never stashes; the commit
+tool stages only the manifest's files whose content still matches what
+remediation wrote, never ignored files, and adds a ``Darnit-Remediation-Run``
+trailer; the PR tool pushes only the run's branch. The repository-state
+precondition is :func:`darnit.remediation.git_state.check_repository_state`.
 """
 
+import os
 import subprocess
 
-from darnit.core.utils import validate_local_path
+from darnit.core.utils import detect_repo_from_git, validate_local_path
+from darnit.remediation import manifest
+from darnit.remediation.git_state import (
+    TRAILER_KEY,
+    GitStateError,
+    base_branch_name,
+    branch_exists,
+    check_repository_state,
+    current_branch,
+    foreign_commits,
+    has_uncommitted_changes,
+    is_ignored,
+    is_work_tree,
+    resolve_base,
+    resolve_commit,
+    run_git,
+)
+from darnit.remediation.plan import content_digest
+
+_PROTECTED_BRANCHES = ("main", "master")
+_REMOTE = "origin"
+
+
+def _gh(repo: str, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["gh", *args], cwd=repo, capture_output=True, text=True)
+
+
+def _error(message: str) -> str:
+    return f"❌ Error: {message}"
+
+
+def _repository(local_path: str, owner: str | None, repo: str | None) -> str:
+    """The identity the remediation executor records this checkout's runs under."""
+    if not owner or not repo:
+        detected = detect_repo_from_git(local_path)
+        if detected:
+            owner = owner or detected.get("owner")
+            repo = repo or detected.get("repo")
+    return manifest.repository_identity(local_path, owner, repo)
+
+
+def _load_run(repository: str, run_id: str | None, checkout: str) -> tuple[manifest.RunManifest | None, str | None]:
+    try:
+        run = manifest.load_run(repository, run_id, checkout=checkout)
+    except ValueError as e:
+        return None, str(e)
+    if run is None:
+        named = f"run {run_id}" if run_id else "run"
+        return None, f"no remediation {named} is recorded for this repository; apply remediation first"
+    return run, None
+
+
+def _bullets(items: list[str]) -> str:
+    return "\n".join(f"  - {item}" for item in items)
 
 
 def create_remediation_branch_impl(
     branch_name: str = "fix/compliance",
     local_path: str = ".",
-    base_branch: str | None = None
+    base_branch: str | None = None,
+    run_id: str | None = None,
+    *,
+    owner: str | None = None,
+    repo: str | None = None,
 ) -> str:
-    """Create a new branch for remediation work.
+    """Create, or switch to, the branch for a remediation run.
+
+    Never stashes. A new branch is created from HEAD and the user's
+    uncommitted changes stay in the working tree untouched. An existing
+    branch is used only if every commit on it beyond its base carries the
+    ``Darnit-Remediation-Run`` trailer, and switching to it requires a clean
+    working tree. A detached HEAD or a merge or rebase in progress is
+    refused. On any refusal nothing is changed.
 
     Args:
-        branch_name: Name for the new branch
+        branch_name: Name for the branch
         local_path: Path to the repository
-        base_branch: Branch to base off of (default: current branch)
+        base_branch: The base an existing branch's commits are checked
+            against (default: current branch); for a new branch it must be HEAD
+        run_id: Remediation run to record the branch in. Default: the
+            latest run for the repository, if it is not yet committed
+        owner: Repository owner the run is recorded under (default: detected as the executor does)
+        repo: Repository name the run is recorded under (default: detected as the executor does)
 
     Returns:
         Success message with branch name or error
     """
     resolved_path, error = validate_local_path(local_path)
     if error:
-        return f"❌ Error: {error}"
+        return _error(error)
 
     try:
-        # Get current branch if base not specified
-        if not base_branch:
-            result = subprocess.run(
-                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                cwd=resolved_path,
-                capture_output=True,
-                text=True
-            )
+        refusal = check_repository_state(resolved_path, branch_name, base_branch)
+        if refusal:
+            return _error(f"cannot use remediation branch '{branch_name}': {refusal}. Nothing was changed.")
+
+        repository = _repository(resolved_path, owner, repo)
+        try:
+            run = manifest.load_run(repository, run_id, checkout=resolved_path)
+        except ValueError as e:
+            return _error(f"{e}. Nothing was changed.")
+        if run_id is None and run is not None and run.commit is not None:
+            run = None
+        if run is not None and run.commit is not None and run.branch not in (None, branch_name):
+            return _error(f"remediation run {run.run_id} was committed on branch '{run.branch}'. Nothing was changed.")
+
+        existed = branch_exists(resolved_path, branch_name)
+        previous = current_branch(resolved_path)
+        if existed:
+            if previous != branch_name:
+                result = run_git(resolved_path, "checkout", "-q", branch_name, "--")
+                if result.returncode != 0:
+                    return _error(f"checking out existing branch: {result.stderr.strip()}")
+        else:
+            result = run_git(resolved_path, "checkout", "-q", "-b", branch_name)
             if result.returncode != 0:
-                return "❌ Error: Not a git repository or git not available"
-            base_branch = result.stdout.strip()
+                return _error(f"creating branch: {result.stderr.strip()}")
 
-        # Check if branch already exists
-        result = subprocess.run(
-            ["git", "rev-parse", "--verify", branch_name],
-            cwd=resolved_path,
-            capture_output=True,
-            text=True
-        )
-        if result.returncode == 0:
-            # Branch exists, check it out (stash dirty files if needed)
-            result = subprocess.run(
-                ["git", "checkout", branch_name],
-                cwd=resolved_path,
-                capture_output=True,
-                text=True
+        if run is None and run_id is not None:
+            run = manifest.start_run(repository, checkout=resolved_path, run_id=run_id)
+        if run is not None:
+            manifest.set_branch(repository, run.run_id, branch_name, checkout=resolved_path)
+            recorded = f"**Remediation run:** {run.run_id}"
+            run_arg = f', run_id="{run.run_id}"'
+        else:
+            recorded = (
+                "**Remediation run:** none recorded yet; the commit step records the branch in the run it commits"
             )
-            if result.returncode != 0:
-                if "local changes" in result.stderr or "would be overwritten" in result.stderr:
-                    stash_result = subprocess.run(
-                        ["git", "stash", "--include-untracked"],
-                        cwd=resolved_path, capture_output=True, text=True,
-                    )
-                    if stash_result.returncode != 0:
-                        return f"❌ Error stashing changes: {stash_result.stderr.strip()}"
+            run_arg = ""
 
-                    checkout_result = subprocess.run(
-                        ["git", "checkout", branch_name],
-                        cwd=resolved_path, capture_output=True, text=True,
-                    )
-                    if checkout_result.returncode != 0:
-                        subprocess.run(["git", "stash", "pop"], cwd=resolved_path,
-                                       capture_output=True, text=True)
-                        return f"❌ Error checking out branch: {checkout_result.stderr.strip()}"
+        if existed:
+            headline = f"✅ Switched to existing branch '{branch_name}'"
+        else:
+            headline = (
+                f"✅ Created and switched to branch '{branch_name}'\n\n**Base branch:** {base_branch or previous}\n\n"
+                "Uncommitted changes were left in the working tree; nothing was stashed."
+            )
 
-                    pop_result = subprocess.run(
-                        ["git", "stash", "pop"],
-                        cwd=resolved_path, capture_output=True, text=True,
-                    )
-                    if pop_result.returncode != 0:
-                        subprocess.run(["git", "checkout", "--theirs", ".project/"],
-                                       cwd=resolved_path, capture_output=True, text=True)
-                        subprocess.run(["git", "stash", "drop"],
-                                       cwd=resolved_path, capture_output=True, text=True)
-                else:
-                    return f"❌ Error checking out existing branch: {result.stderr.strip()}"
+        return f"""{headline}
 
-            return f"""✅ Switched to existing branch '{branch_name}'
+{recorded}
 
 **Next steps:**
 1. Apply remediations: `remediate_audit_findings(local_path="{resolved_path}", dry_run=False)`
-2. Commit changes: `commit_remediation_changes(local_path="{resolved_path}")`
-3. Create PR: `create_remediation_pr(local_path="{resolved_path}")`
-"""
-
-        # Create and checkout new branch (preserves dirty working tree)
-        result = subprocess.run(
-            ["git", "checkout", "-b", branch_name],
-            cwd=resolved_path,
-            capture_output=True,
-            text=True
-        )
-        if result.returncode != 0:
-            return f"❌ Error creating branch: {result.stderr.strip()}"
-
-        return f"""✅ Created and switched to branch '{branch_name}'
-
-**Base branch:** {base_branch}
-
-**Next steps:**
-1. Apply remediations: `remediate_audit_findings(local_path="{resolved_path}", dry_run=False)`
-2. Commit changes: `commit_remediation_changes(local_path="{resolved_path}")`
-3. Create PR: `create_remediation_pr(local_path="{resolved_path}")`
+2. Commit changes: `commit_remediation_changes(local_path="{resolved_path}"{run_arg})`
+3. Create PR: `create_remediation_pr(local_path="{resolved_path}"{run_arg})`
 """
 
     except FileNotFoundError:
         return "❌ Error: git command not found. Ensure git is installed."
     except Exception as e:
         return f"❌ Error: {str(e)}"
+
+
+def _describe(paths: list[str]) -> str:
+    file_descriptions = []
+    for f in paths:
+        if "SECURITY.md" in f:
+            file_descriptions.append("security policy")
+        elif "CONTRIBUTING.md" in f:
+            file_descriptions.append("contribution guidelines")
+        elif "GOVERNANCE.md" in f:
+            file_descriptions.append("governance documentation")
+        elif "CODEOWNERS" in f:
+            file_descriptions.append("code owners")
+        elif "dependabot" in f.lower():
+            file_descriptions.append("Dependabot configuration")
+        elif ".github/ISSUE_TEMPLATE" in f:
+            file_descriptions.append("issue templates")
+        elif "SUPPORT.md" in f:
+            file_descriptions.append("support documentation")
+    if file_descriptions:
+        return f"chore(security): add {', '.join(sorted(set(file_descriptions)))} for compliance"
+    return "chore(security): apply compliance remediations"
 
 
 def commit_remediation_changes_impl(
     local_path: str = ".",
     message: str | None = None,
-    add_all: bool = True
+    run_id: str | None = None,
+    *,
+    owner: str | None = None,
+    repo: str | None = None,
 ) -> str:
-    """Commit remediation changes with a descriptive message.
+    """Commit the files a remediation run wrote, and nothing else.
+
+    Stages, with explicit pathspecs, only the run manifest's files whose
+    current content digest equals the digest remediation wrote; a file
+    changed or deleted since is a conflict and nothing is committed. Ignored
+    files are never staged. Other staged or unstaged changes are left as they
+    are. The message carries ``Darnit-Remediation-Run: <run_id>``; the commit
+    (and, if none was recorded, the branch) is recorded in the manifest.
 
     Args:
         local_path: Path to the repository
         message: Commit message (auto-generated if not provided)
-        add_all: Whether to stage all changes (default: True)
+        run_id: Remediation run to commit (default: the latest run)
+        owner: Repository owner the run is recorded under (default: detected as the executor does)
+        repo: Repository name the run is recorded under (default: detected as the executor does)
 
     Returns:
-        Success message with commit info or error
+        Success message listing every committed file, or error
     """
     resolved_path, error = validate_local_path(local_path)
     if error:
-        return f"❌ Error: {error}"
+        return _error(error)
 
     try:
-        # Check for changes
-        result = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=resolved_path,
-            capture_output=True,
-            text=True
-        )
-        if result.returncode != 0:
-            return "❌ Error: Not a git repository"
+        refusal = check_repository_state(resolved_path)
+        if refusal:
+            return _error(f"cannot commit remediation changes: {refusal}. Nothing was committed.")
 
-        changes = result.stdout.strip()
-        if not changes:
-            return "ℹ️ No changes to commit."
-
-        # Parse changed files for commit message
-        changed_files = []
-        for line in changes.split('\n'):
-            if line.strip():
-                # Format: "XY filename" where XY is status
-                parts = line.split(None, 1)
-                if len(parts) >= 2:
-                    changed_files.append(parts[1])
-
-        # Stage changes
-        if add_all:
-            result = subprocess.run(
-                ["git", "add", "-A"],
-                cwd=resolved_path,
-                capture_output=True,
-                text=True
+        repository = _repository(resolved_path, owner, repo)
+        run, problem = _load_run(repository, run_id, resolved_path)
+        if run is None:
+            return _error(f"{problem}. Nothing was committed.")
+        branch = current_branch(resolved_path)
+        if run.branch and branch != run.branch:
+            return _error(
+                f"remediation run {run.run_id} belongs to branch '{run.branch}', and '{branch}' is checked out. "
+                "Nothing was committed."
             )
-            if result.returncode != 0:
-                return f"❌ Error staging changes: {result.stderr.strip()}"
 
-        # Generate commit message if not provided
-        if not message:
-            # Analyze files to create descriptive message
-            file_descriptions = []
-            for f in changed_files:
-                if "SECURITY.md" in f:
-                    file_descriptions.append("security policy")
-                elif "CONTRIBUTING.md" in f:
-                    file_descriptions.append("contribution guidelines")
-                elif "GOVERNANCE.md" in f:
-                    file_descriptions.append("governance documentation")
-                elif "CODEOWNERS" in f:
-                    file_descriptions.append("code owners")
-                elif "dependabot" in f.lower():
-                    file_descriptions.append("Dependabot configuration")
-                elif ".github/ISSUE_TEMPLATE" in f:
-                    file_descriptions.append("issue templates")
-                elif "SUPPORT.md" in f:
-                    file_descriptions.append("support documentation")
+        conflicts: list[str] = []
+        ignored: list[str] = []
+        to_commit: list[str] = []
+        for entry in run.files:
+            if is_ignored(resolved_path, entry.path):
+                ignored.append(entry.path)
+                continue
+            try:
+                with open(os.path.join(resolved_path, entry.path), "rb") as f:
+                    current = f.read()
+            except FileNotFoundError:
+                conflicts.append(f"{entry.path} (deleted since remediation wrote it)")
+                continue
+            if content_digest(current) != entry.after_digest:
+                conflicts.append(f"{entry.path} (changed since remediation wrote it)")
+                continue
+            if has_uncommitted_changes(resolved_path, entry.path):
+                to_commit.append(entry.path)
 
-            if file_descriptions:
-                items = ", ".join(sorted(set(file_descriptions)))
-                message = f"chore(security): add {items} for compliance"
-            else:
-                message = "chore(security): apply compliance remediations"
+        if conflicts:
+            return f"""❌ Conflict: files changed after remediation wrote them. Nothing was committed.
 
-        # Add trailer
-        full_message = f"""{message}
+**Run:** {run.run_id}
 
-Applied via darnit compliance server."""
+**Conflicting files:**
+{_bullets(conflicts)}
 
-        # Commit
-        result = subprocess.run(
-            ["git", "commit", "-m", full_message],
-            cwd=resolved_path,
-            capture_output=True,
-            text=True
-        )
+Review these files, then re-run remediation or commit them yourself.
+"""
+
+        ignored_note = f"\n\n**Not staged (ignored by the repository):**\n{_bullets(ignored)}" if ignored else ""
+        if not to_commit:
+            return f"ℹ️ No remediation changes to commit for run {run.run_id}.{ignored_note}"
+
+        result = run_git(resolved_path, "--literal-pathspecs", "add", "--", *to_commit)
         if result.returncode != 0:
-            error_msg = result.stderr.strip()
-            if "nothing to commit" in error_msg.lower():
-                return "ℹ️ No changes to commit."
-            return f"❌ Error committing: {error_msg}"
+            return _error(f"staging remediation files: {result.stderr.strip()}")
 
-        # Get commit hash
-        result = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
-            cwd=resolved_path,
-            capture_output=True,
-            text=True
+        message = message or _describe(to_commit)
+        full_message = f"{message}\n\nApplied via darnit compliance server.\n\n{TRAILER_KEY}: {run.run_id}\n"
+        commit_args = ("--literal-pathspecs", "commit", "-q", "--only", "-F", "-", "--", *to_commit)
+        result = run_git(resolved_path, *commit_args, stdin=full_message)
+        if result.returncode != 0:
+            return _error(
+                f"committing: {result.stderr.strip() or result.stdout.strip()}. Nothing was committed; "
+                "the remediation files remain staged."
+            )
+
+        commit_sha = resolve_commit(resolved_path, "HEAD") or "unknown"
+        listed = run_git(resolved_path, "diff-tree", "-r", "--no-commit-id", "--name-only", "-z", "--root", "HEAD")
+        committed = sorted(p for p in listed.stdout.split("\0") if p)
+        manifest.set_commit(repository, run.run_id, commit_sha, checkout=resolved_path)
+        if run.branch is None and branch:
+            manifest.set_branch(repository, run.run_id, branch, checkout=resolved_path)
+
+        unexpected = sorted(set(committed) - set(to_commit))
+        unexpected_note = (
+            f"\n\n**Warning:** a commit hook added files outside the remediation run:\n{_bullets(unexpected)}"
+            if unexpected
+            else ""
         )
-        commit_hash = result.stdout.strip() if result.returncode == 0 else "unknown"
-
-        files_list = '\n'.join(f'  - {f}' for f in changed_files[:10])
-        more_files = f'\n  ... and {len(changed_files) - 10} more' if len(changed_files) > 10 else ''
 
         return f"""✅ Changes committed successfully
 
-**Commit:** {commit_hash}
+**Commit:** {commit_sha[:12]}
+**Run:** {run.run_id}
 **Message:** {message}
-**Files:** {len(changed_files)} file(s) changed
+**Files:** {len(committed)} file(s) committed
 
-**Changed files:**
-{files_list}{more_files}
+**Committed files:**
+{_bullets(committed)}{ignored_note}{unexpected_note}
 
 **Next step:**
-Create a pull request: `create_remediation_pr(local_path="{resolved_path}")`
+Create a pull request: `create_remediation_pr(local_path="{resolved_path}", run_id="{run.run_id}")`
 """
 
     except FileNotFoundError:
         return "❌ Error: git command not found. Ensure git is installed."
+    except GitStateError as e:
+        return _error(f"{e}. Nothing was committed.")
     except Exception as e:
         return f"❌ Error: {str(e)}"
 
 
-def create_remediation_pr_impl(
-    local_path: str = ".",
-    title: str | None = None,
-    body: str | None = None,
-    base_branch: str | None = None,
-    draft: bool = False
-) -> str:
-    """Create a pull request for remediation changes.
-
-    Args:
-        local_path: Path to the repository
-        title: PR title (auto-generated if not provided)
-        body: PR body/description (auto-generated if not provided)
-        base_branch: Target branch for PR (default: repo default branch)
-        draft: Create as draft PR (default: False)
-
-    Returns:
-        Success message with PR URL or error
-    """
-    resolved_path, error = validate_local_path(local_path)
-    if error:
-        return f"❌ Error: {error}"
-
-    try:
-        # Get current branch
-        result = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=resolved_path,
-            capture_output=True,
-            text=True
-        )
-        if result.returncode != 0:
-            return "❌ Error: Not a git repository"
-        current_branch = result.stdout.strip()
-
-        if current_branch in ["main", "master"]:
-            return f"""❌ Error: Cannot create PR from '{current_branch}' branch.
-
-Create a remediation branch first:
-`create_remediation_branch(local_path="{resolved_path}")`
-"""
-
-        # Push branch to remote
-        result = subprocess.run(
-            ["git", "push", "-u", "origin", current_branch],
-            cwd=resolved_path,
-            capture_output=True,
-            text=True
-        )
-        if result.returncode != 0:
-            error_msg = result.stderr.strip()
-            if "already exists" not in error_msg.lower() and "up-to-date" not in error_msg.lower():
-                return f"❌ Error pushing branch: {error_msg}"
-
-        # Get list of commits on this branch vs base
-        base = base_branch or "main"
-        result = subprocess.run(
-            ["git", "log", f"{base}..HEAD", "--oneline"],
-            cwd=resolved_path,
-            capture_output=True,
-            text=True
-        )
-        commits = result.stdout.strip().split('\n') if result.returncode == 0 else []
-        commits = [c for c in commits if c.strip()]
-
-        # Get changed files
-        result = subprocess.run(
-            ["git", "diff", "--name-only", f"{base}..HEAD"],
-            cwd=resolved_path,
-            capture_output=True,
-            text=True
-        )
-        changed_files = result.stdout.strip().split('\n') if result.returncode == 0 else []
-        changed_files = [f for f in changed_files if f.strip()]
-
-        # Generate title if not provided
-        if not title:
-            title = "chore(security): compliance improvements"
-
-        # Generate body if not provided
-        if not body:
-            body = """## Summary
+def _pr_body(changed_files: list[str]) -> str:
+    body = """## Summary
 
 This PR addresses compliance requirements.
 
 ## Changes
 
 """
-            # Add file-specific descriptions
-            file_changes = []
-            for f in changed_files:
-                if "SECURITY.md" in f:
-                    file_changes.append("- Added/updated `SECURITY.md` with vulnerability reporting policy")
-                elif "CONTRIBUTING.md" in f:
-                    file_changes.append("- Added/updated `CONTRIBUTING.md` with contribution guidelines")
-                elif "GOVERNANCE.md" in f:
-                    file_changes.append("- Added/updated `GOVERNANCE.md` with project governance")
-                elif "CODEOWNERS" in f:
-                    file_changes.append("- Added/updated `CODEOWNERS` for code review requirements")
-                elif "dependabot" in f.lower():
-                    file_changes.append("- Configured Dependabot for automated dependency updates")
-                elif "SUPPORT.md" in f:
-                    file_changes.append("- Added `SUPPORT.md` with support information")
-                elif ".github/ISSUE_TEMPLATE" in f:
-                    file_changes.append("- Added issue templates for bug reports")
+    file_changes = []
+    for f in changed_files:
+        if "SECURITY.md" in f:
+            file_changes.append("- Added/updated `SECURITY.md` with vulnerability reporting policy")
+        elif "CONTRIBUTING.md" in f:
+            file_changes.append("- Added/updated `CONTRIBUTING.md` with contribution guidelines")
+        elif "GOVERNANCE.md" in f:
+            file_changes.append("- Added/updated `GOVERNANCE.md` with project governance")
+        elif "CODEOWNERS" in f:
+            file_changes.append("- Added/updated `CODEOWNERS` for code review requirements")
+        elif "dependabot" in f.lower():
+            file_changes.append("- Configured Dependabot for automated dependency updates")
+        elif "SUPPORT.md" in f:
+            file_changes.append("- Added `SUPPORT.md` with support information")
+        elif ".github/ISSUE_TEMPLATE" in f:
+            file_changes.append("- Added issue templates for bug reports")
 
-            if file_changes:
-                body += '\n'.join(sorted(set(file_changes)))
-            else:
-                body += f"- Modified {len(changed_files)} file(s) for compliance"
+    if file_changes:
+        body += "\n".join(sorted(set(file_changes)))
+    else:
+        body += f"- Modified {len(changed_files)} file(s) for compliance"
 
-            body += """
+    body += """
 
 ## Testing
 
@@ -371,31 +363,115 @@ This PR addresses compliance requirements.
 ---
 *Generated by darnit compliance server*
 """
+    return body
 
-        # Build gh pr create command
-        cmd = ["gh", "pr", "create", "--title", title, "--body", body]
-        if base_branch:
-            cmd.extend(["--base", base_branch])
+
+def create_remediation_pr_impl(
+    local_path: str = ".",
+    title: str | None = None,
+    body: str | None = None,
+    base_branch: str | None = None,
+    draft: bool = False,
+    run_id: str | None = None,
+    *,
+    owner: str | None = None,
+    repo: str | None = None,
+) -> str:
+    """Push a remediation run's branch, and only that branch, and open a pull request.
+
+    The branch must hold the run's commit, and every commit on it beyond its
+    base must carry the ``Darnit-Remediation-Run`` trailer. Commits and
+    changed files are listed against the branch's base.
+
+    Args:
+        local_path: Path to the repository
+        title: PR title (auto-generated if not provided)
+        body: PR body/description (auto-generated if not provided)
+        base_branch: Target branch for PR (default: the remote's default
+            branch, else ``main`` or ``master``)
+        draft: Create as draft PR (default: False)
+        run_id: Remediation run whose branch to push (default: the latest run)
+        owner: Repository owner the run is recorded under (default: detected as the executor does)
+        repo: Repository name the run is recorded under (default: detected as the executor does)
+
+    Returns:
+        Success message with PR URL or error
+    """
+    resolved_path, error = validate_local_path(local_path)
+    if error:
+        return _error(error)
+
+    try:
+        if not is_work_tree(resolved_path):
+            return "❌ Error: Not a git repository"
+
+        repository = _repository(resolved_path, owner, repo)
+        run, problem = _load_run(repository, run_id, resolved_path)
+        if run is None:
+            return _error(f"{problem}. Nothing was pushed.")
+        branch = run.branch
+        if branch is None:
+            return _error(
+                f"remediation run {run.run_id} has no branch. Create one first: "
+                f'`create_remediation_branch(local_path="{resolved_path}", run_id="{run.run_id}")`'
+            )
+        if branch in _PROTECTED_BRANCHES:
+            return f"""❌ Error: Cannot create PR from '{branch}' branch.
+
+Create a remediation branch first:
+`create_remediation_branch(local_path="{resolved_path}")`
+"""
+        if run.commit is None:
+            return _error(
+                f"nothing is committed for remediation run {run.run_id}; commit it first. Nothing was pushed."
+            )
+        tip = resolve_commit(resolved_path, f"refs/heads/{branch}")
+        if tip is None:
+            return _error(f"branch '{branch}' of remediation run {run.run_id} does not exist. Nothing was pushed.")
+        if run_git(resolved_path, "merge-base", "--is-ancestor", run.commit, tip).returncode != 0:
+            return _error(f"branch '{branch}' does not contain the run's commit {run.commit[:12]}. Nothing was pushed.")
+
+        base = resolve_base(resolved_path, branch, base_branch, current_first=False)
+        if base is None:
+            return _error(f"cannot determine the base of branch '{branch}'; pass base_branch. Nothing was pushed.")
+        foreign = foreign_commits(resolved_path, base, branch)
+        if foreign:
+            return _error(
+                f"branch '{branch}' has {len(foreign)} commit(s) beyond '{base}' without a {TRAILER_KEY} trailer "
+                f"({', '.join(sha[:12] for sha in foreign)}); it holds work remediation did not make. Nothing was pushed."
+            )
+
+        ref = f"refs/heads/{branch}"
+        result = run_git(
+            resolved_path,
+            "push",
+            "--no-follow-tags",
+            "--recurse-submodules=no",
+            "--set-upstream",
+            _REMOTE,
+            f"{ref}:{ref}",
+        )
+        if result.returncode != 0:
+            return _error(f"pushing branch: {result.stderr.strip()}")
+
+        result = run_git(resolved_path, "log", "--oneline", f"{base}..{ref}", "--")
+        commits = [c for c in result.stdout.splitlines() if c.strip()] if result.returncode == 0 else []
+        result = run_git(resolved_path, "diff", "--name-only", "-z", f"{base}...{ref}", "--")
+        changed_files = [f for f in result.stdout.split("\0") if f] if result.returncode == 0 else []
+
+        title = title or "chore(security): compliance improvements"
+        body = body or _pr_body(changed_files)
+        target = base_branch_name(base)
+
+        cmd = ["pr", "create", "--head", branch, "--base", target, "--title", title, "--body", body]
         if draft:
             cmd.append("--draft")
-
-        result = subprocess.run(
-            cmd,
-            cwd=resolved_path,
-            capture_output=True,
-            text=True
-        )
+        result = _gh(resolved_path, *cmd)
 
         if result.returncode != 0:
             error_msg = result.stderr.strip()
             if "already exists" in error_msg.lower():
-                # PR already exists, try to get URL
-                result = subprocess.run(
-                    ["gh", "pr", "view", "--json", "url", "-q", ".url"],
-                    cwd=resolved_path,
-                    capture_output=True,
-                    text=True
-                )
+                result = _gh(resolved_path, "pr", "view", branch, "--json", "url", "-q", ".url")
                 if result.returncode == 0:
                     pr_url = result.stdout.strip()
                     return f"""ℹ️ Pull request already exists
@@ -412,7 +488,10 @@ The branch already has an open PR. You can view or update it at the URL above.
 
 **URL:** {pr_url}
 **Title:** {title}
-**Branch:** {current_branch}
+**Branch:** {branch}
+**Base:** {target}
+**Run:** {run.run_id}
+**Commits:** {len(commits)}
 **Files changed:** {len(changed_files)}
 
 The PR is ready for review. After approval and merge, re-run the audit to verify improvements.
@@ -420,6 +499,8 @@ The PR is ready for review. After approval and merge, re-run the audit to verify
 
     except FileNotFoundError:
         return "❌ Error: gh CLI not found. Install from https://cli.github.com/"
+    except GitStateError as e:
+        return _error(f"{e}. Nothing was pushed.")
     except Exception as e:
         return f"❌ Error: {str(e)}"
 

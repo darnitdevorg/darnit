@@ -57,7 +57,7 @@ from darnit.config.framework_schema import (
 )
 from darnit.config.when_evaluator import evaluate_when
 from darnit.core.logging import get_logger
-from darnit.remediation import manifest
+from darnit.remediation import git_state, manifest
 from darnit.remediation.helpers import (
     detect_repo_from_git,
 )
@@ -251,6 +251,7 @@ class RemediationExecutor:
         self.run_id = run_id
         self._run_ready = False
         self.platform = platform
+        self._in_git: bool | None = None
 
         # Auto-detect owner/repo if not provided
         if not owner or not repo:
@@ -530,13 +531,13 @@ class RemediationExecutor:
         written = False
         for change in changes:
             try:
-                self._write(change)
+                applied = self._write(change)
             except (WriteRefused, OSError, ValueError, LookupError) as e:
                 logger.warning(f"Remediation for {control_id} succeeded but project_update failed: {e}")
                 result.details["project_update"] = f"failed: {e}"
                 return
-            result.file_changes.append(change)
-            written = True
+            result.file_changes.append(applied)
+            written = written or applied.changes
         result.details["project_update"] = "applied" if written else "unchanged"
         if written:
             result.changed = True
@@ -553,20 +554,62 @@ class RemediationExecutor:
         assert self.run_id is not None
         return repository, self.run_id
 
-    def _write(self, change: FileChange) -> None:
+    def _vcs_state(self, path: str) -> tuple[bool, bool]:
+        """``(user_changes, ignored)`` for ``path`` in a git checkout; ``(False, False)`` outside one.
+
+        A file this run wrote, unchanged since, is not a user change.
+        """
+        if self._in_git is None:
+            self._in_git = git_state.is_work_tree(self.local_path)
+        if not self._in_git:
+            return False, False
+        try:
+            if git_state.is_ignored(self.local_path, path):
+                return False, True
+            if not git_state.has_uncommitted_changes(self.local_path, path):
+                return False, False
+        except git_state.GitStateError as e:
+            raise WriteRefused(f"{path}: {e}") from e
+        return not self._written_this_run(path), False
+
+    def _written_this_run(self, path: str) -> bool:
+        if self.run_id is None:
+            return False
+        repository = manifest.repository_identity(self.local_path, self.owner, self.repo)
+        run = manifest.load_run(repository, self.run_id, checkout=self.local_path)
+        entry = next((f for f in run.files if f.path == path), None) if run else None
+        if entry is None:
+            return False
+        try:
+            with open(os.path.join(self.local_path, path), "rb") as f:
+                return content_digest(f.read()) == entry.after_digest
+        except OSError:
+            return False
+
+    def _write(self, change: FileChange) -> FileChange:
         """Write one planned change atomically and record it in the run manifest.
 
+        Returns the change as applied. A target with uncommitted user changes
+        is not written and comes back as ``action = "none"``, reason
+        ``user_changes_present`` (FR-011); a target the repository ignores is
+        written and comes back with ``ignored = True``, so it is never staged
+        (FR-014).
+
         Raises:
-            WriteRefused: the target is outside the repository, or no longer
-                in the state the change was planned against.
+            WriteRefused: the target is outside the repository, its git state
+                cannot be read, or it is no longer in the state the change
+                was planned against.
         """
         if not change.changes:
-            return
+            return change
         assert change.content is not None
         root = os.path.realpath(self.local_path)
         full_path = os.path.join(root, change.path)
         if os.path.commonpath([root, os.path.realpath(full_path)]) != root:
             raise WriteRefused(f"{change.path} resolves outside the repository")
+        user_changes, ignored = self._vcs_state(change.path)
+        if user_changes:
+            return FileChange(path=change.path, action="none", reason="user_changes_present")
         if change.action == "create" and os.path.lexists(full_path):
             raise WriteRefused(f"{change.path} exists; it was planned as a new file")
         if change.action == "modify":
@@ -582,6 +625,7 @@ class RemediationExecutor:
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
         _write_bytes_atomic(full_path, change.content.encode("utf-8"))
         manifest.record_file(repository, run_id, change.path, change.after_digest or "", checkout=self.local_path)
+        return change.model_copy(update={"ignored": True}) if ignored else change
 
     def _record_change_set(self, digest: str) -> None:
         repository, run_id = self._ensure_run()
@@ -781,14 +825,14 @@ class RemediationExecutor:
             elif handler_result.status == HandlerResultStatus.PASS and result_entry["status"] != "error":
                 for change in changes:
                     try:
-                        self._write(change)
+                        applied = self._write(change)
                     except (WriteRefused, OSError, ValueError, LookupError) as e:
                         result_entry["status"] = "error"
                         result_entry["message"] = f"Not written: {e}"
                         all_success = False
                         break
-                    file_changes.append(change)
-                    wrote = wrote or change.changes
+                    file_changes.append(applied)
+                    wrote = wrote or applied.changes
                 # Propagate llm_enhance metadata for AI-assisted file customization
                 if result_entry["status"] != "error" and "llm_enhance" in handler_config:
                     results[-1]["llm_enhance"] = {
