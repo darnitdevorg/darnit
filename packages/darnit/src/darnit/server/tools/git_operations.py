@@ -43,7 +43,7 @@ def _gh(repo: str, *args: str) -> subprocess.CompletedProcess[str]:
 
 
 def _error(message: str) -> str:
-    return f"❌ Error: {message}"
+    return f"Error: {message}"
 
 
 def _repository(local_path: str, owner: str | None, repo: str | None) -> str:
@@ -146,10 +146,10 @@ def create_remediation_branch_impl(
             run_arg = ""
 
         if existed:
-            headline = f"✅ Switched to existing branch '{branch_name}'"
+            headline = f"Switched to existing branch '{branch_name}'"
         else:
             headline = (
-                f"✅ Created and switched to branch '{branch_name}'\n\n**Base branch:** {base_branch or previous}\n\n"
+                f"Created and switched to branch '{branch_name}'\n\n**Base branch:** {base_branch or previous}\n\n"
                 "Uncommitted changes were left in the working tree; nothing was stashed."
             )
 
@@ -164,9 +164,9 @@ def create_remediation_branch_impl(
 """
 
     except FileNotFoundError:
-        return "❌ Error: git command not found. Ensure git is installed."
+        return "Error: git command not found. Ensure git is installed."
     except Exception as e:
-        return f"❌ Error: {str(e)}"
+        return f"Error: {str(e)}"
 
 
 def _describe(paths: list[str]) -> str:
@@ -258,7 +258,7 @@ def commit_remediation_changes_impl(
                 to_commit.append(entry.path)
 
         if conflicts:
-            return f"""❌ Conflict: files changed after remediation wrote them. Nothing was committed.
+            return f"""Conflict: files changed after remediation wrote them. Nothing was committed.
 
 **Run:** {run.run_id}
 
@@ -270,7 +270,7 @@ Review these files, then re-run remediation or commit them yourself.
 
         ignored_note = f"\n\n**Not staged (ignored by the repository):**\n{_bullets(ignored)}" if ignored else ""
         if not to_commit:
-            return f"ℹ️ No remediation changes to commit for run {run.run_id}.{ignored_note}"
+            return f"No remediation changes to commit for run {run.run_id}.{ignored_note}"
 
         result = run_git(resolved_path, "--literal-pathspecs", "add", "--", *to_commit)
         if result.returncode != 0:
@@ -300,7 +300,7 @@ Review these files, then re-run remediation or commit them yourself.
             else ""
         )
 
-        return f"""✅ Changes committed successfully
+        return f"""Changes committed successfully
 
 **Commit:** {commit_sha[:12]}
 **Run:** {run.run_id}
@@ -315,11 +315,11 @@ Create a pull request: `create_remediation_pr(local_path="{resolved_path}", run_
 """
 
     except FileNotFoundError:
-        return "❌ Error: git command not found. Ensure git is installed."
+        return "Error: git command not found. Ensure git is installed."
     except GitStateError as e:
         return _error(f"{e}. Nothing was committed.")
     except Exception as e:
-        return f"❌ Error: {str(e)}"
+        return f"Error: {str(e)}"
 
 
 def _pr_body(changed_files: list[str]) -> str:
@@ -403,7 +403,7 @@ def create_remediation_pr_impl(
 
     try:
         if not is_work_tree(resolved_path):
-            return "❌ Error: Not a git repository"
+            return "Error: Not a git repository"
 
         repository = _repository(resolved_path, owner, repo)
         run, problem = _load_run(repository, run_id, resolved_path)
@@ -416,7 +416,7 @@ def create_remediation_pr_impl(
                 f'`create_remediation_branch(local_path="{resolved_path}", run_id="{run.run_id}")`'
             )
         if branch in _PROTECTED_BRANCHES:
-            return f"""❌ Error: Cannot create PR from '{branch}' branch.
+            return f"""Error: Cannot create PR from '{branch}' branch.
 
 Create a remediation branch first:
 `create_remediation_branch(local_path="{resolved_path}")`
@@ -474,17 +474,17 @@ Create a remediation branch first:
                 result = _gh(resolved_path, "pr", "view", branch, "--json", "url", "-q", ".url")
                 if result.returncode == 0:
                     pr_url = result.stdout.strip()
-                    return f"""ℹ️ Pull request already exists
+                    return f"""Pull request already exists
 
 **URL:** {pr_url}
 
 The branch already has an open PR. You can view or update it at the URL above.
 """
-            return f"❌ Error creating PR: {error_msg}"
+            return f"Error creating PR: {error_msg}"
 
         pr_url = result.stdout.strip()
 
-        return f"""✅ Pull request created successfully
+        return f"""Pull request created successfully
 
 **URL:** {pr_url}
 **Title:** {title}
@@ -498,11 +498,11 @@ The PR is ready for review. After approval and merge, re-run the audit to verify
 """
 
     except FileNotFoundError:
-        return "❌ Error: gh CLI not found. Install from https://cli.github.com/"
+        return "Error: gh CLI not found. Install from https://cli.github.com/"
     except GitStateError as e:
         return _error(f"{e}. Nothing was pushed.")
     except Exception as e:
-        return f"❌ Error: {str(e)}"
+        return f"Error: {str(e)}"
 
 
 def get_remediation_status_impl(local_path: str = ".") -> str:
@@ -516,7 +516,7 @@ def get_remediation_status_impl(local_path: str = ".") -> str:
     """
     resolved_path, error = validate_local_path(local_path)
     if error:
-        return f"❌ Error: {error}"
+        return f"Error: {error}"
 
     try:
         # Get current branch
@@ -527,7 +527,7 @@ def get_remediation_status_impl(local_path: str = ".") -> str:
             text=True
         )
         if result.returncode != 0:
-            return "❌ Error: Not a git repository"
+            return "Error: Not a git repository"
         current_branch = result.stdout.strip()
 
         # Get status
@@ -571,7 +571,7 @@ def get_remediation_status_impl(local_path: str = ".") -> str:
 
         if current_branch in ["main", "master"]:
             lines.append("")
-            lines.append("⚠️ **Warning:** You're on the default branch. Create a remediation branch first:")
+            lines.append("**Warning:** You're on the default branch. Create a remediation branch first:")
             lines.append("```python")
             lines.append(f'create_remediation_branch(local_path="{resolved_path}")')
             lines.append("```")
@@ -600,10 +600,10 @@ def get_remediation_status_impl(local_path: str = ".") -> str:
             lines.append("")
             lines.append(f"**Open PR:** {pr_url}")
             lines.append("")
-            lines.append("✅ PR is open and ready for review!")
+            lines.append("PR is open and ready for review!")
         else:
             lines.append("")
-            lines.append("✅ Working directory is clean.")
+            lines.append("Working directory is clean.")
             lines.append("")
             lines.append("**To start remediation:**")
             lines.append("```python")
@@ -614,6 +614,6 @@ def get_remediation_status_impl(local_path: str = ".") -> str:
         return "\n".join(lines)
 
     except FileNotFoundError:
-        return "❌ Error: git command not found. Ensure git is installed."
+        return "Error: git command not found. Ensure git is installed."
     except Exception as e:
-        return f"❌ Error: {str(e)}"
+        return f"Error: {str(e)}"

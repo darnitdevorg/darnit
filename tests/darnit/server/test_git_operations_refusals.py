@@ -15,7 +15,16 @@ from darnit.remediation.git_state import TRAILER_KEY, check_repository_state
 from darnit.remediation.plan import FileChange
 from darnit.server.tools import git_operations
 
-from .conftest import REMEDIATION_BRANCH, BareRemote, DirtyRepo, ForeignBranchRepo, assert_unchanged, git, snapshot
+from .conftest import (
+    REMEDIATION_BRANCH,
+    SUCCESS,
+    BareRemote,
+    DirtyRepo,
+    ForeignBranchRepo,
+    assert_unchanged,
+    git,
+    snapshot,
+)
 
 OWNER, REPO = "example-org", "example"
 IDENTITY = f"github.com/{OWNER}/{REPO}"
@@ -88,7 +97,7 @@ class TestRefusedStates:
         result = create_branch(branch_name=REMEDIATION_BRANCH, local_path=str(repo))
 
         assert refusal is not None and reason in refusal
-        assert result.startswith("❌") and reason in result
+        assert result.startswith(("Error", "Conflict")) and reason in result
         assert_unchanged(repo, files)
         assert _git_state(repo) == state
         assert manifest.load_run(IDENTITY) is None
@@ -101,7 +110,7 @@ class TestRefusedStates:
 
         result = commit_changes(local_path=str(repo), run_id=run.run_id)
 
-        assert result.startswith("❌")
+        assert result.startswith(("Error", "Conflict"))
         assert_unchanged(repo, files)
         assert _git_state(repo) == state
 
@@ -113,7 +122,7 @@ class TestRefusedStates:
 
         result = create_branch(branch_name="fix/new", local_path=str(repo))
 
-        assert result.startswith("❌") and "rebase" in result
+        assert result.startswith(("Error", "Conflict")) and "rebase" in result
         assert_unchanged(repo, files)
         assert _git_state(repo) == state
 
@@ -124,7 +133,7 @@ class TestRefusedStates:
 
         result = create_branch(branch_name=REMEDIATION_BRANCH, local_path=str(repo))
 
-        assert result.startswith("❌") and "clean working tree" in result
+        assert result.startswith(("Error", "Conflict")) and "clean working tree" in result
         assert_unchanged(repo, files)
         assert _git_state(repo) == state
 
@@ -137,7 +146,7 @@ class TestRefusedStates:
 
         result = create_branch(branch_name="fix/darnit", local_path=str(repo), run_id=run_id)
 
-        assert result.startswith("✅"), result
+        assert result.startswith(SUCCESS), result
         assert git(repo, "symbolic-ref", "--short", "HEAD").stdout.strip() == "fix/darnit"
         run = manifest.load_run(IDENTITY, run_id)
         assert run is not None and run.branch == "fix/darnit"
@@ -148,15 +157,15 @@ class TestRefusedStates:
         repo = r_foreign_branch.path
         bare_remote.attach(repo)
         run_id = manifest.new_run_id()
-        assert create_branch(branch_name="fix/darnit", local_path=str(repo), run_id=run_id).startswith("✅")
+        assert create_branch(branch_name="fix/darnit", local_path=str(repo), run_id=run_id).startswith(SUCCESS)
         assert _apply(repo, SECURITY, run_id=run_id).changed
-        assert commit_changes(local_path=str(repo), run_id=run_id).startswith("✅")
+        assert commit_changes(local_path=str(repo), run_id=run_id).startswith(SUCCESS)
         _commit(repo, "user work on the remediation branch", {"NOTES.md": "mine\n"})
         remote_before = bare_remote.branches()
 
         result = create_pr(local_path=str(repo), run_id=run_id)
 
-        assert result.startswith("❌") and TRAILER_KEY in result
+        assert result.startswith(("Error", "Conflict")) and TRAILER_KEY in result
         assert bare_remote.branches() == remote_before
         assert no_gh == []
 
@@ -165,13 +174,13 @@ class TestRefusedStates:
         bare_remote.attach(repo)
         run_id = manifest.new_run_id()
         assert _apply(repo, SECURITY, run_id=run_id).changed
-        assert commit_changes(local_path=str(repo), run_id=run_id).startswith("✅")
+        assert commit_changes(local_path=str(repo), run_id=run_id).startswith(SUCCESS)
         refs = ("for-each-ref", "--format=%(refname) %(objectname)")
         remote_before = git(bare_remote.path, *refs).stdout
 
         result = create_pr(local_path=str(repo), run_id=run_id)
 
-        assert result.startswith("❌") and "main" in result
+        assert result.startswith(("Error", "Conflict")) and "main" in result
         assert git(bare_remote.path, *refs).stdout == remote_before
 
 
@@ -243,7 +252,7 @@ class TestIgnoredTargets:
             ("SECURITY.md", False),
         ]
         assert (repo / "generated" / "report.md").is_file()
-        assert commit.startswith("✅"), commit
+        assert commit.startswith(SUCCESS), commit
         committed = git(repo, "diff-tree", "-r", "--no-commit-id", "--name-only", "HEAD").stdout.split()
         assert committed == ["SECURITY.md"]
         assert git(repo, "ls-files", "--", "generated/report.md").stdout == ""
@@ -262,7 +271,7 @@ class TestConflicts:
 
         commit = commit_changes(local_path=str(repo), run_id=result.run_id)
 
-        assert commit.startswith("❌") and "SECURITY.md" in commit and "conflict" in commit.lower()
+        assert commit.startswith(("Error", "Conflict")) and "SECURITY.md" in commit and "conflict" in commit.lower()
         assert_unchanged(repo, files)
         assert _git_state(repo) == state
         run = manifest.load_run(IDENTITY, result.run_id)
@@ -275,7 +284,7 @@ class TestConflicts:
 
         commit = commit_changes(local_path=str(repo), run_id=result.run_id)
 
-        assert commit.startswith("✅"), commit
+        assert commit.startswith(SUCCESS), commit
         committed = git(repo, "diff-tree", "-r", "--no-commit-id", "--name-only", "HEAD").stdout.split()
         assert committed == ["SECURITY.md"]
         assert git(repo, "diff", "--cached", "--name-only").stdout.split() == ["README.md"]
@@ -286,6 +295,6 @@ class TestConflicts:
 
         commit = commit_changes(local_path=str(r_dirty.path))
 
-        assert commit.startswith("❌") and "run" in commit
+        assert commit.startswith(("Error", "Conflict")) and "run" in commit
         assert_unchanged(r_dirty.path, files)
         assert _git_state(r_dirty.path) == state

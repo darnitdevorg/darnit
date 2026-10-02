@@ -10,6 +10,8 @@ iterates *controls*, not hardcoded categories.
 
 import json
 import os
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -27,6 +29,7 @@ from darnit.remediation.context_validator import (
     check_context_requirements,
 )
 from darnit.remediation.executor import RemediationExecutor
+from darnit.remediation.plan import ErrorInfo, FileChange, PlanItem, RemediationOutcome, RemediationRun
 from darnit.tools import (
     calculate_compliance,
     prepare_audit,
@@ -582,6 +585,12 @@ def _apply_declarative_remediation(
             }
 
         platform_results = _platform_results(result.details)
+        applied_record: dict[str, Any] = {
+            "plan": plan_items,
+            "platform": platform_results,
+            "file_changes": [change.model_dump(mode="json") for change in result.file_changes],
+            "handlers": _handler_statuses(result.details),
+        }
         platform_status = _platform_status(platform_results, result.changed) if result.success else None
         if platform_status is not None:
             return {
@@ -591,8 +600,7 @@ def _apply_declarative_remediation(
                 "controls": [control_id],
                 "result": _platform_summary(platform_results),
                 "declarative": True,
-                "plan": plan_items,
-                "platform": platform_results,
+                **applied_record,
             }
 
         if result.success:
@@ -614,10 +622,6 @@ def _apply_declarative_remediation(
                         if config_updated:
                             logger.info(f"Updated .project/ with reference: {created_path}")
                         break
-
-            # Apply project_update if defined
-            if remediation_config.project_update:
-                _apply_project_update(local_path, remediation_config.project_update, control_id)
 
             # Optional LLM enhancement for complex documents
             enhanced = False
@@ -666,10 +670,7 @@ def _apply_declarative_remediation(
                 "declarative": True,
                 "config_updated": config_updated,
                 "enhanced": enhanced,
-                "plan": plan_items,
-                "platform": platform_results,
-                "changed": result.changed,
-                "file_changes": [change.model_dump(mode="json") for change in result.file_changes],
+                **applied_record,
             }
             # Propagate handler evidence containing LLM consultation
             # payloads so the MCP tool can surface them to the agent.
@@ -691,9 +692,7 @@ def _apply_declarative_remediation(
                 "description": description,
                 "message": "; ".join(h.get("message", "") for h in failures) or result.message,
                 "declarative": True,
-                "plan": plan_items,
-                "platform": platform_results,
-                "changed": bool(platform_results and any(p.get("changed") for p in platform_results)),
+                **applied_record,
             }
 
     except (RuntimeError, ValueError, TypeError, KeyError) as e:
@@ -713,6 +712,13 @@ def _platform_results(details: dict[str, Any] | None) -> list[dict[str, Any]]:
         platform_result
         for handler in (details or {}).get("handlers", [])
         for platform_result in (handler.get("evidence") or {}).get("platform_results", [])
+    ]
+
+
+def _handler_statuses(details: dict[str, Any] | None) -> list[dict[str, str]]:
+    return [
+        {"handler": h.get("handler", "?"), "status": h.get("status", "?"), "message": h.get("message", "")}
+        for h in (details or {}).get("handlers", [])
     ]
 
 
@@ -749,20 +755,6 @@ def _platform_summary(platform_results: list[dict[str, Any]]) -> str:
         elif kind == "unchanged":
             lines.append(f"Platform setting already satisfied ({platform_result.get('reason')}); nothing was written.")
     return "\n".join(lines)
-
-
-def _apply_project_update(
-    local_path: str,
-    project_update: Any,
-    control_id: str,
-) -> None:
-    """Apply project_update after successful remediation."""
-    from darnit.remediation.executor import apply_project_update
-
-    try:
-        apply_project_update(local_path, project_update, control_id)
-    except Exception as e:
-        logger.warning(f"Failed to apply project_update for {control_id}: {e}")
 
 
 # =============================================================================
@@ -924,6 +916,14 @@ def _format_preflight_prompt(
 # =============================================================================
 
 
+@dataclass(frozen=True)
+class RemediationReport:
+    """A remediation call's Markdown report and, when remediation ran, its run record."""
+
+    markdown: str
+    run: RemediationRun | None = None
+
+
 def remediate_audit_findings(
     local_path: str = ".",
     owner: str | None = None,
@@ -943,9 +943,11 @@ def remediate_audit_findings(
 
     Platform changes follow the operator's remediation policy (feature 043):
     under ``prompt`` a change set is written only when its digest is in
-    ``approve``. The report ends with a fenced JSON block holding the
-    ``RemediationRun`` (run id, policy, plan items and change sets with their
-    digests, and in an apply the per-control outcomes).
+    ``approve``. After an apply, every control whose remediation changed
+    something is re-checked without writing the audit cache, and its outcome
+    says whether it now passes. The report ends with a fenced JSON block
+    holding the ``RemediationRun`` (run id, policy, plan items and change
+    sets with their digests, and in an apply the per-control outcomes).
 
     Args:
         local_path: Absolute path to repository
@@ -964,10 +966,39 @@ def remediate_audit_findings(
     Returns:
         Markdown-formatted summary of applied or planned remediations
     """
+    return run_remediation(
+        local_path=local_path,
+        owner=owner,
+        repo=repo,
+        categories=categories,
+        dry_run=dry_run,
+        profile=profile,
+        enhance_with_llm=enhance_with_llm,
+        approve=approve,
+        run_id=run_id,
+    ).markdown
+
+
+def run_remediation(
+    local_path: str = ".",
+    owner: str | None = None,
+    repo: str | None = None,
+    categories: list[str] | None = None,
+    dry_run: bool = True,
+    profile: str | None = None,
+    enhance_with_llm: bool = False,
+    approve: list[str] | None = None,
+    run_id: str | None = None,
+) -> RemediationReport:
+    """:func:`remediate_audit_findings`, returning the run record with the report.
+
+    ``run`` is None when remediation did not run (an error, nothing to
+    remediate, or context that needs confirmation).
+    """
     # Validate path
     resolved_path, path_error = validate_local_path(local_path)
     if path_error:
-        return f"❌ Error: {path_error}"
+        return RemediationReport(f"Error: {path_error}")
     local_path = resolved_path
 
     from darnit.core.utils import detect_owner_repo
@@ -984,7 +1015,7 @@ def remediate_audit_findings(
     # Load framework config (needed for control discovery)
     framework = _get_framework_config()
     if not framework:
-        return "❌ Error: Could not load framework TOML config"
+        return RemediationReport("Error: Could not load framework TOML config")
 
     # Apply profile filtering if specified
     profile_ids: set[str] | None = None
@@ -1003,7 +1034,7 @@ def remediate_audit_findings(
             _, profile_config = resolve_profile(profile, profile_impls)
             profile_ids = set(resolve_profile_control_ids(profile_config, all_controls))
         except Exception as e:
-            return f"❌ Error resolving profile '{profile}': {e}"
+            return RemediationReport(f"Error resolving profile '{profile}': {e}")
 
     # ------------------------------------------------------------------
     # Determine which controls failed the audit.
@@ -1055,11 +1086,11 @@ def remediate_audit_findings(
     # ------------------------------------------------------------------
     if not categories or categories == ["all"]:
         if error:
-            return f"❌ Error running audit: {error}"
+            return RemediationReport(f"Error running audit: {error}")
         if not failed_ids:
             if failed_ids is None:
-                return "❌ Audit did not produce results. Try running an audit first."
-            return "✅ No remediations needed - all controls are passing."
+                return RemediationReport("Error: Audit did not produce results. Try running an audit first.")
+            return RemediationReport("No remediations needed - all controls are passing.")
 
         # All failed controls that have ANY remediation in TOML
         remediable_ids = []
@@ -1100,12 +1131,12 @@ def remediate_audit_findings(
     if not remediable_ids:
         if failed_ids:
             no_handler_ids = sorted(failed_ids)
-            return (
-                f"⚠️ {len(failed_ids)} control(s) failed but none have auto-fix handlers.\n\n"
+            return RemediationReport(
+                f"{len(failed_ids)} control(s) failed but none have auto-fix handlers.\n\n"
                 f"**Controls without auto-fix:** {', '.join(no_handler_ids)}\n\n"
                 "These require manual remediation."
             )
-        return "✅ No remediations needed - all controls are passing."
+        return RemediationReport("No remediations needed - all controls are passing.")
 
     # ------------------------------------------------------------------
     # Pre-flight context check (prompt for ALL missing context upfront)
@@ -1119,7 +1150,7 @@ def remediate_audit_findings(
     )
 
     if not context_ready:
-        return _format_preflight_prompt(context_info, local_path)
+        return RemediationReport(_format_preflight_prompt(context_info, local_path))
 
     # ------------------------------------------------------------------
     # Platform session: one policy, one set of approvals, and every
@@ -1132,7 +1163,7 @@ def remediate_audit_findings(
     try:
         policy = resolve_policy(local_path)
     except OperatorConfigError as e:
-        return f"Error: remediation policy unavailable: {e}"
+        return RemediationReport(f"Error: remediation policy unavailable: {e}")
     run_id = run_id or manifest.new_run_id()
     repository = platform_repository(local_path, owner, repo) or manifest.repository_identity(local_path, owner, repo)
     session = PlatformSession(
@@ -1168,50 +1199,66 @@ def remediate_audit_findings(
         )
         results.append(result)
 
-    # Invalidate cache after applying changes (not dry-run)
+    # ------------------------------------------------------------------
+    # Outcomes: re-check what changed, then invalidate the stale cache
+    # ------------------------------------------------------------------
+    outcomes: list[RemediationOutcome] = []
     if not dry_run:
-        applied_any = any(r.get("status") == "applied" for r in results)
-        if applied_any:
+        outcomes = _outcomes(results, lambda ids: _recheck(ids, local_path, owner, repo, target))
+        if any(_written(r) or _applied_change_sets(r) for r in results):
             try:
-                from darnit.core.audit_cache import invalidate_audit_cache
-                invalidate_audit_cache(local_path)
+                from darnit.core import audit_cache
+
+                audit_cache.invalidate_audit_cache(local_path)
             except Exception as exc:
                 logger.warning(f"Failed to invalidate audit cache: {exc}")
 
-    # ------------------------------------------------------------------
-    # Format output
-    # ------------------------------------------------------------------
-    return _format_remediation_output(
+    run = RemediationRun(
+        run_id=run_id,
+        repository=repository,
+        mode="preview" if dry_run else "apply",
+        policy=policy.settings,
+        operator_config_digest=policy.operator_config_digest,
+        approvals=session.used_approvals,
+        plan=[PlanItem.model_validate(item) for r in results for item in r.get("plan", [])],
+        outcomes=outcomes,
+    )
+    markdown = _format_remediation_output(
         results=results,
         local_path=local_path,
         owner=owner,
         repo=repo,
         dry_run=dry_run,
         categories=categories,
-        run=_remediation_run(
-            results,
-            run_id=run_id,
-            repository=repository,
-            dry_run=dry_run,
-            policy=policy,
-            approvals=session.used_approvals,
-        ),
+        run=run,
     )
+    return RemediationReport(markdown, run)
 
 
-def _outcome(r: dict[str, Any]) -> Any:
-    """The typed outcome of one control's apply (framework-design 15.4).
+_RECHECK_FIELDS = ("status", "details", "authority", "error", "error_class", "pending")
 
-    A change is never reported ``fixed`` here: the re-check of affected
-    controls is not run yet, so a control whose remediation changed
-    something is ``changed_not_verified``.
-    """
-    from darnit.remediation.plan import ErrorInfo, RemediationOutcome
 
+def _written(r: dict[str, Any]) -> list[FileChange]:
+    """The files this control's apply wrote."""
+    return [FileChange.model_validate(c) for c in r.get("file_changes", []) if c.get("action") != "none"]
+
+
+def _applied_change_sets(r: dict[str, Any]) -> list[dict[str, Any]]:
+    """The change sets this control's apply wrote, each with the settings its read-back shows changed."""
+    return [
+        {**p["change_set"], "read_back": p.get("changed", [])}
+        for p in r.get("platform") or []
+        if p.get("change_set") and (p["kind"] == "applied" or p.get("changed"))
+    ]
+
+
+def _settled_outcome(r: dict[str, Any]) -> RemediationOutcome | None:
+    """The outcome of a control whose apply needs no re-check, or None when it changed something (15.4)."""
     control_id = r.get("control_id", "?")
     status = r.get("status")
     platform_results = r.get("platform") or []
-    shown_sets = [p["change_set"] for p in platform_results if p.get("change_set")]
+    written = _written(r)
+    applied = _applied_change_sets(r)
     if status == "needs_confirmation":
         return RemediationOutcome(
             control_id=control_id,
@@ -1219,11 +1266,18 @@ def _outcome(r: dict[str, Any]) -> Any:
             reason="confirmation required: " + ", ".join(r.get("missing_context") or []),
         )
     if status == "needs_approval":
+        pending = [p["change_set"] for p in platform_results if p["kind"] == "needs_approval" and p.get("change_set")]
         return RemediationOutcome(
-            control_id=control_id, kind="needs_approval", change_sets=shown_sets, reason="approval required"
+            control_id=control_id,
+            kind="needs_approval",
+            file_changes=written,
+            change_sets=pending,
+            reason="approval required; nothing was written for this change",
         )
     if status == "manual":
-        return RemediationOutcome(control_id=control_id, kind="manual", reason=r.get("result") or "manual steps")
+        return RemediationOutcome(
+            control_id=control_id, kind="manual", file_changes=written, reason=r.get("result") or "manual steps"
+        )
     if status == "error":
         platform_errors = [p["error"] for p in platform_results if p.get("error")]
         error = (
@@ -1231,68 +1285,328 @@ def _outcome(r: dict[str, Any]) -> Any:
             if platform_errors
             else ErrorInfo(error_class="crashed", cause=r.get("message") or "remediation failed")
         )
-        return RemediationOutcome(control_id=control_id, kind="error", change_sets=shown_sets, error=error)
-    if status == "applied" and r.get("changed"):
-        from darnit.remediation.plan import FileChange
-
         return RemediationOutcome(
-            control_id=control_id,
-            kind="changed_not_verified",
-            file_changes=[FileChange.model_validate(c) for c in r.get("file_changes", []) if c["action"] != "none"],
-            change_sets=[p["change_set"] for p in platform_results if p["kind"] == "applied"],
-            reason="re-check not run",
+            control_id=control_id, kind="error", file_changes=written, change_sets=applied, error=error
         )
-    reasons = sorted(
-        {c["reason"] for c in r.get("file_changes", []) if c.get("reason")}
-        | {p["reason"] for p in platform_results if p.get("reason")}
-    )
+    if written or applied:
+        return None
+    unchanged = [FileChange.model_validate(c) for c in r.get("file_changes", []) if c.get("action") == "none"]
+    reasons = [c.reason for c in unchanged if c.reason]
+    reasons += [p["reason"] for p in platform_results if p.get("reason")]
+    reasons += [
+        f"{h['handler']} returned {h['status']}: {h['message']}"
+        for h in r.get("handlers", [])
+        if h.get("status") != "pass"
+    ]
     return RemediationOutcome(
         control_id=control_id,
         kind="unchanged",
-        reason=", ".join(reasons) or r.get("message") or "nothing changed",
+        file_changes=unchanged,
+        reason=", ".join(dict.fromkeys(reasons)) or r.get("message") or "nothing changed",
     )
 
 
-def _remediation_run(
-    results: list[dict[str, Any]],
-    *,
-    run_id: str,
-    repository: str,
-    dry_run: bool,
-    policy: Any,
-    approvals: list[Any],
-) -> Any:
-    from darnit.remediation.plan import PlanItem, RemediationRun
+def _rechecked_outcome(r: dict[str, Any], result: dict[str, Any] | None, failure: str | None) -> RemediationOutcome:
+    """The outcome of a control whose apply changed something, from its re-check (15.5)."""
+    common: dict[str, Any] = {
+        "control_id": r.get("control_id", "?"),
+        "file_changes": _written(r),
+        "change_sets": _applied_change_sets(r),
+    }
+    if result is None:
+        cause = failure or "the re-check returned no result for this control"
+        return RemediationOutcome(
+            kind="changed_not_verified", error=ErrorInfo(error_class="crashed", cause=cause), **common
+        )
+    recheck = {k: result[k] for k in _RECHECK_FIELDS if k in result}
+    status = recheck.get("status")
+    if status == "PASS":
+        return RemediationOutcome(kind="fixed", recheck=recheck, **common)
+    if status == "ERROR":
+        block = recheck.get("error") or {}
+        error = ErrorInfo(
+            error_class=block.get("class") or recheck.get("error_class") or "evaluation",
+            cause=block.get("cause") or recheck.get("details") or "the re-check ended ERROR",
+        )
+        return RemediationOutcome(kind="changed_not_verified", recheck=recheck, error=error, **common)
+    return RemediationOutcome(kind="changed_not_passing", recheck=recheck, **common)
 
-    return RemediationRun(
-        run_id=run_id,
-        repository=repository,
-        mode="preview" if dry_run else "apply",
-        policy=policy.settings,
-        operator_config_digest=policy.operator_config_digest,
-        approvals=approvals,
-        plan=[PlanItem.model_validate(item) for r in results for item in r.get("plan", [])],
-        outcomes=[] if dry_run else [_outcome(r) for r in results],
+
+def _outcomes(
+    results: list[dict[str, Any]], recheck: Callable[[list[str]], dict[str, dict[str, Any]]]
+) -> list[RemediationOutcome]:
+    """One outcome per control; controls whose apply changed something are re-checked together."""
+    settled = [_settled_outcome(r) for r in results]
+    changed = [r.get("control_id", "?") for r, outcome in zip(results, settled, strict=True) if outcome is None]
+    rechecked: dict[str, dict[str, Any]] = {}
+    failure: str | None = None
+    if changed:
+        try:
+            rechecked = recheck(changed)
+        except Exception as e:
+            logger.warning(f"Re-check of remediated controls could not run: {e}")
+            failure = f"the re-check could not run: {e}"
+    return [
+        outcome or _rechecked_outcome(r, rechecked.get(r.get("control_id", "?")), failure)
+        for r, outcome in zip(results, settled, strict=True)
+    ]
+
+
+def _recheck(
+    control_ids: list[str], local_path: str, owner: str | None, repo: str | None, target: str | None
+) -> dict[str, dict[str, Any]]:
+    """Re-check ``control_ids`` through the canonical audit pipeline, without writing the audit cache (15.5)."""
+    from darnit.config.control_loader import load_controls_from_effective
+    from darnit.config.merger import merge_configs
+    from darnit.config.operator.loader import resolve_operator_config
+    from darnit.tools import audit as audit_tools
+
+    framework = _get_framework_config()
+    if framework is None:
+        raise RuntimeError("the framework configuration could not be loaded")
+    owner, repo, resolved_path, default_branch, error = prepare_audit(owner, repo, local_path)
+    if error:
+        raise RuntimeError(error)
+    operator_config = resolve_operator_config(resolved_path)
+    wanted = set(control_ids)
+    specs = [
+        spec
+        for spec in load_controls_from_effective(merge_configs(framework, None, operator_config.config))
+        if spec.control_id in wanted
+    ]
+    results, _ = audit_tools.run_sieve_audit(
+        owner or "",
+        repo or "",
+        resolved_path,
+        default_branch,
+        3,
+        controls=specs,
+        framework_name="openssf-baseline",
+        operator_config=operator_config,
+        target=target,
+        write_cache=False,
     )
+    return {r["id"]: r for r in results}
 
 
-def _plan_lines(plan_items: list[dict[str, Any]]) -> list[str]:
+def _file_lines(changes: list[FileChange], *, preview: bool) -> list[str]:
+    lines: list[str] = []
+    for change in changes:
+        if change.action == "none":
+            lines.append(f"- `{change.path}`: not written ({change.reason})")
+            continue
+        verb = {"create": "created", "modify": "modified"}[change.action]
+        lines.append(f"- `{change.path}`: {'would be ' + verb if preview else verb}")
+        if change.ignored:
+            lines.append("  - ignored by the repository's ignore rules; it is never committed")
+    return lines
+
+
+def _change_set_lines(change_sets: list[dict[str, Any]]) -> list[str]:
     from darnit.remediation.platform import ChangeSet
     from darnit.remediation.platform.policy import describe_change_set
 
     lines: list[str] = []
-    for item in plan_items:
-        for change_set in item.get("change_sets", []):
-            if not change_set["operations"]:
-                lines.append(f"- Platform setting already satisfied ({change_set['satisfied_by']}); nothing to change")
-                continue
-            lines.append("- **Platform change** (approve by its digest):")
-            lines.append("```text")
-            lines.extend(describe_change_set(ChangeSet.model_validate(change_set)))
-            lines.append("```")
-        if item.get("requires_individual_approval"):
-            lines.append(f"- Requires individual approval: plan item digest `{item['digest']}`")
+    for change_set in change_sets:
+        if not change_set["operations"]:
+            lines.append(f"- Platform setting already satisfied ({change_set['satisfied_by']}); nothing to change")
+            continue
+        lines += ["- **Platform change** (approve by its digest):", "```text"]
+        lines += describe_change_set(ChangeSet.model_validate({k: v for k, v in change_set.items() if k != "read_back"}))
+        lines.append("```")
     return lines
+
+
+def _applied_platform_lines(change_sets: list[dict[str, Any]]) -> list[str]:
+    from darnit.remediation.platform.targets import show_value
+
+    lines: list[str] = []
+    for change_set in change_sets:
+        target = change_set["target"]
+        where = f"{target['owner']}/{target['repo']}" + (f" branch {target['branch']}" if target.get("branch") else "")
+        changes = change_set.get("read_back") or [c for op in change_set["operations"] for c in op["changes"]]
+        lines.append(f"- **Platform:** {target['kind']} on {where} (`{change_set['digest']}`)")
+        lines += [f"  - {c['field']}: {show_value(c['before'])} -> {show_value(c['after'])}" for c in changes]
+        lines += [f"  - Impact: {note}" for note in change_set.get("impact_notes", [])]
+    return lines
+
+
+def _plan_item_lines(item: PlanItem) -> list[str]:
+    lines = _file_lines(item.file_changes, preview=True)
+    lines += _change_set_lines(item.change_sets)
+    lines += [f"- Command: `{' '.join(command)}`" for command in item.commands]
+    if not item.previewable:
+        lines.append(f"- `{item.step}` cannot be previewed exactly; it may change files or settings not listed here")
+    if item.requires_individual_approval:
+        lines.append(f"- Requires individual approval: plan item digest `{item.digest}`")
+    return lines
+
+
+def _run_lines(run: RemediationRun) -> list[str]:
+    lines = [
+        f"**Run:** `{run.run_id}`",
+        f"**Policy:** platform={run.policy.platform}, high_impact={run.policy.high_impact}",
+        (
+            f"**Operator configuration:** `{run.operator_config_digest}`"
+            if run.operator_config_digest
+            else "**Operator configuration:** built-in defaults (no operator configuration file)"
+        ),
+    ]
+    if run.approvals:
+        lines.append("**Approvals:**")
+        lines += [f"- `{a.digest}` by {a.approved_by} at {a.approved_at.isoformat()}" for a in run.approvals]
+    else:
+        lines.append("**Approvals:** none")
+    return lines + [""]
+
+
+def _preview_lines(
+    results: list[dict[str, Any]], run: RemediationRun, local_path: str, categories: list[str] | None
+) -> list[str]:
+    plan: dict[str, list[PlanItem]] = {}
+    for item in run.plan:
+        plan.setdefault(item.control_id, []).append(item)
+
+    would_apply = [r for r in results if r.get("status") == "would_apply"]
+    md = [f"## Would Apply ({len(would_apply)} remediations)", ""]
+    for r in would_apply:
+        cid = r.get("control_id", "?")
+        api_note = " *(requires GitHub API)*" if r.get("requires_api") else ""
+        declarative_note = " *(declarative)*" if r.get("declarative") else ""
+        review_note = " **REVIEW REQUIRED**" if r.get("needs_review") else ""
+        md.append(f"### {cid}{api_note}{declarative_note}{review_note}")
+        md.append(f"- **Description:** {r.get('description', 'N/A')}")
+        if r.get("remediation_type"):
+            md.append(f"- **Type:** {r.get('remediation_type')}")
+        for item in plan.get(cid, []):
+            md.extend(_plan_item_lines(item))
+        md.append("")
+
+    md += _status_sections(results)
+    md += ["---", "", "**To apply these remediations:**", "```python", "remediate_audit_findings("]
+    md.append(f'    local_path="{local_path}",')
+    if categories and categories != ["all"]:
+        md.append(f"    categories=[{', '.join(repr(c) for c in categories)}],")
+    md += ["    dry_run=False,", "    approve=[<only the digests the person approved>],", ")", "```", ""]
+    md.append(
+        "Platform changes are written only for approved digests under the default policy; "
+        "`dry_run=False` alone approves nothing."
+    )
+    md.append("")
+    return md
+
+
+def _status_sections(results: list[dict[str, Any]]) -> list[str]:
+    """Preview sections for controls that have no plan to apply."""
+    md: list[str] = []
+    sections = (
+        ("needs_confirmation", "Needs Confirmation"),
+        ("manual", "Manual Steps Required"),
+        ("skipped", "Skipped"),
+        ("no_remediation", "No Remediation"),
+        ("error", "Errors"),
+    )
+    for status, title in sections:
+        matching = [r for r in results if r.get("status") == status]
+        if not matching:
+            continue
+        md += [f"## {title} ({len(matching)})", ""]
+        for r in matching:
+            md.append(f"### {r.get('control_id', '?')}")
+            md.append(f"- **Description:** {r.get('description', 'N/A')}")
+            if r.get("message"):
+                md.append(f"- {r['message']}")
+            if r.get("result"):
+                md += ["", r["result"]]
+            md.append("")
+    return md
+
+
+def _outcome_lines(run: RemediationRun, results: list[dict[str, Any]]) -> list[str]:
+    by_id = {r.get("control_id", "?"): r for r in results}
+    md = ["## Summary", "", "| Outcome | Count |", "|---|---|"]
+    md += [f"| {kind} | {count} |" for kind, count in run.summary.items()]
+    md.append("")
+    if run.outcomes:
+        md += ["## Outcomes", ""]
+    for outcome in run.outcomes:
+        r = by_id.get(outcome.control_id, {})
+        md.append(f"### {outcome.control_id}: {outcome.kind}")
+        if r.get("description"):
+            md.append(f"- **Description:** {r['description']}")
+        md += _file_lines(outcome.file_changes, preview=False)
+        if outcome.kind == "needs_approval":
+            md += _change_set_lines(outcome.change_sets)
+        else:
+            md += _applied_platform_lines(outcome.change_sets)
+        if outcome.recheck is not None:
+            details = f" ({outcome.recheck['details']})" if outcome.recheck.get("details") else ""
+            md.append(f"- **Re-check:** {outcome.recheck.get('status')}{details}")
+        if outcome.reason and outcome.kind != "manual":
+            md.append(f"- **Reason:** {outcome.reason}")
+        if outcome.error is not None:
+            md.append(f"- **Error:** {outcome.error.error_class}: {outcome.error.cause}")
+        if outcome.kind in ("needs_confirmation", "manual") and r.get("result"):
+            md += ["", r["result"]]
+        md.append("")
+    return md
+
+
+def _review_lines(results: list[dict[str, Any]], dry_run: bool) -> list[str]:
+    review = [r for r in results if r.get("needs_review") and r.get("status") in ("applied", "would_apply")]
+    if not review:
+        return []
+    md = [
+        "## Changes Requiring Review",
+        "",
+        "The following remediations may modify application behavior "
+        "(e.g., rewriting workflow expressions, changing CI/CD configuration). "
+        "**Review the changes before committing.**",
+        "",
+    ]
+    md += [f"- **{r.get('control_id', '?')}**: {r.get('description', r.get('result', 'N/A'))}" for r in review]
+    md.append("")
+    if not dry_run:
+        md += ["Use `git diff` to inspect all modifications.", ""]
+    return md
+
+
+def _consultation_lines(results: list[dict[str, Any]]) -> list[str]:
+    """Structured review requests from handlers that set ``llm_verification_required`` (e.g., threat model)."""
+    md: list[str] = []
+    consultations = [r for r in results if r.get("llm_consultation") and r.get("status") == "applied"]
+    if consultations:
+        md += ["## LLM Verification Required", ""]
+    for r in consultations:
+        consultation = r["llm_consultation"]
+        md.append(f"### {r.get('control_id', '?')}: Review generated threat model")
+        md.append("")
+        md.append(f"**File:** `{consultation.get('file_path', '?')}`")
+        md.append(f"**Findings to review:** {consultation.get('total_findings', 0)}")
+        md.append("")
+        by_sev = consultation.get("summary", {}).get("by_severity", {})
+        if by_sev:
+            md += ["| Severity | Count |", "|----------|-------|"]
+            md += [f"| {sev} | {by_sev[sev]} |" for sev in ("CRITICAL", "HIGH", "MEDIUM", "LOW") if by_sev.get(sev, 0) > 0]
+            md.append("")
+        md += [consultation.get("instructions", ""), ""]
+        findings = consultation.get("findings_to_review", [])
+        high_medium = [f for f in findings if f.get("severity_band") in ("CRITICAL", "HIGH", "MEDIUM")]
+        if high_medium:
+            md += [f"### Findings requiring review ({len(high_medium)})", ""]
+            for f in high_medium:
+                md.append(f"- **{f['severity_band']}** | `{f['location']}` | {f['title']}")
+                if f.get("review_hint"):
+                    md.append(f"  - *{f['review_hint']}*")
+            md.append("")
+        low = [f for f in findings if f.get("severity_band") == "LOW"]
+        if low:
+            md.append(
+                f"*Plus {len(low)} LOW-risk findings rendered as a summary table in the file. "
+                "Spot-check a few but these are likely acceptable as-is.*"
+            )
+            md.append("")
+    return md
 
 
 def _format_remediation_output(
@@ -1301,238 +1615,28 @@ def _format_remediation_output(
     owner: str | None,
     repo: str | None,
     dry_run: bool,
+    run: RemediationRun,
     categories: list[str] | None = None,
-    run: Any | None = None,
 ) -> str:
-    """Build the markdown output for the remediation report, followed by the run record as fenced JSON."""
-    md: list[str] = []
-    mode = "Preview (dry run)" if dry_run else "Applied"
-    md.append(f"# Remediation {mode}")
-    md.append(f"**Repository:** {owner}/{repo}" if owner and repo else f"**Path:** {local_path}")
-    md.append("")
-
-    applied = [r for r in results if r.get("status") == "applied"]
-    would_apply = [r for r in results if r.get("status") == "would_apply"]
-    needs_confirmation = [r for r in results if r.get("status") == "needs_confirmation"]
-    needs_approval = [r for r in results if r.get("status") == "needs_approval"]
-    unchanged = [r for r in results if r.get("status") == "unchanged"]
-    manual = [r for r in results if r.get("status") == "manual"]
-    skipped = [r for r in results if r.get("status") == "skipped"]
-    errors = [r for r in results if r.get("status") == "error"]
-
-    if dry_run:
-        md.append(f"## Would Apply ({len(would_apply)} remediations)")
-        md.append("")
-        for r in would_apply:
-            cid = r.get("control_id", r.get("category", "?"))
-            api_note = " *(requires GitHub API)*" if r.get("requires_api") else ""
-            review_note = " **⚠️ REVIEW REQUIRED**" if r.get("needs_review") else ""
-            declarative_note = " *(declarative)*" if r.get("declarative") else ""
-            md.append(f"### {cid}{api_note}{declarative_note}{review_note}")
-            md.append(f"- **Description:** {r.get('description', 'N/A')}")
-            if r.get("remediation_type"):
-                md.append(f"- **Type:** {r.get('remediation_type')}")
-            md.extend(_plan_lines(r.get("plan", [])))
-            md.append("")
-
-        md.append("---")
-        md.append("")
-        md.append("**To apply these remediations:**")
-        md.append("```python")
-        md.append("remediate_audit_findings(")
-        md.append(f'    local_path="{local_path}",')
-        if categories and categories != ["all"]:
-            cats_str = ", ".join(f'"{c}"' for c in categories)
-            md.append(f"    categories=[{cats_str}],")
-        md.append("    dry_run=False,")
-        md.append("    approve=[<only the digests the person approved>],")
-        md.append(")")
-        md.append("```")
-        md.append("")
-        md.append(
-            "Platform changes are written only for approved digests under the default policy; "
-            "`dry_run=False` alone approves nothing."
-        )
-    else:
-        if applied:
-            md.append(f"## ✅ Applied ({len(applied)} remediations)")
-            md.append("")
-            for r in applied:
-                cid = r.get("control_id", r.get("category", "?"))
-                review_note = " **⚠️ REVIEW REQUIRED**" if r.get("needs_review") else ""
-                declarative_note = " *(declarative)*" if r.get("declarative") else ""
-                md.append(f"### {cid}{declarative_note}{review_note}")
-                md.append(f"- **Description:** {r.get('description', 'N/A')}")
-                md.append("")
-
-    # Context confirmation needed
-    if needs_confirmation:
-        md.append(f"## ⚠️ Needs Confirmation ({len(needs_confirmation)} remediations)")
-        md.append("")
-        md.append("The following remediations need your confirmation before they can be applied:")
-        md.append("")
-        for r in needs_confirmation:
-            cid = r.get("control_id", r.get("category", "?"))
-            md.append(f"### {cid}")
-            md.append(f"- **Description:** {r.get('description', 'N/A')}")
-            md.append("")
-            if r.get("result"):
-                md.append(r["result"])
-            md.append("")
-        md.append("---")
-        md.append("")
-
-    if needs_approval:
-        md.append(f"## Needs Approval ({len(needs_approval)})")
-        md.append("")
-        md.append("Nothing was written for these. Show each change to the person; pass back only approved digests.")
-        md.append("")
-        for r in needs_approval:
-            md.append(f"### {r.get('control_id', '?')}")
-            md.append("")
-            md.append("```text")
-            md.append(r.get("result", ""))
-            md.append("```")
-            md.append("")
-
-    if unchanged:
-        md.append(f"## Unchanged ({len(unchanged)})")
-        md.append("")
-        for r in unchanged:
-            md.append(f"- **{r.get('control_id', '?')}**: {r.get('result', 'nothing changed')}")
-        md.append("")
-
-    # Skipped (.project.yaml overrides)
-    if skipped:
-        md.append(f"## ⏭️ Skipped ({len(skipped)} controls)")
-        md.append("")
-        for r in skipped:
-            cid = r.get("control_id", r.get("category", "?"))
-            md.append(f"- **{cid}**: {r.get('message', 'N/A in .project.yaml')}")
-        md.append("")
-
-    # Manual steps
-    if manual:
-        md.append(f"## 📋 Manual Steps Required ({len(manual)})")
-        md.append("")
-        for r in manual:
-            cid = r.get("control_id", r.get("category", "?"))
-            md.append(f"### {cid}")
-            md.append(f"- **Description:** {r.get('description', 'N/A')}")
-            md.append("")
-            if r.get("result"):
-                md.append(r["result"])
-            md.append("")
-
-    # Errors
-    if errors:
-        md.append(f"## ❌ Errors ({len(errors)})")
-        md.append("")
-        for r in errors:
-            cid = r.get("control_id", r.get("category", "?"))
-            md.append(f"- **{cid}**: {r.get('message', 'Unknown error')}")
-        md.append("")
-
-    # Review warnings section (aggregated)
-    review_results = [r for r in results if r.get("needs_review") and r.get("status") in ("applied", "would_apply")]
-    if review_results:
-        md.append("## ⚠️ Changes Requiring Review")
-        md.append("")
-        md.append(
-            "The following remediations may modify application behavior "
-            "(e.g., rewriting workflow expressions, changing CI/CD configuration). "
-            "**Review the changes before committing.**"
-        )
-        md.append("")
-        for r in review_results:
-            cid = r.get("control_id", r.get("category", "?"))
-            md.append(f"- **{cid}**: {r.get('description', r.get('result', 'N/A'))}")
-        md.append("")
-        if not dry_run:
-            md.append("Use `git diff` to inspect all modifications.")
-            md.append("")
-
-    # LLM consultation section — surfaces structured review requests from
-    # handlers that set llm_verification_required (e.g., threat model).
-    consultation_results = [
-        r for r in results
-        if r.get("llm_consultation") and r.get("status") in ("applied", "would_apply")
+    """The Markdown report rendered from ``run`` (contract section 5), followed by ``run`` as fenced JSON."""
+    md = [
+        f"# Remediation {'Preview (dry run)' if dry_run else 'Applied'}",
+        f"**Repository:** {owner}/{repo}" if owner and repo else f"**Path:** {local_path}",
+        "",
     ]
-    if consultation_results and not dry_run:
-        md.append("## 🤖 LLM Verification Required")
-        md.append("")
-        for r in consultation_results:
-            consultation = r["llm_consultation"]
-            cid = r.get("control_id", "?")
-            file_path = consultation.get("file_path", "?")
-            total = consultation.get("total_findings", 0)
-            summary = consultation.get("summary", {})
-
-            md.append(f"### {cid}: Review generated threat model")
-            md.append("")
-            md.append(f"**File:** `{file_path}`")
-            md.append(f"**Findings to review:** {total}")
-            md.append("")
-
-            # Severity breakdown
-            by_sev = summary.get("by_severity", {})
-            if by_sev:
-                md.append("| Severity | Count |")
-                md.append("|----------|-------|")
-                for sev in ("CRITICAL", "HIGH", "MEDIUM", "LOW"):
-                    if by_sev.get(sev, 0) > 0:
-                        md.append(f"| {sev} | {by_sev[sev]} |")
-                md.append("")
-
-            # Instructions
-            md.append(consultation.get("instructions", ""))
-            md.append("")
-
-            # HIGH and MEDIUM findings for immediate review
-            findings = consultation.get("findings_to_review", [])
-            high_medium = [
-                f for f in findings
-                if f.get("severity_band") in ("CRITICAL", "HIGH", "MEDIUM")
-            ]
-            if high_medium:
-                md.append(f"### Findings requiring review ({len(high_medium)})")
-                md.append("")
-                for f in high_medium:
-                    md.append(
-                        f"- **{f['severity_band']}** | "
-                        f"`{f['location']}` | "
-                        f"{f['title']}"
-                    )
-                    if f.get("review_hint"):
-                        md.append(f"  - *{f['review_hint']}*")
-                md.append("")
-
-            low = [f for f in findings if f.get("severity_band") == "LOW"]
-            if low:
-                md.append(
-                    f"*Plus {len(low)} LOW-risk findings rendered as a "
-                    f"summary table in the file. Spot-check a few but "
-                    f"these are likely acceptable as-is.*"
-                )
-                md.append("")
-
-    if not dry_run and applied:
-        md.append("Run the audit tool to verify the fixes.")
-        md.append("")
-
-    if run is not None:
-        md.append(f"**Run:** `{run.run_id}` (policy: platform={run.policy.platform}, high_impact={run.policy.high_impact})")
-        md.append("")
-        md.append("```json")
-        md.append(json.dumps(run.model_dump(mode="json"), indent=2))
-        md.append("```")
-        md.append("")
-
+    md += _run_lines(run)
+    md += _preview_lines(results, run, local_path, categories) if dry_run else _outcome_lines(run, results)
+    md += _review_lines(results, dry_run)
+    if not dry_run:
+        md += _consultation_lines(results)
+    md += ["```json", json.dumps(run.model_dump(mode="json"), indent=2), "```", ""]
     return "\n".join(md)
 
 
 __all__ = [
+    "RemediationReport",
     "remediate_audit_findings",
+    "run_remediation",
     "_apply_control_remediation",
     "_run_baseline_checks",
 ]

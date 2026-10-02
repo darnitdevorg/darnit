@@ -769,6 +769,7 @@ def run_sieve_audit(
     framework_name: str | None = None,
     operator_config: "LoadedOperatorConfig | None" = None,
     target: str | None = None,
+    write_cache: bool = True,
 ) -> tuple[list[CheckResult], dict[str, int]]:
     """Run a sieve-based compliance audit -- the canonical audit pipeline.
 
@@ -804,6 +805,9 @@ def run_sieve_audit(
             unusable operator configuration raises ``OperatorConfigError``.
         target: Repository identity the operator named. It decides whether
             the repository is trusted, and so whether claims can be honored.
+        write_cache: Write the results to the audit cache. A subset run, such
+            as remediation's re-check (feature 043), passes False so it does
+            not replace the full-audit cache.
 
     Returns:
         Tuple of (results, summary) where results is a list of check result
@@ -1078,18 +1082,19 @@ def run_sieve_audit(
     # internally. The enclosing try/except is defensive belt-and-braces
     # against any unexpected exception path (e.g. TypeError from a
     # future signature change).
-    try:
-        write_audit_cache(
-            local_path,
-            all_results,
-            summary,
-            level,
-            resolved_fw or "",
-            store=stores_bundle.cache,
-            cache_key=cache_key,
-        )
-    except Exception as exc:
-        logger.warning("Failed to write audit cache (non-fatal): %s", exc)
+    if write_cache:
+        try:
+            write_audit_cache(
+                local_path,
+                all_results,
+                summary,
+                level,
+                resolved_fw or "",
+                store=stores_bundle.cache,
+                cache_key=cache_key,
+            )
+        except Exception as exc:
+            logger.warning("Failed to write audit cache (non-fatal): %s", exc)
 
     # Feature 033: release backend resources at audit-boundary teardown.
     # close() implementations are required to be idempotent (FR-019); any

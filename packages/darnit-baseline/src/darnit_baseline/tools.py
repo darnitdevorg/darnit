@@ -1271,15 +1271,15 @@ def remediate_audit_findings(
     Returns:
         Summary of applied or planned remediations (with git workflow status if applicable)
     """
-    from darnit_baseline.remediation import remediate_audit_findings as apply_remediations
+    from darnit_baseline.remediation import orchestrator
 
     repo_path = Path(local_path).resolve()
     if not repo_path.exists():
-        return f"❌ Error: Repository path not found: {repo_path}"
+        return f"Error: Repository path not found: {repo_path}"
 
     # Validate git workflow param combinations
     if create_pr and not auto_commit:
-        return "❌ Error: create_pr requires auto_commit=True"
+        return "Error: create_pr requires auto_commit=True"
 
     from darnit.core.utils import detect_owner_repo
 
@@ -1287,53 +1287,54 @@ def remediate_audit_findings(
     owner = owner or detected_owner
     repo = repo or detected_repo
 
-    # Guard: check for unresolved context before remediating
+    # Guard: unresolved context stops remediation, and so does a guard that
+    # cannot tell (feature 043, FR-020).
     try:
         from darnit.config.context_storage import get_pending_context as _get_pending
 
         pending = _get_pending(
             local_path=str(repo_path), owner=owner, repo=repo,
         )
-        if pending:
-            keys = [p.key for p in pending]
-            return (
-                "⚠️ Cannot remediate yet — there are unresolved context questions.\n\n"
-                f"**Pending context keys**: {', '.join(keys)}\n\n"
-                "Please call `get_pending_data()` first to collect the missing "
-                "project context, then confirm each answer with `confirm_project_data()`. "
-                "Once all context is resolved, call `remediate_audit_findings()` again."
-            )
-    except Exception:
-        pass  # If context check fails, proceed with remediation anyway
+    except Exception as e:
+        return (
+            f"Error: cannot check for unconfirmed project context: {e}. "
+            "Remediation did not run; nothing was changed."
+        )
+    if pending:
+        keys = [p.key for p in pending]
+        return (
+            "Cannot remediate yet: there are unresolved context questions.\n\n"
+            f"**Pending context keys**: {', '.join(keys)}\n\n"
+            "Please call `get_pending_data()` first to collect the missing "
+            "project context, then confirm each answer with `confirm_project_data()`. "
+            "Once all context is resolved, call `remediate_audit_findings()` again."
+        )
 
-    from darnit.remediation import manifest
+    from darnit.remediation import git_state, manifest
+    from darnit.server.tools import git_operations
 
     run_id = manifest.new_run_id()
 
     # Feature 043 (FR-013): a requested git step is checked before any
     # remediation is applied; an unsafe repository state changes nothing.
     if not dry_run and (branch_name or auto_commit or create_pr):
-        from darnit.remediation.git_state import check_repository_state
-
-        refusal = check_repository_state(repo_path, branch_name)
+        refusal = git_state.check_repository_state(repo_path, branch_name)
         if refusal:
             return f"Error: cannot run the requested git steps: {refusal}. Nothing was changed."
 
     # Step 1: Create branch before applying (so changes land on the right branch)
     git_report: list[str] = []
     if branch_name and not dry_run:
-        from darnit.server.tools.git_operations import create_remediation_branch_impl
-
-        branch_result = create_remediation_branch_impl(
+        branch_result = git_operations.create_remediation_branch_impl(
             branch_name=branch_name, local_path=str(repo_path), run_id=run_id, owner=owner, repo=repo,
         )
-        if "❌" in branch_result:
-            return f"❌ Branch creation failed, aborting remediation.\n\n{branch_result}"
+        if git_state.current_branch(repo_path) != branch_name:
+            return f"Error: the remediation branch was not checked out; remediation did not run.\n\n{branch_result}"
         git_report.append(branch_result)
 
     # Step 2: Apply remediations
     try:
-        result = apply_remediations(
+        report = orchestrator.run_remediation(
             local_path=str(repo_path),
             owner=owner,
             repo=repo,
@@ -1345,25 +1346,32 @@ def remediate_audit_findings(
             run_id=run_id,
         )
     except Exception as e:
-        return f"❌ Error applying remediations: {e}"
+        return f"Error applying remediations: {e}"
+    result = report.markdown
 
-    # Step 3: Commit and optionally create PR (only on successful non-dry-run apply)
-    if not dry_run and "❌" not in result:
-        if auto_commit:
-            from darnit.server.tools.git_operations import commit_remediation_changes_impl
-
-            commit_result = commit_remediation_changes_impl(
-                local_path=str(repo_path), run_id=run_id, owner=owner, repo=repo,
-            )
-            git_report.append(commit_result)
-
-            if create_pr and "❌" not in commit_result:
-                from darnit.server.tools.git_operations import create_remediation_pr_impl
-
-                pr_result = create_remediation_pr_impl(
+    # Step 3: Commit and optionally open a PR, only when an outcome changed
+    # files (FR-019). The PR step itself refuses a run with no commit.
+    run = report.run
+    changed_files = (
+        run is not None
+        and run.mode == "apply"
+        and any(change.changes for outcome in run.outcomes for change in outcome.file_changes)
+    )
+    if not dry_run and auto_commit:
+        if changed_files:
+            git_report.append(
+                git_operations.commit_remediation_changes_impl(
                     local_path=str(repo_path), run_id=run_id, owner=owner, repo=repo,
                 )
-                git_report.append(pr_result)
+            )
+            if create_pr:
+                git_report.append(
+                    git_operations.create_remediation_pr_impl(
+                        local_path=str(repo_path), run_id=run_id, owner=owner, repo=repo,
+                    )
+                )
+        else:
+            git_report.append("No outcome changed a file, so nothing was committed and no pull request was opened.")
 
     # Append git workflow summary if any git steps ran
     if git_report:

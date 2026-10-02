@@ -232,8 +232,14 @@ class TestOrchestratorCacheInvalidation:
     """Cache invalidation after applying changes."""
 
     def test_invalidates_after_applied_changes(self, tmp_path, cached_results):
-        """Non-dry-run with applied remediations should invalidate cache."""
+        """An apply that wrote a file invalidates the cache.
+
+        Feature 043 FR-019: the decision comes from the applied file changes,
+        not from an "applied" status (which a remediation that changed
+        nothing also reports).
+        """
         invalidate_mock = MagicMock()
+        written = {"path": "SECURITY.md", "action": "create", "content": "# Security\n"}
 
         with (
             patch(
@@ -258,8 +264,9 @@ class TestOrchestratorCacheInvalidation:
             ),
             patch(
                 "darnit_baseline.remediation.orchestrator._apply_control_remediation",
-                return_value={"status": "applied", "control_id": "OSPS-DO-02.01"},
+                return_value={"status": "applied", "control_id": "OSPS-DO-02.01", "file_changes": [written]},
             ),
+            patch("darnit_baseline.remediation.orchestrator._recheck", return_value={}),
         ):
             from darnit_baseline.remediation.orchestrator import remediate_audit_findings
 
@@ -269,6 +276,34 @@ class TestOrchestratorCacheInvalidation:
             )
 
             invalidate_mock.assert_called_once()
+
+    def test_apply_that_changed_nothing_keeps_cache(self, tmp_path, cached_results):
+        """An "applied" status with no written file is not a change (feature 043 FR-019)."""
+        invalidate_mock = MagicMock()
+        unchanged = {"path": "SECURITY.md", "action": "none", "reason": "already_exists"}
+
+        with (
+            patch("darnit.core.audit_cache.read_audit_cache", return_value=cached_results),
+            patch("darnit.core.audit_cache.invalidate_audit_cache", invalidate_mock),
+            patch(
+                "darnit_baseline.remediation.orchestrator.validate_local_path",
+                return_value=(str(tmp_path), None),
+            ),
+            patch("darnit.core.utils.detect_owner_repo", return_value=("testorg", "testrepo")),
+            patch(
+                "darnit_baseline.remediation.orchestrator._preflight_context_check",
+                return_value=(True, {}),
+            ),
+            patch(
+                "darnit_baseline.remediation.orchestrator._apply_control_remediation",
+                return_value={"status": "applied", "control_id": "OSPS-DO-02.01", "file_changes": [unchanged]},
+            ),
+        ):
+            from darnit_baseline.remediation.orchestrator import remediate_audit_findings
+
+            remediate_audit_findings(local_path=str(tmp_path), dry_run=False)
+
+            invalidate_mock.assert_not_called()
 
     def test_dry_run_preserves_cache(self, tmp_path, cached_results):
         """Dry run should NOT invalidate cache."""

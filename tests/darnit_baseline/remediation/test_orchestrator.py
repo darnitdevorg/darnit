@@ -1,3 +1,5 @@
+import json
+import re
 from unittest.mock import patch
 
 import pytest
@@ -102,9 +104,11 @@ def test_remediate_audit_findings_happy_path(
         local_path=str(temp_git_repo), owner="test-owner", repo="test-repo", dry_run=False, enhance_with_llm=False
     )
 
-    # Assert
-    assert "✅" in result_markdown
+    # Feature 043 (FR-017, FR-019): a successful handler that wrote nothing
+    # is reported "unchanged" from the structured result, never as a fix.
     assert "OSPS-GV-01.01" in result_markdown
+    run = json.loads(re.findall(r"```json\n(.*?)\n```", result_markdown, re.DOTALL)[-1])
+    assert [(o["control_id"], o["kind"]) for o in run["outcomes"]] == [("OSPS-GV-01.01", "unchanged")]
     mock_executor.execute.assert_called_once()
 
     call_args = mock_executor.execute.call_args[1]
@@ -112,16 +116,18 @@ def test_remediate_audit_findings_happy_path(
     assert call_args["dry_run"] is False
 
 
-@patch("darnit_baseline.remediation.orchestrator._apply_project_update")
 @patch("darnit_baseline.remediation.orchestrator.RemediationExecutor")
-def test_apply_declarative_remediation_project_update(
+def test_apply_declarative_remediation_leaves_project_update_to_the_executor(
     mock_executor_class,
-    mock_apply_project_update,
     mock_framework,
     temp_git_repo,
 ):
-    """Test that a successful declarative remediation applies project_update config."""
-    # We want to verify _apply_project_update actually mutates the yaml
+    """The executor is the single writer of project_update (feature 043, research R6).
+
+    It writes project_update through the run manifest after a successful
+    apply; the orchestrator writing it again would be a second, unrecorded
+    write path.
+    """
     mock_executor = mock_executor_class.return_value
     mock_executor.execute.return_value = RemediationResult(
         success=True,
@@ -145,11 +151,8 @@ def test_apply_declarative_remediation_project_update(
     )
 
     assert result["status"] == "applied"
-
-    # Verify the project update function was called
-    mock_apply_project_update.assert_called_once_with(
-        str(temp_git_repo), mock_framework.controls["OSPS-GV-01.01"].remediation.project_update, "OSPS-GV-01.01"
-    )
+    written = [path.read_text() for path in (temp_git_repo / ".project").glob("*.yaml")]
+    assert not any("updated" in text for text in written)
 
 
 # ---------------------------------------------------------

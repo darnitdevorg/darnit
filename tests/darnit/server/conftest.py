@@ -30,12 +30,19 @@ __all__ = [
     "DirtyRepo",
     "ForeignBranchRepo",
     "MergingRepo",
+    "SUCCESS",
     "assert_unchanged",
     "git",
     "snapshot",
 ]
 
 REMEDIATION_BRANCH = "fix/compliance"
+SUCCESS = (
+    "Created and switched",
+    "Switched to existing branch",
+    "Changes committed successfully",
+    "Pull request created successfully",
+)
 ENV_CONTENT = "API_TOKEN=fake-token-not-a-secret\nDATABASE_URL=postgres://user:pass@localhost/db\n"
 _ISOLATED_ENV = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0"}
 

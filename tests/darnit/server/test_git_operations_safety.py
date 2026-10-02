@@ -20,7 +20,7 @@ from darnit.remediation.executor import RemediationExecutor
 from darnit.remediation.git_state import check_repository_state
 from darnit.server.tools import git_operations
 
-from .conftest import ENV_CONTENT, REMEDIATION_BRANCH, BareRemote, DirtyRepo, git
+from .conftest import ENV_CONTENT, REMEDIATION_BRANCH, SUCCESS, BareRemote, DirtyRepo, git
 
 OWNER, REPO = "example-org", "example"
 IDENTITY = f"github.com/{OWNER}/{REPO}"
@@ -61,15 +61,15 @@ def _remote_refs(remote: BareRemote) -> dict[str, str]:
 def _remediate(r_dirty: DirtyRepo, run_id: str | None) -> tuple[str, str, str]:
     path = str(r_dirty.path)
     branch = create_branch(branch_name=REMEDIATION_BRANCH, local_path=path, run_id=run_id)
-    assert branch.startswith("✅"), branch
+    assert branch.startswith(SUCCESS), branch
     result = RemediationExecutor(owner=OWNER, repo=REPO, local_path=path, run_id=run_id).execute(
         "C-1", REMEDIATION, dry_run=False
     )
     assert result.success and result.changed, result.details
     commit = commit_changes(local_path=path, run_id=result.run_id)
-    assert commit.startswith("✅"), commit
+    assert commit.startswith(SUCCESS), commit
     pr = create_pr(local_path=path, run_id=result.run_id)
-    assert pr.startswith("✅"), pr
+    assert pr.startswith(SUCCESS), pr
     assert result.run_id is not None
     return result.run_id, commit, pr
 
