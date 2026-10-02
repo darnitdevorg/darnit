@@ -40,18 +40,14 @@ WORKFLOW_TEMPLATES = [
     "sca_workflow",
 ]
 
+# The *_payload templates went with api_call: a payload cannot express a
+# minimal non-weakening change (feature 043, FR-003; platform_setting replaces them).
 YAML_TEMPLATES = WORKFLOW_TEMPLATES + [
-    "allow_forking_payload",
-    "branch_deletion_protection_payload",
-    "branch_protection_payload",
     "dependabot_config",
     "dependabot_go",
     "dependabot_node",
     "dependabot_python",
     "dependabot_rust",
-    "mfa_enforcement_payload",
-    "pr_review_payload",
-    "repo_visibility_payload",
 ]
 
 DOCUMENTATION_TEMPLATES = [
@@ -90,7 +86,6 @@ _OTHER_TEMPLATES = [
     "license_apache",
     "license_bsd3",
     "license_mit",
-    "vulnerability_reporting_payload",
 ]
 
 

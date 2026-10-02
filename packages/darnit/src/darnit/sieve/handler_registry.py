@@ -154,6 +154,13 @@ class HandlerContext:
             handlers return their file changes in ``evidence["file_changes"]``
             in both modes and never write themselves: the remediation executor
             is the only writer. Verification handlers ignore it.
+        platform: Feature 043. The run's platform session
+            (``darnit.remediation.platform.PlatformSession``): the operator
+            policy, the approved digests, and every platform requirement of
+            the run, so ``platform_setting`` steps of several controls on one
+            target share one change set. None outside remediation; a
+            ``platform_setting`` step then plans alone under the operator
+            policy with no approvals.
     """
 
     local_path: str
@@ -172,6 +179,7 @@ class HandlerContext:
     # indicates a plumbing bug and MUST resolve the pass ERROR.
     mcp_pool: Any | None = None
     mode: Literal["plan", "apply"] = "apply"
+    platform: Any | None = None
 
 
 # Handler callable signature: (config, context) -> HandlerResult

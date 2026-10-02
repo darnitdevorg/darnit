@@ -527,61 +527,72 @@ def create_security_policy(
 def enable_branch_protection(
     owner: str | None = None,
     repo: str | None = None,
-    branch: str = "main",
+    branch: str | None = None,
     required_approvals: int = 1,
     enforce_admins: bool = True,
     require_pull_request: bool = True,
     require_status_checks: bool = False,
     status_checks: list | None = None,
     local_path: str = ".",
-    dry_run: bool = False,
+    dry_run: bool = True,
+    approve: str | None = None,
+    prevent_deletion: bool = True,
+    prevent_force_push: bool = True,
 ) -> str:
     """
-    Enable branch protection rules.
+    Require branch protection settings; previews unless asked to apply.
 
     Satisfies: OSPS-AC-03.01, OSPS-AC-03.02, OSPS-QA-07.01
+
+    Reads the current protection and active rulesets and plans only the
+    missing settings. It never lowers an existing approval count, never
+    removes a status check, and never turns an existing setting off. The
+    default call changes nothing and returns the planned change with its
+    digest. Show that change to the person; only if they approve it, call
+    again with ``dry_run=False`` and ``approve`` set to that digest. Passing
+    ``dry_run=False`` alone is not an approval.
 
     Args:
         owner: GitHub Org/User (auto-detected if not provided)
         repo: Repository Name (auto-detected if not provided)
-        branch: Branch to protect (default: main)
-        required_approvals: Number of required PR approvals (default: 1)
-        enforce_admins: Apply rules to admins too (default: True)
+        branch: Branch to protect (default: the repository's default branch)
+        required_approvals: Minimum number of required PR approvals (default: 1)
+        enforce_admins: Require the rules to apply to admins too (default: True)
         require_pull_request: Require PRs for changes (default: True)
-        require_status_checks: Require status checks (default: False)
-        status_checks: List of required status check contexts
+        require_status_checks: Require ``status_checks`` to pass (default: False)
+        status_checks: Status check contexts to add to the required ones
         local_path: Path to repository for auto-detection
-        dry_run: Show what would be done without making changes
+        dry_run: Preview only (default: True)
+        approve: Digest of the previewed change set the person approved
+        prevent_deletion: Require that the branch cannot be deleted (default: True)
+        prevent_force_push: Require that force pushes are rejected (default: True)
 
     Returns:
-        Success message with configuration details
+        Markdown report followed by a fenced JSON block with the run record
     """
+    from darnit.core.utils import detect_owner_repo
     from darnit.remediation.github import enable_branch_protection as _enable
 
     repo_path = Path(local_path).resolve()
-
-    # Auto-detect owner/repo
-    from darnit.core.utils import detect_owner_repo
-
-    detected_owner, detected_repo = detect_owner_repo(str(repo_path))
-    owner = owner or detected_owner
-    repo = repo or detected_repo
-
+    detected_owner, detected_repo = detect_owner_repo(str(repo_path), owner=owner, repo=repo)
     try:
-        result = _enable(
-            owner=owner,
-            repo=repo,
+        return _enable(
+            owner=owner or detected_owner or None,
+            repo=repo or detected_repo or None,
             branch=branch,
             required_approvals=required_approvals,
             enforce_admins=enforce_admins,
             require_pull_request=require_pull_request,
             require_status_checks=require_status_checks,
             status_checks=status_checks or [],
+            local_path=str(repo_path),
             dry_run=dry_run,
+            approve=approve,
+            prevent_deletion=prevent_deletion,
+            prevent_force_push=prevent_force_push,
         )
-        return result
     except Exception as e:
-        return f"❌ Error configuring branch protection: {e}"
+        return f"Error configuring branch protection: {e}"
 
 
 # =============================================================================
@@ -1222,6 +1233,7 @@ def remediate_audit_findings(
     auto_commit: bool = False,
     create_pr: bool = False,
     enhance_with_llm: bool = False,
+    approve: list | None = None,
 ) -> str:
     """
     Apply automated remediations for failed audit controls.
@@ -1251,6 +1263,10 @@ def remediate_audit_findings(
         enhance_with_llm: If True, enrich complex documents (ARCHITECTURE.md,
             threat model) with LLM-generated descriptions after deterministic
             generation.  Default False (opt-in).
+        approve: Digests from the preview that the person approved. Platform
+            changes are written only for approved change-set digests under the
+            default remediation policy; ``dry_run=False`` alone approves
+            nothing. Pass only digests the person approved.
 
     Returns:
         Summary of applied or planned remediations (with git workflow status if applicable)
@@ -1312,6 +1328,7 @@ def remediate_audit_findings(
             dry_run=dry_run,
             profile=profile,
             enhance_with_llm=enhance_with_llm,
+            approve=approve,
         )
     except Exception as e:
         return f"❌ Error applying remediations: {e}"

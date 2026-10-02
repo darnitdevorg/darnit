@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest
 
-from darnit.core.utils import RecordedGhApi, set_gh_api_responder
+from darnit.core.utils import GhApiCall, RecordedGhApi, set_gh_api_responder
 
 OWNER = "o"
 REPO = "r"
@@ -389,3 +389,188 @@ def _private_repo() -> Responses:
 @pytest.fixture(name="pvr_disabled")
 def _pvr_disabled() -> Responses:
     return pvr_disabled()
+
+
+class SimulatedGitHub(RecordedGhApi):
+    """A ``RecordedGhApi`` whose successful writes change what later GETs return (feature 043 US1).
+
+    Platform writes are verified by reading the settings back (FR-006), so a
+    test of an apply needs a platform that remembers writes. Writes follow the
+    GitHub REST semantics the engine relies on: a protection ``PUT`` replaces
+    the whole protection (omitted optional booleans become false, absent
+    objects become disabled), the reviews ``PATCH`` merges only the fields it
+    sends, ``POST .../enforce_admins`` turns it on, ``POST
+    .../required_status_checks/contexts`` adds contexts. A recorded write with
+    a non-2xx status is rejected and changes nothing. ``reject`` names writes
+    (``"PUT /repos/o/r/branches/main/protection"``) to answer 422 instead.
+    """
+
+    def __init__(self, responses: Responses, *, reject: tuple[str, ...] = ()):
+        super().__init__(responses)
+        self._rejected = {self._key(key) for key in reject}
+
+    def _get(self, path: str) -> Any:
+        return self.responses.get(("GET", path), {}).get("body")
+
+    def _set(self, path: str, body: Any, status: int = 200) -> None:
+        self.responses[("GET", path)] = {"status": status, "body": body}
+
+    def __call__(self, method: str, endpoint: str | None = None, body: Any = None):
+        if endpoint is None:
+            method, endpoint = "GET", method
+        verb = method.upper()
+        key = (verb, self._path(endpoint))
+        if verb != "GET" and key in self._rejected:
+            self.calls.append(GhApiCall(verb, endpoint, body))
+            return None, 422, "HTTP 422: Validation Failed"
+        answer = super().__call__(verb, endpoint, body)
+        if verb != "GET" and 200 <= answer[1] < 300:
+            self._apply(verb, self._path(endpoint), body)
+        return answer
+
+    def _apply(self, verb: str, path: str, body: Any) -> None:
+        if path == REPO_PATH and verb == "PATCH":
+            repo = dict(self._get(path))
+            if body.get("visibility") == "public" or body.get("private") is False:
+                repo.update(private=False, visibility="public")
+            self._set(path, repo)
+            return
+        if path == f"{REPO_PATH}/private-vulnerability-reporting" and verb == "PUT":
+            self._set(path, {"enabled": True})
+            return
+        branch, _, rest = path.removeprefix(f"{REPO_PATH}/branches/").partition("/protection")
+        protection_path = _protection_path(branch)
+        current = (
+            self._get(protection_path)
+            if self.responses.get(("GET", protection_path), {}).get("status", 200) == 200
+            else None
+        )
+        if rest == "" and verb == "PUT":
+            self._set(protection_path, _protection_from_put(branch, body, current))
+            branch_body = dict(self._get(f"{REPO_PATH}/branches/{branch}"))
+            branch_body["protected"] = True
+            self._set(f"{REPO_PATH}/branches/{branch}", branch_body)
+            return
+        assert current is not None, f"{verb} {path} on an unprotected branch"
+        updated = dict(current)
+        url = f"{API}{protection_path}"
+        if rest == "/required_pull_request_reviews" and verb == "PATCH":
+            reviews = dict(
+                updated.get("required_pull_request_reviews") or {"url": f"{url}/required_pull_request_reviews"}
+            )
+            reviews.update(body or {})
+            updated["required_pull_request_reviews"] = reviews
+        elif rest == "/enforce_admins" and verb == "POST":
+            updated["enforce_admins"] = {"url": f"{url}/enforce_admins", "enabled": True}
+        elif rest == "/required_status_checks/contexts" and verb == "POST":
+            checks = dict(updated["required_status_checks"])
+            added = [c for c in body["contexts"] if c not in checks["contexts"]]
+            checks["contexts"] = checks["contexts"] + added
+            checks["checks"] = checks["checks"] + [{"context": c, "app_id": None} for c in added]
+            updated["required_status_checks"] = checks
+        elif rest == "/required_status_checks" and verb == "PATCH":
+            contexts = list(body.get("contexts") or [])
+            updated["required_status_checks"] = {
+                "url": f"{url}/required_status_checks",
+                "strict": bool(body.get("strict", False)),
+                "contexts": contexts,
+                "contexts_url": f"{url}/required_status_checks/contexts",
+                "checks": [{"context": c, "app_id": None} for c in contexts],
+            }
+        else:
+            raise AssertionError(f"SimulatedGitHub does not model {verb} {path}")
+        self._set(protection_path, updated)
+
+    def protection(self, branch: str = "main") -> dict[str, Any]:
+        return self._get(_protection_path(branch))
+
+
+def _enabled(value: Any) -> dict[str, bool]:
+    return {"enabled": bool(value)}
+
+
+def _protection_from_put(branch: str, body: dict[str, Any], current: dict[str, Any] | None) -> dict[str, Any]:
+    url = f"{API}{_protection_path(branch)}"
+    result: dict[str, Any] = {
+        "url": url,
+        "required_signatures": (current or {}).get(
+            "required_signatures", {"url": f"{url}/required_signatures", "enabled": False}
+        ),
+        "enforce_admins": {"url": f"{url}/enforce_admins", "enabled": bool(body["enforce_admins"])},
+    }
+    for name in (
+        "required_linear_history",
+        "allow_force_pushes",
+        "allow_deletions",
+        "block_creations",
+        "required_conversation_resolution",
+        "lock_branch",
+        "allow_fork_syncing",
+    ):
+        result[name] = _enabled(body.get(name, False))
+    reviews = body["required_pull_request_reviews"]
+    if reviews is not None:
+        result["required_pull_request_reviews"] = {
+            "url": f"{url}/required_pull_request_reviews",
+            "dismiss_stale_reviews": reviews.get("dismiss_stale_reviews", False),
+            "require_code_owner_reviews": reviews.get("require_code_owner_reviews", False),
+            "required_approving_review_count": reviews.get("required_approving_review_count", 0),
+            "require_last_push_approval": reviews.get("require_last_push_approval", False),
+        }
+        for optional in ("dismissal_restrictions", "bypass_pull_request_allowances"):
+            if optional in reviews:
+                result["required_pull_request_reviews"][optional] = reviews[optional]
+    checks = body["required_status_checks"]
+    if checks is not None:
+        entries = checks.get("checks") or [{"context": c, "app_id": None} for c in checks.get("contexts", [])]
+        result["required_status_checks"] = {
+            "url": f"{url}/required_status_checks",
+            "strict": checks["strict"],
+            "contexts": [c["context"] for c in entries],
+            "contexts_url": f"{url}/required_status_checks/contexts",
+            "checks": [dict(c) for c in entries],
+        }
+    restrictions = body["restrictions"]
+    if restrictions is not None:
+        previous = (current or {}).get("restrictions") or {}
+        result["restrictions"] = {
+            "url": f"{url}/restrictions",
+            "users_url": f"{url}/restrictions/users",
+            "teams_url": f"{url}/restrictions/teams",
+            "apps_url": f"{url}/restrictions/apps",
+            "users": [u for u in previous.get("users", []) if u["login"] in restrictions["users"]]
+            + [
+                {"login": login}
+                for login in restrictions["users"]
+                if login not in {u["login"] for u in previous.get("users", [])}
+            ],
+            "teams": [t for t in previous.get("teams", []) if t["slug"] in restrictions["teams"]]
+            + [
+                {"slug": slug}
+                for slug in restrictions["teams"]
+                if slug not in {t["slug"] for t in previous.get("teams", [])}
+            ],
+            "apps": [a for a in previous.get("apps", []) if a["slug"] in restrictions.get("apps", [])]
+            + [
+                {"slug": slug}
+                for slug in restrictions.get("apps", [])
+                if slug not in {a["slug"] for a in previous.get("apps", [])}
+            ],
+        }
+    return result
+
+
+@pytest.fixture()
+def simulated_gh() -> Iterator[Callable[..., SimulatedGitHub]]:
+    """Install a :class:`SimulatedGitHub` built from a fixture name or response set; restore afterwards."""
+    previous = set_gh_api_responder(None)
+
+    def install(responses: str | Responses, **kwargs: Any) -> SimulatedGitHub:
+        if isinstance(responses, str):
+            responses = PLATFORM_FIXTURES[responses]()
+        responder = SimulatedGitHub(responses, **kwargs)
+        set_gh_api_responder(responder)
+        return responder
+
+    yield install
+    set_gh_api_responder(previous)

@@ -117,7 +117,7 @@ class TestHandlerAliases:
             "pattern",       # alias for regex
             "manual",        # alias for manual_steps
             "file_create",
-            "api_call",
+            "platform_setting",  # replaces api_call (feature 043, FR-009)
             # Canonical names should also work
             "regex",
             "manual_steps",

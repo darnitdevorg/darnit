@@ -516,6 +516,44 @@ class RemediationConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
+    @field_validator("handlers")
+    @classmethod
+    def _remediation_handlers(cls, handlers: list[HandlerInvocation]) -> list[HandlerInvocation]:
+        """Reject the removed ``api_call`` handler and validate ``platform_setting`` steps (feature 043, 4.5)."""
+        for handler in handlers:
+            if handler.handler == "api_call":
+                raise ValueError(_API_CALL_REMOVED)
+            if handler.handler == "platform_setting":
+                _validate_platform_setting(handler.model_extra or {})
+        return handlers
+
+    @model_validator(mode="after")
+    def _no_api_call_table(self) -> "RemediationConfig":
+        if "api_call" in (self.model_extra or {}):
+            raise ValueError(_API_CALL_REMOVED)
+        return self
+
+
+_API_CALL_REMOVED = (
+    "the api_call remediation handler was removed (feature 043): declare the requirement "
+    'with handler = "platform_setting" (framework-design 4.5), or a manual step when the '
+    "platform has no API for the change"
+)
+
+
+_PLATFORM_SETTING_FIELDS = frozenset({"target", "require", "branch"})
+
+
+def _validate_platform_setting(fields: dict[str, Any]) -> None:
+    from darnit.remediation.platform.model import PlatformRequirement
+
+    unknown = sorted(set(fields) - _PLATFORM_SETTING_FIELDS)
+    if unknown:
+        raise ValueError(f"platform_setting does not take {unknown}; it declares target, require, and branch")
+    if "target" not in fields or "require" not in fields:
+        raise ValueError("platform_setting needs target and require")
+    PlatformRequirement(target=fields["target"], require=fields["require"], branch=fields.get("branch"))
+
 
 class ProjectUpdateRemediationConfig(BaseModel):
     """Configuration for .project/ file update remediation.

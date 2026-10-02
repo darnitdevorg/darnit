@@ -1,16 +1,16 @@
 """GitHub API remediation actions.
 
 This module contains functions that use the GitHub API to configure
-repository settings like branch protection rules.
+repository settings like branch protection rules. Every write goes through
+the platform engine (``darnit.remediation.platform``, feature 043).
 """
 
 import json
 import os
-import subprocess
 from typing import Any
 
 from darnit.core.logging import get_logger
-from darnit.core.utils import detect_repo_from_git, gh_api_safe
+from darnit.core.utils import detect_repo_from_git
 
 logger = get_logger("remediation.github")
 
@@ -95,230 +95,210 @@ def detect_workflow_checks(local_path: str) -> list[dict[str, Any]]:
     return checks
 
 
+TOOL_STEP = "enable_branch_protection"
+
+
+def _requirements(
+    *,
+    required_approvals: int,
+    enforce_admins: bool,
+    require_pull_request: bool,
+    require_status_checks: bool,
+    status_checks: list[str] | None,
+    prevent_deletion: bool,
+    prevent_force_push: bool,
+) -> dict[str, Any]:
+    """The tool's parameters as ``branch_protection`` requirements; a false flag requires nothing."""
+    require: dict[str, Any] = {}
+    if require_pull_request:
+        require["require_pull_request"] = True
+        if required_approvals >= 1:
+            require["require_approvals"] = required_approvals
+    if prevent_deletion:
+        require["prevent_deletion"] = True
+    if prevent_force_push:
+        require["prevent_force_push"] = True
+    if enforce_admins:
+        require["enforce_admins"] = True
+    if require_status_checks and status_checks:
+        require["require_status_checks"] = list(status_checks)
+    return require
+
+
+def _change_lines(change_set: Any) -> list[str]:
+    from darnit.remediation.platform.policy import describe_change_set
+
+    return describe_change_set(change_set)
+
+
 def enable_branch_protection(
     owner: str | None = None,
     repo: str | None = None,
-    branch: str = "main",
+    branch: str | None = None,
     required_approvals: int = 1,
     enforce_admins: bool = True,
     require_pull_request: bool = True,
     require_status_checks: bool = False,
     status_checks: list[str] | None = None,
     local_path: str = ".",
-    dry_run: bool = False
+    dry_run: bool = True,
+    approve: str | list[str] | None = None,
+    prevent_deletion: bool = True,
+    prevent_force_push: bool = True,
 ) -> str:
-    """
-    Enable branch protection rules to satisfy OSPS-AC-03.01, OSPS-AC-03.02, and OSPS-QA-07.01.
+    """Require branch protection settings through the platform engine (feature 043, framework-design 4.5).
+
+    The parameters become ``branch_protection`` requirements. Each only
+    tightens: an existing approval count is never lowered, existing status
+    checks are never removed, and a false flag requires nothing (it never
+    turns an existing setting off). The engine reads the current protection
+    and any active rulesets, and plans only what is missing.
+
+    By default this previews and changes nothing. With ``dry_run=False`` the
+    change is applied as the operator's remediation policy allows: under
+    ``prompt`` (the default) only when ``approve`` names the digest of the
+    change set the person approved, and the current settings still match the
+    preview; under ``manual`` never; under ``auto`` without a digest. The
+    outcome comes from reading the settings back.
 
     Args:
-        owner: GitHub Org/User (auto-detected from git if not provided)
-        repo: Repository Name (auto-detected from git if not provided)
-        branch: Branch to protect (default: main)
-        required_approvals: Number of required PR approvals (default: 1)
-        enforce_admins: Apply rules to admins too (default: True)
-        require_pull_request: Require pull requests for changes (default: True).
-            Setting to False allows direct pushes while still protecting against
-            force-push and deletion. NOTE: Disabling this means OSPS-QA-07.01
-            (peer review requirement) will NOT be satisfied.
-        require_status_checks: Require status checks to pass (default: False)
-        status_checks: List of required status check contexts (e.g., ["ci/test"])
-        local_path: Local path to repo for auto-detection (default: ".")
-        dry_run: If True, show what would be configured without making changes (default: False)
+        owner: GitHub org/user (auto-detected from git if not provided)
+        repo: Repository name (auto-detected from git if not provided)
+        branch: Branch to protect (default: the repository's default branch)
+        required_approvals: Minimum number of approving reviews (default: 1)
+        enforce_admins: Require the rules to apply to administrators (default: True)
+        require_pull_request: Require pull requests before merging (default: True)
+        require_status_checks: Require ``status_checks`` to pass (default: False)
+        status_checks: Status-check contexts to add to the required ones
+        local_path: Local path to the repository (default: ".")
+        dry_run: Preview only (default: True)
+        approve: Digest(s) of the previewed change set the person approved
+        prevent_deletion: Require that the branch cannot be deleted (default: True)
+        prevent_force_push: Require that force pushes are rejected (default: True)
 
     Returns:
-        Success message with configuration details or error message
+        A Markdown report followed by a fenced JSON block holding the
+        ``RemediationRun`` (framework-design 15.4).
     """
+    from darnit.config.operator.loader import OperatorConfigError
+    from darnit.remediation import manifest
+    from darnit.remediation.plan import PlanItem, RemediationOutcome, RemediationRun
+    from darnit.remediation.platform import PlatformRequirement, apply, plan, platform_repository, resolve_policy
+
     if not owner or not repo:
         detected = detect_repo_from_git(local_path)
         if detected:
             owner = owner or detected["owner"]
             repo = repo or detected["repo"]
-        else:
-            return "❌ Error: Could not auto-detect owner/repo."
+    repository = platform_repository(local_path, owner, repo)
+    if repository is None:
+        return "Error: could not determine the repository (pass owner and repo)."
 
-    # Check for existing rulesets that might conflict
-    ruleset_warning = ""
+    require = _requirements(
+        required_approvals=required_approvals,
+        enforce_admins=enforce_admins,
+        require_pull_request=require_pull_request,
+        require_status_checks=require_status_checks,
+        status_checks=status_checks,
+        prevent_deletion=prevent_deletion,
+        prevent_force_push=prevent_force_push,
+    )
+    if not require:
+        return "Nothing to require: every branch protection parameter is off."
     try:
-        rulesets = gh_api_safe(f"/repos/{owner}/{repo}/rulesets")
-        if rulesets:
-            conflicting_rulesets = []
-            for rs in rulesets:
-                rs_detail = gh_api_safe(f"/repos/{owner}/{repo}/rulesets/{rs['id']}")
-                if rs_detail and rs_detail.get("enforcement") == "active":
-                    conditions = rs_detail.get("conditions", {})
-                    ref_name = conditions.get("ref_name", {})
-                    includes = ref_name.get("include", [])
-                    if any(inc in ["~DEFAULT_BRANCH", f"refs/heads/{branch}", branch] for inc in includes):
-                        conflicting_rulesets.append({
-                            "name": rs["name"],
-                            "id": rs["id"],
-                            "rules": rs_detail.get("rules", [])
-                        })
+        request = PlatformRequirement(target="branch_protection", require=require, branch=branch)
+        policy = resolve_policy(local_path)
+    except (ValueError, OperatorConfigError) as e:
+        return f"Error: {e}"
 
-            if conflicting_rulesets:
-                ruleset_warning = f"""
-⚠️ **WARNING: Existing rulesets detected that may override branch protection!**
+    run_id = manifest.new_run_id()
+    settings = policy.settings
+    lines = [
+        f"# Branch protection {'preview' if dry_run else 'apply'} for {repository}",
+        "",
+        f"- Run: {run_id}",
+        f"- Policy: platform={settings.platform}, high_impact={settings.high_impact}",
+        "- Requirements: " + ", ".join(f"{k}={v}" for k, v in require.items()),
+        "",
+    ]
 
-The following rulesets target `{branch}`:
-"""
-                for rs in conflicting_rulesets:
-                    ruleset_warning += f"- **{rs['name']}** (ID: {rs['id']})\n"
-                    for rule in rs['rules']:
-                        if rule.get('type') == 'pull_request':
-                            params = rule.get('parameters', {})
-                            rs_approvals = params.get('required_approving_review_count', 0)
-                            if rs_approvals != required_approvals:
-                                ruleset_warning += f"  - Ruleset requires {rs_approvals} approvals (you requested {required_approvals})\n"
-
-                ruleset_warning += """
-**Note:** Repository rulesets take precedence over branch protection rules.
-To modify rulesets, go to: Settings → Rules → Rulesets
-
-"""
-    except RuntimeError:
-        pass  # Rulesets API may not be available
-
-    endpoint = f"/repos/{owner}/{repo}/branches/{branch}/protection"
-
-    # Build protection config as a proper dict (NOT string)
-    protection_config: dict[str, Any] = {
-        "enforce_admins": enforce_admins,
-        "restrictions": None,
-        "required_linear_history": False,
-        "allow_force_pushes": False,
-        "allow_deletions": False
-    }
-
-    # Only require PRs if explicitly enabled
-    if require_pull_request:
-        protection_config["required_pull_request_reviews"] = {
-            "required_approving_review_count": required_approvals,
-            "dismiss_stale_reviews": True,
-            "require_code_owner_reviews": False
-        }
-    else:
-        protection_config["required_pull_request_reviews"] = None
-
-    if require_status_checks and status_checks:
-        protection_config["required_status_checks"] = {
-            "strict": True,
-            "contexts": status_checks
-        }
-    else:
-        protection_config["required_status_checks"] = None
-
-    config_json = json.dumps(protection_config)
-
-    # Build compliance warning if PR reviews are disabled or no approvals required
-    compliance_warning = ""
-    if not require_pull_request:
-        compliance_warning = """
-⚠️ **COMPLIANCE WARNING**: Pull request reviews are DISABLED.
-- OSPS-QA-07.01 (peer review requirement) will NOT be satisfied
-- This configuration is suitable for solo maintainers but does not meet
-  full OpenSSF Baseline Level 1 compliance
-- Consider enabling PR reviews when you have additional contributors
-
-"""
-    elif required_approvals == 0:
-        compliance_warning = """
-⚠️ **COMPLIANCE NOTE**: Pull requests required but NO approvals needed.
-- OSPS-QA-07.01 (peer review requirement) will NOT be satisfied
-- PRs provide traceability but not actual peer review
-- This configuration is suitable for solo maintainers
-- Consider requiring approvals when you have additional contributors
-
-"""
-
-    # Dry run - show what would be configured
     if dry_run:
-        pr_config_display = f"""- Require pull requests: {require_pull_request}
-- Required approvals: {required_approvals}
-- Dismiss stale reviews: Yes""" if require_pull_request else "- Require pull requests: No (direct pushes allowed)"
-
-        return f"""🔍 **DRY RUN** - Branch protection preview for {owner}/{repo}:{branch}
-{ruleset_warning}{compliance_warning}
-**Would configure:**
-{pr_config_display}
-- Enforce for admins: {enforce_admins}
-- Prevent force push: Yes
-- Prevent deletion: Yes
-- Require status checks: {require_status_checks}
-{f"- Status checks: {', '.join(status_checks)}" if status_checks else ""}
-
-**API endpoint:** PUT {endpoint}
-
-**Configuration JSON:**
-```json
-{json.dumps(protection_config, indent=2)}
-```
-
-**OSPS Controls that would be addressed:**
-- OSPS-AC-03.01: {"Direct commits prevented" if require_pull_request else "⚠️ NOT SATISFIED (direct pushes allowed)"}
-- OSPS-AC-03.02: Branch deletion prevented
-- OSPS-QA-07.01: {"Peer review required" if require_pull_request and required_approvals >= 1 else "⚠️ NOT SATISFIED (no peer review requirement)"}
-
-**To apply:** Run again with `dry_run=False`
-"""
-
-    # IMPORTANT: Use --input - to pass JSON body via stdin
-    # This avoids shell escaping issues with -f flags that cause
-    # "is not an object" errors from GitHub's API
-    try:
-        result = subprocess.run(
-            [
-                "gh", "api",
-                "-X", "PUT",
-                endpoint,
-                "-H", "Accept: application/vnd.github+json",
-                "--input", "-"
-            ],
-            input=config_json,
-            capture_output=True,
-            text=True,
-            timeout=30
+        [planned] = plan(repository, [request])
+        change_sets = [planned.change_set.model_dump(mode="json")] if planned.change_set else []
+        item = PlanItem(control_id=TOOL_STEP, step="platform_setting[0]", change_sets=change_sets, previewable=True)
+        run = RemediationRun(
+            run_id=run_id,
+            repository=repository,
+            mode="preview",
+            policy=settings,
+            operator_config_digest=policy.operator_config_digest,
+            plan=[item],
         )
+        if planned.error is not None:
+            lines.append(f"Cannot plan: {planned.error.cause} ({planned.error.error_class}). Nothing was written.")
+        elif not planned.supported:
+            lines += ["Manual steps (no platform call was made):", *(f"- {step}" for step in planned.steps)]
+        elif planned.change_set is not None and not planned.change_set.operations:
+            lines.append(f"Already satisfied ({planned.change_set.satisfied_by}); nothing to change.")
+        elif planned.change_set is not None:
+            lines += ["## Planned change", "", *_change_lines(planned.change_set), ""]
+            lines.append(
+                "Nothing was changed. To apply, show this change to the person and, if they approve it, "
+                f'call again with dry_run=False and approve="{planned.change_set.digest}".'
+            )
+        return "\n".join(lines) + "\n\n```json\n" + json.dumps(run.model_dump(mode="json"), indent=2) + "\n```\n"
 
-        if result.returncode != 0:
-            error_msg = result.stderr.strip()
-            # Provide helpful context for common errors
-            if "Not Found" in error_msg:
-                logger.warning(f"Repository {owner}/{repo} not found or no admin access")
-                return f"❌ Failed: Repository {owner}/{repo} not found or you don't have admin access."
-            elif "Resource not accessible" in error_msg:
-                logger.warning(f"No admin permissions on {owner}/{repo}")
-                return f"❌ Failed: You need admin permissions on {owner}/{repo} to set branch protection."
-            logger.error(f"Branch protection failed: {error_msg}")
-            return f"❌ Failed: {error_msg}"
+    approvals = [approve] if isinstance(approve, str) else list(approve or [])
+    [result] = apply(repository, [request], policy=policy, approvals=approvals)
+    change_set = result.change_set
+    wrote = change_set is not None and (result.kind == "applied" or bool(result.changed))
+    if wrote:
+        assert change_set is not None
+        manifest.start_run(repository, checkout=local_path, run_id=run_id)
+        manifest.record_change_set(repository, run_id, change_set.digest, checkout=local_path)
 
-        logger.info(f"Enabled branch protection for {owner}/{repo}:{branch}")
+    shown_sets = [change_set.model_dump(mode="json")] if change_set is not None else []
+    if result.kind == "applied":
+        outcome = RemediationOutcome(
+            control_id=TOOL_STEP,
+            kind="fixed",
+            change_sets=shown_sets,
+            recheck={"status": "PASS", "method": "read_back"},
+        )
+        lines += ["Applied. The read-back satisfies every requirement and shows changed:", ""]
+        lines += [f"- {c.field}: {c.before} -> {c.after}" for c in result.changed]
+    elif result.kind == "error":
+        assert result.error is not None
+        outcome = RemediationOutcome(
+            control_id=TOOL_STEP, kind="error", change_sets=shown_sets, error=result.error
+        )
+        lines.append(f"Error ({result.error.error_class}): {result.error.cause}")
+        if result.changed:
+            lines += ["Changed before the error (from the read-back):", *(f"- {c.field}" for c in result.changed)]
+    else:
+        reason = result.reason
+        if result.kind == "manual":
+            reason = f"{result.reason}: " + " | ".join(result.steps)
+            lines += ["Manual steps (darnit made no change):", *(f"- {step}" for step in result.steps)]
+        elif result.kind == "needs_approval":
+            lines += ["Needs approval; nothing was written.", "", *(_change_lines(change_set) if change_set else [])]
+        elif result.reason == "stale_preview":
+            lines.append("The settings changed since the preview; nothing was written. Preview again.")
+        else:
+            lines.append(f"Already satisfied ({result.reason}); nothing was written.")
+        outcome = RemediationOutcome(control_id=TOOL_STEP, kind=result.kind, change_sets=shown_sets, reason=reason)
 
-        pr_config_display = f"""- Require pull requests: Yes
-- Required approvals: {required_approvals}
-- Dismiss stale reviews: Yes""" if require_pull_request else "- Require pull requests: No (direct pushes allowed)"
-
-        return f"""✅ Branch protection enabled for {owner}/{repo}:{branch}
-{ruleset_warning}{compliance_warning}
-**Configuration:**
-{pr_config_display}
-- Enforce for admins: {enforce_admins}
-- Prevent force push: Yes
-- Prevent deletion: Yes
-
-**OSPS Controls Addressed:**
-- OSPS-AC-03.01: {"Direct commits prevented" if require_pull_request else "⚠️ NOT SATISFIED (direct pushes allowed)"}
-- OSPS-AC-03.02: Branch deletion prevented
-- OSPS-QA-07.01: {"Peer review required" if require_pull_request and required_approvals >= 1 else "⚠️ NOT SATISFIED (no peer review requirement)"}"""
-
-    except FileNotFoundError:
-        logger.error("gh CLI not found")
-        return "❌ Error: `gh` CLI not found. Install from https://cli.github.com/"
-    except subprocess.TimeoutExpired:
-        logger.error("Branch protection API call timed out")
-        return "❌ Error: GitHub API call timed out"
-    except subprocess.SubprocessError as e:
-        logger.error(f"Branch protection subprocess error: {e}")
-        return f"❌ Error: {str(e)}"
+    run = RemediationRun(
+        run_id=run_id,
+        repository=repository,
+        mode="apply",
+        policy=settings,
+        operator_config_digest=policy.operator_config_digest,
+        approvals=[result.approval] if result.approval else [],
+        outcomes=[outcome],
+    )
+    logger.info("enable_branch_protection %s: %s", repository, result.kind)
+    return "\n".join(lines) + "\n\n```json\n" + json.dumps(run.model_dump(mode="json"), indent=2) + "\n```\n"
 
 
 __all__ = [

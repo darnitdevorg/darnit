@@ -8,6 +8,7 @@ requirements) comes from the TOML FrameworkConfig.  The orchestrator
 iterates *controls*, not hardcoded categories.
 """
 
+import json
 import os
 from datetime import datetime
 from typing import Any
@@ -317,6 +318,8 @@ def _apply_control_remediation(
     dry_run: bool = True,
     enhance_with_llm: bool = False,
     target: str | None = None,
+    platform: Any | None = None,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     """Apply remediation for a single control, driven entirely by TOML.
 
@@ -329,6 +332,9 @@ def _apply_control_remediation(
         enhance_with_llm: If True, enrich complex docs with LLM after generation
         target: Repository identity the operator named, for operator-side
             context confirmations
+        platform: The run's platform session (policy, approvals, and every
+            platform requirement of the run; feature 043)
+        run_id: Remediation run whose manifest records this control's writes
 
     Returns:
         Dict with control_id, status, and result details
@@ -401,6 +407,8 @@ def _apply_control_remediation(
             requires_api=remediation_config.requires_api,
             enhance_with_llm=enhance_with_llm,
             target=target,
+            platform=platform,
+            run_id=run_id,
         )
         # Tag unsafe remediations for review
         if not remediation_config.safe:
@@ -439,6 +447,8 @@ def _apply_declarative_remediation(
     requires_api: bool = False,
     enhance_with_llm: bool = False,
     target: str | None = None,
+    platform: Any | None = None,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     """Apply a declarative remediation from TOML config.
 
@@ -532,6 +542,8 @@ def _apply_declarative_remediation(
             project_values=project_values,
             framework_path=fw_path,
             unconfirmed_keys=resolved.unusable_keys(),
+            run_id=run_id,
+            platform=platform,
         )
 
         # Execute the remediation
@@ -555,6 +567,7 @@ def _apply_declarative_remediation(
                 "declarative": True,
             }
 
+        plan_items = [item.model_dump(mode="json") for item in result.plan]
         if dry_run:
             return {
                 "control_id": control_id,
@@ -565,6 +578,21 @@ def _apply_declarative_remediation(
                 "details": result.details,
                 "requires_api": requires_api,
                 "declarative": True,
+                "plan": plan_items,
+            }
+
+        platform_results = _platform_results(result.details)
+        platform_status = _platform_status(platform_results, result.changed) if result.success else None
+        if platform_status is not None:
+            return {
+                "control_id": control_id,
+                "status": platform_status,
+                "description": description,
+                "controls": [control_id],
+                "result": _platform_summary(platform_results),
+                "declarative": True,
+                "plan": plan_items,
+                "platform": platform_results,
             }
 
         if result.success:
@@ -638,6 +666,10 @@ def _apply_declarative_remediation(
                 "declarative": True,
                 "config_updated": config_updated,
                 "enhanced": enhanced,
+                "plan": plan_items,
+                "platform": platform_results,
+                "changed": result.changed,
+                "file_changes": [change.model_dump(mode="json") for change in result.file_changes],
             }
             # Propagate handler evidence containing LLM consultation
             # payloads so the MCP tool can surface them to the agent.
@@ -652,12 +684,16 @@ def _apply_declarative_remediation(
             return result_dict
         else:
             logger.error(f"Declarative remediation failed: {result.message}")
+            failures = [h for h in (result.details or {}).get("handlers", []) if h.get("status") == "error"]
             return {
                 "control_id": control_id,
                 "status": "error",
                 "description": description,
-                "message": result.message,
+                "message": "; ".join(h.get("message", "") for h in failures) or result.message,
                 "declarative": True,
+                "plan": plan_items,
+                "platform": platform_results,
+                "changed": bool(platform_results and any(p.get("changed") for p in platform_results)),
             }
 
     except (RuntimeError, ValueError, TypeError, KeyError) as e:
@@ -669,6 +705,50 @@ def _apply_declarative_remediation(
             "message": f"Declarative remediation error: {str(e)}",
             "declarative": True,
         }
+
+
+def _platform_results(details: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """The platform engine's results reported by this control's ``platform_setting`` steps."""
+    return [
+        platform_result
+        for handler in (details or {}).get("handlers", [])
+        for platform_result in (handler.get("evidence") or {}).get("platform_results", [])
+    ]
+
+
+def _platform_status(platform_results: list[dict[str, Any]], changed: bool) -> str | None:
+    """The control status when a platform step changed nothing, else None."""
+    kinds = [p["kind"] for p in platform_results]
+    if "needs_approval" in kinds:
+        return "needs_approval"
+    if "manual" in kinds:
+        return "manual"
+    if any(p["kind"] == "unchanged" and p.get("reason") == "stale_preview" for p in platform_results):
+        return "unchanged"
+    if kinds and set(kinds) == {"unchanged"} and not changed:
+        return "unchanged"
+    return None
+
+
+def _platform_summary(platform_results: list[dict[str, Any]]) -> str:
+    from darnit.remediation.platform import ChangeSet
+    from darnit.remediation.platform.policy import describe_change_set
+
+    lines: list[str] = []
+    for platform_result in platform_results:
+        kind = platform_result["kind"]
+        change_set = platform_result.get("change_set")
+        if kind == "needs_approval" and change_set:
+            lines.append("Needs approval of this change set's digest; nothing was written:")
+            lines += describe_change_set(ChangeSet.model_validate(change_set))
+        elif kind == "manual":
+            lines.append(f"darnit made no platform change ({platform_result.get('reason')}). Steps:")
+            lines += [f"{i}. {step}" for i, step in enumerate(platform_result.get("steps", []), 1)]
+        elif kind == "unchanged" and platform_result.get("reason") == "stale_preview":
+            lines.append("The settings changed since the preview; nothing was written. Preview again.")
+        elif kind == "unchanged":
+            lines.append(f"Platform setting already satisfied ({platform_result.get('reason')}); nothing was written.")
+    return "\n".join(lines)
 
 
 def _apply_project_update(
@@ -852,12 +932,19 @@ def remediate_audit_findings(
     dry_run: bool = True,
     profile: str | None = None,
     enhance_with_llm: bool = False,
+    approve: list[str] | None = None,
 ) -> str:
     """Apply automated remediations for failed audit controls.
 
     Iterates all failed controls that have TOML-defined remediation and
     applies them.  The optional ``categories`` parameter filters to a
     subset (supports both domain-based and legacy category names).
+
+    Platform changes follow the operator's remediation policy (feature 043):
+    under ``prompt`` a change set is written only when its digest is in
+    ``approve``. The report ends with a fenced JSON block holding the
+    ``RemediationRun`` (run id, policy, plan items and change sets with their
+    digests, and in an apply the per-control outcomes).
 
     Args:
         local_path: Absolute path to repository
@@ -868,6 +955,8 @@ def remediate_audit_findings(
         profile: Optional audit profile name to filter to profile controls only
         enhance_with_llm: If True, enrich complex documents with LLM-generated
             descriptions after deterministic generation.  Default False.
+        approve: Digests of the previewed change sets (and plan items) the
+            person approved
 
     Returns:
         Markdown-formatted summary of applied or planned remediations
@@ -1030,6 +1119,27 @@ def remediate_audit_findings(
         return _format_preflight_prompt(context_info, local_path)
 
     # ------------------------------------------------------------------
+    # Platform session: one policy, one set of approvals, and every
+    # platform requirement of the run planned together (feature 043)
+    # ------------------------------------------------------------------
+    from darnit.config.operator.loader import OperatorConfigError
+    from darnit.remediation import manifest
+    from darnit.remediation.platform import PlatformSession, platform_repository, platform_requests, resolve_policy
+
+    try:
+        policy = resolve_policy(local_path)
+    except OperatorConfigError as e:
+        return f"Error: remediation policy unavailable: {e}"
+    run_id = manifest.new_run_id()
+    repository = platform_repository(local_path, owner, repo) or manifest.repository_identity(local_path, owner, repo)
+    session = PlatformSession(
+        repository,
+        platform_requests(framework, [c for c in remediable_ids if c not in honored_claims]),
+        policy=policy,
+        approvals=approve or [],
+    )
+
+    # ------------------------------------------------------------------
     # Apply remediations
     # ------------------------------------------------------------------
     results = []
@@ -1050,6 +1160,8 @@ def remediate_audit_findings(
             dry_run=dry_run,
             enhance_with_llm=enhance_with_llm,
             target=target,
+            platform=session,
+            run_id=None if dry_run else run_id,
         )
         results.append(result)
 
@@ -1073,7 +1185,111 @@ def remediate_audit_findings(
         repo=repo,
         dry_run=dry_run,
         categories=categories,
+        run=_remediation_run(
+            results,
+            run_id=run_id,
+            repository=repository,
+            dry_run=dry_run,
+            policy=policy,
+            approvals=session.used_approvals,
+        ),
     )
+
+
+def _outcome(r: dict[str, Any]) -> Any:
+    """The typed outcome of one control's apply (framework-design 15.4).
+
+    A change is never reported ``fixed`` here: the re-check of affected
+    controls is not run yet, so a control whose remediation changed
+    something is ``changed_not_verified``.
+    """
+    from darnit.remediation.plan import ErrorInfo, RemediationOutcome
+
+    control_id = r.get("control_id", "?")
+    status = r.get("status")
+    platform_results = r.get("platform") or []
+    shown_sets = [p["change_set"] for p in platform_results if p.get("change_set")]
+    if status == "needs_confirmation":
+        return RemediationOutcome(
+            control_id=control_id,
+            kind="needs_confirmation",
+            reason="confirmation required: " + ", ".join(r.get("missing_context") or []),
+        )
+    if status == "needs_approval":
+        return RemediationOutcome(
+            control_id=control_id, kind="needs_approval", change_sets=shown_sets, reason="approval required"
+        )
+    if status == "manual":
+        return RemediationOutcome(control_id=control_id, kind="manual", reason=r.get("result") or "manual steps")
+    if status == "error":
+        platform_errors = [p["error"] for p in platform_results if p.get("error")]
+        error = (
+            ErrorInfo.model_validate(platform_errors[0])
+            if platform_errors
+            else ErrorInfo(error_class="crashed", cause=r.get("message") or "remediation failed")
+        )
+        return RemediationOutcome(control_id=control_id, kind="error", change_sets=shown_sets, error=error)
+    if status == "applied" and r.get("changed"):
+        from darnit.remediation.plan import FileChange
+
+        return RemediationOutcome(
+            control_id=control_id,
+            kind="changed_not_verified",
+            file_changes=[FileChange.model_validate(c) for c in r.get("file_changes", []) if c["action"] != "none"],
+            change_sets=[p["change_set"] for p in platform_results if p["kind"] == "applied"],
+            reason="re-check not run",
+        )
+    reasons = sorted(
+        {c["reason"] for c in r.get("file_changes", []) if c.get("reason")}
+        | {p["reason"] for p in platform_results if p.get("reason")}
+    )
+    return RemediationOutcome(
+        control_id=control_id,
+        kind="unchanged",
+        reason=", ".join(reasons) or r.get("message") or "nothing changed",
+    )
+
+
+def _remediation_run(
+    results: list[dict[str, Any]],
+    *,
+    run_id: str,
+    repository: str,
+    dry_run: bool,
+    policy: Any,
+    approvals: list[Any],
+) -> Any:
+    from darnit.remediation.plan import PlanItem, RemediationRun
+
+    return RemediationRun(
+        run_id=run_id,
+        repository=repository,
+        mode="preview" if dry_run else "apply",
+        policy=policy.settings,
+        operator_config_digest=policy.operator_config_digest,
+        approvals=approvals,
+        plan=[PlanItem.model_validate(item) for r in results for item in r.get("plan", [])],
+        outcomes=[] if dry_run else [_outcome(r) for r in results],
+    )
+
+
+def _plan_lines(plan_items: list[dict[str, Any]]) -> list[str]:
+    from darnit.remediation.platform import ChangeSet
+    from darnit.remediation.platform.policy import describe_change_set
+
+    lines: list[str] = []
+    for item in plan_items:
+        for change_set in item.get("change_sets", []):
+            if not change_set["operations"]:
+                lines.append(f"- Platform setting already satisfied ({change_set['satisfied_by']}); nothing to change")
+                continue
+            lines.append("- **Platform change** (approve by its digest):")
+            lines.append("```text")
+            lines.extend(describe_change_set(ChangeSet.model_validate(change_set)))
+            lines.append("```")
+        if item.get("requires_individual_approval"):
+            lines.append(f"- Requires individual approval: plan item digest `{item['digest']}`")
+    return lines
 
 
 def _format_remediation_output(
@@ -1083,8 +1299,9 @@ def _format_remediation_output(
     repo: str | None,
     dry_run: bool,
     categories: list[str] | None = None,
+    run: Any | None = None,
 ) -> str:
-    """Build the markdown output for the remediation report."""
+    """Build the markdown output for the remediation report, followed by the run record as fenced JSON."""
     md: list[str] = []
     mode = "Preview (dry run)" if dry_run else "Applied"
     md.append(f"# Remediation {mode}")
@@ -1094,6 +1311,8 @@ def _format_remediation_output(
     applied = [r for r in results if r.get("status") == "applied"]
     would_apply = [r for r in results if r.get("status") == "would_apply"]
     needs_confirmation = [r for r in results if r.get("status") == "needs_confirmation"]
+    needs_approval = [r for r in results if r.get("status") == "needs_approval"]
+    unchanged = [r for r in results if r.get("status") == "unchanged"]
     manual = [r for r in results if r.get("status") == "manual"]
     skipped = [r for r in results if r.get("status") == "skipped"]
     errors = [r for r in results if r.get("status") == "error"]
@@ -1110,6 +1329,7 @@ def _format_remediation_output(
             md.append(f"- **Description:** {r.get('description', 'N/A')}")
             if r.get("remediation_type"):
                 md.append(f"- **Type:** {r.get('remediation_type')}")
+            md.extend(_plan_lines(r.get("plan", [])))
             md.append("")
 
         md.append("---")
@@ -1121,9 +1341,15 @@ def _format_remediation_output(
         if categories and categories != ["all"]:
             cats_str = ", ".join(f'"{c}"' for c in categories)
             md.append(f"    categories=[{cats_str}],")
-        md.append("    dry_run=False")
+        md.append("    dry_run=False,")
+        md.append("    approve=[<only the digests the person approved>],")
         md.append(")")
         md.append("```")
+        md.append("")
+        md.append(
+            "Platform changes are written only for approved digests under the default policy; "
+            "`dry_run=False` alone approves nothing."
+        )
     else:
         if applied:
             md.append(f"## ✅ Applied ({len(applied)} remediations)")
@@ -1151,6 +1377,26 @@ def _format_remediation_output(
                 md.append(r["result"])
             md.append("")
         md.append("---")
+        md.append("")
+
+    if needs_approval:
+        md.append(f"## Needs Approval ({len(needs_approval)})")
+        md.append("")
+        md.append("Nothing was written for these. Show each change to the person; pass back only approved digests.")
+        md.append("")
+        for r in needs_approval:
+            md.append(f"### {r.get('control_id', '?')}")
+            md.append("")
+            md.append("```text")
+            md.append(r.get("result", ""))
+            md.append("```")
+            md.append("")
+
+    if unchanged:
+        md.append(f"## Unchanged ({len(unchanged)})")
+        md.append("")
+        for r in unchanged:
+            md.append(f"- **{r.get('control_id', '?')}**: {r.get('result', 'nothing changed')}")
         md.append("")
 
     # Skipped (.project.yaml overrides)
@@ -1269,6 +1515,14 @@ def _format_remediation_output(
 
     if not dry_run and applied:
         md.append("Run the audit tool to verify the fixes.")
+        md.append("")
+
+    if run is not None:
+        md.append(f"**Run:** `{run.run_id}` (policy: platform={run.policy.platform}, high_impact={run.policy.high_impact})")
+        md.append("")
+        md.append("```json")
+        md.append(json.dumps(run.model_dump(mode="json"), indent=2))
+        md.append("```")
         md.append("")
 
     return "\n".join(md)

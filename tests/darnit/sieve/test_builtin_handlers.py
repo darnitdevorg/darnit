@@ -10,7 +10,6 @@ import pytest
 
 from darnit.remediation.plan import FileChange
 from darnit.sieve.builtin_handlers import (
-    api_call_handler,
     exec_handler,
     file_create_handler,
     file_exists_handler,
@@ -1042,33 +1041,18 @@ class TestFileCreateHandler:
 
 
 # =============================================================================
-# api_call_handler (remediation)
+# api_call removed (feature 043)
 # =============================================================================
 
 
-class TestApiCallHandler:
-    """Tests for the api_call remediation handler."""
+class TestApiCallRemoved:
+    """api_call is replaced by platform_setting (feature 043, FR-009; framework-design Appendix C)."""
 
-    def test_returns_inconclusive_with_url(self, ctx):
-        result = api_call_handler(
-            {"url": "https://api.github.com/repos/$OWNER/$REPO", "method": "PUT"},
-            ctx,
-        )
-        assert result.status == HandlerResultStatus.INCONCLUSIVE
-        assert "testorg" in result.evidence["url"]
-        assert "testrepo" in result.evidence["url"]
-        assert result.evidence["method"] == "PUT"
+    def test_api_call_handler_replaced_by_platform_setting(self):
+        from darnit.sieve import builtin_handlers
 
-    def test_error_when_no_url(self, ctx):
-        result = api_call_handler({}, ctx)
-        assert result.status == HandlerResultStatus.ERROR
-
-    def test_variable_substitution_in_url(self, ctx):
-        result = api_call_handler(
-            {"url": "https://api.example.com/$OWNER/$REPO/$BRANCH"},
-            ctx,
-        )
-        assert "testorg/testrepo/main" in result.evidence["url"]
+        assert not hasattr(builtin_handlers, "api_call_handler"), "FR-009: no second platform write path"
+        assert hasattr(builtin_handlers, "platform_setting_handler")
 
 
 # =============================================================================

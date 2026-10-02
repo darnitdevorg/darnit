@@ -14,7 +14,7 @@ Built-in verification handlers:
 Built-in remediation handlers (feature 043: they return FileChanges and
 never write; the remediation executor is the single writer):
     - file_create: Create a file from a template
-    - api_call: Make an HTTP API call
+    - platform_setting: Change a hosting-platform setting through the platform engine
     - project_update: Update .project/project.yaml values
     - yaml_inject: Add a top-level key to YAML files that lack it
 """
@@ -1084,37 +1084,108 @@ def file_create_handler(config: dict[str, Any], context: HandlerContext) -> Hand
     )
 
 
-def api_call_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResult:
-    """Make an HTTP API call for remediation.
+def platform_setting_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResult:
+    """Plan or apply a platform requirement through the platform engine (feature 043, framework-design 4.5).
+
+    The step declares a requirement on a target, never a payload. In plan
+    mode the planned :class:`~darnit.remediation.platform.ChangeSet` is
+    returned in ``evidence["change_sets"]`` and nothing is written. In apply
+    mode the engine writes it only as the operator policy allows (approved
+    digest under ``prompt``, never under ``manual``) and reads it back; the
+    digests it wrote are in ``evidence["applied_change_sets"]`` and the
+    engine's result in ``evidence["platform_results"]``.
 
     Config fields:
-        method: str - HTTP method (default: "PUT")
-        url: str - URL to call (supports $OWNER, $REPO, $BRANCH)
-        payload: dict | str - Request body
-        headers: dict[str, str] - Request headers
+        target: str - ``branch_protection``, ``repository``, or ``vulnerability_reporting``
+        require: dict - Requirement keys for the target
+        branch: str - Optional; ``branch_protection`` only (default: the repository's default branch)
     """
-    url = config.get("url", "")
-    if not url:
+    from darnit.config.operator.loader import OperatorConfigError
+    from darnit.remediation.platform import (
+        PlatformRequirement,
+        PlatformSession,
+        platform_repository,
+        resolve_policy,
+    )
+
+    try:
+        request = PlatformRequirement(
+            target=config.get("target"), require=config.get("require") or {}, branch=config.get("branch")
+        )
+    except ValueError as e:
+        return HandlerResult(status=HandlerResultStatus.ERROR, message=f"Invalid platform_setting: {e}")
+
+    session = context.platform
+    if session is None:
+        repository = platform_repository(context.local_path, context.owner or None, context.repo or None)
+        if repository is None:
+            return HandlerResult(
+                status=HandlerResultStatus.ERROR,
+                message="platform_setting: cannot determine which repository's settings to change",
+            )
+        try:
+            policy = resolve_policy(context.local_path)
+        except OperatorConfigError as e:
+            return HandlerResult(status=HandlerResultStatus.ERROR, message=f"Remediation policy unavailable: {e}")
+        session = PlatformSession(repository, policy=policy)
+
+    if context.mode == "plan":
+        planned = session.plan_for(request)
+        evidence: dict[str, Any] = {"platform_plans": [planned.model_dump(mode="json")]}
+        if planned.change_set is not None:
+            evidence["change_sets"] = [planned.change_set.model_dump(mode="json")]
+        if planned.error is not None:
+            return HandlerResult(
+                status=HandlerResultStatus.ERROR,
+                message=f"Cannot plan {request.target}: {planned.error.cause}",
+                evidence=evidence,
+                error_class=planned.error.error_class,
+            )
+        if not planned.supported:
+            return HandlerResult(
+                status=HandlerResultStatus.INCONCLUSIVE,
+                message=f"Manual: {planned.steps[0]}",
+                evidence={**evidence, "steps": planned.steps},
+            )
+        change_set = planned.change_set
+        assert change_set is not None
+        message = (
+            f"Change {request.target}: {len(change_set.operations)} operation(s), digest {change_set.digest}"
+            if change_set.operations
+            else f"{request.target} already satisfied ({change_set.satisfied_by})"
+        )
+        return HandlerResult(status=HandlerResultStatus.PASS, message=message, evidence=evidence)
+
+    result = session.apply_for(request)
+    evidence = {"platform_results": [result.model_dump(mode="json")]}
+    if result.change_set is not None:
+        evidence["change_sets"] = [result.change_set.model_dump(mode="json")]
+    if result.change_set is not None and (result.kind == "applied" or result.changed):
+        evidence["applied_change_sets"] = [result.change_set.digest]
+    if result.steps:
+        evidence["steps"] = result.steps
+    if result.kind == "error":
+        assert result.error is not None
         return HandlerResult(
             status=HandlerResultStatus.ERROR,
-            message="No URL specified for API call",
+            message=f"Platform change failed: {result.error.cause}",
+            evidence=evidence,
+            error_class=result.error.error_class,
         )
-
-    # Substitute variables
-    substitutions = {
-        "$OWNER": context.owner,
-        "$REPO": context.repo,
-        "$BRANCH": context.default_branch,
+    if result.kind == "applied":
+        return HandlerResult(status=HandlerResultStatus.PASS, message=f"Applied {request.target}", evidence=evidence)
+    if result.kind == "unchanged" and result.reason != "stale_preview":
+        return HandlerResult(
+            status=HandlerResultStatus.PASS,
+            message=f"{request.target} already satisfied ({result.reason})",
+            evidence=evidence,
+        )
+    messages = {
+        "needs_approval": f"{request.target} change needs approval of its digest",
+        "manual": f"{request.target} change is manual ({result.reason})",
+        "unchanged": f"{request.target} settings changed since the preview; preview again (stale_preview)",
     }
-    for var, val in substitutions.items():
-        url = url.replace(var, val)
-
-    return HandlerResult(
-        status=HandlerResultStatus.INCONCLUSIVE,
-        message=f"API call to {url} requires execution context",
-        evidence={"url": url, "method": config.get("method", "PUT")},
-        details={"requires_execution": True},
-    )
+    return HandlerResult(status=HandlerResultStatus.INCONCLUSIVE, message=messages[result.kind], evidence=evidence)
 
 
 def project_update_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResult:
@@ -1616,10 +1687,11 @@ def register_builtin_handlers() -> None:
         supports_plan=True,
     )
     registry.register(
-        "api_call",
+        "platform_setting",
         phase="deterministic",
-        handler_fn=api_call_handler,
-        description="Make an HTTP API call",
+        handler_fn=platform_setting_handler,
+        description="Change a platform setting by the minimal approved change that satisfies a requirement",
+        supports_plan=True,
     )
     registry.register(
         "project_update",

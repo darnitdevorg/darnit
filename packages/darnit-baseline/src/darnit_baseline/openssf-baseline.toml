@@ -59,10 +59,6 @@ file = "templates/contributing_standard.tmpl"
 description = "GitHub issue template for bug reports"
 file = "templates/bug_report_template.tmpl"
 
-[templates.branch_protection_payload]
-description = "JSON payload for GitHub branch protection API"
-file = "templates/branch_protection_payload.tmpl"
-
 [templates.dependabot_config]
 description = "Dependabot configuration file"
 file = "templates/dependabot_config.tmpl"
@@ -126,32 +122,6 @@ file = "templates/vex_policy_template.tmpl"
 [templates.gitignore_secrets]
 description = "Gitignore patterns for common secret files"
 file = "templates/gitignore_secrets.tmpl"
-
-# --- API Payload Templates ---
-
-[templates.mfa_enforcement_payload]
-description = "JSON payload for enabling org-level MFA requirement"
-file = "templates/mfa_enforcement_payload.tmpl"
-
-[templates.allow_forking_payload]
-description = "JSON payload for enabling repository forking"
-file = "templates/allow_forking_payload.tmpl"
-
-[templates.branch_deletion_protection_payload]
-description = "JSON payload for branch deletion protection"
-file = "templates/branch_deletion_protection_payload.tmpl"
-
-[templates.repo_visibility_payload]
-description = "JSON payload for making a repository public"
-file = "templates/repo_visibility_payload.tmpl"
-
-[templates.pr_review_payload]
-description = "JSON payload for requiring PR reviews before merging"
-file = "templates/pr_review_payload.tmpl"
-
-[templates.vulnerability_reporting_payload]
-description = "JSON payload for enabling private vulnerability reporting"
-file = "templates/vulnerability_reporting_payload.tmpl"
 
 # --- CI Workflow Templates ---
 
@@ -494,24 +464,16 @@ steps = [
     "(For user-owned repos) Verify the maintainer has 2FA enabled on their account: Settings → Password and authentication",
 ]
 
-[controls."OSPS-AC-01.01".remediation]
-safe = false
-requires_api = true
-dry_run_supported = false
-
-[[controls."OSPS-AC-01.01".remediation.handlers]]
-handler = "api_call"
-method = "PUT"
-endpoint = "/orgs/$OWNER"
-payload_template = "mfa_enforcement_payload"
-
+# Manual under every remediation policy (feature 043): GitHub offers no API
+# to require two-factor authentication for an organization.
 [[controls."OSPS-AC-01.01".remediation.handlers]]
 handler = "manual"
 steps = [
-    "Go to Organization Settings → Authentication security",
+    "Impact: when you require two-factor authentication, outside collaborators and bot accounts without it are removed from the organization; members without it must enable it before they can continue",
+    "Review who lacks two-factor authentication first: Organization Settings -> People, filter by '2FA: Disabled'",
+    "Go to Organization Settings -> Authentication security",
     "Enable 'Require two-factor authentication for everyone in the organization'",
-    "Set a grace period for existing members to enable MFA",
-    "Notify members who haven't enabled MFA",
+    "Notify the affected members, collaborators, and bot owners",
 ]
 docs_url = "https://docs.github.com/en/organizations/keeping-your-organization-secure/managing-two-factor-authentication-for-your-organization/requiring-two-factor-authentication-in-your-organization"
 context_hints = ["org_admin_access"]
@@ -546,24 +508,9 @@ steps = [
     "Verify new collaborators are added with an explicitly assigned role, not a default above the lowest privilege",
 ]
 
-[controls."OSPS-AC-02.01".remediation]
-safe = true
-requires_api = true
-dry_run_supported = false
-
-[[controls."OSPS-AC-02.01".remediation.handlers]]
-handler = "api_call"
-method = "PATCH"
-endpoint = "/repos/$OWNER/$REPO"
-payload_template = "allow_forking_payload"
-
-[[controls."OSPS-AC-02.01".remediation.handlers]]
-handler = "manual"
-steps = [
-    "Navigate to Repository Settings → General",
-    "Under 'Features', check the 'Allow forking' checkbox",
-]
-docs_url = "https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/managing-repository-settings/managing-the-forking-policy-for-your-repository"
+# No remediation (feature 043): the former one enabled forking, which is not
+# what this control requires (#513). Its manual check steps above are the
+# guidance until an automated fix measures the right thing.
 
 [controls."OSPS-AC-03.01"]
 name = "PreventDirectCommits"
@@ -576,11 +523,13 @@ help_md = """Enable branch protection to require pull requests.
 **Auto-remediation (recommended):**
 Darnit can configure this for you via the GitHub Branch Protection API.
 
-- MCP tool: `enable_branch_protection` — accepts `owner`, `repo`, `branch`,
-  `required_approvals`, `enforce_admins`, and related flags. The defaults
-  satisfy OSPS-AC-03.01 + OSPS-AC-03.02 + OSPS-QA-07.01 in a single call.
-- TOML remediation: the control's `[remediation]` block uses an `api_call`
-  handler against `PUT /repos/{owner}/{repo}/branches/{branch}/protection`.
+- MCP tool: `enable_branch_protection` previews by default; it reads the
+  current protection, plans only the missing settings (never lowering
+  existing ones), and applies the change when its digest is approved. The
+  defaults satisfy OSPS-AC-03.01 + OSPS-AC-03.02 + OSPS-QA-07.01 together.
+- TOML remediation: a `platform_setting` requirement (`require_pull_request`)
+  on the default branch's protection, applied under the operator's
+  remediation policy.
 
 Requires the `gh` CLI to be authenticated with a token holding `repo` scope.
 
@@ -611,16 +560,12 @@ steps = [
 ]
 
 [controls."OSPS-AC-03.01".remediation]
-safe = true
 requires_api = true
-dry_run_supported = true
 
-# Declarative API call remediation
 [[controls."OSPS-AC-03.01".remediation.handlers]]
-handler = "api_call"
-method = "PUT"
-endpoint = "/repos/$OWNER/$REPO/branches/$BRANCH/protection"
-payload_template = "branch_protection_payload"
+handler = "platform_setting"
+target = "branch_protection"
+require = { require_pull_request = true }
 
 [controls."OSPS-AC-03.02"]
 name = "PreventBranchDeletion"
@@ -638,9 +583,10 @@ Darnit can configure this for you via the GitHub Branch Protection API.
 A protected branch automatically disallows deletion.
 
 - MCP tool: `enable_branch_protection` (same tool that satisfies
-  OSPS-AC-03.01; the API call sets `allow_deletions=false` by default).
-- TOML remediation: the control's `[remediation]` block uses an `api_call`
-  handler against `PUT /repos/{owner}/{repo}/branches/{branch}/protection`.
+  OSPS-AC-03.01; it requires deletion protection by default).
+- TOML remediation: a `platform_setting` requirement (`prevent_deletion`)
+  on the default branch's protection, applied under the operator's
+  remediation policy.
 
 Requires the `gh` CLI to be authenticated with a token holding `repo` scope.
 
@@ -668,15 +614,12 @@ steps = [
 ]
 
 [controls."OSPS-AC-03.02".remediation]
-safe = false
 requires_api = true
-dry_run_supported = false
 
 [[controls."OSPS-AC-03.02".remediation.handlers]]
-handler = "api_call"
-method = "PUT"
-endpoint = "/repos/$OWNER/$REPO/branches/$BRANCH/protection"
-payload_template = "branch_deletion_protection_payload"
+handler = "platform_setting"
+target = "branch_protection"
+require = { prevent_deletion = true }
 
 [[controls."OSPS-AC-03.02".remediation.handlers]]
 handler = "manual"
@@ -2066,16 +2009,15 @@ steps = [
     "Check repository settings to confirm visibility is 'Public'",
 ]
 
+# High-impact (feature 043): under the default policy the change applies
+# only when its own digest is approved, never as part of a batch.
 [controls."OSPS-QA-01.01".remediation]
-safe = false
 requires_api = true
-dry_run_supported = false
 
 [[controls."OSPS-QA-01.01".remediation.handlers]]
-handler = "api_call"
-method = "PATCH"
-endpoint = "/repos/$OWNER/$REPO"
-payload_template = "repo_visibility_payload"
+handler = "platform_setting"
+target = "repository"
+require = { visibility = "public" }
 
 [[controls."OSPS-QA-01.01".remediation.handlers]]
 handler = "manual"
@@ -2949,15 +2891,12 @@ steps = [
 ]
 
 [controls."OSPS-VM-03.01".remediation]
-safe = true
 requires_api = true
-dry_run_supported = false
 
 [[controls."OSPS-VM-03.01".remediation.handlers]]
-handler = "api_call"
-method = "PUT"
-endpoint = "/repos/$OWNER/$REPO/private-vulnerability-reporting"
-payload_template = "vulnerability_reporting_payload"
+handler = "platform_setting"
+target = "vulnerability_reporting"
+require = { enabled = true }
 
 [[controls."OSPS-VM-03.01".remediation.handlers]]
 handler = "manual"
@@ -3370,15 +3309,12 @@ steps = [
 ]
 
 [controls."OSPS-QA-07.01".remediation]
-safe = false
 requires_api = true
-dry_run_supported = false
 
 [[controls."OSPS-QA-07.01".remediation.handlers]]
-handler = "api_call"
-method = "PUT"
-endpoint = "/repos/$OWNER/$REPO/branches/$BRANCH/protection"
-payload_template = "pr_review_payload"
+handler = "platform_setting"
+target = "branch_protection"
+require = { require_approvals = 1 }
 
 [[controls."OSPS-QA-07.01".remediation.handlers]]
 handler = "manual"

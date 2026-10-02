@@ -48,6 +48,8 @@ if TYPE_CHECKING:
 
     from jinja2 import Environment
 
+    from darnit.remediation.platform import PlatformSession
+
 from darnit.config.framework_schema import (
     ProjectUpdateRemediationConfig,
     RemediationConfig,
@@ -113,7 +115,7 @@ class RemediationResult:
     success: bool
     message: str
     control_id: str
-    remediation_type: str  # "file_create", "exec", "api_call", "handler"
+    remediation_type: str  # "file_create", "exec", "platform_setting", "handler"
     dry_run: bool
     details: dict[str, Any]
     needs_review: bool = False  # True when safe=false — changes may alter behavior
@@ -165,7 +167,7 @@ class RemediationExecutor:
     """Executes declarative remediations from framework TOML configs.
 
     Dispatches handler invocations from RemediationConfig.handlers through
-    the sieve handler registry (file_create, exec, api_call, manual_steps, etc.).
+    the sieve handler registry (file_create, exec, platform_setting, manual_steps, etc.).
 
     Templates use Jinja2 with non-colliding delimiters (<< >> for variables,
     <% %> for blocks) so that GitHub Actions ${{ }}, shell $VAR, and other
@@ -201,6 +203,7 @@ class RemediationExecutor:
         now_provider: Callable[[], datetime] | None = None,
         unconfirmed_keys: Collection[str] = (),
         run_id: str | None = None,
+        platform: PlatformSession | None = None,
     ):
         """Initialize the executor.
 
@@ -230,6 +233,11 @@ class RemediationExecutor:
             run_id: Remediation run whose manifest records this executor's
                 writes (feature 043). When None, the first write starts a new
                 run; every later write by this executor joins it.
+            platform: The run's platform session (feature 043): the operator
+                policy, the approved digests, and the run's platform
+                requirements. ``platform_setting`` steps plan and apply
+                through it; when None, each such step plans alone under the
+                operator policy with no approvals.
         """
         self.local_path = os.path.abspath(local_path)
         self.templates = templates or {}
@@ -242,6 +250,7 @@ class RemediationExecutor:
         self._unconfirmed_keys = frozenset(unconfirmed_keys)
         self.run_id = run_id
         self._run_ready = False
+        self.platform = platform
 
         # Auto-detect owner/repo if not provided
         if not owner or not repo:
@@ -574,6 +583,10 @@ class RemediationExecutor:
         _write_bytes_atomic(full_path, change.content.encode("utf-8"))
         manifest.record_file(repository, run_id, change.path, change.after_digest or "", checkout=self.local_path)
 
+    def _record_change_set(self, digest: str) -> None:
+        repository, run_id = self._ensure_run()
+        manifest.record_change_set(repository, run_id, digest, checkout=self.local_path)
+
     def _when_not_met(self, handler_config: dict[str, Any]) -> list[FileChange]:
         path = handler_config.get("path")
         if not isinstance(path, str):
@@ -612,6 +625,7 @@ class RemediationExecutor:
             control_id=control_id,
             project_context=dict(self._project_values),
             mode=mode,
+            platform=self.platform,
         )
 
         # Assemble flat context for when-clause evaluation. Scan values let
@@ -629,15 +643,22 @@ class RemediationExecutor:
         first_match = config.strategy == "first_match"
         matched_any = False
 
+        high_impact_mode = self.platform.policy.settings.high_impact if self.platform else "prompt"
+
         def plan_item(step: str, **fields: Any) -> PlanItem:
             previewable = fields.setdefault("previewable", True)
+            high_impact = any(cs["target"]["impact"] == "high_impact" for cs in fields.get("change_sets", []))
             item = PlanItem(
                 control_id=control_id,
                 step=step,
-                requires_individual_approval=not previewable or not config.safe,
+                requires_individual_approval=(
+                    not previewable or not config.safe or (high_impact and high_impact_mode == "prompt")
+                ),
                 **fields,
             )
             plan_items.append(item)
+            if self.platform is not None:
+                self.platform.note_known(item.digest)
             return item
 
         for index, invocation in enumerate(config.handlers):
@@ -743,10 +764,16 @@ class RemediationExecutor:
                 all_success = False
                 changes = []
 
+            if mode == "apply":
+                for digest in handler_result.evidence.get("applied_change_sets") or []:
+                    self._record_change_set(digest)
+                    wrote = True
+
             if mode == "plan":
                 plan_item(
                     step,
                     file_changes=changes,
+                    change_sets=list(handler_result.evidence.get("change_sets") or []),
                     commands=[] if handler_info.supports_plan else commands,
                     previewable=handler_info.supports_plan,
                 )
