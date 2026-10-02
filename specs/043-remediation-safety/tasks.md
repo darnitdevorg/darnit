@@ -84,7 +84,7 @@
 - [ ] T010 [P] Add `RemediationSettings` (`platform`, `high_impact`: `Literal["prompt", "manual", "auto"]`, default `"prompt"`) to `OperatorConfig`, and print it in `darnit config show`. Files: `packages/darnit/src/darnit/config/operator/schema.py` and `packages/darnit/src/darnit/cli.py`.
 - [ ] T011 [P] Implement the operator-side run manifest in `packages/darnit/src/darnit/remediation/manifest.py`: `start_run`, `record_file`, `record_change_set`, `set_commit`, `load_run(repository, run_id=None)`. Use the 040 data root and its atomic, 0600, outside-checkout rules (pattern: `trust/confirmations.py`).
 - [ ] T012 Add `mode: Literal["plan", "apply"] = "apply"` to `HandlerContext`, and a `supports_plan: bool = False` registration flag, in `packages/darnit/src/darnit/sieve/handler_registry.py`.
-- [ ] T013 Make `file_create`, `yaml_inject` and `project_update` compute and return their `FileChange`s in evidence (`evidence["file_changes"]`) in both modes and never write themselves, and register them with `supports_plan=True`. Include the resulting content and the reasons `already_exists` and `when_not_met`. File: `packages/darnit/src/darnit/sieve/builtin_handlers.py`.
+- [ ] T013 Register the `manual` remediation handler with `supports_plan=True` (it has no side effects, so manual remediations stay previewable and batch-eligible). Make `file_create`, `yaml_inject` and `project_update` compute and return their `FileChange`s in evidence (`evidence["file_changes"]`) in both modes and never write themselves, and register them with `supports_plan=True`. Include the resulting content and the reasons `already_exists` and `when_not_met`. File: `packages/darnit/src/darnit/sieve/builtin_handlers.py`.
 - [ ] T014 Rework `RemediationExecutor` as the single writer, in `packages/darnit/src/darnit/remediation/executor.py`:
   - `plan` mode runs handlers with `mode="plan"` and returns `PlanItem`s; this replaces the "Would execute handler" short-circuit at the dry-run branch;
   - `apply` mode runs the plan, writes the `FileChange`s atomically, and records each in the manifest;
@@ -112,6 +112,7 @@
   - `read_failure` and an unreadable default branch: ERROR with cause; no operation (FR-002).
   - `default_branch_release`: the target is `release` (FR-007).
   - Review count is raised through `PATCH .../required_pull_request_reviews` and never lowered.
+  - `enforce_admins` uses `POST .../enforce_admins` only when it is off; `require_status_checks` adds only missing contexts and keeps existing `contexts` and `checks`.
 - [ ] T017 [P] [US1] Write GET-to-PUT translator round-trip tests in `tests/darnit/remediation/platform/test_protection_translate.py`: every known field of a recorded protection GET maps to the PUT shape and back without loss, and an unrecognised key raises.
 - [ ] T018 [P] [US1] Write tests for the `repository` and `vulnerability_reporting` targets in `tests/darnit/remediation/platform/test_targets.py`:
   - `private_repo` with `visibility = "public"` gives a PATCH with only that field, class `high_impact`, and impact notes;
@@ -126,7 +127,9 @@
   - `manual` gives 0 writes and steps in the outcome;
   - `auto` writes without a digest and records the policy;
   - a `[remediation]` table in the audited repository's files is ignored;
-  - `read_only_token` gives an error and 0 changed fields after read-back.
+  - `read_only_token` gives an error and 0 changed fields after read-back;
+  - a partial write (the reviews PATCH succeeds, the following PUT is rejected) gives outcome `error` listing exactly the one changed field from the read-back, and the control is not `fixed`;
+  - a repository on a forge other than GitHub gives outcome `manual` with 0 platform calls.
 - [ ] T020 [P] [US1] Write `enable_branch_protection` tool tests in `tests/darnit_baseline/test_enable_branch_protection.py`:
   - the default call previews only;
   - `branch=None` uses the default branch;
@@ -140,7 +143,8 @@
 - [ ] T022 [US1] Implement the targets in `packages/darnit/src/darnit/remediation/platform/targets.py` (research R2, R3):
   - **Readers:** default branch from `GET /repos`; `GET .../branches/{b}` (`protected`); protection GET; `GET .../rules/branches/{b}`; repo GET; PVR GET.
   - **Translator:** total over the known field list from research; raises on unknown keys.
-  - **Comparators:** booleans toward the required value; counts as minimums; status checks as a superset.
+  - **Comparators:** booleans toward the required value; counts as minimums; status-check contexts as a superset.
+  - **Granular writes:** `enforce_admins` via `POST .../enforce_admins`; missing status-check contexts via `POST .../required_status_checks/contexts` (or `PATCH .../required_status_checks` when none are configured).
   - **Planners:** unprotected means one PUT; protected means the reviews PATCH, plus one translated full PUT only for `prevent_deletion`/`prevent_force_push`; all requirements on one branch merge into one change set; impact class and impact notes per target.
 - [ ] T023 [US1] Implement policy resolution and approval matching in `packages/darnit/src/darnit/remediation/platform/policy.py`:
   - the policy comes from `resolve_operator_config(...)`, never from the repository;
@@ -150,7 +154,9 @@
   - `plan(targets, requirements) -> list[ChangeSet]`;
   - `apply(change_sets, approvals, policy)`: re-read, re-plan and compare digests; write with `gh_api_write`; read back; derive the result from the read-back (FR-006); record applied change sets in the manifest.
   - Errors use the 041 `error.class`/`cause`.
+  - A repository whose canonical identity is not on GitHub gives a `manual` outcome with the steps and makes no platform call.
 - [ ] T025 [US1] Register the `platform_setting` remediation handler (`supports_plan=True`; `ChangeSet`s in evidence; apply through the engine) in `packages/darnit/src/darnit/sieve/builtin_handlers.py`. Add its schema (`target`, `require`, optional `branch`; unknown requirement keys rejected) in `packages/darnit/src/darnit/config/framework_schema.py`.
+- [ ] T025a [US1] Amend `.specify/memory/constitution.md` (PATCH, 1.3.0 to 1.3.1) so Architecture Constraints Layer 2 lists the built-in remediation actions as `file_create`, `exec`, `platform_setting`, `project_update`, `yaml_inject` (no `api_call`). Add a Sync Impact Report entry, and do it before T026.
 - [ ] T026 [US1] Remove the `api_call` handler and its schema section. A TOML that uses it fails validation with a message naming `platform_setting`. Files: `packages/darnit/src/darnit/sieve/builtin_handlers.py`, `packages/darnit/src/darnit/config/framework_schema.py`, `tests/darnit/sieve/test_builtin_handlers.py` (drop the api_call cases).
 - [ ] T027 [US1] Migrate the Baseline TOML in `packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml`:
   - AC-03.01 gets `require_pull_request`, AC-03.02 gets `prevent_deletion`, QA-07.01 gets `require_approvals = 1`, QA-01.01 gets `visibility = "public"`, and VM-03.01 gets `enabled = true`, each as a `platform_setting`;
@@ -193,7 +199,7 @@
 
 ### Implementation for User Story 2
 
-- [ ] T034 [US2] Before applying a `FileChange`, check `git status --porcelain -- <path>` and `git check-ignore`. A path with user changes is not written; an ignored path is written but flagged `ignored`. File: `packages/darnit/src/darnit/remediation/executor.py`.
+- [ ] T034 [US2] Before applying a `FileChange`, check `git status --porcelain -- <path>` and `git check-ignore`. A path with user changes is not written (`action = "none"`, `reason = "user_changes_present"`); an ignored path is written with `ignored = true` and is never staged. File: `packages/darnit/src/darnit/remediation/executor.py`.
 - [ ] T035 [US2] Rewrite `create_remediation_branch_impl` in `packages/darnit/src/darnit/server/tools/git_operations.py`:
   - never stash or drop;
   - a new branch uses `git checkout -b` from HEAD;
@@ -207,7 +213,7 @@
   - list every committed file;
   - record the commit in the manifest.
 - [ ] T037 [US2] Make `create_remediation_pr_impl` take `run_id`, push only the manifest's branch, and diff against the branch's base, not a hard-coded `main`. File: `packages/darnit/src/darnit/server/tools/git_operations.py`.
-- [ ] T038 [US2] Pass the run id from `remediate_audit_findings` to the branch, commit and PR steps, and expose `run_id` on the three MCP git tools. Files: `packages/darnit-baseline/src/darnit_baseline/tools.py` and the tool registration in `packages/darnit/src/darnit/server/`.
+- [ ] T038 [US2] When any git step is requested (`branch_name`, `auto_commit` or `create_pr`), run the repository-state checks from T035 (detached HEAD, merge or rebase in progress, an existing branch with foreign commits, a dirty tree when switching) before applying any remediation, and stop with nothing changed if one fails (FR-013, US2 scenario 3). Pass the run id from `remediate_audit_findings` to the branch, commit and PR steps, and expose `run_id` on the three MCP git tools. Files: `packages/darnit-baseline/src/darnit_baseline/tools.py` and the tool registration in `packages/darnit/src/darnit/server/`.
 
 **Checkpoint**: SC-003 holds.
 
@@ -363,11 +369,11 @@
 - **US1 (MVP):** after Foundational.
   - T021 before T022; T022 before T023 and T024.
   - T025 needs T024.
-  - T026 and T027 need T025.
+  - T025a before T026; T026 and T027 need T025.
   - T028 needs T024.
   - T029 needs T025.
   - T030 and T031 come last.
-- **US2:** independent of US1 after Foundational, so the two can be built in parallel. T034 touches `executor.py` after T014. T038 touches the Baseline `tools.py` after T029 if US1 is done first; otherwise coordinate.
+- **US2:** independent of US1 after Foundational, so the two can be built in parallel. T034 touches `executor.py` after T014. T038 needs T035 and touches the Baseline `tools.py` after T029 if US1 is done first; otherwise coordinate.
 - **US3:** after US2 (needs the manifest from a real run and the T034 executor checks).
 - **US4:** after Foundational. T045 and T046 touch the orchestrator and `tools.py` after T029 and T038.
 - **US5:** after Foundational. T051 touches `executor.py` after T034. T052 touches the Baseline TOML after T027 and T041.

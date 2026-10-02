@@ -30,11 +30,11 @@ What a control needs from a target; declared in TOML on a `platform_setting` han
 
 | Kind | Requirement keys |
 |---|---|
-| `branch_protection` | `require_pull_request: true`, `require_approvals: int >= 1`, `prevent_deletion: true`, `prevent_force_push: true` |
+| `branch_protection` | `require_pull_request: true`, `require_approvals: int >= 1`, `prevent_deletion: true`, `prevent_force_push: true`, `enforce_admins: true`, `require_status_checks: list[str]` (contexts that must be required; existing ones are kept) |
 | `repository` | `visibility: "public"` |
 | `vulnerability_reporting` | `enabled: true` |
 
-Validation: unknown keys rejected at load; each key has a "stricter" direction used by the comparator (booleans toward the required value, counts as minimums).
+Validation: unknown keys rejected at load; each key has a "stricter" direction used by the comparator (booleans toward the required value, counts as minimums, status-check contexts as a superset of the current set).
 
 ## ObservedState
 
@@ -75,7 +75,8 @@ Invariants: every `FieldChange.after` is equal to or stricter than `before` (FR-
 | Field | Type | Notes |
 |---|---|---|
 | `path` | `str` | Repository-relative. |
-| `action` | `Literal["create", "modify", "none"]` | `none` with `reason` (`already_exists`, `user_changes_present`, `ignored`, `when_not_met`). |
+| `action` | `Literal["create", "modify", "none"]` | `none` with `reason` (`already_exists`, `user_changes_present`, `when_not_met`). |
+| `ignored` | `bool` | The path matches the repository's ignore rules: it is written but never staged or committed (FR-014). |
 | `content` | `str \| None` | Resulting content for `create`/`modify`. |
 | `before_digest`, `after_digest` | `str \| None` | |
 | `project_reference` | `str \| None` | Field to record after a successful create (R9). |
@@ -149,7 +150,7 @@ plan -> [confirmation missing]            -> needs_confirmation
 
 ## RunManifest (operator-side)
 
-File `user_data_root()/remediation/<repository-identity>/<run_id>.json`, mode 0600, refused inside the checkout.
+File `user_data_root()/remediation/<repository-identity>/<run_id>.json`, mode 0600, refused inside the checkout. Written in apply mode only; a preview writes no manifest.
 
 | Field | Type | Notes |
 |---|---|---|

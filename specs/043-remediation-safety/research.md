@@ -10,7 +10,7 @@ Paths are relative to `packages/`.
 |---|---|---|
 | Branch protection tool | `darnit/remediation/github.py:98` `enable_branch_protection(dry_run=False, branch="main")` builds a fixed object and runs `gh api -X PUT .../protection` (:268). MCP wrapper `darnit_baseline/tools.py:525` also defaults `dry_run=False`. | #473: no read of current protection; `required_status_checks`, `restrictions` sent as null; `require_code_owner_reviews`, `required_linear_history` forced false; assumes `main`. Rulesets are only read to print a warning. |
 | Declarative platform fixes | 7 `api_call` handlers in `openssf-baseline.toml` (:503, 555, 620, 676, 2075, 2957, 3378) with `endpoint` + `payload_template`; handler `sieve/builtin_handlers.py:1065` reads `url`, returns ERROR "No URL"; with a URL it returns INCONCLUSIVE "requires execution context" and the executor (`remediation/executor.py`) counts only FAIL/ERROR as failure. | #472: today every one errors; a rename alone turns them into reported successes that call nothing; a real call would send full-object payloads (`templates/*_payload.tmpl`). AC-03.01 and AC-02.01 are `safe = true`. |
-| Success detection | `darnit_baseline/tools.py:1320` gates commit/PR on `"❌" not in result`. | #472, FR-019. |
+| Success detection | `darnit_baseline/tools.py:1320` gates commit/PR on whether the output text contains the error emoji. | #472, FR-019. |
 | Safety flags | `framework_schema.py:506-510` declares `safe`, `requires_api`, `requires_confirmation`, `dry_run_supported`; `dry_run_command` appears in TOML. Only `safe` is read (`darnit_baseline/remediation/orchestrator.py:406`), and only to tag `needs_review` after applying. | #483, FR-024, FR-025. |
 | Dry run | `executor.py:535` skips handler calls and returns "Would execute handler" plus the rendered config. `HandlerContext` (`sieve/handler_registry.py:135`) has no mode field. No handler honors dry run; `yaml_inject` writes unconditionally (#166). | #483, FR-021/022. |
 | File creation outcome | `file_create_handler` (`builtin_handlers.py:1013`) returns PASS "File already exists" with `action: skipped`; the orchestrator marks the control `applied` (:633). | #475. |
@@ -56,7 +56,7 @@ The engine reads the target's current state, decides whether the requirement alr
 
 | Target | Requirements | Read | Write |
 |---|---|---|---|
-| `branch_protection` | `require_pull_request`, `require_approvals = N` (at least N), `prevent_deletion`, `prevent_force_push` | branch (`protected`), protection (if protected), branch rules | see R3 |
+| `branch_protection` | `require_pull_request`, `require_approvals = N` (at least N), `prevent_deletion`, `prevent_force_push`, `enforce_admins`, `require_status_checks = [contexts]` (superset of current) | branch (`protected`), protection (if protected), branch rules | see R3 |
 | `repository` | `visibility = "public"` (high-impact) | `GET /repos/{o}/{r}` | `PATCH` with only that field |
 | `vulnerability_reporting` | `enabled = true` | `GET .../private-vulnerability-reporting` | `PUT` |
 
@@ -83,6 +83,7 @@ Control mapping:
 3. Unprotected: one `PUT` that sets only the required settings; every other field is sent at its platform default, which equals the current (unprotected) state, so nothing is lost.
 4. Protected:
    - review requirements -> `PATCH .../required_pull_request_reviews`, sending only the fields that must tighten (`required_approving_review_count` raised to the minimum, never lowered);
+   - `enforce_admins` -> `POST .../enforce_admins`; `require_status_checks` -> `POST .../required_status_checks/contexts` with only the missing contexts (existing contexts and `checks` are kept; if status checks are not configured at all, `PATCH .../required_status_checks` creates them);
    - `prevent_deletion` / `prevent_force_push` (no granular endpoint) -> one full `PUT` built by translating the GET response into the PUT shape with every existing value preserved and only the required booleans changed.
    - The translator is total over a known field list; if the GET response contains a field it does not know, the planner refuses with ERROR "cannot preserve unknown protection setting <field>" rather than risk dropping it.
 5. Several requirements on the same branch (AC-03.01, AC-03.02, QA-07.01 in one run) are planned together into one change set (edge case: no second full replacement undoes the first).

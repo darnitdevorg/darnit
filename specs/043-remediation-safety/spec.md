@@ -153,7 +153,7 @@ A maintainer previews remediation before applying it. The preview lists every fi
 - **FR-006**: After a platform write, darnit MUST read the settings back and derive the outcome from the comparison with the requirement; it MUST NOT derive success from response text.
 - **FR-007**: The target branch for branch-level settings MUST be the repository's actual default branch as reported by the platform, unless the person names a branch.
 - **FR-008**: Changes to organization-wide settings and to repository visibility are high-impact. Under the `prompt` policy each MUST be approved on its own; an approval of a batch or of other changes MUST NOT cover it. Its preview MUST show its impact as far as the platform reveals it (for example which members would lose access, or that private contents would become public).
-- **FR-026**: The operator configuration MUST set a remediation policy for platform changes, separately for high-impact changes (FR-008) and for other platform changes, each one of: `prompt` (default; darnit asks, and on approval makes the change itself), `manual` (darnit makes no platform change and reports the exact steps), or `auto` (darnit applies without asking). The policy MUST come only from operator configuration (feature 040), never from the audited repository, and the policy in effect MUST be recorded in the remediation report. Every mode MUST still follow FR-002 to FR-007; `auto` only removes the approval step of FR-005 and FR-008.
+- **FR-026**: The operator configuration MUST set a remediation policy for platform changes, separately for high-impact changes (FR-008) and for other platform changes, each one of: `prompt` (default; darnit asks, and on approval makes the change itself), `manual` (darnit makes no platform change and reports the exact steps), or `auto` (darnit applies without asking). The policy MUST come only from operator configuration (feature 040), never from the audited repository, and the policy in effect MUST be recorded in the remediation report. Every mode MUST still follow FR-002 to FR-007; `auto` only removes the approval step of FR-005 and FR-008. It does not approve repository steps that require individual approval under FR-023 or FR-024; those still need a person's approval in every mode.
 - **FR-009**: Fixes declared in the framework configuration and fixes offered as standalone tools for the same setting MUST follow the same rules (FR-001 to FR-008); there MUST be no second path that bypasses them.
 
 **Working tree and version control**
@@ -171,7 +171,7 @@ A maintainer previews remediation before applying it. The preview lists every fi
 
 **Outcomes**
 
-- **FR-017**: Each control's remediation outcome MUST be exactly one of: fixed (something changed and a re-check passes), changed but still not passing, changed but not verified (re-check could not run), nothing changed (with reason, including "already present" and "already satisfied"), needs confirmation, manual, or error. A handler result that is not a definite success MUST NOT count as success.
+- **FR-017**: Each control's remediation outcome MUST be exactly one of: fixed (something changed and a re-check passes), changed but still not passing, changed but not verified (re-check could not run), nothing changed (with reason, including "already present" and "already satisfied"), needs approval (with the previewed change), needs confirmation, manual, or error. A handler result that is not a definite success MUST NOT count as success.
 - **FR-018**: After an applied remediation changes something, darnit MUST re-check the affected controls and report the re-check result with the outcome.
 - **FR-019**: Remediation summaries and any downstream decision (such as whether to commit or open a pull request) MUST be derived from structured per-control outcomes, never from matching symbols or words in output text.
 - **FR-020**: If darnit cannot determine whether project context is still unconfirmed, remediation MUST NOT run.
@@ -208,6 +208,7 @@ A maintainer previews remediation before applying it. The preview lists every fi
 ## Assumptions
 
 - Features 040 (operator configuration, trust), 041 (result contract, ERROR), and 042 (only usable context values reach remediation) are in place; this feature does not change their rules.
+- Organization two-factor enforcement cannot be set through GitHub's API (web UI only), so its remediation is manual under every policy; the policy governs only changes the platform allows darnit to make.
 - GitHub is the only hosting platform with platform remediation today; other platforms get manual instructions. Rulesets and classic branch protection are both in scope for reading.
 - "Approval" follows the confirmation model used in 041 and 042: a person decides, directly or through an agent acting on the person's explicit instruction, and the decision is bound to the exact change shown.
 - Atomic, idempotent rollback across multiple handlers of one remediation is out of scope (#420); this feature requires accurate per-step reporting instead.

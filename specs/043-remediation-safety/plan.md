@@ -24,7 +24,7 @@ Make every remediation path plan before it acts, act only on what it planned, an
 
 **Project Type**: Library + MCP server + CLI + skills.
 
-**Performance Goals**: A preview adds at most 3 GET calls per platform target (repo or branch, protection, rules). A re-check runs only the affected controls. Scratch-copy previews apply only to exec steps declared offline.
+**Performance Goals**: A preview adds at most 4 GET calls per platform target (repository for the default branch, branch, protection, rules). A re-check runs only the affected controls. Scratch-copy previews apply only to exec steps declared offline.
 
 **Constraints**:
 - Principle II (a fix is claimed only when a re-check passes).
@@ -40,8 +40,7 @@ Make every remediation path plan before it acts, act only on what it planned, an
 
 | Item | Count |
 |---|---|
-| Platform remediations moved to the engine | 7 |
-| Moved to manual | 2 (AC-01.01, AC-02.01) |
+| `api_call` remediations replaced | 7: 5 moved to the engine, 2 made manual (AC-01.01, AC-02.01) |
 | Platform targets | 3 |
 | Remediation handlers given plan mode | 6 (`file_create`, `yaml_inject`, `project_update`, `exec`, `platform_setting`, `manual`), plus the plugin `generate_threat_model` |
 | MCP tools changed | 6 |
