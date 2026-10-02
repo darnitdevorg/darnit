@@ -40,7 +40,6 @@ steps = [
 
 [controls."GT-01.01".remediation]
 safe = false
-dry_run_supported = false
 
 [[controls."GT-01.01".remediation.handlers]]
 handler = "manual"

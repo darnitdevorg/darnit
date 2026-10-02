@@ -504,10 +504,11 @@ class RemediationConfig(BaseModel):
 
     # Common settings
     template: str | None = None  # Template name reference
-    safe: bool = True  # Safe to auto-apply without confirmation
-    requires_api: bool = False  # Requires API access (GitHub, etc.)
-    requires_confirmation: bool = False  # Require user confirmation
-    dry_run_supported: bool = True  # Supports dry-run mode
+    # Feature 043 (framework-design 15.3): false means every step that may
+    # act needs individual approval by its PlanItem digest in a batch apply,
+    # under every remediation policy.
+    safe: bool = True
+    requires_api: bool = False  # Descriptive only: needs platform API access
     config: dict[str, Any] = Field(default_factory=dict)
 
     # Context requirements - checked by orchestrator before running remediation
@@ -519,20 +520,26 @@ class RemediationConfig(BaseModel):
     @field_validator("handlers")
     @classmethod
     def _remediation_handlers(cls, handlers: list[HandlerInvocation]) -> list[HandlerInvocation]:
-        """Reject the removed ``api_call`` handler and validate ``platform_setting`` steps (feature 043, 4.5)."""
+        """Reject removed handlers and properties; validate ``platform_setting`` and ``exec`` steps (feature 043)."""
         for handler in handlers:
             if handler.handler == "api_call":
                 raise ValueError(_API_CALL_REMOVED)
+            extra = handler.model_extra or {}
+            _reject_removed_properties(extra)
             if handler.handler == "platform_setting":
-                _validate_platform_setting(handler.model_extra or {})
+                _validate_platform_setting(extra)
             if handler.handler == "file_create":
-                _validate_project_reference((handler.model_extra or {}).get("project_reference"))
+                _validate_project_reference(extra.get("project_reference"))
+            if handler.handler == "exec":
+                _validate_exec_declarations(extra)
         return handlers
 
     @model_validator(mode="after")
-    def _no_api_call_table(self) -> "RemediationConfig":
-        if "api_call" in (self.model_extra or {}):
+    def _no_removed_properties(self) -> "RemediationConfig":
+        extra = self.model_extra or {}
+        if "api_call" in extra:
             raise ValueError(_API_CALL_REMOVED)
+        _reject_removed_properties(extra)
         return self
 
 
@@ -541,6 +548,31 @@ _API_CALL_REMOVED = (
     'with handler = "platform_setting" (framework-design 4.5), or a manual step when the '
     "platform has no API for the change"
 )
+
+_PLAN_MODE = (
+    "every remediation is previewed in plan mode (framework-design 4.2); an exec step is "
+    'previewable when it declares effects = "working_tree" and offline = true (4.4)'
+)
+REMOVED_REMEDIATION_PROPERTIES: dict[str, str] = {
+    "requires_confirmation": "use safe = false, which requires individual approval in a batch apply (15.3)",
+    "dry_run_supported": _PLAN_MODE,
+    "dry_run_command": _PLAN_MODE,
+}
+
+
+def _reject_removed_properties(fields: dict[str, Any]) -> None:
+    for name, replacement in REMOVED_REMEDIATION_PROPERTIES.items():
+        if name in fields:
+            raise ValueError(f"the remediation property {name} was removed (feature 043): {replacement}")
+
+
+def _validate_exec_declarations(fields: dict[str, Any]) -> None:
+    effects = fields.get("effects")
+    if effects is not None and effects != "working_tree":
+        raise ValueError(f'exec effects must be "working_tree" (framework-design 4.4), not {effects!r}')
+    offline = fields.get("offline")
+    if offline is not None and not isinstance(offline, bool):
+        raise ValueError(f"exec offline must be true or false, not {offline!r}")
 
 
 _PLATFORM_SETTING_FIELDS = frozenset({"target", "require", "branch"})

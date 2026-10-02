@@ -266,7 +266,15 @@ def exec_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResu
         stdout: str (truncated to 2000 chars)
         stderr: str (truncated to 500 chars)
         json: parsed JSON if output is valid JSON, else None
+
+    As a remediation step in plan mode (feature 043, framework-design 4.4)
+    the command runs only in a scratch copy, and only when the step declares
+    ``effects = "working_tree"`` and ``offline = true``; see
+    :func:`exec_previewable`.
     """
+    if context.mode == "plan":
+        return _exec_preview(config, context)
+
     command = config.get("command", [])
     if not command:
         return HandlerResult(
@@ -372,6 +380,77 @@ def exec_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResu
             evidence=evidence,
             error_class=error_class,
         )
+
+
+def exec_previewable(config: dict[str, Any]) -> bool:
+    """An exec remediation step can be previewed exactly in a scratch copy (framework-design 4.4)."""
+    return config.get("effects") == "working_tree" and config.get("offline") is True and "cwd" not in config
+
+
+def _exec_preview(config: dict[str, Any], context: HandlerContext) -> HandlerResult:
+    """Run the command in a scratch copy of the visible working tree and return the difference as FileChanges.
+
+    The checkout is never touched. Files the command creates that the
+    checkout's ignore rules exclude are left out, as an apply never records
+    them either.
+    """
+    import dataclasses
+    import tempfile
+
+    from darnit.remediation import git_state, working_tree
+
+    command = [str(arg) for arg in config.get("command") or []]
+    if not exec_previewable(config):
+        return HandlerResult(
+            status=HandlerResultStatus.INCONCLUSIVE,
+            message='Cannot be previewed exactly: exec needs effects = "working_tree" and offline = true',
+            evidence={"command": command, "previewable": False},
+        )
+    try:
+        paths = working_tree.visible_files(context.local_path)
+        with tempfile.TemporaryDirectory(prefix="darnit-preview-") as scratch:
+            working_tree.copy_files(context.local_path, scratch, paths)
+            before = working_tree.digests(scratch, paths)
+            ran = exec_handler(config, dataclasses.replace(context, local_path=scratch, mode="apply"))
+            if ran.status != HandlerResultStatus.PASS:
+                return HandlerResult(
+                    status=HandlerResultStatus.ERROR,
+                    message=f"Preview run did not succeed: {ran.message}",
+                    evidence={"command": command, "exit_code": ran.evidence.get("exit_code")},
+                    error_class=ran.error_class,
+                )
+            after = working_tree.all_files(scratch)
+            hidden = working_tree.ignored(context.local_path, [p for p in after if p not in before])
+            found = working_tree.diff(scratch, before, [p for p in after if p not in hidden])
+    except (git_state.GitStateError, OSError) as e:
+        return HandlerResult(
+            status=HandlerResultStatus.ERROR,
+            message=f"Cannot preview exec step: {e}",
+            evidence={"command": command},
+            error_class="crashed",
+        )
+    if not found.representable:
+        return HandlerResult(
+            status=HandlerResultStatus.ERROR,
+            message=(
+                "Cannot be previewed exactly: the command "
+                + "; ".join(
+                    part
+                    for part in (
+                        f"deletes {found.deleted}" if found.deleted else "",
+                        f"writes non-text files {found.not_text}" if found.not_text else "",
+                    )
+                    if part
+                )
+            ),
+            evidence={"command": command},
+        )
+    return HandlerResult(
+        status=HandlerResultStatus.PASS,
+        message=f"Command would change {len(found.changes)} file(s)",
+        confidence=1.0,
+        evidence=_file_changes_evidence(found.changes, command=command, previewable=True),
+    )
 
 
 def gh_api_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResult:

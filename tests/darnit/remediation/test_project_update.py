@@ -85,9 +85,12 @@ class TestExecutorProjectUpdate:
         def _test_handler(config, ctx):
             return HandlerResult(status=HandlerResultStatus.PASS, message="OK")
 
+        # The handler has no side effects; without supports_plan it would need
+        # individual approval in an apply (FR-023, 043 US5).
         registry.register(
             "_test_pu_handler", "deterministic", _test_handler,
             ceiling={"pass", "fail"},
+            supports_plan=True,
         )
 
         try:

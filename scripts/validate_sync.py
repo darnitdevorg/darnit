@@ -6,6 +6,9 @@ This script validates that:
 2. Built-in handler names declared in docs/architecture/framework-design.md
    match handler registrations in packages/darnit/src/darnit/sieve/builtin_handlers.py
 3. The SARIF formatter loads from the TOML framework config (no catalog references)
+4. Every [context.*] key in a shipped TOML is a declared schema field
+5. Shipped remediations use no removed handler or property, and no exec
+   remediation runs a platform-changing command (gh, curl, wget, git push)
 
 Exit Codes:
     0 = All validations pass
@@ -252,6 +255,97 @@ def validate_context_keys() -> ValidationResult:
     )
 
 
+REMOVED_REMEDIATION_PROPERTIES = ("requires_confirmation", "dry_run_supported", "dry_run_command")
+PLATFORM_COMMANDS = frozenset({"gh", "curl", "wget"})
+_SHELLS = frozenset({"sh", "bash", "zsh", "dash"})
+
+
+def shipped_framework_tomls() -> list[Path]:
+    packages = PROJECT_ROOT / "packages"
+    top_level = sorted(p for p in packages.glob("*/*.toml") if p.name != "pyproject.toml")
+    return sorted(packages.glob("*/src/*/*.toml")) + top_level
+
+
+def _platform_command(command: list[str]) -> str | None:
+    """The platform-changing program ``command`` runs (gh, curl, wget, git push), or None."""
+    import shlex
+
+    args = [str(arg) for arg in command]
+    while args and (Path(args[0]).name == "env" or "=" in args[0]):
+        args = args[1:]
+    if not args:
+        return None
+    program = Path(args[0]).name
+    if program in _SHELLS and "-c" in args[1:]:
+        script = args[args.index("-c") + 1] if args.index("-c") + 1 < len(args) else ""
+        try:
+            tokens = shlex.split(script)
+        except ValueError:
+            tokens = script.split()
+        names = [Path(token).name for token in tokens]
+        if hit := next((name for name in names if name in PLATFORM_COMMANDS), None):
+            return hit
+        return "git push" if "git" in names and "push" in names else None
+    if program in PLATFORM_COMMANDS:
+        return program
+    if program == "git" and "push" in args[1:]:
+        return "git push"
+    return None
+
+
+def validate_remediation_properties(paths: list[Path] | None = None) -> ValidationResult:
+    """Shipped remediations declare only enforced properties and never change platform state from exec (feature 043).
+
+    Rejects the removed ``api_call`` handler and the removed properties
+    ``requires_confirmation``, ``dry_run_supported`` and ``dry_run_command``
+    (framework-design 4.1), and exec remediations whose command is ``gh``,
+    ``curl``, ``wget`` or ``git push`` (4.4). ``paths`` defaults to every
+    shipped framework TOML.
+    """
+    import tomllib
+
+    offenders: list[str] = []
+    checked = 0
+    for toml_path in shipped_framework_tomls() if paths is None else paths:
+        try:
+            data = tomllib.loads(toml_path.read_text(encoding="utf-8"))
+        except (OSError, tomllib.TOMLDecodeError) as exc:
+            return ValidationResult(passed=False, message=f"Could not read {toml_path.name}", details=str(exc))
+        try:
+            where = toml_path.relative_to(PROJECT_ROOT)
+        except ValueError:
+            where = toml_path
+        for control_id, control in (data.get("controls") or {}).items():
+            remediation = control.get("remediation") if isinstance(control, dict) else None
+            if not isinstance(remediation, dict):
+                continue
+            checked += 1
+            if "api_call" in remediation:
+                offenders.append(f"  - {where}: {control_id} declares an api_call table (use platform_setting)")
+            for name in REMOVED_REMEDIATION_PROPERTIES:
+                if name in remediation:
+                    offenders.append(f"  - {where}: {control_id} declares removed property {name}")
+            for index, step in enumerate(remediation.get("handlers") or []):
+                label = f"{control_id} handler {index} ({step.get('handler')})"
+                if step.get("handler") == "api_call":
+                    offenders.append(f"  - {where}: {label} uses the removed api_call handler (use platform_setting)")
+                for name in REMOVED_REMEDIATION_PROPERTIES:
+                    if name in step:
+                        offenders.append(f"  - {where}: {label} declares removed property {name}")
+                if step.get("handler") == "exec" and (program := _platform_command(step.get("command") or [])):
+                    offenders.append(
+                        f"  - {where}: {label} runs {program}; platform settings change only through platform_setting"
+                    )
+
+    if offenders:
+        return ValidationResult(
+            passed=False,
+            message="Remediations declare removed or platform-changing steps",
+            details="\n".join(offenders),
+        )
+    return ValidationResult(passed=True, message=f"Remediation properties enforced ({checked} remediations)")
+
+
 def run_validations(verbose: bool = False) -> int:
     """Run all validation checks.
 
@@ -266,6 +360,7 @@ def run_validations(verbose: bool = False) -> int:
         ("Pass Types Sync", validate_pass_types_sync),
         ("SARIF Source", validate_sarif_reads_from_toml),
         ("Context Keys", validate_context_keys),
+        ("Remediation Properties", validate_remediation_properties),
     ]
 
     results = []

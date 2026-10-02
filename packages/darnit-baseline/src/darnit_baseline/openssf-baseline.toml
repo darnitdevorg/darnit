@@ -698,7 +698,6 @@ steps = [
 
 [controls."OSPS-BR-01.01".remediation]
 safe = false
-dry_run_supported = false
 
 # Primary: zizmor auto-fix moves ${{ }} into env: variables (uses --fix=all which
 # includes "unsafe" fixes that may change workflow behavior)
@@ -769,7 +768,6 @@ steps = [
 
 [controls."OSPS-BR-01.02".remediation]
 safe = false
-dry_run_supported = false
 
 # Primary: zizmor auto-fix moves ${{ github.head_ref }} into env: variables
 [[controls."OSPS-BR-01.02".remediation.handlers]]
@@ -829,7 +827,6 @@ steps = [
 
 [controls."OSPS-BR-01.03".remediation]
 safe = false
-dry_run_supported = false
 
 [[controls."OSPS-BR-01.03".remediation.handlers]]
 handler = "manual"
@@ -874,7 +871,6 @@ steps = [
 
 [controls."OSPS-BR-01.04".remediation]
 safe = false
-dry_run_supported = false
 
 [[controls."OSPS-BR-01.04".remediation.handlers]]
 handler = "manual"
@@ -995,7 +991,6 @@ credential_files = '(?i)(credentials|secrets?)\.json|\.secret'
 
 [controls."OSPS-BR-07.01".remediation]
 safe = true
-dry_run_supported = true
 
 [[controls."OSPS-BR-07.01".remediation.handlers]]
 handler = "file_create"
@@ -1042,7 +1037,6 @@ steps = [
 
 [controls."OSPS-BR-02.01".remediation]
 safe = false
-dry_run_supported = false
 
 [[controls."OSPS-BR-02.01".remediation.handlers]]
 handler = "manual"
@@ -1121,7 +1115,6 @@ steps = [
 
 [controls."OSPS-BR-04.01".remediation]
 safe = false
-dry_run_supported = false
 
 [[controls."OSPS-BR-04.01".remediation.handlers]]
 handler = "manual"
@@ -1186,7 +1179,6 @@ steps = [
 
 [controls."OSPS-BR-05.01".remediation]
 safe = false
-dry_run_supported = false
 
 [[controls."OSPS-BR-05.01".remediation.handlers]]
 handler = "manual"
@@ -1231,7 +1223,6 @@ steps = [
 
 [controls."OSPS-BR-06.01".remediation]
 safe = true
-dry_run_supported = true
 
 [[controls."OSPS-BR-06.01".remediation.handlers]]
 handler = "file_create"
@@ -1320,7 +1311,6 @@ steps = [
 
 [controls."OSPS-DO-01.01".remediation]
 safe = true
-dry_run_supported = true
 
 [[controls."OSPS-DO-01.01".remediation.handlers]]
 handler = "file_create"
@@ -1409,7 +1399,6 @@ steps = [
 
 [controls."OSPS-DO-02.01".remediation]
 safe = true
-dry_run_supported = true
 
 # Declarative file creation remediation
 [[controls."OSPS-DO-02.01".remediation.handlers]]
@@ -1480,7 +1469,6 @@ steps = [
 
 [controls."OSPS-DO-06.01".remediation]
 safe = true
-dry_run_supported = true
 
 [[controls."OSPS-DO-06.01".remediation.handlers]]
 handler = "file_create"
@@ -1550,7 +1538,6 @@ steps = [
 
 [controls."OSPS-DO-07.01".remediation]
 safe = true
-dry_run_supported = true
 
 [[controls."OSPS-DO-07.01".remediation.handlers]]
 handler = "manual"
@@ -1661,7 +1648,6 @@ steps = [
 
 [controls."OSPS-GV-03.01".remediation]
 safe = true
-dry_run_supported = true
 
 # Declarative file creation remediation
 [[controls."OSPS-GV-03.01".remediation.handlers]]
@@ -1730,7 +1716,6 @@ steps = [
 
 [controls."OSPS-LE-01.01".remediation]
 safe = true
-dry_run_supported = true
 strategy = "first_match"
 
 [[controls."OSPS-LE-01.01".remediation.handlers]]
@@ -1803,7 +1788,6 @@ steps = [
 
 [controls."OSPS-LE-02.01".remediation]
 safe = true
-dry_run_supported = true
 strategy = "first_match"
 description = "Add SPDX license identifier to LICENSE file header"
 
@@ -1915,7 +1899,6 @@ steps = [
 
 [controls."OSPS-LE-03.01".remediation]
 safe = true
-dry_run_supported = true
 strategy = "first_match"
 
 [[controls."OSPS-LE-03.01".remediation.handlers]]
@@ -2067,7 +2050,6 @@ steps = [
 
 [controls."OSPS-QA-01.02".remediation]
 safe = false
-dry_run_supported = false
 
 [[controls."OSPS-QA-01.02".remediation.handlers]]
 handler = "manual"
@@ -2126,7 +2108,6 @@ steps = [
 
 [controls."OSPS-QA-02.01".remediation]
 safe = false
-dry_run_supported = false
 
 [[controls."OSPS-QA-02.01".remediation.handlers]]
 handler = "manual"
@@ -2183,7 +2164,6 @@ steps = [
 
 [controls."OSPS-QA-04.01".remediation]
 safe = false
-dry_run_supported = false
 
 [[controls."OSPS-QA-04.01".remediation.handlers]]
 handler = "manual"
@@ -2228,7 +2208,6 @@ steps = [
 
 [controls."OSPS-QA-05.01".remediation]
 safe = false
-dry_run_supported = false
 
 [[controls."OSPS-QA-05.01".remediation.handlers]]
 handler = "manual"
@@ -2272,7 +2251,6 @@ steps = [
 
 [controls."OSPS-QA-05.02".remediation]
 safe = false
-dry_run_supported = false
 
 [[controls."OSPS-QA-05.02".remediation.handlers]]
 handler = "manual"
@@ -2354,7 +2332,6 @@ steps = [
 
 [controls."OSPS-VM-02.01".remediation]
 safe = true
-dry_run_supported = true
 
 # Declarative file creation remediation
 [[controls."OSPS-VM-02.01".remediation.handlers]]
@@ -2411,7 +2388,6 @@ steps = [
 
 [controls."OSPS-AC-04.01".remediation]
 safe = true
-dry_run_supported = true
 
 [[controls."OSPS-AC-04.01".remediation.handlers]]
 handler = "yaml_inject"
@@ -2499,7 +2475,6 @@ steps = [
 
 [controls."OSPS-GV-01.01".remediation]
 safe = true
-dry_run_supported = true
 
 [[controls."OSPS-GV-01.01".remediation.handlers]]
 handler = "file_create"
@@ -2563,7 +2538,6 @@ steps = [
 
 [controls."OSPS-GV-01.02".remediation]
 safe = true
-dry_run_supported = true
 
 [[controls."OSPS-GV-01.02".remediation.handlers]]
 handler = "file_create"
@@ -2626,7 +2600,6 @@ steps = [
 
 [controls."OSPS-GV-03.02".remediation]
 safe = true
-dry_run_supported = true
 
 [[controls."OSPS-GV-03.02".remediation.handlers]]
 handler = "file_create"
@@ -2673,7 +2646,6 @@ steps = [
 
 [controls."OSPS-QA-03.01".remediation]
 safe = false
-dry_run_supported = false
 
 [[controls."OSPS-QA-03.01".remediation.handlers]]
 handler = "manual"
@@ -2719,7 +2691,6 @@ steps = [
 
 [controls."OSPS-QA-06.01".remediation]
 safe = true
-dry_run_supported = true
 strategy = "first_match"
 
 [[controls."OSPS-QA-06.01".remediation.handlers]]
@@ -2823,7 +2794,6 @@ steps = [
 
 [controls."OSPS-VM-01.01".remediation]
 safe = false
-dry_run_supported = false
 
 [[controls."OSPS-VM-01.01".remediation.handlers]]
 handler = "manual"
@@ -2967,7 +2937,6 @@ steps = [
 
 [controls."OSPS-VM-04.01".remediation]
 safe = false
-dry_run_supported = false
 
 [[controls."OSPS-VM-04.01".remediation.handlers]]
 handler = "manual"
@@ -3048,7 +3017,6 @@ steps = [
 
 [controls."OSPS-AC-04.02".remediation]
 safe = false
-dry_run_supported = false
 
 [[controls."OSPS-AC-04.02".remediation.handlers]]
 handler = "manual"
@@ -3106,7 +3074,6 @@ steps = [
 
 [controls."OSPS-BR-02.02".remediation]
 safe = false
-dry_run_supported = false
 
 [[controls."OSPS-BR-02.02".remediation.handlers]]
 handler = "manual"
@@ -3164,7 +3131,6 @@ steps = [
 
 [controls."OSPS-BR-07.02".remediation]
 safe = true
-dry_run_supported = true
 
 [[controls."OSPS-BR-07.02".remediation.handlers]]
 handler = "file_create"
@@ -3219,7 +3185,6 @@ steps = [
 
 [controls."OSPS-QA-02.02".remediation]
 safe = true
-dry_run_supported = true
 
 [[controls."OSPS-QA-02.02".remediation.handlers]]
 handler = "file_create"
@@ -3273,7 +3238,6 @@ steps = [
 
 [controls."OSPS-QA-04.02".remediation]
 safe = false
-dry_run_supported = false
 
 [[controls."OSPS-QA-04.02".remediation.handlers]]
 handler = "manual"
@@ -3381,7 +3345,6 @@ steps = [
 
 [controls."OSPS-QA-06.02".remediation]
 safe = true
-dry_run_supported = true
 strategy = "first_match"
 
 [[controls."OSPS-QA-06.02".remediation.handlers]]
@@ -3469,7 +3432,6 @@ steps = [
 
 [controls."OSPS-QA-06.03".remediation]
 safe = true
-dry_run_supported = true
 
 [[controls."OSPS-QA-06.03".remediation.handlers]]
 handler = "file_create"
@@ -3542,7 +3504,6 @@ steps = [
 # Remediation: Add VEX policy section to SECURITY.md
 [controls."OSPS-VM-04.02".remediation]
 safe = true
-dry_run_supported = true
 
 [[controls."OSPS-VM-04.02".remediation.handlers]]
 handler = "file_create"
@@ -3607,7 +3568,6 @@ steps = [
 
 [controls."OSPS-VM-05.01".remediation]
 safe = true
-dry_run_supported = true
 
 [[controls."OSPS-VM-05.01".remediation.handlers]]
 handler = "file_create"
@@ -3674,7 +3634,6 @@ steps = [
 
 [controls."OSPS-VM-05.02".remediation]
 safe = true
-dry_run_supported = true
 strategy = "first_match"
 
 # When Kusari Inspector is installed, it handles SCA — no workflow needed
@@ -3746,7 +3705,6 @@ steps = [
 
 [controls."OSPS-VM-05.03".remediation]
 safe = true
-dry_run_supported = true
 strategy = "first_match"
 
 [[controls."OSPS-VM-05.03".remediation.handlers]]
@@ -3834,7 +3792,6 @@ steps = [
 
 [controls."OSPS-VM-06.01".remediation]
 safe = true
-dry_run_supported = true
 
 [[controls."OSPS-VM-06.01".remediation.handlers]]
 handler = "file_create"
@@ -3887,7 +3844,6 @@ steps = [
 
 [controls."OSPS-VM-06.02".remediation]
 safe = true
-dry_run_supported = true
 strategy = "first_match"
 
 # When Kusari Inspector is installed, it handles SAST — no workflow needed
@@ -3983,7 +3939,6 @@ steps = [
 
 [controls."OSPS-DO-03.01".remediation]
 safe = true
-dry_run_supported = true
 
 [[controls."OSPS-DO-03.01".remediation.handlers]]
 handler = "file_create"
@@ -4044,7 +3999,6 @@ steps = [
 
 [controls."OSPS-DO-03.02".remediation]
 safe = true
-dry_run_supported = true
 
 [[controls."OSPS-DO-03.02".remediation.handlers]]
 handler = "file_create"
@@ -4101,7 +4055,6 @@ steps = [
 
 [controls."OSPS-DO-04.01".remediation]
 safe = true
-dry_run_supported = true
 
 [[controls."OSPS-DO-04.01".remediation.handlers]]
 handler = "file_create"
@@ -4167,7 +4120,6 @@ steps = [
 
 [controls."OSPS-DO-05.01".remediation]
 safe = true
-dry_run_supported = true
 
 [[controls."OSPS-DO-05.01".remediation.handlers]]
 handler = "file_create"
@@ -4243,7 +4195,6 @@ steps = [
 
 [controls."OSPS-GV-04.01".remediation]
 safe = true
-dry_run_supported = true
 
 [[controls."OSPS-GV-04.01".remediation.handlers]]
 handler = "file_create"
@@ -4330,7 +4281,6 @@ steps = [
 
 [controls."OSPS-SA-01.01".remediation]
 safe = true
-dry_run_supported = true
 
 [[controls."OSPS-SA-01.01".remediation.handlers]]
 handler = "file_create"
@@ -4407,7 +4357,6 @@ steps = [
 
 [controls."OSPS-SA-02.01".remediation]
 safe = true
-dry_run_supported = true
 
 [[controls."OSPS-SA-02.01".remediation.handlers]]
 handler = "file_create"
@@ -4465,7 +4414,6 @@ steps = [
 
 [controls."OSPS-SA-03.01".remediation]
 safe = true
-dry_run_supported = true
 
 [[controls."OSPS-SA-03.01".remediation.handlers]]
 handler = "file_create"
@@ -4550,7 +4498,6 @@ analysis_hints = [
 
 [controls."OSPS-SA-03.02".remediation]
 safe = true
-dry_run_supported = true
 
 [[controls."OSPS-SA-03.02".remediation.handlers]]
 handler = "generate_threat_model"

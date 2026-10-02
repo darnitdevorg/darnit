@@ -36,7 +36,10 @@ COMPLETE = {
 def _run(repo: Path, **params: Any) -> str:
     from darnit_csl.mcp_tools import remediate_community_spec
 
-    return asyncio.run(remediate_community_spec(local_path=str(repo), add_readme_links=False, **params))
+    # Feature 043 (contract 3.4) made dry_run=True the default; these tests apply.
+    return asyncio.run(
+        remediate_community_spec(local_path=str(repo), add_readme_links=False, dry_run=False, **params)
+    )
 
 
 def _without(*names: str) -> dict[str, Any]:

@@ -232,6 +232,10 @@ class OSPSBaselineImplementation:
             # RFC-0001 Stage 1: threat-model generation observes ground
             # truth (file produced or not).
             ceiling={"pass", "fail"},
+            # Feature 043 (framework-design 4.2): it writes its files itself,
+            # so it is reported as not previewable and runs in a batch apply
+            # only when its plan item digest is approved.
+            supports_plan=False,
         )
         # Feature 032: ruleset-aware branch-protection verdict. Observes
         # ground truth (queries GitHub for protection state), so it may

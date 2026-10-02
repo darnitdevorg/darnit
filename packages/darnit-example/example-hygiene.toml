@@ -198,7 +198,6 @@ project_update = { "documentation.readme.path" = "README.md" }
 [controls."PH-DOC-01".remediation]
 handler = "create_readme"
 safe = true
-dry_run_supported = true
 
 [controls."PH-DOC-01".remediation.file_create]
 path = "README.md"
@@ -233,7 +232,6 @@ steps = [
 
 [controls."PH-DOC-02".remediation]
 safe = true
-dry_run_supported = true
 
 [controls."PH-DOC-02".remediation.file_create]
 path = "LICENSE"
@@ -306,7 +304,6 @@ project_update = { "security.policy.path" = "SECURITY.md" }
 
 [controls."PH-SEC-01".remediation]
 safe = true
-dry_run_supported = true
 
 [controls."PH-SEC-01".remediation.file_create]
 path = "SECURITY.md"
@@ -335,7 +332,6 @@ files = [".gitignore"]
 [controls."PH-CFG-01".remediation]
 handler = "create_gitignore"
 safe = true
-dry_run_supported = true
 
 [controls."PH-CFG-01".remediation.file_create]
 path = ".gitignore"
@@ -360,7 +356,6 @@ files = [".editorconfig"]
 
 [controls."PH-CFG-02".remediation]
 safe = true
-dry_run_supported = true
 
 [controls."PH-CFG-02".remediation.file_create]
 path = ".editorconfig"
@@ -389,7 +384,6 @@ files = ["CONTRIBUTING.md", "CONTRIBUTING", "CONTRIBUTING.rst", ".github/CONTRIB
 
 [controls."PH-QA-01".remediation]
 safe = true
-dry_run_supported = true
 
 [controls."PH-QA-01".remediation.file_create]
 path = "CONTRIBUTING.md"
@@ -423,7 +417,6 @@ steps = [
 
 [controls."PH-CI-01".remediation]
 safe = true
-dry_run_supported = true
 
 [controls."PH-CI-01".remediation.file_create]
 path = ".github/workflows/ci.yml"

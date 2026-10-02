@@ -811,6 +811,8 @@ offline = true
 
 **Preview.** A step that declares both `effects = "working_tree"` and `offline = true` is previewable: in plan mode the executor copies the tracked files and the untracked files that are not ignored into a scratch directory, runs the command there, and records the difference as `FileChange`s; the checkout is not touched. A step without both declarations is "cannot be previewed exactly": it is not run in plan mode, its `PlanItem` lists the command with `previewable = False`, and it requires individual approval (15.3).
 
+A file the command creates that the checkout's ignore rules exclude is not part of the preview (and is not recorded at apply). A preview whose run does not succeed (an exit code outside `pass_exit_codes`, a missing binary, a timeout), or whose difference a `FileChange` cannot express (a deleted file, a non-text file), is an error, and the step is `previewable = False`.
+
 **Apply.** The command runs in the checkout. The executor records every file the command created or modified in the run manifest, compares the result with the preview, and reports any difference in the outcome. A previewed path that has uncommitted user changes is a conflict: the command is not run and the outcome names the path. A file the command changed that had uncommitted user changes before the step is reported as a conflict and is not recorded in the manifest, so it is never committed. An exit code outside `pass_exit_codes` is an error; a missing binary is ERROR, class `missing_tool`; a timeout is ERROR, class `timeout`.
 
 #### Scenario: Exec remediation calling a platform command
@@ -1842,7 +1844,9 @@ A plan item has `requires_individual_approval = True`, and runs in a batch apply
 2. it cannot be previewed exactly (`previewable = False`: a handler without plan support, or an exec step without `effects = "working_tree"` and `offline = true`), under every policy;
 3. it holds a high-impact change set and the `high_impact` policy is `prompt`.
 
-An item that needs individual approval and has none has outcome `needs_approval`, and nothing is written for it.
+An item that can change nothing (it is previewable and has no file change, no platform operation, and no command; for example a `manual` step or a `file_create` of a file that already exists) never requires individual approval.
+
+An item that needs individual approval and has none has outcome `needs_approval`, and nothing is written for it. Approval is per control: while any item of a control's remediation needs approval and lacks it, no step of that remediation runs. An item that needs approval only because of rule 3 is also approved by the digests of its change sets, or by a person at the terminal (15.2).
 
 #### Scenario: Unsafe remediation in a batch
 - **WHEN** a batch apply includes a remediation with `safe = false` and its `PlanItem.digest` was not approved

@@ -67,11 +67,10 @@ steps = [
 ]
 
 # Optional: remediation block. Tells the framework how to auto-fix when the
-# control fails. `safe = true` means the framework will run it without
-# prompting; `dry_run_supported = true` means the user can preview the fix.
+# control fails. Every remediation can be previewed before it is applied;
+# `safe = false` would require approving each step individually.
 [controls."HELLO-01.01".remediation]
 safe = true
-dry_run_supported = true
 
 [[controls."HELLO-01.01".remediation.handlers]]
 handler = "file_create"

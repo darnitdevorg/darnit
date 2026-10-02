@@ -213,10 +213,16 @@ class TestApplyMode:
         assert result.run_id is None
         assert not data_root.exists()
 
-    def test_handler_without_plan_support_runs_in_apply(
+    def test_handler_without_plan_support_runs_in_apply_when_individually_approved(
         self, repo: Path, data_root: Path, side_effect_handler: list[str]
     ) -> None:
-        result = _executor(repo).execute("C-1", _config(HandlerInvocation(handler="_side_effect")), dry_run=False)
+        # FR-023 (043 US5) replaced running it in every apply: it now runs only with its own digest.
+        config = _config(HandlerInvocation(handler="_side_effect"))
+        preview = _executor(repo).execute("C-1", config, dry_run=True)
+
+        result = RemediationExecutor(
+            local_path=str(repo), owner=OWNER, repo=REPO, approvals=[preview.plan[0].digest]
+        ).execute("C-1", config, dry_run=False)
 
         assert side_effect_handler == ["apply"]
         assert result.success

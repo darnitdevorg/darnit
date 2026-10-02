@@ -240,7 +240,6 @@ steps = [
 
 [controls."CSL-01.01".remediation]
 safe = true
-dry_run_supported = true
 
 [[controls."CSL-01.01".remediation.handlers]]
 handler = "file_create"
@@ -299,7 +298,6 @@ steps = ["Confirm the Community Specification License 1.0 text is present in the
 
 [controls."CSL-01.02".remediation]
 safe = true
-dry_run_supported = true
 
 [[controls."CSL-01.02".remediation.handlers]]
 handler = "file_create"
@@ -360,7 +358,6 @@ steps = ["Confirm governance/02-scope.md describes the Working Group's scope and
 
 [controls."CSL-02.01".remediation]
 safe = true
-dry_run_supported = true
 
 # Only runs when the control FAILS (missing or placeholder), so overwrite is safe.
 [[controls."CSL-02.01".remediation.handlers]]
@@ -430,7 +427,6 @@ steps = ["Confirm governance/03-notices.md names a Code of Conduct contact (two 
 
 [controls."CSL-03.01".remediation]
 safe = true
-dry_run_supported = true
 
 # Step 4: the CoC contact genuinely needs human input -> required = true (blocks
 # until confirmed). coc_policy / coc_reference are optional refinements.
@@ -480,7 +476,6 @@ steps = ["Confirm governance/04-license.md states CSL for the spec and a code li
 
 [controls."CSL-04.01".remediation]
 safe = true
-dry_run_supported = true
 
 [[controls."CSL-04.01".remediation.requires_context]]
 key = "csl_code_license"
@@ -572,7 +567,6 @@ steps = ["Confirm a governance policy is present (full CSL policy, or a referenc
 
 [controls."CSL-05.01".remediation]
 safe = true
-dry_run_supported = true
 strategy = "first_match"
 
 # Step 4: which governance mode? A person decides; while it is unconfirmed the
@@ -640,7 +634,6 @@ steps = [
 
 [controls."CSL-06.01".remediation]
 safe = true
-dry_run_supported = true
 
 [[controls."CSL-06.01".remediation.handlers]]
 handler = "manual"

@@ -40,7 +40,7 @@ import subprocess
 import tempfile
 from collections.abc import Collection, Iterator, Mapping
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
@@ -49,6 +49,7 @@ if TYPE_CHECKING:
     from jinja2 import Environment
 
     from darnit.remediation.platform import PlatformSession
+    from darnit.sieve.handler_registry import HandlerContext, SieveHandlerInfo
 
 from darnit.config.framework_schema import (
     ProjectUpdateRemediationConfig,
@@ -61,9 +62,11 @@ from darnit.remediation import git_state, manifest
 from darnit.remediation.helpers import (
     detect_repo_from_git,
 )
-from darnit.remediation.plan import FileChange, PlanItem, content_digest, normalize_repo_path
+from darnit.remediation.plan import Approval, FileChange, PlanItem, content_digest, normalize_repo_path
 
 logger = get_logger("remediation.executor")
+
+_ExecOutcome = tuple[dict[str, Any], list[FileChange], bool, bool]
 
 
 class ConfirmationRequired(Exception):
@@ -128,6 +131,12 @@ class RemediationResult:
     file_changes: list[FileChange] = field(default_factory=list)
     changed: bool = False
     run_id: str | None = None
+    # Feature 043 (framework-design 15.3). An apply whose plan holds an item
+    # that requires individual approval and was not approved runs no step of
+    # the control; the unapproved PlanItem digests are listed here.
+    # ``approvals`` are the individual approvals the apply used.
+    needs_approval: list[str] = field(default_factory=list)
+    approvals: list[Approval] = field(default_factory=list)
 
     def to_markdown(self) -> str:
         """Format result as markdown."""
@@ -204,6 +213,7 @@ class RemediationExecutor:
         unconfirmed_keys: Collection[str] = (),
         run_id: str | None = None,
         platform: PlatformSession | None = None,
+        approvals: Collection[str] = (),
     ):
         """Initialize the executor.
 
@@ -238,6 +248,10 @@ class RemediationExecutor:
                 requirements. ``platform_setting`` steps plan and apply
                 through it; when None, each such step plans alone under the
                 operator policy with no approvals.
+            approvals: ``PlanItem`` digests a person approved individually
+                (framework-design 15.3), in addition to the platform
+                session's approvals. A plan item that requires individual
+                approval runs in an apply only when its own digest is here.
         """
         self.local_path = os.path.abspath(local_path)
         self.templates = templates or {}
@@ -251,6 +265,7 @@ class RemediationExecutor:
         self.run_id = run_id
         self._run_ready = False
         self.platform = platform
+        self._approvals = frozenset(approvals)
         self._in_git: bool | None = None
 
         # Auto-detect owner/repo if not provided
@@ -486,7 +501,31 @@ class RemediationExecutor:
 
         try:
             planned = self._run_steps(control_id, config, "plan")
-            result = planned if dry_run else self._run_steps(control_id, config, "apply")
+            if not dry_run and planned.details.get("missing_handlers"):
+                return RemediationResult(
+                    success=False,
+                    message=f"Handler(s) not found: {planned.details['missing_handlers']}; nothing was run",
+                    control_id=control_id,
+                    remediation_type="handler_pipeline",
+                    dry_run=False,
+                    details=planned.details,
+                    plan=planned.plan,
+                )
+            if not dry_run and (unapproved := self._unapproved(planned.plan, config.safe)):
+                return RemediationResult(
+                    success=False,
+                    message=(
+                        f"Needs individual approval of {len(unapproved)} plan item digest(s); "
+                        "no step of this remediation was run"
+                    ),
+                    control_id=control_id,
+                    remediation_type="handler_pipeline",
+                    dry_run=False,
+                    details={"needs_approval": unapproved},
+                    plan=planned.plan,
+                    needs_approval=unapproved,
+                )
+            result = planned if dry_run else self._run_steps(control_id, config, "apply", planned.plan)
         except ConfirmationRequired as needed:
             return RemediationResult(
                 success=False,
@@ -499,11 +538,51 @@ class RemediationExecutor:
             )
         if not dry_run:
             result.plan = planned.plan
+            result.approvals = self._used_approvals(planned.plan)
 
         if result.success and config.project_update and config.project_update.set:
             self._project_update(control_id, config.project_update, result)
 
         return result
+
+    def _approved_digests(self) -> frozenset[str]:
+        return self._approvals | (self.platform.approvals if self.platform is not None else frozenset())
+
+    def _individually_approved(self, item: PlanItem, safe: bool) -> bool:
+        """``item``'s own digest is approved (framework-design 15.3).
+
+        An item that needs approval only because it holds a high-impact
+        change set under ``prompt`` is approved as well by the digests of its
+        change sets, or by the session's approver, which asks a person for
+        each change set before the platform engine writes it (15.2).
+        """
+        approved = self._approved_digests()
+        if item.digest in approved:
+            return True
+        if item.previewable and safe and item.change_sets:
+            if self.platform is not None and self.platform.approver is not None:
+                return True
+            return all(cs["digest"] in approved for cs in item.change_sets if cs.get("operations"))
+        return False
+
+    def _unapproved(self, plan: list[PlanItem], safe: bool) -> list[str]:
+        return [
+            item.digest
+            for item in plan
+            if item.requires_individual_approval and not self._individually_approved(item, safe)
+        ]
+
+    def _used_approvals(self, plan: list[PlanItem]) -> list[Approval]:
+        from darnit.remediation.platform.policy import ResolvedPolicy
+
+        approved = self._approved_digests()
+        operator = (self.platform.policy if self.platform is not None else ResolvedPolicy()).operator
+        now = datetime.now(UTC)
+        return [
+            Approval(digest=item.digest, approved_by=operator, approved_at=now)
+            for item in plan
+            if item.requires_individual_approval and item.digest in approved
+        ]
 
     def _project_update(
         self, control_id: str, project_update: ProjectUpdateRemediationConfig, result: RemediationResult
@@ -674,6 +753,94 @@ class RemediationExecutor:
         entry["project_reference"] = _reference_note(created, kept)
         return applied
 
+    def _apply_exec(
+        self,
+        handler_info: SieveHandlerInfo,
+        handler_config: dict[str, Any],
+        handler_ctx: HandlerContext,
+        planned: PlanItem | None,
+    ) -> _ExecOutcome:
+        """Run an exec step in the checkout and record what it changed (framework-design 4.4).
+
+        Returns ``(result entry, file changes, success, wrote)``. A previewed
+        path with uncommitted user changes stops the step before it runs. A
+        file the command changed that had uncommitted user changes before is
+        a conflict and is not recorded, so it is never committed. Any
+        difference from the preview is reported and fails the step.
+        """
+        from darnit.remediation import working_tree
+        from darnit.sieve.handler_registry import HandlerResultStatus
+
+        entry: dict[str, Any] = {"handler": handler_config["handler"]}
+        previewed = [c for c in planned.file_changes if c.changes] if planned and planned.previewable else []
+
+        def failed(message: str, changes: list[FileChange] | None = None) -> _ExecOutcome:
+            entry.update(status="error", message=message)
+            return entry, changes or [], False, False
+
+        try:
+            dirty = {p for p in working_tree.user_changed(self.local_path) if not self._written_this_run(p)}
+            conflicts = sorted(c.path for c in previewed if c.path in dirty)
+            if conflicts:
+                return failed(
+                    f"Not run: uncommitted user changes in previewed path(s) {conflicts}",
+                    [FileChange(path=p, action="none", reason="user_changes_present") for p in conflicts],
+                )
+            before = working_tree.digests(self.local_path, working_tree.visible_files(self.local_path))
+        except (git_state.GitStateError, OSError) as e:
+            return failed(f"Not run: cannot read the working tree: {e}")
+
+        passed = False
+        try:
+            handler_result = handler_info.fn(handler_config, handler_ctx)
+        except (RuntimeError, ValueError, OSError, subprocess.SubprocessError) as e:
+            entry.update(status="error", message=str(e))
+        else:
+            passed = handler_result.status == HandlerResultStatus.PASS
+            entry.update(status=handler_result.status.value, message=handler_result.message)
+            if handler_result.evidence:
+                entry["evidence"] = handler_result.evidence
+
+        try:
+            found = working_tree.diff(self.local_path, before, working_tree.visible_files(self.local_path))
+        except (git_state.GitStateError, OSError) as e:
+            return failed(f"{entry['message']}; the changes it made cannot be read: {e}")
+
+        recorded: list[FileChange] = []
+        conflicted: list[str] = []
+        for change in found.changes:
+            if change.path in dirty:
+                conflicted.append(change.path)
+                continue
+            repository, run_id = self._ensure_run()
+            manifest.record_file(repository, run_id, change.path, change.after_digest or "", checkout=self.local_path)
+            recorded.append(change)
+        changes = recorded + [FileChange(path=p, action="none", reason="user_changes_present") for p in conflicted]
+
+        problems: list[str] = []
+        if not passed:
+            problems.append(entry["message"])
+        if conflicted:
+            problems.append(f"changed files that had uncommitted user changes (not recorded): {conflicted}")
+        if found.deleted:
+            problems.append(f"deleted {found.deleted}")
+        if found.not_text:
+            problems.append(f"wrote non-text files {found.not_text}")
+        if planned is not None and planned.previewable:
+            expected = {c.path: c.after_digest for c in previewed}
+            actual = {c.path: c.after_digest for c in found.changes}
+            mismatch = {
+                "planned_only": sorted(expected.keys() - actual.keys()),
+                "applied_only": sorted(actual.keys() - expected.keys()),
+                "different": sorted(p for p in expected.keys() & actual.keys() if expected[p] != actual[p]),
+            }
+            if any(mismatch.values()):
+                entry["preview_mismatch"] = mismatch
+                problems.append(f"applied changes differ from the preview: {mismatch}")
+        if problems:
+            entry.update(status="error", message="; ".join(problems))
+        return entry, changes, not problems, bool(recorded)
+
     def _when_not_met(self, handler_config: dict[str, Any]) -> list[FileChange]:
         path = handler_config.get("path")
         if not isinstance(path, str):
@@ -688,6 +855,7 @@ class RemediationExecutor:
         control_id: str,
         config: RemediationConfig,
         mode: Literal["plan", "apply"],
+        planned: list[PlanItem] | None = None,
     ) -> RemediationResult:
         """Run the handler invocations in ``mode``.
 
@@ -695,7 +863,8 @@ class RemediationExecutor:
         the sieve handler registry. Respects ``when`` clauses on individual
         handlers and the ``strategy`` field on RemediationConfig. In apply
         mode, the file changes of a step are written only when the step
-        returned PASS.
+        returned PASS; an ``exec`` step writes through its command and is
+        compared with its planned item in ``planned``.
         """
         from darnit.sieve.handler_registry import (
             HandlerContext,
@@ -729,18 +898,26 @@ class RemediationExecutor:
         wrote = False
         first_match = config.strategy == "first_match"
         matched_any = False
+        missing: list[str] = []
 
         high_impact_mode = self.platform.policy.settings.high_impact if self.platform else "prompt"
+
+        planned_by_step = {item.step: item for item in planned or []}
 
         def plan_item(step: str, **fields: Any) -> PlanItem:
             previewable = fields.setdefault("previewable", True)
             high_impact = any(cs["target"]["impact"] == "high_impact" for cs in fields.get("change_sets", []))
+            may_act = (
+                not previewable
+                or bool(fields.get("commands"))
+                or any(c.changes for c in fields.get("file_changes", []))
+                or any(cs.get("operations") for cs in fields.get("change_sets", []))
+            )
             item = PlanItem(
                 control_id=control_id,
                 step=step,
-                requires_individual_approval=(
-                    not previewable or not config.safe or (high_impact and high_impact_mode == "prompt")
-                ),
+                requires_individual_approval=may_act
+                and (not previewable or not config.safe or (high_impact and high_impact_mode == "prompt")),
                 **fields,
             )
             plan_items.append(item)
@@ -788,12 +965,14 @@ class RemediationExecutor:
                     }
                 )
                 plan_item(step, commands=commands, previewable=False)
+                missing.append(invocation.handler)
                 all_success = False
                 if first_match:
                     break
                 continue
 
-            if mode == "plan" and not handler_info.supports_plan:
+            previewable = _step_previewable(handler_info, handler_config)
+            if mode == "plan" and not previewable:
                 results.append(
                     {
                         "handler": invocation.handler,
@@ -805,6 +984,18 @@ class RemediationExecutor:
                     }
                 )
                 plan_item(step, commands=commands, previewable=False)
+                if first_match:
+                    break
+                continue
+
+            if mode == "apply" and _is_exec(handler_info):
+                entry, changes, ok, step_wrote = self._apply_exec(
+                    handler_info, handler_config, handler_ctx, planned_by_step.get(step)
+                )
+                results.append(entry)
+                file_changes.extend(changes)
+                all_success = all_success and ok
+                wrote = wrote or step_wrote
                 if first_match:
                     break
                 continue
@@ -824,7 +1015,7 @@ class RemediationExecutor:
                         "message": str(e),
                     }
                 )
-                plan_item(step, commands=commands, previewable=handler_info.supports_plan)
+                plan_item(step, commands=commands, previewable=previewable and not _is_exec(handler_info))
                 all_success = False
                 if first_match:
                     break
@@ -864,12 +1055,13 @@ class RemediationExecutor:
 
             if mode == "plan":
                 changes = changes + self._planned_references(changes, result_entry)
+                previewed = not _is_exec(handler_info) or handler_result.status == HandlerResultStatus.PASS
                 plan_item(
                     step,
                     file_changes=changes,
                     change_sets=list(handler_result.evidence.get("change_sets") or []),
-                    commands=[] if handler_info.supports_plan else commands,
-                    previewable=handler_info.supports_plan,
+                    commands=commands,
+                    previewable=previewable and previewed,
                 )
                 file_changes.extend(changes)
             elif handler_result.status == HandlerResultStatus.PASS and result_entry["status"] != "error":
@@ -899,6 +1091,7 @@ class RemediationExecutor:
 
         dry_run = mode == "plan"
         run_id = self.run_id if wrote else None
+        missing_details = {"missing_handlers": missing} if missing else {}
 
         # Handle first_match with no matching handlers
         if first_match and not matched_any:
@@ -914,7 +1107,7 @@ class RemediationExecutor:
                 control_id=control_id,
                 remediation_type="handler_pipeline",
                 dry_run=dry_run,
-                details={"handlers": results, "strategy": "first_match"},
+                details={"handlers": results, "strategy": "first_match", **missing_details},
                 plan=plan_items,
                 file_changes=file_changes,
             )
@@ -929,12 +1122,27 @@ class RemediationExecutor:
             control_id=control_id,
             remediation_type="handler_pipeline",
             dry_run=dry_run,
-            details={"handlers": results},
+            details={"handlers": results, **missing_details},
             plan=plan_items,
             file_changes=file_changes,
             changed=all_success and wrote,
             run_id=run_id,
         )
+
+
+def _is_exec(handler_info: SieveHandlerInfo) -> bool:
+    from darnit.sieve.builtin_handlers import exec_handler
+
+    return handler_info.fn is exec_handler
+
+
+def _step_previewable(handler_info: SieveHandlerInfo, handler_config: Mapping[str, Any]) -> bool:
+    """The step can be previewed exactly: its handler registered plan support, or it is a declared exec (4.4)."""
+    from darnit.sieve.builtin_handlers import exec_previewable
+
+    if _is_exec(handler_info):
+        return exec_previewable(dict(handler_config))
+    return handler_info.supports_plan
 
 
 def _file_changes(evidence: Mapping[str, Any]) -> list[FileChange]:

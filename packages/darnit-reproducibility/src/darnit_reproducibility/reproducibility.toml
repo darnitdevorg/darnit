@@ -39,7 +39,6 @@ steps = [
 
 [controls."RE-01.01".remediation]
 safe = true
-dry_run_supported = true
 
 # `uv lock` is Python-specific, so the remediation is gated to Python projects
 # via `when = { detected_ecosystem = "python" }`; on non-Python projects it is
@@ -49,7 +48,6 @@ dry_run_supported = true
 handler = "exec"
 when = { detected_ecosystem = "python" }
 command = ["uv", "lock"]
-dry_run_command = ["uv", "lock", "--dry-run"]
 
 # =============================================================================
 # Control: Is the build environment declared?
