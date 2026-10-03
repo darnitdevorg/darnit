@@ -1974,10 +1974,20 @@ Every writer goes through the executor, the platform engine, and the run manifes
 | `create_remediation_branch`, `commit_remediation_changes`, `create_remediation_pr` | `run_id`; rules of 15.7 |
 | `remediate_community_spec` (darnit-csl) | `dry_run = True` by default; its README edit is a `FileChange` in the preview and the manifest |
 | `create_security_policy` | Writes through the executor and the manifest; keeps its explicit-create semantics |
-| `darnit run` | Platform changes follow the policy; under `prompt` with a terminal it asks on `/dev/tty`, otherwise the outcome is `needs_approval` |
+| `darnit run` | Previews by default; creates or changes files, or platform settings, only with `--apply` (FR-027). In an apply, platform changes follow the policy; under `prompt` with a terminal it asks on `/dev/tty`, otherwise the outcome is `needs_approval`. A plan item that requires individual approval (15.3) is shown on `/dev/tty` with its files (action and a content summary), commands, change sets, the reason it needs approval, and its `PlanItem.digest`, and runs only on the person's yes; with no terminal it ends as `needs_approval` |
 | Skills (`darnit-remediate`, `darnit-comply`) | Show the preview with before/after fields, impact notes, and digests; pass back only the digests the person approved; never pass `dry_run = false` as a substitute for approval |
 
 The `confirm_*` tools are unchanged; approvals are not confirmations. Audit results and the attestation predicate are unchanged.
+
+#### Scenario: darnit run without --apply
+- **WHEN** `darnit run` remediates failing controls and `--apply` is not given
+- **THEN** no repository file, platform setting, or run manifest MUST change
+- **AND** the output MUST list the planned changes and say that `--apply` writes them
+
+#### Scenario: darnit run asks for an individually approved item
+- **WHEN** `darnit run --apply` reaches a plan item that requires individual approval and a terminal is available
+- **THEN** it MUST show the item and its digest on `/dev/tty` and run the control's remediation only if the person says yes
+- **AND** an approved item MUST be recorded as an `Approval` (digest, by, at); a refusal, or no terminal, MUST leave the control `needs_approval` with nothing written
 
 ## Appendix C: Removed Requirements
 
