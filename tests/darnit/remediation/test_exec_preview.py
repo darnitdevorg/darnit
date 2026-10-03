@@ -432,3 +432,34 @@ class TestValidateSync:
         result = validate_remediation_properties([_toml(tmp_path, command)])
 
         assert result.passed, result.details
+
+
+@pytest.mark.unit
+class TestManifestReads:
+    """The exec apply reads the run manifest once per user-changes check, however many files the run wrote."""
+
+    def _reads_during_exec(self, repo: Path, monkeypatch: pytest.MonkeyPatch, written: int) -> int:
+        executor = _executor(repo, run_id=manifest.new_run_id())
+        docs = [HandlerInvocation(handler="file_create", path=f"doc{i}.md", content=f"# {i}\n") for i in range(written)]
+        assert executor.execute("T-DOCS", RemediationConfig(handlers=docs), dry_run=False).changed
+        reads = []
+        original = manifest.load_run
+        monkeypatch.setattr(manifest, "load_run", lambda *a, **k: reads.append(a) or original(*a, **k))
+
+        result = executor.execute("T-01", _previewable(MARK), dry_run=False)
+
+        assert result.changed, result.details
+        monkeypatch.setattr(manifest, "load_run", original)
+        return len(reads)
+
+    def test_reads_do_not_grow_with_the_files_written(
+        self, tmp_path: Path, repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        other = tmp_path / "other"
+        subprocess.run(["cp", "-R", str(repo), str(other)], check=True)
+
+        few = self._reads_during_exec(repo, monkeypatch, 2)
+        many = self._reads_during_exec(other, monkeypatch, 12)
+
+        assert few == many
+        assert many <= 2

@@ -677,17 +677,21 @@ class RemediationExecutor:
             raise WriteRefused(f"{path}: {e}") from e
         return not self._written_this_run(path), False
 
-    def _written_this_run(self, path: str) -> bool:
+    def _recorded_files(self) -> dict[str, str]:
+        """Path to recorded content digest of every file this run wrote, from one read of the run manifest."""
         if self.run_id is None:
-            return False
+            return {}
         repository = manifest.repository_identity(self.local_path, self.owner, self.repo)
         run = manifest.load_run(repository, self.run_id, checkout=self.local_path)
-        entry = next((f for f in run.files if f.path == path), None) if run else None
-        if entry is None:
+        return {f.path: f.after_digest for f in run.files} if run else {}
+
+    def _written_this_run(self, path: str) -> bool:
+        recorded = self._recorded_files().get(path)
+        if recorded is None:
             return False
         try:
             with open(os.path.join(self.local_path, path), "rb") as f:
-                return content_digest(f.read()) == entry.after_digest
+                return content_digest(f.read()) == recorded
         except OSError:
             return False
 
@@ -857,14 +861,19 @@ class RemediationExecutor:
             return entry, changes or [], False, False
 
         try:
-            dirty = {p for p in working_tree.user_changed(self.local_path) if not self._written_this_run(p)}
+            before = working_tree.digests(self.local_path, working_tree.visible_files(self.local_path))
+            recorded = self._recorded_files()
+            dirty = {
+                p
+                for p in working_tree.user_changed(self.local_path)
+                if p not in recorded or before.get(p) != recorded[p]
+            }
             conflicts = sorted(c.path for c in previewed if c.path in dirty)
             if conflicts:
                 return failed(
                     f"Not run: uncommitted user changes in previewed path(s) {conflicts}",
                     [FileChange(path=p, action="none", reason="user_changes_present") for p in conflicts],
                 )
-            before = working_tree.digests(self.local_path, working_tree.visible_files(self.local_path))
         except (git_state.GitStateError, OSError) as e:
             return failed(f"Not run: cannot read the working tree: {e}")
 
