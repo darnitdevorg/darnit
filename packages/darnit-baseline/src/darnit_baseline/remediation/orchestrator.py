@@ -10,7 +10,7 @@ iterates *controls*, not hardcoded categories.
 
 import json
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -568,8 +568,9 @@ def _apply_declarative_remediation(
             }
 
         plan_items = [item.model_dump(mode="json") for item in result.plan]
-        if dry_run and enhance_with_llm:
-            for _index, item, _etype in _enhancement_items(control_id, result.file_changes, remediation_config):
+        if enhance_with_llm and (dry_run or result.needs_approval):
+            planned_changes = [c for item in result.plan for c in item.file_changes]
+            for _index, item, _etype in _enhancement_items(control_id, planned_changes, remediation_config):
                 if platform is not None:
                     platform.note_known(item.digest)
                 plan_items.append(item.model_dump(mode="json"))
@@ -1243,22 +1244,6 @@ def run_remediation(
         approvals=approve or [],
     )
 
-    # An approval may make a change set a stale preview only if it matches
-    # no digest of the run's preview (15.2). Plan every control before any is
-    # applied, so the session knows the digests of controls applied later.
-    if not dry_run and approve:
-        for control_id in remediable_ids:
-            if control_id not in honored_claims:
-                _apply_control_remediation(
-                    control_id=control_id,
-                    local_path=local_path,
-                    owner=owner,
-                    repo=repo,
-                    dry_run=True,
-                    target=target,
-                    platform=session,
-                )
-
     # ------------------------------------------------------------------
     # Apply remediations
     # ------------------------------------------------------------------
@@ -1290,6 +1275,7 @@ def run_remediation(
     # ------------------------------------------------------------------
     outcomes: list[RemediationOutcome] = []
     if not dry_run:
+        _reclassify_stale_previews(results, session.approvals)
         outcomes = _outcomes(results, lambda ids: _recheck(ids, local_path, owner, repo, target))
         if any(_written(r) or _applied_change_sets(r) for r in results):
             try:
@@ -1322,6 +1308,39 @@ def run_remediation(
 
 
 _RECHECK_FIELDS = ("status", "details", "authority", "error", "error_class", "pending")
+
+
+def _run_digests(results: list[dict[str, Any]]) -> set[str]:
+    """Every plan-item and change-set digest the controls of this run planned or applied."""
+    seen: set[str] = set()
+    for r in results:
+        for item in r.get("plan", []):
+            seen.add(item["digest"])
+            seen.update(cs["digest"] for cs in item.get("change_sets", []))
+        seen.update(p["change_set"]["digest"] for p in r.get("platform") or [] if p.get("change_set"))
+    return seen
+
+
+def _reclassify_stale_previews(results: list[dict[str, Any]], approvals: Collection[str]) -> None:
+    """Turn ``stale_preview`` into ``needs_approval`` when every approval matches an item of this run (15.2).
+
+    A change set applied before a later control was planned saw that
+    control's approved items as unmatched. Once every control has run, an
+    approval that matches a digest of the run is not stale. Nothing was
+    written for such a change set either way.
+    """
+    if not approvals or not set(approvals) <= _run_digests(results):
+        return
+    for r in results:
+        platform_results = r.get("platform") or []
+        stale = [p for p in platform_results if p["kind"] == "unchanged" and p.get("reason") == "stale_preview"]
+        if not stale:
+            continue
+        for p in stale:
+            p["kind"], p["reason"] = "needs_approval", None
+        if r.get("status") == "unchanged":
+            r["status"] = _platform_status(platform_results, bool(_written(r))) or r["status"]
+            r["result"] = _platform_summary(platform_results)
 
 
 def _run_approvals(platform_approvals: list[Approval], results: list[dict[str, Any]]) -> list[Approval]:
