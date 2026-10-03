@@ -695,6 +695,8 @@ Every remediation runs in one of two modes. The executor passes the mode to each
 - a path with uncommitted user changes is not written; its `FileChange` becomes `action = "none"`, `reason = "user_changes_present"`, and the outcome reports the conflict;
 - a path matched by the repository's ignore rules is written with `ignored = true` and is never staged.
 
+A preview runs the same two checks, read-only, on every planned `FileChange` of a `file_create`, `yaml_inject`, or `project_update` step, of a declared `project_reference`, and of the remediation's `project_update`, so it reports these paths exactly as the apply will. Outside a git work tree neither check applies. A file written earlier in the same apply is not a user change.
+
 Platform settings are written only by the platform engine (4.5). An `exec` step writes through its command in apply mode (4.4); the executor records what it changed.
 
 **Plan support.** Handler registration takes a flag `supports_plan` (default `False`): `registry.register(..., supports_plan=True)`. The built-in `file_create`, `project_update`, `yaml_inject`, `manual`, and `platform_setting` handlers register with `supports_plan=True`; `exec` is previewable only as section 4.4 describes. A step whose handler did not register `supports_plan=True` is not run in plan mode; it is reported as "cannot be previewed exactly" (`previewable = False`) and requires individual approval (15.3). A plugin handler without plan support that writes files itself is outside the run manifest, so the git tools never commit those files (15.7).
@@ -735,7 +737,7 @@ Templates and `when` clauses are evaluated in plan mode exactly as in apply mode
 #### Scenario: Target file has uncommitted user changes
 - **WHEN** a planned `FileChange` targets a path with uncommitted user changes
 - **THEN** the executor MUST NOT write the path
-- **AND** the `FileChange` MUST be reported with `action = "none"` and `reason = "user_changes_present"`
+- **AND** the `FileChange` MUST be reported with `action = "none"` and `reason = "user_changes_present"`, in the preview and in the apply
 
 ### 4.3 file_create
 
