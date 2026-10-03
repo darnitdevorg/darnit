@@ -400,7 +400,8 @@ class SimulatedGitHub(RecordedGhApi):
     the whole protection (omitted optional booleans become false, absent
     objects become disabled), the reviews ``PATCH`` merges only the fields it
     sends, ``POST .../enforce_admins`` turns it on, ``POST
-    .../required_status_checks/contexts`` adds contexts. A recorded write with
+    .../required_status_checks/contexts`` adds contexts; a reviews or status
+    checks endpoint answers 404 when that sub-protection is not enabled. A recorded write with
     a non-2xx status is rejected and changes nothing. ``reject`` names writes
     (``"PUT /repos/o/r/branches/main/protection"``) to answer 422 instead.
     """
@@ -423,10 +424,22 @@ class SimulatedGitHub(RecordedGhApi):
         if verb != "GET" and key in self._rejected:
             self.calls.append(GhApiCall(verb, endpoint, body))
             return None, 422, "HTTP 422: Validation Failed"
+        if verb != "GET" and self._sub_protection_missing(self._path(endpoint)):
+            self.calls.append(GhApiCall(verb, endpoint, body))
+            return None, 404, "HTTP 404: Not Found"
         answer = super().__call__(verb, endpoint, body)
         if verb != "GET" and 200 <= answer[1] < 300:
             self._apply(verb, self._path(endpoint), body)
         return answer
+
+    def _sub_protection_missing(self, path: str) -> bool:
+        """GitHub answers 404 on a granular endpoint whose sub-protection is not enabled."""
+        branch, _, rest = path.removeprefix(f"{REPO_PATH}/branches/").partition("/protection")
+        for name in ("required_pull_request_reviews", "required_status_checks"):
+            if rest.startswith(f"/{name}"):
+                current = self.responses.get(("GET", _protection_path(branch)), {})
+                return current.get("status", 200) != 200 or not (current.get("body") or {}).get(name)
+        return False
 
     def _apply(self, verb: str, path: str, body: Any) -> None:
         if path == REPO_PATH and verb == "PATCH":

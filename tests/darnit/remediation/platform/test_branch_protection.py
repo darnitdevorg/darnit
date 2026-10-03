@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import pytest
 
+from darnit.config.operator.schema import RemediationSettings
 from darnit.remediation.plan import digest
-from darnit.remediation.platform import FieldChange, PlatformRequirement, plan
+from darnit.remediation.platform import FieldChange, PlatformRequirement, ResolvedPolicy, apply, plan
 from darnit.remediation.platform.targets import protection_get_to_put
 from tests.darnit.remediation.platform.conftest import (
     REPO_PATH,
@@ -268,16 +269,6 @@ class TestGranularWrites:
             )
         ]
 
-    def test_status_checks_created_by_patch_when_none_configured(self, gh_platform) -> None:
-        gh_platform(_base(protection=_protection()))
-
-        [op] = only(plan(REPOSITORY, [bp(require_status_checks=["ci/build"])])).change_set.operations
-
-        assert (op.method, op.endpoint, op.body) == (
-            "PATCH",
-            f"{PROTECTION}/required_status_checks",
-            {"contexts": ["ci/build"]},
-        )
 
     def test_full_put_comes_last_and_carries_the_granular_changes(self, gh_platform) -> None:
         gh_platform(_base(protection=_protection(allow_deletions=True)))
@@ -291,6 +282,62 @@ class TestGranularWrites:
         put = operations[1]
         assert put.body["required_pull_request_reviews"]["required_approving_review_count"] == 2
         assert put.changes == [FieldChange(field="allow_deletions", before=True, after=False)]
+
+
+def _without(*names: str) -> dict:
+    protection = _protection(restricted=True, linear_history=True, code_owner_reviews=True)
+    for name in names:
+        protection.pop(name, None)
+    return protection
+
+
+@pytest.mark.unit
+class TestSubProtectionNotEnabled:
+    """framework-design 4.5, scenario "Sub-protection not enabled": its granular endpoint would answer 404."""
+
+    def test_status_checks_go_into_the_full_put(self, gh_platform) -> None:
+        protection = _without("required_status_checks")
+        gh_platform(_base(protection=protection))
+
+        [op] = only(plan(REPOSITORY, [bp(require_status_checks=["ci/build"])])).change_set.operations
+
+        assert (op.method, op.endpoint) == ("PUT", PROTECTION)
+        expected = protection_get_to_put(protection)
+        expected["required_status_checks"] = {"strict": False, "checks": [{"context": "ci/build"}]}
+        assert op.body == expected
+        assert op.changes == [FieldChange(field="required_status_checks", before=None, after={"contexts": ["ci/build"]})]
+
+    def test_review_requirement_goes_into_the_full_put(self, gh_platform) -> None:
+        protection = _without("required_pull_request_reviews")
+        gh_platform(_base(protection=protection))
+
+        [op] = only(plan(REPOSITORY, [AC_03_01, QA_07_01])).change_set.operations
+
+        assert (op.method, op.endpoint) == ("PUT", PROTECTION)
+        expected = protection_get_to_put(protection)
+        expected["required_pull_request_reviews"] = {"required_approving_review_count": 1}
+        assert op.body == expected
+        assert op.changes == [
+            FieldChange(
+                field="required_pull_request_reviews", before=None, after={"required_approving_review_count": 1}
+            )
+        ]
+
+    def test_apply_succeeds_and_preserves_every_other_setting(self, simulated_gh) -> None:
+        protection = _without("required_pull_request_reviews", "required_status_checks")
+        gh = simulated_gh(_base(protection=protection))
+        auto = ResolvedPolicy(settings=RemediationSettings(platform="auto"), operator_config_digest=None, operator="a")
+
+        [result] = apply(REPOSITORY, [AC_03_01, QA_07_01, bp(require_status_checks=["ci/build"])], policy=auto)
+
+        assert result.kind == "applied", result.error
+        assert [(w.method, w.endpoint) for w in gh.writes] == [("PUT", PROTECTION)]
+        after = gh.protection()
+        assert after["required_pull_request_reviews"]["required_approving_review_count"] == 1
+        assert after["required_status_checks"]["contexts"] == ["ci/build"]
+        assert after["restrictions"]["users"] == protection["restrictions"]["users"]
+        assert after["required_linear_history"] == {"enabled": True}
+        assert after["enforce_admins"]["enabled"] is True
 
 
 @pytest.mark.unit

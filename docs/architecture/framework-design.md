@@ -903,7 +903,7 @@ The impact class is fixed by the target kind: repository visibility and any orga
 
 1. `GET /repos/{o}/{r}` for the default branch; `GET .../branches/{b}`: a missing branch is ERROR; `protected = false` is the unprotected state; `protected = true` is followed by `GET .../protection`. Active rules come from `GET /repos/{o}/{r}/rules/branches/{b}`.
 2. Unprotected: one `PUT .../protection` that sets only the required settings; every other field is sent at its platform default, which equals the current, unprotected state.
-3. Protected: review requirements through `PATCH .../required_pull_request_reviews` with only the fields that must tighten (the approval count is raised to the minimum, never lowered); `enforce_admins` through `POST .../enforce_admins` only when it is off; missing status-check contexts through `POST .../required_status_checks/contexts` (or `PATCH .../required_status_checks` when none are configured), keeping existing `contexts` and `checks`; `prevent_deletion` and `prevent_force_push`, which have no granular endpoint, through one full `PUT` built by translating the current protection into the PUT shape with every existing value preserved and only the required booleans changed.
+3. Protected: review requirements through `PATCH .../required_pull_request_reviews` with only the fields that must tighten (the approval count is raised to the minimum, never lowered), when pull request reviews are already required; `enforce_admins` through `POST .../enforce_admins` only when it is off; missing status-check contexts through `POST .../required_status_checks/contexts`, keeping existing `contexts` and `checks`, when status checks are already required. The granular endpoints of a sub-protection answer 404 when that sub-protection is not enabled, so a requirement whose sub-protection is absent from the protection GET (no `required_pull_request_reviews`, or no `required_status_checks`), and `prevent_deletion` and `prevent_force_push`, which have no granular endpoint, are applied through one full `PUT` built by translating the current protection into the PUT shape with every existing value preserved and only the required settings added or tightened.
 4. The translator is total over a known field list. A protection response containing a field it does not know makes the step ERROR, "cannot preserve unknown protection setting <field>", and nothing is planned.
 
 **Platform calls.** Writes go through `darnit.core.utils.gh_api_write(method, endpoint, payload) -> (body, status, error)`, which sends the JSON body with `gh api -X METHOD --input -` and reads the status. It uses the same responder seam as `gh_api_with_status` (section 3.8).
@@ -916,6 +916,11 @@ The impact class is fixed by the target kind: repository visibility and any orga
 - **THEN** the change set MUST change only the fields the requirements tighten (here at most `allow_deletions: true -> false`)
 - **AND** any full `PUT` body MUST preserve every other existing value
 - **AND** the read-back MUST show every pre-existing setting unchanged
+
+#### Scenario: Sub-protection not enabled
+- **WHEN** the branch is protected but its protection has no `required_pull_request_reviews` (or no `required_status_checks`) and a requirement needs it
+- **THEN** the change set MUST NOT use `PATCH .../required_pull_request_reviews` (or `PATCH .../required_status_checks`)
+- **AND** it MUST add the setting through the translated full `PUT`, which preserves every other existing value
 
 #### Scenario: Requirement already satisfied
 - **WHEN** the current settings, or an active ruleset, satisfy every requirement on the target

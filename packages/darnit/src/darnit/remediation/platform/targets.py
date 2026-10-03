@@ -531,22 +531,25 @@ def _plan_branch(state: ObservedState, missing: dict[str, Any]) -> list[ChangeOp
 
     operations: list[ChangeOperation] = []
     reviews = fields.get("required_pull_request_reviews")
+    target_count = max(approvals, _review_count(fields))
+    fold_reviews = needs_reviews and reviews is None
+    fold_checks = bool(contexts) and fields.get("required_status_checks") is None
+    put_changes: list[FieldChange] = []
     if needs_reviews:
-        target_count = max(approvals, _review_count(fields))
         patch = {"required_approving_review_count": target_count}
-        if reviews is None:
-            change = FieldChange(field="required_pull_request_reviews", before=None, after=patch)
+        if fold_reviews:
+            put_changes.append(FieldChange(field="required_pull_request_reviews", before=None, after=patch))
         else:
             change = FieldChange(
                 field="required_pull_request_reviews.required_approving_review_count",
                 before=_review_count(fields),
                 after=target_count,
             )
-        operations.append(
-            ChangeOperation(
-                method="PATCH", endpoint=f"{endpoint}/required_pull_request_reviews", body=patch, changes=[change]
+            operations.append(
+                ChangeOperation(
+                    method="PATCH", endpoint=f"{endpoint}/required_pull_request_reviews", body=patch, changes=[change]
+                )
             )
-        )
     if "enforce_admins" in missing:
         operations.append(
             ChangeOperation(
@@ -558,15 +561,8 @@ def _plan_branch(state: ObservedState, missing: dict[str, Any]) -> list[ChangeOp
     if contexts:
         current = _contexts(fields)
         added = [c for c in contexts if c not in current]
-        if fields.get("required_status_checks") is None:
-            operations.append(
-                ChangeOperation(
-                    method="PATCH",
-                    endpoint=f"{endpoint}/required_status_checks",
-                    body={"contexts": added},
-                    changes=[FieldChange(field="required_status_checks", before=None, after={"contexts": added})],
-                )
-            )
+        if fold_checks:
+            put_changes.append(FieldChange(field="required_status_checks", before=None, after={"contexts": added}))
         else:
             operations.append(
                 ChangeOperation(
@@ -586,16 +582,14 @@ def _plan_branch(state: ObservedState, missing: dict[str, Any]) -> list[ChangeOp
         for key, name in (("prevent_deletion", "allow_deletions"), ("prevent_force_push", "allow_force_pushes"))
         if key in missing
     ]
-    if toggles:
+    put_changes += [FieldChange(field=name, before=fields.get(name), after=False) for name in toggles]
+    if put_changes:
         if fields.get("unrecognized"):
             raise UnknownProtectionField(sorted(fields["unrecognized"])[0])
         body = {key: copy.deepcopy(value) for key, value in fields.items() if key != "required_signatures"}
         if needs_reviews:
             current_reviews = body["required_pull_request_reviews"] or {}
-            body["required_pull_request_reviews"] = {
-                **current_reviews,
-                "required_approving_review_count": max(approvals, _review_count(fields)),
-            }
+            body["required_pull_request_reviews"] = {**current_reviews, "required_approving_review_count": target_count}
         if "enforce_admins" in missing:
             body["enforce_admins"] = True
         if contexts:
@@ -605,14 +599,7 @@ def _plan_branch(state: ObservedState, missing: dict[str, Any]) -> list[ChangeOp
             body["required_status_checks"] = checks
         for name in toggles:
             body[name] = False
-        operations.append(
-            ChangeOperation(
-                method="PUT",
-                endpoint=endpoint,
-                body=body,
-                changes=[FieldChange(field=name, before=fields.get(name), after=False) for name in toggles],
-            )
-        )
+        operations.append(ChangeOperation(method="PUT", endpoint=endpoint, body=body, changes=put_changes))
     return operations
 
 

@@ -82,8 +82,9 @@ Control mapping:
 2. `GET .../branches/{b}`: missing branch -> ERROR; `protected = false` -> state "unprotected"; `protected = true` -> `GET .../protection`. Any read failure -> ERROR, no write (FR-002).
 3. Unprotected: one `PUT` that sets only the required settings; every other field is sent at its platform default, which equals the current (unprotected) state, so nothing is lost.
 4. Protected:
-   - review requirements -> `PATCH .../required_pull_request_reviews`, sending only the fields that must tighten (`required_approving_review_count` raised to the minimum, never lowered);
-   - `enforce_admins` -> `POST .../enforce_admins`; `require_status_checks` -> `POST .../required_status_checks/contexts` with only the missing contexts (existing contexts and `checks` are kept; if status checks are not configured at all, `PATCH .../required_status_checks` creates them);
+   - review requirements -> `PATCH .../required_pull_request_reviews`, sending only the fields that must tighten (`required_approving_review_count` raised to the minimum, never lowered), when reviews are already required;
+   - `enforce_admins` -> `POST .../enforce_admins`; `require_status_checks` -> `POST .../required_status_checks/contexts` with only the missing contexts (existing contexts and `checks` are kept), when status checks are already required;
+   - a review or status-check requirement whose sub-protection is not enabled goes into the full `PUT` below (the granular endpoints answer 404 then);
    - `prevent_deletion` / `prevent_force_push` (no granular endpoint) -> one full `PUT` built by translating the GET response into the PUT shape with every existing value preserved and only the required booleans changed.
    - The translator is total over a known field list; if the GET response contains a field it does not know, the planner refuses with ERROR "cannot preserve unknown protection setting <field>" rather than risk dropping it.
 5. Several requirements on the same branch (AC-03.01, AC-03.02, QA-07.01 in one run) are planned together into one change set (edge case: no second full replacement undoes the first).
