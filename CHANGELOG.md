@@ -22,6 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   compliance result. These settings are moving to operator
   configuration that lives outside the audited repository.
   See GHSA-96qw-w4fw-5hcm.
+- Platform remediation reads the current settings first, changes only what a
+  control requires, and never weakens a setting already in place (fewer
+  required approvals, removed status checks or push restrictions, code-owner
+  review or linear history turned off). If the settings cannot be read,
+  nothing is written. Platform changes need a person's approval of the exact
+  change by default, and the result is read back from the platform rather
+  than taken from response text.
 
 ### Removed
 
@@ -172,6 +179,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (for example Community Specification) get a framework-neutral
   `confirm_project_data` that records context values for that framework's
   keys.
+- Remediation policy in operator configuration: `[remediation]` with
+  `platform` and `high_impact`, each `prompt` (default; darnit asks and, on
+  approval, makes the change), `manual` (darnit only reports the steps), or
+  `auto` (darnit applies without asking, still reading first, changing only
+  what is needed, and reading back). High-impact changes are repository
+  visibility and organization-wide settings. The policy comes only from
+  operator configuration, and every remediation report records it.
+- `platform_setting` remediation handler: a control declares a requirement on
+  a target (`branch_protection`, `repository`, `vulnerability_reporting`), not
+  a payload. One platform engine reads the target, plans the minimal change
+  without weakening anything, writes under the policy, and reads back. Branch
+  protection uses the repository's default branch unless one is named, and a
+  requirement already met by classic protection or an active ruleset writes
+  nothing.
+- Approval by digest. A preview returns a digest for every platform change
+  set and plan item; `remediate_audit_findings` and
+  `enable_branch_protection` take `approve` with the digests the person
+  approved. A change set's digest is bound to the settings it was computed
+  from, so a change in between writes nothing and needs a new preview. A batch approval
+  never covers a high-impact change, and `dry_run=False` alone approves
+  nothing. Remediations marked `safe = false` and steps that cannot be
+  previewed exactly need their own approval under every policy.
+- Run ids. Every apply records an operator-side run manifest of the files it
+  wrote (never inside the checkout). `create_remediation_branch`,
+  `commit_remediation_changes`, and `create_remediation_pr` take `run_id`
+  (default: the repository's latest run), and every remediation commit
+  carries a `Darnit-Remediation-Run: <run_id>` trailer.
+- Remediation outcome kinds, one per control: `fixed`, `changed_not_passing`,
+  `changed_not_verified`, `unchanged` (with the reason, for example
+  `already_exists`), `needs_approval`, `needs_confirmation`, `manual`, and
+  `error`. `fixed` requires that something changed and that a re-check of the
+  control passes; the re-check does not replace the audit cache. Summaries
+  and the commit and pull request steps are derived from these outcomes,
+  never from words or symbols in report text. `remediate_audit_findings`
+  returns the run as a fenced JSON block after its Markdown report.
+- `project_reference` on a `file_create` remediation step names the
+  `.project/` field that describes the created file. The reference is
+  recorded only for a file created in this run and only into an empty field.
+  It replaces the fixed control-to-field table, which recorded some files
+  under unrelated fields (a bug report template as the security policy) and
+  replaced existing references.
+- Exec remediation steps declare `effects = "working_tree"` and `offline =
+  true` to be previewed in a scratch copy of the working tree; other exec
+  steps are labelled "cannot be previewed exactly".
 - `docs/architecture/` directory containing the 25 rehomed architectural reference
   specs (including the authoritative `framework-design.md`), plus a one-screen
   `README.md` index. These are static reference documentation, not in-flight
@@ -228,6 +279,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stops that control with `confirmation required: <key>` and writes
   nothing, whether or not the control lists the key in `requires_context`
   and whatever `default()` the template uses.
+- **BREAKING:** `enable_branch_protection` previews by default
+  (`dry_run=True`); applying needs `dry_run=False` and, under the default
+  policy, the change set's digest in `approve`. Its branch defaults to the
+  repository's default branch (was `main`). Its parameters only tighten
+  protection; existing settings are never lowered or removed.
+- **BREAKING:** the `api_call` remediation handler is removed, with its
+  full-object payload templates. A framework TOML that declares it fails to
+  load, naming `platform_setting`.
+- **BREAKING:** the remediation properties `requires_confirmation`,
+  `dry_run_supported`, and `dry_run_command` are removed; a framework TOML
+  that declares one fails to load, naming the replacement (`safe = false`,
+  or plan mode with exec `effects`/`offline`). A remediation's preview now
+  runs the same handler logic as the apply against the current state and
+  writes nothing; it no longer lists the handlers that would be called.
+- **BREAKING:** `commit_remediation_changes` stages only the files the
+  remediation run wrote, and only while they are unchanged since; ignored
+  files are never staged. `add_all` is removed. Remediation never writes a
+  file with uncommitted user changes (the preview reports it as
+  `user_changes_present`), and `create_remediation_branch` never stashes and
+  refuses a detached HEAD, a merge or rebase in progress, or an existing
+  branch holding commits without the run trailer. `create_remediation_pr`
+  pushes only the remediation branch.
+- **BREAKING:** the OpenSSF Baseline OSPS-AC-01.01 (organization two-factor
+  authentication, which has no API) and OSPS-LE-01.01 (contributor sign-off,
+  DCO or CLA) remediations are manual steps; the OSPS-AC-02.01 remediation,
+  which enabled forking, is removed and its manual check steps are the
+  guidance. OSPS-LE-01.01 no longer creates or replaces a LICENSE file.
+- **BREAKING:** OpenSSF Baseline OSPS-LE-02.01 and OSPS-LE-03.01 create a
+  LICENSE only for a confirmed `license_type` (`mit`, `apache-2.0`,
+  `bsd-3-clause`, or `other` for manual steps), a new user-judgment context
+  key; MIT is no longer a default, and an existing license file is never
+  replaced.
+- **BREAKING:** `remediate_community_spec` previews by default
+  (`dry_run=True`); its README edit appears in the preview and the run
+  manifest.
+- **BREAKING:** `darnit run` previews remediation by default and writes files
+  or platform settings only with `--apply`. Items that need individual
+  approval are asked for on the terminal by digest, and otherwise end as
+  `needs_approval`.
+- `create_security_policy` writes through the remediation executor and the
+  run manifest, never replaces an existing SECURITY.md, and reports the
+  control's outcome.
+- If the check for unconfirmed project context cannot complete, remediation
+  does not run and the error is returned (it used to proceed).
 - Reads never write. Audits (every driver), `get_pending_data`, report
   generation, `remediate_audit_findings` in dry run, and the harness collect
   phase no longer create or modify files in the audited repository; the
