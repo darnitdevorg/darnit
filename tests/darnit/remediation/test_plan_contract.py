@@ -43,6 +43,9 @@ OWNER, REPO = "o", "r"
 REPOSITORY = "github.com/o/r"
 WORKFLOW = "name: ci\non:\n  push:\n\njobs:\n  build:\n    runs-on: ubuntu-latest\n"
 _GIT_ENV = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+# A confirmed answer for the user-judgment key the license steps need, so
+# LICENSE creation is previewed and applied like every other file.
+CONTEXT = {"license_type": "mit"}
 
 
 def _shipped_tomls() -> list[Path]:
@@ -155,6 +158,7 @@ def _executor(repo: Path, path: Path, framework: FrameworkConfig, approvals: Seq
         repo=REPO,
         templates=framework.templates,
         framework_path=str(path),
+        context_values=CONTEXT,
         platform=PlatformSession(REPOSITORY, policy=_policy(), approvals=approvals),
     )
 

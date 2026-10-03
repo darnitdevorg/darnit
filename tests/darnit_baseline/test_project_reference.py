@@ -46,7 +46,8 @@ EXPECTED_REFERENCES = {
     "OSPS-DO-01.01": "documentation.readme",
     "OSPS-GV-01.01": "governance.governance_doc",
     "OSPS-GV-01.02": "governance.maintainers",
-    "OSPS-LE-01.01": "legal.license",
+    "OSPS-LE-02.01": "legal.license",
+    "OSPS-LE-03.01": "legal.license",
 }
 
 
@@ -209,17 +210,19 @@ def test_every_declared_reference_matches_the_fields_file_locations() -> None:
 
 @pytest.mark.unit
 def test_the_documented_steps_declare_their_reference() -> None:
-    declared = {cid: h.get("project_reference") for cid, h in _file_creates() if "when" not in h}
+    declared: dict[str, set[str | None]] = {}
+    for cid, h in _file_creates():
+        declared.setdefault(cid, set()).add(h.get("project_reference"))
 
-    assert {cid: declared[cid] for cid in EXPECTED_REFERENCES} == EXPECTED_REFERENCES
-    assert declared["OSPS-DO-02.01"] is None, "a bug report template is no project reference"
+    assert {cid: declared[cid] for cid in EXPECTED_REFERENCES} == {c: {r} for c, r in EXPECTED_REFERENCES.items()}
+    assert declared["OSPS-DO-02.01"] == {None}, "a bug report template is no project reference"
 
 
 @pytest.mark.unit
 def test_no_control_to_field_table_remains() -> None:
     assert not hasattr(baseline_config, "CONTROL_REFERENCE_MAPPING")
     assert not hasattr(orchestrator, "CONTROL_REFERENCE_MAPPING")
-    for control_id in ("OSPS-DO-01.01", "OSPS-LE-01.01"):
+    for control_id in ("OSPS-DO-01.01", "OSPS-LE-02.01", "OSPS-LE-03.01"):
         assert "project_update" not in BASELINE["controls"][control_id]["remediation"], (
             f"{control_id} records its reference through project_reference, not an unconditional project_update"
         )

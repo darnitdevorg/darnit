@@ -377,10 +377,23 @@ detect = [
     { handler = "file_exists", files = [".github"], value_if_pass = "github" },
 ]
 
-# NOTE: detected_ecosystem and license_type are auto-detected by
-# darnit.context.auto_detect (collect_auto_context) without prompting.
-# They do NOT need TOML [context.*] definitions because they never go
-# through get_pending_data / confirm_project_data.
+[context.license_type]
+type = "enum"
+prompt = "Which license should darnit use when it creates a LICENSE file?"
+hint = "Used only when no license file exists. Choose 'other' to add the license yourself"
+values = ["mit", "apache-2.0", "bsd-3-clause", "other"]
+examples = ["apache-2.0", "mit"]
+affects = ["OSPS-LE-02.01", "OSPS-LE-03.01"]
+store_as = "legal.license_type"
+# A user-judgment key (Principle IV): darnit never picks a project's license.
+auto_detect = false
+required = false
+presentation_hint = "[mit/apache-2.0/bsd-3-clause/other]"
+
+# NOTE: detected_ecosystem is auto-detected by darnit.context.auto_detect
+# (collect_auto_context) without prompting. It does NOT need a TOML
+# [context.*] definition because it never goes through get_pending_data /
+# confirm_project_data.
 
 # =============================================================================
 # Shared Handlers (cached across controls within a single audit run)
@@ -1718,33 +1731,18 @@ steps = [
     "Confirm license type is clearly identified",
 ]
 
-# Unsafe: `overwrite = true` replaces an existing LICENSE file's text.
-[controls."OSPS-LE-01.01".remediation]
-safe = false
-strategy = "first_match"
-
+# Manual only (feature 043): this control requires contributor sign-off
+# (DCO or CLA, #508), not a license file. The former remediation replaced an
+# existing LICENSE with MIT.
 [[controls."OSPS-LE-01.01".remediation.handlers]]
-handler = "file_create"
-path = "LICENSE"
-project_reference = "legal.license"
-template = "license_apache"
-overwrite = true
-when = { license_type = "apache-2.0" }
-
-[[controls."OSPS-LE-01.01".remediation.handlers]]
-handler = "file_create"
-path = "LICENSE"
-project_reference = "legal.license"
-template = "license_bsd3"
-overwrite = true
-when = { license_type = "bsd-3-clause" }
-
-[[controls."OSPS-LE-01.01".remediation.handlers]]
-handler = "file_create"
-path = "LICENSE"
-project_reference = "legal.license"
-template = "license_mit"
-overwrite = true
+handler = "manual"
+steps = [
+    "Choose how contributors assert they are legally authorized to contribute: the Developer Certificate of Origin (DCO) or a Contributor License Agreement (CLA)",
+    "DCO: require a Signed-off-by trailer on every commit (git commit -s) and enforce it with a DCO check on pull requests",
+    "CLA: have each contributor sign the CLA before their first contribution is merged, and enforce it with a CLA check on pull requests",
+    "Document the requirement and how to meet it in CONTRIBUTING.md",
+]
+docs_url = "https://developercertificate.org/"
 
 [controls."OSPS-LE-02.01"]
 name = "OSIApprovedLicense"
@@ -1791,10 +1789,12 @@ steps = [
     "Verify license is OSI-approved at https://opensource.org/licenses",
 ]
 
+# License choice comes only from a confirmed license_type (Principle IV): no
+# license is a default, and an existing license file is never replaced.
 [controls."OSPS-LE-02.01".remediation]
 safe = true
 strategy = "first_match"
-description = "Add SPDX license identifier to LICENSE file header"
+description = "Create a LICENSE file for the confirmed license type"
 
 [[controls."OSPS-LE-02.01".remediation.handlers]]
 handler = "file_create"
@@ -1818,6 +1818,14 @@ path = "LICENSE"
 project_reference = "legal.license"
 template = "license_mit"
 overwrite = false
+when = { license_type = "mit" }
+
+[[controls."OSPS-LE-02.01".remediation.handlers]]
+handler = "manual"
+steps = [
+    "Choose the project's license; for an open source project, an OSI-approved one (https://opensource.org/licenses)",
+    "Add its full text as LICENSE in the repository root",
+]
 
 [controls."OSPS-LE-02.02"]
 name = "ReleaseLicense"
@@ -1902,6 +1910,7 @@ steps = [
     "Confirm the file contains complete license text",
 ]
 
+# License choice comes only from a confirmed license_type; see OSPS-LE-02.01.
 [controls."OSPS-LE-03.01".remediation]
 safe = true
 strategy = "first_match"
@@ -1928,6 +1937,14 @@ path = "LICENSE"
 project_reference = "legal.license"
 template = "license_mit"
 overwrite = false
+when = { license_type = "mit" }
+
+[[controls."OSPS-LE-03.01".remediation.handlers]]
+handler = "manual"
+steps = [
+    "Choose the project's license; for an open source project, an OSI-approved one (https://opensource.org/licenses)",
+    "Add its full text as LICENSE in the repository root",
+]
 
 [controls."OSPS-LE-03.02"]
 name = "LicenseInReleases"

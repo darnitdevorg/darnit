@@ -528,4 +528,5 @@ class TestTomlDefinitionOrder:
         order = _context_key_order()
         assert order[0] == "maintainers"
         assert "platform" in order
-        assert len(order) == len(set(order)) == 9
+        assert "license_type" in order, "feature 043 T055c: a LICENSE is created only for a confirmed license"
+        assert len(order) == len(set(order)) == 10
