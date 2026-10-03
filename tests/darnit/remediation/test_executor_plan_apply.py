@@ -425,3 +425,44 @@ class TestUserChangesInPreview:
         preview = _executor(repo).execute("C-1", config, dry_run=True)
 
         assert [(c.path, c.action) for c in preview.file_changes] == [("SECURITY.md", "create"), (PROJECT, "create")]
+
+
+@pytest.mark.unit
+class TestApproveItem:
+    """An item a caller adds to a remediation runs only on its own approval (framework-design 4.3, 15.3)."""
+
+    @staticmethod
+    def _item():
+        from darnit.remediation.plan import PlanItem
+
+        return PlanItem(
+            control_id="C-1", step="llm_enhance[A.md] of sha256:x", previewable=False, requires_individual_approval=True
+        )
+
+    def test_unapproved_without_an_approver(self, repo: Path) -> None:
+        executor = RemediationExecutor(local_path=str(repo), owner=OWNER, repo=REPO)
+
+        assert executor.approve_item(self._item()) is None
+
+    def test_approved_by_its_digest(self, repo: Path) -> None:
+        item = self._item()
+        executor = RemediationExecutor(local_path=str(repo), owner=OWNER, repo=REPO, approvals=[item.digest])
+
+        approval = executor.approve_item(item)
+
+        assert approval is not None and approval.digest == item.digest
+
+    @pytest.mark.parametrize("answer", [True, False])
+    def test_item_approver_is_asked(self, repo: Path, answer: bool) -> None:
+        asked: list[list[str]] = []
+
+        def approver(item, reasons) -> bool:
+            asked.append(list(reasons))
+            return answer
+
+        executor = RemediationExecutor(local_path=str(repo), owner=OWNER, repo=REPO, item_approver=approver)
+
+        approval = executor.approve_item(self._item())
+
+        assert asked == [["it cannot be previewed exactly"]]
+        assert (approval is not None) is answer

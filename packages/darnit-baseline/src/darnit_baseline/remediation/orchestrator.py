@@ -568,6 +568,11 @@ def _apply_declarative_remediation(
             }
 
         plan_items = [item.model_dump(mode="json") for item in result.plan]
+        if dry_run and enhance_with_llm:
+            for _index, item, _etype in _enhancement_items(control_id, result.file_changes, remediation_config):
+                if platform is not None:
+                    platform.note_known(item.digest)
+                plan_items.append(item.model_dump(mode="json"))
         if dry_run:
             return {
                 "control_id": control_id,
@@ -620,8 +625,13 @@ def _apply_declarative_remediation(
 
             enhanced = False
             if enhance_with_llm:
-                enhanced = _enhance_created_files(executor, result, remediation_config, local_path, control_id)
+                enhanced, items, approvals, pending = _enhance_created_files(
+                    executor, result, remediation_config, local_path, control_id
+                )
                 applied_record["file_changes"] = [change.model_dump(mode="json") for change in result.file_changes]
+                applied_record["plan"] += [item.model_dump(mode="json") for item in items]
+                applied_record["approvals"] += [approval.model_dump(mode="json") for approval in approvals]
+                applied_record["enhancement_needs_approval"] = pending
 
             result_dict: dict[str, Any] = {
                 "control_id": control_id,
@@ -668,25 +678,22 @@ def _apply_declarative_remediation(
         }
 
 
-def _enhance_created_files(
-    executor: RemediationExecutor,
-    result: Any,
-    remediation_config: Any,
-    local_path: str,
-    control_id: str,
-) -> bool:
-    """Enrich complex documents this apply created, through the executor's writer (framework-design 4.3).
+def _enhancement_items(
+    control_id: str, changes: list[FileChange], remediation_config: Any
+) -> list[tuple[int, PlanItem, str]]:
+    """``(index in changes, plan item, enhancement type)`` for each created file a model would customize (FR-023).
 
-    Only a file whose ``FileChange`` in ``result`` is a create is enhanced; a
-    file that existed before the run is never touched. The new content is
-    recorded in the run manifest, so it stays committable.
+    The model's output cannot be computed in advance, so each customization
+    is its own plan item that cannot be previewed exactly and needs
+    individual approval. Its digest covers the path and the digest of the
+    content the file is created with, so an approval covers enhancing that
+    content only.
     """
-    from darnit.remediation.executor import WriteRefused
     from darnit.remediation.plan import normalize_repo_path
-    from darnit_baseline.remediation.enhancer import enhance_generated_file, get_enhancement_type, is_enhanceable
+    from darnit_baseline.remediation.enhancer import get_enhancement_type, is_enhanceable
 
-    created = {c.path: index for index, c in enumerate(result.file_changes) if c.action == "create"}
-    enhanced = False
+    created = {c.path: index for index, c in enumerate(changes) if c.action == "create"}
+    items: list[tuple[int, PlanItem, str]] = []
     for handler_inv in remediation_config.handlers:
         if handler_inv.handler != "file_create":
             continue
@@ -700,6 +707,49 @@ def _enhance_created_files(
         etype = get_enhancement_type(path)
         if not etype:
             continue
+        item = PlanItem(
+            control_id=control_id,
+            step=f"llm_enhance[{path}] of {changes[index].after_digest}",
+            previewable=False,
+            requires_individual_approval=True,
+        )
+        items.append((index, item, etype))
+    return items
+
+
+def _enhance_created_files(
+    executor: RemediationExecutor,
+    result: Any,
+    remediation_config: Any,
+    local_path: str,
+    control_id: str,
+) -> tuple[bool, list[PlanItem], list[Approval], list[str]]:
+    """Enrich complex documents this apply created, through the executor's writer (framework-design 4.3).
+
+    Only a file whose ``FileChange`` in ``result`` is a create is enhanced; a
+    file that existed before the run is never touched. Each enhancement is a
+    plan item (:func:`_enhancement_items`) and runs only when the executor
+    approves it; otherwise the file keeps the content it was created with
+    and the item's digest is returned as needing approval. Enhanced content
+    is recorded in the run manifest, so it stays committable.
+
+    Returns ``(enhanced, items, approvals, digests needing approval)``.
+    """
+    from darnit.remediation.executor import WriteRefused
+    from darnit_baseline.remediation.enhancer import enhance_generated_file
+
+    enhanced = False
+    items: list[PlanItem] = []
+    approvals: list[Approval] = []
+    pending: list[str] = []
+    for index, item, etype in _enhancement_items(control_id, result.file_changes, remediation_config):
+        items.append(item)
+        approval = executor.approve_item(item)
+        if approval is None:
+            pending.append(item.digest)
+            continue
+        approvals.append(approval)
+        path = result.file_changes[index].path
         try:
             enriched = enhance_generated_file(os.path.join(local_path, path), local_path, etype)
         except Exception as e:
@@ -714,7 +764,7 @@ def _enhance_created_files(
             continue
         enhanced = True
         logger.info("LLM-enhanced %s for %s", path, control_id)
-    return enhanced
+    return enhanced, items, approvals, pending
 
 
 def _platform_results(details: dict[str, Any] | None) -> list[dict[str, Any]]:
@@ -1297,6 +1347,16 @@ def _applied_change_sets(r: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def _enhancement_notes(r: dict[str, Any]) -> list[str]:
+    """One note per created file whose model customization was not approved; it keeps its created content."""
+    steps = {item["digest"]: item["step"] for item in r.get("plan", [])}
+    return [
+        f"{steps.get(d, 'llm_enhance')} needs individual approval of plan item digest {d}; "
+        "the file keeps the content it was created with"
+        for d in r.get("enhancement_needs_approval", [])
+    ]
+
+
 def _settled_outcome(r: dict[str, Any]) -> RemediationOutcome | None:
     """The outcome of a control whose apply needs no re-check, or None when it changed something (15.4)."""
     control_id = r.get("control_id", "?")
@@ -1369,7 +1429,7 @@ def _rechecked_outcome(r: dict[str, Any], result: dict[str, Any] | None, failure
         "control_id": r.get("control_id", "?"),
         "file_changes": _written(r),
         "change_sets": _applied_change_sets(r),
-        "reason": "; ".join(r.get("references", [])) or None,
+        "reason": "; ".join(r.get("references", []) + _enhancement_notes(r)) or None,
     }
     if result is None:
         cause = failure or "the re-check returned no result for this control"
@@ -1607,6 +1667,9 @@ def _outcome_lines(run: RemediationRun, results: list[dict[str, Any]]) -> list[s
             md.append(f"- **Re-check:** {outcome.recheck.get('status')}{details}")
         if outcome.reason and outcome.kind != "manual":
             md.append(f"- **Reason:** {outcome.reason}")
+        for item in r.get("plan", []):
+            if item["digest"] in r.get("enhancement_needs_approval", []):
+                md += _plan_item_lines(PlanItem.model_validate(item))
         if outcome.error is not None:
             md.append(f"- **Error:** {outcome.error.error_class}: {outcome.error.cause}")
         if outcome.kind in ("needs_confirmation", "manual") and r.get("result"):

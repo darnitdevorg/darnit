@@ -1281,7 +1281,9 @@ def remediate_audit_findings(
         create_pr: Create a pull request after committing
         enhance_with_llm: If True, enrich complex documents (ARCHITECTURE.md,
             threat model) with LLM-generated descriptions after deterministic
-            generation.  Default False (opt-in).
+            generation.  Default False (opt-in). Each enrichment is its own
+            preview item ("cannot be previewed exactly") and runs only when
+            its digest is in ``approve``.
         approve: Digests from the preview that the person approved. Platform
             changes are written only for approved change-set digests under the
             default remediation policy; ``dry_run=False`` alone approves

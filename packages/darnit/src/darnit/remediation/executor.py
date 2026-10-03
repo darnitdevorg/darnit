@@ -597,6 +597,22 @@ class RemediationExecutor:
         self._granted.update(granted)
         return []
 
+    def approve_item(self, item: PlanItem) -> Approval | None:
+        """The individual approval of ``item``, which this executor did not plan, or None (framework-design 15.3).
+
+        ``item`` is approved by its own digest, or by asking the item approver
+        when there is one. A caller that adds a step to a remediation (for
+        example customizing a created file with a model) runs it only when
+        this returns an approval.
+        """
+        if self.platform is not None:
+            self.platform.note_known(item.digest)
+        if item.digest not in self._approved_digests() and self._unapproved([item], True):
+            return None
+        return self._granted.get(item.digest) or Approval(
+            digest=item.digest, approved_by=self._operator(), approved_at=datetime.now(UTC)
+        )
+
     def _used_approvals(self, plan: list[PlanItem]) -> list[Approval]:
         approved = self._approved_digests()
         now = datetime.now(UTC)

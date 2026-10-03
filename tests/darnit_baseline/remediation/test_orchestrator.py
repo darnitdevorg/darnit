@@ -259,7 +259,10 @@ def stub_enhancer():
         yield enhance
 
 
-def _enhanced_apply(repo, path: str, run_id: str) -> dict:
+def _enhanced(repo, path: str, *, dry_run: bool, run_id: str | None = None, approve=()) -> dict:
+    from darnit.remediation.platform import PlatformSession
+    from darnit.remediation.platform.policy import ResolvedPolicy
+
     for key, value in (("commit.gpgsign", "false"), ("core.hooksPath", ".git/hooks")):
         subprocess.run(["git", "config", "--local", key, value], cwd=repo, check=True, capture_output=True)
     config = RemediationConfig(handlers=[HandlerInvocation(handler="file_create", path=path, content="# Generated\n")])
@@ -270,10 +273,20 @@ def _enhanced_apply(repo, path: str, run_id: str) -> dict:
         local_path=str(repo),
         owner="owner",
         repo="repo",
-        dry_run=False,
+        dry_run=dry_run,
         enhance_with_llm=True,
+        platform=PlatformSession("github.com/owner/repo", policy=ResolvedPolicy(), approvals=approve),
         run_id=run_id,
     )
+
+
+def _enhanced_apply(repo, path: str, run_id: str, approve=()) -> dict:
+    return _enhanced(repo, path, dry_run=False, run_id=run_id, approve=approve)
+
+
+def _enhancement_item(preview: dict) -> dict:
+    [item] = [i for i in preview["plan"] if i["step"].startswith("llm_enhance[")]
+    return item
 
 
 def test_llm_enhancement_never_touches_a_file_that_already_existed(stub_enhancer, temp_git_repo):
@@ -288,14 +301,54 @@ def test_llm_enhancement_never_touches_a_file_that_already_existed(stub_enhancer
     stub_enhancer.assert_not_called()
 
 
+def test_preview_lists_the_enhancement_as_an_item_that_cannot_be_previewed(stub_enhancer, temp_git_repo):
+    """FR-023: the LLM's output cannot be computed in advance, so it is its own item needing approval."""
+    preview = _enhanced(temp_git_repo, "ARCHITECTURE.md", dry_run=True)
+
+    item = _enhancement_item(preview)
+    assert item["previewable"] is False and item["requires_individual_approval"] is True
+    assert content_digest("# Generated\n") in item["step"]
+    assert item["digest"] not in {i["digest"] for i in preview["plan"] if i is not item}
+    assert not (temp_git_repo / "ARCHITECTURE.md").exists()
+    stub_enhancer.assert_not_called()
+
+
+def test_unapproved_enhancement_keeps_the_template_content_and_commits(stub_enhancer, temp_git_repo):
+    from darnit.server.tools.git_operations import commit_remediation_changes_impl
+
+    run_id = manifest.new_run_id()
+    item = _enhancement_item(_enhanced(temp_git_repo, "ARCHITECTURE.md", dry_run=True))
+
+    result = _enhanced_apply(temp_git_repo, "ARCHITECTURE.md", run_id)
+
+    stub_enhancer.assert_not_called()
+    assert result["enhanced"] is False
+    assert result["enhancement_needs_approval"] == [item["digest"]]
+    assert item["digest"] in {i["digest"] for i in result["plan"]}
+    assert (temp_git_repo / "ARCHITECTURE.md").read_text(encoding="utf-8") == "# Generated\n"
+    run = manifest.load_run("github.com/owner/repo", run_id)
+    assert {f.path: f.after_digest for f in run.files} == {"ARCHITECTURE.md": content_digest("# Generated\n")}
+
+    committed = commit_remediation_changes_impl(local_path=str(temp_git_repo), run_id=run_id, owner="owner", repo="repo")
+
+    assert committed.startswith("Changes committed successfully"), committed
+    shown = subprocess.run(
+        ["git", "show", "HEAD:ARCHITECTURE.md"], cwd=temp_git_repo, capture_output=True, text=True, check=True
+    ).stdout
+    assert shown == "# Generated\n"
+
+
 def test_llm_enhancement_of_a_created_file_is_recorded_and_committable(stub_enhancer, temp_git_repo):
     from darnit.server.tools.git_operations import commit_remediation_changes_impl
 
     run_id = manifest.new_run_id()
+    item = _enhancement_item(_enhanced(temp_git_repo, "ARCHITECTURE.md", dry_run=True))
 
-    result = _enhanced_apply(temp_git_repo, "ARCHITECTURE.md", run_id)
+    result = _enhanced_apply(temp_git_repo, "ARCHITECTURE.md", run_id, approve=[item["digest"]])
 
     assert result["enhanced"] is True
+    assert result["enhancement_needs_approval"] == []
+    assert item["digest"] in {a["digest"] for a in result["approvals"]}
     assert (temp_git_repo / "ARCHITECTURE.md").read_text(encoding="utf-8") == "# Enriched\n"
     [created] = [c for c in result["file_changes"] if c["path"] == "ARCHITECTURE.md"]
     assert (created["action"], created["content"]) == ("create", "# Enriched\n")

@@ -775,7 +775,12 @@ project_reference = "security.policy"
 - **THEN** the remediation result MUST include the enhancement prompt and file path in the result details
 - **AND** the MCP layer MAY use this prompt to offer AI-assisted customization of the generated file
 
-An implementation that customizes a created file itself (for example `remediate_audit_findings(enhance_with_llm=True)`) changes only a file whose `FileChange` in this apply has `action = "create"`, writes the new content through the executor's single writer with the same user-changes check (section 4.2), and records the new content's digest in the run manifest, so the file stays committable. A file that existed before the run is never changed.
+An implementation that customizes a created file itself (for example `remediate_audit_findings(enhance_with_llm=True)`) changes only a file whose `FileChange` in this apply has `action = "create"`, writes the new content through the executor's single writer with the same user-changes check (section 4.2), and records the new content's digest in the run manifest, so the file stays committable. A file that existed before the run is never changed. A model's output cannot be computed in advance (FR-023), so each such customization is its own `PlanItem`: `step = "llm_enhance[<path>] of <after_digest of the planned create>"`, `previewable = False`, `requires_individual_approval = True`, listed in the preview as "cannot be previewed exactly". Its digest covers the path and the content the file is created with. At apply, the file is customized only when that item's digest is approved (or a terminal item approver says yes); the approval is recorded with the run's approvals. Otherwise the model is not called, the file keeps the content it was created with (recorded and committable), and the control's outcome names the item as needing individual approval.
+
+#### Scenario: Customization not approved
+- **WHEN** AI-assisted customization is requested for a created file and the apply does not carry the digest of its `llm_enhance` plan item
+- **THEN** the model MUST NOT be called and the file MUST keep the content it was created with, recorded in the run manifest
+- **AND** the outcome MUST name the `llm_enhance` item as needing individual approval
 
 #### Scenario: Customizing a file that already existed
 - **WHEN** a `file_create` step's target already existed (`action = "none"`, `already_exists`) and AI-assisted customization is requested
