@@ -744,6 +744,50 @@ def cmd_install(args: argparse.Namespace) -> int:
 MAX_AGENT_ITERATIONS = 10
 
 
+_PAST = {"create": "created", "modify": "modified"}
+
+
+def _ascii(text: str) -> str:
+    return text.encode("ascii", "backslashreplace").decode("ascii")
+
+
+def _remediation_lines(results: list[dict], applied: bool) -> list[str]:
+    """Per-control lines for the remediation step of ``darnit run`` (FR-027)."""
+    lines: list[str] = []
+    for result in results:
+        lines.append(f"  {result['control_id']}")
+        body: list[str] = []
+        if result.get("status") == "skipped":
+            body.append(f"skipped: {result.get('reason', '')}")
+        elif not applied:
+            for item in result.get("plan", []):
+                for change in item["file_changes"]:
+                    if change["action"] == "none":
+                        body.append(f"{change['path']}: not written ({change['reason']})")
+                    else:
+                        body.append(f"{change['action']} {change['path']}")
+                body += [f"command: {' '.join(command)}" for command in item["commands"]]
+                if not item["previewable"]:
+                    body.append(f"{item['step']}: cannot be previewed exactly")
+                if item["requires_individual_approval"]:
+                    body.append(f"needs individual approval: {item['digest']}")
+        else:
+            for change in result.get("file_changes", []):
+                if change["action"] == "none":
+                    body.append(f"{change['path']}: not written ({change['reason']})")
+                else:
+                    body.append(f"{_PAST[change['action']]} {change['path']}")
+            body += [f"approved: {approval['digest']}" for approval in result.get("approvals", [])]
+            body += [
+                f"needs approval: {digest} (no step of this remediation was run)"
+                for digest in result.get("needs_approval", [])
+            ]
+            if not result.get("success") and not result.get("needs_approval"):
+                body.append(f"not done: {result.get('message', '')}")
+        lines += [f"    {_ascii(line)}" for line in body]
+    return lines
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     """Run the audit workflow with human feedback.
 
@@ -751,6 +795,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     require LLM judgement halt for an external agent (e.g. Claude Code);
     questions needing a human are handled per --feedback mode. Automated
     in-process LLM backends are not wired into this command yet.
+
+    Remediation is previewed; files and platform settings change only with
+    ``--apply`` (FR-027).
     """
     from darnit.agent.feedback import get_feedback_handler
     from darnit.agent.graph import audit, collect_context, remediate, route
@@ -780,6 +827,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     print(f"  Trust      : {format_trust(trust)}")
     for warning in trust["warnings"]:
         print(f"  Warning    : {warning}")
+    print(f"  Remediate  : {'apply' if args.apply else 'preview (nothing is written; pass --apply to write)'}")
     print()
 
     # framework_name=None auto-resolves from .baseline.toml inside audit().
@@ -826,7 +874,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 approver = terminal_approver() if feedback_mode == "interactive" else None
                 state = remediate(
                     state,
-                    dry_run=getattr(args, "dry_run", False),
+                    dry_run=not args.apply,
                     approver=approver,
                     item_approver=approver.approve_item if approver is not None else None,
                 )
@@ -853,6 +901,14 @@ def cmd_run(args: argparse.Namespace) -> int:
     print(f"  Passed : {passed}")
     print(f"  Failed : {failed}")
     print(f"  Warned : {warned}")
+
+    if final_state.remediation_results:
+        if args.apply:
+            print("\nRemediation applied:")
+        else:
+            print("\nRemediation preview (nothing was written; pass --apply to write these changes):")
+        for line in _remediation_lines(final_state.remediation_results, applied=args.apply):
+            print(line)
 
     platform = [p for r in final_state.remediation_results for p in r.get("platform", [])]
     if platform:
@@ -1497,7 +1553,8 @@ def create_parser() -> argparse.ArgumentParser:
         help="Run full agentic workflow (LLM-powered)",
         description="Run the full autonomous compliance pipeline. "
                     "Loads project context, runs all checks, collects context, "
-                    "and remediates failures. Requires an LLM API key.",
+                    "and remediates failures (previewed unless --apply is given). "
+                    "Requires an LLM API key.",
     )
     run_parser.add_argument(
         "repo_path",
@@ -1513,6 +1570,12 @@ def create_parser() -> argparse.ArgumentParser:
         help="Human feedback mode: interactive (prompts in terminal), "
              "noninteractive (collects questions for later), "
              "auto (interactive if terminal, noninteractive in CI)",
+    )
+    run_parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Write the remediation changes (files and platform settings). "
+             "Without it, remediation is only previewed and nothing is written.",
     )
     _add_operator_config_args(run_parser)
     _add_target_arg(run_parser)

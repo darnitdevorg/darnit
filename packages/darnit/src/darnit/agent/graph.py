@@ -206,7 +206,7 @@ def collect_context(
 
 def remediate(
     state: AuditState,
-    dry_run: bool = False,
+    dry_run: bool = True,
     approver: Approver | None = None,
     item_approver: ItemApprover | None = None,
 ) -> AuditState:
@@ -224,7 +224,8 @@ def remediate(
         state: Current agent state. Must contain audit_results from a prior
             audit() call. context_values should be populated if collect_context
             was run beforehand.
-        dry_run: If True, show what would change without writing any files.
+        dry_run: If True (the default), show what would change without
+            writing any files or platform settings (FR-027).
         approver: Asks a person to approve each platform change set (feature
             043). Platform changes follow the operator's remediation policy:
             under ``prompt`` a change set is written only when the approver
