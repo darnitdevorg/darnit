@@ -115,6 +115,63 @@ def test_unsafe_state_stops_before_any_remediation(fixture: str, request: pytest
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("local_branch", [True, False], ids=["local_branch", "main_with_unpushed_commit"])
+def test_pull_request_from_history_not_on_the_base_is_refused_before_any_change(
+    request: pytest.FixtureRequest, gh_calls: list[list[str]], local_branch: bool
+) -> None:
+    """framework-design 15.7, scenario "Pull request from history that is not on the base"."""
+    dirty = request.getfixturevalue("r_dirty")
+    request.getfixturevalue("bare_remote").attach(dirty.path)
+    if local_branch:
+        git(dirty.path, "checkout", "-q", "-b", "dev")
+    (dirty.path / "LOCAL.md").write_text("Local work, not pushed.\n", encoding="utf-8")
+    git(dirty.path, "add", "--", "LOCAL.md")
+    git(dirty.path, "commit", "-q", "-m", "local work", "--", "LOCAL.md")
+    before, state = snapshot(dirty.path), _git_state(dirty.path)
+
+    output = _remediate(dirty.path, dry_run=False, branch_name=REMEDIATION_BRANCH, auto_commit=True, create_pr=True)
+
+    assert output.startswith("Error: cannot run the requested git steps"), output
+    assert "origin/main" in output and "Nothing was changed" in output, output
+    assert not (dirty.path / "SECURITY.md").exists()
+    assert_unchanged(dirty.path, before)
+    assert _git_state(dirty.path) == state
+    assert manifest.load_run(IDENTITY) is None
+    assert gh_calls == []
+
+
+@pytest.mark.integration
+def test_pull_request_targets_the_base_recorded_with_the_branch(
+    request: pytest.FixtureRequest, gh_calls: list[list[str]]
+) -> None:
+    dirty = request.getfixturevalue("r_dirty")
+    request.getfixturevalue("bare_remote").attach(dirty.path)
+    run_id = manifest.new_run_id()
+    branch = git_operations.create_remediation_branch_impl(
+        branch_name=REMEDIATION_BRANCH, local_path=str(dirty.path), run_id=run_id, owner=OWNER, repo=REPO
+    )
+    assert branch.startswith("Created and switched"), branch
+    run = manifest.load_run(IDENTITY, run_id)
+    assert (run.base, run.base_commit) == ("origin/main", git(dirty.path, "rev-parse", "origin/main").stdout.strip())
+    git(dirty.path, "branch", "-q", "other", "main")
+    git(dirty.path, "push", "-q", "origin", "other:refs/heads/other")
+    git(dirty.path, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/other")
+    orchestrator.run_remediation(
+        local_path=str(dirty.path), owner=OWNER, repo=REPO, dry_run=False, run_id=run_id
+    )
+    commit = git_operations.commit_remediation_changes_impl(
+        local_path=str(dirty.path), run_id=run_id, owner=OWNER, repo=REPO
+    )
+    assert commit.startswith("Changes committed successfully"), commit
+
+    pr = git_operations.create_remediation_pr_impl(local_path=str(dirty.path), run_id=run_id, owner=OWNER, repo=REPO)
+
+    assert pr.startswith("Pull request created successfully"), pr
+    [create] = gh_calls
+    assert create[create.index("--base") + 1] == "main"
+
+
+@pytest.mark.integration
 def test_commit_alone_is_refused_on_a_detached_head(request: pytest.FixtureRequest) -> None:
     repo = request.getfixturevalue("r_detached").path
     before = snapshot(repo)

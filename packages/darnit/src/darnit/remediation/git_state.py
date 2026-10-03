@@ -29,6 +29,7 @@ _IN_PROGRESS = (
 )
 _REMOTE = "origin"
 _FALLBACK_BASES = ("main", "master")
+PROTECTED_BRANCHES = ("main", "master")
 
 
 class GitStateError(RuntimeError):
@@ -169,8 +170,60 @@ def foreign_commits(repo: str | Path, base: str, branch: str) -> list[str]:
     return foreign
 
 
+def _branch_refusal(repo: str, current: str, branch_name: str, base_branch: str | None) -> str | None:
+    if not valid_branch_name(repo, branch_name):
+        return f"'{branch_name}' is not a valid branch name"
+    if not branch_exists(repo, branch_name):
+        if base_branch and resolve_commit(repo, base_branch) != resolve_commit(repo, "HEAD"):
+            return (
+                f"a new branch is created from HEAD, and base branch '{base_branch}' is not HEAD; "
+                f"check out '{base_branch}' first"
+            )
+        return None
+    base = resolve_base(repo, branch_name, base_branch)
+    if base is None:
+        return f"cannot determine the base of branch '{branch_name}'; pass base_branch"
+    foreign = foreign_commits(repo, base, branch_name)
+    if foreign:
+        listed = ", ".join(sha[:12] for sha in foreign)
+        return (
+            f"branch '{branch_name}' has {len(foreign)} commit(s) beyond '{base}' without a "
+            f"{TRAILER_KEY} trailer ({listed}); it holds work remediation did not make"
+        )
+    if current != branch_name and has_tracked_changes(repo):
+        return (
+            f"switching to existing branch '{branch_name}' needs a clean working tree, and there are "
+            "uncommitted changes; commit them or choose a new branch name (darnit does not stash)"
+        )
+    return None
+
+
+def _pull_request_refusal(repo: str, current: str, branch_name: str | None, base_branch: str | None) -> str | None:
+    """Why a pull request from the remediation branch would be refused after the commit, or None."""
+    head = branch_name or current
+    if head in PROTECTED_BRANCHES:
+        return f"a pull request cannot be opened from '{head}'; pass a remediation branch name"
+    base = resolve_base(repo, head, base_branch, current_first=False)
+    if base is None:
+        return f"cannot determine the pull request base for branch '{head}'; pass base_branch"
+    start = branch_name if branch_name and branch_exists(repo, branch_name) else current
+    foreign = foreign_commits(repo, base, start)
+    if foreign:
+        listed = ", ".join(sha[:12] for sha in foreign)
+        return (
+            f"'{start}' has {len(foreign)} commit(s) not on the pull request base '{base}' without a "
+            f"{TRAILER_KEY} trailer ({listed}); a pull request would carry work remediation did not make. "
+            f"Push them, or start from a branch based on '{base}'"
+        )
+    return None
+
+
 def check_repository_state(
-    local_path: str | Path, branch_name: str | None = None, base_branch: str | None = None
+    local_path: str | Path,
+    branch_name: str | None = None,
+    base_branch: str | None = None,
+    *,
+    pull_request: bool = False,
 ) -> str | None:
     """Why a remediation git step must not run here, or None when it may.
 
@@ -180,7 +233,11 @@ def check_repository_state(
     beyond its base (``base_branch``, default the current branch) without the
     ``Darnit-Remediation-Run`` trailer, and tracked uncommitted changes when
     switching to it; for a new branch, a ``base_branch`` other than HEAD,
-    because a new branch is created from HEAD. Changes nothing.
+    because a new branch is created from HEAD. With ``pull_request``: refuses
+    a pull request head of ``main`` or ``master``, an undeterminable pull
+    request base, and a commit without the trailer that the remediation
+    branch would start from and that is not on the pull request base, which
+    the pull request tool would refuse after the commit. Changes nothing.
     """
     repo = str(local_path)
     if not is_work_tree(repo):
@@ -192,38 +249,19 @@ def check_repository_state(
         current = current_branch(repo)
         if current is None:
             return "HEAD is detached; check out a branch first"
-        if branch_name is None:
-            return None
-        if not valid_branch_name(repo, branch_name):
-            return f"'{branch_name}' is not a valid branch name"
-        if not branch_exists(repo, branch_name):
-            if base_branch and resolve_commit(repo, base_branch) != resolve_commit(repo, "HEAD"):
-                return (
-                    f"a new branch is created from HEAD, and base branch '{base_branch}' is not HEAD; "
-                    f"check out '{base_branch}' first"
-                )
-            return None
-        base = resolve_base(repo, branch_name, base_branch)
-        if base is None:
-            return f"cannot determine the base of branch '{branch_name}'; pass base_branch"
-        foreign = foreign_commits(repo, base, branch_name)
-        if foreign:
-            listed = ", ".join(sha[:12] for sha in foreign)
-            return (
-                f"branch '{branch_name}' has {len(foreign)} commit(s) beyond '{base}' without a "
-                f"{TRAILER_KEY} trailer ({listed}); it holds work remediation did not make"
-            )
-        if current != branch_name and has_tracked_changes(repo):
-            return (
-                f"switching to existing branch '{branch_name}' needs a clean working tree, and there are "
-                "uncommitted changes; commit them or choose a new branch name (darnit does not stash)"
-            )
+        if branch_name is not None:
+            refusal = _branch_refusal(repo, current, branch_name, base_branch)
+            if refusal:
+                return refusal
+        if pull_request:
+            return _pull_request_refusal(repo, current, branch_name, base_branch)
     except (GitStateError, OSError) as e:
         return f"cannot read the repository state: {e}"
     return None
 
 
 __all__ = [
+    "PROTECTED_BRANCHES",
     "TRAILER_KEY",
     "GitStateError",
     "base_branch_name",

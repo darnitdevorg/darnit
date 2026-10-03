@@ -18,6 +18,7 @@ import subprocess
 from darnit.core.utils import detect_repo_from_git, validate_local_path
 from darnit.remediation import manifest
 from darnit.remediation.git_state import (
+    PROTECTED_BRANCHES,
     TRAILER_KEY,
     GitStateError,
     base_branch_name,
@@ -35,7 +36,6 @@ from darnit.remediation.git_state import (
 )
 from darnit.remediation.plan import content_digest
 
-_PROTECTED_BRANCHES = ("main", "master")
 _REMOTE = "origin"
 
 
@@ -137,7 +137,15 @@ def create_remediation_branch_impl(
         if run is None and run_id is not None:
             run = manifest.start_run(repository, checkout=resolved_path, run_id=run_id)
         if run is not None:
-            manifest.set_branch(repository, run.run_id, branch_name, checkout=resolved_path)
+            pr_base = resolve_base(resolved_path, branch_name, base_branch, current_first=False)
+            manifest.set_branch(
+                repository,
+                run.run_id,
+                branch_name,
+                checkout=resolved_path,
+                base=pr_base,
+                base_commit=resolve_commit(resolved_path, pr_base) if pr_base else None,
+            )
             recorded = f"**Remediation run:** {run.run_id}"
             run_arg = f', run_id="{run.run_id}"'
         else:
@@ -381,15 +389,18 @@ def create_remediation_pr_impl(
     """Push a remediation run's branch, and only that branch, and open a pull request.
 
     The branch must hold the run's commit, and every commit on it beyond its
-    base must carry the ``Darnit-Remediation-Run`` trailer. Commits and
-    changed files are listed against the branch's base.
+    base must carry the ``Darnit-Remediation-Run`` trailer. Unless
+    ``base_branch`` is given, the base is the one recorded with the run's
+    branch (its ref, and the commit it pointed to then). Commits and changed
+    files are listed against that base.
 
     Args:
         local_path: Path to the repository
         title: PR title (auto-generated if not provided)
         body: PR body/description (auto-generated if not provided)
-        base_branch: Target branch for PR (default: the remote's default
-            branch, else ``main`` or ``master``)
+        base_branch: Target branch for PR (default: the base recorded with
+            the run's branch, else the remote's default branch, else ``main``
+            or ``master``)
         draft: Create as draft PR (default: False)
         run_id: Remediation run whose branch to push (default: the latest run)
         owner: Repository owner the run is recorded under (default: detected as the executor does)
@@ -416,7 +427,7 @@ def create_remediation_pr_impl(
                 f"remediation run {run.run_id} has no branch. Create one first: "
                 f'`create_remediation_branch(local_path="{resolved_path}", run_id="{run.run_id}")`'
             )
-        if branch in _PROTECTED_BRANCHES:
+        if branch in PROTECTED_BRANCHES:
             return f"""Error: Cannot create PR from '{branch}' branch.
 
 Create a remediation branch first:
@@ -432,10 +443,14 @@ Create a remediation branch first:
         if run_git(resolved_path, "merge-base", "--is-ancestor", run.commit, tip).returncode != 0:
             return _error(f"branch '{branch}' does not contain the run's commit {run.commit[:12]}. Nothing was pushed.")
 
-        base = resolve_base(resolved_path, branch, base_branch, current_first=False)
-        if base is None:
-            return _error(f"cannot determine the base of branch '{branch}'; pass base_branch. Nothing was pushed.")
-        foreign = foreign_commits(resolved_path, base, branch)
+        if base_branch is None and run.base and run.base_commit:
+            base, since = run.base, run.base_commit
+        else:
+            base = resolve_base(resolved_path, branch, base_branch, current_first=False)
+            if base is None:
+                return _error(f"cannot determine the base of branch '{branch}'; pass base_branch. Nothing was pushed.")
+            since = base
+        foreign = foreign_commits(resolved_path, since, branch)
         if foreign:
             return _error(
                 f"branch '{branch}' has {len(foreign)} commit(s) beyond '{base}' without a {TRAILER_KEY} trailer "
@@ -455,9 +470,9 @@ Create a remediation branch first:
         if result.returncode != 0:
             return _error(f"pushing branch: {result.stderr.strip()}")
 
-        result = run_git(resolved_path, "log", "--oneline", f"{base}..{ref}", "--")
+        result = run_git(resolved_path, "log", "--oneline", f"{since}..{ref}", "--")
         commits = [c for c in result.stdout.splitlines() if c.strip()] if result.returncode == 0 else []
-        result = run_git(resolved_path, "diff", "--name-only", "-z", f"{base}...{ref}", "--")
+        result = run_git(resolved_path, "diff", "--name-only", "-z", f"{since}...{ref}", "--")
         changed_files = [f for f in result.stdout.split("\0") if f] if result.returncode == 0 else []
 
         title = title or "chore(security): compliance improvements"

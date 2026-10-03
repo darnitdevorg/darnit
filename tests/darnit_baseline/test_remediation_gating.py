@@ -15,6 +15,7 @@ import pytest
 
 from darnit.config import context_storage
 from darnit.config.operator.schema import RemediationSettings
+from darnit.remediation import git_state
 from darnit.remediation.plan import ErrorInfo, FileChange, RemediationOutcome, RemediationRun
 from darnit.server.tools import git_operations
 from darnit_baseline import tools
@@ -69,6 +70,7 @@ def git_steps(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, dict]]:
 @pytest.fixture
 def no_pending(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(context_storage, "get_pending_context", lambda **_k: [])
+    monkeypatch.setattr(git_state, "check_repository_state", lambda *_a, **_k: None)
 
 
 def _report(monkeypatch: pytest.MonkeyPatch, markdown: str, run: RemediationRun | None) -> list[dict]:

@@ -1337,7 +1337,7 @@ def remediate_audit_findings(
     # Feature 043 (FR-013): a requested git step is checked before any
     # remediation is applied; an unsafe repository state changes nothing.
     if not dry_run and (branch_name or auto_commit or create_pr):
-        refusal = git_state.check_repository_state(repo_path, branch_name)
+        refusal = git_state.check_repository_state(repo_path, branch_name, pull_request=create_pr)
         if refusal:
             return f"Error: cannot run the requested git steps: {refusal}. Nothing was changed."
 

@@ -158,6 +158,7 @@ File `user_data_root()/remediation/<repository-identity>/<run_id>.json`, mode 06
 | `files` | `list[{path, after_digest}]` | Every file the executor wrote. |
 | `change_sets` | `list[str]` | Applied change-set digests. |
 | `branch` | `str \| None` | Remediation branch, if created. |
+| `base`, `base_commit` | `str \| None` | The ref a pull request from `branch` targets, and its commit, recorded with the branch; the PR tool uses them. |
 | `commit` | `str \| None` | Set by the commit tool. |
 
 The commit tool stages exactly `files` whose current digest equals `after_digest`.

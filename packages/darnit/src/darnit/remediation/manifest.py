@@ -61,6 +61,8 @@ class RunManifest(BaseModel):
     files: list[ManifestFile] = Field(default_factory=list)
     change_sets: list[str] = Field(default_factory=list)
     branch: str | None = None
+    base: str | None = None
+    base_commit: str | None = None
     commit: str | None = None
 
 
@@ -206,9 +208,21 @@ def record_change_set(repository: str, run_id: str, digest: str, *, checkout: st
     return _update(repository, run_id, checkout, change)
 
 
-def set_branch(repository: str, run_id: str, branch: str, *, checkout: str | Path | None) -> RunManifest:
+def set_branch(
+    repository: str,
+    run_id: str,
+    branch: str,
+    *,
+    checkout: str | Path | None,
+    base: str | None = None,
+    base_commit: str | None = None,
+) -> RunManifest:
+    """Record the run's branch and, when given, the ref a pull request from it targets and that ref's commit."""
+
     def change(run: RunManifest) -> None:
         run.branch = branch
+        if base is not None:
+            run.base, run.base_commit = base, base_commit
 
     return _update(repository, run_id, checkout, change)
 

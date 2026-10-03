@@ -1964,6 +1964,7 @@ Every apply records a run manifest operator-side at `user_data_root()/remediatio
 | `files` | `[{path, after_digest}]` for every file the executor wrote |
 | `change_sets` | Digests of the change sets applied |
 | `branch` | Remediation branch, if one was created |
+| `base`, `base_commit` | The ref a pull request from `branch` targets, and the commit it pointed to, recorded when the branch is created or switched to |
 | `commit` | Set by the commit tool |
 
 The manifest is the only record of which files remediation wrote; the git tools read it (15.7).
@@ -1972,17 +1973,21 @@ The manifest is the only record of which files remediation wrote; the git tools 
 
 The git tools `create_remediation_branch`, `commit_remediation_changes`, and `create_remediation_pr` take `run_id` (default `None`: the latest run for the repository).
 
-- **Refused states.** When any git step is requested, darnit checks the repository before applying any remediation and stops with nothing changed on a detached HEAD, a merge in progress (`MERGE_HEAD`), a rebase in progress (`rebase-merge`, `rebase-apply`), an existing remediation branch with a commit beyond its base that lacks the `Darnit-Remediation-Run` trailer, or a dirty working tree when switching to an existing branch.
+- **Refused states.** When any git step is requested, darnit checks the repository before applying any remediation and stops with nothing changed on a detached HEAD, a merge in progress (`MERGE_HEAD`), a rebase in progress (`rebase-merge`, `rebase-apply`), an existing remediation branch with a commit beyond its base that lacks the `Darnit-Remediation-Run` trailer, or a dirty working tree when switching to an existing branch. When a pull request is requested, it also stops when the pull request's head would be `main` or `master`, when the pull request base cannot be determined, or when the history the remediation branch starts from (HEAD for a new branch, the branch itself for an existing one) holds a commit without the trailer that is not on the pull request base (for example a local branch, or a `main` with unpushed commits): the pull request would carry work remediation did not make, so the pull request tool would refuse after the commit.
 - **No stash.** Remediation never stashes, drops a stash, discards, or overwrites the user's uncommitted changes. A new branch is created with `git checkout -b` from HEAD; the user's uncommitted changes stay in the working tree untouched. Switching to an existing branch requires a clean tree.
 - **Manifest-only commits.** `commit_remediation_changes` stages only the run manifest's files, with explicit pathspecs, and only those whose current content digest equals the manifest's `after_digest`; a file edited after remediation wrote it is a conflict and is not committed. Ignored files are never staged. `add_all` does not exist.
 - **Trailer.** Every remediation commit message carries `Darnit-Remediation-Run: <run_id>`. The response lists every committed file, and the commit is recorded in the manifest.
-- **Push.** `create_remediation_pr` pushes only the remediation branch, and diffs against the branch's base.
+- **Push.** `create_remediation_pr` pushes only the remediation branch. Unless a base branch is passed, it targets the `base` recorded in the run manifest and checks and lists the branch's commits against the recorded `base_commit`; without a recorded base it resolves the base as at branch creation (the remote's default branch, then `main`, `master`).
 - **Gates.** Commit and pull request steps run only when at least one outcome changed files (15.4).
 
 #### Scenario: Unrelated work in progress
 - **WHEN** the working tree has a modified tracked file, an untracked `.env`, and a stash, and remediation creates a branch, commits, and opens a pull request
 - **THEN** the commit MUST contain exactly the manifest's files
 - **AND** the modified file and `.env` MUST remain uncommitted and byte-identical, and the stash list MUST be unchanged
+
+#### Scenario: Pull request from history that is not on the base
+- **WHEN** remediation is asked to create a branch, commit, and open a pull request, and HEAD holds a commit without the trailer that is not on the pull request base
+- **THEN** darnit MUST stop before applying any remediation or creating the branch, and explain why
 
 #### Scenario: Unsafe repository state
 - **WHEN** a git step is requested on a detached HEAD, during a merge or rebase, or with an existing branch holding a commit without the trailer
