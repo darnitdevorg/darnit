@@ -1842,7 +1842,7 @@ A **digest** is `"sha256:" + hex(sha256(canonical_json(x)))`, with `canonical_js
 - `ChangeSet.digest` covers `{target, observed_digest, operations}`, so it binds the approval to the exact change and to the observed state the change was computed from.
 - `PlanItem.digest` covers the plan item and is used to approve a repository step individually (15.3).
 
-A person approves by digest: an apply call carries the approved digests (`approve` on `remediate_audit_findings` and `enable_branch_protection`), or `darnit run` shows each change set and asks on `/dev/tty`. At apply, darnit re-reads the target and re-plans; it writes only when the recomputed digest equals an approved one. Otherwise it writes nothing for that item, the outcome is `unchanged` with reason `stale_preview`, and a new preview is needed.
+A person approves by digest: an apply call carries the approved digests (`approve` on `remediate_audit_findings` and `enable_branch_protection`), or `darnit run` shows each change set and asks on `/dev/tty`. At apply, darnit re-reads the target and re-plans; it writes only when the recomputed digest equals an approved one. Otherwise it writes nothing for that item. The outcome is `unchanged` with reason `stale_preview`, and a new preview is needed, only when some approval matches no change-set or plan-item digest of the run's preview; an apply that carries approvals computes that preview for every control before it applies any, so an approval of a control applied later is matched. When every approval matches another item of the run, the unapproved change set is `needs_approval`.
 
 - A high-impact change set is applied under `prompt` only when its own digest is approved. An approval of a batch, or of other change sets, never covers it. Its preview lists its `impact_notes` (for example: all code, history, and Actions logs become publicly readable, and existing private forks are detached).
 - An apply flag alone (`dry_run = False`) never approves anything. An agent passes only the digests the person approved.
@@ -1852,6 +1852,10 @@ A person approves by digest: an apply call carries the approved digests (`approv
 - **WHEN** a person approved a change set's digest and the target's settings changed before the apply
 - **THEN** darnit MUST write nothing for that change set
 - **AND** the outcome MUST be `unchanged` with reason `stale_preview`
+
+#### Scenario: Approval of another control's item
+- **WHEN** an apply under `prompt` carries only the `PlanItem.digest` of one control's item, and an earlier-applied control's change set is not approved
+- **THEN** that change set MUST be `needs_approval`, not `unchanged` with `stale_preview`
 
 #### Scenario: Apply without approval under prompt
 - **WHEN** the policy is `prompt` and an apply carries no digest for a change set

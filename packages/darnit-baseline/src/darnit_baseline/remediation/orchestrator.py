@@ -1193,6 +1193,22 @@ def run_remediation(
         approvals=approve or [],
     )
 
+    # An approval may make a change set a stale preview only if it matches
+    # no digest of the run's preview (15.2). Plan every control before any is
+    # applied, so the session knows the digests of controls applied later.
+    if not dry_run and approve:
+        for control_id in remediable_ids:
+            if control_id not in honored_claims:
+                _apply_control_remediation(
+                    control_id=control_id,
+                    local_path=local_path,
+                    owner=owner,
+                    repo=repo,
+                    dry_run=True,
+                    target=target,
+                    platform=session,
+                )
+
     # ------------------------------------------------------------------
     # Apply remediations
     # ------------------------------------------------------------------
