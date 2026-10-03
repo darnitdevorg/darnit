@@ -29,6 +29,7 @@ Feature 042 already ensures remediation consumes only confirmed project values a
 ### Session 2026-10-02
 
 - Q: May darnit apply organization-wide or repository visibility changes itself? -> A: Yes, governed by operator configuration. Default `prompt`: darnit asks the person and, on approval, makes the change itself. The operator may set `manual` (darnit only gives the steps) or `auto` (darnit applies without asking) (FR-008, FR-026).
+- Q: Should the command-line remediation command (`darnit run`) write files by default? -> A: No. It previews by default and writes only with an explicit apply option, the same default as the MCP remediation tool (FR-027).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -182,6 +183,7 @@ A maintainer previews remediation before applying it. The preview lists every fi
 - **FR-022**: A preview MUST NOT change any file or platform setting; every remediation handler MUST honor preview mode.
 - **FR-023**: A step whose effect cannot be computed in advance MUST be labelled as such in the preview, with the command and the files or settings it may affect, and MUST NOT run in a batch apply unless the person approved it individually.
 - **FR-024**: Remediations marked unsafe or requiring confirmation in the framework configuration MUST NOT be applied in a batch unless the person approved each individually.
+- **FR-027**: The command-line remediation command MUST preview by default and MUST create or change files, or platform settings, only when the person passes an explicit apply option. Items that require individual approval (FR-008, FR-023, FR-024) MUST be asked for on the terminal when one is available, and otherwise end as needs approval.
 - **FR-025**: Every remediation property in the framework schema that concerns safety, confirmation, or preview MUST be enforced; a property that is not enforced MUST be removed from the schema and configurations rather than left declared.
 
 ### Key Entities

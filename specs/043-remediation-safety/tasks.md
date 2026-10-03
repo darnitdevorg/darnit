@@ -313,6 +313,9 @@
 - [ ] T054 [US5] Add `dry_run: bool = True` to `remediate_community_spec`. Route its README edit through the executor as a `FileChange` so it appears in the preview and the manifest. File: `packages/darnit-csl/src/darnit_csl/mcp_tools.py`.
 - [ ] T055 [US5] Route `create_security_policy` through the executor's writer and manifest, keeping its explicit-create semantics. File: `packages/darnit-baseline/src/darnit_baseline/tools.py`.
 
+- [ ] T055a [US5] Make `darnit run` preview by default and write only with `--apply` (FR-027). Update framework-design.md section 15.8 first, then `packages/darnit/src/darnit/cli.py` and `packages/darnit/src/darnit/agent/graph.py`. Update the feature 024 E2E tests that pin `darnit run` output (`tests/darnit/cli/`), naming FR-027, and add tests: no `--apply` writes nothing; `--apply` writes the planned changes.
+- [ ] T055b [US4] Map the executor's individual-approval gating (`RemediationResult.needs_approval`, `.approvals`) to a `needs_approval` outcome and into `RemediationRun.approvals` in `packages/darnit-baseline/src/darnit_baseline/remediation/orchestrator.py` (`_settled_outcome`). Extend the `darnit run` terminal approver to ask for individually-approved plan items by `PlanItem.digest` in `packages/darnit/src/darnit/remediation/platform/policy.py` and `packages/darnit/src/darnit/agent/graph.py`. Tests: `tests/darnit_baseline/remediation/test_outcomes.py` and `tests/darnit/agent/test_remediate_platform_policy.py`.
+
 **Checkpoint**: SC-005 and SC-007 hold.
 
 ---

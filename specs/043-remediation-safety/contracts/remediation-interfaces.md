@@ -119,9 +119,11 @@ Unchanged. Approvals are not confirmations, and are not stored in the confirmati
 
 `darnit run`:
 
+- Previews remediation by default; `--apply` is required to write files or change platform settings (FR-027).
 - Platform changes follow `[remediation]`.
 - Under `prompt` with a TTY, it shows each change set and asks on `/dev/tty`.
 - Without a TTY, the outcome is `needs_approval` and the exit code is unchanged from today's "remediation incomplete" path.
+- Items that need individual approval (`safe = false`, not previewable, high-impact) are asked for on `/dev/tty` by their digest when interactive, and otherwise end as `needs_approval`.
 
 ## 5. Report fields (Markdown and JSON)
 
