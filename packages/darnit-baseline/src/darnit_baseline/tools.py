@@ -450,6 +450,12 @@ def create_security_policy(
 
     Satisfies: OSPS-VM-01.01, OSPS-VM-02.01, OSPS-VM-03.01
 
+    Calling this tool is the request to create the file, so it writes without
+    a separate preview. It runs the OSPS-VM-02.01 remediation through the
+    remediation executor, which records the file in the run manifest (so the
+    git tools can commit it), never overwrites an existing SECURITY.md, and
+    re-checks the control after a change.
+
     Args:
         owner: GitHub Org/User (auto-detected if not provided)
         repo: Repository Name (auto-detected if not provided)
@@ -457,71 +463,84 @@ def create_security_policy(
         template: Template to use (standard, minimal, enterprise)
 
     Returns:
-        Success message with created file path
+        What was done, followed by a fenced JSON block with the run record
+        (run id, plan, and the control's outcome)
     """
-    from darnit.config import load_effective_config_by_name
-    from darnit.config.framework_schema import FrameworkConfig
-    from darnit.remediation.executor import RemediationExecutor
-
-    repo_path = Path(local_path).resolve()
-
-    # Auto-detect owner/repo
+    from darnit.config.operator.loader import OperatorConfigError
     from darnit.core.utils import detect_owner_repo
+    from darnit.remediation import manifest
+    from darnit.remediation.plan import PlanItem, RemediationRun
+    from darnit.remediation.platform import platform_repository, resolve_policy
+    from darnit.trust.decision import target_from_owner_repo
+    from darnit_baseline.remediation import orchestrator
 
+    control_id = "OSPS-VM-02.01"
+    repo_path = Path(local_path).resolve()
+    target = target_from_owner_repo(owner, repo)
     detected_owner, detected_repo = detect_owner_repo(str(repo_path))
     owner = owner or detected_owner
     repo = repo or detected_repo
 
     try:
-        # Load framework config to get SECURITY.md remediation definition
-        config = load_effective_config_by_name("openssf-baseline", repo_path)
-        framework = FrameworkConfig(**config)
+        policy = resolve_policy(repo_path)
+    except OperatorConfigError as e:
+        return f"Error: SECURITY.md was not created: remediation policy unavailable: {e}"
+    run_id = manifest.new_run_id()
+    repository = platform_repository(str(repo_path), owner, repo) or manifest.repository_identity(
+        str(repo_path), owner, repo
+    )
 
-        # Use the TOML-defined remediation for OSPS-VM-02.01 (security policy)
-        control = framework.controls.get("OSPS-VM-02.01")
-        if not control or not control.remediation:
-            return "❌ No remediation config found for OSPS-VM-02.01"
-
-        fw_path = None
+    result = orchestrator._apply_control_remediation(
+        control_id=control_id,
+        local_path=str(repo_path),
+        owner=owner,
+        repo=repo,
+        dry_run=False,
+        target=target,
+        run_id=run_id,
+    )
+    [outcome] = orchestrator._outcomes(
+        [result], lambda ids: orchestrator._recheck(ids, str(repo_path), owner, repo, target)
+    )
+    written = [c.path for c in outcome.file_changes if c.changes]
+    if written:
         try:
-            from darnit_baseline import get_framework_path
-            p = get_framework_path()
-            if p:
-                fw_path = str(p)
-        except Exception:
-            pass
+            from darnit.core import audit_cache
 
-        from darnit.config.context_resolve import resolve_context
-        from darnit.config.context_storage import framework_definitions
+            audit_cache.invalidate_audit_cache(str(repo_path))
+        except Exception as exc:  # noqa: BLE001
+            from darnit.core.logging import get_logger
 
-        resolved = resolve_context(str(repo_path), framework_definitions(framework), detect=False)
-        executor = RemediationExecutor(
-            local_path=str(repo_path),
-            owner=owner,
-            repo=repo,
-            templates=framework.templates or {},
-            context_values=resolved.usable(),
-            framework_path=fw_path,
-            unconfirmed_keys=resolved.unusable_keys(),
+            get_logger("darnit_baseline.tools").warning(f"Failed to invalidate audit cache: {exc}")
+
+    run = RemediationRun(
+        run_id=run_id,
+        repository=repository,
+        mode="apply",
+        policy=policy.settings,
+        operator_config_digest=policy.operator_config_digest,
+        approvals=orchestrator._run_approvals([], [result]),
+        plan=[PlanItem.model_validate(item) for item in result.get("plan", [])],
+        outcomes=[outcome],
+    )
+
+    if outcome.kind == "needs_confirmation":
+        summary = (
+            f"SECURITY.md was not created: {outcome.reason}. Ask the person for the value and "
+            "record their answer with confirm_project_data, then call this tool again."
         )
+    elif written:
+        recheck = (outcome.recheck or {}).get("status", "not run")
+        summary = f"Wrote {', '.join(written)} in {repo_path} ({outcome.kind}; re-check of {control_id}: {recheck})."
+    elif outcome.kind == "unchanged":
+        summary = f"Nothing was written: {outcome.reason}. An existing SECURITY.md is never overwritten."
+    elif outcome.error is not None:
+        summary = f"Error: SECURITY.md was not created: {outcome.error.error_class}: {outcome.error.cause}"
+    else:
+        summary = f"SECURITY.md was not created ({outcome.kind}): {outcome.reason or result.get('message', '')}"
 
-        result = executor.execute(
-            control_id="OSPS-VM-02.01",
-            config=control.remediation,
-            dry_run=False,
-        )
-
-        if result.confirmation_required:
-            return (
-                f"Error: SECURITY.md was not created: {result.message}. Ask the person for "
-                f"`{result.confirmation_required}` and record their answer with confirm_project_data."
-            )
-        if result.success:
-            return f"✅ Created SECURITY.md at {repo_path}/SECURITY.md"
-        else:
-            return f"❌ Error creating SECURITY.md: {result.message}"
-    except Exception as e:
-        return f"❌ Error creating SECURITY.md: {e}"
+    lines = [summary, "", f"Run id: {run_id}", "", "```json", json.dumps(run.model_dump(mode="json"), indent=2), "```"]
+    return "\n".join(lines)
 
 
 def enable_branch_protection(
