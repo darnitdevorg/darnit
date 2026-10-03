@@ -1,8 +1,8 @@
 """Tests for project_update remediation support.
 
 Tests that the RemediationExecutor correctly applies project_update
-after successful remediations, and that the standalone apply_project_update
-function works for nested dotted paths.
+after successful remediations, and that the project_update handler, applied
+by the executor, works for nested dotted paths.
 """
 
 import pytest
@@ -15,7 +15,7 @@ from darnit.config.framework_schema import (
 from darnit.remediation.executor import (
     RemediationExecutor,
     _set_nested_value,
-    apply_project_update,
+    plan_project_update,
 )
 
 
@@ -189,41 +189,34 @@ class TestExecutorProjectUpdate:
         assert result.remediation_type == "none"
 
 
-class TestApplyProjectUpdate:
-    """Tests for standalone apply_project_update function."""
+def _apply_update(path, updates: dict, *, create: bool = True):
+    config = RemediationConfig(
+        handlers=[HandlerInvocation(handler="project_update", updates=updates, create_if_missing=create)]
+    )
+    return RemediationExecutor(local_path=str(path), owner="o", repo="r").execute("TEST-01", config, dry_run=False)
+
+
+class TestProjectUpdateHandler:
+    """The project_update handler plans the change; the executor writes it."""
 
     def test_creates_project_dir(self, tmp_path):
         """Creates .project/ directory if it doesn't exist."""
-        config = ProjectUpdateRemediationConfig(
-            set={"security.policy.path": "SECURITY.md"},
-            create_if_missing=True,
-        )
+        result = _apply_update(tmp_path, {"security.policy.path": "SECURITY.md"})
 
-        apply_project_update(str(tmp_path), config, "TEST-01")
-
-        # Check .project/ was created
-        project_dir = tmp_path / ".project"
-        assert project_dir.exists()
+        assert result.changed
+        assert (tmp_path / ".project").exists()
 
     def test_skip_if_no_project_and_not_create(self, tmp_path):
         """Skip if no .project/ and create_if_missing=False."""
-        config = ProjectUpdateRemediationConfig(
-            set={"security.policy.path": "SECURITY.md"},
-            create_if_missing=False,
-        )
+        result = _apply_update(tmp_path, {"security.policy.path": "SECURITY.md"}, create=False)
 
-        # Should not raise, just skip
-        apply_project_update(str(tmp_path), config, "TEST-01")
+        assert not result.changed
+        assert not (tmp_path / ".project").exists()
 
-        # .project/ should NOT be created
-        project_dir = tmp_path / ".project"
-        assert not project_dir.exists()
+    def test_empty_updates_change_nothing(self, tmp_path):
+        result = _apply_update(tmp_path, {})
 
-    def test_empty_set_is_noop(self, tmp_path):
-        """Empty set dict is a no-op."""
-        config = ProjectUpdateRemediationConfig(set={})
-        apply_project_update(str(tmp_path), config, "TEST-01")
-        # Should not create .project/
+        assert not result.changed
         assert not (tmp_path / ".project").exists()
 
     def test_does_not_overwrite_existing_config_on_validation_failure(self, tmp_path):
@@ -240,12 +233,10 @@ class TestApplyProjectUpdate:
         darnit_yaml.write_text("context:\n  maintainers:\n  - '@alice'\n  - '@bob'\n")
         originals = {path: path.read_text() for path in (project_yaml, darnit_yaml)}
 
-        config = ProjectUpdateRemediationConfig(
-            set={"security.policy.path": "SECURITY.md"},
-            create_if_missing=True,
-        )
-
         with pytest.raises(ValueError, match="maturity_log"):
-            apply_project_update(str(tmp_path), config, "TEST-01")
+            plan_project_update(str(tmp_path), {"security.policy.path": "SECURITY.md"})
+        result = _apply_update(tmp_path, {"security.policy.path": "SECURITY.md"})
 
+        assert not result.success
+        assert "maturity_log" in result.details["handlers"][0]["message"]
         assert {path: path.read_text() for path in originals} == originals

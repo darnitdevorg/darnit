@@ -14,7 +14,7 @@ from darnit.config.framework_schema import RemediationConfig as RemediationSpec
 from darnit.config.resolver import update_config_after_file_create
 from darnit.locate.locator import UnifiedLocator
 from darnit.locate.models import FoundEvidence
-from darnit.remediation.executor import RemediationExecutor, apply_project_update
+from darnit.remediation.executor import RemediationExecutor, plan_project_update
 from darnit.server.tools.project_data import confirm_project_data_impl
 from darnit_baseline.tools import audit_openssf_baseline
 
@@ -161,9 +161,7 @@ class TestInvalidFilesAreNotWritten:
         before = snapshot(repo)
 
         with pytest.raises(ValueError, match=error):
-            apply_project_update(
-                str(repo), ProjectUpdateRemediationConfig(set={"security.policy.path": "SECURITY.md"}), "TEST-01"
-            )
+            plan_project_update(str(repo), {"security.policy.path": "SECURITY.md"})
 
         assert_unchanged(repo, before)
 
@@ -200,6 +198,11 @@ class TestInvalidFilesAreNotWritten:
         assert_unchanged(repo, before)
 
 
+def _apply_update(repo: Path, updates: dict) -> object:
+    spec = RemediationSpec(handlers=[HandlerInvocation(handler="project_update", updates=updates)])
+    return RemediationExecutor(local_path=str(repo), owner=OWNER, repo="hand").execute("T", spec, dry_run=False)
+
+
 @pytest.mark.unit
 class TestTargetedFieldsOnly:
     def test_applied_remediation_changes_only_the_targeted_field(self, tmp_path: Path) -> None:
@@ -220,7 +223,7 @@ class TestTargetedFieldsOnly:
     def test_a_string_value_is_written_as_a_path_reference(self, tmp_path: Path) -> None:
         repo = _hand_written(tmp_path)
 
-        apply_project_update(str(repo), ProjectUpdateRemediationConfig(set={"security.policy": "SECURITY.md"}), "T")
+        assert _apply_update(repo, {"security.policy": "SECURITY.md"}).changed
 
         assert (repo / ".project" / "project.yaml").read_text(encoding="utf-8") == HAND_WRITTEN_WITH_POLICY
 
@@ -245,9 +248,7 @@ class TestTargetedFieldsOnly:
         assert (repo / ".project" / "project.yaml").read_text(encoding="utf-8") == HAND_WRITTEN_WITH_POLICY
 
     def test_an_absent_project_directory_gets_only_what_is_needed(self, tmp_path: Path) -> None:
-        apply_project_update(
-            str(tmp_path), ProjectUpdateRemediationConfig(set={"security.policy.path": "SECURITY.md"}), "TEST-01"
-        )
+        assert _apply_update(tmp_path, {"security.policy.path": "SECURITY.md"}).changed
 
         assert sorted(p.name for p in (tmp_path / ".project").iterdir()) == ["project.yaml"]
         assert yaml.safe_load((tmp_path / ".project" / "project.yaml").read_text(encoding="utf-8")) == {

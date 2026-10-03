@@ -1334,55 +1334,6 @@ def plan_project_update(local_path: str, updates: Mapping[str, Any], *, create: 
     return _rendered_file_changes(root, render_project_config_update(root, list(updates), mutate, create=create))
 
 
-def apply_project_update(
-    local_path: str,
-    project_update: ProjectUpdateRemediationConfig,
-    control_id: str,
-) -> None:
-    """Apply a project_update to the ``.project/`` files.
-
-    Sets each dotted path from ``project_update.set`` and nothing else:
-    comments, ordering, and fields darnit does not own are preserved
-    (feature 042, FR-020). CNCF fields are written to
-    ``.project/project.yaml``, other fields to ``.project/darnit.yaml``.
-
-    Args:
-        local_path: Path to the repository root
-        project_update: Configuration specifying what to update
-        control_id: Control ID for logging context
-
-    Raises:
-        ValueError: A ``.project/`` file is present but unreadable or
-            invalid; nothing is written and the errors are in the message
-            (FR-019).
-
-    Example:
-        Given project_update.set = {"security.policy.path": "SECURITY.md"},
-        this updates .project/project.yaml:
-
-            security:
-              policy:
-                path: SECURITY.md
-    """
-    if not project_update.set:
-        return
-
-    from darnit.config.loader import update_project_config
-
-    def mutate(config: object) -> None:
-        for dotted_path, value in project_update.set.items():
-            _set_nested_value(config, dotted_path, value)
-            logger.debug(f"project_update for {control_id}: set {dotted_path} = {value}")
-
-    written = update_project_config(
-        local_path, list(project_update.set), mutate, create=project_update.create_if_missing
-    )
-    if written:
-        logger.info(f"Applied project_update for {control_id}: set {len(project_update.set)} values")
-    else:
-        logger.debug(f"project_update for {control_id}: nothing to change")
-
-
 def _coerce_to_field_type(obj: object, field_name: str, value: object) -> object:
     """Coerce a value to match the expected Pydantic field type.
 
@@ -1599,6 +1550,5 @@ __all__ = [
     "RemediationExecutor",
     "RemediationResult",
     "WriteRefused",
-    "apply_project_update",
     "plan_project_update",
 ]
