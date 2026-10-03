@@ -41,7 +41,7 @@ from darnit.tools.audit import prepare_audit, run_checks
 
 if TYPE_CHECKING:
     from darnit.config.operator.schema import OperatorConfig
-    from darnit.remediation.platform.policy import Approver
+    from darnit.remediation.platform.policy import Approver, ItemApprover
 
 logger = get_logger("agent.graph")
 
@@ -204,7 +204,12 @@ def collect_context(
 # =============================================================================
 
 
-def remediate(state: AuditState, dry_run: bool = False, approver: Approver | None = None) -> AuditState:
+def remediate(
+    state: AuditState,
+    dry_run: bool = False,
+    approver: Approver | None = None,
+    item_approver: ItemApprover | None = None,
+) -> AuditState:
     """Remediate all FAIL controls that have a remediation definition.
 
     Issue #144 fix: Previously this node only logged what it would do.
@@ -224,6 +229,10 @@ def remediate(state: AuditState, dry_run: bool = False, approver: Approver | Non
             043). Platform changes follow the operator's remediation policy:
             under ``prompt`` a change set is written only when the approver
             says yes; with no approver its outcome is ``needs_approval``.
+        item_approver: Asks a person to approve each plan item that requires
+            individual approval (framework-design 15.3), shown with its
+            ``PlanItem.digest``. With none, such an item ends as needs
+            approval and nothing of its control is written.
 
     Returns:
         Updated state with remediation_results populated.
@@ -271,6 +280,7 @@ def remediate(state: AuditState, dry_run: bool = False, approver: Approver | Non
         framework_path=_get_framework_path(state.framework_name),
         unconfirmed_keys=resolved.unusable_keys(),
         platform=session,
+        item_approver=None if dry_run else item_approver,
     )
 
     results: list[dict[str, Any]] = []
@@ -310,6 +320,10 @@ def remediate(state: AuditState, dry_run: bool = False, approver: Approver | Non
                 "dry_run": result.dry_run,
                 "details": result.details,
                 "platform": _platform_results(result.details),
+                "plan": [item.model_dump(mode="json") for item in result.plan],
+                "file_changes": [change.model_dump(mode="json") for change in result.file_changes],
+                "needs_approval": list(result.needs_approval),
+                "approvals": [approval.model_dump(mode="json") for approval in result.approvals],
             })
             logger.info(
                 "Remediation %s for %s: %s",

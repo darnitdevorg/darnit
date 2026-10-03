@@ -1,28 +1,32 @@
-"""Remediation policy and digest-bound approval for platform changes (feature 043, R4, R5; framework-design 15.1-15.2).
+"""Remediation policy and digest-bound approval (feature 043, R4, R5; framework-design 15.1-15.3).
 
 The policy comes only from operator configuration (feature 040); nothing in
 the audited repository is read for it. Under ``prompt`` a change set is
 written only when its own digest is approved, either listed by the caller or
 accepted by a person at a terminal. An approval of anything else, including a
-batch of other change sets, never covers it.
+batch of other change sets, never covers it. A plan item that requires
+individual approval is approved the same way, by its own ``PlanItem.digest``.
 """
 
 from __future__ import annotations
 
 import getpass
 import sys
-from collections.abc import Callable, Collection
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TextIO
 
 from darnit.config.operator.schema import RemediationMode, RemediationSettings
-from darnit.remediation.plan import Approval
+from darnit.remediation.plan import Approval, PlanItem
 from darnit.remediation.platform.model import ChangeSet, PlatformTarget
 from darnit.remediation.platform.targets import show_value
 
 Approver = Callable[[ChangeSet], bool]
+ItemApprover = Callable[[PlanItem, Sequence[str]], bool]
+
+_CONTENT_LINES = 10
 
 
 def _os_user() -> str:
@@ -89,8 +93,35 @@ def describe_change_set(change_set: ChangeSet) -> list[str]:
     return lines
 
 
+def _printable(text: str) -> str:
+    """``text`` with every character outside printable ASCII escaped, so file content cannot drive the terminal."""
+    return "".join(c if " " <= c <= "~" else c.encode("unicode_escape").decode("ascii") for c in text)
+
+
+def describe_plan_item(item: PlanItem, reasons: Sequence[str]) -> list[str]:
+    """The lines a person reads before approving ``item`` individually (framework-design 15.3)."""
+    lines = [f"Remediation step: {item.control_id} {item.step}"]
+    lines += [f"  Needs individual approval: {reason}" for reason in reasons]
+    for change in item.file_changes:
+        if not change.changes:
+            lines.append(f"  {_printable(change.path)}: not written ({change.reason})")
+            continue
+        content = (change.content or "").splitlines()
+        lines.append(f"  {change.action} {_printable(change.path)} ({len(content)} lines):")
+        lines += [f"    | {_printable(line)}" for line in content[:_CONTENT_LINES]]
+        if len(content) > _CONTENT_LINES:
+            lines.append(f"    | ... {len(content) - _CONTENT_LINES} more lines")
+    lines += [f"  Command: {_printable(' '.join(command))}" for command in item.commands]
+    for change_set in item.change_sets:
+        lines += [f"  {line}" for line in describe_change_set(ChangeSet.model_validate(change_set))]
+    if not item.previewable:
+        lines.append("  Cannot be previewed exactly: it may change files or settings not listed here")
+    lines.append(f"  Digest: {item.digest}")
+    return lines
+
+
 class TerminalApprover:
-    """Asks a person at the terminal to approve each change set (the feature 027 ``/dev/tty`` pattern).
+    """Asks a person at the terminal to approve each change set or plan item (the feature 027 ``/dev/tty`` pattern).
 
     Both streams None opens ``/dev/tty`` on first use, so the prompt never
     mixes with the report on stdout. Anything but ``y``/``yes`` is a refusal,
@@ -109,15 +140,21 @@ class TerminalApprover:
             self._input = self._output = tty
         return self._input, self._output
 
-    def __call__(self, change_set: ChangeSet) -> bool:
+    def _ask(self, lines: list[str], question: str) -> bool:
         source, sink = self._streams()
-        sink.write("\n" + "\n".join(describe_change_set(change_set)) + "\nApply this change? [y/N] ")
+        sink.write("\n" + "\n".join(lines) + f"\n{question} [y/N] ")
         sink.flush()
         try:
             answer = source.readline()
         except (KeyboardInterrupt, OSError):
             return False
         return answer.strip().lower() in ("y", "yes")
+
+    def __call__(self, change_set: ChangeSet) -> bool:
+        return self._ask(describe_change_set(change_set), "Apply this change?")
+
+    def approve_item(self, item: PlanItem, reasons: Sequence[str]) -> bool:
+        return self._ask(describe_plan_item(item, reasons), "Apply this step?")
 
 
 def terminal_approver() -> TerminalApprover | None:
@@ -133,10 +170,12 @@ def terminal_approver() -> TerminalApprover | None:
 
 __all__ = [
     "Approver",
+    "ItemApprover",
     "ResolvedPolicy",
     "TerminalApprover",
     "approval_for",
     "describe_change_set",
+    "describe_plan_item",
     "mode_for",
     "resolve_policy",
     "terminal_approver",

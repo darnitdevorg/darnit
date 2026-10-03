@@ -229,3 +229,64 @@ def test_run_sieve_audit_without_cache_write(repo: Path) -> None:
 
     audit.run_sieve_audit(OWNER, REPO, str(repo), "main", controls=_specs(), framework_name="openssf-baseline")
     assert cache_file.exists()
+
+
+UNSAFE_FRAMEWORK = FrameworkConfig(
+    metadata=FrameworkMetadata(name="openssf-baseline", display_name="Test", version="1.0"),
+    controls={
+        "T-UNSAFE": _control(
+            _present("UNSAFE.md"),
+            RemediationConfig(
+                safe=False,
+                handlers=[HandlerInvocation(handler="file_create", path="UNSAFE.md", content="# UNSAFE.md\n")],
+            ),
+        ),
+    },
+)
+
+
+@pytest.fixture
+def unsafe_framework(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(orchestrator, "_get_framework_config", lambda: UNSAFE_FRAMEWORK)
+    monkeypatch.setattr(
+        audit_cache, "read_audit_cache", lambda *_a, **_k: {"results": [{"id": "T-UNSAFE", "status": "FAIL"}]}
+    )
+
+
+def _unsafe_digest(repo: Path) -> str:
+    preview = _run_block(orchestrator.remediate_audit_findings(local_path=str(repo), owner=OWNER, repo=REPO))
+    [item] = [item for item in preview["plan"] if item["requires_individual_approval"]]
+    return item["digest"]
+
+
+@pytest.mark.integration
+def test_unapproved_individual_item_needs_approval(repo: Path, unsafe_framework: None) -> None:
+    """T055b: a gated plan item is ``needs_approval``, not ``error`` (framework-design 15.3, 15.4)."""
+    digest = _unsafe_digest(repo)
+
+    output, run = _apply(repo)
+
+    [outcome] = run["outcomes"]
+    assert outcome["kind"] == "needs_approval"
+    assert outcome["file_changes"] == [], "nothing was written, so no file change is reported"
+    assert digest in outcome["reason"]
+    assert outcome["error"] is None
+    assert run["approvals"] == []
+    assert not (repo / "UNSAFE.md").exists()
+    assert digest in output.split("```json")[0]
+
+
+@pytest.mark.integration
+def test_individually_approved_item_is_applied_and_recorded(repo: Path, unsafe_framework: None) -> None:
+    """T055b: the item's own digest approves it; the approval is recorded in ``RemediationRun.approvals``."""
+    digest = _unsafe_digest(repo)
+
+    output = orchestrator.remediate_audit_findings(
+        local_path=str(repo), owner=OWNER, repo=REPO, dry_run=False, approve=[digest]
+    )
+    run = _run_block(output)
+
+    [outcome] = run["outcomes"]
+    assert outcome["kind"] == "fixed"
+    assert (repo / "UNSAFE.md").read_text(encoding="utf-8") == "# UNSAFE.md\n"
+    assert [a["digest"] for a in run["approvals"]] == [digest]

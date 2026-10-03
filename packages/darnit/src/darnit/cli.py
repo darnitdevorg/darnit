@@ -824,7 +824,12 @@ def cmd_run(args: argparse.Namespace) -> int:
                 from darnit.remediation.platform import terminal_approver
 
                 approver = terminal_approver() if feedback_mode == "interactive" else None
-                state = remediate(state, dry_run=getattr(args, "dry_run", False), approver=approver)
+                state = remediate(
+                    state,
+                    dry_run=getattr(args, "dry_run", False),
+                    approver=approver,
+                    item_approver=approver.approve_item if approver is not None else None,
+                )
                 break
             else:  # "audit" (no results) or "end"
                 break

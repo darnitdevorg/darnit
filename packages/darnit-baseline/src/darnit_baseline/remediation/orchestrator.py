@@ -28,7 +28,7 @@ from darnit.remediation.context_validator import (
     check_context_requirements,
 )
 from darnit.remediation.executor import RemediationExecutor
-from darnit.remediation.plan import ErrorInfo, FileChange, PlanItem, RemediationOutcome, RemediationRun
+from darnit.remediation.plan import Approval, ErrorInfo, FileChange, PlanItem, RemediationOutcome, RemediationRun
 from darnit.tools import (
     calculate_compliance,
     prepare_audit,
@@ -582,6 +582,18 @@ def _apply_declarative_remediation(
                 "references": _unrecorded_references(result.details),
             }
 
+        if result.needs_approval:
+            return {
+                "control_id": control_id,
+                "status": "needs_approval",
+                "description": description,
+                "controls": [control_id],
+                "result": result.message,
+                "declarative": True,
+                "plan": plan_items,
+                "needs_approval": list(result.needs_approval),
+            }
+
         platform_results = _platform_results(result.details)
         applied_record: dict[str, Any] = {
             "plan": plan_items,
@@ -589,6 +601,7 @@ def _apply_declarative_remediation(
             "file_changes": [change.model_dump(mode="json") for change in result.file_changes],
             "handlers": _handler_statuses(result.details),
             "references": _unrecorded_references(result.details),
+            "approvals": [approval.model_dump(mode="json") for approval in result.approvals],
         }
         platform_status = _platform_status(platform_results, result.changed) if result.success else None
         if platform_status is not None:
@@ -1209,7 +1222,7 @@ def run_remediation(
         mode="preview" if dry_run else "apply",
         policy=policy.settings,
         operator_config_digest=policy.operator_config_digest,
-        approvals=session.used_approvals,
+        approvals=_run_approvals(session.used_approvals, results),
         plan=[PlanItem.model_validate(item) for r in results for item in r.get("plan", [])],
         outcomes=outcomes,
     )
@@ -1226,6 +1239,15 @@ def run_remediation(
 
 
 _RECHECK_FIELDS = ("status", "details", "authority", "error", "error_class", "pending")
+
+
+def _run_approvals(platform_approvals: list[Approval], results: list[dict[str, Any]]) -> list[Approval]:
+    """The run's approvals: change sets the platform engine applied, and plan items approved individually (15.3)."""
+    approvals = {a.digest: a for a in platform_approvals}
+    for r in results:
+        for raw in r.get("approvals", []):
+            approvals.setdefault(raw["digest"], Approval.model_validate(raw))
+    return list(approvals.values())
 
 
 def _written(r: dict[str, Any]) -> list[FileChange]:
@@ -1254,6 +1276,18 @@ def _settled_outcome(r: dict[str, Any]) -> RemediationOutcome | None:
             control_id=control_id,
             kind="needs_confirmation",
             reason="confirmation required: " + ", ".join(r.get("missing_context") or []),
+        )
+    if status == "needs_approval" and r.get("needs_approval"):
+        unapproved = set(r["needs_approval"])
+        return RemediationOutcome(
+            control_id=control_id,
+            kind="needs_approval",
+            change_sets=[cs for item in r.get("plan", []) if item["digest"] in unapproved for cs in item["change_sets"]],
+            reason=(
+                "individual approval required for plan item digest(s) "
+                + ", ".join(sorted(unapproved))
+                + "; no step of this remediation was run"
+            ),
         )
     if status == "needs_approval":
         pending = [p["change_set"] for p in platform_results if p["kind"] == "needs_approval" and p.get("change_set")]
@@ -1527,7 +1561,11 @@ def _outcome_lines(run: RemediationRun, results: list[dict[str, Any]]) -> list[s
         if r.get("description"):
             md.append(f"- **Description:** {r['description']}")
         md += _file_lines(outcome.file_changes, preview=False)
-        if outcome.kind == "needs_approval":
+        if outcome.kind == "needs_approval" and r.get("needs_approval"):
+            for item in r.get("plan", []):
+                if item["digest"] in r["needs_approval"]:
+                    md += _plan_item_lines(PlanItem.model_validate(item))
+        elif outcome.kind == "needs_approval":
             md += _change_set_lines(outcome.change_sets)
         else:
             md += _applied_platform_lines(outcome.change_sets)

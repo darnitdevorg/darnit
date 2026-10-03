@@ -49,6 +49,7 @@ if TYPE_CHECKING:
     from jinja2 import Environment
 
     from darnit.remediation.platform import PlatformSession
+    from darnit.remediation.platform.policy import ItemApprover
     from darnit.sieve.handler_registry import HandlerContext, SieveHandlerInfo
 
 from darnit.config.framework_schema import (
@@ -214,6 +215,7 @@ class RemediationExecutor:
         run_id: str | None = None,
         platform: PlatformSession | None = None,
         approvals: Collection[str] = (),
+        item_approver: ItemApprover | None = None,
     ):
         """Initialize the executor.
 
@@ -252,6 +254,11 @@ class RemediationExecutor:
                 (framework-design 15.3), in addition to the platform
                 session's approvals. A plan item that requires individual
                 approval runs in an apply only when its own digest is here.
+            item_approver: Asks a person to approve a plan item that requires
+                individual approval and has no approved digest (``darnit run``
+                at a terminal). Every such item of a control must be approved
+                before any step of the control runs; asking stops at the first
+                refusal. When None, such an item ends as needs approval.
         """
         self.local_path = os.path.abspath(local_path)
         self.templates = templates or {}
@@ -266,6 +273,8 @@ class RemediationExecutor:
         self._run_ready = False
         self.platform = platform
         self._approvals = frozenset(approvals)
+        self._item_approver = item_approver
+        self._granted: dict[str, Approval] = {}
         self._in_git: bool | None = None
 
         # Auto-detect owner/repo if not provided
@@ -546,7 +555,13 @@ class RemediationExecutor:
         return result
 
     def _approved_digests(self) -> frozenset[str]:
-        return self._approvals | (self.platform.approvals if self.platform is not None else frozenset())
+        platform = self.platform.approvals if self.platform is not None else frozenset()
+        return self._approvals | platform | self._granted.keys()
+
+    def _operator(self) -> str:
+        from darnit.remediation.platform.policy import ResolvedPolicy
+
+        return (self.platform.policy if self.platform is not None else ResolvedPolicy()).operator
 
     def _individually_approved(self, item: PlanItem, safe: bool) -> bool:
         """``item``'s own digest is approved (framework-design 15.3).
@@ -566,20 +581,27 @@ class RemediationExecutor:
         return False
 
     def _unapproved(self, plan: list[PlanItem], safe: bool) -> list[str]:
-        return [
-            item.digest
-            for item in plan
-            if item.requires_individual_approval and not self._individually_approved(item, safe)
+        """Digests of the items of ``plan`` that need individual approval and lack it, after asking a person."""
+        unapproved = [
+            item for item in plan if item.requires_individual_approval and not self._individually_approved(item, safe)
         ]
+        if self._item_approver is None:
+            return [item.digest for item in unapproved]
+        granted: dict[str, Approval] = {}
+        for index, item in enumerate(unapproved):
+            if not self._item_approver(item, _approval_reasons(item, safe)):
+                return [i.digest for i in unapproved[index:]]
+            granted[item.digest] = Approval(
+                digest=item.digest, approved_by=self._operator(), approved_at=datetime.now(UTC)
+            )
+        self._granted.update(granted)
+        return []
 
     def _used_approvals(self, plan: list[PlanItem]) -> list[Approval]:
-        from darnit.remediation.platform.policy import ResolvedPolicy
-
         approved = self._approved_digests()
-        operator = (self.platform.policy if self.platform is not None else ResolvedPolicy()).operator
         now = datetime.now(UTC)
         return [
-            Approval(digest=item.digest, approved_by=operator, approved_at=now)
+            self._granted.get(item.digest) or Approval(digest=item.digest, approved_by=self._operator(), approved_at=now)
             for item in plan
             if item.requires_individual_approval and item.digest in approved
         ]
@@ -1128,6 +1150,18 @@ class RemediationExecutor:
             changed=all_success and wrote,
             run_id=run_id,
         )
+
+
+def _approval_reasons(item: PlanItem, safe: bool) -> list[str]:
+    """Why ``item`` requires individual approval (framework-design 15.3)."""
+    reasons = []
+    if not safe:
+        reasons.append("its remediation is marked safe = false")
+    if not item.previewable:
+        reasons.append("it cannot be previewed exactly")
+    if any(cs["target"]["impact"] == "high_impact" for cs in item.change_sets if cs.get("operations")):
+        reasons.append("it holds a high-impact platform change")
+    return reasons
 
 
 def _is_exec(handler_info: SieveHandlerInfo) -> bool:

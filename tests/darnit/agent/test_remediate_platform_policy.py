@@ -1,4 +1,7 @@
-"""``darnit run`` platform changes follow the operator policy (feature 043 T030; contracts section 4)."""
+"""``darnit run`` platform changes follow the operator policy, and individually approved items are asked for.
+
+Feature 043 T030 and T055b; contracts section 4; framework-design 15.3, 15.8.
+"""
 
 from __future__ import annotations
 
@@ -10,8 +13,16 @@ import pytest
 
 from darnit.agent.graph import remediate
 from darnit.agent.state import AuditState
+from darnit.config.framework_schema import (
+    ControlConfig,
+    FrameworkConfig,
+    FrameworkMetadata,
+    HandlerInvocation,
+    RemediationConfig,
+)
 from darnit.config.operator.schema import RemediationSettings
 from darnit.core.utils import RecordedGhApi, set_gh_api_responder
+from darnit.remediation.plan import FileChange, PlanItem
 from darnit.remediation.platform import PlatformRequirement, ResolvedPolicy, plan
 from darnit.remediation.platform.policy import TerminalApprover, terminal_approver
 from tests.darnit.remediation.platform.conftest import PLATFORM_FIXTURES, REPO_PATH, SimulatedGitHub
@@ -134,3 +145,130 @@ def test_policy_is_resolved_from_operator_configuration(tmp_path: Path, simulate
 
     assert gh.writes == []
     assert _platform_kinds(state) == ["manual"]
+
+
+UNSAFE = FrameworkConfig(
+    metadata=FrameworkMetadata(name="t", display_name="T", version="1.0"),
+    controls={
+        "T-UNSAFE": ControlConfig(
+            name="Unsafe",
+            description="Unsafe remediation",
+            level=1,
+            passes=[HandlerInvocation(handler="file_exists", files=["UNSAFE.md"], existence=True)],
+            remediation=RemediationConfig(
+                safe=False,
+                handlers=[HandlerInvocation(handler="file_create", path="UNSAFE.md", content="line 1\nline 2\n")],
+            ),
+        ),
+    },
+)
+
+
+@pytest.fixture()
+def unsafe_framework(monkeypatch: pytest.MonkeyPatch) -> None:
+    from darnit.agent import graph
+
+    monkeypatch.setattr(graph, "_load_framework_config", lambda _name: UNSAFE)
+    monkeypatch.setattr(graph, "_get_framework_path", lambda _name: None)
+
+
+def _unsafe_state(tmp_path: Path) -> AuditState:
+    return AuditState(
+        local_path=str(tmp_path), owner="o", repo="r", audit_results=[{"id": "T-UNSAFE", "status": "FAIL"}]
+    )
+
+
+@pytest.mark.unit
+class TestIndividualApprovalAtTheTerminal:
+    """T055b: ``darnit run`` asks for plan items that need individual approval by digest (framework-design 15.3, 15.8)."""
+
+    def test_without_a_terminal_the_item_needs_approval(self, tmp_path: Path, unsafe_framework: None) -> None:
+        state = remediate(_unsafe_state(tmp_path), dry_run=False, approver=None, item_approver=None)
+
+        [result] = state.remediation_results
+        assert not (tmp_path / "UNSAFE.md").exists()
+        assert len(result["needs_approval"]) == 1
+        assert result["approvals"] == []
+
+    def test_yes_applies_the_item_and_records_the_approval(self, tmp_path: Path, unsafe_framework: None) -> None:
+        asked: list[tuple[PlanItem, list[str]]] = []
+
+        def item_approver(item: PlanItem, reasons: list[str]) -> bool:
+            asked.append((item, reasons))
+            return True
+
+        state = remediate(_unsafe_state(tmp_path), dry_run=False, item_approver=item_approver)
+
+        [(item, reasons)] = asked
+        [result] = state.remediation_results
+        assert (tmp_path / "UNSAFE.md").read_text(encoding="utf-8") == "line 1\nline 2\n"
+        assert result["needs_approval"] == []
+        assert [a["digest"] for a in result["approvals"]] == [item.digest]
+        assert any("safe = false" in reason for reason in reasons)
+
+    def test_no_writes_nothing(self, tmp_path: Path, unsafe_framework: None) -> None:
+        state = remediate(_unsafe_state(tmp_path), dry_run=False, item_approver=lambda _item, _reasons: False)
+
+        [result] = state.remediation_results
+        assert not (tmp_path / "UNSAFE.md").exists()
+        assert len(result["needs_approval"]) == 1
+        assert result["approvals"] == []
+
+    def test_a_preview_never_asks(self, tmp_path: Path, unsafe_framework: None) -> None:
+        def item_approver(_item, _reasons) -> bool:
+            raise AssertionError("a preview never asks")
+
+        remediate(_unsafe_state(tmp_path), dry_run=True, item_approver=item_approver)
+
+        assert not (tmp_path / "UNSAFE.md").exists()
+
+
+@pytest.mark.unit
+class TestTerminalApproverForPlanItems:
+    def _item(self) -> PlanItem:
+        return PlanItem(
+            control_id="T-UNSAFE",
+            step="exec[0]",
+            file_changes=[
+                FileChange(path="UNSAFE.md", action="create", content="".join(f"line {i}\n" for i in range(30))),
+                FileChange(path="SECURITY.md", action="none", reason="already_exists"),
+            ],
+            commands=[["zizmor", "--fix=all", "$PATH"]],
+            previewable=False,
+            requires_individual_approval=True,
+        )
+
+    @pytest.mark.parametrize(("answer", "approved"), [("y\n", True), ("yes\n", True), ("\n", False), ("n\n", False)])
+    def test_shows_the_item_and_reads_the_answer(self, answer: str, approved: bool) -> None:
+        item = self._item()
+        out = io.StringIO()
+
+        assert TerminalApprover(io.StringIO(answer), out).approve_item(item, ["it cannot be previewed exactly"]) is approved
+
+        shown = out.getvalue()
+        assert item.digest in shown
+        assert "T-UNSAFE" in shown and "exec[0]" in shown
+        assert "create UNSAFE.md" in shown
+        assert "line 0" in shown and "line 29" not in shown, "the content is summarized"
+        assert "SECURITY.md" in shown and "already_exists" in shown
+        assert "zizmor --fix=all $PATH" in shown
+        assert "it cannot be previewed exactly" in shown
+        assert shown.isascii()
+
+    def test_content_cannot_drive_the_terminal(self) -> None:
+        item = PlanItem(
+            control_id="T",
+            step="file_create[0]",
+            file_changes=[FileChange(path="X.md", action="create", content="\x1b[2Jcafé\n")],
+            previewable=True,
+            requires_individual_approval=True,
+        )
+        out = io.StringIO()
+
+        TerminalApprover(io.StringIO("n\n"), out).approve_item(item, ["its remediation is marked safe = false"])
+
+        assert "\x1b" not in out.getvalue()
+        assert out.getvalue().isascii()
+
+    def test_eof_is_a_refusal(self) -> None:
+        assert TerminalApprover(io.StringIO(""), io.StringIO()).approve_item(self._item(), []) is False
