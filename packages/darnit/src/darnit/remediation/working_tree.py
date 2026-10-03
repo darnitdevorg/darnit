@@ -65,7 +65,9 @@ def escaping_symlinks(root: str | Path, paths: Iterable[str]) -> list[str]:
     command would follow it. A link with an absolute target is reported even
     when the target is inside ``root``, because in a scratch copy it still
     points at the checkout. A command run in a scratch copy could write
-    through such a link into files outside the copy.
+    through such a link into files outside the copy. A relative link can
+    resolve inside the checkout yet leave a scratch copy (``../<checkout
+    folder>/file``), so the preview checks the copy as well, before running.
     """
     real_root = os.path.realpath(root)
     escaping = []

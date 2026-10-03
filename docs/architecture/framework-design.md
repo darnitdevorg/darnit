@@ -824,7 +824,7 @@ offline = true
 
 **Preview.** A step that declares both `effects = "working_tree"` and `offline = true` is previewable: in plan mode the executor copies the tracked files and the untracked files that are not ignored into a scratch directory, runs the command there, and records the difference as `FileChange`s; the checkout is not touched. A step without both declarations is "cannot be previewed exactly": it is not run in plan mode, its `PlanItem` lists the command with `previewable = False`, and it requires individual approval (15.3).
 
-A step is not run in a scratch copy when any file it would see is a symbolic link whose target is absolute, or is or passes through a symbolic link and resolves outside the repository. Each path is resolved as the operating system resolves it (`realpath`), so a chain of links is followed (for example `sub/inner/d -> ../..` and `a -> sub/inner/d/../x`, which reads as inside the repository but is not): a command writing through such a link would change files outside the scratch copy. The preview is then an error, the step is `previewable = False`, and it requires individual approval (15.3). A relative link that stays inside the repository is copied as a link.
+A step is not run in a scratch copy when any file it would see is a symbolic link whose target is absolute, or is or passes through a symbolic link and resolves outside the repository. Each path is resolved as the operating system resolves it (`realpath`), so a chain of links is followed (for example `sub/inner/d -> ../..` and `a -> sub/inner/d/../x`, which reads as inside the repository but is not): a command writing through such a link would change files outside the scratch copy. Because a relative link can resolve inside the checkout yet outside the copy (for example `../<checkout folder>/SECURITY.md` when the copy is made beside the checkout), the same check is repeated on the scratch copy after copying and before the command runs. The preview is then an error, the step is `previewable = False`, and it requires individual approval (15.3). A relative link that stays inside the repository is copied as a link.
 
 A file the command creates that the checkout's ignore rules exclude is not part of the preview (and is not recorded at apply). A preview whose run does not succeed (an exit code outside `pass_exit_codes`, a missing binary, a timeout), or whose difference a `FileChange` cannot express (a deleted file, a non-text file), is an error, and the step is `previewable = False`.
 
@@ -845,7 +845,7 @@ A file the command creates that the checkout's ignore rules exclude is not part 
 - **THEN** `validate_sync` MUST fail, naming the control
 
 #### Scenario: Symbolic link leaving the repository
-- **WHEN** a previewable exec step's visible files include a symbolic link whose target is absolute or resolves outside the repository, directly or through a chain of links
+- **WHEN** a previewable exec step's visible files include a symbolic link whose target is absolute or resolves outside the repository or outside the scratch copy, directly or through a chain of links
 - **THEN** the step MUST NOT run in the scratch copy, and the link's target MUST NOT change during the preview
 - **AND** its `PlanItem` MUST have `previewable = False` and `requires_individual_approval = True`
 

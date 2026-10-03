@@ -406,20 +406,24 @@ def _exec_preview(config: dict[str, Any], context: HandlerContext) -> HandlerRes
             message='Cannot be previewed exactly: exec needs effects = "working_tree" and offline = true',
             evidence={"command": command, "previewable": False},
         )
+    def leaving(escaping: list[str]) -> HandlerResult:
+        return HandlerResult(
+            status=HandlerResultStatus.ERROR,
+            message=(
+                f"Cannot be previewed exactly: symbolic link(s) {escaping} point outside the repository, "
+                "so the command could write through them; it was not run"
+            ),
+            evidence={"command": command, "previewable": False},
+        )
+
     try:
         paths = working_tree.visible_files(context.local_path)
-        escaping = working_tree.escaping_symlinks(context.local_path, paths)
-        if escaping:
-            return HandlerResult(
-                status=HandlerResultStatus.ERROR,
-                message=(
-                    f"Cannot be previewed exactly: symbolic link(s) {escaping} point outside the repository, "
-                    "so the command could write through them; it was not run"
-                ),
-                evidence={"command": command, "previewable": False},
-            )
+        if escaping := working_tree.escaping_symlinks(context.local_path, paths):
+            return leaving(escaping)
         with tempfile.TemporaryDirectory(prefix="darnit-preview-") as scratch:
             working_tree.copy_files(context.local_path, scratch, paths)
+            if escaping := working_tree.escaping_symlinks(scratch, paths):
+                return leaving(escaping)
             before = working_tree.digests(scratch, paths)
             ran = exec_handler(config, dataclasses.replace(context, local_path=scratch, mode="apply"))
             if ran.status != HandlerResultStatus.PASS:

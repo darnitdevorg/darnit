@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -177,6 +178,36 @@ class TestSymlinks:
         [entry] = result.details["handlers"]
         assert entry["status"] == "error"
         assert "link.txt" in entry["message"]
+
+    @pytest.mark.parametrize(
+        "target",
+        ["../{name}/SECURITY.md", "sub/inner/d/../{name}/SECURITY.md"],
+        ids=["by_folder_name", "chain_by_folder_name"],
+    )
+    def test_link_reentering_by_the_checkout_folder_name_is_not_previewed(
+        self, repo: Path, target: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Inside the checkout the link resolves to its own file; in the scratch copy it points at the checkout.
+
+        The scratch copy is made beside the checkout, as when CI clones into the temporary directory.
+        """
+        monkeypatch.setattr(tempfile, "tempdir", str(repo.parent))
+        (repo / "SECURITY.md").write_text("original\n", encoding="utf-8")
+        (repo / "sub" / "inner").mkdir(parents=True)
+        (repo / "sub" / "inner" / "d").symlink_to("../..")
+        (repo / "link.txt").symlink_to(target.format(name=repo.name))
+        assert (repo / "link.txt").resolve() == (repo / "SECURITY.md").resolve()
+        _git(repo, "add", "SECURITY.md", "sub/inner/d", "link.txt")
+        _git(repo, "commit", "-q", "--no-gpg-sign", "-m", "links")
+        before = snapshot(repo)
+
+        result = _executor(repo).execute("T-01", _previewable(THROUGH_LINK), dry_run=True)
+
+        assert (repo / "SECURITY.md").read_text(encoding="utf-8") == "original\n"
+        assert_unchanged(repo, before)
+        [item] = result.plan
+        assert item.previewable is False
+        assert item.requires_individual_approval is True
 
     def test_chained_links_leaving_the_repository_are_not_previewed(self, repo: Path, tmp_path: Path) -> None:
         """``sub/inner/d -> ../..`` is the repository root; ``a -> sub/inner/d/../x`` reads as inside but is not."""
