@@ -388,6 +388,25 @@ class TestCommitStepFailures:
         assert head[:12] in commit and "not recorded" in commit, commit
         assert git(repo, "log", "-1", "--format=%B").stdout.count(TRAILER_KEY) == 1
 
+    def test_failure_recording_the_branch_says_the_commit_is_recorded(
+        self, r_dirty: DirtyRepo, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        repo = r_dirty.path
+        result = _apply(repo, SECURITY)
+
+        def failing_set_branch(*_args, **_kwargs):
+            raise OSError("simulated manifest write failure")
+
+        monkeypatch.setattr(manifest, "set_branch", failing_set_branch)
+
+        commit = commit_changes(local_path=str(repo), run_id=result.run_id)
+
+        head = git(repo, "rev-parse", "HEAD").stdout.strip()
+        assert "recorded it in remediation run" in commit and "branch" in commit, commit
+        assert "the commit is not recorded" not in commit, commit
+        run = manifest.load_run(IDENTITY, result.run_id)
+        assert run is not None and run.commit == head
+
 
 @pytest.mark.integration
 class TestSubdirectoryCheckout:

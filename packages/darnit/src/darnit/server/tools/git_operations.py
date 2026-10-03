@@ -335,13 +335,20 @@ def _report_commit(
         )
     try:
         manifest.set_commit(repository, run.run_id, commit_sha, checkout=resolved_path)
-        if run.branch is None and branch:
-            manifest.set_branch(repository, run.run_id, branch, checkout=resolved_path)
     except Exception as e:
         return _error(
             f"committed {commit_sha[:12]}, but the commit is not recorded in remediation run {run.run_id}: {e}. "
             "The pull request tool needs it recorded; do not commit again."
         )
+    if run.branch is None and branch:
+        try:
+            manifest.set_branch(repository, run.run_id, branch, checkout=resolved_path)
+        except Exception as e:
+            return _error(
+                f"committed {commit_sha[:12]} and recorded it in remediation run {run.run_id}, but branch "
+                f"'{branch}' is not recorded: {e}. The pull request tool needs the branch recorded; "
+                "do not commit again."
+            )
     try:
         listed = run_git(resolved_path, "diff-tree", "-r", "--no-commit-id", "--name-only", "-z", "--root", "HEAD")
         committed = sorted(from_root(resolved_path, [p for p in listed.stdout.split("\0") if p], prefix=prefix))
