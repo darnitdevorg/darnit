@@ -320,6 +320,76 @@ class TestConflicts:
 
 
 @pytest.mark.integration
+class TestCommitStepFailures:
+    """A failure after ``git commit`` never reports "Nothing was committed"; one before it changes nothing."""
+
+    def test_unreadable_prefix_fails_before_anything_is_committed(
+        self, r_dirty: DirtyRepo, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from darnit.remediation import git_state
+
+        repo = r_dirty.path
+        result = _apply(repo, SECURITY)
+        head = git(repo, "rev-parse", "HEAD").stdout
+        real_run_git = git_state.run_git
+
+        def failing_prefix(repo_path, *args, **kwargs):
+            if "--show-prefix" in args:
+                return subprocess.CompletedProcess(["git", *args], 128, stdout="", stderr="fatal: simulated")
+            return real_run_git(repo_path, *args, **kwargs)
+
+        monkeypatch.setattr(git_state, "run_git", failing_prefix)
+
+        commit = commit_changes(local_path=str(repo), run_id=result.run_id)
+
+        assert commit.startswith("Error") and "Nothing was committed" in commit, commit
+        assert git(repo, "rev-parse", "HEAD").stdout == head
+        assert git(repo, "diff", "--cached", "--name-only").stdout == ""
+        run = manifest.load_run(IDENTITY, result.run_id)
+        assert run is not None and run.commit is None
+
+    def test_failure_listing_the_commit_still_records_it(
+        self, r_dirty: DirtyRepo, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        repo = r_dirty.path
+        result = _apply(repo, SECURITY)
+        real_run_git = git_operations.run_git
+
+        def failing_listing(repo_path, *args, **kwargs):
+            if "diff-tree" in args:
+                raise OSError("simulated failure after the commit")
+            return real_run_git(repo_path, *args, **kwargs)
+
+        monkeypatch.setattr(git_operations, "run_git", failing_listing)
+
+        commit = commit_changes(local_path=str(repo), run_id=result.run_id)
+
+        head = git(repo, "rev-parse", "HEAD").stdout.strip()
+        assert "Nothing was committed" not in commit, commit
+        assert head[:12] in commit and "simulated failure" in commit, commit
+        run = manifest.load_run(IDENTITY, result.run_id)
+        assert run is not None and run.commit == head
+
+    def test_failure_recording_the_commit_reports_the_commit(
+        self, r_dirty: DirtyRepo, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        repo = r_dirty.path
+        result = _apply(repo, SECURITY)
+
+        def failing_set_commit(*_args, **_kwargs):
+            raise OSError("simulated manifest write failure")
+
+        monkeypatch.setattr(manifest, "set_commit", failing_set_commit)
+
+        commit = commit_changes(local_path=str(repo), run_id=result.run_id)
+
+        head = git(repo, "rev-parse", "HEAD").stdout.strip()
+        assert "Nothing was committed" not in commit, commit
+        assert head[:12] in commit and "not recorded" in commit, commit
+        assert git(repo, "log", "-1", "--format=%B").stdout.count(TRAILER_KEY) == 1
+
+
+@pytest.mark.integration
 class TestSubdirectoryCheckout:
     """``local_path`` is a subdirectory of the repository: git reports paths from the repository root."""
 

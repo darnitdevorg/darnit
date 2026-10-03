@@ -61,12 +61,20 @@ def is_work_tree(repo: str | Path) -> bool:
     return result.returncode == 0 and result.stdout.strip() == "true"
 
 
-def from_root(repo: str | Path, paths: Iterable[str]) -> list[str]:
+def show_prefix(repo: str | Path) -> str:
+    """``repo``'s path below the repository root (``""`` at the root), as ``git rev-parse --show-prefix`` prints it."""
+    return _checked(repo, "rev-parse", "--show-prefix").strip()
+
+
+def from_root(repo: str | Path, paths: Iterable[str], *, prefix: str | None = None) -> list[str]:
     """Repository-root-relative ``paths`` (as ``git status --porcelain`` and ``diff-tree`` print them), relative to ``repo``.
 
-    A path outside ``repo`` (when ``repo`` is a subdirectory) comes back with a leading ``../``.
+    ``prefix`` is :func:`show_prefix` of ``repo``, read when not given. A path
+    outside ``repo`` (when ``repo`` is a subdirectory) comes back with a
+    leading ``../``.
     """
-    prefix = _checked(repo, "rev-parse", "--show-prefix").strip()
+    if prefix is None:
+        prefix = show_prefix(repo)
     return [posixpath.relpath(path, prefix) if prefix else path for path in paths]
 
 
@@ -306,5 +314,6 @@ __all__ = [
     "resolve_base",
     "resolve_commit",
     "run_git",
+    "show_prefix",
     "valid_branch_name",
 ]

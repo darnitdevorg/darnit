@@ -35,6 +35,7 @@ from darnit.remediation.git_state import (
     resolve_base,
     resolve_commit,
     run_git,
+    show_prefix,
 )
 from darnit.remediation.plan import content_digest
 
@@ -283,6 +284,7 @@ Review these files, then re-run remediation or commit them yourself.
         if not to_commit:
             return f"No remediation changes to commit for run {run.run_id}.{ignored_note}"
 
+        prefix = show_prefix(resolved_path)
         result = run_git(resolved_path, "--literal-pathspecs", "add", "--", *to_commit)
         if result.returncode != 0:
             return _error(f"staging remediation files: {result.stderr.strip()}")
@@ -296,22 +298,67 @@ Review these files, then re-run remediation or commit them yourself.
                 f"committing: {result.stderr.strip() or result.stdout.strip()}. Nothing was committed; "
                 "the remediation files remain staged."
             )
+    except FileNotFoundError:
+        return "Error: git command not found. Ensure git is installed."
+    except GitStateError as e:
+        return _error(f"{e}. Nothing was committed.")
+    except Exception as e:
+        return f"Error: {str(e)}"
 
-        commit_sha = resolve_commit(resolved_path, "HEAD") or "unknown"
-        listed = run_git(resolved_path, "diff-tree", "-r", "--no-commit-id", "--name-only", "-z", "--root", "HEAD")
-        committed = sorted(from_root(resolved_path, [p for p in listed.stdout.split("\0") if p]))
+    return _report_commit(resolved_path, repository, run, branch, message, to_commit, prefix, ignored_note)
+
+
+def _report_commit(
+    resolved_path: str,
+    repository: str,
+    run: manifest.RunManifest,
+    branch: str | None,
+    message: str,
+    to_commit: list[str],
+    prefix: str,
+    ignored_note: str,
+) -> str:
+    """Record and report a remediation commit that ``git commit`` has made.
+
+    The commit is recorded in the run manifest before anything else that can
+    fail; a later failure is reported with the commit, never as "Nothing was
+    committed".
+    """
+    try:
+        commit_sha = resolve_commit(resolved_path, "HEAD")
+    except Exception:
+        commit_sha = None
+    if commit_sha is None:
+        return _error(
+            "the remediation files were committed, but HEAD cannot be read, so the commit is not recorded in "
+            f"remediation run {run.run_id}. Check `git log` before committing again."
+        )
+    try:
         manifest.set_commit(repository, run.run_id, commit_sha, checkout=resolved_path)
         if run.branch is None and branch:
             manifest.set_branch(repository, run.run_id, branch, checkout=resolved_path)
-
-        unexpected = sorted(set(committed) - set(to_commit))
-        unexpected_note = (
-            f"\n\n**Warning:** a commit hook added files outside the remediation run:\n{_bullets(unexpected)}"
-            if unexpected
-            else ""
+    except Exception as e:
+        return _error(
+            f"committed {commit_sha[:12]}, but the commit is not recorded in remediation run {run.run_id}: {e}. "
+            "The pull request tool needs it recorded; do not commit again."
+        )
+    try:
+        listed = run_git(resolved_path, "diff-tree", "-r", "--no-commit-id", "--name-only", "-z", "--root", "HEAD")
+        committed = sorted(from_root(resolved_path, [p for p in listed.stdout.split("\0") if p], prefix=prefix))
+    except Exception as e:
+        return _error(
+            f"committed {commit_sha[:12]} and recorded it in remediation run {run.run_id}, "
+            f"but its files cannot be listed: {e}. Check `git show --stat {commit_sha[:12]}`."
         )
 
-        return f"""Changes committed successfully
+    unexpected = sorted(set(committed) - set(to_commit))
+    unexpected_note = (
+        f"\n\n**Warning:** a commit hook added files outside the remediation run:\n{_bullets(unexpected)}"
+        if unexpected
+        else ""
+    )
+
+    return f"""Changes committed successfully
 
 **Commit:** {commit_sha[:12]}
 **Run:** {run.run_id}
@@ -324,13 +371,6 @@ Review these files, then re-run remediation or commit them yourself.
 **Next step:**
 Create a pull request: `create_remediation_pr(local_path="{resolved_path}", run_id="{run.run_id}")`
 """
-
-    except FileNotFoundError:
-        return "Error: git command not found. Ensure git is installed."
-    except GitStateError as e:
-        return _error(f"{e}. Nothing was committed.")
-    except Exception as e:
-        return f"Error: {str(e)}"
 
 
 def _pr_body(changed_files: list[str]) -> str:
