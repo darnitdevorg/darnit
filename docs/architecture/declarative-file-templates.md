@@ -46,17 +46,16 @@ The framework SHALL support a TOML-based `file_create` remediation template for 
 - **THEN** the executor SHALL create a dependabot configuration covering common package ecosystems (pip, npm, github-actions at minimum)
 - **AND** the generated file SHALL include comments indicating users should customize the ecosystem list for their project
 
-### Requirement: API call remediation for branch protection
-The framework SHALL support a TOML-based `api_call` remediation for enabling branch protection rules on the default branch.
+### Requirement: Platform setting remediation for branch protection
+Branch protection remediation SHALL be declared as a `platform_setting` requirement on the `branch_protection` target (framework-design.md 4.5), never as an API payload.
 
-#### Scenario: Branch protection API call
-- **WHEN** a control with `remediation.api_call` for branch protection is executed
-- **THEN** the executor SHALL call the GitHub API to enable branch protection on the default branch
-- **AND** the API call SHALL require pull request reviews and enforce for administrators
+#### Scenario: Branch protection requirement
+- **WHEN** a control with a `branch_protection` requirement is remediated
+- **THEN** the platform engine SHALL read the default branch's current protection and rulesets, change only the settings the requirement tightens, and never weaken an existing setting
 
-#### Scenario: Branch protection dry run
-- **WHEN** a control with `remediation.api_call` for branch protection is executed in dry-run mode
-- **THEN** the executor SHALL report the API call that would be made without executing it
+#### Scenario: Branch protection preview
+- **WHEN** such a control is remediated in preview (the default)
+- **THEN** the system SHALL report each field to change with its value before and after, and the change-set digest to approve, without writing anything
 
 ### Requirement: Context requirements in TOML
 Controls that require confirmed project context for remediation SHALL declare `requires_context` in their TOML `[remediation]` section. The orchestrator SHALL validate context requirements from TOML before attempting remediation.
@@ -72,7 +71,7 @@ Controls that require confirmed project context for remediation SHALL declare `r
 - **THEN** the orchestrator SHALL proceed with remediation and the template SHALL have access to the confirmed maintainer values
 
 ### Requirement: No legacy Python remediation fallback
-After migration, the orchestrator SHALL NOT have a legacy Python function fallback path. All remediation dispatch SHALL go through TOML declarative (file_create, exec, api_call) or TOML manual guidance.
+After migration, the orchestrator SHALL NOT have a legacy Python function fallback path. All remediation dispatch SHALL go through TOML declarative steps (file_create, exec, platform_setting, project_update, yaml_inject) or TOML manual guidance.
 
 #### Scenario: Control without TOML remediation
 - **WHEN** a control has no `[remediation]` section in TOML
@@ -81,4 +80,4 @@ After migration, the orchestrator SHALL NOT have a legacy Python function fallba
 
 #### Scenario: All previously legacy controls have TOML remediation
 - **WHEN** the audit finds failures in controls that previously used legacy Python remediation
-- **THEN** all such controls SHALL have TOML-based remediation (file_create, api_call, or manual) defined
+- **THEN** all such controls SHALL have TOML-based remediation (file_create, platform_setting, or manual) defined

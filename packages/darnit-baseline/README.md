@@ -30,11 +30,11 @@ Controls gated by `platform = "github"` require the GitHub CLI (`gh`). Additiona
 
 | Control | Lvl | What It Checks | How | Auto-Remediation |
 |---------|-----|----------------|-----|------------------|
-| AC-01.01 | 1 | MFA required for org members | `exec` gh api | API: enable org MFA |
-| AC-02.01 | 1 | Repository allows forking | `exec` gh api | API: enable forking |
-| AC-03.01 | 1 | PRs required for primary branch | `exec` gh api | API: branch protection |
-| AC-03.02 | 1 | Primary branch deletion blocked | `exec` gh api | API: branch protection |
-| AC-04.01 | 2 | Workflows declare `permissions:` *(GitHub Actions)* | `pattern` workflows | Manual |
+| AC-01.01 | 1 | MFA required for org members | `exec` gh api | Manual (no API; steps state who loses access) |
+| AC-02.01 | 1 | Repository allows forking | `exec` gh api | None (removed: enabling forking is not what the control requires, #513) |
+| AC-03.01 | 1 | PRs required for primary branch | `exec` gh api | Platform: require pull requests |
+| AC-03.02 | 1 | Primary branch deletion blocked | `exec` gh api | Platform: prevent deletion |
+| AC-04.01 | 2 | Workflows declare `permissions:` *(GitHub Actions)* | `pattern` workflows | Adds `permissions: {}` to workflows (`safe = false`: approve individually) |
 | AC-04.02 | 3 | Permissions scoped to least privilege *(GitHub Actions)* | `pattern` workflows | Manual |
 
 ### OSPS-BR — Build & Release (11 controls)
@@ -80,17 +80,17 @@ Controls gated by `platform = "github"` require the GitHub CLI (`gh`). Additiona
 
 | Control | Lvl | What It Checks | How | Auto-Remediation |
 |---------|-----|----------------|-----|------------------|
-| LE-01.01 | 1 | Repository has a license file | `file` LICENSE | Creates LICENSE (MIT, Apache-2.0, or BSD-3-Clause via `license_type` context) |
-| LE-02.01 | 1 | License is OSI-approved | `exec` gh api | — |
+| LE-01.01 | 1 | Repository has a license file | `file` LICENSE | Manual (contributor sign-off: DCO or CLA, #508) |
+| LE-02.01 | 1 | License is OSI-approved | `exec` gh api | Creates LICENSE for the confirmed `license_type` |
 | LE-02.02 | 1 | Releases include license info | `exec` gh release view | — |
-| LE-03.01 | 1 | License file present in repository root | `file` LICENSE | — |
+| LE-03.01 | 1 | License file present in repository root | `file` LICENSE | Creates LICENSE for the confirmed `license_type` |
 | LE-03.02 | 1 | License included in release archives *(if has_releases)* | `exec` gh release view | — |
 
 ### OSPS-QA — Quality Assurance (13 controls)
 
 | Control | Lvl | What It Checks | How | Auto-Remediation |
 |---------|-----|----------------|-----|------------------|
-| QA-01.01 | 1 | Repository is publicly accessible | `exec` gh api | API: make repo public |
+| QA-01.01 | 1 | Repository is publicly accessible | `exec` gh api | Platform: make repo public (high-impact; approve individually) |
 | QA-01.02 | 1 | Commit history is publicly visible | `exec` gh api | Manual |
 | QA-02.01 | 1 | Dependency manifest exists | `file` package.json, pyproject.toml, etc. | Manual |
 | QA-02.02 | 3 | SBOM delivered with compiled assets *(if has_compiled_assets)* | `pattern` workflows | Creates sbom.yml |
@@ -102,7 +102,7 @@ Controls gated by `platform = "github"` require the GitHub CLI (`gh`). Additiona
 | QA-06.01 | 2 | CI includes automated tests | `pattern` workflows | Creates ci.yml (ecosystem-aware: Python/Node/Rust/Go) |
 | QA-06.02 | 3 | Testing instructions documented | `pattern` README, docs | Creates docs/TESTING.md (ecosystem-aware: Python/Node/Rust/Go) |
 | QA-06.03 | 3 | Test requirements for contributions | `pattern` CONTRIBUTING.md | Manual |
-| QA-07.01 | 3 | PRs require approval before merge | `exec` gh api | API: require PR reviews |
+| QA-07.01 | 3 | PRs require approval before merge | `exec` gh api | Platform: require at least 1 approval |
 
 ### OSPS-SA — Security Assessment (4 controls)
 
@@ -119,7 +119,7 @@ Controls gated by `platform = "github"` require the GitHub CLI (`gh`). Additiona
 |---------|-----|----------------|-----|------------------|
 | VM-01.01 | 2 | Security policy includes disclosure process | `pattern` SECURITY.md | Manual |
 | VM-02.01 | 1 | Repository has a security policy | `file` SECURITY.md | Creates SECURITY.md |
-| VM-03.01 | 2 | Private vulnerability reporting enabled | `exec` gh api / `pattern` | API: enable private reporting |
+| VM-03.01 | 2 | Private vulnerability reporting enabled | `exec` gh api / `pattern` | Platform: enable private reporting |
 | VM-04.01 | 2 | Repository supports security advisories | `exec` gh api | Manual |
 | VM-04.02 | 3 | VEX policy documented | `pattern` SECURITY.md, docs | Creates docs/VEX-POLICY.md |
 | VM-05.01 | 3 | SCA remediation policy documented | `pattern` docs | Creates docs/SCA-POLICY.md |
@@ -144,12 +144,21 @@ Confirm context with the `confirm_project_data` MCP tool, which records who conf
 | `is_library` | boolean | No | DO-04.01, BR-01.01 | Audit hints for accuracy |
 | `has_compiled_assets` | boolean | No | QA-02.02 | When-clause: control only runs if `true` |
 | `ci_provider` | enum | Yes | BR-01.01, BR-01.02, AC-04.01, AC-04.02 | When-clause: controls only run if `"github"` |
+| `license_type` | enum (`mit`, `apache-2.0`, `bsd-3-clause`, `other`) | No | LE-02.01, LE-03.01 | Selects the LICENSE template when no license file exists; `other` gives manual steps. darnit never picks a license |
 
-**Auto-detected without prompting:** `detected_ecosystem` (from manifest files: pyproject.toml → python, package.json → node, Cargo.toml → rust, go.mod → go) and `license_type` (from LICENSE file content: Apache-2.0, MIT, BSD-3-Clause) are detected automatically by `collect_auto_context()` and injected into both audit and remediation paths. They never appear in `get_pending_context` questions.
+**Auto-detected without prompting:** `detected_ecosystem` (from manifest files: pyproject.toml → python, package.json → node, Cargo.toml → rust, go.mod → go) is detected automatically by `collect_auto_context()` and injected into both audit and remediation paths. It never appears in `get_pending_context` questions.
 
 ## Remediation Capabilities
 
-The implementation provides **40 automated remediation actions**: 31 file creations, 7 GitHub API calls, and 2 exec commands. All file creations are conservative-by-default (`overwrite = false`) — they never clobber existing files. All file creations support dry-run. Three governance controls (GV-01.01, GV-01.02, GV-04.01) block until project maintainers are confirmed via `confirm_project_data`. The remaining 15 controls with remediation sections provide manual guidance only, and 7 controls are verification-only with no remediation.
+Remediation previews by default and applies only what it previewed (`docs/architecture/framework-design.md` sections 4 and 15):
+
+- **Preview, then approve.** `remediate_audit_findings` (and `darnit run`) preview unless asked to apply. The preview lists each file to be created or changed, each platform setting before and after, each command, and a digest per plan item and platform change set. An apply carries `approve` with the digests the person approved; `dry_run=False` alone approves nothing.
+- **Platform changes never weaken settings.** The platform engine reads the current settings first, changes only what the control requires, writes nothing when the settings (or an active ruleset) already satisfy it, uses the repository's default branch, and reads the result back. The operator configuration's `[remediation]` policy (`prompt` by default, `manual`, or `auto`) decides whether darnit asks first; a high-impact change (making the repository public) is never covered by a batch approval.
+- **Files.** `overwrite = false` everywhere: an existing file is never replaced, and a file with your uncommitted changes is not written. `safe = false` remediations and steps that cannot be previewed exactly need their own approval.
+- **Commits.** The git tools commit only the files the run wrote (tracked in an operator-side run manifest), never stash, and stop on a detached HEAD, a merge or rebase in progress, or a branch with commits darnit did not make.
+- **Outcomes.** Each control reports `fixed` only when something changed and a re-check passes; otherwise `changed_not_passing`, `changed_not_verified`, `unchanged` (with the reason), `needs_approval`, `needs_confirmation`, `manual`, or `error`.
+
+The implementation declares: file creations for 31 controls (27 unique files), 5 platform settings, 2 exec fixes (zizmor), a `yaml_inject` fix (AC-04.01), and the threat model generator (SA-03.02). Three governance controls (GV-01.01, GV-01.02, GV-04.01) block until project maintainers are confirmed via `confirm_project_data`, and LE-02.01 and LE-03.01 until a `license_type` is confirmed. 19 controls provide manual guidance only, and 6 are verification-only with no remediation.
 
 ### File Creation (31 actions across 28 unique files)
 
@@ -172,7 +181,7 @@ Five templates have `llm_enhance` prompts (marked with \*) that request LLM-base
 | GV-01.01 | `GOVERNANCE.md` | Scaffold\* | Roles, decision making. `llm_enhance`. **Needs: maintainers** |
 | GV-01.02 | `MAINTAINERS.md` | Scaffold | Responsibilities, criteria. **Needs: maintainers** |
 | GV-04.01 | `CODEOWNERS` | Scaffold | Single global ownership rule. **Needs: maintainers** |
-| LE-01.01 | `LICENSE` | Production | MIT (default), Apache-2.0, BSD-3-Clause — selected via `license_type` context. `project_update` |
+| LE-02.01, LE-03.01 | `LICENSE` | Production | MIT, Apache-2.0, or BSD-3-Clause for the confirmed `license_type`; no default license. Never replaces an existing license file |
 | BR-07.01 | `.gitignore` | Production | Covers .env, \*.pem, \*.key, cloud creds (AWS/GCP/Azure) |
 | DO-03.01 | `SUPPORT.md` | Production | Getting help, scope table, EOL policy with 30-day notice |
 | DO-04.01 | `SUPPORT.md` | Production | Support scope variant (no-op if DO-03.01 ran first) |
@@ -212,19 +221,19 @@ Five templates have `llm_enhance` prompts (marked with \*) that request LLM-base
 | QA-06.02 | `docs/TESTING.md` | Production | Ecosystem-aware: Python (pytest/coverage), Node (npm test/jest), Rust (cargo test), Go (go test/race). Auto-detected via `detected_ecosystem` context |
 | QA-06.03 | `docs/TEST-REQUIREMENTS.md` | Scaffold | Contribution test requirements; `make test` placeholder |
 
-### API Calls (7 actions)
+### Platform Settings (5 requirements)
 
-All target the GitHub REST API via `gh`. Require authentication with appropriate scopes (`repo`, `admin:org` for MFA).
+Each is a `platform_setting` requirement handled by the platform engine, not a payload. Requirements on the same branch in one run are combined into one change set.
 
-| Control | Endpoint | What It Changes | Safe | Reversible |
-|---------|----------|-----------------|:----:|:----------:|
-| AC-01.01 | `PUT /orgs/$OWNER` | Enforce org-wide MFA | No | Hard — may lock out members without MFA |
-| AC-02.01 | `PATCH /repos/$OWNER/$REPO` | Enable repository forking | Yes | Yes |
-| AC-03.01 | `PUT .../branches/$BRANCH/protection` | Require PRs for primary branch | Yes | Yes |
-| AC-03.02 | `PUT .../branches/$BRANCH/protection` | Block primary branch deletion | No | Yes |
-| QA-01.01 | `PATCH /repos/$OWNER/$REPO` | Make repository public | No | Hard — may expose private code |
-| QA-07.01 | `PUT .../branches/$BRANCH/protection` | Require PR approval before merge | No | Yes |
-| VM-03.01 | `PUT .../private-vulnerability-reporting` | Enable private vulnerability reporting | Yes | Yes |
+| Control | Target | Requirement | Impact |
+|---------|--------|-------------|--------|
+| AC-03.01 | `branch_protection` | `require_pull_request` | platform |
+| AC-03.02 | `branch_protection` | `prevent_deletion` | platform |
+| QA-07.01 | `branch_protection` | `require_approvals = 1` (a minimum; never lowers a higher count) | platform |
+| QA-01.01 | `repository` | `visibility = "public"` | high-impact: all code, history, and Actions logs become public |
+| VM-03.01 | `vulnerability_reporting` | `enabled = true` | platform |
+
+OSPS-AC-01.01 (organization two-factor enforcement) has no API and is manual under every policy.
 
 ### Exec (2 actions)
 
@@ -233,31 +242,35 @@ All target the GitHub REST API via `gh`. Require authentication with appropriate
 | BR-01.01 | `zizmor --fix=all --offline` | Requires external `zizmor` tool. Applies all fixes including unsafe. GitHub Actions only |
 | BR-01.02 | `zizmor --fix=all --offline` | Same command, targets branch name injection patterns |
 
-### Manual-Only (15 controls)
+### Manual-Only (19 controls)
 
 These controls provide step-by-step guidance but cannot be auto-remediated.
 
 | Control | Why Manual |
 |---------|-----------|
+| AC-01.01 | Organization two-factor enforcement has no API; enabling it removes members and bots without 2FA |
+| LE-01.01 | Contributor sign-off (DCO or CLA) is a project decision and a process, not a file |
 | QA-01.02 | Commit history visibility — verification-only, nothing to change programmatically |
 | QA-02.01 | Dependency manifest — project-specific; can't generate a real lockfile |
 | QA-04.01 | Subproject documentation — requires human knowledge of project structure |
 | QA-05.01 | No generated executables — requires human judgment on what to remove |
 | QA-05.02 | No binary artifacts — requires human judgment on what to remove |
-| AC-04.01 | Workflow `permissions:` declarations — requires understanding each workflow's needs |
 | AC-04.02 | Least-privilege permissions — requires per-workflow security analysis |
+| BR-01.03 | Isolating untrusted code from privileged credentials in CI - requires per-workflow review |
+| BR-01.04 | Sanitizing collaborator input in CI - requires per-workflow review |
 | BR-02.01 | Unique version IDs — release versioning process is project-specific |
 | BR-04.01 | Changelog in releases — changelog content is project-specific |
 | BR-05.01 | Standard dependency tooling — tool adoption is a project-level decision |
 | BR-02.02 | Assets linked to release IDs — release artifact process is project-specific |
+| DO-07.01 | Build instructions - project-specific |
 | QA-03.01 | Required status checks — which checks to require depends on CI setup |
 | QA-04.02 | Subproject security parity — requires cross-repo security review |
 | VM-01.01 | Disclosure process in SECURITY.md — content verification is judgment-based |
 | VM-04.01 | Security advisory support — GitHub platform feature, manual enablement |
 
-### No Remediation (7 controls)
+### No Remediation (6 controls)
 
-Verification-only controls that check conditions which already exist or can't be meaningfully auto-remediated: BR-03.01 (HTTPS repo URL), BR-03.02 (HTTPS distribution), GV-02.01 (Issues/Discussions enabled), LE-02.01 (OSI-approved license), LE-02.02 (License in releases), LE-03.01 (License in root), LE-03.02 (License in release archives).
+Verification-only controls that check conditions which already exist or can't be meaningfully auto-remediated: AC-02.01 (its former remediation enabled forking, #513), BR-03.01 (HTTPS repo URL), BR-03.02 (HTTPS distribution), GV-02.01 (Issues/Discussions enabled), LE-02.02 (License in releases), LE-03.02 (License in release archives).
 
 ### Template Quality Summary
 
@@ -273,12 +286,12 @@ Verification-only controls that check conditions which already exist or can't be
 
 - Templates use `$OWNER`, `$REPO`, `$BRANCH` variables resolved from git remote — may be wrong for forks or non-standard remote names
 - `security@$OWNER.github.io` in SECURITY.md is a placeholder email — almost always needs customization
-- LICENSE template auto-detects existing license type; defaults to MIT if no LICENSE file is present
+- A LICENSE is created only for a confirmed `license_type`; without one the remediation stops with `confirmation required: license_type`
 - CI workflows, dependabot, and testing docs auto-detect ecosystem from manifest files — falls back to generic starter if ecosystem is unrecognized
 - `release-signing.yml` uses `subject-path: '.'` which should be customized to actual release artifacts
 - `llm_enhance` prompts are captured in templates but the LLM integration path isn't fully wired in the remediation executor
 - Three SUPPORT.md controls (DO-03.01, DO-04.01, DO-05.01) each create the same file with different templates — only the first to run takes effect due to `overwrite = false`
-- API call remediations require `gh` CLI authentication with appropriate scopes (`repo`, `admin:org` for MFA enforcement)
+- Platform remediations require `gh` CLI authentication that can read and write the settings (`repo`, admin access for branch protection); a token that cannot read them changes nothing
 - `zizmor --fix=all` applies all fixes including potentially unsafe ones — review changes before committing
 - Manual-only controls have varying depth of guidance (some have 2 steps, some have 6)
 - `dependabot.yml` auto-detects project ecosystem — falls back to `github-actions` only if ecosystem is unrecognized

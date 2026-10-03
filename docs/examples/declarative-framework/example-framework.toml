@@ -10,7 +10,7 @@
 # - Pattern matching in files (pattern handler)
 # - External command execution (exec handler)
 # - File creation remediation from templates
-# - API call remediation
+# - Platform setting remediation (a requirement, never a payload)
 # - Variable substitution ($OWNER, $REPO, $BRANCH, etc.)
 
 [metadata]
@@ -119,11 +119,8 @@ handler = "file_exists"
 files = ["README.md", "README", "README.rst", "README.txt"]
 
 # Remediation: Create README.md from template
-[controls."EXAMPLE-DO-01".remediation]
-safe = true
-dry_run_supported = true
-
-[controls."EXAMPLE-DO-01".remediation.file_create]
+[[controls."EXAMPLE-DO-01".remediation.handlers]]
+handler = "file_create"
 path = "README.md"
 template = "readme_standard"
 overwrite = false
@@ -140,11 +137,8 @@ tags = { level = 1, domain = "DO", documentation = true, versioning = true }
 handler = "file_exists"
 files = ["CHANGELOG.md", "CHANGELOG", "HISTORY.md", "NEWS.md"]
 
-[controls."EXAMPLE-DO-02".remediation]
-safe = true
-dry_run_supported = true
-
-[controls."EXAMPLE-DO-02".remediation.file_create]
+[[controls."EXAMPLE-DO-02".remediation.handlers]]
+handler = "file_create"
 path = "CHANGELOG.md"
 template = "changelog_standard"
 overwrite = false
@@ -248,11 +242,8 @@ tags = { level = 2, domain = "GV", governance = true, ownership = true }
 handler = "file_exists"
 files = ["CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS"]
 
-[controls."EXAMPLE-GV-01".remediation]
-safe = true
-dry_run_supported = true
-
-[controls."EXAMPLE-GV-01".remediation.file_create]
+[[controls."EXAMPLE-GV-01".remediation.handlers]]
+handler = "file_create"
 path = "CODEOWNERS"
 template = "codeowners_standard"
 overwrite = false
@@ -281,23 +272,18 @@ steps = [
     "Verify branch protection rule exists for the default branch",
 ]
 
-# Remediation: Enable branch protection via API
+# Remediation: require branch protection settings. The platform engine reads
+# the current protection, changes only what is missing, never weakens an
+# existing setting, and writes only an approved change under the operator's
+# remediation policy (framework-design 4.5). The branch defaults to the
+# repository's default branch.
 [controls."EXAMPLE-AC-01".remediation]
-safe = true
 requires_api = true
-dry_run_supported = true
 
-[controls."EXAMPLE-AC-01".remediation.api_call]
-method = "PUT"
-endpoint = "/repos/$OWNER/$REPO/branches/$BRANCH/protection"
-payload = {
-    enforce_admins = true,
-    required_pull_request_reviews = { required_approving_review_count = 1 },
-    required_status_checks = null,
-    restrictions = null,
-    allow_force_pushes = false,
-    allow_deletions = false
-}
+[[controls."EXAMPLE-AC-01".remediation.handlers]]
+handler = "platform_setting"
+target = "branch_protection"
+require = { require_pull_request = true, require_approvals = 1, prevent_force_push = true, prevent_deletion = true }
 
 # -----------------------------------------------------------------------------
 # Control: Dependency scanning configured

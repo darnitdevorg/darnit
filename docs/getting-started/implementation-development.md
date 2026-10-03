@@ -111,42 +111,53 @@ steps = [
 
 ## Remediation in TOML
 
-Controls can define declarative remediation actions:
+Controls can define declarative remediation steps, an ordered list under
+`[[controls."ID".remediation.handlers]]`. Every remediation previews by default
+(plan mode: computes the changes, writes nothing) and an apply writes exactly
+what was previewed. See `docs/architecture/framework-design.md` sections 4 and 15
+and the "Remediation in TOML" section of `docs/IMPLEMENTATION_GUIDE.md`.
 
 ### file_create
 
 ```toml
-[controls."MS-SEC-01".remediation]
-safe = true
-dry_run_supported = true
-
-[controls."MS-SEC-01".remediation.file_create]
+[[controls."MS-SEC-01".remediation.handlers]]
+handler = "file_create"
 path = "SECURITY.md"
 template = "security_policy"
 overwrite = false
+project_reference = "security.policy"   # optional: record the created file in .project/
 ```
 
 ### exec
 
 ```toml
-[controls."MS-BR-01".remediation.exec]
-command = ["git", "tag", "-s", "v1.0.0"]
-success_exit_codes = [0]
-timeout = 30
+[[controls."MS-BR-01".remediation.handlers]]
+handler = "exec"
+command = ["zizmor", "--fix=all", "--offline", "$PATH"]
+pass_exit_codes = [0]
+timeout = 60
+effects = "working_tree"   # with offline = true, the step can be previewed
+offline = true
 ```
 
-### api_call
+An exec remediation changes only working-tree files, never platform settings.
+
+### platform_setting
 
 ```toml
-[controls."MS-AC-01".remediation.api_call]
-method = "PUT"
-endpoint = "/repos/$OWNER/$REPO/branches/$BRANCH/protection"
-payload_template = "branch_protection_payload"
+[[controls."MS-AC-01".remediation.handlers]]
+handler = "platform_setting"
+target = "branch_protection"
+require = { require_pull_request = true, require_approvals = 1 }
 ```
+
+A requirement, not a payload: darnit reads the current settings, changes only
+what is missing without weakening anything, and writes only an approved change
+under the operator's remediation policy.
 
 ### project_update
 
-Update `.project/project.yaml` after remediation:
+Update `.project/` after a successful remediation:
 
 ```toml
 [controls."MS-SEC-01".remediation.project_update]

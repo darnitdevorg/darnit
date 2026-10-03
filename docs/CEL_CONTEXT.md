@@ -147,7 +147,7 @@ never reach `expr`; see framework-design.md section 3.8.
 
 ### Handlers that do NOT evaluate `expr`
 
-`llm_eval`, `llm_extract`, `manual_steps`, `file_create`, `api_call`,
+`llm_eval`, `llm_extract`, `manual_steps`, `file_create`, `platform_setting`,
 `project_update`, `yaml_inject` do not run a post-step CEL evaluator on
 their evidence. Writing an `expr` on their pass config is silently
 ignored today; use the handler's own config keys to shape the verdict.

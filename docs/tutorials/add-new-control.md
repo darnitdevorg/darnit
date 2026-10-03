@@ -87,18 +87,16 @@ steps = [
 Add a remediation section that creates the file from the template:
 
 ```toml
-[controls."OSPS-DO-99.01".remediation]
-safe = true
-dry_run_supported = true
-
-[controls."OSPS-DO-99.01".remediation.file_create]
+[[controls."OSPS-DO-99.01".remediation.handlers]]
+handler = "file_create"
 path = "CODE_OF_CONDUCT.md"
 template = "code_of_conduct"
 overwrite = false
-
-[controls."OSPS-DO-99.01".remediation.project_update]
-set = { "governance.code_of_conduct.path" = "CODE_OF_CONDUCT.md" }
+project_reference = "governance.code_of_conduct"
 ```
+
+`project_reference` records the created file in `.project/`, only when this
+run created it and only if the field is empty.
 
 ## Step 6: Validate Sync
 
@@ -137,11 +135,12 @@ You should see `OSPS-DO-99.01` in the output with status WARN or FAIL (since the
 
 Test that remediation creates the file:
 
-```bash
-uv run darnit remediate /tmp/test-repo --categories code_of_conduct --dry-run
-```
+Ask your MCP client to call `remediate_audit_findings(local_path="/tmp/test-repo")`
+(it previews by default), or run `uv run darnit run /tmp/test-repo` (previews unless
+`--apply` is given).
 
-Expected: The dry-run output shows that CODE_OF_CONDUCT.md would be created.
+Expected: the preview lists `CODE_OF_CONDUCT.md` as a file that would be created, and
+nothing is written.
 
 ## Step 9: Run Tests
 

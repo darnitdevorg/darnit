@@ -92,8 +92,8 @@ Add to your MCP settings with the same configuration.
 | `generate_threat_model` | STRIDE threat analysis |
 | `generate_attestation` | Create signed attestation |
 | `create_security_policy` | Generate SECURITY.md |
-| `enable_branch_protection` | Configure branch rules |
-| `remediate_audit_findings` | Auto-fix multiple issues |
+| `enable_branch_protection` | Preview or apply branch protection (only tightens) |
+| `remediate_audit_findings` | Preview or apply fixes for failing controls |
 
 ---
 
@@ -173,25 +173,51 @@ Upstream OSPS Baseline v2026.02.19 defines 64 controls (24 / 19 / 21). Darnit sh
 
 ## Fixing Issues (Remediation)
 
-### Auto-Fix Multiple Issues
+Remediation previews by default. A preview runs the same logic as the apply against the current state and changes nothing; it lists every file to be created or changed, every platform setting with its value before and after, every command, and the digests to approve.
+
+### Preview, then apply
 ```
+# 1. Preview (dry_run defaults to true)
 remediate_audit_findings(
   local_path="/path/to/repo",
-  categories=["security_policy", "branch_protection"],
-  dry_run=false
+  categories=["access_control", "governance"]
+)
+
+# 2. Apply, passing only the digests the person approved
+remediate_audit_findings(
+  local_path="/path/to/repo",
+  categories=["access_control", "governance"],
+  dry_run=false,
+  approve=["sha256:..."]
 )
 ```
 
-### Available Remediation Categories
-| Category | Controls Fixed |
-|----------|----------------|
-| `security_policy` | OSPS-VM-01, VM-02, VM-03 |
-| `branch_protection` | OSPS-AC-03.01, AC-03.02, QA-07.01 |
-| `codeowners` | OSPS-GV-01.01, GV-01.02, GV-04.01 |
-| `governance` | OSPS-GV-01.01, GV-01.02 |
-| `contributing` | OSPS-GV-03.01, GV-03.02 |
-| `dependabot` | OSPS-VM-05.* |
-| `bug_report_template` | OSPS-DO-02.01 |
+- `dry_run=false` alone approves nothing. Under the default policy a platform change (branch protection, repository visibility, private vulnerability reporting) is written only when its change-set digest is in `approve`, and a high-impact change (repository visibility, organization-wide settings) only by its own digest, never as part of a batch.
+- Remediations marked `safe = false` and steps that cannot be previewed exactly (for example a fixing tool that needs the network) run only when their plan item digest is approved.
+- If the settings changed since the preview, nothing is written for that change and you need a new preview.
+- Platform changes read the current settings first, change only what the control requires, never weaken an existing setting, and are read back afterwards. Branch protection targets the repository's default branch.
+- The operator configuration sets the policy (`[remediation]` `platform` and `high_impact`: `prompt` (default), `manual`, or `auto`); see the [Security Guide](SECURITY_GUIDE.md#remediation-safety).
+
+### Outcomes
+
+The apply reports one outcome per control, derived from what changed and from a re-check of the control:
+
+| Outcome | Meaning |
+|---------|---------|
+| `fixed` | Something changed and the re-check passes |
+| `changed_not_passing` | Something changed; the control still does not pass |
+| `changed_not_verified` | Something changed; the re-check could not run |
+| `unchanged` | Nothing changed, with the reason (for example `already_exists`, `user_changes_present`) |
+| `needs_approval` | An approval is required; nothing was written for it |
+| `needs_confirmation` | A project value must be confirmed first (`confirm_project_data`) |
+| `manual` | darnit made no change and lists the steps |
+| `error` | A step failed; the error names its cause |
+
+`remediate_audit_findings` returns the Markdown report followed by a fenced JSON block holding the run (`run_id`, `plan` with digests, `outcomes`, `summary`).
+
+### Remediation Categories
+
+Categories are control domains: `access_control`, `build_release`, `documentation`, `governance`, `legal`, `quality`, `security_architecture`, `vulnerability_management`, or `["all"]` (the default).
 
 ---
 
@@ -199,27 +225,24 @@ remediate_audit_findings(
 
 ### Recommended Git Workflow
 ```
-1. create_remediation_branch()     # Create fix/openssf-baseline-compliance
-2. remediate_audit_findings()      # Apply fixes
-3. commit_remediation_changes()    # Commit with message
-4. create_remediation_pr()         # Open PR for review
+1. remediate_audit_findings()                          # Preview
+2. remediate_audit_findings(dry_run=false, approve=[...],
+       branch_name="fix/openssf-baseline", auto_commit=true, create_pr=true)
 ```
 
-### Example
+Or step by step after an apply:
 ```
-# Step 1: Create branch
 create_remediation_branch(branch_name="fix/security-baseline")
-
-# Step 2: Apply fixes (dry run first)
-remediate_audit_findings(categories=["all"], dry_run=true)
-
-# Step 3: Apply fixes for real
-remediate_audit_findings(categories=["all"], dry_run=false)
-
-# Step 4: Commit and PR
-commit_remediation_changes()
-create_remediation_pr()
+commit_remediation_changes()      # Commits only the files this run wrote
+create_remediation_pr()           # Pushes only the remediation branch
 ```
+
+The git tools take `run_id` (default: the repository's latest run). They follow these rules:
+
+- The commit stages only the files the remediation run wrote, and only while they are unchanged since; your other changes, untracked files, and ignored files are never committed. The commit message carries `Darnit-Remediation-Run: <run_id>`.
+- darnit never stashes. A new branch keeps your uncommitted changes in the working tree; switching to an existing branch needs a clean tree.
+- darnit stops before changing anything on a detached HEAD, during a merge or rebase, or when the remediation branch holds commits darnit did not make.
+- A file with your uncommitted changes is not written; the outcome says `user_changes_present`.
 
 ---
 
@@ -299,7 +322,7 @@ generate_attestation(
 ```
 1. audit_openssf_baseline(level=1)    # Start with Level 1
 2. Review failures and warnings
-3. remediate_audit_findings()          # Fix easy issues
+3. remediate_audit_findings()          # Preview fixes, then apply approved ones
 4. Re-audit to verify fixes
 ```
 
@@ -324,7 +347,7 @@ generate_attestation(
 
 ### Do ✅
 - Start with Level 1 compliance
-- Use `dry_run=true` before remediation
+- Preview remediation (the default) and approve only the changes you reviewed
 - Review auto-generated files before committing
 - Keep project.toml updated
 
@@ -357,8 +380,9 @@ gh auth status
 
 ### Branch Protection Failures
 ```
-# Ensure you have admin access to the repository
-# Check: Settings → Branches → Branch protection rules
+# Reading or changing protection needs admin access to the repository.
+# If darnit cannot read the current protection, it writes nothing and
+# reports the cause. Check: Settings -> Branches -> Branch protection rules
 ```
 
 ---
@@ -380,7 +404,7 @@ gh auth status
 ├────────────────────────────────────────────────────────┤
 │ Audit:        audit_openssf_baseline(level=3)          │
 │ List checks:  list_available_checks()                  │
-│ Fix issues:   remediate_audit_findings(dry_run=false)  │
+│ Fix issues:   remediate_audit_findings()  (preview)    │
 │ Threat model: generate_threat_model()                  │
 │ Attestation:  generate_attestation(sign=true)          │
 │ Init config:  init_project_config()                    │

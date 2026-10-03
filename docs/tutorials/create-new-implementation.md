@@ -84,27 +84,6 @@ TODO: Add getting started instructions.
 See LICENSE file.
 """
 
-[templates.license_mit]
-description = "MIT License template"
-content = """MIT License
-
-Copyright (c) 2026 $OWNER
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-"""
-
 # Control 1: README exists
 [controls."HYG-01"]
 name = "ReadmeExists"
@@ -120,11 +99,8 @@ files = ["README.md", "README.rst", "README.txt", "README"]
 handler = "manual"
 steps = ["Check repository root for a README file"]
 
-[controls."HYG-01".remediation]
-safe = true
-dry_run_supported = true
-
-[controls."HYG-01".remediation.file_create]
+[[controls."HYG-01".remediation.handlers]]
+handler = "file_create"
 path = "README.md"
 template = "readme"
 overwrite = false
@@ -144,14 +120,11 @@ files = ["LICENSE", "LICENSE.md", "LICENSE.txt", "COPYING"]
 handler = "manual"
 steps = ["Check repository root for a LICENSE file"]
 
-[controls."HYG-02".remediation]
-safe = true
-dry_run_supported = true
-
-[controls."HYG-02".remediation.file_create]
-path = "LICENSE"
-template = "license_mit"
-overwrite = false
+# The license is the project's decision, so the remediation gives steps
+# instead of creating a file with a default license.
+[[controls."HYG-02".remediation.handlers]]
+handler = "manual"
+steps = ["Choose the project's license", "Add its full text as LICENSE in the repository root"]
 
 # MCP Tools (built-in)
 [mcp.tools.audit]

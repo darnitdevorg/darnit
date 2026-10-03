@@ -208,7 +208,7 @@ These are the characters that could enable injection via
 
 ---
 
-### 3.3 `remediate(state, dry_run=False) → AuditState`
+### 3.3 `remediate(state, dry_run=True, approver=None, item_approver=None) → AuditState`
 
 **What it does**
 
@@ -224,6 +224,15 @@ These are the characters that could enable injection via
    exceptions are caught, logged, and recorded as `success: False`.
 5. Stores all outcomes in `state.remediation_results`.
 
+By default it only previews (feature 043, FR-027): handlers run in plan mode
+and nothing is written. With `dry_run=False`, platform changes follow the
+operator's `[remediation]` policy: under `prompt`, `approver` is asked for each
+platform change set, and `item_approver` for each plan item that needs
+individual approval (`safe = false`, not previewable, high-impact), shown with
+its digest. Without an approver such an item ends as `needs_approval` and
+nothing of its control is written. `darnit run` passes terminal approvers when
+it runs interactively with `--apply`.
+
 **When to call it**
 
 When `route()` returns `"remediate"` — i.e. FAIL controls exist (and all
@@ -234,11 +243,11 @@ context questions are answered or there are none).
 ```python
 from darnit.agent.graph import remediate
 
-# Dry-run: show what would change
-state = remediate(state, dry_run=True)
+# Preview (the default): show what would change, write nothing
+state = remediate(state)
 
-# Apply changes
-state = remediate(state, dry_run=False)
+# Apply; approvers ask a person on the terminal (feature 043)
+state = remediate(state, dry_run=False, approver=approver, item_approver=item_approver)
 ```
 
 **`remediation_results` schema**
@@ -348,10 +357,10 @@ while True:
         state = collect_context(state, answers)
 
     elif next_step == "remediate":
-        # Show dry-run plan; get confirmation; apply
-        state = remediate(state, dry_run=True)
+        # Show the preview; apply only with approvers that ask the person
+        state = remediate(state)
         if user_confirms(state.remediation_results):
-            state = remediate(state, dry_run=False)
+            state = remediate(state, dry_run=False, approver=approver, item_approver=item_approver)
         break
 
     elif next_step == "end":

@@ -165,20 +165,22 @@ generate_attestation(
 ### Remediate Issues
 
 ```python
-# Preview what would be fixed
+# Preview (the default): planned files, platform changes, and their digests
 remediate_audit_findings(
     local_path="/path/to/repo",
-    categories=["security_policy", "contributing"],
-    dry_run=True  # Preview changes
+    categories=["governance", "vulnerability_management"],
 )
 
-# Apply fixes
+# Apply, passing only the digests the person approved
 remediate_audit_findings(
     local_path="/path/to/repo",
-    categories=["security_policy", "contributing"],
-    dry_run=False
+    categories=["governance", "vulnerability_management"],
+    dry_run=False,
+    approve=["sha256:..."],
 )
 ```
+
+Platform changes read the current settings first, change only what a control requires, never weaken an existing setting, and need approval of the exact change by default (operator configuration `[remediation]`). Each control reports an outcome (`fixed` only when something changed and a re-check passes). See the [Security Guide](docs/SECURITY_GUIDE.md#remediation-safety).
 
 ## Architecture
 
@@ -287,14 +289,14 @@ For implementation-level details (Python control handlers, custom MCP tools, rem
 - `confirm_project_data` - Record a person's answers as confirmed project context
 
 ### Remediation Tools
-- `remediate_audit_findings` - Auto-fix compliance gaps
+- `remediate_audit_findings` - Preview fixes for compliance gaps; apply the approved ones
 - `create_security_policy` - Generate SECURITY.md
-- `enable_branch_protection` - Configure branch protection
+- `enable_branch_protection` - Preview or apply branch protection on the default branch (only tightens)
 
 ### Git Workflow Tools
 - `create_remediation_branch` - Create a branch for fixes
-- `commit_remediation_changes` - Commit changes
-- `create_remediation_pr` - Open a pull request
+- `commit_remediation_changes` - Commit only the files the remediation run wrote
+- `create_remediation_pr` - Push the remediation branch and open a pull request
 - `get_remediation_status` - Check git status
 
 ### Analysis Tools

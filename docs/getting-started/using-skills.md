@@ -97,7 +97,7 @@ Guides you through answering questions about your project (maintainers, CI provi
 /darnit-remediate
 ```
 
-Shows a dry-run plan first, asks for confirmation, then creates a branch with fixes and offers to open a PR.
+Shows the preview first (files, platform settings before and after, and digests), asks you about each platform change and each item that needs individual approval, applies only what you approved, then commits only the files it wrote on a branch and offers to open a PR.
 
 ### Full pipeline
 

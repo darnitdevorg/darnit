@@ -78,12 +78,12 @@ The Implementation Guide SHALL document how remediation handlers differ from che
 #### Scenario: Author writes a remediation handler
 - **WHEN** an implementation author reads the remediation handler section
 - **THEN** they SHALL understand that their handler will always execute even if a prior remediation handler in the same phase succeeded
-- **AND** SHALL see an example remediation handler that creates a file or makes an API call
+- **AND** SHALL see an example remediation handler that plans a file change
 
-#### Scenario: Author understands dry-run support
-- **WHEN** an implementation author reads about dry-run support
-- **THEN** they SHALL understand the convention that handlers check for a `dry_run` config flag
-- **AND** SHALL return a PASS result with a descriptive message instead of performing the action
+#### Scenario: Author understands plan mode
+- **WHEN** an implementation author reads about previews
+- **THEN** they SHALL understand the plan/apply contract (framework-design.md 4.2): the handler receives `HandlerContext.mode` (`plan` or `apply`), returns its planned `FileChange`s in `evidence["file_changes"]` in both modes, and never writes; the executor writes them in apply mode
+- **AND** SHALL understand that a handler registered without `supports_plan=True` is not previewable and runs only when its plan item digest is approved
 
 ### Requirement: Documentation SHALL provide a complete end-to-end example
 The Implementation Guide SHALL include a complete worked example showing a custom handler from Python function through registration to TOML usage. The example SHALL be a realistic domain handler (not a trivial stub) that demonstrates config parsing, evidence production, and proper error handling.

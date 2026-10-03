@@ -93,7 +93,7 @@ Each handler SHALL be registered in the handler registry with a name, phase affi
 - **AND** SHALL still execute the handler
 
 ### Requirement: Three tiers of handler providers
-Handlers SHALL come from three tiers: core framework (built-in), library packages (pip-installable), and implementation-specific (registered via plugin system). Core built-in handlers SHALL include: `file_exists`, `exec`, `regex`, `llm_eval`, `manual_steps`, `file_create`, `api_call`, `project_update`.
+Handlers SHALL come from three tiers: core framework (built-in), library packages (pip-installable), and implementation-specific (registered via plugin system). Core built-in handlers SHALL include: `file_exists`, `exec`, `regex`, `llm_eval`, `manual_steps`, `file_create`, `platform_setting`, `project_update`, `yaml_inject`.
 
 #### Scenario: Implementation registers domain-specific handler
 - **WHEN** an implementation registers a handler named `scorecard` via `register_handlers()`

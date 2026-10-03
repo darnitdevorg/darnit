@@ -102,7 +102,7 @@ For read-only auditing, your token needs:
 | `repo` | Read | Access repository metadata, branch protection |
 | `read:org` | Read | Check organization settings (if applicable) |
 
-For remediation (creating files, enabling branch protection):
+For remediation (creating files, changing branch protection). darnit reads the current settings before any change, so a token that can write but not read protection settings changes nothing:
 
 | Permission | Scope | Purpose |
 |------------|-------|---------|
@@ -210,7 +210,7 @@ Operator configuration is a TOML file found the same way by every driver (CLI, M
 2. Otherwise the per-user location: `$XDG_CONFIG_HOME/darnit/config.toml` when `XDG_CONFIG_HOME` is set and absolute, else `~/.config/darnit/config.toml` (Linux and macOS), or `%APPDATA%\darnit\config.toml` (Windows).
 3. Otherwise built-in defaults.
 
-It holds allowed plugins and trusted publishers, MCP servers, per-control pass overrides and custom controls, storage backends, LLM settings, trusted repositories, CI trust rules, and policy defaults:
+It holds allowed plugins and trusted publishers, MCP servers, per-control pass overrides and custom controls, storage backends, LLM settings, trusted repositories, CI trust rules, policy defaults, and the remediation policy for platform changes ([Remediation Safety](#remediation-safety)):
 
 ```toml
 schema_version = 1
@@ -230,6 +230,10 @@ ci = [ { event = "push-default-branch" } ]
 
 [policy]
 confirmation_expiry_days = 180
+
+[remediation]
+platform = "prompt"      # prompt | manual | auto
+high_impact = "prompt"   # prompt | manual | auto
 ```
 
 `darnit config show` prints the file in use, its SHA-256 digest, the permission-check result, and the effective settings with secrets redacted. Every audit report records the same source and digest, so reference secrets as `$VAR` rather than writing them into the file.
@@ -325,23 +329,14 @@ Pass `--operator-config PATH` and `--strict-operator-config` in `args` if you ke
 ### Security Recommendations
 
 1. **Run with minimal permissions** - Use read-only tokens when only auditing
-2. **Use dry-run mode** - Always preview remediation changes before applying
+2. **Preview, then approve by digest** - Remediation previews by default; approve only the change sets and plan items a person reviewed
 3. **Review AI-suggested changes** - Don't blindly apply remediation recommendations
 4. **Isolate sensitive repositories** - Consider separate MCP server instances
 5. **Monitor MCP server logs** - Track what operations are being performed
 
-### Dry-Run Mode
+### Preview Mode
 
-Always use dry-run mode first to preview changes:
-
-```python
-# Preview what would be changed
-remediate_audit_findings(
-    local_path="/path/to/repo",
-    categories=["security_policy", "contributing"],
-    dry_run=True  # Preview only
-)
-```
+`remediate_audit_findings`, `enable_branch_protection`, and `remediate_community_spec` preview by default (`dry_run=True`), and `darnit run` previews unless given `--apply`. A preview writes nothing: no file, no platform setting, no run manifest. See [Remediation Safety](#remediation-safety).
 
 ---
 
@@ -680,54 +675,66 @@ cosign verify-attestation \
 
 ## Remediation Security
 
-Remediation actions modify your repository. Follow these safety practices.
+Remediation changes files in your repository, `.project/` data, commits and pull requests, and settings on the hosting platform. A damaging change is worse than no change, so remediation plans before it acts, acts only on what it planned, and reports only what it verified. The authoritative rules are in `docs/architecture/framework-design.md` sections 4 and 15.
 
-### Safe Remediation Workflow
+### Remediation Safety
 
-1. **Create a branch** for remediation changes
-2. **Run in dry-run mode** first to preview
-3. **Apply changes** to the branch
-4. **Review the diff** carefully
-5. **Create a PR** for team review
-6. **Merge after approval**
+**Preview equals apply.** Every remediation previews by default. The preview runs the same handler logic as the apply against the current state and lists every file to be created or changed, every platform field with its value before and after, every command, and a digest for each plan item and platform change set. A step whose effect cannot be computed in advance (a handler without plan support, or an `exec` step not declared `effects = "working_tree"` and `offline = true`) is labelled "cannot be previewed exactly".
+
+**Platform changes never weaken settings.** One platform engine makes every platform write, from TOML (`platform_setting`) and from `enable_branch_protection` alike. It:
+
+- reads the current settings first, and writes nothing if they cannot be read;
+- changes only what the control requires, and never removes, loosens, or resets anything else (required approvals are a minimum; existing status checks, push restrictions, code-owner review, and linear history stay as they are);
+- writes nothing when the settings, or an active repository or organization ruleset, already satisfy the control;
+- targets the repository's default branch unless a branch is named;
+- reads the settings back afterwards and derives the outcome from them, not from response text.
+
+**Approval is bound to the change.** The operator configuration sets the policy separately for platform changes and for high-impact changes (repository visibility, organization-wide settings):
+
+| Policy | Behavior |
+|--------|----------|
+| `prompt` (default) | Writes a change set only when its digest is approved. `darnit run` asks on the terminal; through MCP, the agent passes `approve` with the digests the person approved |
+| `manual` | Makes no platform change and reports the steps |
+| `auto` | Writes without asking, still reading first, changing only what is needed, and reading back; the report records the change and its impact |
+
+- The policy comes only from operator configuration; a `[remediation]` setting in the audited repository is ignored.
+- A digest covers the change and the settings it was computed from. If the settings changed after the preview, nothing is written and a new preview is needed.
+- A high-impact change set under `prompt` needs its own digest; a batch approval never covers it.
+- `dry_run=False` alone approves nothing. A remediation marked `safe = false` and a step that cannot be previewed exactly need their own plan item digest under every policy, including `auto`.
+- Organization two-factor enforcement has no API, so its remediation is manual under every policy.
+
+**Outcomes come from a re-check.** Each control gets one outcome (`fixed`, `changed_not_passing`, `changed_not_verified`, `unchanged`, `needs_approval`, `needs_confirmation`, `manual`, `error`). `fixed` needs a change and a passing re-check of the control. Summaries and the commit and pull request steps are derived from these outcomes, never from text in the report. If darnit cannot tell whether project context is still unconfirmed, remediation does not run.
+
+### Version-Control Safety
+
+- **Your work is never committed.** Each apply records the files it wrote in an operator-side run manifest (never inside the checkout). `commit_remediation_changes` stages only those files, and only while they are unchanged since remediation wrote them. Ignored files are never staged, and there is no option to stage everything.
+- **No stash.** darnit never stashes, drops a stash, or discards your changes. A new branch keeps your uncommitted changes in the working tree; switching to an existing branch requires a clean tree.
+- **Unsafe states stop before any change**: a detached HEAD, a merge or rebase in progress, or a remediation branch holding commits without the `Darnit-Remediation-Run` trailer.
+- **Your edits are not overwritten.** A file with uncommitted changes is not written; the preview and the apply both report it as `user_changes_present`.
+- `create_remediation_pr` pushes only the remediation branch.
 
 ### Using MCP Tools Safely
 
 ```python
-# 1. Create a branch
-create_remediation_branch(
-    local_path="/path/to/repo",
-    branch_name="fix/openssf-baseline-compliance"
-)
+# 1. Preview (the default): planned files, platform changes, and digests
+remediate_audit_findings(local_path="/path/to/repo", categories=["all"])
 
-# 2. Preview changes (dry-run)
+# 2. Show the preview to the person. Apply with only the digests they approved,
+#    on a branch, and open a pull request.
 remediate_audit_findings(
     local_path="/path/to/repo",
     categories=["all"],
-    dry_run=True
+    dry_run=False,
+    approve=["sha256:..."],
+    branch_name="fix/openssf-baseline-compliance",
+    auto_commit=True,
+    create_pr=True,
 )
 
-# 3. Apply changes
-remediate_audit_findings(
-    local_path="/path/to/repo",
-    categories=["security_policy", "contributing"],
-    dry_run=False
-)
-
-# 4. Commit and create PR
-commit_remediation_changes(local_path="/path/to/repo")
-create_remediation_pr(local_path="/path/to/repo")
+# 3. Review the pull request before merging.
 ```
 
-### Remediation Categories
-
-| Category | Risk Level | Review Priority |
-|----------|------------|-----------------|
-| `branch_protection` | High | Requires admin review |
-| `security_policy` | Low | Standard review |
-| `contributing` | Low | Standard review |
-| `codeowners` | Medium | Team lead review |
-| `dependabot` | Medium | Security team review |
+Never pass digests the person did not approve, and never use `dry_run=False` as a substitute for approval.
 
 ---
 

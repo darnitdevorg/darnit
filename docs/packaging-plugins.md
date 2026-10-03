@@ -204,12 +204,9 @@ steps = [
     "If missing, create one summarising the project.",
 ]
 
-# Optional remediation. `safe = true` lets darnit auto-apply without
-# prompting; `dry_run_supported = true` enables preview mode.
-[controls."YF-01.01".remediation]
-safe = true
-dry_run_supported = true
-
+# Optional remediation. Every remediation previews by default and applies
+# only what it previewed. `safe = false` (default true) would make each step
+# need its own approval.
 [[controls."YF-01.01".remediation.handlers]]
 handler = "file_create"
 path = "README.md"
@@ -226,11 +223,11 @@ description = "Create a minimal README stub."
 | `pattern` | Grep one or more files for a regex | `paths`, `pattern`, optional `must_match` |
 | `manual` | Human review required; never auto-PASSES | `steps: list[str]` |
 
-Built-in remediation handlers: `file_create`, `exec`, `api_call`, `project_update`, `yaml_inject`. Custom Python handlers can be registered via `register_handlers()` — see [`packages/darnit-baseline/`](../packages/darnit-baseline/) for examples.
+Built-in remediation handlers: `file_create`, `exec`, `platform_setting`, `project_update`, `yaml_inject`, `manual`. A platform change is declared as a requirement (`platform_setting`), never a payload; an `exec` remediation changes only working-tree files and is previewable when it declares `effects = "working_tree"` and `offline = true`. Custom Python handlers can be registered via `register_handlers()`; a remediation handler should register with `supports_plan=True` and return its planned file changes instead of writing (see `docs/architecture/framework-design.md` 4.2 and [`packages/darnit-baseline/`](../packages/darnit-baseline/) for examples).
 
 ### CEL expressions
 
-Both `exec` and `api_call` passes can use [CEL](https://github.com/google/cel-spec) for richer pass logic:
+Both `exec` and `gh_api` passes can use [CEL](https://github.com/google/cel-spec) for richer pass logic:
 
 ```toml
 [[controls."YF-02.01".passes]]
@@ -330,7 +327,7 @@ When your plugin grows beyond TOML-only checks, you may want to add Python handl
 | Layer | What it does | Built-in handlers | Plugin extension |
 |---|---|---|---|
 | **1. Checking** (sieve passes) | Determines if a control passes/fails | `file_must_exist`, `exec`, `pattern`, `manual` | Register Python functions via `register_handlers()` |
-| **2. Remediation** | Auto-fixes failing controls | `file_create`, `exec`, `api_call`, `project_update`, `yaml_inject` | Register Python functions for complex remediation |
+| **2. Remediation** | Previews, then fixes failing controls | `file_create`, `exec`, `platform_setting`, `project_update`, `yaml_inject`, `manual` | Register Python functions for complex remediation |
 | **3. MCP tools** | Exposes functionality to calling agents | `audit`, `remediate`, `list_controls` | Register custom Python handlers via `register_handlers()` |
 
 "Built-in" means different things at each layer. Don't conflate them.

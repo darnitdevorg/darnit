@@ -151,7 +151,7 @@ darnit operates at three distinct layers, each with built-in primitives and plug
 | Layer | Purpose | Built-in | Plugin Extension |
 |-------|---------|----------|-----------------|
 | **1. Checking** | Verify if a control passes | `file_exists`, `exec`, `pattern`, `manual` | Custom Python handler functions |
-| **2. Remediation** | Fix failing controls | `file_create`, `exec`, `api_call`, `project_update` | Custom Python remediation functions |
+| **2. Remediation** | Preview, then fix failing controls | `file_create`, `exec`, `platform_setting`, `project_update`, `yaml_inject`, `manual` | Custom Python remediation functions |
 | **3. MCP Tools** | Expose to AI assistants | `audit`, `remediate`, `list_controls` | Custom Python handlers via `register_handlers()` |
 
 "Built-in" means different things at each layer. Don't conflate them. See `docs/IMPLEMENTATION_GUIDE.md` for the canonical reference on the three layers.

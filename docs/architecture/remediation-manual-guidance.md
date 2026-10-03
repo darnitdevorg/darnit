@@ -33,7 +33,7 @@ The `remediate_audit_findings` MCP tool SHALL include manual remediations in its
 
 #### Scenario: MCP tool distinguishes manual from automated
 - **WHEN** `remediate_audit_findings` returns results for a mix of automated and manual remediations
-- **THEN** each result SHALL include a `remediation_type` field that is either an automated type name (e.g., `file_create`, `api_call`) or `manual`
+- **THEN** each result SHALL include a `remediation_type` field that is either an automated type name (e.g., `file_create`, `platform_setting`) or `manual`
 
 ### Requirement: Context hints document automation path
 Manual remediation blocks MAY include a `context_hints` field listing context keys that, if confirmed, would enable future automation of the control.

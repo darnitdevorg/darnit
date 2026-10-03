@@ -577,44 +577,21 @@ def create_codeowners(
 def enable_branch_protection(
     owner: str,
     repo: str,
-    branch: str,
+    branch: str | None = None,
     dry_run: bool = True,
+    approve: str | None = None,
 ) -> str:
-    """Enable branch protection via GitHub API."""
-    import json
+    """Require branch protection through darnit's platform engine.
 
-    payload = {
-        "enforce_admins": True,
-        "required_pull_request_reviews": {
-            "required_approving_review_count": 1,
-        },
-        "required_status_checks": None,
-        "restrictions": None,
-        "allow_force_pushes": False,
-        "allow_deletions": False,
-    }
+    Never send a full protection object: a PUT replaces every existing
+    setting (required checks, push restrictions, a higher approval count).
+    The engine reads the current protection, adds only what is missing, and
+    writes only an approved change (framework-design 4.5). ``branch`` defaults
+    to the repository's default branch.
+    """
+    from darnit.remediation.github import enable_branch_protection as require_protection
 
-    endpoint = f"/repos/{owner}/{repo}/branches/{branch}/protection"
-
-    if dry_run:
-        return f"Would call: PUT {endpoint}\nPayload: {json.dumps(payload, indent=2)}"
-
-    try:
-        result = subprocess.run(
-            ["gh", "api", "-X", "PUT", endpoint, "--input", "-"],
-            input=json.dumps(payload),
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-
-        if result.returncode == 0:
-            return f"Branch protection enabled for {branch}"
-        else:
-            return f"Failed: {result.stderr}"
-
-    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
-        return f"Error: {str(e)}"
+    return require_protection(owner=owner, repo=repo, branch=branch, dry_run=dry_run, approve=approve)
 
 
 # =============================================================================

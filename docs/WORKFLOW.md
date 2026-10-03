@@ -23,20 +23,15 @@ sequenceDiagram
     MCP->>FS: Value + confirmation record in .project/darnit.yaml (trusted repo; else operator-side)
     MCP-->>AI: Per-key result
 
-    AI->>MCP: remediate_audit_findings(dry_run=true)
-    MCP-->>AI: Preview of changes
+    AI->>MCP: remediate_audit_findings()  (preview, the default)
+    MCP-->>AI: Planned files, platform fields before -> after, digests (writes nothing)
 
-    AI->>MCP: remediate_audit_findings(dry_run=false)
-    MCP->>FS: Create files, run commands, update .project/
-    MCP-->>AI: Remediation results
-
-    AI->>MCP: create_remediation_branch()
-    MCP->>FS: git checkout -b fix/openssf-baseline-compliance
-    MCP-->>AI: Branch name
-
-    AI->>MCP: commit_remediation_changes()
-    MCP->>FS: git add + commit
-    MCP-->>AI: Commit SHA
+    AI->>MCP: remediate_audit_findings(dry_run=false, approve=[digests the person approved], branch_name, auto_commit)
+    MCP->>FS: Check repository state; git checkout -b (no stash)
+    MCP->>FS: Write planned files; record them in the operator-side run manifest
+    MCP->>FS: Platform changes: read, minimal change, read back (approved digests only)
+    MCP->>FS: Re-check changed controls; git add <manifest files> + commit with Darnit-Remediation-Run trailer
+    MCP-->>AI: Per-control outcomes, run id, committed files
 
     AI->>MCP: create_remediation_pr()
     MCP-->>AI: PR URL
@@ -130,50 +125,40 @@ What happens inside `remediate_audit_findings()`.
 
 ```mermaid
 flowchart TD
-    A[remediate_audit_findings called] --> B[Run audit to find failures]
-    B --> C[Group failed controls by category]
-    C --> Pre[Preflight: check context requirements<br/>for all categories]
+    A[remediate_audit_findings called] --> B[Read failing controls from the audit cache<br/>or run the audit]
+    B --> Pre[Context guard: check context requirements<br/>fails closed if the check cannot complete]
 
     Pre --> Pre_check{Missing context?}
     Pre_check -->|Yes| Prompt[Return prompts with candidates as data<br/>person confirms via confirm_project_data first]
-    Pre_check -->|No| Loop[For each category]
+    Pre_check -->|No| Git{Git step requested?}
+    Git -->|Yes| State{Repository state safe?<br/>no detached HEAD, merge, rebase,<br/>foreign commits on the branch}
+    State -->|No| Stop[Stop before any change and explain]
+    State -->|Yes| Loop
+    Git -->|No| Loop[For each failing control]
 
-    Loop --> Cat[For each failed control in category]
-    Cat --> Applicable{is_control_applicable?}
-    Applicable -->|No / N/A| Skip[Skip control]
-    Applicable -->|Yes| TOML_check{Has TOML remediation?<br/>file_create / exec / api_call}
+    Loop --> Applicable{Honored N/A claim?}
+    Applicable -->|Yes| Skip[Skip control]
+    Applicable -->|No| Plan[Plan: run every step in plan mode<br/>FileChanges, platform ChangeSets, commands]
 
-    TOML_check -->|Yes| Executor[RemediationExecutor]
-    TOML_check -->|No| Legacy[Legacy Python handler]
-
-    subgraph exec["RemediationExecutor"]
-        Executor --> ExType{Remediation type?}
-        ExType -->|file_create| FC[Substitute variables<br/>Write file from template/inline]
-        ExType -->|exec| EX[Substitute variables<br/>Run subprocess]
-        ExType -->|api_call| API[Build gh api command<br/>Execute with payload]
-    end
-
-    FC --> DryCheck
-    EX --> DryCheck
-    API --> DryCheck
-    Legacy --> DryCheck
-
-    DryCheck{dry_run?}
-    DryCheck -->|Yes| Preview[Record what would change]
-    DryCheck -->|No| Apply[Apply changes]
-    Apply --> PU{Has project_update?}
-    PU -->|Yes| Update[Update .project/project.yaml]
-    PU -->|No| Next
-    Update --> Next
+    Plan --> DryCheck{dry_run?}
+    DryCheck -->|Yes| Preview[Record the plan with digests; write nothing]
+    DryCheck -->|No| Approve{Every step that needs approval approved?<br/>safe = false, not previewable,<br/>platform change under prompt}
+    Approve -->|No| NeedsApproval[Outcome needs_approval; nothing written]
+    Approve -->|Yes| Apply[Apply: executor writes planned files<br/>skips files with user changes<br/>platform engine writes approved change sets<br/>and reads them back]
+    Apply --> Manifest[Record writes in the run manifest]
 
     Preview --> Next[Next control]
+    NeedsApproval --> Next
+    Manifest --> Next
     Skip --> Next
     Next --> More{More controls?}
-    More -->|Yes| Cat
-    More -->|No| MoreCat{More categories?}
-    MoreCat -->|Yes| Loop
-    MoreCat -->|No| Format[Format results]
-    Format --> Return[Return to AI]
+    More -->|Yes| Loop
+    More -->|No| Recheck[Re-check changed controls<br/>without writing the audit cache]
+    Recheck --> Outcomes[One outcome per control:<br/>fixed, changed_not_passing, changed_not_verified,<br/>unchanged, needs_approval, needs_confirmation, manual, error]
+    Outcomes --> Commit{Any outcome changed files<br/>and auto_commit?}
+    Commit -->|Yes| GitCommit[Commit only manifest files]
+    Commit -->|No| Return
+    GitCommit --> Return[Return report and RemediationRun JSON]
 ```
 
 ## 5. Context Lifecycle

@@ -62,14 +62,16 @@ Here's the end-to-end flow that an AI assistant (or human) goes through when aud
  4. RE-AUDIT (optional)      5. REMEDIATE                  6. COMMIT
  ───────────────────────     ───────────────────────        ───────────────────────
  Re-run with new context     For controls still failing:    Branch, commit, and PR
- → some WARNs become                                       the changes
+ → some WARNs become                                       only the files remediation wrote
  PASS or FAIL now that       Apply TOML-declared fixes
- we know where files are     using gathered context or
- and have confirmed values   sensible defaults as input:
+ we know where files are     using confirmed context as
+ and have confirmed values   input; preview first, apply
+                             only approved changes:
 
                                • file_create (from template)
-                               • exec (run commands)
-                               • api_call (GitHub API)
+                               • exec (local fixing tools)
+                               • platform_setting (GitHub,
+                                 minimal, never weakens)
                                • project_update (.project/)
                                • custom plugin handlers
 ```
@@ -80,7 +82,7 @@ Here's the end-to-end flow that an AI assistant (or human) goes through when aud
 - **Locator misses**: The control checks `SECURITY.md` and `.github/SECURITY.md`, but your project keeps security docs at `docs/security.txt`. The user tells the framework where to look, and that location is stored so future audits find it automatically.
 - **Value confirmation**: The framework can auto-detect potential maintainers from git history or GitHub collaborators, but it won't *assume* those are correct — it presents candidates and asks the user to confirm. This is the conservative-by-default philosophy in action.
 - **Remediation prerequisites**: Some fixes need context before they can run. Creating a `CODEOWNERS` file requires knowing who the maintainers are. The framework checks for this upfront and prompts for missing values before attempting the fix.
-- **Custom remediation**: The built-in remediation types (`file_create`, `exec`, `api_call`) cover common cases, but implementations can register custom Python handlers for anything more complex — e.g., modifying CI configs, updating dependency manifests, or calling third-party libraries.
+- **Custom remediation**: The built-in remediation types (`file_create`, `exec`, `platform_setting`, `project_update`, `yaml_inject`, `manual`) cover common cases, but implementations can register custom Python handlers for anything more complex — e.g., modifying CI configs, updating dependency manifests, or calling third-party libraries.
 
 Context is currently stored in `.project/project.yaml` (a dotfile directory in the repo root). The storage layer is designed to be pluggable in the future — the framework reads/writes context through an abstraction (`context/dot_project.py`, `context/dot_project_mapper.py`) rather than touching YAML directly, so alternative backends (database, API, etc.) could be swapped in.
 
@@ -173,12 +175,13 @@ Darnit operates at three distinct layers. Each has built-in primitives and plugi
 ├─────────────────────────────────────────────────────────┤
 │  Layer 2: Remediation (how to fix a failing control)    │
 │                                                         │
-│  Built-in: file_create, exec, api_call, project_update  │
+│  Built-in: file_create, exec, platform_setting,         │
+│            project_update, yaml_inject, manual          │
 │  Plugin:   handler = "my_custom_fix"                    │
 │                                                         │
-│  TOML:  [controls."X".remediation.file_create]          │
+│  TOML:  [[controls."X".remediation.handlers]]           │
+│         handler = "file_create"                         │
 │         path = "SECURITY.md"                            │
-│         template = "security_policy"                    │
 ├─────────────────────────────────────────────────────────┤
 │  Layer 1: Checking (how to verify a control)            │
 │                                                         │
@@ -293,15 +296,12 @@ steps = [
     "Check for security contact or email address",
 ]
 
-[controls."OSPS-VM-02.01".remediation]
-safe = true
-dry_run_supported = true
-
 [[controls."OSPS-VM-02.01".remediation.handlers]]
 handler = "file_create"
 path = "SECURITY.md"
 template = "security_policy_standard"
 overwrite = false
+project_reference = "security.policy"
 ```
 
 ### Built-in Pass Types
@@ -331,12 +331,15 @@ Available variables: `output.stdout`, `output.stderr`, `output.exit_code`, `outp
 
 ### Remediation in TOML
 
-Controls can define declarative remediation:
+Controls can define declarative remediation steps under `[[controls."ID".remediation.handlers]]`:
 
-- **`file_create`** — Create a file from a template (`template = "security_policy_standard"`)
-- **`exec`** — Run a command
-- **`api_call`** — Call the GitHub API via `gh api`
-- **`project_update`** — Update `.project/project.yaml` after successful fix
+- **`file_create`** - Create a file from a template (`template = "security_policy_standard"`); never replaces an existing file unless `overwrite = true`
+- **`exec`** - Run a local fixing tool that changes only working-tree files
+- **`platform_setting`** - Require a hosting-platform setting (branch protection, repository visibility, private vulnerability reporting); the platform engine reads first, changes only what is missing, never weakens a setting, and reads back
+- **`project_update`** / **`yaml_inject`** - Update `.project/` fields, or add a top-level YAML key
+- **`manual`** - Steps for a person
+
+Every remediation previews by default and an apply writes exactly what was previewed; platform changes, `safe = false` remediations, and steps that cannot be previewed exactly need approval by digest. The executor is the only writer and records each write in a run manifest, so remediation commits contain only those files. See `docs/architecture/framework-design.md` sections 4 and 15.
 
 Templates are defined in `[templates.*]` sections and support `$OWNER`, `$REPO`, and `${context.*}` variable substitution.
 

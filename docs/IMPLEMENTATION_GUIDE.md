@@ -74,12 +74,13 @@ plugin extensibility:
 ├─────────────────────────────────────────────────────────┤
 │  Layer 2: Remediation (how to fix a failing control)    │
 │                                                         │
-│  Built-in: file_create, exec, api_call, project_update  │
+│  Built-in: file_create, exec, platform_setting,         │
+│            project_update, yaml_inject, manual          │
 │  Plugin:   handler = "my_custom_fix"                    │
 │                                                         │
-│  TOML:  [controls."X".remediation.file_create]          │
+│  TOML:  [[controls."X".remediation.handlers]]           │
+│         handler = "file_create"                         │
 │         path = "SECURITY.md"                            │
-│         template = "security_policy"                    │
 ├─────────────────────────────────────────────────────────┤
 │  Layer 1: Checking (how to verify a control)            │
 │                                                         │
@@ -96,8 +97,10 @@ plugin extensibility:
 (file existence, command execution, regex patterns) or custom Python check functions.
 
 **Layer 2 (Remediation)** answers: "How do I fix it?" Using built-in actions
-(create file from template, run command, call API, update project config) or custom
-Python remediation functions.
+(create file from template, run a local fixing tool, require a platform setting,
+update project config, inject a YAML key, give manual steps) or custom Python
+remediation functions. Every remediation previews by default and applies only
+what it previewed (see "Remediation in TOML").
 
 **Layer 3 (MCP Tools)** answers: "What can the AI assistant do?" Using built-in
 tools (audit all controls, remediate failures, list controls) or custom Python
@@ -138,16 +141,11 @@ files = ["README.md", "README.rst"]
 handler = "manual"
 steps = ["Check for README in project root"]
 
-[controls."MS-01".remediation]
-safe = true
-dry_run_supported = true
-
-[controls."MS-01".remediation.file_create]
+[[controls."MS-01".remediation.handlers]]
+handler = "file_create"
 path = "README.md"
 template = "readme"
-
-[controls."MS-01".remediation.project_update]
-set = { "documentation.readme.path" = "README.md" }
+project_reference = "documentation.readme"
 
 [mcp.tools.audit]
 builtin = "audit"
@@ -566,47 +564,94 @@ steps = [
 
 ### Remediation in TOML
 
-Controls can define declarative remediation actions that the framework executes
-without Python code. These are the built-in remediation types:
+Controls can define declarative remediation steps that the framework executes
+without Python code. A remediation is an ordered list of handler invocations
+under `[[controls."ID".remediation.handlers]]`; each step may have a `when`
+clause, and `strategy = "first_match"` stops after the first step whose `when`
+matches. The authoritative reference is `docs/architecture/framework-design.md`
+sections 4 and 15.
+
+Every remediation runs in two modes. A **preview** (the default for every tool)
+runs the same handler logic as the apply against the current state and writes
+nothing; it lists each file to be created or changed, each platform field before
+and after, each command, and a digest per step. An **apply** writes exactly the
+previewed changes. The executor is the only writer: handlers return the changes
+they would make, and the executor writes them, skips any file with uncommitted
+user changes, and records every write in an operator-side run manifest, so the
+git tools commit only those files.
 
 #### file_create
 
 Create a file from a template:
 
 ```toml
-[controls."MS-SEC-01".remediation]
-safe = true
-dry_run_supported = true
-
-[controls."MS-SEC-01".remediation.file_create]
+[[controls."MS-SEC-01".remediation.handlers]]
+handler = "file_create"
 path = "SECURITY.md"
 template = "security_policy"
 overwrite = false
-create_dirs = true  # Create parent directories if needed
+create_dirs = true                       # Create parent directories if needed
+project_reference = "security.policy"    # Record the file in .project/ after creating it
 ```
 
-#### exec (run a command)
+A file that already exists is not written (`overwrite = false`, the default) and
+the outcome is `unchanged`, reason `already_exists`. `project_reference` names the
+`.project/` field that describes the created file; it is recorded only for a file
+created in this run and only into an empty field.
+
+#### exec (run a local fixing tool)
 
 ```toml
-[controls."MS-BR-01".remediation.exec]
-command = ["git", "tag", "-s", "v1.0.0"]
-success_exit_codes = [0]
-timeout = 30
+[[controls."MS-BR-01".remediation.handlers]]
+handler = "exec"
+command = ["zizmor", "--fix=all", "--offline", "$PATH"]
+pass_exit_codes = [0]
+timeout = 60
+effects = "working_tree"   # Changes only files in the working tree
+offline = true             # Needs no network
 ```
 
-#### api_call
+With both `effects = "working_tree"` and `offline = true` the preview runs the
+command in a scratch copy and shows the resulting file changes. Without them the
+step "cannot be previewed exactly" and runs only when the person approves its
+plan item digest. An exec remediation never changes platform state; a shipped
+exec remediation whose command is `gh`, `curl`, `wget`, or `git push` fails
+`validate_sync`.
+
+#### platform_setting
+
+Declare a requirement on a platform target, not a payload:
 
 ```toml
-[controls."MS-AC-01".remediation.api_call]
-method = "PUT"
-endpoint = "/repos/$OWNER/$REPO/branches/$BRANCH/protection"
-payload_template = "branch_protection_payload"
+[[controls."MS-AC-01".remediation.handlers]]
+handler = "platform_setting"
+target = "branch_protection"   # branch_protection | repository | vulnerability_reporting
+require = { require_pull_request = true, require_approvals = 1 }
+# branch = "release"           # optional; default = the repository's default branch
 ```
+
+The platform engine reads the current settings, plans the smallest change that
+satisfies the requirement without weakening anything already configured, writes
+it under the operator's `[remediation]` policy (by default only when the person
+approves the change set's digest), and reads the result back. A requirement
+already met, including by an active ruleset, writes nothing. GitHub is the only
+supported platform; other forges get manual steps.
+
+#### manual
+
+```toml
+[[controls."MS-AC-02".remediation.handlers]]
+handler = "manual"
+steps = ["Go to Organization Settings -> Authentication security", "Enable two-factor authentication"]
+docs_url = "https://docs.github.com/..."
+```
+
+Use manual steps when the platform has no API for a change or when the choice
+needs a person.
 
 #### project_update
 
-Update `.project/project.yaml` with dotted-path values after a successful
-remediation. This keeps the project config in sync with what was created:
+Set `.project/` fields after a successful remediation:
 
 ```toml
 [controls."MS-SEC-01".remediation.project_update]
@@ -622,8 +667,20 @@ security:
     path: SECURITY.md
 ```
 
-`project_update` only runs when the primary remediation (file_create, exec, or
-api_call) succeeds. In dry-run mode, it shows a preview of what would change.
+`project_update` is written only when every step of the remediation succeeded,
+by the executor, through the same preview and run manifest. To record where a
+created file lives, prefer `project_reference` on the `file_create` step.
+
+#### Safety fields
+
+| Field | Effect |
+|-------|--------|
+| `safe = false` | Every step of the remediation that may change something needs its own approval (its plan item digest), under every policy |
+| `requires_api` | Descriptive only |
+
+`api_call`, `requires_confirmation`, `dry_run_supported`, and `dry_run_command`
+were removed in feature 043; a TOML that declares one fails to load with the
+replacement named.
 
 ### on_pass (post-check context updates)
 
@@ -1039,42 +1096,44 @@ def security_content_checker(config, context):
 
 ### Remediation handlers
 
-Remediation handlers use the same signature and result type as checking handlers, with
-two key differences:
+Remediation handlers use the same signature and result type as checking handlers.
+Feature 043 (framework-design.md 4.2) adds a plan/apply contract:
 
-1. **All handlers execute**: In a remediation phase, every handler runs even if a
-   prior handler succeeded. (Checking stops on first conclusive result.)
-2. **PASS means "remediation succeeded"**: Return PASS when your handler successfully
-   applied the fix, FAIL if the fix could not be applied.
+1. **Plan, do not write**: the executor calls the handler with `context.mode` set to
+   `"plan"` for a preview and `"apply"` for an apply. In both modes the handler returns
+   the files it would change as `FileChange` entries in `evidence["file_changes"]`
+   and writes nothing; the executor writes them in apply mode, skips files with
+   uncommitted user changes, and records each write in the run manifest.
+2. **PASS means "the plan is valid"**: return PASS with the planned changes (an
+   `action = "none"` change with a reason when nothing needs changing), ERROR when
+   the fix cannot be computed. A step that changes nothing never counts as a fix.
+3. **Register plan support**: register with `supports_plan=True`. A handler without
+   it is not run in a preview, is labelled "cannot be previewed exactly", and runs
+   in an apply only when the person approves its plan item digest. Files it writes
+   itself are outside the run manifest and are never committed by the git tools.
 
 ```python
-def create_license_file(config: dict[str, Any], context: HandlerContext) -> HandlerResult:
-    """Create a LICENSE file from a template."""
-    path = os.path.join(context.local_path, config.get("path", "LICENSE"))
+import os
 
-    if config.get("dry_run"):
-        return HandlerResult(
-            status=HandlerResultStatus.PASS,
-            message=f"Would create {config.get('path', 'LICENSE')}",
-            evidence={"path": config.get("path", "LICENSE"), "action": "dry_run"},
-        )
+from darnit.remediation.plan import FileChange
 
-    content = config.get("content", "MIT License\n")
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
-        f.write(content)
 
+def create_notice_file(config: dict[str, Any], context: HandlerContext) -> HandlerResult:
+    """Plan a NOTICE file from the step's content; the executor writes it."""
+    path = config.get("path", "NOTICE")
+    if os.path.exists(os.path.join(context.local_path, path)):
+        change = FileChange(path=path, action="none", reason="already_exists")
+    else:
+        change = FileChange(path=path, action="create", content=config.get("content", ""))
     return HandlerResult(
         status=HandlerResultStatus.PASS,
-        message=f"Created {config.get('path', 'LICENSE')}",
-        confidence=1.0,
-        evidence={"path": config.get("path", "LICENSE"), "action": "created"},
+        message=f"{path}: {change.action}",
+        evidence={"file_changes": [change.model_dump(mode="json")]},
     )
-```
 
-**Dry-run convention**: Check `config.get("dry_run")` and return a descriptive PASS
-without performing the action. The framework passes `dry_run=True` when the user
-requests a preview.
+
+registry.register("create_notice_file", "deterministic", create_notice_file, supports_plan=True)
+```
 
 **project_update integration**: When a control's TOML defines `on_pass.project_update`,
 the framework automatically updates `.project/project.yaml` after the control passes
@@ -1331,13 +1390,6 @@ REMEDIATION_REGISTRY: dict[str, dict[str, Any]] = {
         "safe": True,           # Safe to auto-apply without confirmation
         "requires_api": False,  # Doesn't need GitHub API access
     },
-    "branch_protection": {
-        "description": "Enable branch protection rules",
-        "controls": ["MS-AC-02", "MS-AC-03"],
-        "function": "enable_branch_protection",
-        "safe": True,
-        "requires_api": True,
-    },
 }
 ```
 
@@ -1447,7 +1499,7 @@ Available built-in tools:
 | Name | What it does |
 |------|-------------|
 | `audit` | Load controls from this framework's TOML, run sieve on each, return formatted report |
-| `remediate` | Run audit, then apply declarative remediations (file_create, exec, api_call) for failures |
+| `remediate` | Run audit, then preview (default) or apply the declarative remediations for failures |
 | `list_controls` | Return JSON list of all controls grouped by level |
 
 Built-in tools automatically receive the framework name from the `[metadata]` section,
