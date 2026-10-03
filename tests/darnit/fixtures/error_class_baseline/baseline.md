@@ -104,7 +104,7 @@ Use `get_remediation_status()` at any time to check current git state and next s
 
 ## Next Steps
 
-**Step 1: Confirm project context** (8 items needed)
+**Step 1: Confirm project context** (9 items needed)
 
 Call `get_pending_data(local_path="<FIXTURE>")` to start. It will walk you through each question one at a time.
 
