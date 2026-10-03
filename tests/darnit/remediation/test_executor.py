@@ -221,12 +221,15 @@ class TestHandlerPipelineRemediation:
                 ],
             )
 
-            # Dry run skips handler lookup, so test non-dry-run
-            result = executor.execute("TEST-01", config, dry_run=False)
+            # FR-021: the preview looks the handler up as the apply does; it
+            # no longer only lists handler names.
+            for dry_run in (True, False):
+                result = executor.execute("TEST-01", config, dry_run=dry_run)
 
-            assert not result.success
-            details = result.details.get("handlers", [])
-            assert any("not found" in h.get("message", "") for h in details)
+                assert not result.success
+                details = result.details.get("handlers", [])
+                assert any("not found" in h.get("message", "") for h in details)
+                assert [item.previewable for item in result.plan] == [False]
 
 
 class TestNoRemediationConfig:

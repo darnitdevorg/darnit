@@ -13,6 +13,7 @@ from darnit.config.framework_schema import (
     TemplateConfig,
 )
 from darnit.remediation.executor import RemediationResult
+from darnit.remediation.plan import FileChange, PlanItem
 from darnit_baseline.remediation.orchestrator import (
     _apply_declarative_remediation,
     remediate_audit_findings,
@@ -208,14 +209,18 @@ def test_remediate_audit_findings_dry_run(
     mock_read_cache.return_value = {"results": [{"id": "OSPS-GV-01.01", "status": "FAIL"}]}
     mock_preflight.return_value = (True, [])
 
+    planned = FileChange(path="GOVERNANCE.md", action="create", content="# Governance\n")
+    item = PlanItem(control_id="OSPS-GV-01.01", step="file_create[0]", file_changes=[planned], previewable=True)
     mock_executor = mock_executor_class.return_value
     mock_executor.execute.return_value = RemediationResult(
         success=True,
         control_id="OSPS-GV-01.01",
         remediation_type="declarative",
-        message="Would create GOVERNANCE.md",
+        message="Would execute 1 remediation handler(s)",
         dry_run=True,
         details={},
+        plan=[item],
+        file_changes=[planned],
     )
 
     result_markdown = remediate_audit_findings(
@@ -225,11 +230,13 @@ def test_remediate_audit_findings_dry_run(
         dry_run=True,
     )
 
-    # The output should contain preview formatting
+    # Feature 043 FR-021: the preview lists the planned changes and their
+    # digests (was: only the remediation type of each control).
     assert "Would Apply" in result_markdown
     assert "OSPS-GV-01.01" in result_markdown
-    # dry run only shows type in output, message is in result details
-    assert "declarative" in result_markdown
+    assert "`GOVERNANCE.md`: would be created" in result_markdown
+    run = json.loads(re.findall(r"```json\n(.*?)\n```", result_markdown, re.DOTALL)[-1])
+    assert [p["digest"] for p in run["plan"]] == [item.digest]
 
     # Verify no file was created by checking test repo
     assert not (temp_git_repo / "GOVERNANCE.md").exists()

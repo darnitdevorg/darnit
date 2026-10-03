@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.conftest_helpers import snapshot
+
 
 class TestRemediationOrchestratorExecution:
     """Test that the remediation orchestrator works end-to-end."""
@@ -66,6 +68,7 @@ class TestRemediationOrchestratorExecution:
         """Test remediate_audit_findings with all categories in dry-run mode."""
         from darnit_baseline.remediation.orchestrator import remediate_audit_findings
 
+        before = snapshot(Path(temp_repo))
         result = remediate_audit_findings(
             local_path=temp_repo,
             categories=["all"],
@@ -74,6 +77,7 @@ class TestRemediationOrchestratorExecution:
         assert isinstance(result, str)
         # Should not crash and should return something meaningful
         assert len(result) > 0
+        assert snapshot(Path(temp_repo)) == before, "feature 043 FR-022: a preview writes nothing"
 
     @pytest.mark.unit
     def test_apply_control_remediation_dry_run(self, temp_repo):

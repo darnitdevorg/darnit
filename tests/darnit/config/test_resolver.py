@@ -37,9 +37,13 @@ def clear_cache():
     clear_config_cache()
 
 
+# A control maps to the field describing the file it creates (feature 043,
+# FR-016): the former DO-02.01 -> security.policy and LE-01.01 ->
+# legal.license rows recorded a bug report template and a sign-off control
+# under unrelated fields (#482).
 CONTROL_REFERENCE_MAPPING = {
-    "OSPS-DO-02.01": "security.policy",
-    "OSPS-LE-01.01": "legal.license",
+    "OSPS-VM-02.01": "security.policy",
+    "OSPS-LE-03.01": "legal.license",
 }
 
 FILE_LOCATIONS = {
@@ -57,7 +61,7 @@ class TestResolveFileForControl:
     def test_returns_none_and_none_source_when_not_found(self, temp_dir):
         file_path, source = resolve_file_for_control(
             str(temp_dir),
-            "OSPS-DO-02.01",
+            "OSPS-VM-02.01",
             FILE_LOCATIONS,
             CONTROL_REFERENCE_MAPPING,
         )
@@ -73,7 +77,7 @@ class TestResolveFileForControl:
 
         file_path, source = resolve_file_for_control(
             str(temp_dir),
-            "OSPS-DO-02.01",
+            "OSPS-VM-02.01",
             FILE_LOCATIONS,
             CONTROL_REFERENCE_MAPPING,
         )
@@ -91,7 +95,7 @@ class TestResolveFileForControl:
 
         file_path, source = resolve_file_for_control(
             str(temp_dir),
-            "OSPS-DO-02.01",
+            "OSPS-VM-02.01",
             FILE_LOCATIONS,
             CONTROL_REFERENCE_MAPPING,
         )
@@ -105,7 +109,7 @@ class TestResolveFileForControl:
 
         file_path, source = resolve_file_for_control(
             str(temp_dir),
-            "OSPS-DO-02.01",
+            "OSPS-VM-02.01",
             FILE_LOCATIONS,
             CONTROL_REFERENCE_MAPPING,
         )
@@ -133,7 +137,7 @@ class TestResolveFileForControl:
 
         file_path, source = resolve_file_for_control(
             str(temp_dir),
-            "OSPS-DO-02.01",
+            "OSPS-VM-02.01",
             FILE_LOCATIONS,
             CONTROL_REFERENCE_MAPPING,
         )
@@ -163,7 +167,7 @@ class TestUpdateConfigAfterFileCreate:
 
         result = update_config_after_file_create(
             str(temp_dir),
-            "OSPS-DO-02.01",
+            "OSPS-VM-02.01",
             "SECURITY.md",
             CONTROL_REFERENCE_MAPPING,
         )
@@ -178,7 +182,7 @@ class TestUpdateConfigAfterFileCreate:
 
         update_config_after_file_create(
             str(temp_dir),
-            "OSPS-DO-02.01",
+            "OSPS-VM-02.01",
             "SECURITY.md",
             CONTROL_REFERENCE_MAPPING,
         )
@@ -196,12 +200,29 @@ class TestUpdateConfigAfterFileCreate:
 
         result = update_config_after_file_create(
             str(temp_dir),
-            "OSPS-DO-02.01",
+            "OSPS-VM-02.01",
             "SECURITY.md",
             CONTROL_REFERENCE_MAPPING,
         )
 
         assert result is False
+
+    def test_keeps_a_different_existing_reference_fr015(self, temp_dir):
+        config = create_minimal_config(name="my-project")
+        config.security = SecurityConfig(policy=PathRef(path="docs/SECURITY.md"))
+        save_project_config(config, str(temp_dir))
+
+        result = update_config_after_file_create(
+            str(temp_dir),
+            "OSPS-VM-02.01",
+            "SECURITY.md",
+            CONTROL_REFERENCE_MAPPING,
+        )
+
+        assert result is False
+        loaded = load_project_config(str(temp_dir))
+        assert loaded is not None and loaded.security is not None and loaded.security.policy is not None
+        assert loaded.security.policy.path == "docs/SECURITY.md"
 
     def test_returns_false_for_invalid_ref_path_format(self, temp_dir):
         bad_mapping = {"CTRL-01": "no-dot-separator"}
@@ -227,7 +248,7 @@ class TestSyncDiscoveredFileToConfig:
 
         result = sync_discovered_file_to_config(
             str(temp_dir),
-            "OSPS-DO-02.01",
+            "OSPS-VM-02.01",
             "SECURITY.md",
             CONTROL_REFERENCE_MAPPING,
         )

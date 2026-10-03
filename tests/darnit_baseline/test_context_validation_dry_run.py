@@ -62,7 +62,12 @@ class TestContextValidationAfterConfirmation:
 
         assert result["status"] != "needs_confirmation", \
             f"Still prompting after confirmation! Status: {result['status']}"
-        assert result["status"] in ["skipped", "applied", "dry_run", "preview", "would_apply"]
+        # Feature 043 FR-021/FR-022: a preview is the plan, computed by the
+        # apply's logic, and writes nothing (was: any of five statuses).
+        assert result["status"] == "would_apply"
+        planned = [c for item in result["plan"] for c in item["file_changes"]]
+        assert ("GOVERNANCE.md", "create") in [(c["path"], c["action"]) for c in planned]
+        assert not (Path(temp_repo) / "GOVERNANCE.md").exists()
 
     @pytest.mark.unit
     def test_governance_proceeds_after_confirmation_dry_run_false(self, temp_repo, trusted_target):
@@ -247,7 +252,7 @@ class TestPreflightContextCheck:
         )
 
         assert "BLOCKED: Remediation Cannot Proceed" in result
-        assert "Would Apply (0 remediations)" not in result or "Would Apply (0" in result
+        assert "Would Apply" not in result, "a blocked run previews nothing"
 
     @pytest.mark.unit
     def test_preflight_allows_after_confirmation(self, temp_repo, trusted_target):

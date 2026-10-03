@@ -28,7 +28,7 @@ class TestToolsSignatures:
 
         # Check that common parameters match
         # The wrapper can have additional parameters, but any it passes to impl must exist
-        common_params = {'local_path', 'owner', 'repo', 'categories', 'dry_run'}
+        common_params = {'local_path', 'owner', 'repo', 'categories', 'dry_run', 'approve'}
         for param in common_params:
             assert param in impl_params, f"Parameter '{param}' not in implementation"
 
@@ -54,7 +54,7 @@ class TestToolsSignatures:
 
         # Check expected parameters exist
         expected = {'owner', 'repo', 'branch', 'required_approvals', 'enforce_admins',
-                    'require_pull_request', 'require_status_checks', 'status_checks', 'dry_run'}
+                    'require_pull_request', 'require_status_checks', 'status_checks', 'dry_run', 'approve'}
         for param in expected:
             assert param in impl_params, f"Parameter '{param}' not in implementation"
 

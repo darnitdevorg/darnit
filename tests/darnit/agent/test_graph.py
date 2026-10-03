@@ -420,7 +420,9 @@ class TestRemediateNode:
         MockExecutor.assert_not_called()
         assert state.remediation_results == []
 
-    def test_dry_run_passed_to_executor(self):
+    @pytest.mark.parametrize(("kwargs", "expected"), [({}, True), ({"dry_run": True}, True), ({"dry_run": False}, False)])
+    def test_previews_unless_asked_to_apply_fr027(self, kwargs, expected):
+        """Feature 043 FR-027: the remediate node previews by default; only dry_run=False writes."""
         state = _make_state(
             owner="org",
             repo="repo",
@@ -428,7 +430,7 @@ class TestRemediateNode:
         )
 
         framework = self._make_framework(["CTRL-01"])
-        mock_result = MagicMock(success=True, message="dry", dry_run=True, details={})
+        mock_result = MagicMock(success=True, message="dry", dry_run=expected, details={})
 
         with (
             patch("darnit.agent.graph._load_framework_config", return_value=framework),
@@ -436,10 +438,10 @@ class TestRemediateNode:
             patch("darnit.agent.graph.RemediationExecutor") as MockExecutor,
         ):
             MockExecutor.return_value.execute.return_value = mock_result
-            remediate(state, dry_run=True)
+            remediate(state, **kwargs)
 
         _, call_kwargs = MockExecutor.return_value.execute.call_args
-        assert call_kwargs["dry_run"] is True
+        assert call_kwargs["dry_run"] is expected
 
 
 # ---------------------------------------------------------------------------

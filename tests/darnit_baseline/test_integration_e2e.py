@@ -7,7 +7,9 @@ They catch issues like:
 - Status codes not propagating correctly
 """
 
+import json
 import os
+import re
 import tempfile
 from pathlib import Path
 
@@ -64,7 +66,12 @@ class TestRemediationE2EFlow:
             dry_run=False,
         )
 
-        assert "Applied" in result2 or "✅" in result2
+        # Feature 043 FR-019: read the structured outcome, not words or
+        # symbols in the report (was: "Applied" or a check-mark emoji).
+        run = json.loads(re.findall(r"```json\n(.*?)\n```", result2, re.DOTALL)[-1])
+        [outcome] = [o for o in run["outcomes"] if o["control_id"] == "OSPS-GV-01.01"]
+        assert ("GOVERNANCE.md", "create") in [(c["path"], c["action"]) for c in outcome["file_changes"]]
+        assert outcome["kind"] in ("fixed", "changed_not_passing", "changed_not_verified")
         assert (Path(temp_git_repo) / "GOVERNANCE.md").exists()
 
         content = (Path(temp_git_repo) / "GOVERNANCE.md").read_text()
@@ -113,11 +120,12 @@ class TestRemediationE2EFlow:
         assert contact in content
 
     @pytest.mark.integration
-    def test_vex_policy_returns_manual_guidance(self, temp_git_repo):
-        """Test that VEX policy remediation returns manual guidance.
+    def test_vex_policy_creates_the_policy_document(self, temp_git_repo):
+        """OSPS-VM-04.02 creates docs/VEX-POLICY.md, and the result lists the file it wrote.
 
-        OSPS-VM-04.02 uses manual remediation type because it requires
-        appending to an existing SECURITY.md (which file_create can't do).
+        Feature 043 FR-017: an apply reports what it changed (was: any of
+        applied, would_apply, or manual, from a docstring that predated the
+        file_create step).
         """
         from darnit_baseline.remediation.orchestrator import _apply_control_remediation
 
@@ -129,8 +137,9 @@ class TestRemediationE2EFlow:
             dry_run=False,
         )
 
-        assert result["status"] in ("applied", "would_apply", "manual"), \
-            f"Unexpected status: {result['status']}"
+        assert result["status"] == "applied"
+        assert [(c["path"], c["action"]) for c in result["file_changes"]] == [("docs/VEX-POLICY.md", "create")]
+        assert (Path(temp_git_repo) / "docs" / "VEX-POLICY.md").exists()
 
 
 class TestControlDefinitionConsistency:
