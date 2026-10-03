@@ -1968,7 +1968,7 @@ Every apply records a run manifest operator-side at `user_data_root()/remediatio
 | `files` | `[{path, after_digest}]` for every file the executor wrote |
 | `change_sets` | Digests of the change sets applied |
 | `branch` | Remediation branch, if one was created |
-| `base`, `base_commit` | The ref a pull request from `branch` targets, and the commit it pointed to, recorded when the branch is created or switched to |
+| `base`, `base_commit` | The ref a pull request from `branch` targets, and the commit it pointed to, recorded when the branch is created or switched to; a run that moves to another branch replaces both (empty when the base cannot be resolved) |
 | `commit` | Set by the commit tool |
 
 The manifest is the only record of which files remediation wrote; the git tools read it (15.7).

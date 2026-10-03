@@ -217,12 +217,16 @@ def set_branch(
     base: str | None = None,
     base_commit: str | None = None,
 ) -> RunManifest:
-    """Record the run's branch and, when given, the ref a pull request from it targets and that ref's commit."""
+    """Record the run's branch and the ref a pull request from it targets, with that ref's commit.
+
+    A new branch replaces the recorded base (None when unresolved); the same
+    branch keeps it unless ``base`` is given.
+    """
 
     def change(run: RunManifest) -> None:
-        run.branch = branch
-        if base is not None:
+        if base is not None or run.branch != branch:
             run.base, run.base_commit = base, base_commit
+        run.branch = branch
 
     return _update(repository, run_id, checkout, change)
 

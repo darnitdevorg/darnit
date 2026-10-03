@@ -120,6 +120,28 @@ class TestRecord:
         assert loaded.branch == "fix/compliance"
         assert loaded.commit == "0123abcd"
 
+    def test_moving_to_a_new_branch_replaces_the_base_even_when_unresolved(
+        self, data_root: Path, checkout: Path
+    ) -> None:
+        run = manifest.start_run(REPO, checkout=checkout)
+        manifest.set_branch(REPO, run.run_id, "fix/a", checkout=checkout, base="origin/main", base_commit="c0ffee")
+
+        manifest.set_branch(REPO, run.run_id, "fix/b", checkout=checkout, base=None, base_commit=None)
+
+        loaded = manifest.load_run(REPO, run.run_id, checkout=checkout)
+        assert loaded is not None
+        assert (loaded.branch, loaded.base, loaded.base_commit) == ("fix/b", None, None)
+
+    def test_same_branch_without_a_base_keeps_the_recorded_base(self, data_root: Path, checkout: Path) -> None:
+        run = manifest.start_run(REPO, checkout=checkout)
+        manifest.set_branch(REPO, run.run_id, "fix/a", checkout=checkout, base="origin/main", base_commit="c0ffee")
+
+        manifest.set_branch(REPO, run.run_id, "fix/a", checkout=checkout)
+
+        loaded = manifest.load_run(REPO, run.run_id, checkout=checkout)
+        assert loaded is not None
+        assert (loaded.base, loaded.base_commit) == ("origin/main", "c0ffee")
+
     def test_recording_to_an_unknown_run_fails(self, data_root: Path, checkout: Path) -> None:
         with pytest.raises(LookupError):
             manifest.record_file(REPO, manifest.new_run_id(), "A.md", content_digest("x"), checkout=checkout)
