@@ -871,7 +871,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             elif step == "remediate":
                 from darnit.remediation.platform import terminal_approver
 
-                approver = terminal_approver() if feedback_mode == "interactive" else None
+                approver = terminal_approver(state.local_path) if feedback_mode == "interactive" else None
                 state = remediate(
                     state,
                     dry_run=not args.apply,

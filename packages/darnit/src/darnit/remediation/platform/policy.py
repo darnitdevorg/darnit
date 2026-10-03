@@ -10,6 +10,7 @@ individual approval is approved the same way, by its own ``PlanItem.digest``.
 
 from __future__ import annotations
 
+import difflib
 import getpass
 import sys
 from collections.abc import Callable, Collection, Sequence
@@ -19,14 +20,12 @@ from pathlib import Path
 from typing import TextIO
 
 from darnit.config.operator.schema import RemediationMode, RemediationSettings
-from darnit.remediation.plan import Approval, PlanItem
+from darnit.remediation.plan import Approval, FileChange, PlanItem, content_digest
 from darnit.remediation.platform.model import ChangeSet, PlatformTarget
 from darnit.remediation.platform.targets import show_value
 
 Approver = Callable[[ChangeSet], bool]
 ItemApprover = Callable[[PlanItem, Sequence[str]], bool]
-
-_CONTENT_LINES = 10
 
 
 def _os_user() -> str:
@@ -98,19 +97,53 @@ def _printable(text: str) -> str:
     return "".join(c if " " <= c <= "~" else c.encode("unicode_escape").decode("ascii") for c in text)
 
 
-def describe_plan_item(item: PlanItem, reasons: Sequence[str]) -> list[str]:
-    """The lines a person reads before approving ``item`` individually (framework-design 15.3)."""
+def _current_text(root: str | Path | None, change: FileChange) -> str | None:
+    """The file ``change`` modifies as it is now, if it is still the content the change was planned against."""
+    if root is None:
+        return None
+    try:
+        current = (Path(root) / change.path).read_bytes()
+    except OSError:
+        return None
+    if content_digest(current) != change.before_digest:
+        return None
+    try:
+        return current.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+
+def _file_lines(change: FileChange, root: str | Path | None) -> list[str]:
+    """``change`` in full: a created file's content, or a modified file's diff against its current content."""
+    path = _printable(change.path)
+    content = change.content or ""
+    current = _current_text(root, change) if change.action == "modify" else None
+    if current is None:
+        resulting = content.splitlines()
+        note = "; the current file cannot be read, so the full resulting content follows" if change.action == "modify" else ""
+        return [f"  {change.action} {path} ({len(resulting)} lines{note}):"] + [
+            f"    | {_printable(line)}" for line in resulting
+        ]
+    diff = difflib.unified_diff(
+        current.splitlines(), content.splitlines(), fromfile=f"a/{change.path}", tofile=f"b/{change.path}", lineterm=""
+    )
+    return [f"  modify {path} (diff against the current file):"] + [f"    {_printable(line)}" for line in diff]
+
+
+def describe_plan_item(item: PlanItem, reasons: Sequence[str], root: str | Path | None = None) -> list[str]:
+    """The lines a person reads before approving ``item`` individually (framework-design 15.3, 15.8).
+
+    Nothing is truncated: a created file is shown in full, a modified file as
+    a unified diff against its current content under ``root`` (in full when
+    that cannot be read), every character escaped to printable ASCII.
+    """
     lines = [f"Remediation step: {item.control_id} {item.step}"]
     lines += [f"  Needs individual approval: {reason}" for reason in reasons]
     for change in item.file_changes:
         if not change.changes:
             lines.append(f"  {_printable(change.path)}: not written ({change.reason})")
             continue
-        content = (change.content or "").splitlines()
-        lines.append(f"  {change.action} {_printable(change.path)} ({len(content)} lines):")
-        lines += [f"    | {_printable(line)}" for line in content[:_CONTENT_LINES]]
-        if len(content) > _CONTENT_LINES:
-            lines.append(f"    | ... {len(content) - _CONTENT_LINES} more lines")
+        lines += _file_lines(change, root)
     lines += [f"  Command: {_printable(' '.join(command))}" for command in item.commands]
     for change_set in item.change_sets:
         lines += [f"  {line}" for line in describe_change_set(ChangeSet.model_validate(change_set))]
@@ -128,11 +161,18 @@ class TerminalApprover:
     and so is end of input.
     """
 
-    def __init__(self, input_stream: TextIO | None = None, output_stream: TextIO | None = None) -> None:
+    def __init__(
+        self,
+        input_stream: TextIO | None = None,
+        output_stream: TextIO | None = None,
+        *,
+        root: str | Path | None = None,
+    ) -> None:
         if (input_stream is None) != (output_stream is None):
             raise ValueError("TerminalApprover takes both streams or neither")
         self._input = input_stream
         self._output = output_stream
+        self._root = root
 
     def _streams(self) -> tuple[TextIO, TextIO]:
         if self._input is None or self._output is None:
@@ -154,18 +194,21 @@ class TerminalApprover:
         return self._ask(describe_change_set(change_set), "Apply this change?")
 
     def approve_item(self, item: PlanItem, reasons: Sequence[str]) -> bool:
-        return self._ask(describe_plan_item(item, reasons), "Apply this step?")
+        return self._ask(describe_plan_item(item, reasons, self._root), "Apply this step?")
 
 
-def terminal_approver() -> TerminalApprover | None:
-    """A :class:`TerminalApprover` when a person can be asked, else None (outcome ``needs_approval``)."""
+def terminal_approver(root: str | Path | None = None) -> TerminalApprover | None:
+    """A :class:`TerminalApprover` when a person can be asked, else None (outcome ``needs_approval``).
+
+    ``root`` is the checkout whose current files a modified file is diffed against.
+    """
     if not sys.stdin.isatty():
         return None
     try:
         tty = open("/dev/tty", "r+", buffering=1, encoding="utf-8")  # noqa: SIM115
     except OSError:
         return None
-    return TerminalApprover(tty, tty)
+    return TerminalApprover(tty, tty, root=root)
 
 
 __all__ = [
