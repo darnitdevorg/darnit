@@ -189,6 +189,15 @@ def foreign_commits(repo: str | Path, base: str, branch: str) -> list[str]:
     return foreign
 
 
+def describe_foreign_commits(repo: str | Path, base: str, branch: str, where: str) -> str | None:
+    """``"<n> commit(s) <where> without a ... trailer (<sha>, ...)"`` for :func:`foreign_commits`, or None when there are none."""
+    foreign = foreign_commits(repo, base, branch)
+    if not foreign:
+        return None
+    listed = ", ".join(sha[:12] for sha in foreign)
+    return f"{len(foreign)} commit(s) {where} without a {TRAILER_KEY} trailer ({listed})"
+
+
 def _branch_refusal(repo: str, current: str, branch_name: str, base_branch: str | None) -> str | None:
     if not valid_branch_name(repo, branch_name):
         return f"'{branch_name}' is not a valid branch name"
@@ -202,13 +211,9 @@ def _branch_refusal(repo: str, current: str, branch_name: str, base_branch: str 
     base = resolve_base(repo, branch_name, base_branch)
     if base is None:
         return f"cannot determine the base of branch '{branch_name}'; pass base_branch"
-    foreign = foreign_commits(repo, base, branch_name)
+    foreign = describe_foreign_commits(repo, base, branch_name, f"beyond '{base}'")
     if foreign:
-        listed = ", ".join(sha[:12] for sha in foreign)
-        return (
-            f"branch '{branch_name}' has {len(foreign)} commit(s) beyond '{base}' without a "
-            f"{TRAILER_KEY} trailer ({listed}); it holds work remediation did not make"
-        )
+        return f"branch '{branch_name}' has {foreign}; it holds work remediation did not make"
     if current != branch_name and has_tracked_changes(repo):
         return (
             f"switching to existing branch '{branch_name}' needs a clean working tree, and there are "
@@ -228,12 +233,10 @@ def _pull_request_refusal(repo: str, current: str, branch_name: str | None, base
     if head == base_branch_name(base):
         return f"a pull request cannot be opened from '{head}' into itself; pass a remediation branch name"
     start = branch_name if branch_name and branch_exists(repo, branch_name) else current
-    foreign = foreign_commits(repo, base, start)
+    foreign = describe_foreign_commits(repo, base, start, f"not on the pull request base '{base}'")
     if foreign:
-        listed = ", ".join(sha[:12] for sha in foreign)
         return (
-            f"'{start}' has {len(foreign)} commit(s) not on the pull request base '{base}' without a "
-            f"{TRAILER_KEY} trailer ({listed}); a pull request would carry work remediation did not make. "
+            f"'{start}' has {foreign}; a pull request would carry work remediation did not make. "
             f"Push them, or start from a branch based on '{base}'"
         )
     return None
@@ -290,6 +293,7 @@ __all__ = [
     "branch_exists",
     "check_repository_state",
     "current_branch",
+    "describe_foreign_commits",
     "foreign_commits",
     "from_root",
     "has_tracked_changes",

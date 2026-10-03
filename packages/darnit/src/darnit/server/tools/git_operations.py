@@ -25,7 +25,7 @@ from darnit.remediation.git_state import (
     branch_exists,
     check_repository_state,
     current_branch,
-    foreign_commits,
+    describe_foreign_commits,
     from_root,
     has_uncommitted_changes,
     holds_commit,
@@ -465,12 +465,9 @@ Create a remediation branch first:
             )
         if branch == base_branch_name(base):
             return _error(f"a pull request cannot be opened from '{branch}' into itself. Nothing was pushed.")
-        foreign = foreign_commits(resolved_path, since, branch)
+        foreign = describe_foreign_commits(resolved_path, since, branch, f"beyond '{base}'")
         if foreign:
-            return _error(
-                f"branch '{branch}' has {len(foreign)} commit(s) beyond '{base}' without a {TRAILER_KEY} trailer "
-                f"({', '.join(sha[:12] for sha in foreign)}); it holds work remediation did not make. Nothing was pushed."
-            )
+            return _error(f"branch '{branch}' has {foreign}; it holds work remediation did not make. Nothing was pushed.")
 
         ref = f"refs/heads/{branch}"
         result = run_git(
