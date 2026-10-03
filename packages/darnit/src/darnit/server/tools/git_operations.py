@@ -450,6 +450,8 @@ Create a remediation branch first:
             if base is None:
                 return _error(f"cannot determine the base of branch '{branch}'; pass base_branch. Nothing was pushed.")
             since = base
+        if branch == base_branch_name(base):
+            return _error(f"a pull request cannot be opened from '{branch}' into itself. Nothing was pushed.")
         foreign = foreign_commits(resolved_path, since, branch)
         if foreign:
             return _error(

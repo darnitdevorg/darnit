@@ -206,6 +206,8 @@ def _pull_request_refusal(repo: str, current: str, branch_name: str | None, base
     base = resolve_base(repo, head, base_branch, current_first=False)
     if base is None:
         return f"cannot determine the pull request base for branch '{head}'; pass base_branch"
+    if head == base_branch_name(base):
+        return f"a pull request cannot be opened from '{head}' into itself; pass a remediation branch name"
     start = branch_name if branch_name and branch_exists(repo, branch_name) else current
     foreign = foreign_commits(repo, base, start)
     if foreign:
@@ -234,7 +236,8 @@ def check_repository_state(
     ``Darnit-Remediation-Run`` trailer, and tracked uncommitted changes when
     switching to it; for a new branch, a ``base_branch`` other than HEAD,
     because a new branch is created from HEAD. With ``pull_request``: refuses
-    a pull request head of ``main`` or ``master``, an undeterminable pull
+    a pull request head of ``main``, ``master``, or the pull request base
+    branch itself, an undeterminable pull
     request base, and a commit without the trailer that the remediation
     branch would start from and that is not on the pull request base, which
     the pull request tool would refuse after the commit. Changes nothing.

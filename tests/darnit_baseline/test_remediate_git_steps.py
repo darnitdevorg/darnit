@@ -141,6 +141,28 @@ def test_pull_request_from_history_not_on_the_base_is_refused_before_any_change(
 
 
 @pytest.mark.integration
+def test_pull_request_from_the_default_branch_itself_is_refused_before_any_change(
+    request: pytest.FixtureRequest, gh_calls: list[list[str]]
+) -> None:
+    """origin/HEAD is develop and develop is checked out: the PR head would be its own base."""
+    dirty = request.getfixturevalue("r_dirty")
+    git(dirty.path, "branch", "-m", "main", "develop")
+    request.getfixturevalue("bare_remote").attach(dirty.path, push="develop")
+    git(dirty.path, "remote", "set-head", "origin", "develop")
+    before, state = snapshot(dirty.path), _git_state(dirty.path)
+
+    output = _remediate(dirty.path, dry_run=False, auto_commit=True, create_pr=True)
+
+    assert output.startswith("Error: cannot run the requested git steps"), output
+    assert "'develop'" in output and "Nothing was changed" in output, output
+    assert not (dirty.path / "SECURITY.md").exists()
+    assert_unchanged(dirty.path, before)
+    assert _git_state(dirty.path) == state
+    assert manifest.load_run(IDENTITY) is None
+    assert gh_calls == []
+
+
+@pytest.mark.integration
 def test_pull_request_targets_the_base_recorded_with_the_branch(
     request: pytest.FixtureRequest, gh_calls: list[list[str]]
 ) -> None:

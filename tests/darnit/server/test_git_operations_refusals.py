@@ -183,6 +183,25 @@ class TestRefusedStates:
         assert result.startswith(("Error", "Conflict")) and "main" in result
         assert git(bare_remote.path, *refs).stdout == remote_before
 
+    def test_pr_refuses_the_base_branch_itself(
+        self, r_foreign_branch: ForeignBranchRepo, bare_remote: BareRemote, no_gh: list[list[str]]
+    ) -> None:
+        repo = r_foreign_branch.path
+        git(repo, "branch", "-m", "main", "develop")
+        bare_remote.attach(repo, push="develop")
+        git(repo, "remote", "set-head", "origin", "develop")
+        run_id = manifest.new_run_id()
+        assert _apply(repo, SECURITY, run_id=run_id).changed
+        assert commit_changes(local_path=str(repo), run_id=run_id).startswith(SUCCESS)
+        refs = ("for-each-ref", "--format=%(refname) %(objectname)")
+        remote_before = git(bare_remote.path, *refs).stdout
+
+        result = create_pr(local_path=str(repo), run_id=run_id)
+
+        assert result.startswith("Error") and "'develop'" in result, result
+        assert git(bare_remote.path, *refs).stdout == remote_before
+        assert no_gh == []
+
 
 @pytest.mark.integration
 class TestUserChanges:
