@@ -335,3 +335,93 @@ class TestApplyMode:
         assert result.confirmation_required == "maintainers"
         assert not (repo / "FIRST.md").exists()
         assert not data_root.exists()
+
+
+PROJECT = ".project/project.yaml"
+_BASE = {PROJECT: "name: repo\n", "NOTES.md": "mine\n", ".github/workflows/ci.yml": WORKFLOW}
+_USER_EDIT = "# work in progress\n"
+_DIRTY_TARGETS = {
+    "file_create": (
+        _config(HandlerInvocation(handler="file_create", path="NOTES.md", content="# Notes\n", overwrite=True)),
+        "NOTES.md",
+    ),
+    "yaml_inject": (_config(YAML_INJECT), ".github/workflows/ci.yml"),
+    "project_update": (_config(PROJECT_UPDATE), PROJECT),
+    "project_reference": (
+        _config(
+            HandlerInvocation(
+                handler="file_create", path="SECURITY.md", content="# Security\n", project_reference="security.policy"
+            )
+        ),
+        PROJECT,
+    ),
+    "config_project_update": (
+        _config(FILE_CREATE, project_update=ProjectUpdateRemediationConfig(set={"security.policy.path": "SECURITY.md"})),
+        PROJECT,
+    ),
+}
+
+
+def _git(repo: Path, *args: str) -> None:
+    import subprocess
+
+    subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", *args],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+
+
+@pytest.mark.unit
+class TestUserChangesInPreview:
+    """FR-021, FR-011: the preview runs the apply's uncommitted-user-changes check (T055d)."""
+
+    @pytest.fixture
+    def git_repo(self, tmp_path: Path, request: pytest.FixtureRequest) -> tuple[Path, str]:
+        config_name, state = request.param
+        _config_, target = _DIRTY_TARGETS[config_name]
+        path = tmp_path / "git-repo"
+        path.mkdir()
+        _git(path, "init", "-q")
+        for relative, text in _BASE.items():
+            if state == "untracked" and relative == target:
+                continue
+            (path / relative).parent.mkdir(parents=True, exist_ok=True)
+            (path / relative).write_text(text, encoding="utf-8")
+        _git(path, "add", "-A")
+        _git(path, "commit", "-q", "-m", "init")
+        (path / target).parent.mkdir(parents=True, exist_ok=True)
+        (path / target).write_text(_BASE[target] + _USER_EDIT, encoding="utf-8")
+        return path, config_name
+
+    @pytest.mark.parametrize(
+        "git_repo",
+        [(name, state) for name in _DIRTY_TARGETS for state in ("untracked", "modified")],
+        ids=lambda p: f"{p[0]}-{p[1]}",
+        indirect=True,
+    )
+    def test_preview_and_apply_list_the_same_changes(self, git_repo: tuple[Path, str], data_root: Path) -> None:
+        repo, config_name = git_repo
+        config, target = _DIRTY_TARGETS[config_name]
+        user_text = (repo / target).read_text(encoding="utf-8")
+
+        preview = _executor(repo).execute("C-1", config, dry_run=True)
+        applied = _executor(repo).execute("C-1", config, dry_run=False)
+
+        def listed(result) -> list[tuple[str, str, str | None]]:
+            return [(c.path, c.action, c.reason) for c in result.file_changes]
+
+        assert (target, "none", "user_changes_present") in listed(preview)
+        assert listed(preview) == listed(applied)
+        assert [h.get("project_reference") for h in preview.details["handlers"]] == [
+            h.get("project_reference") for h in applied.details["handlers"]
+        ]
+        assert (repo / target).read_text(encoding="utf-8") == user_text
+
+    def test_outside_a_git_repository_nothing_is_a_user_change(self, repo: Path, data_root: Path) -> None:
+        config, _target = _DIRTY_TARGETS["project_reference"]
+
+        preview = _executor(repo).execute("C-1", config, dry_run=True)
+
+        assert [(c.path, c.action) for c in preview.file_changes] == [("SECURITY.md", "create"), (PROJECT, "create")]

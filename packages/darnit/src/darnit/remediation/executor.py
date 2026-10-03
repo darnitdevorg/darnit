@@ -613,7 +613,9 @@ class RemediationExecutor:
             changes = plan_project_update(
                 self.local_path, project_update.set, create=project_update.create_if_missing
             )
-        except ValueError as e:
+            if result.dry_run:
+                changes = [self._planned_write(c) for c in changes]
+        except (ValueError, WriteRefused) as e:
             if result.dry_run:
                 result.details["project_update"] = f"would fail: {e}"
             else:
@@ -622,7 +624,9 @@ class RemediationExecutor:
             return
 
         if result.dry_run:
-            result.details["project_update"] = f"would set: {project_update.set}"
+            result.details["project_update"] = (
+                f"would set: {project_update.set}" if any(c.changes for c in changes) else "unchanged"
+            )
             result.plan.append(
                 PlanItem(control_id=control_id, step="project_update", file_changes=changes, previewable=True)
             )
@@ -687,6 +691,23 @@ class RemediationExecutor:
         except OSError:
             return False
 
+    def _planned_write(self, change: FileChange) -> FileChange:
+        """``change`` as :meth:`_write` would apply it, by the same read-only checks (FR-011, FR-021).
+
+        A target with uncommitted user changes comes back as ``action =
+        "none"``, reason ``user_changes_present``; a target the repository
+        ignores comes back with ``ignored = True``.
+
+        Raises:
+            WriteRefused: the target's git state cannot be read.
+        """
+        if not change.changes:
+            return change
+        user_changes, ignored = self._vcs_state(change.path)
+        if user_changes:
+            return FileChange(path=change.path, action="none", reason="user_changes_present")
+        return change.model_copy(update={"ignored": True}) if ignored else change
+
     def _write(self, change: FileChange) -> FileChange:
         """Write one planned change atomically and record it in the run manifest.
 
@@ -744,7 +765,14 @@ class RemediationExecutor:
         for change in changes:
             if change.action != "create" or not change.project_reference:
                 continue
+            if change.ignored:
+                entry["project_reference"] = _reference_note(change, f"{change.path} is ignored by the repository")
+                continue
             references, kept = self._reference_changes(change.project_reference, change.path)
+            references = [self._planned_write(c) for c in references]
+            blocked = [c.path for c in references if not c.changes]
+            if kept is None and blocked:
+                kept = f"{', '.join(blocked)} has uncommitted changes"
             planned += references
             entry["project_reference"] = _reference_note(change, kept)
         return planned
@@ -1076,7 +1104,15 @@ class RemediationExecutor:
                     wrote = True
 
             if mode == "plan":
-                changes = changes + self._planned_references(changes, result_entry)
+                try:
+                    if not _is_exec(handler_info):
+                        changes = [self._planned_write(c) for c in changes]
+                    changes = changes + self._planned_references(changes, result_entry)
+                except WriteRefused as e:
+                    result_entry["status"] = "error"
+                    result_entry["message"] = f"Not written: {e}"
+                    all_success = False
+                    changes = []
                 previewed = not _is_exec(handler_info) or handler_result.status == HandlerResultStatus.PASS
                 plan_item(
                     step,
