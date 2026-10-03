@@ -144,6 +144,50 @@ class TestPreview:
         assert first.plan[0].digest == second.plan[0].digest
 
 
+THROUGH_LINK = """
+from pathlib import Path
+Path("link.txt").write_text("overwritten by the preview\\n")
+"""
+
+
+@pytest.mark.unit
+class TestSymlinks:
+    """framework-design 4.4, scenario "Symbolic link leaving the repository"."""
+
+    @pytest.fixture
+    def outside(self, tmp_path: Path) -> Path:
+        path = tmp_path / "outside.txt"
+        path.write_text("outside the repository\n", encoding="utf-8")
+        return path
+
+    @pytest.mark.parametrize("relative", [False, True], ids=["absolute", "escaping"])
+    def test_link_leaving_the_repository_is_not_previewed(self, repo: Path, outside: Path, relative: bool) -> None:
+        (repo / "link.txt").symlink_to(os.path.relpath(outside, repo) if relative else outside)
+        _git(repo, "add", "link.txt")
+        _git(repo, "commit", "-q", "--no-gpg-sign", "-m", "link")
+        before = snapshot(repo)
+
+        result = _executor(repo).execute("T-01", _previewable(THROUGH_LINK), dry_run=True)
+
+        assert outside.read_text(encoding="utf-8") == "outside the repository\n"
+        assert_unchanged(repo, before)
+        [item] = result.plan
+        assert item.previewable is False
+        assert item.requires_individual_approval is True
+        [entry] = result.details["handlers"]
+        assert entry["status"] == "error"
+        assert "link.txt" in entry["message"]
+
+    def test_link_inside_the_repository_stays_previewable(self, repo: Path) -> None:
+        (repo / "link.txt").symlink_to("d.txt")
+        _git(repo, "add", "link.txt")
+        _git(repo, "commit", "-q", "--no-gpg-sign", "-m", "link")
+
+        result = _executor(repo).execute("T-01", _previewable(FIX), dry_run=True)
+
+        assert result.plan[0].previewable is True
+
+
 @pytest.mark.unit
 class TestApply:
     def test_apply_equals_the_preview_and_is_recorded(self, repo: Path) -> None:

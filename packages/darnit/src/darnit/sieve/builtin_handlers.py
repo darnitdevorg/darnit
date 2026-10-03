@@ -408,6 +408,16 @@ def _exec_preview(config: dict[str, Any], context: HandlerContext) -> HandlerRes
         )
     try:
         paths = working_tree.visible_files(context.local_path)
+        escaping = working_tree.escaping_symlinks(context.local_path, paths)
+        if escaping:
+            return HandlerResult(
+                status=HandlerResultStatus.ERROR,
+                message=(
+                    f"Cannot be previewed exactly: symbolic link(s) {escaping} point outside the repository, "
+                    "so the command could write through them; it was not run"
+                ),
+                evidence={"command": command, "previewable": False},
+            )
         with tempfile.TemporaryDirectory(prefix="darnit-preview-") as scratch:
             working_tree.copy_files(context.local_path, scratch, paths)
             before = working_tree.digests(scratch, paths)

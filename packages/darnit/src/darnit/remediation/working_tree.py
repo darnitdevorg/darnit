@@ -9,6 +9,7 @@ there, and compares; an apply compares the checkout before and after.
 from __future__ import annotations
 
 import os
+import posixpath
 import shutil
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
@@ -57,6 +58,24 @@ def visible_files(root: str | Path) -> list[str]:
     return [p for p in paths if (root / p).is_file() or (root / p).is_symlink()]
 
 
+def escaping_symlinks(root: str | Path, paths: Iterable[str]) -> list[str]:
+    """The ``paths`` that are symbolic links whose target is absolute or leaves ``root``.
+
+    A command run in a scratch copy could write through such a link into files outside the copy.
+    """
+    root = Path(root)
+    escaping = []
+    for path in paths:
+        link = root / path
+        if not link.is_symlink():
+            continue
+        target = os.readlink(link)
+        resolved = posixpath.normpath(posixpath.join(posixpath.dirname(path), target))
+        if posixpath.isabs(target) or resolved == ".." or resolved.startswith("../"):
+            escaping.append(path)
+    return escaping
+
+
 def ignored(root: str | Path, paths: Iterable[str]) -> set[str]:
     """The ``paths`` that ``root``'s ignore rules exclude (none outside a git checkout)."""
     paths = list(paths)
@@ -72,9 +91,7 @@ def user_changed(root: str | Path) -> set[str]:
     """Paths under ``root``, relative to it, with uncommitted changes (modified, staged, or untracked); empty outside git."""
     if not git_state.is_work_tree(root):
         return set()
-    result = git_state.run_git(
-        root, "status", "--porcelain", "-z", "--untracked-files=all", "--no-renames", "--", "."
-    )
+    result = git_state.run_git(root, "status", "--porcelain", "-z", "--untracked-files=all", "--no-renames", "--", ".")
     if result.returncode != 0:
         raise git_state.GitStateError(f"git status failed: {result.stderr.strip() or result.returncode}")
     paths = git_state.from_root(root, [entry[3:] for entry in result.stdout.split("\0") if len(entry) > 3])
@@ -123,4 +140,14 @@ def diff(root: str | Path, before: Mapping[str, str], after_paths: Iterable[str]
     return result
 
 
-__all__ = ["TreeDiff", "all_files", "copy_files", "diff", "digests", "ignored", "user_changed", "visible_files"]
+__all__ = [
+    "TreeDiff",
+    "all_files",
+    "copy_files",
+    "diff",
+    "digests",
+    "escaping_symlinks",
+    "ignored",
+    "user_changed",
+    "visible_files",
+]

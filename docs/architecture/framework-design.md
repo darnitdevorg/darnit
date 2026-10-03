@@ -819,6 +819,8 @@ offline = true
 
 **Preview.** A step that declares both `effects = "working_tree"` and `offline = true` is previewable: in plan mode the executor copies the tracked files and the untracked files that are not ignored into a scratch directory, runs the command there, and records the difference as `FileChange`s; the checkout is not touched. A step without both declarations is "cannot be previewed exactly": it is not run in plan mode, its `PlanItem` lists the command with `previewable = False`, and it requires individual approval (15.3).
 
+A step is not run in a scratch copy when any file it would see is a symbolic link whose target is absolute or leaves the repository (`..`): a command writing through such a link would change files outside the scratch copy. The preview is then an error, the step is `previewable = False`, and it requires individual approval (15.3). A relative link that stays inside the repository is copied as a link.
+
 A file the command creates that the checkout's ignore rules exclude is not part of the preview (and is not recorded at apply). A preview whose run does not succeed (an exit code outside `pass_exit_codes`, a missing binary, a timeout), or whose difference a `FileChange` cannot express (a deleted file, a non-text file), is an error, and the step is `previewable = False`.
 
 **Apply.** The command runs in the checkout. The executor compares what the command created or modified with the preview, and records those files in the run manifest only when the step succeeded cleanly: the exit code is in `pass_exit_codes`, the result equals the preview (for a previewable step), no changed file had uncommitted user changes, and the command deleted no file and wrote no non-text file. Otherwise the step is an error, nothing it changed is recorded (so the git tools never commit it), the files stay in the working tree as the command left them, and the outcome lists them as written but not recorded, for a person to review by hand. A previewed path that has uncommitted user changes is a conflict: the command is not run and the outcome names the path. A file the command changed that had uncommitted user changes before the step is reported as a conflict. An exit code outside `pass_exit_codes` is an error; a missing binary is ERROR, class `missing_tool`; a timeout is ERROR, class `timeout`.
@@ -831,6 +833,11 @@ A file the command creates that the checkout's ignore rules exclude is not part 
 #### Scenario: Exec remediation calling a platform command
 - **WHEN** a shipped framework TOML declares an exec remediation whose command is `gh`, `curl`, `wget`, or `git push`
 - **THEN** `validate_sync` MUST fail, naming the control
+
+#### Scenario: Symbolic link leaving the repository
+- **WHEN** a previewable exec step's visible files include a symbolic link whose target is absolute or resolves outside the repository
+- **THEN** the step MUST NOT run in the scratch copy, and the link's target MUST NOT change during the preview
+- **AND** its `PlanItem` MUST have `previewable = False` and `requires_individual_approval = True`
 
 #### Scenario: Exec step without preview declarations
 - **WHEN** an exec remediation step lacks `effects = "working_tree"` or `offline = true`
