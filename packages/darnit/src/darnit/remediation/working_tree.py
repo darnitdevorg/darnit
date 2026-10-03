@@ -69,13 +69,16 @@ def ignored(root: str | Path, paths: Iterable[str]) -> set[str]:
 
 
 def user_changed(root: str | Path) -> set[str]:
-    """Paths with uncommitted changes (modified, staged, or untracked) in a git checkout; empty outside one."""
+    """Paths under ``root``, relative to it, with uncommitted changes (modified, staged, or untracked); empty outside git."""
     if not git_state.is_work_tree(root):
         return set()
-    result = git_state.run_git(root, "status", "--porcelain", "-z", "--untracked-files=all", "--no-renames")
+    result = git_state.run_git(
+        root, "status", "--porcelain", "-z", "--untracked-files=all", "--no-renames", "--", "."
+    )
     if result.returncode != 0:
         raise git_state.GitStateError(f"git status failed: {result.stderr.strip() or result.returncode}")
-    return {entry[3:] for entry in result.stdout.split("\0") if len(entry) > 3}
+    paths = git_state.from_root(root, [entry[3:] for entry in result.stdout.split("\0") if len(entry) > 3])
+    return {path for path in paths if not path.startswith("../")}
 
 
 def digests(root: str | Path, paths: Iterable[str]) -> dict[str, str]:

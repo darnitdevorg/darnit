@@ -25,6 +25,7 @@ from darnit.remediation.git_state import (
     check_repository_state,
     current_branch,
     foreign_commits,
+    from_root,
     has_uncommitted_changes,
     is_ignored,
     is_work_tree,
@@ -288,7 +289,7 @@ Review these files, then re-run remediation or commit them yourself.
 
         commit_sha = resolve_commit(resolved_path, "HEAD") or "unknown"
         listed = run_git(resolved_path, "diff-tree", "-r", "--no-commit-id", "--name-only", "-z", "--root", "HEAD")
-        committed = sorted(p for p in listed.stdout.split("\0") if p)
+        committed = sorted(from_root(resolved_path, [p for p in listed.stdout.split("\0") if p]))
         manifest.set_commit(repository, run.run_id, commit_sha, checkout=resolved_path)
         if run.branch is None and branch:
             manifest.set_branch(repository, run.run_id, branch, checkout=resolved_path)

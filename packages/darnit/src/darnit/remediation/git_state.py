@@ -13,7 +13,9 @@ Every function here only reads the repository.
 from __future__ import annotations
 
 import os
+import posixpath
 import subprocess
+from collections.abc import Iterable
 from pathlib import Path
 
 TRAILER_KEY = "Darnit-Remediation-Run"
@@ -56,6 +58,15 @@ def is_work_tree(repo: str | Path) -> bool:
     except (FileNotFoundError, NotADirectoryError):
         return False
     return result.returncode == 0 and result.stdout.strip() == "true"
+
+
+def from_root(repo: str | Path, paths: Iterable[str]) -> list[str]:
+    """Repository-root-relative ``paths`` (as ``git status --porcelain`` and ``diff-tree`` print them), relative to ``repo``.
+
+    A path outside ``repo`` (when ``repo`` is a subdirectory) comes back with a leading ``../``.
+    """
+    prefix = _checked(repo, "rev-parse", "--show-prefix").strip()
+    return [posixpath.relpath(path, prefix) if prefix else path for path in paths]
 
 
 def has_uncommitted_changes(repo: str | Path, path: str) -> bool:
@@ -220,6 +231,7 @@ __all__ = [
     "check_repository_state",
     "current_branch",
     "foreign_commits",
+    "from_root",
     "has_tracked_changes",
     "has_uncommitted_changes",
     "is_ignored",

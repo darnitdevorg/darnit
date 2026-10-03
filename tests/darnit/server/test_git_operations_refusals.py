@@ -298,3 +298,55 @@ class TestConflicts:
         assert commit.startswith(("Error", "Conflict")) and "run" in commit
         assert_unchanged(r_dirty.path, files)
         assert _git_state(r_dirty.path) == state
+
+
+@pytest.mark.integration
+class TestSubdirectoryCheckout:
+    """``local_path`` is a subdirectory of the repository: git reports paths from the repository root."""
+
+    def test_user_changes_are_found_relative_to_the_subdirectory(self, r_dirty: DirtyRepo) -> None:
+        from darnit.remediation import working_tree
+
+        (r_dirty.path / "src" / "app.py").write_text("print('mine')\n", encoding="utf-8")
+        (r_dirty.path / "src" / "new.py").write_text("x = 1\n", encoding="utf-8")
+
+        assert working_tree.user_changed(r_dirty.path / "src") == {"app.py", "new.py"}
+
+    def test_exec_does_not_run_over_a_previewed_path_with_user_changes(self, r_dirty: DirtyRepo) -> None:
+        import sys
+
+        src = r_dirty.path / "src"
+        rewrite = HandlerInvocation(
+            handler="exec",
+            command=[sys.executable, "-c", "from pathlib import Path; Path('app.py').write_text('fixed\\n')"],
+            effects="working_tree",
+            offline=True,
+        )
+        config = RemediationConfig(handlers=[rewrite])
+        preview = RemediationExecutor(owner=OWNER, repo=REPO, local_path=str(src)).execute("C-1", config)
+        assert [c.path for c in preview.plan[0].file_changes] == ["app.py"]
+        (src / "app.py").write_text("print('mine')\n", encoding="utf-8")
+
+        result = RemediationExecutor(owner=OWNER, repo=REPO, local_path=str(src)).execute(
+            "C-1", config, dry_run=False
+        )
+
+        assert (src / "app.py").read_text(encoding="utf-8") == "print('mine')\n"
+        assert FileChange(path="app.py", action="none", reason="user_changes_present") in result.file_changes
+        assert not result.changed
+
+    def test_commit_lists_files_relative_to_the_subdirectory_without_a_false_warning(
+        self, r_dirty: DirtyRepo, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(git_operations, "validate_local_path", lambda path: (str(Path(path).resolve()), None))
+        docs = r_dirty.path / "docs"
+        result = _apply(docs, SECURITY)
+
+        commit = commit_changes(local_path=str(docs), run_id=result.run_id)
+
+        assert commit.startswith(SUCCESS), commit
+        assert git(r_dirty.path, "diff-tree", "-r", "--no-commit-id", "--name-only", "HEAD").stdout.split() == [
+            "docs/SECURITY.md"
+        ]
+        assert "Warning" not in commit
+        assert "  - SECURITY.md" in commit
