@@ -239,19 +239,36 @@ class TestGovernanceContentDetection:
 
 
 def _executor(repo: Path, context_values: dict):
+    """An executor whose person approved every previewed item (FR-024).
+
+    These tests check what the templates render; approval itself is
+    covered in test_csl_preview.py.
+    """
     from darnit.config import load_framework_config
     from darnit.remediation.executor import RemediationExecutor
 
     cfg = load_framework_config(get_framework_path())
-    ex = RemediationExecutor(
-        local_path=str(repo),
-        owner="o",
-        repo="r",
-        templates=cfg.templates,
-        context_values=context_values,
-        framework_path=str(get_framework_path()),
-    )
-    return cfg, ex
+
+    def build(approvals=()):
+        return RemediationExecutor(
+            local_path=str(repo),
+            owner="o",
+            repo="r",
+            templates=cfg.templates,
+            context_values=context_values,
+            framework_path=str(get_framework_path()),
+            approvals=approvals,
+        )
+
+    previewer = build()
+    approvals = [
+        item.digest
+        for cid, control in cfg.controls.items()
+        if control.remediation is not None
+        for item in previewer.execute(cid, control.remediation, dry_run=True).plan
+        if item.requires_individual_approval
+    ]
+    return cfg, build(approvals)
 
 
 class TestRemediation:

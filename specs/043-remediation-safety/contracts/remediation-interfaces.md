@@ -109,6 +109,7 @@ The response follows the 3.1 shape, for a single target.
 ### 3.4 `remediate_community_spec` (darnit-csl)
 
 - Adds `dry_run: bool = True`.
+- Adds `approve: list[str] | None = None`: digests of previewed items the person approved; required for `safe = false` steps (CSL-02.01, CSL-03.01 replace an existing document).
 - Its README edit is a `FileChange` and appears in the manifest.
 
 ### 3.5 `confirm_*` tools

@@ -115,6 +115,13 @@ def _preview_report(repo: Path, previews: list[tuple[str, RemediationResult]]) -
     ]
     for cid, preview in previews:
         for item in preview.plan:
+            if item.requires_individual_approval:
+                lines += [
+                    "",
+                    f"## {cid}: needs the person's approval before it is written",
+                    "",
+                    f"Show the person the content below; if they approve, pass approve=['{item.digest}'].",
+                ]
             for change in item.file_changes:
                 if not change.changes:
                     lines += ["", f"## {cid}: {change.path} unchanged ({change.reason})"]
@@ -138,6 +145,7 @@ async def remediate_community_spec(
     spec_name: str | None = None,
     add_readme_links: bool = True,
     dry_run: bool = True,
+    approve: list[str] | None = None,
 ) -> str:
     """Write the Community Specification License (CSL 1.0) file set into a repo.
 
@@ -152,6 +160,10 @@ async def remediate_community_spec(
     ``dry_run=False`` the remediation executor writes exactly those files,
     including the README links, and records them in the run manifest whose
     run id the result reports (feature 043, framework-design 15.8).
+
+    A step that replaces an existing document is written only when the
+    person approved its previewed content: ``approve`` lists the digests
+    from the preview they approved (feature 043, FR-024).
     """
     from darnit.config import load_framework_config
     from darnit.config.context_resolve import resolve_context
@@ -250,6 +262,7 @@ async def remediate_community_spec(
         templates=fw.templates, context_values=context_values,
         framework_path=str(fw_path),
         unconfirmed_keys=resolved.unusable_keys(),
+        approvals=approve or (),
     )
 
     remediations = [
@@ -277,6 +290,7 @@ async def remediate_community_spec(
 
     written: list[str] = []
     not_written: list[str] = []
+    needs_approval: list[str] = []
     errors: list[str] = []
     for cid, remediation in remediations:
         try:
@@ -286,6 +300,9 @@ async def remediate_community_spec(
             continue
         written += [c.path for c in res.file_changes if c.changes]
         not_written += [f"{c.path} ({c.reason})" for c in res.file_changes if c.reason == "user_changes_present"]
+        if res.needs_approval:
+            needs_approval += [f"{cid}: approve={digest}" for digest in res.needs_approval]
+            continue
         if not res.success:
             errors.append(f"{cid}: {res.message}")
 
@@ -299,6 +316,9 @@ async def remediate_community_spec(
         lines.append(f"Run id: {executor.run_id}")
     if not_written:
         lines += ["", "Not written (uncommitted changes in the file):"] + [f"- {p}" for p in not_written]
+    if needs_approval:
+        lines += ["", "Not written (needs the person's approval of the previewed content):"]
+        lines += [f"- {n}" for n in needs_approval]
     if errors:
         lines += ["", "Errors:"] + [f"- {e}" for e in errors]
     lines += ["", "## Re-audit"]

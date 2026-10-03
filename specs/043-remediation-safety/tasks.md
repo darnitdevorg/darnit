@@ -316,8 +316,8 @@
 - [X] T055a [US5] Make `darnit run` preview by default and write only with `--apply` (FR-027). Update framework-design.md section 15.8 first, then `packages/darnit/src/darnit/cli.py` and `packages/darnit/src/darnit/agent/graph.py`. Update the feature 024 E2E tests that pin `darnit run` output (`tests/darnit/cli/`), naming FR-027, and add tests: no `--apply` writes nothing; `--apply` writes the planned changes.
 - [X] T055b [US4] Map the executor's individual-approval gating (`RemediationResult.needs_approval`, `.approvals`) to a `needs_approval` outcome and into `RemediationRun.approvals` in `packages/darnit-baseline/src/darnit_baseline/remediation/orchestrator.py` (`_settled_outcome`). Extend the `darnit run` terminal approver to ask for individually-approved plan items by `PlanItem.digest` in `packages/darnit/src/darnit/remediation/platform/policy.py` and `packages/darnit/src/darnit/agent/graph.py`. Tests: `tests/darnit_baseline/remediation/test_outcomes.py` and `tests/darnit/agent/test_remediate_platform_policy.py`.
 
-- [ ] T055c [US5] Remove the OSPS-LE-01.01 LICENSE remediation (its fallback `file_create` overwrites an existing LICENSE with MIT and the control's requirement is contributor sign-off, #508); make the control manual-only with steps for DCO/CLA, per the spec assumption on unrelated remediations, in `packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml`. Keep license-file creation only where a control requires a license file, and never with `overwrite = true` over an existing file. Test: an existing LICENSE is byte-identical after remediating every legal control, in `tests/darnit_baseline/test_legal_remediation.py`.
-- [ ] T055d [US5] Make the preview run the same uncommitted-user-changes check the apply runs (read-only `git status`), so a target with user changes is previewed as `action = "none"`, `reason = "user_changes_present"` for `file_create`, `yaml_inject`, `project_update` and `project_reference` changes (FR-021, FR-011), in `packages/darnit/src/darnit/remediation/executor.py`. Test: with an untracked or modified `.project/project.yaml`, the preview and the apply list the same changes, in `tests/darnit/remediation/test_executor_plan_apply.py`.
+- [X] T055c [US5] Remove the OSPS-LE-01.01 LICENSE remediation (its fallback `file_create` overwrites an existing LICENSE with MIT and the control's requirement is contributor sign-off, #508); make the control manual-only with steps for DCO/CLA, per the spec assumption on unrelated remediations, in `packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml`. Keep license-file creation only where a control requires a license file, and never with `overwrite = true` over an existing file. Test: an existing LICENSE is byte-identical after remediating every legal control, in `tests/darnit_baseline/test_legal_remediation.py`.
+- [X] T055d [US5] Make the preview run the same uncommitted-user-changes check the apply runs (read-only `git status`), so a target with user changes is previewed as `action = "none"`, `reason = "user_changes_present"` for `file_create`, `yaml_inject`, `project_update` and `project_reference` changes (FR-021, FR-011), in `packages/darnit/src/darnit/remediation/executor.py`. Test: with an untracked or modified `.project/project.yaml`, the preview and the apply list the same changes, in `tests/darnit/remediation/test_executor_plan_apply.py`.
 
 **Checkpoint**: SC-005 and SC-007 hold.
 
@@ -325,7 +325,7 @@
 
 ## Phase 8: Polish & Cross-Cutting Concerns
 
-- [ ] T056 [P] Update the tests that pinned the old behavior. Each change must state which requirement replaced the pinned behavior. The pinned behaviors: dry run listing handlers; `api_call` INCONCLUSIVE/ERROR; `file_create` "already exists" as PASS; the config overwrite after `file_create`; `add_all`; text-based gating. The files:
+- [X] T056 [P] Update the tests that pinned the old behavior. Each change must state which requirement replaced the pinned behavior. The pinned behaviors: dry run listing handlers; `api_call` INCONCLUSIVE/ERROR; `file_create` "already exists" as PASS; the config overwrite after `file_create`; `add_all`; text-based gating. The files:
   - `tests/darnit/remediation/test_executor.py`
   - `tests/darnit/remediation/test_confirmation_required.py`
   - `tests/darnit/remediation/test_project_update.py`
@@ -347,7 +347,7 @@
   - `tests/darnit_csl/test_csl.py`
   - `tests/darnit_example/test_remediation.py`
   - `tests/integration/test_mcp_server.py`
-- [ ] T057 [P] Update CHANGELOG `[Unreleased]` in `CHANGELOG.md`:
+- [X] T057 [P] Update CHANGELOG `[Unreleased]` in `CHANGELOG.md`:
   - **Security:** platform remediation reads first, never weakens settings, and needs approval by default.
   - **BREAKING:**
     - `enable_branch_protection` defaults to preview, and its branch defaults to the repository default;
@@ -357,7 +357,7 @@
     - the OSPS-AC-01.01 and OSPS-AC-02.01 remediations are manual;
     - `remediate_community_spec` defaults to preview.
   - **Added:** the `[remediation]` operator policy; `platform_setting`; `approve` digests; run ids; outcome kinds.
-- [ ] T058 [P] Update `docs/` pages that describe remediation, dry run, branch protection or the git workflow (`docs/USAGE_GUIDE.md`, `docs/SECURITY_GUIDE.md`, `docs/IMPLEMENTATION_GUIDE.md`, `packages/darnit-baseline/README.md`) to match framework-design.md. In `CLAUDE.md`, add the remediation rules to the Sieve/Conservative sections.
+- [X] T058 [P] Update `docs/` pages that describe remediation, dry run, branch protection or the git workflow (`docs/USAGE_GUIDE.md`, `docs/SECURITY_GUIDE.md`, `docs/IMPLEMENTATION_GUIDE.md`, `packages/darnit-baseline/README.md`) to match framework-design.md. In `CLAUDE.md`, add the remediation rules to the Sieve/Conservative sections.
 - [ ] T059 Run quickstart.md V1-V7 and record the results in a "Validation log" section of `specs/043-remediation-safety/quickstart.md`. Use recorded responses and scratch repositories only; V1 live only on a disposable repository.
 - [ ] T060 Close or update the issues on merge: #472, #473, #474, #475, #482, #483. Note on #513 that the AC-02.01 remediation was removed. Note on #420 that it stays open. Do not reference unpublished advisories.
 - [ ] T061 Run `uv run ruff check .`, `uv run pytest tests/ --ignore=tests/integration/ -q` and `uv run python scripts/validate_sync.py --verbose`, then fix failures.

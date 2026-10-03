@@ -313,7 +313,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   replaced.
 - **BREAKING:** `remediate_community_spec` previews by default
   (`dry_run=True`); its README edit appears in the preview and the run
-  manifest.
+  manifest. CSL-02.01 and CSL-03.01 replace an existing scope or notices
+  document, so they are `safe = false` and are written only when the person
+  approves the previewed content (`approve=[digest]`).
 - **BREAKING:** `darnit run` previews remediation by default and writes files
   or platform settings only with `--apply`. Items that need individual
   approval are asked for on the terminal by digest, and otherwise end as

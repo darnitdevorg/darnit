@@ -96,3 +96,30 @@ def test_missing_readme_is_created(tmp_path: Path) -> None:
 
     assert "CSL-06.01: create README.md" in out
     assert (tmp_path / "README.md").read_text(encoding="utf-8").startswith("# Specification\n")
+
+
+def test_replacing_an_existing_scope_needs_the_previewed_digest(tmp_path: Path) -> None:
+    """CSL-02.01 overwrites an existing scope document, so it is ``safe = false`` (FR-024)."""
+    import re
+
+    scope = tmp_path / "governance" / "02-scope.md"
+    scope.parent.mkdir()
+    scope.write_text("# Scope\n\n[Include a detailed description]\n\nOur own notes.\n", encoding="utf-8")
+    original = scope.read_bytes()
+
+    preview = _run(tmp_path)
+    match = re.search(r"## CSL-02\.01: needs the person's approval.*?approve=\['(sha256:[0-9a-f]+)'\]", preview, re.S)
+    assert match, preview
+
+    unapproved = _run(tmp_path, dry_run=False)
+    assert scope.read_bytes() == original
+    assert f"CSL-02.01: approve={match.group(1)}" in unapproved
+
+    _run(tmp_path, dry_run=False, approve=[match.group(1)])
+    assert COMPLETE["scope"] in scope.read_text(encoding="utf-8")
+
+
+def test_approve_parameter_defaults_to_none() -> None:
+    from darnit_csl.mcp_tools import remediate_community_spec
+
+    assert inspect.signature(remediate_community_spec).parameters["approve"].default is None
