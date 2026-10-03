@@ -749,6 +749,31 @@ class RemediationExecutor:
         manifest.record_file(repository, run_id, change.path, change.after_digest or "", checkout=self.local_path)
         return change.model_copy(update={"ignored": True}) if ignored else change
 
+    def amend_created(self, created: FileChange, content: str) -> FileChange:
+        """Replace the content of a file this run created, through the single writer (framework-design 4.3).
+
+        Returns ``created`` with the new content; the run manifest records the
+        new digest, so the file stays committable.
+
+        Raises:
+            WriteRefused: ``created`` is not a create, the file was not created
+                in this run, or it changed since this run wrote it.
+        """
+        if created.action != "create":
+            raise WriteRefused(f"{created.path} was not created by this remediation")
+        if not self._written_this_run(created.path):
+            raise WriteRefused(f"{created.path} was not created in this run, or changed since")
+        self._write(
+            FileChange(path=created.path, action="modify", content=content, before_digest=created.after_digest)
+        )
+        return FileChange(
+            path=created.path,
+            action="create",
+            content=content,
+            ignored=created.ignored,
+            project_reference=created.project_reference,
+        )
+
     def _record_change_set(self, digest: str) -> None:
         repository, run_id = self._ensure_run()
         manifest.record_change_set(repository, run_id, digest, checkout=self.local_path)

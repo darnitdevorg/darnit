@@ -1,5 +1,6 @@
 import json
 import re
+import subprocess
 from unittest.mock import patch
 
 import pytest
@@ -12,8 +13,9 @@ from darnit.config.framework_schema import (
     RemediationConfig,
     TemplateConfig,
 )
+from darnit.remediation import manifest
 from darnit.remediation.executor import RemediationResult
-from darnit.remediation.plan import FileChange, PlanItem
+from darnit.remediation.plan import FileChange, PlanItem, content_digest
 from darnit_baseline.remediation.orchestrator import (
     _apply_declarative_remediation,
     remediate_audit_findings,
@@ -247,56 +249,60 @@ def test_remediate_audit_findings_dry_run(
 # ---------------------------------------------------------
 
 
-@patch("darnit_baseline.remediation.orchestrator.RemediationExecutor")
-@patch("darnit_baseline.remediation.enhancer.is_enhanceable")
-@patch("darnit_baseline.remediation.enhancer.get_enhancement_type")
-@patch("darnit_baseline.remediation.enhancer.enhance_generated_file")
-def test_apply_declarative_remediation_llm_enhancement(
-    mock_enhance,
-    mock_get_type,
-    mock_is_enhanceable,
-    mock_executor_class,
-    mock_framework,
-    temp_git_repo,
-):
-    """Test that successful creation triggers LLM enhancement if enabled."""
-    mock_executor = mock_executor_class.return_value
-    mock_executor.execute.return_value = RemediationResult(
-        success=True,
+@pytest.fixture
+def stub_enhancer():
+    with (
+        patch("darnit_baseline.remediation.enhancer.is_enhanceable", return_value=True),
+        patch("darnit_baseline.remediation.enhancer.get_enhancement_type", return_value="architecture"),
+        patch("darnit_baseline.remediation.enhancer.enhance_generated_file", return_value="# Enriched\n") as enhance,
+    ):
+        yield enhance
+
+
+def _enhanced_apply(repo, path: str, run_id: str) -> dict:
+    for key, value in (("commit.gpgsign", "false"), ("core.hooksPath", ".git/hooks")):
+        subprocess.run(["git", "config", "--local", key, value], cwd=repo, check=True, capture_output=True)
+    config = RemediationConfig(handlers=[HandlerInvocation(handler="file_create", path=path, content="# Generated\n")])
+    return _apply_declarative_remediation(
         control_id="OSPS-GV-01.01",
-        remediation_type="file_create",
-        message="Created GOVERNANCE.md",
-        dry_run=False,
-        details={},
-    )
-
-    # Needs a real file to trigger `os.path.isfile(abs_path)` in orchestrator
-    test_file = temp_git_repo / "GOVERNANCE.md"
-    test_file.write_text("Base content")
-
-    # Setup LLM mocks
-    mock_is_enhanceable.return_value = True
-    mock_get_type.return_value = "governance"
-    mock_enhance.return_value = "Enriched content output from LLM"
-
-    control = mock_framework.controls["OSPS-GV-01.01"]
-
-    # Since we can't write to model_extra statically, we replace the handler object
-    control.remediation.handlers[0] = HandlerInvocation(**{"handler": "file_create", "path": "GOVERNANCE.md"})
-
-    result = _apply_declarative_remediation(
-        control_id="OSPS-GV-01.01",
-        remediation_config=control.remediation,
-        templates=mock_framework.templates,
-        local_path=str(temp_git_repo),
+        remediation_config=config,
+        templates={},
+        local_path=str(repo),
         owner="owner",
         repo="repo",
         dry_run=False,
         enhance_with_llm=True,
+        run_id=run_id,
     )
 
-    assert result["enhanced"] is True
-    mock_enhance.assert_called_once()
 
-    # Verify the file was updated with enriched content
-    assert test_file.read_text() == "Enriched content output from LLM"
+def test_llm_enhancement_never_touches_a_file_that_already_existed(stub_enhancer, temp_git_repo):
+    """framework-design 4.3, scenario "Customizing a file that already existed"."""
+    readme = temp_git_repo / "README.md"
+    before = readme.read_bytes()
+
+    result = _enhanced_apply(temp_git_repo, "README.md", manifest.new_run_id())
+
+    assert readme.read_bytes() == before
+    assert result["enhanced"] is False
+    stub_enhancer.assert_not_called()
+
+
+def test_llm_enhancement_of_a_created_file_is_recorded_and_committable(stub_enhancer, temp_git_repo):
+    from darnit.server.tools.git_operations import commit_remediation_changes_impl
+
+    run_id = manifest.new_run_id()
+
+    result = _enhanced_apply(temp_git_repo, "ARCHITECTURE.md", run_id)
+
+    assert result["enhanced"] is True
+    assert (temp_git_repo / "ARCHITECTURE.md").read_text(encoding="utf-8") == "# Enriched\n"
+    [created] = [c for c in result["file_changes"] if c["path"] == "ARCHITECTURE.md"]
+    assert (created["action"], created["content"]) == ("create", "# Enriched\n")
+    run = manifest.load_run("github.com/owner/repo", run_id)
+    assert {f.path: f.after_digest for f in run.files} == {"ARCHITECTURE.md": content_digest("# Enriched\n")}
+
+    committed = commit_remediation_changes_impl(local_path=str(temp_git_repo), run_id=run_id, owner="owner", repo="repo")
+
+    assert committed.startswith("Changes committed successfully"), committed
+    assert "ARCHITECTURE.md" in committed

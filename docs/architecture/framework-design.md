@@ -775,6 +775,12 @@ project_reference = "security.policy"
 - **THEN** the remediation result MUST include the enhancement prompt and file path in the result details
 - **AND** the MCP layer MAY use this prompt to offer AI-assisted customization of the generated file
 
+An implementation that customizes a created file itself (for example `remediate_audit_findings(enhance_with_llm=True)`) changes only a file whose `FileChange` in this apply has `action = "create"`, writes the new content through the executor's single writer with the same user-changes check (section 4.2), and records the new content's digest in the run manifest, so the file stays committable. A file that existed before the run is never changed.
+
+#### Scenario: Customizing a file that already existed
+- **WHEN** a `file_create` step's target already existed (`action = "none"`, `already_exists`) and AI-assisted customization is requested
+- **THEN** the file MUST NOT be changed
+
 #### Scenario: Existing reference is kept
 - **WHEN** `file_create` creates a file whose `project_reference` field already holds a different reference
 - **THEN** the field MUST be unchanged

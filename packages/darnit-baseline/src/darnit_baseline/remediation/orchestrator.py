@@ -618,42 +618,10 @@ def _apply_declarative_remediation(
         if result.success:
             logger.info(f"Applied declarative remediation: {control_id} ({result.remediation_type})")
 
-            # Optional LLM enhancement for complex documents
             enhanced = False
-            if enhance_with_llm and not dry_run:
-                for handler_inv in remediation_config.handlers:
-                    if handler_inv.handler == "file_create":
-                        extra = handler_inv.model_extra or {}
-                        created_path = extra.get("path")
-                        if created_path:
-                            try:
-                                from darnit_baseline.remediation.enhancer import (
-                                    enhance_generated_file,
-                                    get_enhancement_type,
-                                    is_enhanceable,
-                                )
-                                if is_enhanceable(created_path):
-                                    etype = get_enhancement_type(created_path)
-                                    abs_path = os.path.join(local_path, created_path)
-                                    if etype and os.path.isfile(abs_path):
-                                        enriched = enhance_generated_file(
-                                            abs_path, local_path, etype
-                                        )
-                                        if enriched:
-                                            import pathlib
-                                            pathlib.Path(abs_path).write_text(
-                                                enriched, encoding="utf-8"
-                                            )
-                                            enhanced = True
-                                            logger.info(
-                                                "LLM-enhanced %s for %s",
-                                                created_path, control_id,
-                                            )
-                            except Exception as e:
-                                logger.debug(
-                                    "LLM enhancement skipped for %s: %s",
-                                    created_path, e,
-                                )
+            if enhance_with_llm:
+                enhanced = _enhance_created_files(executor, result, remediation_config, local_path, control_id)
+                applied_record["file_changes"] = [change.model_dump(mode="json") for change in result.file_changes]
 
             result_dict: dict[str, Any] = {
                 "control_id": control_id,
@@ -698,6 +666,55 @@ def _apply_declarative_remediation(
             "message": f"Declarative remediation error: {str(e)}",
             "declarative": True,
         }
+
+
+def _enhance_created_files(
+    executor: RemediationExecutor,
+    result: Any,
+    remediation_config: Any,
+    local_path: str,
+    control_id: str,
+) -> bool:
+    """Enrich complex documents this apply created, through the executor's writer (framework-design 4.3).
+
+    Only a file whose ``FileChange`` in ``result`` is a create is enhanced; a
+    file that existed before the run is never touched. The new content is
+    recorded in the run manifest, so it stays committable.
+    """
+    from darnit.remediation.executor import WriteRefused
+    from darnit.remediation.plan import normalize_repo_path
+    from darnit_baseline.remediation.enhancer import enhance_generated_file, get_enhancement_type, is_enhanceable
+
+    created = {c.path: index for index, c in enumerate(result.file_changes) if c.action == "create"}
+    enhanced = False
+    for handler_inv in remediation_config.handlers:
+        if handler_inv.handler != "file_create":
+            continue
+        try:
+            path = normalize_repo_path((handler_inv.model_extra or {}).get("path") or "")
+        except ValueError:
+            continue
+        index = created.get(path)
+        if index is None or not is_enhanceable(path):
+            continue
+        etype = get_enhancement_type(path)
+        if not etype:
+            continue
+        try:
+            enriched = enhance_generated_file(os.path.join(local_path, path), local_path, etype)
+        except Exception as e:
+            logger.debug("LLM enhancement skipped for %s: %s", path, e)
+            continue
+        if not enriched:
+            continue
+        try:
+            result.file_changes[index] = executor.amend_created(result.file_changes[index], enriched)
+        except (WriteRefused, OSError, ValueError, LookupError) as e:
+            logger.warning("LLM enhancement of %s for %s not written: %s", path, control_id, e)
+            continue
+        enhanced = True
+        logger.info("LLM-enhanced %s for %s", path, control_id)
+    return enhanced
 
 
 def _platform_results(details: dict[str, Any] | None) -> list[dict[str, Any]]:
