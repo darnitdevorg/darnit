@@ -697,7 +697,7 @@ Every remediation runs in one of two modes. The executor passes the mode to each
 
 A preview runs the same two checks, read-only, on every planned `FileChange` of a `file_create`, `yaml_inject`, or `project_update` step, of a declared `project_reference`, and of the remediation's `project_update`, so it reports these paths exactly as the apply will. Outside a git work tree neither check applies. A file written earlier in the same apply is not a user change.
 
-Platform settings are written only by the platform engine (4.5). An `exec` step writes through its command in apply mode (4.4); the executor records what it changed.
+Platform settings are written only by the platform engine (4.5). An `exec` step writes through its command in apply mode (4.4); the executor records what it changed when the step succeeded cleanly.
 
 **Plan support.** Handler registration takes a flag `supports_plan` (default `False`): `registry.register(..., supports_plan=True)`. The built-in `file_create`, `project_update`, `yaml_inject`, `manual`, and `platform_setting` handlers register with `supports_plan=True`; `exec` is previewable only as section 4.4 describes. A step whose handler did not register `supports_plan=True` is not run in plan mode; it is reported as "cannot be previewed exactly" (`previewable = False`) and requires individual approval (15.3). A plugin handler without plan support that writes files itself is outside the run manifest, so the git tools never commit those files (15.7).
 
@@ -815,7 +815,12 @@ offline = true
 
 A file the command creates that the checkout's ignore rules exclude is not part of the preview (and is not recorded at apply). A preview whose run does not succeed (an exit code outside `pass_exit_codes`, a missing binary, a timeout), or whose difference a `FileChange` cannot express (a deleted file, a non-text file), is an error, and the step is `previewable = False`.
 
-**Apply.** The command runs in the checkout. The executor records every file the command created or modified in the run manifest, compares the result with the preview, and reports any difference in the outcome. A previewed path that has uncommitted user changes is a conflict: the command is not run and the outcome names the path. A file the command changed that had uncommitted user changes before the step is reported as a conflict and is not recorded in the manifest, so it is never committed. An exit code outside `pass_exit_codes` is an error; a missing binary is ERROR, class `missing_tool`; a timeout is ERROR, class `timeout`.
+**Apply.** The command runs in the checkout. The executor compares what the command created or modified with the preview, and records those files in the run manifest only when the step succeeded cleanly: the exit code is in `pass_exit_codes`, the result equals the preview (for a previewable step), no changed file had uncommitted user changes, and the command deleted no file and wrote no non-text file. Otherwise the step is an error, nothing it changed is recorded (so the git tools never commit it), the files stay in the working tree as the command left them, and the outcome lists them as written but not recorded, for a person to review by hand. A previewed path that has uncommitted user changes is a conflict: the command is not run and the outcome names the path. A file the command changed that had uncommitted user changes before the step is reported as a conflict. An exit code outside `pass_exit_codes` is an error; a missing binary is ERROR, class `missing_tool`; a timeout is ERROR, class `timeout`.
+
+#### Scenario: Exec apply that differs from its preview
+- **WHEN** an applied exec step's changes differ from its preview, or its command exits outside `pass_exit_codes` after writing files
+- **THEN** the step MUST be an error and none of the files it changed MUST be recorded in the run manifest
+- **AND** the outcome MUST list those files as written but not recorded, and `commit_remediation_changes` MUST NOT commit them
 
 #### Scenario: Exec remediation calling a platform command
 - **WHEN** a shipped framework TOML declares an exec remediation whose command is `gh`, `curl`, `wget`, or `git push`

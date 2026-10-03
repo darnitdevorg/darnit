@@ -3,8 +3,9 @@
 An exec step that declares ``effects = "working_tree"`` and ``offline = true``
 is previewed by running it in a scratch copy of the tracked and
 untracked-not-ignored files; the difference is its ``FileChange``s and the
-checkout is untouched. Apply runs it in the checkout, records what it changed
-in the run manifest, and reports any difference from the preview. Without both
+checkout is untouched. Apply runs it in the checkout and records what it
+changed in the run manifest only when it succeeded and matched the preview;
+otherwise nothing is recorded and the difference is reported. Without both
 declarations the step cannot be previewed exactly: it is not run in plan mode
 and needs individual approval.
 """
@@ -59,6 +60,14 @@ MARK = """
 from pathlib import Path
 Path("RAN").write_text("ran\\n")
 """
+WRITES_THEN_FAILS = """
+import sys
+from pathlib import Path
+Path("a.txt").write_text("half-fixed\\n")
+Path("b.txt").write_text("partial\\n")
+sys.exit(3)
+"""
+SECURITY = HandlerInvocation(handler="file_create", path="SECURITY.md", content="# Security\n")
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -174,7 +183,7 @@ class TestApply:
         assert FileChange(path="a.txt", action="none", reason="user_changes_present") in result.file_changes
         assert "a.txt" in result.details["handlers"][0]["message"]
 
-    def test_changed_file_with_user_changes_is_a_conflict_and_not_recorded(self, repo: Path) -> None:
+    def test_changed_file_with_user_changes_is_a_conflict_and_nothing_is_recorded(self, repo: Path) -> None:
         (repo / "d.txt").write_text("committed\nmine\n", encoding="utf-8")
 
         result = _executor(repo).execute("T-01", _previewable(ONLY_IN_CHECKOUT), dry_run=False)
@@ -182,8 +191,81 @@ class TestApply:
         assert result.success is False
         assert FileChange(path="d.txt", action="none", reason="user_changes_present") in result.file_changes
         run = manifest.load_run(REPOSITORY, checkout=repo)
+        assert run is None or not run.files
+        assert result.details["handlers"][0]["not_recorded"] == ["b.txt"]
+
+
+def _commit_run(repo: Path, run_id: str) -> str:
+    from darnit.server.tools.git_operations import commit_remediation_changes_impl
+
+    return commit_remediation_changes_impl(local_path=str(repo), run_id=run_id, owner=OWNER, repo=REPO)
+
+
+def _committed(repo: Path) -> list[str]:
+    out = subprocess.run(
+        ["git", "diff-tree", "-r", "--no-commit-id", "--name-only", "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+        env={**os.environ, **_GIT_ENV},
+    ).stdout
+    return sorted(out.split())
+
+
+@pytest.mark.unit
+class TestFailedApplyIsNotRecorded:
+    """framework-design 4.4, scenario "Exec apply that differs from its preview"."""
+
+    @pytest.fixture(autouse=True)
+    def _local_identity(self, repo: Path) -> None:
+        for key, value in (
+            ("user.name", "t"),
+            ("user.email", "t@example.com"),
+            ("commit.gpgsign", "false"),
+            ("core.hooksPath", ".git/hooks"),
+        ):
+            _git(repo, "config", "--local", key, value)
+
+    def _apply_in_run(self, repo: Path, exec_step: HandlerInvocation):
+        config = RemediationConfig(safe=False, handlers=[exec_step])
+        preview = _executor(repo).execute("T-EXEC", config, dry_run=True)
+        run_id = manifest.new_run_id()
+        executor = _executor(repo, run_id=run_id, approvals=[item.digest for item in preview.plan])
+        created = executor.execute("T-DOC", RemediationConfig(handlers=[SECURITY]), dry_run=False)
+        assert created.changed
+        return run_id, executor.execute("T-EXEC", config, dry_run=False)
+
+    def _assert_not_recorded(self, repo: Path, run_id: str, result, written: list[str]) -> None:
+        assert result.success is False
+        assert result.changed is False
+        [entry] = result.details["handlers"]
+        assert entry["status"] == "error"
+        assert entry["not_recorded"] == written
+        assert "not recorded" in entry["message"]
+        assert not any(c.changes for c in result.file_changes)
+        run = manifest.load_run(REPOSITORY, run_id, checkout=repo)
         assert run is not None
-        assert "d.txt" not in {f.path for f in run.files}
+        assert [f.path for f in run.files] == ["SECURITY.md"]
+
+        commit = _commit_run(repo, run_id)
+
+        assert commit.startswith("Changes committed successfully"), commit
+        assert _committed(repo) == ["SECURITY.md"]
+        for path in written:
+            assert (repo / path).exists(), "the files stay in the working tree for a person to review"
+
+    def test_approved_apply_that_differs_from_the_preview(self, repo: Path) -> None:
+        run_id, result = self._apply_in_run(repo, _step(ONLY_IN_CHECKOUT, effects="working_tree", offline=True))
+
+        assert result.details["handlers"][0]["preview_mismatch"]["applied_only"] == ["d.txt"]
+        self._assert_not_recorded(repo, run_id, result, ["b.txt", "d.txt"])
+
+    def test_approved_apply_that_exits_non_zero_after_writing(self, repo: Path) -> None:
+        run_id, result = self._apply_in_run(repo, _step(WRITES_THEN_FAILS))
+
+        assert (repo / "a.txt").read_text(encoding="utf-8") == "half-fixed\n"
+        self._assert_not_recorded(repo, run_id, result, ["a.txt", "b.txt"])
 
 
 @pytest.mark.unit

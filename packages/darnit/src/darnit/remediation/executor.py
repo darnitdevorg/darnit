@@ -815,8 +815,11 @@ class RemediationExecutor:
         Returns ``(result entry, file changes, success, wrote)``. A previewed
         path with uncommitted user changes stops the step before it runs. A
         file the command changed that had uncommitted user changes before is
-        a conflict and is not recorded, so it is never committed. Any
-        difference from the preview is reported and fails the step.
+        a conflict. The changed files are recorded only when the step
+        succeeded cleanly; after a failure, a conflict, a deletion, a
+        non-text write, or a difference from the preview, none is recorded
+        (so none is ever committed) and they are listed in
+        ``entry["not_recorded"]`` for a person to review.
         """
         from darnit.remediation import working_tree
         from darnit.sieve.handler_registry import HandlerResultStatus
@@ -856,22 +859,14 @@ class RemediationExecutor:
         except (git_state.GitStateError, OSError) as e:
             return failed(f"{entry['message']}; the changes it made cannot be read: {e}")
 
-        recorded: list[FileChange] = []
-        conflicted: list[str] = []
-        for change in found.changes:
-            if change.path in dirty:
-                conflicted.append(change.path)
-                continue
-            repository, run_id = self._ensure_run()
-            manifest.record_file(repository, run_id, change.path, change.after_digest or "", checkout=self.local_path)
-            recorded.append(change)
-        changes = recorded + [FileChange(path=p, action="none", reason="user_changes_present") for p in conflicted]
+        conflicted = [c.path for c in found.changes if c.path in dirty]
+        written = [c for c in found.changes if c.path not in dirty]
 
         problems: list[str] = []
         if not passed:
             problems.append(entry["message"])
         if conflicted:
-            problems.append(f"changed files that had uncommitted user changes (not recorded): {conflicted}")
+            problems.append(f"changed files that had uncommitted user changes: {conflicted}")
         if found.deleted:
             problems.append(f"deleted {found.deleted}")
         if found.not_text:
@@ -887,9 +882,20 @@ class RemediationExecutor:
             if any(mismatch.values()):
                 entry["preview_mismatch"] = mismatch
                 problems.append(f"applied changes differ from the preview: {mismatch}")
+        conflicts = [FileChange(path=p, action="none", reason="user_changes_present") for p in conflicted]
         if problems:
+            if written:
+                entry["not_recorded"] = sorted(c.path for c in written)
+                problems.append(
+                    f"written but not recorded: {entry['not_recorded']}; they will not be committed, "
+                    "review them by hand"
+                )
             entry.update(status="error", message="; ".join(problems))
-        return entry, changes, not problems, bool(recorded)
+            return entry, conflicts, False, False
+        for change in written:
+            repository, run_id = self._ensure_run()
+            manifest.record_file(repository, run_id, change.path, change.after_digest or "", checkout=self.local_path)
+        return entry, written, True, bool(written)
 
     def _when_not_met(self, handler_config: dict[str, Any]) -> list[FileChange]:
         path = handler_config.get("path")
