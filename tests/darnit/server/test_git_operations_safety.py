@@ -20,7 +20,7 @@ from darnit.remediation.executor import RemediationExecutor
 from darnit.remediation.git_state import check_repository_state
 from darnit.server.tools import git_operations
 
-from .conftest import ENV_CONTENT, REMEDIATION_BRANCH, SUCCESS, BareRemote, DirtyRepo, git
+from .conftest import ENV_CONTENT, REMEDIATION_BRANCH, SUCCESS, BareRemote, DirtyRepo, ForeignBranchRepo, git
 
 OWNER, REPO = "example-org", "example"
 IDENTITY = f"github.com/{OWNER}/{REPO}"
@@ -170,3 +170,81 @@ def test_pr_diffs_against_the_branch_base(
     assert "**Files changed:** 2" in pr
     create = gh_calls[0]
     assert create[create.index("--base") + 1] == "develop"
+
+
+def _commit_then_rebase_onto_a_newer_base(repo: Path, bare_remote: BareRemote) -> str:
+    path = str(repo)
+    bare_remote.attach(repo)
+    run_id = manifest.new_run_id()
+    assert create_branch(branch_name="fix/darnit", local_path=path, run_id=run_id).startswith(SUCCESS)
+    result = RemediationExecutor(owner=OWNER, repo=REPO, local_path=path, run_id=run_id).execute(
+        "C-1", REMEDIATION, dry_run=False
+    )
+    assert result.changed, result.details
+    assert commit_changes(local_path=path, run_id=run_id).startswith(SUCCESS)
+    git(repo, "checkout", "-q", "main")
+    for n in (1, 2, 3):
+        (repo / f"UPSTREAM{n}.md").write_text(f"upstream {n}\n", encoding="utf-8")
+        git(repo, "add", "--", f"UPSTREAM{n}.md")
+        git(repo, "commit", "-q", "-m", f"upstream C{n}")
+    git(repo, "push", "-q", "origin", "main:refs/heads/main")
+    git(repo, "checkout", "-q", "fix/darnit")
+    git(repo, "rebase", "-q", "origin/main")
+    return run_id
+
+
+@pytest.mark.integration
+def test_pr_after_rebasing_onto_a_newer_base_lists_only_remediation_commits(
+    r_foreign_branch: ForeignBranchRepo, bare_remote: BareRemote, gh_calls: list[list[str]]
+) -> None:
+    """The branch is created at C0, the base advances by C1..C3, and the user rebases the branch onto it."""
+    repo, path = r_foreign_branch.path, str(r_foreign_branch.path)
+    run_id = _commit_then_rebase_onto_a_newer_base(repo, bare_remote)
+
+    pr = create_pr(local_path=path, run_id=run_id)
+
+    assert pr.startswith(SUCCESS), pr
+    assert "**Commits:** 1" in pr and "**Files changed:** 2" in pr, pr
+    create = gh_calls[0]
+    assert create[create.index("--base") + 1] == "main"
+    body = create[create.index("--body") + 1]
+    assert "UPSTREAM" not in body
+
+
+@pytest.mark.integration
+def test_pr_refuses_a_rebased_run_commit_whose_change_differs(
+    r_foreign_branch: ForeignBranchRepo, bare_remote: BareRemote, gh_calls: list[list[str]]
+) -> None:
+    repo = r_foreign_branch.path
+    run_id = _commit_then_rebase_onto_a_newer_base(repo, bare_remote)
+    (repo / "SECURITY.md").write_text("# Security\n\nEdited during the rebase.\n", encoding="utf-8")
+    git(repo, "commit", "-q", "--amend", "--no-edit", "--", "SECURITY.md")
+    remote_before = _remote_refs(bare_remote)
+
+    pr = create_pr(local_path=str(repo), run_id=run_id)
+
+    assert pr.startswith("Error") and "rebased copy" in pr, pr
+    assert _remote_refs(bare_remote) == remote_before
+    assert gh_calls == []
+
+
+@pytest.mark.integration
+def test_pr_falls_back_to_the_recorded_base_commit_when_the_base_ref_is_gone(
+    r_foreign_branch: ForeignBranchRepo, bare_remote: BareRemote, gh_calls: list[list[str]]
+) -> None:
+    repo, path = r_foreign_branch.path, str(r_foreign_branch.path)
+    bare_remote.attach(repo)
+    run_id = manifest.new_run_id()
+    assert create_branch(branch_name="fix/darnit", local_path=path, run_id=run_id).startswith(SUCCESS)
+    assert RemediationExecutor(owner=OWNER, repo=REPO, local_path=path, run_id=run_id).execute(
+        "C-1", REMEDIATION, dry_run=False
+    ).changed
+    assert commit_changes(local_path=path, run_id=run_id).startswith(SUCCESS)
+    git(repo, "update-ref", "-d", "refs/remotes/origin/main")
+
+    pr = create_pr(local_path=path, run_id=run_id)
+
+    assert pr.startswith(SUCCESS), pr
+    assert "**Commits:** 1" in pr, pr
+    create = gh_calls[0]
+    assert create[create.index("--base") + 1] == "main"

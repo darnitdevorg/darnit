@@ -152,6 +152,25 @@ def base_branch_name(base: str) -> str:
     return base[len(prefix) :] if base.startswith(prefix) else base
 
 
+def merge_base(repo: str | Path, base: str, branch: str) -> str | None:
+    """The commit where ``branch`` diverged from ``base``, or None when either cannot be resolved."""
+    if resolve_commit(repo, base) is None or resolve_commit(repo, f"refs/heads/{branch}") is None:
+        return None
+    result = run_git(repo, "merge-base", base, f"refs/heads/{branch}")
+    return result.stdout.strip() if result.returncode == 0 and result.stdout.strip() else None
+
+
+def holds_commit(repo: str | Path, tip: str, commit: str) -> bool:
+    """True when ``tip`` contains ``commit``, or a rebased copy of every change of it not on ``tip``.
+
+    A rebased copy is a commit on ``tip`` with the same patch (``git cherry``).
+    """
+    if resolve_commit(repo, commit) is None:
+        return False
+    result = run_git(repo, "cherry", tip, commit)
+    return result.returncode == 0 and all(line.startswith("-") for line in result.stdout.splitlines() if line.strip())
+
+
 def foreign_commits(repo: str | Path, base: str, branch: str) -> list[str]:
     """Commits on ``branch`` beyond ``base`` whose message lacks the ``Darnit-Remediation-Run`` trailer."""
     out = _checked(
@@ -275,8 +294,10 @@ __all__ = [
     "from_root",
     "has_tracked_changes",
     "has_uncommitted_changes",
+    "holds_commit",
     "is_ignored",
     "is_work_tree",
+    "merge_base",
     "operation_in_progress",
     "resolve_base",
     "resolve_commit",

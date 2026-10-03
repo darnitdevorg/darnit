@@ -1981,13 +1981,18 @@ The git tools `create_remediation_branch`, `commit_remediation_changes`, and `cr
 - **No stash.** Remediation never stashes, drops a stash, discards, or overwrites the user's uncommitted changes. A new branch is created with `git checkout -b` from HEAD; the user's uncommitted changes stay in the working tree untouched. Switching to an existing branch requires a clean tree.
 - **Manifest-only commits.** `commit_remediation_changes` stages only the run manifest's files, with explicit pathspecs, and only those whose current content digest equals the manifest's `after_digest`; a file edited after remediation wrote it is a conflict and is not committed. Ignored files are never staged. `add_all` does not exist.
 - **Trailer.** Every remediation commit message carries `Darnit-Remediation-Run: <run_id>`. The response lists every committed file, and the commit is recorded in the manifest.
-- **Push.** `create_remediation_pr` pushes only the remediation branch, and refuses before pushing when that branch is the pull request base branch itself. Unless a base branch is passed, it targets the `base` recorded in the run manifest and checks and lists the branch's commits against the recorded `base_commit`; without a recorded base it resolves the base as at branch creation (the remote's default branch, then `main`, `master`).
+- **Push.** `create_remediation_pr` pushes only the remediation branch, and refuses before pushing when that branch is the pull request base branch itself. Unless a base branch is passed, it targets the branch named by the `base` recorded in the run manifest; without a recorded base it resolves the base as at branch creation (the remote's default branch, then `main`, `master`). It checks and lists the branch's commits against the merge base of the branch and the base ref as it is now, so a branch rebased onto a newer base carries only its own commits; only when the recorded base ref cannot be resolved does it use the recorded `base_commit`. The branch must contain the run's commit, or a rebased copy of it with the same patch (`git cherry`); otherwise nothing is pushed.
 - **Gates.** Commit and pull request steps run only when at least one outcome changed files (15.4).
 
 #### Scenario: Unrelated work in progress
 - **WHEN** the working tree has a modified tracked file, an untracked `.env`, and a stash, and remediation creates a branch, commits, and opens a pull request
 - **THEN** the commit MUST contain exactly the manifest's files
 - **AND** the modified file and `.env` MUST remain uncommitted and byte-identical, and the stash list MUST be unchanged
+
+#### Scenario: Pull request after a rebase onto a newer base
+- **WHEN** the remediation branch was created at C0, the base advanced by C1..C3 without the trailer, and the user rebased the branch onto it
+- **THEN** `create_remediation_pr` MUST open the pull request against the recorded base's branch
+- **AND** it MUST list only the remediation commits, not C1..C3
 
 #### Scenario: Pull request from history that is not on the base
 - **WHEN** remediation is asked to create a branch, commit, and open a pull request, and HEAD holds a commit without the trailer that is not on the pull request base

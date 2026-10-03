@@ -28,8 +28,10 @@ from darnit.remediation.git_state import (
     foreign_commits,
     from_root,
     has_uncommitted_changes,
+    holds_commit,
     is_ignored,
     is_work_tree,
+    merge_base,
     resolve_base,
     resolve_commit,
     run_git,
@@ -388,11 +390,13 @@ def create_remediation_pr_impl(
 ) -> str:
     """Push a remediation run's branch, and only that branch, and open a pull request.
 
-    The branch must hold the run's commit, and every commit on it beyond its
-    base must carry the ``Darnit-Remediation-Run`` trailer. Unless
-    ``base_branch`` is given, the base is the one recorded with the run's
-    branch (its ref, and the commit it pointed to then). Commits and changed
-    files are listed against that base.
+    The branch must hold the run's commit (or a rebased copy with the same
+    patch), and every commit on it beyond its merge base with the base must
+    carry the ``Darnit-Remediation-Run`` trailer. Unless ``base_branch`` is
+    given, the base is the ref recorded with the run's branch. Commits and
+    changed files are listed against the merge base of the branch and that
+    ref as it is now; the commit recorded with the base is used only when the
+    ref cannot be resolved.
 
     Args:
         local_path: Path to the repository
@@ -440,16 +444,25 @@ Create a remediation branch first:
         tip = resolve_commit(resolved_path, f"refs/heads/{branch}")
         if tip is None:
             return _error(f"branch '{branch}' of remediation run {run.run_id} does not exist. Nothing was pushed.")
-        if run_git(resolved_path, "merge-base", "--is-ancestor", run.commit, tip).returncode != 0:
-            return _error(f"branch '{branch}' does not contain the run's commit {run.commit[:12]}. Nothing was pushed.")
+        if not holds_commit(resolved_path, tip, run.commit):
+            return _error(
+                f"branch '{branch}' does not contain the run's commit {run.commit[:12]} or a rebased copy of it. "
+                "Nothing was pushed."
+            )
 
-        if base_branch is None and run.base and run.base_commit:
-            base, since = run.base, run.base_commit
+        if base_branch is None and run.base:
+            base = run.base
         else:
             base = resolve_base(resolved_path, branch, base_branch, current_first=False)
             if base is None:
                 return _error(f"cannot determine the base of branch '{branch}'; pass base_branch. Nothing was pushed.")
-            since = base
+        since = merge_base(resolved_path, base, branch)
+        if since is None and resolve_commit(resolved_path, base) is None and base == run.base:
+            since = run.base_commit
+        if since is None:
+            return _error(
+                f"cannot determine where branch '{branch}' diverged from '{base}'; pass base_branch. Nothing was pushed."
+            )
         if branch == base_branch_name(base):
             return _error(f"a pull request cannot be opened from '{branch}' into itself. Nothing was pushed.")
         foreign = foreign_commits(resolved_path, since, branch)
