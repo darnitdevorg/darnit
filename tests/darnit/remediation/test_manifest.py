@@ -142,6 +142,17 @@ class TestRecord:
         assert loaded is not None
         assert (loaded.base, loaded.base_commit) == ("origin/main", "c0ffee")
 
+    def test_forget_file_removes_only_that_file(self, data_root: Path, checkout: Path) -> None:
+        run = manifest.start_run(REPO, checkout=checkout)
+        manifest.record_file(REPO, run.run_id, "A.md", content_digest("a"), checkout=checkout)
+        manifest.record_file(REPO, run.run_id, "B.md", content_digest("b"), checkout=checkout)
+
+        manifest.forget_file(REPO, run.run_id, "A.md", checkout=checkout)
+
+        loaded = manifest.load_run(REPO, run.run_id, checkout=checkout)
+        assert loaded is not None
+        assert [f.path for f in loaded.files] == ["B.md"]
+
     def test_recording_to_an_unknown_run_fails(self, data_root: Path, checkout: Path) -> None:
         with pytest.raises(LookupError):
             manifest.record_file(REPO, manifest.new_run_id(), "A.md", content_digest("x"), checkout=checkout)

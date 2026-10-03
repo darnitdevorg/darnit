@@ -309,7 +309,7 @@ class TestFailedApplyIsNotRecorded:
         assert entry["status"] == "error"
         assert entry["not_recorded"] == written
         assert "not recorded" in entry["message"]
-        assert not any(c.changes for c in result.file_changes)
+        assert sorted(c.path for c in result.file_changes if c.changes) == written, "partial writes are reported"
         run = manifest.load_run(REPOSITORY, run_id, checkout=repo)
         assert run is not None
         assert [f.path for f in run.files] == ["SECURITY.md"]
@@ -332,6 +332,37 @@ class TestFailedApplyIsNotRecorded:
 
         assert (repo / "a.txt").read_text(encoding="utf-8") == "half-fixed\n"
         self._assert_not_recorded(repo, run_id, result, ["a.txt", "b.txt"])
+
+
+    def test_failed_step_over_a_file_recorded_earlier_in_the_run_does_not_block_the_commit(self, repo: Path) -> None:
+        overwrites = _step(
+            "import sys\nfrom pathlib import Path\nPath('SECURITY.md').write_text('# Half\\n')\nsys.exit(3)\n"
+        )
+        config = RemediationConfig(safe=False, handlers=[overwrites])
+        preview = _executor(repo).execute("T-EXEC", config, dry_run=True)
+        run_id = manifest.new_run_id()
+        executor = _executor(repo, run_id=run_id, approvals=[item.digest for item in preview.plan])
+        documents = RemediationConfig(
+            handlers=[SECURITY, HandlerInvocation(handler="file_create", path="CONTRIBUTING.md", content="# C\n")]
+        )
+        assert executor.execute("T-DOC", documents, dry_run=False).changed
+
+        result = executor.execute("T-EXEC", config, dry_run=False)
+
+        assert result.success is False and result.changed is False
+        assert [(c.path, c.action) for c in result.file_changes if c.changes] == [("SECURITY.md", "modify")]
+        [entry] = result.details["handlers"]
+        assert entry["status"] == "error"
+        assert entry["removed_from_run"] == ["SECURITY.md"]
+        assert "SECURITY.md" in entry["message"] and "removed from the run" in entry["message"]
+        run = manifest.load_run(REPOSITORY, run_id, checkout=repo)
+        assert run is not None and [f.path for f in run.files] == ["CONTRIBUTING.md"]
+
+        commit = _commit_run(repo, run_id)
+
+        assert commit.startswith("Changes committed successfully"), commit
+        assert _committed(repo) == ["CONTRIBUTING.md"]
+        assert (repo / "SECURITY.md").read_text(encoding="utf-8") == "# Half\n"
 
 
 @pytest.mark.unit

@@ -823,12 +823,17 @@ A step is not run in a scratch copy when any file it would see is a symbolic lin
 
 A file the command creates that the checkout's ignore rules exclude is not part of the preview (and is not recorded at apply). A preview whose run does not succeed (an exit code outside `pass_exit_codes`, a missing binary, a timeout), or whose difference a `FileChange` cannot express (a deleted file, a non-text file), is an error, and the step is `previewable = False`.
 
-**Apply.** The command runs in the checkout. The executor compares what the command created or modified with the preview, and records those files in the run manifest only when the step succeeded cleanly: the exit code is in `pass_exit_codes`, the result equals the preview (for a previewable step), no changed file had uncommitted user changes, and the command deleted no file and wrote no non-text file. Otherwise the step is an error, nothing it changed is recorded (so the git tools never commit it), the files stay in the working tree as the command left them, and the outcome lists them as written but not recorded, for a person to review by hand. A previewed path that has uncommitted user changes is a conflict: the command is not run and the outcome names the path. A file the command changed that had uncommitted user changes before the step is reported as a conflict. An exit code outside `pass_exit_codes` is an error; a missing binary is ERROR, class `missing_tool`; a timeout is ERROR, class `timeout`.
+**Apply.** The command runs in the checkout. The executor compares what the command created or modified with the preview, and records those files in the run manifest only when the step succeeded cleanly: the exit code is in `pass_exit_codes`, the result equals the preview (for a previewable step), no changed file had uncommitted user changes, and the command deleted no file and wrote no non-text file. Otherwise the step is an error, nothing it changed is recorded (so the git tools never commit it), the files stay in the working tree as the command left them, and the outcome (`error`) lists every file the step changed, as written but not recorded, for a person to review by hand; the audit cache is invalidated as for any write. A file the step changed that an earlier step of the same run recorded no longer holds what remediation wrote: it is removed from the run manifest and the outcome says so, so the commit tool commits the run's other files and leaves that one in the working tree. A previewed path that has uncommitted user changes is a conflict: the command is not run and the outcome names the path. A file the command changed that had uncommitted user changes before the step is reported as a conflict. An exit code outside `pass_exit_codes` is an error; a missing binary is ERROR, class `missing_tool`; a timeout is ERROR, class `timeout`.
 
 #### Scenario: Exec apply that differs from its preview
 - **WHEN** an applied exec step's changes differ from its preview, or its command exits outside `pass_exit_codes` after writing files
 - **THEN** the step MUST be an error and none of the files it changed MUST be recorded in the run manifest
 - **AND** the outcome MUST list those files as written but not recorded, and `commit_remediation_changes` MUST NOT commit them
+
+#### Scenario: Failed exec step over a file recorded earlier in the run
+- **WHEN** an exec step changes a file an earlier step of the same run wrote and recorded, and then fails
+- **THEN** that file MUST be removed from the run manifest and the outcome MUST name it
+- **AND** `commit_remediation_changes` MUST commit the run's other recorded files and not that one
 
 #### Scenario: Exec remediation calling a platform command
 - **WHEN** a shipped framework TOML declares an exec remediation whose command is `gh`, `curl`, `wget`, or `git push`
@@ -1965,7 +1970,7 @@ Every apply records a run manifest operator-side at `user_data_root()/remediatio
 | Field | Description |
 |-------|-------------|
 | `run_id`, `repository`, `created_at` | |
-| `files` | `[{path, after_digest}]` for every file the executor wrote |
+| `files` | `[{path, after_digest}]` for every file the executor wrote, less any a failed exec step changed afterwards (4.4) |
 | `change_sets` | Digests of the change sets applied |
 | `branch` | Remediation branch, if one was created |
 | `base`, `base_commit` | The ref a pull request from `branch` targets, and the commit it pointed to, recorded when the branch is created or switched to; a run that moves to another branch replaces both (empty when the base cannot be resolved) |

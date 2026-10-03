@@ -847,8 +847,10 @@ class RemediationExecutor:
         a conflict. The changed files are recorded only when the step
         succeeded cleanly; after a failure, a conflict, a deletion, a
         non-text write, or a difference from the preview, none is recorded
-        (so none is ever committed) and they are listed in
-        ``entry["not_recorded"]`` for a person to review.
+        (so none is ever committed), they are returned as the step's file
+        changes and listed in ``entry["not_recorded"]`` for a person to
+        review, and a file an earlier step of this run recorded is removed
+        from the run manifest (``entry["removed_from_run"]``).
         """
         from darnit.remediation import working_tree
         from darnit.sieve.handler_registry import HandlerResultStatus
@@ -924,8 +926,18 @@ class RemediationExecutor:
                     f"written but not recorded: {entry['not_recorded']}; they will not be committed, "
                     "review them by hand"
                 )
+            superseded = sorted(c.path for c in written if c.path in recorded)
+            if superseded:
+                repository, run_id = self._ensure_run()
+                for path in superseded:
+                    manifest.forget_file(repository, run_id, path, checkout=self.local_path)
+                entry["removed_from_run"] = superseded
+                problems.append(
+                    f"removed from the run: {superseded}, which an earlier step of this run wrote and this "
+                    "step changed; they no longer hold what remediation wrote and will not be committed"
+                )
             entry.update(status="error", message="; ".join(problems))
-            return entry, conflicts, False, False
+            return entry, written + conflicts, False, False
         for change in written:
             repository, run_id = self._ensure_run()
             manifest.record_file(repository, run_id, change.path, change.after_digest or "", checkout=self.local_path)

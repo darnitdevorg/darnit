@@ -198,6 +198,15 @@ def record_file(
     return _update(repository, run_id, checkout, change)
 
 
+def forget_file(repository: str, run_id: str, path: str, *, checkout: str | Path | None) -> RunManifest:
+    """Remove ``path`` from the run's files: it no longer holds what remediation wrote, so it is not committed."""
+
+    def change(run: RunManifest) -> None:
+        run.files = [f for f in run.files if f.path != path]
+
+    return _update(repository, run_id, checkout, change)
+
+
 def record_change_set(repository: str, run_id: str, digest: str, *, checkout: str | Path | None) -> RunManifest:
     """Record an applied platform change set by its digest."""
 
@@ -272,6 +281,7 @@ __all__ = [
     "record_file",
     "repository_identity",
     "runs_dir",
+    "forget_file",
     "set_branch",
     "set_commit",
     "start_run",
