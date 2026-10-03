@@ -706,6 +706,8 @@ handler = "exec"
 command = ["zizmor", "--fix=all", "--offline", "$PATH"]
 pass_exit_codes = [0, 11, 12, 13, 14]
 timeout = 60
+effects = "working_tree"
+offline = true
 
 # Fallback: manual remediation steps
 [[controls."OSPS-BR-01.01".remediation.handlers]]
@@ -775,6 +777,8 @@ handler = "exec"
 command = ["zizmor", "--fix=all", "--offline", "$PATH"]
 pass_exit_codes = [0, 11, 12, 13, 14]
 timeout = 60
+effects = "working_tree"
+offline = true
 
 # Fallback: manual remediation steps
 [[controls."OSPS-BR-01.02".remediation.handlers]]
@@ -1714,8 +1718,9 @@ steps = [
     "Confirm license type is clearly identified",
 ]
 
+# Unsafe: `overwrite = true` replaces an existing LICENSE file's text.
 [controls."OSPS-LE-01.01".remediation]
-safe = true
+safe = false
 strategy = "first_match"
 
 [[controls."OSPS-LE-01.01".remediation.handlers]]
@@ -2386,8 +2391,10 @@ steps = [
     "Check permissions follow least-privilege principle",
 ]
 
+# Unsafe: `permissions: {}` at the top of an existing workflow removes every
+# GITHUB_TOKEN permission from jobs that declare none, which can break them.
 [controls."OSPS-AC-04.01".remediation]
-safe = true
+safe = false
 
 [[controls."OSPS-AC-04.01".remediation.handlers]]
 handler = "yaml_inject"

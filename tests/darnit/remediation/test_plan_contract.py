@@ -9,6 +9,10 @@ on a fixture repository with a recording platform:
 - a step that cannot be previewed exactly is flagged ``previewable = False``,
   is not run in plan mode, and is skipped in a batch apply without its own
   ``PlanItem.digest``.
+
+Exec steps run a stand-in ``zizmor`` placed first on ``PATH``, so the
+previewable zizmor steps (T052) are previewed and applied the same way
+whether or not the real tool is installed.
 """
 
 from __future__ import annotations
@@ -73,6 +77,23 @@ def _steps() -> list[tuple[Path, str, int, HandlerInvocation]]:
 
 def _id(path: Path, control_id: str) -> str:
     return f"{path.stem}:{control_id}"
+
+
+ZIZMOR_FIX = "# fixed by zizmor\n"
+FAKE_ZIZMOR = f"""#!/bin/sh
+for target; do :; done
+printf '{ZIZMOR_FIX.strip()}\\n' >> "$target/.github/workflows/ci.yml"
+exit 0
+"""
+
+
+@pytest.fixture(autouse=True)
+def _fake_zizmor(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:
+    bin_dir = tmp_path_factory.mktemp("bin")
+    tool = bin_dir / "zizmor"
+    tool.write_text(FAKE_ZIZMOR, encoding="utf-8")
+    tool.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
 
 
 @pytest.fixture(autouse=True, scope="module")
@@ -277,10 +298,30 @@ class TestNotPreviewableSteps:
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize("control_id", ["OSPS-BR-01.01", "OSPS-BR-01.02"])
+def test_zizmor_fix_is_previewed(repo: Path, control_id: str) -> None:
+    path = next(p for p, c in REMEDIATIONS if c == control_id)
+    before = snapshot(repo)
+
+    with recorded_gh(_platform()):
+        _framework, preview = _preview(repo, path, control_id)
+
+    assert snapshot(repo) == before
+    [item] = [item for item in preview.plan if item.step == "exec[0]"]
+    assert item.previewable is True
+    assert item.requires_individual_approval is True
+    [change] = item.file_changes
+    assert (change.path, change.action) == (".github/workflows/ci.yml", "modify")
+    assert change.content == WORKFLOW + ZIZMOR_FIX
+
+
+@pytest.mark.unit
 def test_shipped_steps_that_cannot_be_previewed_are_found() -> None:
     handlers = {step.handler for _, _, _, step in NOT_PREVIEWABLE}
 
     assert "generate_threat_model" in handlers
+    assert ("reproducibility", "RE-01.01") in {(p.stem, c) for p, c, _, s in NOT_PREVIEWABLE if s.handler == "exec"}
+    assert not any(c.startswith("OSPS-BR-01.0") for _, c, _, s in NOT_PREVIEWABLE if s.handler == "exec")
 
 
 @pytest.mark.unit

@@ -43,11 +43,15 @@ safe = true
 # `uv lock` is Python-specific, so the remediation is gated to Python projects
 # via `when = { detected_ecosystem = "python" }`; on non-Python projects it is
 # simply not applicable, keeping the safe = true claim accurate where it runs.
+# It changes only the working tree but may resolve against a package index,
+# so it is not `offline` and cannot be previewed exactly: it runs in a batch
+# apply only when its plan item digest is approved (framework-design 4.4, 15.3).
 # TODO: add per-language remediations (cargo update, go mod tidy, ...).
 [[controls."RE-01.01".remediation.handlers]]
 handler = "exec"
 when = { detected_ecosystem = "python" }
 command = ["uv", "lock"]
+effects = "working_tree"
 
 # =============================================================================
 # Control: Is the build environment declared?
