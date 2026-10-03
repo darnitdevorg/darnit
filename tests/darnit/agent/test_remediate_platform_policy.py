@@ -320,5 +320,58 @@ class TestTerminalApproverForPlanItems:
         assert injected in shown
         assert "echo step 79" in shown
 
+    @staticmethod
+    def _shown_modify(tmp_path: Path, current: str, resulting: str) -> list[str]:
+        (tmp_path / "f.txt").write_bytes(current.encode("utf-8"))
+        item = PlanItem(
+            control_id="T-WS",
+            step="file_create[0]",
+            file_changes=[
+                FileChange(
+                    path="f.txt", action="modify", content=resulting, before_digest=content_digest(current)
+                )
+            ],
+            previewable=True,
+            requires_individual_approval=True,
+        )
+        out = io.StringIO()
+        TerminalApprover(io.StringIO("n\n"), out, root=tmp_path).approve_item(item, ["safe = false"])
+        assert out.getvalue().isascii()
+        return [line.strip() for line in out.getvalue().splitlines()]
+
+    def test_crlf_to_lf_is_visible(self, tmp_path: Path) -> None:
+        shown = self._shown_modify(tmp_path, "a\r\nb\r\n", "a\nb\n")
+
+        assert "-a\\r" in shown and "+a" in shown
+        assert "-b\\r" in shown and "+b" in shown
+
+    def test_removed_final_newline_is_visible(self, tmp_path: Path) -> None:
+        shown = self._shown_modify(tmp_path, "a\nb\n", "a\nb")
+
+        assert "-b" in shown and "+b" in shown
+        assert "\\ No newline at end of file" in shown
+
+    def test_line_separator_characters_are_visible(self, tmp_path: Path) -> None:
+        shown = self._shown_modify(tmp_path, "a b\nc\n", "a b\nc\x0cd\x1ce\n")
+
+        assert "+a\\u2028b" in shown
+        assert "+c\\x0cd\\x1ce" in shown
+
+    def test_created_file_shows_line_endings_and_a_missing_final_newline(self) -> None:
+        item = PlanItem(
+            control_id="T",
+            step="file_create[0]",
+            file_changes=[FileChange(path="X.md", action="create", content="a\r\nb")],
+            previewable=True,
+            requires_individual_approval=True,
+        )
+        out = io.StringIO()
+
+        TerminalApprover(io.StringIO("n\n"), out).approve_item(item, ["safe = false"])
+
+        shown = [line.strip() for line in out.getvalue().splitlines()]
+        assert "| a\\r" in shown and "| b" in shown
+        assert "\\ No newline at end of file" in shown
+
     def test_eof_is_a_refusal(self) -> None:
         assert TerminalApprover(io.StringIO(""), io.StringIO()).approve_item(self._item(), []) is False

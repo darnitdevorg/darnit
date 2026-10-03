@@ -2013,7 +2013,7 @@ Every writer goes through the executor, the platform engine, and the run manifes
 | `create_remediation_branch`, `commit_remediation_changes`, `create_remediation_pr` | `run_id`; rules of 15.7 |
 | `remediate_community_spec` (darnit-csl) | `dry_run = True` by default; its README edit is a `FileChange` in the preview and the manifest; `approve` carries the digests of individually approved items (CSL-02.01 and CSL-03.01 are `safe = false` because they replace an existing document) |
 | `create_security_policy` | Writes through the executor and the manifest; keeps its explicit-create semantics |
-| `darnit run` | Previews by default; creates or changes files, or platform settings, only with `--apply` (FR-027). In an apply, platform changes follow the policy; under `prompt` with a terminal it asks on `/dev/tty`, otherwise the outcome is `needs_approval`. A plan item that requires individual approval (15.3) is shown on `/dev/tty` with its files (the full content of a created file; for a modified file, a unified diff of the current file against the resulting content, or the full resulting content when the current file cannot be read; never truncated, and escaped to printable ASCII), commands, change sets, the reason it needs approval, and its `PlanItem.digest`, and runs only on the person's yes; with no terminal it ends as `needs_approval` |
+| `darnit run` | Previews by default; creates or changes files, or platform settings, only with `--apply` (FR-027). In an apply, platform changes follow the policy; under `prompt` with a terminal it asks on `/dev/tty`, otherwise the outcome is `needs_approval`. A plan item that requires individual approval (15.3) is shown on `/dev/tty` with its files (the full content of a created file; for a modified file, a unified diff of the current file against the resulting content, or the full resulting content when the current file cannot be read; never truncated, and escaped to printable ASCII, with lines split only at `\n`, every other line ending or separator (`\r`, form feed, `\x1c`, U+2028) shown escaped, and a missing final newline marked `\ No newline at end of file`, so a change only in whitespace or line endings is never an empty diff), commands, change sets, the reason it needs approval, and its `PlanItem.digest`, and runs only on the person's yes; with no terminal it ends as `needs_approval` |
 | Skills (`darnit-remediate`, `darnit-comply`) | Show the preview with before/after fields, impact notes, and digests; pass back only the digests the person approved; never pass `dry_run = false` as a substitute for approval |
 
 The `confirm_*` tools are unchanged; approvals are not confirmations. Audit results and the attestation predicate are unchanged.
@@ -2027,6 +2027,10 @@ The `confirm_*` tools are unchanged; approvals are not confirmations. Audit resu
 - **WHEN** `darnit run --apply` reaches a plan item that requires individual approval and a terminal is available
 - **THEN** it MUST show the item and its digest on `/dev/tty` and run the control's remediation only if the person says yes
 - **AND** an approved item MUST be recorded as an `Approval` (digest, by, at); a refusal, or no terminal, MUST leave the control `needs_approval` with nothing written
+
+#### Scenario: A change only in line endings is shown
+- **WHEN** a plan item that requires individual approval changes only line endings (CRLF to LF), the final newline, or a line separator character such as U+2028
+- **THEN** the text shown on `/dev/tty` MUST show that change, escaped
 
 #### Scenario: A change deep in a modified file is shown
 - **WHEN** a plan item that requires individual approval modifies a long file (for example one line deep in an 80-line workflow)

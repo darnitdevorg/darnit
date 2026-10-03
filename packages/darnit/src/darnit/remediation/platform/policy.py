@@ -113,21 +113,58 @@ def _current_text(root: str | Path | None, change: FileChange) -> str | None:
         return None
 
 
+_NO_FINAL_NEWLINE = "\\ No newline at end of file"
+
+
+def _lines(text: str) -> list[str]:
+    """``text`` split after each ``\\n`` only, every line keeping its ending; other separators stay inside lines."""
+    parts = text.split("\n")
+    return [part + "\n" for part in parts[:-1]] + ([parts[-1]] if parts[-1] else [])
+
+
+def _shown(prefix: str, line: str) -> list[str]:
+    """One content line: ``\\n`` implied, any other ending or separator escaped, and git's marker when none ends it."""
+    if line.endswith("\n"):
+        return [f"{prefix}{_printable(line[:-1])}"]
+    return [f"{prefix}{_printable(line)}", _NO_FINAL_NEWLINE]
+
+
+def _full_content(change: FileChange, note: str) -> list[str]:
+    resulting = _lines(change.content or "")
+    header = f"  {change.action} {_printable(change.path)} ({len(resulting)} lines{note}):"
+    return [header] + [f"    {shown}" for line in resulting for shown in _shown("| ", line)]
+
+
 def _file_lines(change: FileChange, root: str | Path | None) -> list[str]:
-    """``change`` in full: a created file's content, or a modified file's diff against its current content."""
-    path = _printable(change.path)
-    content = change.content or ""
+    """``change`` in full: a created file's content, or a modified file's diff against its current content.
+
+    Line endings and separators are shown escaped (``\\r``, ``\\u2028``), and a
+    missing final newline is marked, so a change only in whitespace or line
+    endings is never an empty diff.
+    """
     current = _current_text(root, change) if change.action == "modify" else None
     if current is None:
-        resulting = content.splitlines()
         note = "; the current file cannot be read, so the full resulting content follows" if change.action == "modify" else ""
-        return [f"  {change.action} {path} ({len(resulting)} lines{note}):"] + [
-            f"    | {_printable(line)}" for line in resulting
-        ]
-    diff = difflib.unified_diff(
-        current.splitlines(), content.splitlines(), fromfile=f"a/{change.path}", tofile=f"b/{change.path}", lineterm=""
+        return _full_content(change, note)
+    diff = list(
+        difflib.unified_diff(
+            _lines(current), _lines(change.content or ""), fromfile=f"a/{change.path}", tofile=f"b/{change.path}", n=3
+        )
     )
-    return [f"  modify {path} (diff against the current file):"] + [f"    {_printable(line)}" for line in diff]
+    if not diff and current.encode("utf-8") != (change.content or "").encode("utf-8"):
+        return _full_content(
+            change,
+            "; no line differs as text, so the change is in whitespace or line endings; "
+            "the full resulting content follows, escaped",
+        )
+    lines = [f"  modify {_printable(change.path)} (diff against the current file):"]
+    lines += [f"    {_printable(header.rstrip(chr(10)))}" for header in diff[:2]]
+    for line in diff[2:]:
+        if line.startswith("@@"):
+            lines.append(f"    {_printable(line.rstrip(chr(10)))}")
+        else:
+            lines += [f"    {shown}" for shown in _shown(line[0], line[1:])]
+    return lines
 
 
 def describe_plan_item(item: PlanItem, reasons: Sequence[str], root: str | Path | None = None) -> list[str]:
