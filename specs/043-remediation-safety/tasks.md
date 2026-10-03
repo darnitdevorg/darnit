@@ -358,9 +358,9 @@
     - `remediate_community_spec` defaults to preview.
   - **Added:** the `[remediation]` operator policy; `platform_setting`; `approve` digests; run ids; outcome kinds.
 - [X] T058 [P] Update `docs/` pages that describe remediation, dry run, branch protection or the git workflow (`docs/USAGE_GUIDE.md`, `docs/SECURITY_GUIDE.md`, `docs/IMPLEMENTATION_GUIDE.md`, `packages/darnit-baseline/README.md`) to match framework-design.md. In `CLAUDE.md`, add the remediation rules to the Sieve/Conservative sections.
-- [ ] T059 Run quickstart.md V1-V7 and record the results in a "Validation log" section of `specs/043-remediation-safety/quickstart.md`. Use recorded responses and scratch repositories only; V1 live only on a disposable repository.
+- [X] T059 Run quickstart.md V1-V7 and record the results in a "Validation log" section of `specs/043-remediation-safety/quickstart.md`. Use recorded responses and scratch repositories only; V1 live only on a disposable repository.
 - [ ] T060 Close or update the issues on merge: #472, #473, #474, #475, #482, #483. Note on #513 that the AC-02.01 remediation was removed. Note on #420 that it stays open. Do not reference unpublished advisories.
-- [ ] T061 Run `uv run ruff check .`, `uv run pytest tests/ --ignore=tests/integration/ -q` and `uv run python scripts/validate_sync.py --verbose`, then fix failures.
+- [X] T061 Run `uv run ruff check .`, `uv run pytest tests/ --ignore=tests/integration/ -q` and `uv run python scripts/validate_sync.py --verbose`, then fix failures.
 
 ---
 

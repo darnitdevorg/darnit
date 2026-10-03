@@ -136,3 +136,29 @@ uv run ruff check .
 uv run pytest tests/ -q
 uv run python scripts/validate_sync.py --verbose
 ```
+
+## Validation log
+
+Run on 2026-10-02 on branch `043-remediation-safety` at 46a3a4c, with recorded platform responses and scratch repositories only.
+
+| Scenario | Command | Result |
+|---|---|---|
+| V1 | `pytest tests/darnit/remediation/platform/ -k "stricter or unprotected or ruleset or unknown_field or read_failure"` | 11 passed |
+| V1 live | disposable repository | Not run: needs a disposable GitHub repository and the person's go-ahead to change its settings |
+| V2 | `pytest tests/darnit/remediation/platform/test_policy.py tests/darnit/remediation/platform/test_approval.py` | 22 passed |
+| V3 | `pytest tests/darnit/server/test_git_operations_safety.py tests/darnit/server/test_git_operations_refusals.py` | 27 passed |
+| V4 | `pytest tests/darnit_baseline/test_project_reference.py tests/darnit/remediation/test_project_reference.py` | 22 passed |
+| V5 | `pytest tests/darnit_baseline/remediation/test_outcomes.py tests/darnit_baseline/test_remediation_gating.py` | 14 passed |
+| V6 | `pytest tests/darnit/remediation/test_plan_contract.py tests/darnit/remediation/test_exec_preview.py tests/darnit/remediation/test_safety_properties.py` | 201 passed |
+| V6 | `python scripts/validate_sync.py --verbose` | passed (66 controls, 78 remediations) |
+| V7 | `ruff check .`; `pytest tests/` | clean; 4855 passed, 26 skipped |
+
+Known gaps found during implementation (follow-up candidates, not regressions):
+
+- An exec step's preview lists a path that has uncommitted user changes as a modification; the apply stops before running the command and reports the conflict, so nothing is lost, but the preview overstates what will happen.
+- `enhance_with_llm=True` rewrites created files outside the executor, so they are not in the run manifest and the commit tool reports them as a conflict.
+- OSPS-SA-03.02 still sets `security.threat_model.path` with an unconditional `project_update`.
+- `packages/darnit-example/example-hygiene.toml` keeps an MIT-by-default LICENSE remediation in a legacy format the executor never runs.
+- `docs/IMPLEMENTATION_GUIDE.md` and constitution Layer 3 describe a built-in `remediate` MCP tool that `BUILTIN_TOOLS` does not provide (predates 043).
+- `tests/integration/test_mcp_server.py` points at an old framework TOML path and always skips (#527).
+- OSPS-LE-01.01 still measures a license file rather than contributor sign-off (#508); its remediation is now manual only.
