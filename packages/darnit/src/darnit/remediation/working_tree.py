@@ -9,7 +9,6 @@ there, and compares; an apply compares the checkout before and after.
 from __future__ import annotations
 
 import os
-import posixpath
 import shutil
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
@@ -59,19 +58,23 @@ def visible_files(root: str | Path) -> list[str]:
 
 
 def escaping_symlinks(root: str | Path, paths: Iterable[str]) -> list[str]:
-    """The ``paths`` that are symbolic links whose target is absolute or leaves ``root``.
+    """The ``paths`` that are, or pass through, symbolic links and resolve outside ``root``.
 
-    A command run in a scratch copy could write through such a link into files outside the copy.
+    Each path is resolved by the operating system (``os.path.realpath``), so a
+    chain of links (``sub/d -> ..``, ``a -> sub/d/../x``) is followed as a
+    command would follow it. A link with an absolute target is reported even
+    when the target is inside ``root``, because in a scratch copy it still
+    points at the checkout. A command run in a scratch copy could write
+    through such a link into files outside the copy.
     """
-    root = Path(root)
+    real_root = os.path.realpath(root)
     escaping = []
     for path in paths:
-        link = root / path
-        if not link.is_symlink():
+        full = os.path.join(root, path)
+        if os.path.islink(full) and os.path.isabs(os.readlink(full)):
+            escaping.append(path)
             continue
-        target = os.readlink(link)
-        resolved = posixpath.normpath(posixpath.join(posixpath.dirname(path), target))
-        if posixpath.isabs(target) or resolved == ".." or resolved.startswith("../"):
+        if os.path.commonpath([real_root, os.path.realpath(full)]) != real_root:
             escaping.append(path)
     return escaping
 

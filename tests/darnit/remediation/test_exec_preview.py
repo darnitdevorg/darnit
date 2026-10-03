@@ -178,6 +178,28 @@ class TestSymlinks:
         assert entry["status"] == "error"
         assert "link.txt" in entry["message"]
 
+    def test_chained_links_leaving_the_repository_are_not_previewed(self, repo: Path, tmp_path: Path) -> None:
+        """``sub/inner/d -> ../..`` is the repository root; ``a -> sub/inner/d/../x`` reads as inside but is not."""
+        outside = tmp_path / "x"
+        outside.write_text("outside the repository\n", encoding="utf-8")
+        assert outside.parent == repo.parent
+        (repo / "sub" / "inner").mkdir(parents=True)
+        (repo / "sub" / "inner" / "d").symlink_to("../..")
+        (repo / "link.txt").symlink_to("sub/inner/d/../x")
+        assert (repo / "link.txt").resolve() == outside.resolve()
+        _git(repo, "add", "sub/inner/d", "link.txt")
+        _git(repo, "commit", "-q", "--no-gpg-sign", "-m", "links")
+        before = snapshot(repo)
+
+        result = _executor(repo).execute("T-01", _previewable(THROUGH_LINK), dry_run=True)
+
+        assert outside.read_text(encoding="utf-8") == "outside the repository\n"
+        assert_unchanged(repo, before)
+        [item] = result.plan
+        assert item.previewable is False
+        [entry] = result.details["handlers"]
+        assert entry["status"] == "error" and "link.txt" in entry["message"]
+
     def test_link_inside_the_repository_stays_previewable(self, repo: Path) -> None:
         (repo / "link.txt").symlink_to("d.txt")
         _git(repo, "add", "link.txt")
