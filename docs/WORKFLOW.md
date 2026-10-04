@@ -79,7 +79,7 @@ flowchart TD
     Start[SieveOrchestrator.verify] --> D
 
     subgraph Phase1["Phase 1: DETERMINISTIC"]
-        D[Execute deterministic pass<br/>file_must_exist / exec / handler]
+        D[Execute deterministic pass<br/>file_exists / exec / handler]
     end
 
     D --> D_check{Result?}

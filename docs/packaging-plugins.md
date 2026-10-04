@@ -189,11 +189,11 @@ tags = { level = 1, domain = "YF" }
 
 # Pass logic. Each [[controls.X.passes]] entry is one phase of the sieve.
 # The framework tries them in order; the first conclusive result wins.
-# Built-in handlers: file_must_exist, exec, pattern, manual. Plugin handlers
-# can be registered in implementation.py via register_handlers().
+# Built-in handlers: file_exists, exec, gh_api, pattern, manual. Plugin
+# handlers can be registered in implementation.py via register_handlers().
 [[controls."YF-01.01".passes]]
-handler = "file_must_exist"
-paths = ["README.md", "README.rst", "README"]
+handler = "file_exists"
+files = ["README.md", "README.rst", "README"]
 description = "A README file exists at the repo root."
 
 # Manual fallback — surfaces steps for a reviewer, never auto-passes.
@@ -218,9 +218,9 @@ description = "Create a minimal README stub."
 
 | Handler | What it does | Required fields |
 |---|---|---|
-| `file_must_exist` | PASS if any listed path exists; FAIL otherwise | `paths: list[str]` |
+| `file_exists` | FAIL if no listed file exists; a present file is evidence, or PASS with `existence = true` | `files: list[str]` |
 | `exec` | Run a command; PASS/FAIL by exit code (or CEL expression) | `command: list[str]`, `pass_exit_codes`, optional `expr` |
-| `pattern` | Grep one or more files for a regex | `paths`, `pattern`, optional `must_match` |
+| `pattern` | Search one or more files for a regex | `files`, `pattern`, optional `fail_on_miss` |
 | `manual` | Human review required; never auto-PASSES | `steps: list[str]` |
 
 Built-in remediation handlers: `file_create`, `exec`, `platform_setting`, `project_update`, `yaml_inject`, `manual`. A platform change is declared as a requirement (`platform_setting`), never a payload; an `exec` remediation changes only working-tree files and is previewable when it declares `effects = "working_tree"` and `offline = true`. Custom Python handlers can be registered via `register_handlers()`; a remediation handler should register with `supports_plan=True` and return its planned file changes instead of writing (see `docs/architecture/framework-design.md` 4.2 and [`packages/darnit-baseline/`](../packages/darnit-baseline/) for examples).
@@ -326,7 +326,7 @@ When your plugin grows beyond TOML-only checks, you may want to add Python handl
 
 | Layer | What it does | Built-in handlers | Plugin extension |
 |---|---|---|---|
-| **1. Checking** (sieve passes) | Determines if a control passes/fails | `file_must_exist`, `exec`, `pattern`, `manual` | Register Python functions via `register_handlers()` |
+| **1. Checking** (sieve passes) | Determines if a control passes/fails | `file_exists`, `exec`, `gh_api`, `pattern`, `manual` | Register Python functions via `register_handlers()` |
 | **2. Remediation** | Previews, then fixes failing controls | `file_create`, `exec`, `platform_setting`, `project_update`, `yaml_inject`, `manual` | Register Python functions for complex remediation |
 | **3. MCP tools** | Exposes functionality to calling agents | `audit`, `remediate`, `list_controls` | Register custom Python handlers via `register_handlers()` |
 

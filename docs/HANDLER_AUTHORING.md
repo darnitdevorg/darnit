@@ -17,8 +17,8 @@ Two current naming details are worth knowing up front:
 
 - The built-in file-presence sieve handler registered in code is
   `file_exists`.
-- Some older docs and example TOML still say `file_must_exist`. For new
-  controls, prefer `file_exists` unless the framework reintroduces an alias.
+- `file_must_exist` is not a registered handler; older docs and example TOML
+  that used it have been updated to `file_exists` (#501).
 
 The current built-in handler names are defined in
 `packages/darnit/src/darnit/sieve/builtin_handlers.py`:

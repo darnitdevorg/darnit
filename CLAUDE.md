@@ -159,10 +159,10 @@ my-framework = "my_framework:register"
 The verification pipeline follows a 4-phase pattern using built-in handlers:
 
 ```
-file_must_exist → exec/regex → llm_eval → manual
-       ↓              ↓           ↓         ↓
-  File presence   Commands &   AI-based   Human
-  checks          patterns     eval       review
+file_exists → exec/regex → llm_eval → manual
+     ↓             ↓            ↓         ↓
+File presence  Commands &   AI-based   Human
+checks         patterns     eval       review
 ```
 
 Each control can define passes at each phase. The orchestrator stops at the first conclusive result.

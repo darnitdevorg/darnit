@@ -155,7 +155,7 @@ The sieve system implements a 4-phase progressive verification pipeline. Each co
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
 │  │ DeterministicPass                                                      │  │
 │  │ ──────────────────                                                     │  │
-│  │ file_must_exist: ["SECURITY.md", ".github/SECURITY.md"]               │  │
+│  │ file_exists: ["SECURITY.md", ".github/SECURITY.md"]                   │  │
 │  │ exec: { command = [...], expr = 'output.json.key == true' }           │  │
 │  │ handler: "my_module:my_func"  (custom plugin handler)                 │  │
 │  └───────────────────────────────────────────────────────────────────────┘  │

@@ -719,7 +719,7 @@ No threats identified in this category.
 Darnit is a compliance auditing tool — its core purpose is to read repository files (TOML configs, YAML context, source code for pattern matching, workflow files). All 75 "file open with variable path" findings are expected behavior:
 
 - **TOML/YAML config readers** (config/loader.py, config/discovery.py, config/merger.py, dot_project.py, implementation.py): Read package-internal config files and `.project/project.yaml`. Paths derived from known directory structures.
-- **Sieve handlers** (builtin_handlers.py): Read repository files to check compliance patterns. Paths come from TOML control definitions (file_must_exist, pattern handlers).
+- **Sieve handlers** (builtin_handlers.py): Read repository files to check compliance patterns. Paths come from TOML control definitions (file_exists, pattern handlers).
 - **Remediation pipeline** (executor.py, helpers.py, github.py, orchestrator.py): Read templates and write remediation files. Paths from package resources or MCP `local_path` parameter.
 - **Threat model generators** (remediation.py, dependencies.py): Read source files for structural analysis. Paths from directory traversal within `local_path`.
 - **Example/test code** (darnit_example, test_repository.py): Not production — example and test fixtures.

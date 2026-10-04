@@ -499,14 +499,16 @@ entries, implemented in `packages/darnit/src/darnit/sieve/builtin_handlers.py`:
 
 | Handler Name | Purpose |
 |-------------|---------|
-| `file_exists` / `file_must_exist` | File existence checks |
+| `file_exists` | File existence checks |
 | `exec` | Run external commands, evaluate with CEL |
 | `regex` / `pattern` | Regex matching in file contents |
 | `manual` / `manual_steps` | Human verification steps |
 
-#### file_must_exist
+#### file_exists
 
-The simplest check — pass if any listed file exists:
+The simplest check. It fails when none of the listed files exists; a file
+that exists is evidence, and concludes PASS only with `existence = true`
+(for a control whose requirement is literally that the file exists):
 
 ```toml
 [[controls."MS-SEC-01".passes]]
@@ -1834,9 +1836,9 @@ Optional:    register_handlers()
 
 | Need | TOML Handler | Notes |
 |------|-------------|-------|
-| File exists? | `handler = "file_exists"` + `files = [...]` | Also accepts `file_must_exist` alias |
+| File exists? | `handler = "file_exists"` + `files = [...]` | PASS only with `existence = true` |
 | CLI/API check? | `handler = "exec"` + `command = [...]` + `expr = "..."` | CEL expression on output |
-| Regex in file? | `handler = "pattern"` + `file_patterns = [...]` | Also accepts `regex` alias |
+| Regex in file? | `handler = "pattern"` + `files = [...]` + `pattern = "..."` | Also accepts `regex` alias |
 | AI analysis? | `handler = "llm_eval"` + `confidence_threshold = 0.8` | Requires LLM consultation |
 | Human steps? | `handler = "manual"` + `steps = [...]` | Also accepts `manual_steps` alias |
 | Custom logic? | `handler = "my_handler"` | Register via `SieveHandlerRegistry` (Section 6) |

@@ -37,7 +37,7 @@ description = "Run the hello plugin's compliance audit."
 # Controls. Each control is identified by an ID (any string; convention is
 # `<DOMAIN>-<NN>.<NN>` to mirror the OpenSSF Baseline naming).
 #
-# Pass logic uses the 4-phase sieve pipeline (file_must_exist → exec/regex
+# Pass logic uses the 4-phase sieve pipeline (file_exists → exec/regex
 # → llm_eval → manual). Each pass is tried in order; the first conclusive
 # result determines the control's status. See `docs/packaging-plugins.md`
 # for the full sieve reference.
@@ -49,14 +49,17 @@ description = "Repository must have a top-level README documenting the project."
 tags = { level = 1, domain = "HELLO" }
 
 # Pass 1: cheapest possible check — does the file exist?
-# `file_must_exist` is a built-in sieve handler that returns PASS if any of
-# the listed paths is present, FAIL otherwise.
+# `file_exists` is a built-in sieve handler. When none of the listed files is
+# present it concludes FAIL; a present file is evidence, and evaluation
+# continues, because a README existing does not show it documents the
+# project. (Add `existence = true` to a control whose requirement is only
+# that the file exists; then a present file concludes PASS.)
 [[controls."HELLO-01.01".passes]]
-handler = "file_must_exist"
-paths = ["README.md", "README.rst", "README"]
+handler = "file_exists"
+files = ["README.md", "README.rst", "README"]
 description = "A README file is present at the repo root."
 
-# Pass 2 (fallback if pass 1 returns INCONCLUSIVE for any reason): the
+# Pass 2 (reached when pass 1 does not conclude): the
 # human-readable manual fallback. Used as evidence in the audit output;
 # the manual handler never auto-PASSES — it surfaces steps for a reviewer.
 [[controls."HELLO-01.01".passes]]

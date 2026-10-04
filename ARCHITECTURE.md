@@ -216,7 +216,7 @@ The sieve is a 4-phase verification waterfall. Each control defines one or more 
 ├─────────────────────────────────────────────────────────┤
 │                                                         │
 │  Phase 1: DETERMINISTIC                                 │
-│  ├─ file_must_exist, exec + CEL, api_check              │
+│  ├─ file_exists, exec + CEL, gh_api                     │
 │  └─ High confidence (1.0)                               │
 │                     │                                   │
 │            PASS/FAIL? ──────► DONE                      │

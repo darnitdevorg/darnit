@@ -112,7 +112,7 @@ The sieve is a 4-phase verification pipeline. Each control defines passes that e
 
 ```mermaid
 flowchart LR
-    A[file_must_exist<br/>Deterministic] --> B{Conclusive?}
+    A[file_exists<br/>Deterministic] --> B{Conclusive?}
     B -->|PASS/FAIL| Z[Done]
     B -->|INCONCLUSIVE| C[exec / pattern<br/>Heuristic]
     C --> D{Conclusive?}
@@ -131,7 +131,7 @@ flowchart LR
 
 **Phase execution rules**:
 
-1. **DETERMINISTIC** (file_must_exist, exec): High-confidence checks — file existence, API calls, config lookups. Returns PASS, FAIL, or INCONCLUSIVE.
+1. **DETERMINISTIC** (file_exists, exec): High-confidence checks — file existence, API calls, config lookups. Returns PASS, FAIL, or INCONCLUSIVE.
 2. **PATTERN** (regex/pattern): Medium-confidence heuristics — content regex matching. Only runs if phase 1 was INCONCLUSIVE.
 3. **LLM**: Variable-confidence AI evaluation. Only runs if earlier phases were INCONCLUSIVE.
 4. **MANUAL**: Always returns INCONCLUSIVE (rendered as WARN) with human verification steps. This is the fallback.

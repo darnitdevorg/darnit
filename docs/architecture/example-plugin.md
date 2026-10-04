@@ -26,8 +26,8 @@ The implementation SHALL define exactly 8 controls: 6 at level 1 and 2 at level 
 - **WHEN** `get_all_controls()` is called
 - **THEN** exactly 8 `ControlSpec` instances are returned
 
-### Requirement: TOML-defined controls use file_must_exist pass
-Controls `PH-DOC-01`, `PH-DOC-02`, `PH-SEC-01`, `PH-CFG-01`, `PH-CFG-02`, and `PH-QA-01` SHALL be defined declaratively in the TOML configuration file using `file_must_exist` deterministic passes.
+### Requirement: TOML-defined controls use file_exists pass
+Controls `PH-DOC-01`, `PH-DOC-02`, `PH-SEC-01`, `PH-CFG-01`, `PH-CFG-02`, and `PH-QA-01` SHALL be defined declaratively in the TOML configuration file using `file_exists` deterministic passes.
 
 #### Scenario: TOML control for README
 - **WHEN** the sieve evaluates `PH-DOC-01` against a directory containing `README.md`

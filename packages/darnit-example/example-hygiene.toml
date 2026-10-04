@@ -182,7 +182,7 @@ help_md = """Every project should have a README explaining what it does.
 """
 
 [[controls."PH-DOC-01".passes]]
-handler = "file_must_exist"
+handler = "file_exists"
 files = ["README.md", "README", "README.rst", "README.txt"]
 
 [[controls."PH-DOC-01".passes]]
@@ -220,7 +220,7 @@ help_md = """A LICENSE file clarifies how others can use the project.
 """
 
 [[controls."PH-DOC-02".passes]]
-handler = "file_must_exist"
+handler = "file_exists"
 files = ["LICENSE", "LICENSE.md", "LICENSE.txt", "LICENCE", "LICENCE.md"]
 
 [[controls."PH-DOC-02".passes]]
@@ -282,7 +282,7 @@ help_md = """A SECURITY.md tells users how to report vulnerabilities.
 """
 
 [[controls."PH-SEC-01".passes]]
-handler = "file_must_exist"
+handler = "file_exists"
 files = ["SECURITY.md", ".github/SECURITY.md", "docs/SECURITY.md"]
 
 [[controls."PH-SEC-01".passes]]
@@ -326,7 +326,7 @@ help_md = """A .gitignore prevents committing build artifacts and secrets.
 """
 
 [[controls."PH-CFG-01".passes]]
-handler = "file_must_exist"
+handler = "file_exists"
 files = [".gitignore"]
 
 [controls."PH-CFG-01".remediation]
@@ -351,7 +351,7 @@ help_md = """An .editorconfig ensures consistent formatting across editors.
 """
 
 [[controls."PH-CFG-02".passes]]
-handler = "file_must_exist"
+handler = "file_exists"
 files = [".editorconfig"]
 
 [controls."PH-CFG-02".remediation]
@@ -379,7 +379,7 @@ help_md = """A CONTRIBUTING guide helps new contributors get started.
 """
 
 [[controls."PH-QA-01".passes]]
-handler = "file_must_exist"
+handler = "file_exists"
 files = ["CONTRIBUTING.md", "CONTRIBUTING", "CONTRIBUTING.rst", ".github/CONTRIBUTING.md"]
 
 [controls."PH-QA-01".remediation]
