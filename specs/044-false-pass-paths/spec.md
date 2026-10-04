@@ -22,6 +22,10 @@ Constitution Principle II: a control that has not been explicitly verified as pa
 ### Session 2026-10-04
 
 - Q: Which reproducibility checks lose the ability to conclude PASS on their own? -> A: All five check types that decide from text or file-presence signals (provenance, hermetic build, bit-for-bit, dependency pinning, build environment declared). They may still conclude FAIL; PASS needs a corpus measurement (041 promotion) or a check that verifies the property itself (FR-010).
+- Q: When a scanner reports a finding through an accepted exit code, should the step's expression be able to prove failure? -> A: Yes, by opt-in per step: a step field makes the expression alone decide once the command ran successfully (true is PASS, false is FAIL). The two zizmor steps (OSPS-BR-01.01, OSPS-AC-04.02) set it (FR-015).
+- Q: An unreadable or unresolved `requirements.txt` include was a FAIL under feature 037 FR-007; is it still? -> A: No. It is a missing signal, not proof that dependencies are unpinned: the step decides nothing and the control ends non-compliant unless another step concludes. This supersedes 037 FR-007 for that case.
+- Q: A verified Witness attestation is a cryptographic check inside the hermetic-build step type, which is now FAIL-only. -> A: Out of scope; a follow-up splits it into its own step type that may conclude PASS.
+- Q: Which account endpoints count as personal records? -> A: `/user`, anything under `/user/` (for example `/user/emails`), and anything under `/users/` (FR-012).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -127,9 +131,13 @@ The person running an audit should not find their email, location, or biography 
 - **FR-010**: A reproducibility check that decides from text or file-presence signals MUST NOT conclude PASS unless a corpus measurement recorded with the framework justifies it (041 promotion). Its signals MUST be kept as evidence for later steps. This applies to all five such check types: provenance, hermetic build, bit-for-bit, dependency pinning, and build environment declared.
 - **FR-011**: The reproducibility controls affected by FR-010 MUST keep a path to a verdict: their later steps (model judgment and human review) MUST receive the signals as evidence.
 
+**Expressions that decide (clarification 2026-10-04)**
+
+- **FR-015**: A step MAY declare that its expression decides on its own: when the step's command or check completed successfully, the expression's true is PASS and false is FAIL (within the step type's ceiling). Without that declaration the outcome rules of FR-001 and the existing agreement table apply. The OSPS-BR-01.01 and OSPS-AC-04.02 scanner steps MUST declare it, so a matching finding is FAIL rather than a manual-review warning.
+
 **Personal data (#493)**
 
-- **FR-012**: A step that reads the auditing user's own account MUST record only the fields its check needs; the auditor's other profile fields MUST NOT appear in evidence, output files, or attestations.
+- **FR-012**: A step that reads a person's account record (`/user`, anything under `/user/`, or anything under `/users/`) MUST declare the fields it keeps and record only those; the auditor's other profile fields MUST NOT appear in evidence, output files, or attestations.
 
 **Verification**
 

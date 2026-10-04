@@ -191,6 +191,13 @@ Commits: `git commit -s` with an `Assisted-by: Claude:claude-opus-5-5` trailer, 
 
 ## Phase 7: Polish & Cross-Cutting Concerns
 
+- [ ] T024a [US1] Implement FR-015, updating `docs/architecture/framework-design.md` 3.7 and contracts/step-contract.md first.
+  - Add a common step field `expr_decides` (bool). When it is true and the handler completed successfully, the expression alone decides: true is PASS, false is FAIL, within the ceiling. A handler FAIL or ERROR is unchanged.
+  - It is valid only on step types that declare `expression_names`; `gh_api` already decides through its own expression.
+  - Set it on the OSPS-BR-01.01 and OSPS-AC-04.02 zizmor steps.
+  - Tests: a matching zizmor finding gives FAIL, and no findings gives PASS; `expr_decides` on a type without expressions fails loading.
+  - Files: `packages/darnit/src/darnit/config/framework_schema.py`, `packages/darnit/src/darnit/sieve/orchestrator.py`, `packages/darnit/src/darnit/config/control_loader.py`, `packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml`, `tests/darnit/sieve/test_expr_failure.py`.
+- [ ] T024b [US4] Widen the personal-record rule to `/user`, `/user/...`, and `/users/...` in `packages/darnit/src/darnit/config/control_loader.py`, `docs/architecture/framework-design.md` 3.8, and the US4 tests.
 - [ ] T025 [P] Add false-PASS corpus cases under `tests/darnit_baseline/corpus/` (and the corpus runner, if a plugin case needs it), with 0 false PASSes (FR-013, SC-006):
   - an exec step whose expression cannot evaluate;
   - a plugin redefining `manual`;
