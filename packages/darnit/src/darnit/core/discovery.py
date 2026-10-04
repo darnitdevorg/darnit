@@ -118,7 +118,7 @@ def register_implementation_handlers(framework_name: str | None) -> bool:
     Returns:
         True if handlers were registered, False if there was nothing to do
         (no framework name, no such implementation, or the implementation
-        does not expose ``register_handlers``).
+        exposes neither ``register_sieve_handlers`` nor ``register_handlers``).
     """
     if not framework_name:
         return False
@@ -136,18 +136,17 @@ def register_implementation_handlers(framework_name: str | None) -> bool:
     # the protocol: discovery results are cached, so any caller that warmed
     # the cache earlier in the process leaves the handlers unregistered and
     # every plugin control silently falls through to `manual`. Accepting both
-    # names here makes registration explicit and cache-independent.
+    # names here makes registration explicit and cache-independent. A plugin
+    # may define both (darnit-example registers its step types in one and its
+    # MCP tools in the other), so every one present is called.
     # hasattr per Constitution Principle I: missing methods degrade, never crash.
-    method = None
-    for name in ("register_handlers", "register_sieve_handlers"):
-        if hasattr(impl, name):
-            method = getattr(impl, name)
-            break
-    if method is None:
+    methods = [getattr(impl, name) for name in ("register_sieve_handlers", "register_handlers") if hasattr(impl, name)]
+    if not methods:
         return False
 
     try:
-        method()
+        for method in methods:
+            method()
     except Exception as err:  # noqa: BLE001 - a bad plugin must not kill the audit
         logger.warning(
             "Failed to register handlers for '%s': %s: %s",
