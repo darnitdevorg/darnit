@@ -862,7 +862,6 @@ handler = "file_create"
 path = "SECURITY.md"
 template = "security_policy_standard"  # References [templates.security_policy_standard]
 overwrite = false
-create_dirs = true
 project_reference = "security.policy"
 ```
 
@@ -874,9 +873,10 @@ project_reference = "security.policy"
 | `template` | `str` | Template name from `[templates]` section |
 | `content` | `str` | Inline content (alternative to template) |
 | `overwrite` | `bool` | Overwrite existing files (default: false) |
-| `create_dirs` | `bool` | Create parent directories (default: true) |
 | `llm_enhance` | `str` | Optional prompt for AI-assisted customization of the created file |
 | `project_reference` | `str` | Optional dotted project field (`<section.field>`) that describes the created file, recorded after the file is created |
+
+Parent directories of `path` are always created; there is no setting for it (the former `create_dirs` fails loading, section 3.0.3).
 
 **Plan output**: one `FileChange`: `create` (or `modify` with `overwrite = true`) with the rendered content, or `none` with `already_exists`.
 

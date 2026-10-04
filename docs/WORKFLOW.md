@@ -89,7 +89,7 @@ flowchart TD
     D_check -->|INCONCLUSIVE| P
 
     subgraph Phase2["Phase 2: PATTERN"]
-        P[Execute pattern pass<br/>file_patterns + content_patterns + expr]
+        P[Execute pattern pass<br/>files + pattern + expr]
     end
 
     P --> P_check{Result?}

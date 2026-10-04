@@ -90,8 +90,8 @@ Search file contents with regex:
 ```toml
 [[controls."MS-DOC-02".passes]]
 handler = "pattern"
-file_patterns = ["SECURITY.md", ".github/SECURITY.md"]
-content_patterns = { security_contact = '([\w.-]+@[\w.-]+\.\w+|security\s*contact)' }
+files = ["SECURITY.md", ".github/SECURITY.md"]
+pattern = { patterns = { security_contact = '([\w.-]+@[\w.-]+\.\w+|security\s*contact)' } }
 expr = 'output.any_match'
 ```
 
@@ -226,7 +226,6 @@ Then reference in TOML:
 
 ```toml
 [[controls."MS-LIC-01".passes]]
-phase = "deterministic"
 handler = "my_check"
 file_extensions = [".py", ".js"]   # → config["file_extensions"]
 ```

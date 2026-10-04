@@ -88,7 +88,7 @@ output.json.items.exists(x, x.name == "README.md")
 | Variable | Type | Description |
 |----------|------|-------------|
 | `output.any_match` | bool | Whether any content pattern matched |
-| `output.files_found` | int | Number of files matching file_patterns |
+| `output.files_found` | int | Number of files matching `files` |
 | `output.matches` | object | Per-pattern match results |
 
 ### For API responses

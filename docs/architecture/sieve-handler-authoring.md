@@ -48,7 +48,7 @@ The Implementation Guide SHALL document how to register a custom sieve handler u
 #### Scenario: Author registers from a plugin with plugin context
 - **WHEN** an implementation author registers handlers from within an implementation's `register_handlers()` method
 - **THEN** the documentation SHALL show setting plugin context via `registry.set_plugin_context(self.name)` before registration and clearing it after
-- **AND** SHALL explain that plugin handlers override core built-in handlers of the same name
+- **AND** SHALL explain that a plugin cannot replace a step type core or another plugin registered: the registration is refused and reported (framework-design 3.0.3)
 
 ### Requirement: Documentation SHALL explain TOML wiring for custom handlers
 The Implementation Guide SHALL document how to reference a custom handler from a TOML control definition's `[[passes]]` block. It SHALL show the complete TOML syntax with `handler = "my_handler"` and pass-through configuration fields.

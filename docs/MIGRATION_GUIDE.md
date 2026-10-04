@@ -21,7 +21,7 @@ Handler short names are registered by the implementation's `register_handlers()`
 ## CEL Expressions
 
 ### Before (Multiple Fields)
-```toml
+```toml removed
 [[controls."OSPS-XX-01.01".passes]]
 handler = "exec"
 command = ["kusari", "scan"]
@@ -39,7 +39,7 @@ output_format = "json"
 expr = 'output.json.status == "pass"'
 ```
 
-**Note**: The legacy `pass_if_*` fields still work. CEL expressions take precedence when both are defined.
+**Note**: The legacy `pass_if_*` fields are removed. A step that still declares one fails loading, naming the key (feature 044); replace it with `expr`.
 
 ### CEL Context Variables
 
