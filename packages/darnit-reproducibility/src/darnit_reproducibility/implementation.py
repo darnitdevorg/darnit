@@ -124,6 +124,7 @@ class ReproducibilityImplementation:
             handler_fn=handlers.repro_deps_pinned_handler,
             description="Check for lock files indicating pinned dependencies",
             ceiling={"pass", "fail"},
+            settings=frozenset(),
         )
         registry.register(
             "repro_build_env_declared",
@@ -131,6 +132,7 @@ class ReproducibilityImplementation:
             handler_fn=handlers.repro_build_env_declared_handler,
             description="Check for Dockerfile, Nix flake, or similar env declaration",
             ceiling={"pass", "fail"},
+            settings=frozenset(),
         )
         registry.register(
             "repro_hermetic_build",
@@ -138,6 +140,7 @@ class ReproducibilityImplementation:
             handler_fn=handlers.repro_hermetic_build_handler,
             description="Scan CI workflows for live network fetches during build",
             ceiling={"pass", "fail"},
+            settings={"verify_witness_attestations"},
         )
         registry.register(
             "repro_provenance_exists",
@@ -145,6 +148,7 @@ class ReproducibilityImplementation:
             handler_fn=handlers.repro_provenance_exists_handler,
             description="Check CI workflows for sigstore/SLSA provenance steps",
             ceiling={"pass", "fail"},
+            settings=frozenset(),
         )
         registry.register(
             "repro_bit_for_bit",
@@ -152,6 +156,7 @@ class ReproducibilityImplementation:
             handler_fn=handlers.repro_bit_for_bit_handler,
             description="Check for SOURCE_DATE_EPOCH and reprotest signals",
             ceiling={"pass", "fail"},
+            settings=frozenset(),
         )
 
         registry.set_plugin_context(None)

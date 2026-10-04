@@ -106,6 +106,7 @@ class GittufImplementation:
             handler_fn=handlers.gittuf_verify_policy_handler,
             description="Run gittuf verify-ref HEAD",
             ceiling={"pass", "fail"},
+            settings=frozenset(),
         )
         registry.register(
             "gittuf_commits_signed",
@@ -113,6 +114,7 @@ class GittufImplementation:
             handler_fn=handlers.gittuf_commits_signed_handler,
             description="Check last 5 commits for cryptographic signatures",
             ceiling={"pass", "fail"},
+            settings=frozenset(),
         )
 
         registry.set_plugin_context(None)

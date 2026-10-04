@@ -236,6 +236,8 @@ class OSPSBaselineImplementation:
             # so it is reported as not previewable and runs in a batch apply
             # only when its plan item digest is approved.
             supports_plan=False,
+            # template is resolved to content by the remediation executor.
+            settings={"path", "overwrite", "content", "template", "shallow_threshold", "max_findings"},
         )
         # Feature 032: ruleset-aware branch-protection verdict. Observes
         # ground truth (queries GitHub for protection state), so it may
@@ -246,6 +248,7 @@ class OSPSBaselineImplementation:
             handler_fn=github_branch_protection_handler,
             description="Ruleset-aware branch-protection verdict",
             ceiling={"pass", "fail"},
+            settings={"requirement", "required_approvals_minimum", "owner", "repo", "branch"},
         )
         sieve_registry.set_plugin_context(None)
 

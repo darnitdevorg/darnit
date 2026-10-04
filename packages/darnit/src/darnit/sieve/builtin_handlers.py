@@ -1675,6 +1675,14 @@ def _eval_cel_over_result(
 # =============================================================================
 
 
+# Feature 044 (framework-design 3.0.3): the step keys each step type reads,
+# beyond the common step fields, and the names its ``expr`` may use.
+_POST_STEP_EXPRESSION_NAMES = frozenset({"output", "project"})
+_REGEX_SETTINGS = frozenset({"file", "files", "pattern", "pass_if_any", "min_matches", "exclude_files", "max_depth"})
+# docs_url is read by the remediation report, not the handler.
+_MANUAL_SETTINGS = frozenset({"steps", "docs_url"})
+
+
 def register_builtin_handlers() -> None:
     """Register all built-in sieve handlers with the global registry.
 
@@ -1694,6 +1702,7 @@ def register_builtin_handlers() -> None:
         description="Check file existence from a list of paths",
         ceiling={"fail"},
         existence_ceiling={"pass", "fail"},
+        settings={"files", "max_depth"},
     )
     registry.register(
         "exec",
@@ -1701,6 +1710,18 @@ def register_builtin_handlers() -> None:
         handler_fn=exec_handler,
         description="Run external command, evaluate exit code / CEL expr",
         ceiling={"pass", "fail"},
+        settings={
+            "command",
+            "pass_exit_codes",
+            "fail_exit_codes",
+            "output_format",
+            "timeout",
+            "env",
+            "cwd",
+            "effects",
+            "offline",
+        },
+        expression_names=_POST_STEP_EXPRESSION_NAMES,
     )
     # Feature 041: only declared statuses prove failure; any other non-2xx
     # answer is ERROR, so the step may conclude either way.
@@ -1710,6 +1731,8 @@ def register_builtin_handlers() -> None:
         handler_fn=gh_api_handler,
         description="Call the platform API via gh; decide from HTTP status and CEL over response.*",
         ceiling={"pass", "fail"},
+        settings={"endpoint"},
+        expression_names={"response"},
     )
     registry.register(
         "regex",
@@ -1718,6 +1741,8 @@ def register_builtin_handlers() -> None:
         description="Match regex patterns in file content",
         ceiling={"fail"},
         existence_ceiling={"pass", "fail"},
+        settings=_REGEX_SETTINGS,
+        expression_names=_POST_STEP_EXPRESSION_NAMES,
     )
     registry.register(
         "pattern",
@@ -1726,12 +1751,15 @@ def register_builtin_handlers() -> None:
         description="Alias for regex handler (match regex patterns in file content)",
         ceiling={"fail"},
         existence_ceiling={"pass", "fail"},
+        settings=_REGEX_SETTINGS,
+        expression_names=_POST_STEP_EXPRESSION_NAMES,
     )
     registry.register(
         "llm_eval",
         phase="llm",
         handler_fn=llm_eval_handler,
         description="AI evaluation with confidence threshold",
+        settings={"prompt", "confidence_threshold", "analysis_hints", "files_to_include"},
     )
     # RFC-0001 Stage 1 (feature 025 T045): llm_extract for value extraction.
     # Like llm_eval, it never concludes a control.
@@ -1740,6 +1768,7 @@ def register_builtin_handlers() -> None:
         phase="llm",
         handler_fn=llm_extract_handler,
         description="LLM-backed value extraction (suggestive; never concludes a control)",
+        settings={"prompt", "files", "target_key"},
     )
     # Feature 043: manual steps have no side effects, so a manual
     # remediation stays previewable and batch-eligible.
@@ -1749,6 +1778,7 @@ def register_builtin_handlers() -> None:
         handler_fn=manual_steps_handler,
         description="Human verification checklist",
         supports_plan=True,
+        settings=_MANUAL_SETTINGS,
     )
     registry.register(
         "manual",
@@ -1756,6 +1786,7 @@ def register_builtin_handlers() -> None:
         handler_fn=manual_steps_handler,
         description="Alias for manual_steps handler (human verification checklist)",
         supports_plan=True,
+        settings=_MANUAL_SETTINGS,
     )
     # Feature 031: external MCP server as observation source. It may
     # conclude either way because the tool observes ground truth (a real
@@ -1767,6 +1798,8 @@ def register_builtin_handlers() -> None:
         handler_fn=mcp_handler,
         description="Call a tool on an external MCP server; evaluate CEL over result.*",
         ceiling={"pass", "fail"},
+        settings={"server", "tool", "args", "timeout"},
+        expression_names={"result"},
     )
 
     # Remediation handlers. Feature 043: those registered with supports_plan
@@ -1778,6 +1811,9 @@ def register_builtin_handlers() -> None:
         handler_fn=file_create_handler,
         description="Create a file from a template or content",
         supports_plan=True,
+        # template, project_reference, and llm_enhance are read by the
+        # remediation executor.
+        settings={"path", "template", "content", "overwrite", "project_reference", "llm_enhance"},
     )
     registry.register(
         "platform_setting",
@@ -1785,6 +1821,7 @@ def register_builtin_handlers() -> None:
         handler_fn=platform_setting_handler,
         description="Change a platform setting by the minimal approved change that satisfies a requirement",
         supports_plan=True,
+        settings={"target", "require", "branch"},
     )
     registry.register(
         "project_update",
@@ -1792,6 +1829,7 @@ def register_builtin_handlers() -> None:
         handler_fn=project_update_handler,
         description="Update .project/project.yaml values",
         supports_plan=True,
+        settings={"updates", "create_if_missing"},
     )
     registry.register(
         "yaml_inject",
@@ -1799,4 +1837,5 @@ def register_builtin_handlers() -> None:
         handler_fn=yaml_inject_handler,
         description="Inject a top-level key into YAML files that lack it",
         supports_plan=True,
+        settings={"files", "key", "value", "insert_after"},
     )

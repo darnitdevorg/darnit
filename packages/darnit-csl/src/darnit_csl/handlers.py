@@ -51,4 +51,5 @@ get_sieve_handler_registry().register(
     handler_fn=csl_llm_if_present,
     description="Fail if the target file is missing; otherwise defer to the LLM content check.",
     ceiling={"fail"},
+    settings={"prompt", "confidence_threshold", "analysis_hints", "files_to_include"},
 )

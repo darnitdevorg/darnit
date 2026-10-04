@@ -142,18 +142,21 @@ class ExampleHygieneImplementation:
             phase="deterministic",
             handler_fn=handlers.readme_description_handler,
             description="Check README has substantive content",
+            settings={"readme_names"},
         )
         registry.register(
             "readme_quality",
             phase="pattern",
             handler_fn=handlers.readme_quality_handler,
             description="Heuristic check for common README sections",
+            settings={"sections", "min_sections"},
         )
         registry.register(
             "ci_config",
             phase="deterministic",
             handler_fn=handlers.ci_config_handler,
             description="Glob-based search for CI/CD configuration files",
+            settings={"patterns"},
         )
 
         registry.set_plugin_context(None)
