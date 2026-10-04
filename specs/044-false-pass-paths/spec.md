@@ -114,7 +114,7 @@ The person running an audit should not find their email, location, or biography 
 **Expressions (#479)**
 
 - **FR-001**: When a step's expression cannot be evaluated, or evaluates to a value other than true or false, the step result MUST be ERROR with an evaluation error class and the cause, regardless of the step's own result.
-- **FR-002**: An expression MUST have access to the step's output, to project data limited to usable values (confirmed or concluded, 042), and to a `file_exists(path)` function that answers for the audited repository.
+- **FR-002**: An expression MUST have access to the step's output, to project data limited to usable values (042; an audit binds confirmed values, and values concluded by detection only when the driver ran detection, which an audit does not), and to a `file_exists(path)` function that answers for the audited repository.
 - **FR-003**: A reference in an expression to data its step type never provides MUST fail framework loading, naming the control, step, and reference.
 - **FR-004**: The documentation of expression variables MUST match what is provided; anything documented but not provided is removed from the documentation or provided.
 

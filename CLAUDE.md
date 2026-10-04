@@ -284,11 +284,11 @@ Names by step type (each step type declares its `expression_names`; one with non
 - `gh_api`: `response.status_code`, `response.body` (evaluated by the handler; no headers)
 - `mcp`: `result.*` (evaluated by the handler)
 
-`project.*` holds only usable values (confirmed, or concluded for detectable keys); reading anything else is an evaluation error.
+`project.*` holds only usable values (in an audit, confirmed values); reading anything else is an evaluation error.
 
 Custom functions: `file_exists(path)` (relative to the audited repository), `json_path(obj, path)`
 
-An expression that does not compile, cannot be evaluated, or is not boolean makes the step ERROR (`evaluation`), never PASS or FAIL. A name its step type does not provide fails loading (feature 044; framework-design.md 3.7).
+An expression that does not compile, cannot be evaluated, or is not boolean makes the step ERROR (`evaluation`), never PASS or FAIL. With `expr_decides = true` (`exec`, `pattern`, `regex`), the expression alone decides once the handler passed: true is PASS, false is FAIL. A name its step type does not provide fails loading (feature 044; framework-design.md 3.7).
 
 ### Context System
 
