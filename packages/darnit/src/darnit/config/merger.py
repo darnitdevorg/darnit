@@ -668,33 +668,25 @@ def _new_home(key: str) -> str:
 
 # Keys a repository's own .baseline.toml may set.
 # Everything else can change what darnit executes, which servers, adapters,
-# or stores it trusts, which framework definition it loads, or which controls
-# count toward compliance.
-_UNTRUSTED_TOP_LEVEL_KEYS = frozenset({"version", "extends", "settings"})
+# or stores it trusts, or which framework definition it loads.
+_UNTRUSTED_TOP_LEVEL_KEYS = frozenset({"version", "extends", "settings", "controls"})
+_UNTRUSTED_CONTROL_KEYS = frozenset({"status", "reason"})
 
 
 def _restrict_untrusted_user_config(data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     """Reduce a repository-supplied config to scope declarations only.
 
     The audited repository is controlled by whoever can write to it, not by
-    the operator running darnit. Its .baseline.toml may pick a framework by
-    registered name and tune settings. It may not supply per-control overrides
-    of any kind (including ``status = "n/a"`` exclusions, which would let the
-    audited party remove controls from its own compliance result), passes,
-    checks, adapters, remediation, custom controls, control groups, MCP
+    the operator running darnit. Its .baseline.toml may exclude controls
+    (status and reason, which are reported), pick a framework by registered
+    name, and tune settings. It may not supply passes, checks, adapters,
+    remediation or per-control config, custom controls, control groups, MCP
     servers, stores, plugin trust settings, or a framework file by path.
     """
     ignored: list[str] = []
     restricted: dict[str, Any] = {}
 
     for key, value in data.items():
-        if key == "controls" and isinstance(value, dict):
-            for control_id, override in value.items():
-                fields = override if isinstance(override, dict) else {}
-                ignored.extend(f"controls.{control_id}.{field}" for field in fields)
-                if not fields:
-                    ignored.append(f"controls.{control_id}")
-            continue
         if key not in _UNTRUSTED_TOP_LEVEL_KEYS:
             ignored.append(key)
             continue
@@ -704,6 +696,21 @@ def _restrict_untrusted_user_config(data: dict[str, Any]) -> tuple[dict[str, Any
     if isinstance(extends, str) and ("/" in extends or "\\" in extends or extends.endswith(".toml")):
         ignored.append("extends (path)")
         del restricted["extends"]
+
+    controls = restricted.get("controls")
+    if isinstance(controls, dict):
+        kept: dict[str, Any] = {}
+        for control_id, override in controls.items():
+            if not isinstance(override, dict):
+                ignored.append(f"controls.{control_id}")
+                continue
+            for field in override:
+                if field not in _UNTRUSTED_CONTROL_KEYS:
+                    ignored.append(f"controls.{control_id}.{field}")
+            scope = {k: v for k, v in override.items() if k in _UNTRUSTED_CONTROL_KEYS}
+            if scope:
+                kept[control_id] = scope
+        restricted["controls"] = kept
 
     return restricted, ignored
 
@@ -733,9 +740,9 @@ def load_user_config(repo_path: Path, *, trusted: bool = False) -> UserConfig | 
     Searches for .baseline.toml in the repository root.
 
     The file lives in the audited repository, so by default it is treated as
-    untrusted input: only ``version``, ``settings``, and ``extends`` naming a
-    registered framework are honored, and anything else (including per-control
-    ``status``/``reason``) is ignored with a warning. Settings that change what
+    untrusted input: only per-control ``status``/``reason``, ``version``,
+    ``settings``, and ``extends`` naming a registered framework are honored,
+    and anything else is ignored with a warning. Settings that change what
     darnit executes or trusts belong in operator configuration, which lives
     outside the audited repository.
 

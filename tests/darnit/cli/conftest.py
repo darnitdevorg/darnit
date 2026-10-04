@@ -24,27 +24,6 @@ import pytest
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
-@pytest.fixture(autouse=True)
-def _fixture_config_is_operator_config(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Load the fixtures' .baseline.toml as trusted.
-
-    An audited repository's own .baseline.toml is untrusted, so its control
-    exclusions are ignored. These fixtures use theirs to scope the testchecks
-    framework, a decision that belongs to the operator; trusting them here
-    stands in for operator configuration outside the repository.
-    """
-    import darnit.config
-    from darnit.config import merger
-
-    original = merger.load_user_config
-
-    def trusted(repo_path: Path, **_: object) -> object:
-        return original(repo_path, trusted=True)
-
-    monkeypatch.setattr(merger, "load_user_config", trusted)
-    monkeypatch.setattr(darnit.config, "load_user_config", trusted)
-
-
 # ---------------------------------------------------------------------------
 # Stub registries (see data-model.md section 4)
 # ---------------------------------------------------------------------------

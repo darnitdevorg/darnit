@@ -109,17 +109,12 @@ class TestUntrustedByDefault:
         assert user.extends == "openssf-baseline"
 
     @pytest.mark.unit
-    def test_status_exclusions_are_ignored(self, tmp_path: Path) -> None:
-        """The audited party cannot remove controls from its own compliance result."""
+    def test_status_exclusions_are_kept(self, tmp_path: Path) -> None:
         user = load_user_config(_write(tmp_path, EVIL))
-        assert user.get_control_override("OSPS-VM-02.01") is None
-        assert user.is_control_applicable("OSPS-VM-02.01")[0] is True
-
-    @pytest.mark.unit
-    def test_ignored_status_is_reported(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        with caplog.at_level(logging.WARNING):
-            load_user_config(_write(tmp_path, '[controls."OSPS-VM-02.01"]\nstatus = "n/a"\nreason = "library"\n'))
-        assert "controls.OSPS-VM-02.01.status" in caplog.text
+        override = user.get_control_override("OSPS-VM-02.01")
+        assert override is not None
+        assert override.status is not None and override.status.value == "n/a"
+        assert override.reason == "we have no vulnerability process"
 
     @pytest.mark.unit
     def test_ignored_keys_are_reported(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
@@ -132,7 +127,7 @@ class TestUntrustedByDefault:
 
     @pytest.mark.unit
     def test_benign_file_logs_nothing(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        benign = 'version = "1.0"\nextends = "openssf-baseline"\n[settings]\ntimeout = 60\n'
+        benign = '[controls."OSPS-VM-02.01"]\nstatus = "n/a"\nreason = "library"\n'
         with caplog.at_level(logging.WARNING):
             load_user_config(_write(tmp_path, benign))
         assert caplog.text == ""

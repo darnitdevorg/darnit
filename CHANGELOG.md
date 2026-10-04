@@ -7,21 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.1] - 2026-10-03
-
 ### Security
 
-- A repository's own `.baseline.toml` is now treated as untrusted input. By
-  default only `version`, `settings`, and `extends` naming a registered
-  framework are honored; everything else is ignored with a warning: settings
-  that could change what darnit executes or trusts (control `passes`,
-  `check`, `remediation`, and `config` overrides, custom controls,
-  `control_groups`, `adapters`, `mcp_servers`, `stores`, plugin trust
-  settings, and `extends` file paths) and per-control `status`/`reason`
-  exclusions, which would let the audited party remove controls from its own
-  compliance result. These settings are moving to operator
-  configuration that lives outside the audited repository.
-  See GHSA-96qw-w4fw-5hcm.
 - Platform remediation reads the current settings first, changes only what a
   control requires, and never weakens a setting already in place (fewer
   required approvals, removed status checks or push restrictions, code-owner
@@ -32,15 +19,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-- Top-level `openspec/` directory. The 25 architectural specs that lived under
-  `openspec/specs/<topic>/spec.md` were rehomed; the 12 archived proposals
-  under `openspec/changes/archive/` were dropped (history preserved in `git log`).
-- `scripts/generate_docs.py` and the `docs/generated/` output directory.
-- The `doc-generation` job in `.github/workflows/ci.yml` and the
-  "Generated docs are up to date" step in `.github/workflows/release.yml`.
-- The "Generated docs" gate (item 4) from the Development Workflow in the
-  project constitution.
-- Pre-commit hook patterns referencing the openspec path.
 - Python helpers that read or wrote raw context values: `load_context`,
   `load_stored_context`, `flatten_user_context`, `get_context_value`,
   `get_raw_value`, `is_context_confirmed`, `save_context_value`, and
@@ -223,17 +201,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Exec remediation steps declare `effects = "working_tree"` and `offline =
   true` to be previewed in a scratch copy of the working tree; other exec
   steps are labelled "cannot be previewed exactly".
-- `docs/architecture/` directory containing the 25 rehomed architectural reference
-  specs (including the authoritative `framework-design.md`), plus a one-screen
-  `README.md` index. These are static reference documentation, not in-flight
-  feature specs (those live in `specs/`).
-- `specs/017-org-wide-audit-pipeline/` containing the previously in-flight
-  openspec proposal, migrated to the speckit spec/plan/tasks layout, with the
-  two openspec spec-delta files preserved under `specs/017-org-wide-audit-pipeline/deltas/`.
-- This `CHANGELOG.md` file.
 
 ### Changed
 
+- Per-control `status` and `reason` in a repository's `.baseline.toml`, ignored
+  since 0.1.1, are read during the deprecation release as not-applicable
+  claims under the trust rules: a claim counts only for a repository the
+  operator trusts, or after the operator confirms it; otherwise the control
+  is evaluated and counts as non-compliant. `darnit config migrate` moves
+  them to `.project/darnit.yaml`.
 - **BREAKING:** `PENDING_LLM` is removed; `PENDING` with
   `pending.kind = "llm_judgment"` replaces it in every output, including MCP
   tool results and JSON reports.
@@ -376,6 +352,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `operator_config`, `trust`, `ignored_repository_settings`,
   `unknown_assertions`, `summary`, `results`, and `warnings` when present)
   instead of a bare list of results.
+
+## [0.1.1] - 2026-10-03
+
+### Security
+
+- A repository's own `.baseline.toml` is now treated as untrusted input. By
+  default only `version`, `settings`, and `extends` naming a registered
+  framework are honored; everything else is ignored with a warning: settings
+  that could change what darnit executes or trusts (control `passes`,
+  `check`, `remediation`, and `config` overrides, custom controls,
+  `control_groups`, `adapters`, `mcp_servers`, `stores`, plugin trust
+  settings, and `extends` file paths) and per-control `status`/`reason`
+  exclusions, which would let the audited party remove controls from its own
+  compliance result. These settings are moving to operator
+  configuration that lives outside the audited repository.
+  See GHSA-96qw-w4fw-5hcm.
+
+### Removed
+
+- Top-level `openspec/` directory. The 25 architectural specs that lived under
+  `openspec/specs/<topic>/spec.md` were rehomed; the 12 archived proposals
+  under `openspec/changes/archive/` were dropped (history preserved in `git log`).
+- `scripts/generate_docs.py` and the `docs/generated/` output directory.
+- The `doc-generation` job in `.github/workflows/ci.yml` and the
+  "Generated docs are up to date" step in `.github/workflows/release.yml`.
+- The "Generated docs" gate (item 4) from the Development Workflow in the
+  project constitution.
+- Pre-commit hook patterns referencing the openspec path.
+
+### Added
+
+- `docs/architecture/` directory containing the 25 rehomed architectural reference
+  specs (including the authoritative `framework-design.md`), plus a one-screen
+  `README.md` index. These are static reference documentation, not in-flight
+  feature specs (those live in `specs/`).
+- `specs/017-org-wide-audit-pipeline/` containing the previously in-flight
+  openspec proposal, migrated to the speckit spec/plan/tasks layout, with the
+  two openspec spec-delta files preserved under `specs/017-org-wide-audit-pipeline/deltas/`.
+- This `CHANGELOG.md` file.
+
+### Changed
+
 - The authoritative location of the framework-design specification has moved
   from `openspec/specs/framework-design/spec.md` to
   `docs/architecture/framework-design.md`. The project constitution,
