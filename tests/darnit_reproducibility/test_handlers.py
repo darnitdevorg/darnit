@@ -553,12 +553,17 @@ class TestRepoDepsPin:
         assert evidence["classification"] == "hash_pinned"
         assert evidence["requirement_count"] == 1
 
-    def test_version_pinned_warns_about_transitive_dependencies(self, tmp_path: Path) -> None:
+    def test_version_pinned_is_evidence_about_transitive_dependencies(self, tmp_path: Path) -> None:
         """SC-003 / FR-005. Not FAIL: this repo is meaningfully different from
-        one using open ranges. Not PASS: its transitive dependencies float."""
+        one using open ranges. Not PASS: its transitive dependencies float.
+
+        Feature 044 (FR-011, 044 review): INCONCLUSIVE, was WARN, which concludes the
+        control under `{fail}` and kept this signal from the later steps.
+        """
         repo = self._repo(tmp_path, "numpy==1.26.4\nclick==8.1.7\n")
         result = repro_deps_pinned_handler({}, make_ctx(repo))
-        assert result.status == HandlerResultStatus.WARN
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
+        assert result.evidence["unhashed_examples"] == ["numpy==1.26.4", "click==8.1.7"]
         assert result.confidence == 0.8
         assert "transitive" in result.message.lower()
 
@@ -583,7 +588,7 @@ class TestRepoDepsPin:
             statuses.add(repro_deps_pinned_handler({}, make_ctx(repo)).status)
         assert statuses == {
             HandlerResultStatus.PASS,
-            HandlerResultStatus.WARN,
+            HandlerResultStatus.INCONCLUSIVE,
             HandlerResultStatus.FAIL,
         }
 
@@ -592,13 +597,17 @@ class TestRepoDepsPin:
         repo = self._repo(tmp_path, "numpy==1.0\nclick==2.0\nrequests>=2.0\n")
         assert repro_deps_pinned_handler({}, make_ctx(repo)).status == HandlerResultStatus.FAIL
 
-    def test_vcs_sha_caps_the_file_at_warn(self, tmp_path: Path) -> None:
-        """FR-010: a commit SHA pins, but it is never hash evidence."""
+    def test_vcs_sha_caps_the_file_below_pass(self, tmp_path: Path) -> None:
+        """FR-010: a commit SHA pins, but it is never hash evidence.
+
+        Feature 044 (FR-011, 044 review): INCONCLUSIVE, was WARN, which concludes the
+        control under `{fail}` and kept this signal from the later steps.
+        """
         repo = self._repo(
             tmp_path,
             f"numpy==1.0 --hash=sha256:{self.HASH}\npkg @ git+https://example.invalid/y@{self.SHA1}\n",
         )
-        assert repro_deps_pinned_handler({}, make_ctx(repo)).status == HandlerResultStatus.WARN
+        assert repro_deps_pinned_handler({}, make_ctx(repo)).status == HandlerResultStatus.INCONCLUSIVE
 
     def test_empty_requirements_is_treated_as_absent(self, tmp_path: Path) -> None:
         """FR-011: a file declaring no dependencies is evidence of neither good
@@ -736,15 +745,19 @@ class TestBuildEnvDeclared:
 
     DIGEST = "sha256:" + "a" * 64
 
-    def test_warn_with_tag_pinned_dockerfile(self, tmp_path: Path) -> None:
+    def test_tag_pinned_dockerfile_is_evidence(self, tmp_path: Path) -> None:
         """Feature 038 (#431). This asserted PASS until 2026-09.
 
         `python:3.11` is a tag. It is rebuilt and resolves to different bytes
         over time, which is the opposite of a declared environment.
+
+        Feature 044 (FR-011, 044 review): INCONCLUSIVE, was WARN, which concludes the
+        control under `{fail}` and kept this signal from the later steps.
         """
         (tmp_path / "Dockerfile").write_text("FROM python:3.11")
         result = repro_build_env_declared_handler({}, make_ctx(tmp_path))
-        assert result.status == HandlerResultStatus.WARN
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
+        assert result.evidence["unpinned_images"] == ["Dockerfile: python:3.11"]
         assert "python:3.11" in result.message
 
     def test_pass_with_digest_pinned_dockerfile(self, tmp_path: Path) -> None:
@@ -755,11 +768,11 @@ class TestBuildEnvDeclared:
         assert result.confidence == 0.85
         assert result.message == "Build environment declared via: Dockerfile (Docker)"
 
-    def test_latest_tag_warns(self, tmp_path: Path) -> None:
-        """SC-002: the shape #431 was filed about."""
+    def test_latest_tag_is_not_pass(self, tmp_path: Path) -> None:
+        """SC-002: the shape #431 was filed about. INCONCLUSIVE (FR-011, 044 review)."""
         (tmp_path / "Dockerfile").write_text("FROM alpine:latest")
         result = repro_build_env_declared_handler({}, make_ctx(tmp_path))
-        assert result.status == HandlerResultStatus.WARN
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
         assert "alpine:latest" in result.message
 
     def test_multistage_does_not_report_the_stage_name(self, tmp_path: Path) -> None:
@@ -770,7 +783,7 @@ class TestBuildEnvDeclared:
         """
         (tmp_path / "Dockerfile").write_text("FROM python:3.12 AS builder\nRUN true\nFROM builder\n")
         result = repro_build_env_declared_handler({}, make_ctx(tmp_path))
-        assert result.status == HandlerResultStatus.WARN
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
         assert "python:3.12" in result.message
         assert "builder" not in result.message
 
@@ -782,7 +795,7 @@ class TestBuildEnvDeclared:
     def test_containerfile_handled_like_dockerfile(self, tmp_path: Path) -> None:
         (tmp_path / "Containerfile").write_text("FROM alpine:latest")
         result = repro_build_env_declared_handler({}, make_ctx(tmp_path))
-        assert result.status == HandlerResultStatus.WARN
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
 
     def test_flake_wins_over_unpinned_dockerfile(self, tmp_path: Path) -> None:
         """BE-9: a stronger declaration is checked first."""
@@ -1168,7 +1181,7 @@ class TestHermeticBuildCoverage:
         # Without the flake, the unpinned Dockerfile governs and the chain breaks.
         (repo / "flake.nix").unlink()
         env = repro_build_env_declared_handler({}, make_ctx(repo))
-        assert env.status == HandlerResultStatus.WARN
+        assert env.status == HandlerResultStatus.INCONCLUSIVE
         hermetic = repro_hermetic_build_handler(
             {}, make_ctx(repo, dependency_results={"RE-01.02": env.status.value.upper()})
         )

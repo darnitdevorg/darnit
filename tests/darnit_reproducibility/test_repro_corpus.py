@@ -43,12 +43,12 @@ CORPUS: dict[str, dict[str, str]] = {
 # These are handler outcomes, not control verdicts. Feature 044 (FR-010): the
 # reproducibility step types register the ceiling `{fail}`, so a "pass" below is
 # evidence for the control's later steps and the control does not conclude PASS
-# on it (test_no_pass_from_signals.py). "signals_only" was "warn" until feature
-# 044 (FR-011): a WARN concludes under `{fail}`, which kept the signal from the
-# later steps.
+# on it (test_no_pass_from_signals.py). "signals_only" and "floating_container"
+# were "warn" until feature 044 (FR-011): a WARN concludes under `{fail}`, which
+# kept the signal from the later steps.
 EXPECTED: dict[str, dict[str, str]] = {
     "pinned_container": {"RE-01.02": "pass"},
-    "floating_container": {"RE-01.02": "warn"},
+    "floating_container": {"RE-01.02": "inconclusive"},
     "flake_only": {"RE-01.02": "pass"},
     "signals_only": {"RE-03.01": "inconclusive"},
     "go_installer": {"RE-02.01": "fail"},
@@ -99,8 +99,13 @@ def test_expectations_only_cover_controls_this_feature_may_change() -> None:
 
 @pytest.mark.unit
 def test_deps_pinned_is_untouched_by_this_feature(tmp_path: Path) -> None:
-    """FR-013 positively: RE-01.01 keeps feature 037's behaviour exactly."""
+    """FR-013 positively: RE-01.01 keeps feature 037's verdict and message.
+
+    Feature 044 (FR-011) changed only its status, from "warn" to
+    "inconclusive": a WARN concludes under `{fail}` and kept the signal from
+    the later steps.
+    """
     repo = _build(tmp_path, {"requirements.txt": "numpy==1.26.4\n"})
     result = repro_deps_pinned_handler(dict(OFFLINE_CONFIG), repro_ctx(repo))
-    assert result.status.value == "warn"
+    assert result.status.value == "inconclusive"
     assert "transitive" in result.message

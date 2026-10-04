@@ -68,9 +68,10 @@ def repro_deps_pinned_handler(
     A lock file is the strongest signal and short-circuits everything else.
     Failing that, a `requirements.txt` is READ rather than merely noticed
     (feature 037, issue #429): a file pinned with hashes passes, one pinned
-    with `==` alone warns because its transitive dependencies still float, and
-    one with open ranges fails naming an offender. One that cannot be read
-    decides nothing (feature 044).
+    with `==` alone decides nothing because its transitive dependencies still
+    float (feature 044: a WARN would conclude the control under `{fail}` and
+    keep the signal from the later steps), and one with open ranges fails
+    naming an offender. One that cannot be read decides nothing (feature 044).
 
     Every other loose manifest is still judged by presence alone; extending
     content inspection to them needs ecosystem-specific handling and is out of
@@ -174,8 +175,11 @@ def repro_deps_pinned_handler(
         if classification is FileClassification.VERSION_PINNED:
             evidence["unhashed_examples"] = _sample(report.unhashed)
             evidence["unhashed_count"] = len(report.unhashed)
+            # Feature 044 (FR-011): not WARN, which concludes the control under
+            # `{fail}` and keeps the signal from the model judgment and human
+            # review; the control still ends non-compliant without them.
             return HandlerResult(
-                status=HandlerResultStatus.WARN,
+                status=HandlerResultStatus.INCONCLUSIVE,
                 message=(
                     f"requirements.txt pins all {len(report.lines)} direct dependency(ies) "
                     "to exact versions but carries no hashes, so transitive dependencies "
@@ -321,8 +325,10 @@ def repro_build_env_declared_handler(
         evidence["containers_inspected"] = inspected
         if unpinned:
             evidence["unpinned_images"] = unpinned
+            # Feature 044 (FR-011): not WARN, for the same reason as a
+            # version-pinned requirements.txt in repro_deps_pinned.
             return HandlerResult(
-                status=HandlerResultStatus.WARN,
+                status=HandlerResultStatus.INCONCLUSIVE,
                 message=(
                     "Build environment is declared but not pinned: "
                     f"{'; '.join(unpinned)} -- a tag is mutable, so the "

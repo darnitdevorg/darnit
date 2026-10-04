@@ -175,3 +175,39 @@ def test_signals_reach_llm_eval(tmp_path: Path, step_type: str) -> None:
     assert result.status == "PENDING", result.message
     gathered = result.evidence["llm_consultation"]["gathered_evidence"]
     assert gathered.get(evidence_key), f"{evidence_key} missing from {sorted(gathered)}"
+
+
+# Partial signals: a handler that saw something short of the property. Each was
+# a WARN, which under `{fail}` concludes the control, so the later steps never
+# saw it (044 review, FR-011).
+PARTIAL_SIGNAL_REPOS: dict[str, tuple[str, dict[str, str], str]] = {
+    "version_pinned_requirements": ("repro_deps_pinned", {"requirements.txt": "numpy==1.26.4\n"}, "unhashed_examples"),
+    "floating_container": ("repro_build_env_declared", {"Dockerfile": "FROM alpine:latest\n"}, "unpinned_images"),
+}
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("case", sorted(PARTIAL_SIGNAL_REPOS))
+def test_partial_signals_reach_llm_eval(tmp_path: Path, case: str) -> None:
+    """FR-011: a partial signal does not conclude the control; the judgment step gets it."""
+    step_type, files, evidence_key = PARTIAL_SIGNAL_REPOS[case]
+    repo = _build(tmp_path, files)
+    spec = ControlSpec(
+        control_id="RE-TEST",
+        level=1,
+        domain="RE",
+        name="PartialSignalsReachJudgment",
+        description="Partial signals reach the judgment step",
+        metadata={
+            "handler_invocations": [
+                HandlerInvocation(handler=step_type),
+                HandlerInvocation(handler="llm_eval", prompt="Is the property established?"),
+            ]
+        },
+    )
+
+    result = _verify(spec, repo)
+
+    assert result.status == "PENDING", result.message
+    gathered = result.evidence["llm_consultation"]["gathered_evidence"]
+    assert gathered.get(evidence_key), f"{evidence_key} missing from {sorted(gathered)}"
