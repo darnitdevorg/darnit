@@ -25,7 +25,7 @@ from darnit.core.errors import AuthorityViolation
 from darnit.sieve.handler_registry import HandlerResult, HandlerResultStatus
 from darnit.sieve.models import CheckContext, ControlSpec, SieveResult
 from darnit.sieve.orchestrator import SieveOrchestrator, _apply_cel_expr
-from darnit.tools.audit import _applicability_context
+from darnit.tools.audit import _resolve_audit_context
 from tests.conftest_helpers import stand_in_tool
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -56,7 +56,7 @@ def _context(repo: Path, control_id: str, project: dict[str, Any] | None = None)
         local_path=str(repo),
         default_branch="main",
         control_id=control_id,
-        project_context=dict(project or {}),
+        usable_project=dict(project or {}),
     )
 
 
@@ -343,8 +343,7 @@ class TestProjectStanding:
 
     def _project_context(self, repo: Path) -> dict[str, Any]:
         operator = OperatorConfig.model_validate({"schema_version": 1})
-        context, _detected, _repository_values = _applicability_context(str(repo), "example-org", operator=operator)
-        return context
+        return _resolve_audit_context(str(repo), operator=operator).usable()
 
     def test_confirmed_value_evaluates(self, bare_repo: Path) -> None:
         _write_project(
@@ -375,3 +374,83 @@ class TestProjectStanding:
 
         assert result.status == "ERROR"
         assert result.error["class"] == "evaluation"
+
+
+@pytest.mark.unit
+class TestProjectBindingInAnAudit:
+    """``project`` is the usable values only, not the when-clause context (FR-002, 044 review).
+
+    The audit's when-clause context also merges this run's detections and the
+    raw ``.project/project.yaml`` mapper values (``project.governance.maintainers``),
+    which are unconfirmed. The second disjunct reads that raw key: before the
+    fix it held, so the step passed on an unconfirmed value.
+    """
+
+    EXPR = 'size(project.maintainers) > 0 || size(project["project.governance.maintainers"]) > 0'
+    MAINTAINERS = ["@alice"]
+
+    @pytest.fixture(autouse=True)
+    def _no_ci_environment(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for var in CI_VARS:
+            monkeypatch.delenv(var, raising=False)
+
+    @pytest.fixture
+    def maintained_repo(self, tmp_path: Path) -> Path:
+        root = tmp_path / "maintained"
+        (root / ".project").mkdir(parents=True)
+        (root / ".project" / "project.yaml").write_text(
+            yaml.safe_dump({"name": "example", "governance": {"maintainers": self.MAINTAINERS}}), encoding="utf-8"
+        )
+        return root
+
+    def _audit(self, repo: Path) -> dict[str, Any]:
+        from darnit.config.operator.loader import LoadedOperatorConfig
+        from darnit.tools.audit import run_sieve_audit
+
+        operator = LoadedOperatorConfig(
+            config=OperatorConfig.model_validate({"schema_version": 1}),
+            source="test",
+            digest=None,
+            permission_check="ok",
+            strict=False,
+        )
+        results, _summary = run_sieve_audit(
+            "example-org",
+            "example",
+            str(repo),
+            "main",
+            controls=[_step_control(handler="exec", command=["true"], expr=self.EXPR)],
+            apply_user_config=False,
+            stop_on_llm=False,
+            framework_name="openssf-baseline",
+            operator_config=operator,
+            write_cache=False,
+        )
+        (result,) = results
+        return result
+
+    def test_unconfirmed_project_yaml_value_is_an_evaluation_error(self, maintained_repo: Path) -> None:
+        result = self._audit(maintained_repo)
+
+        assert result["status"] == "ERROR"
+        assert result["error"]["class"] == "evaluation"
+
+    def test_confirmed_value_evaluates(self, maintained_repo: Path) -> None:
+        (maintained_repo / ".project" / "darnit.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "context": {"maintainers": self.MAINTAINERS},
+                    "confirmations": {
+                        "maintainers": {
+                            "value_digest": value_digest("maintainers", self.MAINTAINERS),
+                            "confirmed_by": "alice",
+                            "confirmed_at": "2026-09-01T00:00:00Z",
+                            "last_validated": "2026-09-01T00:00:00Z",
+                        }
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        assert self._audit(maintained_repo)["status"] == "PASS"

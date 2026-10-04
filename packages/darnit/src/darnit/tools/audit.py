@@ -302,6 +302,23 @@ def audit_report_metadata(
     return metadata
 
 
+def _resolve_audit_context(
+    local_path: str,
+    *,
+    target: str | None = None,
+    operator: "OperatorConfig | None" = None,
+    definitions: dict[str, Any] | None = None,
+) -> Any:
+    """The context resolver's view for an audit, or None when it cannot be read (non-fatal)."""
+    try:
+        from darnit.config.context_resolve import resolve_context
+
+        return resolve_context(local_path, definitions, target=target, operator=operator, detect=False)
+    except Exception as e:  # noqa: BLE001 - context must not break an audit
+        logger.debug("Context resolution failed (non-fatal): %s", e)
+        return None
+
+
 def _applicability_context(
     local_path: str,
     owner: str | None,
@@ -310,6 +327,7 @@ def _applicability_context(
     target: str | None = None,
     operator: "OperatorConfig | None" = None,
     definitions: dict[str, Any] | None = None,
+    resolved: Any = None,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, str]]:
     """Context for ``when``-clause evaluation, as an audit sees it.
 
@@ -323,17 +341,16 @@ def _applicability_context(
     repository's own statement, so a not-applicable claim it implies is
     assessed like any other; a value the operator confirmed operator-side is
     the operator's decision and is not a repository claim.
+
+    This is the when-clause context, not what a step expression's
+    ``project`` reads: that is ``resolved.usable()`` alone (framework-design
+    3.7). ``resolved`` is the resolver's view when the caller already has it.
     """
     project_context: dict[str, Any] = {}
     detected_context: dict[str, Any] = {}
     repository_values: dict[str, str] = {}
-    resolved = None
-    try:
-        from darnit.config.context_resolve import resolve_context
-
-        resolved = resolve_context(local_path, definitions, target=target, operator=operator, detect=False)
-    except Exception as e:  # noqa: BLE001 - context must not break an audit
-        logger.debug("Context resolution failed (non-fatal): %s", e)
+    if resolved is None:
+        resolved = _resolve_audit_context(local_path, target=target, operator=operator, definitions=definitions)
 
     try:
         from darnit.context.auto_detect import collect_auto_context
@@ -935,13 +952,17 @@ def run_sieve_audit(
 
     from darnit.config.context_storage import framework_definitions
 
+    definitions = framework_definitions(framework) if framework is not None else None
+    resolved_context = _resolve_audit_context(local_path, target=target, operator=operator, definitions=definitions)
+    usable_project = resolved_context.usable() if resolved_context is not None else {}
     project_context, detected_context, repository_values = _applicability_context(
         local_path,
         owner,
         stores_bundle.project,
         target=target,
         operator=operator,
-        definitions=framework_definitions(framework) if framework is not None else None,
+        definitions=definitions,
+        resolved=resolved_context,
     )
 
     if project_context:
@@ -1035,6 +1056,7 @@ def run_sieve_audit(
             locator=locator,
             locator_config=spec.locator_config,
             project_context=dict(control_context),
+            usable_project=dict(usable_project),
             execution_context=execution_context,
         )
 

@@ -616,7 +616,7 @@ expr = 'output.json.status == "pass" && size(output.json.issues) == 0'
 | `gh_api` | `response` (`status_code`, `body`) | the handler (section 3.8) |
 | `mcp` | `result` (the tool's response) | the handler |
 
-`project` holds the usable project context values (confirmed, or concluded for detectable keys, section 7.4), keyed by canonical name (for example `project.ci_provider`). Reading a key that is not usable, such as an unconfirmed candidate, is an evaluation error, never an absent value that happens to make the expression true.
+`project` holds the usable project context values (confirmed, or concluded for detectable keys, section 7.4), keyed by canonical name (for example `project.ci_provider`), and nothing else. It is not the context `when` clauses read: that context also holds this run's detections and the values read from `.project/project.yaml`, which have their own trust rules (section 14) and are not usable values. Reading a key that is not usable, such as an unconfirmed candidate or a raw `.project/project.yaml` value, is an evaluation error, never an absent value that happens to make the expression true. A driver that supplies no usable values binds `project` to an empty mapping.
 
 **Functions**:
 

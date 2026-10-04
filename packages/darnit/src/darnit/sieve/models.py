@@ -52,6 +52,12 @@ class CheckContext:
     # Contains flattened project metadata like project.security.policy_path, project.maintainers
     project_context: dict[str, Any] = field(default_factory=dict)
 
+    # The usable context values only (confirmed or concluded, feature 042):
+    # what a step expression's ``project`` binds to (framework-design 3.7).
+    # ``project_context`` above is the when-clause context, which also holds
+    # detections and unconfirmed .project/ mapper values.
+    usable_project: dict[str, Any] = field(default_factory=dict)
+
     # Shared execution state across all controls
     execution_context: Optional["ExecutionContext"] = None
 

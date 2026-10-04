@@ -145,6 +145,10 @@ class HandlerContext:
         default_branch: Default branch name (e.g., "main").
         control_id: ID of the control being verified (empty for data gathering).
         project_context: Flattened .project/project.yaml values.
+        usable_project: The usable context values only (confirmed or
+            concluded, feature 042), which a step expression's ``project``
+            binds to (framework-design 3.7). Empty when the driver supplies
+            none.
         gathered_evidence: Evidence accumulated from previous handlers in this control.
         shared_cache: Cache for shared handler results (keyed by shared handler name).
         dependency_results: Results from dependency controls (keyed by control ID).
@@ -169,6 +173,7 @@ class HandlerContext:
     default_branch: str = "main"
     control_id: str = ""
     project_context: dict[str, Any] = field(default_factory=dict)
+    usable_project: dict[str, Any] = field(default_factory=dict)
     gathered_evidence: dict[str, Any] = field(default_factory=dict)
     shared_cache: dict[str, HandlerResult] = field(default_factory=dict)
     dependency_results: dict[str, Any] = field(default_factory=dict)

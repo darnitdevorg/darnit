@@ -413,6 +413,7 @@ class SieveOrchestrator:
             default_branch=context.default_branch,
             control_id=control_spec.control_id,
             project_context=dict(context.project_context),
+            usable_project=dict(context.usable_project),
             gathered_evidence=dict(context.gathered_evidence),
             shared_cache=self._shared_cache,
             dependency_results={cid: r.status for cid, r in self._dependency_results.items()},
@@ -538,7 +539,7 @@ class SieveOrchestrator:
                 handler_result = _apply_cel_expr(
                     handler_config,
                     handler_result,
-                    project=handler_ctx.project_context,
+                    project=handler_ctx.usable_project,
                     repo_path=context.local_path,
                     decides=getattr(invocation, "expr_decides", False),
                 )
