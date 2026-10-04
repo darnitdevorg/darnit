@@ -30,6 +30,17 @@ def clear_cache():
     clear_config_cache()
 
 
+@pytest.fixture(autouse=True)
+def outside_ci(monkeypatch: pytest.MonkeyPatch) -> None:
+    """In CI the audited repository is named by CI metadata, not by owner/repo (feature 040).
+
+    These tests record an operator-side confirmation for ``TARGET``, so they
+    run as a local audit of that repository.
+    """
+    for var in ("GITHUB_ACTIONS", "GITLAB_CI", "CI", "JENKINS_URL", "TF_BUILD", "BUILDKITE", "CIRCLECI", "TRAVIS"):
+        monkeypatch.delenv(var, raising=False)
+
+
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
     path = tmp_path / "repo"
