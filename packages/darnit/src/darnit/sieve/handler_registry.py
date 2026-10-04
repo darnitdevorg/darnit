@@ -26,7 +26,7 @@ Example:
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Literal
@@ -217,6 +217,11 @@ class SieveHandlerInfo:
             for remediation: in ``plan`` mode it has no side effects. A
             handler without it is not previewable and is not invoked in a
             preview.
+        settings: Feature 044. The step keys this step type reads, beyond
+            the common step fields. None means not declared (plugin step
+            types only): its steps' keys are not checked.
+        expression_names: Feature 044. The top-level names an ``expr`` on
+            this step type may reference. Empty means it accepts no ``expr``.
     """
 
     name: str
@@ -227,6 +232,8 @@ class SieveHandlerInfo:
     ceiling: frozenset[str] = frozenset()
     existence_ceiling: frozenset[str] | None = None
     supports_plan: bool = False
+    settings: frozenset[str] | None = None
+    expression_names: frozenset[str] = frozenset()
 
 
 class SieveHandlerRegistry:
@@ -261,6 +268,8 @@ class SieveHandlerRegistry:
         ceiling: Any = frozenset(),
         existence_ceiling: Any = None,
         supports_plan: bool = False,
+        settings: Iterable[str] | None = None,
+        expression_names: Iterable[str] = frozenset(),
     ) -> None:
         """Register a sieve handler.
 
@@ -283,6 +292,14 @@ class SieveHandlerRegistry:
             supports_plan: Feature 043. True only for a remediation handler
                 that, given ``context.mode == "plan"``, changes nothing and
                 returns the changes it would make.
+            settings: Feature 044. The step keys the handler reads from its
+                config, excluding the common step fields
+                (framework-design 3.0.3). Every core step type declares
+                them; a plugin step type that leaves None is not checked.
+            expression_names: Feature 044. Names an ``expr`` on this step
+                type may reference (``output`` and ``project`` for a
+                post-step expression; the handler's own binding when it
+                evaluates ``expr`` itself).
         """
         if isinstance(phase, str):
             phase = HandlerPhase(phase)
@@ -317,6 +334,8 @@ class SieveHandlerRegistry:
                 else _outcome_set(existence_ceiling, f"existence_ceiling of handler {name!r}")
             ),
             supports_plan=supports_plan,
+            settings=None if settings is None else frozenset(settings),
+            expression_names=frozenset(expression_names),
         )
         self._handlers[name] = info
         logger.debug(
