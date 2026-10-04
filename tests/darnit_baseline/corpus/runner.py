@@ -36,6 +36,8 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
+from tests.conftest_helpers import write_stand_in_tool
+
 CORPUS_ROOT = Path(__file__).resolve().parent
 LABELS_FILE = "labels.toml"
 KNOWN_FALSE_PASS_FILE = CORPUS_ROOT / "known_false_pass.toml"
@@ -489,11 +491,7 @@ def _observe_steps(sink: list[StepObservation]) -> Iterator[None]:
 def _write_tools(bin_dir: Path, tools: dict[str, dict[str, Any]]) -> None:
     """Stand-in executables that print the declared stdout and exit with the declared code."""
     for name, tool in tools.items():
-        output = bin_dir / f"{name}.stdout"
-        output.write_text(tool.get("stdout", ""), encoding="utf-8")
-        script = bin_dir / name
-        script.write_text(f"#!/bin/sh\ncat '{output}'\nexit {int(tool.get('exit_code', 0))}\n", encoding="utf-8")
-        script.chmod(0o755)
+        write_stand_in_tool(bin_dir, name, stdout=tool.get("stdout", ""), exit_code=int(tool.get("exit_code", 0)))
 
 
 @contextmanager

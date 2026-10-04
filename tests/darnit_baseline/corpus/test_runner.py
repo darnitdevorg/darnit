@@ -214,6 +214,18 @@ def test_stand_in_tools_are_first_on_path(framework: Framework, corpus: Path) ->
     assert results[("without-tool", "SYN-05")].status == "ERROR"
 
 
+def test_stand_in_tool_writer_needs_no_monkeypatch(tmp_path: Path) -> None:
+    """The runner and tests share one stand-in writer; the runner has no monkeypatch (044 review)."""
+    import subprocess
+
+    from tests.conftest_helpers import write_stand_in_tool
+
+    tool = write_stand_in_tool(tmp_path, "corpus-tool", stdout='{"ok": true}', exit_code=3)
+    run = subprocess.run([str(tool)], capture_output=True, text=True, timeout=30, check=False)
+
+    assert (run.stdout, run.returncode) == ('{"ok": true}', 3)
+
+
 def test_plugin_registration_is_refused_and_registry_restored(framework: Framework, corpus: Path) -> None:
     from darnit.sieve.handler_registry import get_sieve_handler_registry
 

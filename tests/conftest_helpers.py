@@ -33,16 +33,8 @@ def assert_unchanged(root: Path, before: dict[str, str | None]) -> None:
     )
 
 
-def stand_in_tool(
-    monkeypatch: pytest.MonkeyPatch,
-    bin_dir: Path,
-    name: str,
-    *,
-    stdout: str = "",
-    exit_code: int = 0,
-    script: str = "",
-) -> Path:
-    """Put an executable ``name`` first on ``PATH``, standing in for a real tool such as ``zizmor``.
+def write_stand_in_tool(bin_dir: Path, name: str, *, stdout: str = "", exit_code: int = 0, script: str = "") -> Path:
+    """Write an executable ``bin_dir/name`` standing in for a real tool such as ``zizmor``.
 
     It runs ``script`` (POSIX sh, with the tool's arguments as ``$@``),
     then writes ``stdout`` exactly (nothing when empty) and exits with
@@ -57,5 +49,19 @@ def stand_in_tool(
     tool = bin_dir / name
     tool.write_text("\n".join(lines) + "\n", encoding="utf-8")
     tool.chmod(0o755)
+    return tool
+
+
+def stand_in_tool(
+    monkeypatch: pytest.MonkeyPatch,
+    bin_dir: Path,
+    name: str,
+    *,
+    stdout: str = "",
+    exit_code: int = 0,
+    script: str = "",
+) -> Path:
+    """Put a stand-in ``name`` (``write_stand_in_tool``) first on ``PATH``."""
+    tool = write_stand_in_tool(bin_dir, name, stdout=stdout, exit_code=exit_code, script=script)
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
     return tool
