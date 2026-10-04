@@ -1,8 +1,8 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.10
+> **Version**: 1.0.0-alpha.11
 > **Status**: Authoritative
-> **Last Updated**: 2026-10-02
+> **Last Updated**: 2026-10-04
 
 This specification defines the authoritative design of the Darnit framework, including the sieve orchestrator, TOML schema, built-in pass types, remediation actions, and plugin protocol.
 
@@ -43,7 +43,7 @@ Darnit is a pluggable security and compliance auditing framework that:
 │                                                             │
 │  ┌─────────────────────────────────────────────────────────┐│
 │  │ Built-in Capabilities (declarative, no Python)         ││
-│  │ - file_must_exist, exec, api_check, pattern, template  ││
+│  │ - file_exists, exec, gh_api, regex, pattern, template  ││
 │  │ - file_create, exec, platform_setting, project_update, ││
 │  │   yaml_inject (remediation)                            ││
 │  └─────────────────────────────────────────────────────────┘│
@@ -160,6 +160,10 @@ steps = ["Verify branch protection in repository settings"]
 - **THEN** it MUST have `name` and `description` fields
 - **AND** it SHOULD have at least one pass defined
 
+#### Requirement: No Unknown Control Keys
+- **WHEN** a control declares a key the control schema does not define
+- **THEN** loading the framework file MUST fail with an error naming the file, the control, and the key (feature 044; step keys are checked as in section 3.0.3)
+
 #### Requirement: SARIF Metadata
 - **WHEN** SARIF output is generated
 - **THEN** the framework MUST use `help_md`, `docs_url`, and `security_severity` from TOML
@@ -219,7 +223,7 @@ Every step type registers a **ceiling**: the set of outcomes (`pass`, `fail`) it
 | `manual`, `manual_steps` | `{}` | -- |
 | remediation handlers (`file_create`, `platform_setting`, `project_update`, `yaml_inject`) | `{}` | -- |
 
-A plugin handler registers its ceiling with the handler (`registry.register(..., ceiling={"pass", "fail"})`). A plugin handler that registers no ceiling has the ceiling `{}`: its results are evidence only.
+A plugin handler registers its ceiling with the handler (`registry.register(..., ceiling={"pass", "fail"})`). A plugin handler that registers no ceiling has the ceiling `{}`: its results are evidence only. A step type that decides from text or file-presence signals registers `{fail}`; the reproducibility framework's five step types (`repro_deps_pinned`, `repro_build_env_declared`, `repro_hermetic_build`, `repro_provenance_exists`, `repro_bit_for_bit`) do, so they conclude PASS only with a promotion, and their signals reach the control's later steps as evidence (feature 044, section 12).
 
 **Step fields** (on any `[[controls."ID".passes]]` entry; none are passed to the handler except `fail_on_miss` and `fail_on_status`):
 
@@ -241,6 +245,8 @@ A plugin handler registers its ceiling with the handler (`registry.register(...,
 3. `fail_on_status` on a step type other than `gh_api`, or without `fail` in the effective set;
 4. any `concludes` outcome outside the (existence) ceiling without a promotion for that outcome;
 5. a promotion whose outcome is not `pass`, or that lacks `corpus`.
+
+Unknown step keys, unregistered step types, and expression references are checked at the same point (section 3.0.3).
 
 The orchestrator computes the effective set from the registry at dispatch time as well, so a step that escaped validation still cannot conclude an outcome outside its ceiling without a promotion.
 
@@ -277,14 +283,77 @@ A step that concludes within its effective set records authority `dispositive` a
 
 The CEL post-step (section 3.7) does not modify a WARN result. Its transition table is defined for PASS and FAIL only; there is no "CEL disagrees with WARN" cell, because WARN already asserts that the evidence is incomplete.
 
+### 3.0.3 Step Registration and Strict Loading
+
+A step type is registered once, with the outcomes it may conclude (3.0.1), the settings it reads, and the names its expression may use (feature 044):
+
+```python
+registry.register(
+    "my_check",
+    phase="deterministic",
+    handler_fn=my_check,
+    ceiling={"fail"},
+    settings=frozenset({"files", "threshold"}),
+    expression_names=frozenset({"output", "project"}),
+)
+```
+
+| Registration field | Default | Meaning |
+|--------------------|---------|---------|
+| `settings` | `None` | The step keys this step type reads, beyond the common step fields. `None` means not declared, which only a plugin step type may leave: it loads with one warning per step type that its settings are not checked. Every core step type, check and remediation, declares its settings. |
+| `expression_names` | `{}` | The top-level names an `expr` on this step type may reference (section 3.7). Empty means the step type does not accept `expr`. |
+
+**Common step fields**, accepted on every step: `handler`, `when`, `shared`, `use_locator`, `authority`, `existence`, `concludes`, `fail_on_miss`, `fail_on_status`, `promotion` (3.0.1), `description` (documentation only), and `expr` (only when the step type declares expression names).
+
+**Name collisions.** Core step types register before any plugin. A registration is refused, logged at WARNING naming both registrants, and recorded in the registry's `refused_registrations` (shown by `darnit list` and in the audit warnings) when:
+
+1. a plugin registers a name a core step type uses; the core step type is unchanged;
+2. a plugin registers a name a different plugin registered; the first registration is unchanged.
+
+The same plugin registering its own name again is allowed. No setting lets a plugin replace a step type: a replacement could widen a ceiling, for example make `manual` conclude PASS.
+
+**Strict loading.** Loading a framework file fails, naming the framework file and control, and for a step the step (`pass[i]:<handler>`) and the offending key or name, when:
+
+1. a step, a verification pass or a remediation handler, has a key that is neither a common step field nor in its step type's declared `settings`;
+2. a step names a step type that is not registered;
+3. a step has `expr` and its step type declares no expression names, the expression does not compile, or it references a name its step type does not provide (section 3.7);
+4. a `gh_api` step reads a personal record without `evidence_fields` (section 3.8).
+
+Unknown control keys fail loading as well (section 2.3). These checks run where 3.0.1's validation runs: on every control-loading path, after plugin step types register. No step is silently skipped. The one exception to rule 2 is a step from operator configuration (a pass override or custom control, section 14.1) that names the step type of a plugin that is not installed: that control loads, and the audit reports it ERROR, class `missing_tool`, with the cause "step type X is not registered".
+
+#### Scenario: A plugin redefines a core step type
+- **WHEN** a plugin registers a step type named `manual` with ceiling `{pass}`
+- **THEN** the registration MUST be refused and reported at WARNING naming the plugin and core
+- **AND** a control whose only step is `manual` MUST NOT conclude PASS
+
+#### Scenario: Two plugins register the same name
+- **WHEN** a second plugin registers a step type name another plugin registered
+- **THEN** the second registration MUST be refused and reported naming both plugins
+
+#### Scenario: Misspelled step setting
+- **WHEN** a step declares `fail_on_mis = true`
+- **THEN** loading MUST fail naming the framework file, control, step, and key
+
+#### Scenario: Plugin step type without declared settings
+- **WHEN** a framework uses a plugin step type registered without `settings`
+- **THEN** it MUST load, with one warning per step type that its settings are not checked
+
+#### Scenario: Unregistered step type
+- **WHEN** a framework file names `handler = "file_must_exst"`
+- **THEN** loading MUST fail naming the control and the step type
+
+#### Scenario: Operator-supplied control names a missing plugin step type
+- **WHEN** an operator custom control names the step type of a plugin that is not installed
+- **THEN** the control MUST be reported ERROR, class `missing_tool`, naming the step type
+
 ### 3.1 Pass Execution Order
 
 ```
 Passes execute in TOML declaration order. Typical ordering:
-  file_must_exist / exec  →  regex  →  llm_eval  →  manual
-       ↓                      ↓          ↓            ↓
-  Exact checks            Heuristics   AI eval    Human review
-  (high conf)             (med conf)              (fallback)
+  file_exists / exec  →  regex  →  llm_eval  →  manual
+          ↓                 ↓          ↓           ↓
+    Exact checks       Heuristics   AI eval   Human review
+    (high conf)        (med conf)              (fallback)
 ```
 
 The framework does not enforce a particular phase ordering. Controls MAY declare passes in any order. The convention above reflects decreasing confidence and increasing cost.
@@ -294,14 +363,14 @@ The framework does not enforce a particular phase ordering. Controls MAY declare
 - **THEN** the orchestrator MUST still execute them in declaration order
 - **AND** the handler type MUST NOT affect execution order
 
-### 3.2 file_must_exist Handler
+### 3.2 file_exists Handler
 
 **Purpose**: High-confidence file existence checks with binary outcomes
 
 **TOML Schema**:
 ```toml
 [[controls."EXAMPLE".passes]]
-handler = "file_must_exist"
+handler = "file_exists"
 files = ["SECURITY.md", ".github/SECURITY.md"]
 ```
 
@@ -309,8 +378,9 @@ files = ["SECURITY.md", ".github/SECURITY.md"]
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `handler` | `str` | MUST be `"file_must_exist"` |
+| `handler` | `str` | MUST be `"file_exists"` |
 | `files` | `list[str]` | Paths/globs where ANY match passes |
+| `max_depth` | `int` | Search subdirectories up to this depth for non-glob entries (default: 0, repository root only) |
 
 **Behavior**:
 1. If any file in `files` matches → PASS
@@ -319,12 +389,12 @@ files = ["SECURITY.md", ".github/SECURITY.md"]
 **Ceiling**: `{fail}`; `{pass, fail}` with `existence = true` (section 3.0.1). A file being present says nothing about its content, so a presence step concludes PASS only for a control whose requirement is literally that the file exists.
 
 #### Scenario: File found
-- **WHEN** a `file_must_exist` handler is invoked
+- **WHEN** a `file_exists` handler is invoked
 - **AND** at least one path in `files` matches an existing file
 - **THEN** the handler MUST return PASS
 
 #### Scenario: No file found
-- **WHEN** a `file_must_exist` handler is invoked
+- **WHEN** a `file_exists` handler is invoked
 - **AND** no path in `files` matches an existing file
 - **THEN** the handler MUST return FAIL
 
@@ -350,17 +420,17 @@ env = { "TOOL_VERBOSE" = "true" }
 | Field | Type | Description |
 |-------|------|-------------|
 | `handler` | `str` | MUST be `"exec"` |
-| `command` | `list[str]` | Command and arguments (supports `$PATH`, `$OWNER`, `$REPO`, `$BRANCH`, `$CONTROL`) |
+| `command` | `list[str]` | Command and arguments (supports `$PATH`, `$OWNER`, `$REPO`, `$BRANCH`) |
 | `pass_exit_codes` | `list[int]` | Exit codes that indicate PASS (default: `[0]`) |
 | `fail_exit_codes` | `list[int]` | Exit codes that indicate FAIL |
-| `output_format` | `str` | Output format: `text`, `json`, `sarif` |
-| `pass_if_output_matches` | `str` | Regex pattern - if matches stdout → PASS |
-| `fail_if_output_matches` | `str` | Regex pattern - if matches stdout → FAIL |
-| `pass_if_json_path` | `str` | JSONPath to extract value |
-| `pass_if_json_value` | `str` | Expected value at JSON path for PASS |
-| `expr` | `str` | CEL expression for pass logic (see Section 3.7; full context/function reference in [docs/CEL_CONTEXT.md](../CEL_CONTEXT.md)) |
+| `output_format` | `str` | `text` (default) or `json`; with `json`, stdout is parsed into `output.json` |
+| `expr` | `str` | CEL expression over `output` and `project` (section 3.7) |
 | `timeout` | `int` | Timeout in seconds (default: 300) |
 | `env` | `dict` | Additional environment variables |
+| `cwd` | `str` | Working directory (default: the repository) |
+| `effects`, `offline` | | Remediation steps only: preview declarations (section 4.4) |
+
+These are the step type's declared `settings` (section 3.0.3); any other key fails loading.
 
 **Security**:
 - Commands are executed as a list (no shell interpolation)
@@ -369,15 +439,14 @@ env = { "TOOL_VERBOSE" = "true" }
 **Broken measurements**: a command whose binary is not installed is ERROR, class `missing_tool`; a timeout is ERROR, class `timeout`. Neither is FAIL.
 
 #### Scenario: CEL expression evaluated
-- **WHEN** an `exec` handler has an `expr` field
-- **THEN** the CEL expression MUST be evaluated after command execution
-- **AND** `expr` returning `true` MUST result in PASS
-- **AND** `expr` returning `false` MUST result in INCONCLUSIVE (not FAIL)
-- **AND** CEL evaluation errors MUST fall through to exit code evaluation
+- **WHEN** an `exec` step has an `expr` field and the exit code gives PASS or FAIL
+- **THEN** the expression MUST be evaluated after the command, and the step result MUST follow the outcome rules of section 3.7
+- **AND** an expression that cannot be evaluated, or is not boolean, MUST make the step ERROR, class `evaluation`
 
 #### Scenario: Exit code evaluation
-- **WHEN** an `exec` handler does not have an `expr` field or CEL evaluation is inconclusive
+- **WHEN** an `exec` handler runs
 - **THEN** the handler MUST evaluate the exit code against `pass_exit_codes` and `fail_exit_codes`
+- **AND** an exit code in neither list MUST NOT give PASS or FAIL
 
 ### 3.4 regex Handler
 
@@ -388,23 +457,27 @@ env = { "TOOL_VERBOSE" = "true" }
 [[controls."EXAMPLE".passes]]
 handler = "regex"
 files = ["SECURITY.md", "README.md", "docs/*.md"]
-patterns = {
-    "has_email" = "[\\w.-]+@[\\w.-]+",
-    "has_disclosure" = "(?i)disclos|report|vulnerabilit"
-}
+pattern = { patterns = { has_email = '[\w.-]+@[\w.-]+', has_disclosure = '(?i)disclos|report|vulnerabilit' } }
 pass_if_any = true
 fail_on_miss = false
 ```
 
-**Fields**:
+**Fields** (`regex` and its alias `pattern`):
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `handler` | `str` | MUST be `"regex"` |
-| `files` | `list[str]` | File patterns to search |
-| `patterns` | `dict[str, str]` | Named patterns (name → regex) |
-| `pass_if_any` | `bool` | PASS if any pattern matches (default: true) |
+| `handler` | `str` | `"regex"` or `"pattern"` |
+| `files` | `list[str]` | File paths/globs to search |
+| `file` | `str` | Legacy single file; `"$FOUND_FILE"` names the file a preceding `file_exists` step found |
+| `pattern` | `str` or `{patterns = dict[str, str]}` | One regex, or named regexes (name -> regex) under `patterns` |
+| `pass_if_any` | `bool` | PASS if any pattern matches (default: true); false requires every file and pattern to match |
+| `min_matches` | `int` | Matches needed per pattern per file (default: 1) |
+| `exclude_files` | `list[str]` | Exclude mode: globs whose presence is reported (see below) |
+| `max_depth` | `int` | Search subdirectories up to this depth for non-glob entries (default: 0) |
 | `fail_on_miss` | `bool` | FAIL instead of INCONCLUSIVE on no match (default: false). Step field; requires `fail` in the step's effective set. |
+| `expr` | `str` | CEL expression over `output` (the handler's evidence) and `project` (section 3.7) |
+
+These are the step type's declared `settings` and common step fields (section 3.0.3); any other key, such as a top-level `patterns`, fails loading.
 
 **Ceiling**: `{fail}`; `{pass, fail}` with `existence = true` (section 3.0.1). A keyword match is evidence that a document mentions something, not that it satisfies the control.
 
@@ -444,7 +517,6 @@ Evaluate whether the SECURITY.md file adequately explains:
 2. Expected response timeline
 3. Disclosure policy
 """
-prompt_file = "prompts/security_policy_eval.txt"
 files_to_include = ["SECURITY.md", "README.md"]
 analysis_hints = ["Look for contact information", "Check for timeline mentions"]
 confidence_threshold = 0.8
@@ -456,7 +528,6 @@ confidence_threshold = 0.8
 |-------|------|-------------|
 | `handler` | `str` | MUST be `"llm_eval"` |
 | `prompt` | `str` | Inline prompt template |
-| `prompt_file` | `str` | Path to prompt file (alternative to inline) |
 | `files_to_include` | `list[str]` | Files to include in LLM context. Supports `$FOUND_FILE` to reference the file discovered by a preceding `file_exists` handler. |
 | `analysis_hints` | `list[str]` | Hints to guide analysis |
 | `confidence_threshold` | `float` | Passed to the model with the consultation. Since feature 041 a judgment's confidence is recorded with it but is never a decision input: a judgment never concludes a control. |
@@ -524,55 +595,66 @@ docs_url = "https://baseline.openssf.org/..."
 
 ### 3.7 CEL Expressions
 
-Handler types that support CEL expressions use Common Expression Language for flexible result evaluation.
-
-**Purpose**: Replace multiple `pass_if_*` fields with a single declarative expression.
+A step may carry an `expr`: a Common Expression Language condition that must hold for the step's result to stand.
 
 **TOML Schema**:
 ```toml
 [[controls."EXAMPLE".passes]]
-handler = "exec"
-command = ["gh", "api", "/orgs/{org}/settings"]
-expr = 'response.two_factor_requirement_enabled == true'
-
-[[controls."EXAMPLE2".passes]]
 handler = "exec"
 command = ["kusari", "scan"]
 output_format = "json"
 expr = 'output.json.status == "pass" && size(output.json.issues) == 0'
 ```
 
-**Context Variables**:
+**Names by step type.** Each step type declares the names its expressions may use (`expression_names`, section 3.0.3). A step type with none does not accept `expr`.
 
-| Variable | Handler | Description |
-|----------|---------|-------------|
-| `output.stdout` | exec | Command stdout |
-| `output.stderr` | exec | Command stderr |
-| `output.exit_code` | exec | Command exit code |
-| `output.json` | exec | Parsed JSON from stdout (if `output_format = "json"`) |
-| `response.status_code` | api_check | HTTP status code |
-| `response.body` | api_check | Response body |
-| `response.headers` | api_check | Response headers |
-| `files` | regex | List of matched file paths |
-| `matches` | regex | Dict of pattern name → match results |
-| `project.*` | all | Values from `.project/` context |
+| Step type | Names | Evaluated by |
+|-----------|-------|--------------|
+| `exec` | `output` (`stdout`, `stderr`, `exit_code`, `json`), `project` | the orchestrator, after the handler |
+| `regex`, `pattern` | `output` (the handler's evidence, e.g. `any_match`, `files_found`, `results`), `project` | the orchestrator, after the handler |
+| `gh_api` | `response` (`status_code`, `body`) | the handler (section 3.8) |
+| `mcp` | `result` (the tool's response) | the handler |
 
-**Custom Functions**:
+`project` holds the usable project context values (confirmed, or concluded for detectable keys, section 7.4), keyed by canonical name (for example `project.ci_provider`). Reading a key that is not usable, such as an unconfirmed candidate, is an evaluation error, never an absent value that happens to make the expression true.
+
+**Functions**:
 
 | Function | Description |
 |----------|-------------|
-| `file_exists(path)` | Check if file exists |
-| `json_path(obj, path)` | Extract value from JSON using JSONPath |
+| `file_exists(path)` | Whether `path`, relative to the audited repository, exists |
+| `json_path(obj, path)` | Value at a JMESPath expression in `obj` |
 
-**Behavior**:
-- `expr` takes precedence over legacy fields (`pass_if_json_path`, etc.)
-- Expression must return `true` for PASS, `false` for FAIL
-- Expressions are sandboxed with 1s timeout
-- CEL is non-Turing complete, preventing infinite loops
+**Outcome rules** for an expression evaluated by the orchestrator. It runs only when the handler returns PASS or FAIL; a WARN, INCONCLUSIVE, or ERROR result is unchanged.
 
-#### Scenario: CEL expression precedence
-- **WHEN** both `expr` and legacy fields (e.g., `pass_if_json_path`) are defined
-- **THEN** the `expr` field MUST take precedence
+| Expression result | Handler result | Step result |
+|-------------------|----------------|-------------|
+| true | PASS | PASS |
+| false | PASS | INCONCLUSIVE |
+| false | FAIL | FAIL |
+| true | FAIL | INCONCLUSIVE |
+| does not compile, cannot be evaluated, or is not boolean | PASS or FAIL | ERROR, class `evaluation` |
+
+On ERROR the step's evidence keeps the handler's evidence and adds `expr` and `expr_error`. A broken expression is a broken measurement: it is neither PASS nor FAIL (section 3.0), whatever the handler returned.
+
+**Load-time check.** When controls load, each `expr` is compiled and its free names are collected (names bound by the comprehension macros `exists`, `all`, `exists_one`, `map`, and `filter`, and function names, are not free). Loading fails, naming the control, the step, and the name, when the expression does not compile, when it uses a name its step type does not provide (for example `response` on an `exec` step, or a misspelled `ouput`), or when the step type accepts no `expr` (section 3.0.3).
+
+**Limits**: evaluation is sandboxed with a 1 second timeout; CEL is not Turing complete.
+
+#### Scenario: An expression cannot be evaluated
+- **WHEN** a step's handler returns PASS and its expression cannot be evaluated (for example `output.json` is missing because the command printed no JSON)
+- **THEN** the step result MUST be ERROR, class `evaluation`, and it MUST NOT conclude the control
+
+#### Scenario: A non-boolean expression
+- **WHEN** a step's expression evaluates to a value that is not `true` or `false`
+- **THEN** the step result MUST be ERROR, class `evaluation`
+
+#### Scenario: An expression reads an unconfirmed project value
+- **WHEN** an expression reads `project.<key>` and the key holds only a candidate
+- **THEN** the step result MUST be ERROR, class `evaluation`
+
+#### Scenario: An expression names data its step type does not provide
+- **WHEN** an `exec` step declares `expr = 'response.body.x'`
+- **THEN** loading MUST fail naming the control, the step, and `response`
 
 ### 3.8 gh_api Handler
 
@@ -594,7 +676,8 @@ expr = 'has(response.body.required_pull_request_reviews)'
 | `handler` | `str` | MUST be `"gh_api"` |
 | `endpoint` | `str` | API path (supports `$OWNER`, `$REPO`, `$BRANCH`) |
 | `fail_on_status` | `list[int]` | HTTP statuses that prove failure (step field) |
-| `expr` | `str` | CEL over `response.status_code` and `response.body` (the parsed JSON body); `true` -> PASS, `false` -> FAIL. Evaluated by the handler, not by the post-step of section 3.7, so `output.*` is not bound. Response headers are not available (`gh api` does not expose them). |
+| `expr` | `str` | CEL over `response.status_code` and `response.body` (the parsed JSON body); `true` -> PASS, `false` -> FAIL. Evaluated by the handler, not by the post-step of section 3.7, so `output.*` and `project.*` are not bound. Response headers are not available (`gh api` does not expose them). |
+| `evidence_fields` | `list[str]` | Top-level `response.body` keys kept in the stored evidence. When set, every other body key is dropped from evidence, and so from reports and attestations; `expr` still evaluates against the full response. |
 
 **Ceiling**: `{pass, fail}`.
 
@@ -608,7 +691,9 @@ expr = 'has(response.body.required_pull_request_reviews)'
 
 A response that is ambiguous between "not found" and "not permitted to see" is ERROR unless the step declares otherwise.
 
-**Evidence**: `endpoint` (after substitution), `response` (`status_code`, `body`), and on a non-2xx answer the `gh` error text.
+**Evidence**: `endpoint` (after substitution), `response` (`status_code`, `body`, limited to `evidence_fields` when declared), and on a non-2xx answer the `gh` error text.
+
+**Personal records**: a step whose endpoint is `/user` or starts with `/users/` reads a person's account (for `/user`, the auditor's own). It MUST declare `evidence_fields`, listing only the fields its check needs; loading fails otherwise (section 3.0.3). OSPS-AC-01.01 reads `/user` with `evidence_fields = ["login", "two_factor_authentication"]`, so the auditor's email, location, company, and biography never reach evidence, JSON output, or attestations (feature 044).
 
 **Recorded responses**: the handler calls the platform through `darnit.core.utils.gh_api_with_status`. `set_gh_api_responder(responder)` routes every such call (including the `github_branch_protection` plugin handler's) through a responder instead of `gh`; `RecordedGhApi({path: {status, body, error}})` serves recorded responses keyed by API path, answers an unrecorded path as a transport failure (status 0), and with `gh_missing = True` answers as if `gh` were not installed. Tests and the adversarial corpus (section 5.5) use it to run platform checks offline and deterministically. Platform writes (`gh_api_write`, section 4.5) go through the same seam: the responder is called with `(method, endpoint, body)` and returns `(body, status, error)`; GET-only responders keep working, and `RecordedGhApi` also serves keys of the form `"PUT /repos/o/r/branches/main/protection"` and records each request body in `.calls`.
 
@@ -623,6 +708,14 @@ A response that is ambiguous between "not found" and "not permitted to see" is E
 #### Scenario: A rate limit never proves failure
 - **WHEN** a `gh_api` step declares `fail_on_status = [403]` and receives a rate-limit 403
 - **THEN** the handler MUST return ERROR, class `rate_limit`
+
+#### Scenario: Personal record without evidence_fields
+- **WHEN** a `gh_api` step reads `/user` and declares no `evidence_fields`
+- **THEN** loading MUST fail naming the control and the step
+
+#### Scenario: Evidence limited to declared fields
+- **WHEN** a `gh_api` step with `evidence_fields = ["login", "two_factor_authentication"]` receives a body that also has `email` and `bio`
+- **THEN** the stored evidence MUST contain only `login` and `two_factor_authentication` in `response.body`
 
 ---
 
@@ -652,7 +745,7 @@ project_reference = "security.policy"
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `handlers` | array of tables | Ordered handler invocations. Each has `handler`, the handler's fields, and an optional `when` |
+| `handlers` | array of tables | Ordered handler invocations. Each has `handler`, the handler's declared settings (section 3.0.3; any other key fails loading), and an optional `when` |
 | `strategy` | `"all"` \| `"first_match"` | `all` (default) runs every handler whose `when` matches; `first_match` stops after the first |
 | `requires_context` | list | Context requirements (section 7.3) |
 | `safe` | `bool` | Default `true`. `false` means every step of this remediation requires individual approval in a batch apply, under every remediation policy (section 15.3) |
@@ -1754,9 +1847,19 @@ Project context from `.project/` SHALL be used to inform WHERE the sieve looks f
 
 ## 12. Handler Registry
 
-The framework SHALL provide a handler registry where handlers are registered by name with a phase affinity. Core SHALL register built-in handlers: `file_exists`, `exec`, `regex`, `llm_eval`, `manual_steps`, `file_create`, `platform_setting`, `project_update`, `yaml_inject`. Remediation handlers declare plan support at registration (`supports_plan`, section 4.2). Implementations SHALL register domain-specific handlers via the existing `ComplianceImplementation.register_handlers()` method.
+The framework SHALL provide a handler registry where handlers are registered by name with a phase affinity. Core SHALL register built-in handlers: `file_exists`, `exec`, `gh_api`, `regex`, `pattern`, `llm_eval`, `llm_extract`, `manual`, `manual_steps`, `mcp`, `file_create`, `platform_setting`, `project_update`, `yaml_inject`. Each registration declares its ceiling (section 3.0.1), its `settings` and `expression_names` (section 3.0.3), and, for remediation handlers, plan support (`supports_plan`, section 4.2). Core registers before any plugin, and the registry refuses a plugin registration that would replace a core step type or another plugin's step type (section 3.0.3). Implementations SHALL register domain-specific handlers via the existing `ComplianceImplementation.register_handlers()` method.
 
-Implementation-registered sieve handlers (non-exhaustive): `github_branch_protection` (registered by `darnit-baseline`, encapsulates the classic-branch-protection + repository-rulesets two-surface check for `OSPS-AC-03.01`, `OSPS-AC-03.02`, `OSPS-QA-03.01`, `OSPS-QA-07.01`; see `specs/032-ruleset-branch-protection/contracts/github-branch-protection-handler.md`).
+Implementation-registered sieve handlers (non-exhaustive):
+
+| Step type | Registered by | Ceiling |
+|-----------|---------------|---------|
+| `github_branch_protection` | `darnit-baseline`: the classic-branch-protection + repository-rulesets two-surface check for `OSPS-AC-03.01`, `OSPS-AC-03.02`, `OSPS-QA-03.01`, `OSPS-QA-07.01`; see `specs/032-ruleset-branch-protection/contracts/github-branch-protection-handler.md` | `{pass, fail}` (reads platform settings) |
+| `generate_threat_model` | `darnit-baseline` (remediation) | `{pass, fail}` |
+| `gittuf_verify_policy`, `gittuf_commits_signed` | `darnit-gittuf` | `{pass, fail}` (cryptographic verification) |
+| `repro_deps_pinned`, `repro_build_env_declared`, `repro_hermetic_build`, `repro_provenance_exists`, `repro_bit_for_bit` | `darnit-reproducibility` | `{fail}`: they decide from text and file-presence signals, so PASS needs a corpus-backed promotion (section 3.0.1) |
+| `csl_llm_if_present` | `darnit-csl` | `{fail}` |
+
+The reproducibility ceilings are part of that framework's own registration, not its package name, so they hold under a rename of the package.
 
 A handler used in a phase different from its registered affinity SHALL trigger a warning but still execute.
 
@@ -2117,6 +2220,7 @@ The following requirements have been superseded: by the handler dispatch archite
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.11 | 2026-10-04 | Close remaining false-PASS paths (feature 044): an expression that cannot be evaluated or is not boolean makes the step ERROR, expression names per step type with usable `project` values and a repository-aware `file_exists`, load-time expression reference check (Section 3.7); step registration declares `settings` and `expression_names`, plugins cannot replace a registered step type, and unknown control keys, unknown step keys, and unregistered step types fail loading (Sections 2.3, 3.0.3); reproducibility step types conclude only FAIL (Sections 3.0.1, 12); `gh_api` `evidence_fields`, required for personal records (Section 3.8); `file_must_exist` replaced by the registered `file_exists` (Section 3.2); field tables corrected to what each handler reads (Sections 3.3-3.5) |
 | 1.0.0-alpha.10 | 2026-10-02 | Remediation safety (feature 043): plan/apply protocol and single writer (Section 4.2), `platform_setting` (4.5), exec `effects`/`offline` and no platform state from exec (4.4), `file_create.project_reference` (4.3), remediation policy, digest-bound approval, outcomes, re-check, run manifest, and version-control rules (Section 15); removed `api_call`, `requires_confirmation`, `dry_run_supported`, `dry_run_command` (Appendix C) |
 | 1.0.0-alpha.9 | 2026-09-29 | Context value standing, confirmation records, lapse, detection fallbacks, canonical keys, reads never write, targeted project-file writes, confirmation tool contract (Sections 7.4-7.11, feature 042) |
 | 1.0.0-alpha.8 | 2026-02-16 | Added audit result cache (Section 10.4): audit writes cache, remediate reads cache, post-remediation invalidation |
