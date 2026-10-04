@@ -15,7 +15,8 @@ uv run pytest tests/darnit/sieve/test_expr_failure.py -v
 | Control | Stand-in output | Expected |
 |---|---|---|
 | OSPS-BR-01.01, OSPS-AC-04.02 | Nothing | ERROR (`evaluation`), not PASS |
-| Same | JSON with a `template-injection` finding | FAIL |
+| Same | JSON with the control's finding (`template-injection`, `excessive-permissions`) | FAIL: the steps set `expr_decides` (FR-015); without it the step was INCONCLUSIVE and the control WARN |
+| Same | JSON with only other findings | PASS |
 | Same | Empty JSON list | PASS |
 
 **Other cases:**
@@ -24,6 +25,8 @@ uv run pytest tests/darnit/sieve/test_expr_failure.py -v
   - with a confirmed `ci_provider = github`, the expression evaluates true;
   - with an unconfirmed candidate, the step is ERROR.
 - `file_exists("README.md")` is true in a repository that has `README.md`.
+- With `expr_decides = true` and a handler PASS: true is PASS, false is FAIL, a broken expression is ERROR; a handler FAIL, WARN, INCONCLUSIVE, or ERROR is unchanged. A FAIL outside the step's effective set does not conclude.
+- `expr_decides` without `expr`, on `file_exists`, or on `gh_api` fails loading.
 
 ## V2. Load-time checks (US1 scenario 6, US2, SC-003)
 
@@ -86,9 +89,29 @@ The recorded `/user` response includes email, location, company, and bio.
 ## V6. Corpus and regression
 
 ```bash
-uv run pytest tests/darnit_baseline/corpus/ -v
+uv run pytest tests/darnit_baseline/corpus/ tests/darnit_reproducibility/test_repro_corpus_gate.py -v
 uv run ruff check .
 uv run pytest tests/ -q
 ```
 
-The corpus has cases for each path closed here, with 0 false PASSes.
+The corpus has cases for each path closed here, with 0 false PASSes:
+- `zizmor-no-findings-document` (Baseline corpus): an exec step whose expression cannot evaluate;
+- `plugin-redefines-manual` (Baseline corpus): a plugin redefining `manual`;
+- `text-signals-only` (`tests/darnit_reproducibility/corpus/`): reproducibility text signals.
+
+## Validation log
+
+Run on 2026-10-04 on branch `044-false-pass-paths` after T024a-T027 and T030, offline, with `uv run` and `-p no:cacheprovider`.
+
+| Scenario | Command | Result |
+|---|---|---|
+| V1 | `pytest tests/darnit/sieve/test_expr_failure.py` | 34 passed. The zizmor stand-in printing nothing gives ERROR (`evaluation`) for OSPS-BR-01.01 and OSPS-AC-04.02; a matching finding gives FAIL (`expr_decides`); other findings and an empty list give PASS. |
+| V2 | `pytest tests/darnit/config/test_strict_framework_loading.py` | 19 passed. |
+| V2 | `python scripts/validate_sync.py --verbose` | PASSED: TOML schema (66 controls), pass types (8 handlers), SARIF source, context keys (17 fields), remediation properties (78 remediations). |
+| V3 | `pytest tests/darnit/sieve/test_registration_collisions.py` | 9 passed. |
+| V4 | `pytest tests/darnit_reproducibility/test_no_pass_from_signals.py` | 17 passed. |
+| V5 | `pytest tests/darnit_baseline/test_user_evidence_redaction.py` | 17 passed. |
+| V6 | `pytest tests/darnit_baseline/corpus/ tests/darnit_reproducibility/test_repro_corpus_gate.py` | 23 passed. Baseline corpus: 13 fixtures, 94 labelled control results, 0 false PASS, 0 gate violations. With the registry's refusal bypassed, `plugin-redefines-manual` produces 3 false PASSes, so the case detects the regression. |
+| V6 | `ruff check .` | All checks passed. |
+| V6 | `pytest tests/ -q` | 5083 passed, 26 skipped. |
+| CI identity | `pytest tests/ -m integration -q` with `CI=true GITHUB_ACTIONS=true GITHUB_EVENT_NAME=pull_request GITHUB_REPOSITORY=darnitdevorg/darnit GITHUB_SERVER_URL=https://github.com GITHUB_REF=refs/pull/1/merge GITHUB_SHA=0000000000000000000000000000000000000000` | 340 passed, 2 skipped. |
