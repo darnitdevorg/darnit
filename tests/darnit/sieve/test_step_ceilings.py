@@ -193,5 +193,6 @@ class TestLoadTimeValidation:
     def test_legacy_unknown_authority_rejected(self) -> None:
         self._reject(HandlerInvocation(handler="file_exists", authority="definitely"), "definitely")
 
-    def test_unknown_handler_skipped(self) -> None:
-        validate_step_authority("fw-test", "CTRL-01", [HandlerInvocation(handler="not_registered_xyz")])
+    def test_unknown_handler_rejected(self) -> None:
+        # Feature 044, FR-009: an unregistered step type fails loading.
+        self._reject(HandlerInvocation(handler="not_registered_xyz"), "not_registered_xyz")

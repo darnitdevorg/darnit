@@ -19,5 +19,5 @@ level = 1
 domain = "AC"
 
 [[controls."MOCK-AC-01.01".passes]]
-handler = "file_must_exist"
-paths = ["DOES_NOT_EXIST.variant.fixture"]
+handler = "file_exists"
+files = ["DOES_NOT_EXIST.variant.fixture"]

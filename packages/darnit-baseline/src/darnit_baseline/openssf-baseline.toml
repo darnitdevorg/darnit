@@ -489,7 +489,6 @@ steps = [
     "Notify the affected members, collaborators, and bot owners",
 ]
 docs_url = "https://docs.github.com/en/organizations/keeping-your-organization-secure/managing-two-factor-authentication-for-your-organization/requiring-two-factor-authentication-in-your-organization"
-context_hints = ["org_admin_access"]
 
 [controls."OSPS-AC-02.01"]
 name = "AllowForking"
@@ -562,7 +561,6 @@ location_hint = ".github/settings.yml"
 [[controls."OSPS-AC-03.01".passes]]
 handler = "github_branch_protection"
 requirement = "require_pull_request"
-timeout = 30
 
 [[controls."OSPS-AC-03.01".passes]]
 handler = "manual"
@@ -616,7 +614,6 @@ Requires the `gh` CLI to be authenticated with a token holding `repo` scope.
 [[controls."OSPS-AC-03.02".passes]]
 handler = "github_branch_protection"
 requirement = "prevent_deletion"
-timeout = 30
 
 [[controls."OSPS-AC-03.02".passes]]
 handler = "manual"
@@ -731,7 +728,6 @@ steps = [
     "Use actions/github-script for complex event data handling",
 ]
 docs_url = "https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#understanding-the-risk-of-script-injections"
-context_hints = ["ci.provider"]
 
 # OSPS-BR-01.02 was retired upstream in ossf/security-baseline#443. Darnit
 # retains this check because the underlying "sanitize `github.head_ref`"
@@ -802,7 +798,6 @@ steps = [
     "Consider using actions/checkout with ref parameter instead of manual branch handling",
 ]
 docs_url = "https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions"
-context_hints = ["ci.provider"]
 
 # Added in OSPS Baseline v2026.02.19. Applies at L1, L2, L3. Requires
 # reasoning about workflow triggers (pull_request vs pull_request_target),
@@ -1063,7 +1058,6 @@ steps = [
     "Use 'gh release create' or CI automation to create GitHub releases from tags",
 ]
 docs_url = "https://semver.org/"
-context_hints = ["build.has_releases"]
 
 [controls."OSPS-BR-04.01"]
 name = "ReleaseChangelog"
@@ -1142,7 +1136,6 @@ steps = [
     "Mark security-relevant changes clearly (e.g., with [SECURITY] prefix)",
 ]
 docs_url = "https://keepachangelog.com/"
-context_hints = ["build.has_releases"]
 
 [controls."OSPS-BR-05.01"]
 name = "StandardizedDependencyTools"
@@ -1246,7 +1239,6 @@ handler = "file_create"
 path = ".github/workflows/release-signing.yml"
 template = "release_signing_workflow"
 overwrite = false
-create_dirs = true
 
 [[controls."OSPS-BR-06.01".remediation.handlers]]
 handler = "manual"
@@ -1257,7 +1249,6 @@ steps = [
     "Document verification instructions in your release notes or README",
 ]
 docs_url = "https://docs.sigstore.dev/signing/quickstart/"
-context_hints = ["build.signing_method", "build.has_releases"]
 
 # =============================================================================
 # Level 1 Controls - Documentation (DO)
@@ -1423,7 +1414,6 @@ handler = "file_create"
 path = ".github/ISSUE_TEMPLATE/bug_report.md"
 template = "bug_report_template"
 overwrite = false
-create_dirs = true
 
 # =============================================================================
 # Level 2 Controls - Documentation (DO)
@@ -1492,7 +1482,6 @@ handler = "file_create"
 path = "docs/DEPENDENCIES.md"
 template = "dependency_management_template"
 overwrite = false
-create_dirs = true
 
 [[controls."OSPS-DO-06.01".remediation.handlers]]
 handler = "manual"
@@ -1673,7 +1662,6 @@ path = "CONTRIBUTING.md"
 project_reference = "governance.contributing"
 template = "contributing_standard"
 overwrite = false
-create_dirs = false
 
 # =============================================================================
 # Level 1 Controls - Legal (LE)
@@ -1767,7 +1755,7 @@ help_md = """Use an OSI-approved open source license.
 [[controls."OSPS-LE-02.01".passes]]
 handler = "regex"
 files = ["LICENSE*", "COPYING*", "NOTICE*", "package.json", "pyproject.toml", "Cargo.toml", "go.mod"]
-patterns = ['(?i)(SPDX-License-Identifier\s*:\s*\S+|"license"\s*:\s*"[^"]+"|license\s*=\s*"[^"]+"|License\s*::\s*OSI)']
+pattern = '(?i)(SPDX-License-Identifier\s*:\s*\S+|"license"\s*:\s*"[^"]+"|license\s*=\s*"[^"]+"|License\s*::\s*OSI)'
 pass_if_any = true
 expr = 'output.any_match'
 description = "Check for SPDX license identifier in project files"
@@ -2194,7 +2182,6 @@ steps = [
     "For each subproject, include a brief description and link to its own README or docs",
     "For monorepos, consider a top-level directory listing with purpose descriptions",
 ]
-context_hints = ["has_subprojects"]
 
 [controls."OSPS-QA-05.01"]
 name = "NoGeneratedExecutables"
@@ -2362,7 +2349,6 @@ path = "SECURITY.md"
 project_reference = "security.policy"
 template = "security_policy_standard"
 overwrite = false
-create_dirs = false
 llm_enhance = "Customize this security policy: replace the placeholder email with the project's actual security contact, update supported versions to match real release versions, and adjust the response timeline to match the team's capacity."
 
 # =============================================================================
@@ -2658,7 +2644,6 @@ help_md = """Configure required status checks.
 [[controls."OSPS-QA-03.01".passes]]
 handler = "github_branch_protection"
 requirement = "require_status_checks"
-timeout = 30
 
 [[controls."OSPS-QA-03.01".passes]]
 handler = "manual"
@@ -2722,7 +2707,6 @@ handler = "file_create"
 path = ".github/workflows/ci.yml"
 template = "ci_python_workflow"
 overwrite = false
-create_dirs = true
 when = { detected_ecosystem = "python" }
 
 [[controls."OSPS-QA-06.01".remediation.handlers]]
@@ -2730,7 +2714,6 @@ handler = "file_create"
 path = ".github/workflows/ci.yml"
 template = "ci_node_workflow"
 overwrite = false
-create_dirs = true
 when = { detected_ecosystem = "node" }
 
 [[controls."OSPS-QA-06.01".remediation.handlers]]
@@ -2738,7 +2721,6 @@ handler = "file_create"
 path = ".github/workflows/ci.yml"
 template = "ci_rust_workflow"
 overwrite = false
-create_dirs = true
 when = { detected_ecosystem = "rust" }
 
 [[controls."OSPS-QA-06.01".remediation.handlers]]
@@ -2746,7 +2728,6 @@ handler = "file_create"
 path = ".github/workflows/ci.yml"
 template = "ci_go_workflow"
 overwrite = false
-create_dirs = true
 when = { detected_ecosystem = "go" }
 
 # Default fallback: generic CI workflow when ecosystem is unknown
@@ -2755,7 +2736,6 @@ handler = "file_create"
 path = ".github/workflows/ci.yml"
 template = "ci_test_workflow"
 overwrite = false
-create_dirs = true
 
 # =============================================================================
 # Level 2 Controls - Vulnerability Management (VM)
@@ -3050,7 +3030,6 @@ steps = [
     "Scope permissions at the job level rather than the workflow level when jobs have different needs",
 ]
 docs_url = "https://docs.github.com/en/actions/using-jobs/assigning-permissions-to-jobs"
-context_hints = ["ci.provider"]
 
 # =============================================================================
 # Level 3 Controls - Build & Release (BR)
@@ -3106,7 +3085,6 @@ steps = [
     "Use 'gh release upload' to associate assets with specific releases",
     "Document asset-to-version mapping in release notes",
 ]
-context_hints = ["build.has_releases", "build.has_compiled_assets"]
 
 [controls."OSPS-BR-07.02"]
 name = "SecretsManagementPolicy"
@@ -3161,7 +3139,6 @@ handler = "file_create"
 path = "docs/SECRETS-POLICY.md"
 template = "secrets_management_policy"
 overwrite = false
-create_dirs = true
 
 [[controls."OSPS-BR-07.02".remediation.handlers]]
 handler = "manual"
@@ -3215,7 +3192,6 @@ handler = "file_create"
 path = ".github/workflows/sbom.yml"
 template = "sbom_workflow"
 overwrite = false
-create_dirs = true
 
 [[controls."OSPS-QA-02.02".remediation.handlers]]
 handler = "manual"
@@ -3226,7 +3202,6 @@ steps = [
     "Consider using GitHub's built-in dependency graph as supplementary SBOM source",
 ]
 docs_url = "https://github.com/anchore/syft"
-context_hints = ["has_compiled_assets", "has_releases"]
 
 [controls."OSPS-QA-04.02"]
 name = "SubprojectSecurity"
@@ -3271,7 +3246,6 @@ steps = [
     "Add shared CI workflows that run security checks across all subprojects",
     "Document security standards in a top-level SECURITY.md that applies to all subprojects",
 ]
-context_hints = ["has_subprojects"]
 
 [controls."OSPS-QA-07.01"]
 name = "RequiredApprovals"
@@ -3295,7 +3269,6 @@ help_md = """Require code review approval.
 handler = "github_branch_protection"
 requirement = "require_approvals"
 required_approvals_minimum = 1
-timeout = 30
 
 [[controls."OSPS-QA-07.01".passes]]
 handler = "manual"
@@ -3376,7 +3349,6 @@ handler = "file_create"
 path = "docs/TESTING.md"
 template = "testing_python"
 overwrite = false
-create_dirs = true
 when = { detected_ecosystem = "python" }
 
 [[controls."OSPS-QA-06.02".remediation.handlers]]
@@ -3384,7 +3356,6 @@ handler = "file_create"
 path = "docs/TESTING.md"
 template = "testing_node"
 overwrite = false
-create_dirs = true
 when = { detected_ecosystem = "node" }
 
 [[controls."OSPS-QA-06.02".remediation.handlers]]
@@ -3392,7 +3363,6 @@ handler = "file_create"
 path = "docs/TESTING.md"
 template = "testing_rust"
 overwrite = false
-create_dirs = true
 when = { detected_ecosystem = "rust" }
 
 [[controls."OSPS-QA-06.02".remediation.handlers]]
@@ -3400,7 +3370,6 @@ handler = "file_create"
 path = "docs/TESTING.md"
 template = "testing_go"
 overwrite = false
-create_dirs = true
 when = { detected_ecosystem = "go" }
 
 # Default fallback: generic testing instructions when ecosystem is unknown
@@ -3409,7 +3378,6 @@ handler = "file_create"
 path = "docs/TESTING.md"
 template = "testing_instructions"
 overwrite = false
-create_dirs = true
 
 [controls."OSPS-QA-06.03"]
 name = "TestRequirements"
@@ -3462,7 +3430,6 @@ handler = "file_create"
 path = "docs/TEST-REQUIREMENTS.md"
 template = "test_requirements_contributing"
 overwrite = false
-create_dirs = true
 
 [[controls."OSPS-QA-06.03".remediation.handlers]]
 handler = "manual"
@@ -3534,7 +3501,6 @@ handler = "file_create"
 path = "docs/VEX-POLICY.md"
 template = "vex_policy_template"
 overwrite = false
-create_dirs = true
 
 [[controls."OSPS-VM-04.02".remediation.handlers]]
 handler = "manual"
@@ -3598,7 +3564,6 @@ handler = "file_create"
 path = "docs/SCA-POLICY.md"
 template = "sca_policy_template"
 overwrite = false
-create_dirs = true
 
 [[controls."OSPS-VM-05.01".remediation.handlers]]
 handler = "manual"
@@ -3676,7 +3641,6 @@ handler = "file_create"
 path = ".github/workflows/sca.yml"
 template = "sca_workflow"
 overwrite = false
-create_dirs = true
 
 [[controls."OSPS-VM-05.02".remediation.handlers]]
 handler = "manual"
@@ -3736,7 +3700,6 @@ handler = "file_create"
 path = ".github/dependabot.yml"
 template = "dependabot_python"
 overwrite = false
-create_dirs = true
 when = { detected_ecosystem = "python" }
 
 [[controls."OSPS-VM-05.03".remediation.handlers]]
@@ -3744,7 +3707,6 @@ handler = "file_create"
 path = ".github/dependabot.yml"
 template = "dependabot_node"
 overwrite = false
-create_dirs = true
 when = { detected_ecosystem = "node" }
 
 [[controls."OSPS-VM-05.03".remediation.handlers]]
@@ -3752,7 +3714,6 @@ handler = "file_create"
 path = ".github/dependabot.yml"
 template = "dependabot_rust"
 overwrite = false
-create_dirs = true
 when = { detected_ecosystem = "rust" }
 
 [[controls."OSPS-VM-05.03".remediation.handlers]]
@@ -3760,7 +3721,6 @@ handler = "file_create"
 path = ".github/dependabot.yml"
 template = "dependabot_go"
 overwrite = false
-create_dirs = true
 when = { detected_ecosystem = "go" }
 
 # Default fallback: github-actions only when ecosystem is unknown
@@ -3769,7 +3729,6 @@ handler = "file_create"
 path = ".github/dependabot.yml"
 template = "dependabot_config"
 overwrite = false
-create_dirs = true
 
 [controls."OSPS-VM-06.01"]
 name = "SASTRemediationPolicy"
@@ -3822,7 +3781,6 @@ handler = "file_create"
 path = "docs/SAST-POLICY.md"
 template = "sast_policy_template"
 overwrite = false
-create_dirs = true
 
 [[controls."OSPS-VM-06.01".remediation.handlers]]
 handler = "manual"
@@ -3886,7 +3844,6 @@ handler = "file_create"
 path = ".github/workflows/sast.yml"
 template = "sast_workflow"
 overwrite = false
-create_dirs = true
 
 [[controls."OSPS-VM-06.02".remediation.handlers]]
 handler = "manual"
@@ -4029,7 +3986,6 @@ handler = "file_create"
 path = "docs/RELEASE-VERIFICATION.md"
 template = "release_verification_template"
 overwrite = false
-create_dirs = true
 
 [controls."OSPS-DO-04.01"]
 name = "SupportScopeStatement"
@@ -4444,7 +4400,6 @@ handler = "file_create"
 path = "docs/SECURITY-ASSESSMENT.md"
 template = "security_assessment_template"
 overwrite = false
-create_dirs = true
 
 # =============================================================================
 # Level 3 Controls - Security Assessment (SA)

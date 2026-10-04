@@ -195,7 +195,6 @@ async def remediate_hygiene(
                     handler="file_create",
                     path=".github/workflows/ci.yml",
                     template="ci_github_actions",
-                    create_dirs=True,
                 ),
             ],
         ),

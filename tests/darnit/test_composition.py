@@ -238,8 +238,9 @@ def test_audit_pipeline_unchanged(composite_fixtures_dir, fixture_source_loader)
 
     This is a SHAPE-only assertion per F-3; we are NOT checking individual
     audit status (PASS/FAIL/WARN). The fixture sources all use
-    unsatisfiable ``file_must_exist`` paths, so any actual audit would
-    return FAIL across the board — which is fine for shape checking.
+    unsatisfiable ``file_exists`` files (a registered step type, feature
+    044 FR-009), so any actual audit would return FAIL across the board —
+    which is fine for shape checking.
     """
     result = _resolve(composite_fixtures_dir, fixture_source_loader, "audit-pipeline")
 
@@ -303,11 +304,11 @@ def test_overrides_replace_fields(composite_fixtures_dir, fixture_source_loader)
     ctrl = result.controls["MOCK-AC-01.01"]
     # Description matches the override
     assert ctrl.description == ("ACME's internal description overrides the upstream one.")
-    # Pass logic untouched — still a single file_must_exist pass with
-    # the unsatisfiable fixture path
+    # Pass logic untouched — still a single file_exists pass with
+    # the unsatisfiable fixture path (feature 044 FR-009: registered type)
     assert ctrl.passes is not None
     assert len(ctrl.passes) == 1
-    assert ctrl.passes[0].handler == "file_must_exist"
+    assert ctrl.passes[0].handler == "file_exists"
 
 
 @pytest.mark.unit
@@ -475,7 +476,7 @@ def test_override_resolves_conflict_in_strict_mode(composite_fixtures_dir, fixtu
     # The pass logic also comes from the earlier source: that's the path
     # with `DOES_NOT_EXIST.fixture` (variant uses `DOES_NOT_EXIST.variant.fixture`).
     assert ctrl.passes is not None and len(ctrl.passes) == 1
-    pass_paths = ctrl.passes[0].model_dump().get("paths", [])
+    pass_paths = ctrl.passes[0].model_dump().get("files", [])
     assert pass_paths == ["DOES_NOT_EXIST.fixture"]
 
     # No INFO log line on this path — overrides resolve conflicts silently
@@ -504,7 +505,7 @@ def test_override_with_allow_conflicts_still_uses_earliest_base(composite_fixtur
     assert ctrl.description == ("OVERRIDE: still wins over allow_conflicts last-wins.")
     # Same as the strict-mode case: base comes from the earlier source.
     assert ctrl.tags.get(_TAG_COMPOSED_FROM) == "mock-source-a"
-    pass_paths = ctrl.passes[0].model_dump().get("paths", [])
+    pass_paths = ctrl.passes[0].model_dump().get("files", [])
     assert pass_paths == ["DOES_NOT_EXIST.fixture"]
 
 
@@ -717,7 +718,8 @@ def test_resolution_performance():
         HandlerInvocation,
     )
 
-    # Build a synthetic 50-control source
+    # Build a synthetic 50-control source (registered step types only;
+    # feature 044, FR-009)
     source_controls = {}
     for i in range(50):
         cid = f"PERF-{i:03d}"
@@ -725,7 +727,7 @@ def test_resolution_performance():
             name=f"PerfControl{i}",
             description=f"Synthetic performance-test control #{i}.",
             level=(i % 3) + 1,
-            passes=[HandlerInvocation(handler="file_must_exist", paths=["X.fixture"])],
+            passes=[HandlerInvocation(handler="file_exists", files=["X.fixture"])],
         )
     source = FrameworkConfig(
         metadata=FrameworkMetadata(name="perf-source", display_name="Perf", version="1.0.0"),
@@ -740,7 +742,7 @@ def test_resolution_performance():
             name=f"Inline{i}",
             description=f"Inline control #{i}.",
             level=1,
-            passes=[HandlerInvocation(handler="file_must_exist", paths=["X.fixture"])],
+            passes=[HandlerInvocation(handler="file_exists", files=["X.fixture"])],
         )
     composite = FrameworkConfig(
         metadata=FrameworkMetadata(name="perf-composite", display_name="PerfComposite", version="1.0.0"),

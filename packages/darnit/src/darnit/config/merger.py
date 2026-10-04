@@ -65,6 +65,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from pydantic import ValidationError
+
 try:
     import tomllib
 except ImportError:
@@ -132,6 +134,10 @@ class EffectiveControl:
 
     # Framework pass configuration (for sieve) — flat list of handler invocation dicts
     passes_config: list[dict[str, Any]] | None = None
+    # Feature 044: the passes come from operator configuration (a custom
+    # control or a pass override), so a step type of a plugin that is not
+    # installed loads and audits ERROR instead of failing the load.
+    steps_from_operator: bool = False
 
     # Flexible key-value tags for filtering and metadata
     tags: dict[str, Any] = field(default_factory=dict)
@@ -491,9 +497,11 @@ def merge_configs(
                 user_override=None,
                 defaults=framework.defaults,
             )
+            effective.controls[control_id].steps_from_operator = True
         for control_id, override in operator.controls.items():
             if override.passes is not None and control_id in effective.controls:
                 effective.controls[control_id].passes_config = [p.model_dump() for p in override.passes]
+                effective.controls[control_id].steps_from_operator = True
 
     return effective
 
@@ -535,7 +543,18 @@ def _parse_framework_only(path: Path) -> FrameworkConfig:
         data = tomllib.load(f)
 
     # Convert to schema model
-    config = FrameworkConfig(**data)
+    try:
+        config = FrameworkConfig(**data)
+    except ValidationError as e:
+        unknown = [
+            f"control {err['loc'][1]!r} has unknown key {err['loc'][2]!r}"
+            for err in e.errors()
+            if err["type"] == "extra_forbidden" and len(err["loc"]) == 3 and err["loc"][0] == "controls"
+        ]
+        if not unknown:
+            raise
+        raise ValueError(f"Framework file {path}: {'; '.join(unknown)} (framework-design 2.3)") from e
+    config._source_path = str(path)
 
     # Validate template file paths at load time
     # Check if file templates exist relative to the framework config location
@@ -626,6 +645,7 @@ def load_framework_config(path: Path) -> FrameworkConfig:
         from darnit.core.composition import resolve_composition
 
         config = resolve_composition(config)
+        config._source_path = str(path)
 
     _framework_config_cache[resolved] = (mtime_ns, config)
     return config

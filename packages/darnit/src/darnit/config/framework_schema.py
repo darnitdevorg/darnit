@@ -129,7 +129,7 @@ Example:
 from enum import Enum
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
 
 # =============================================================================
 # Enums
@@ -865,7 +865,9 @@ class ControlConfig(BaseModel):
     docs_url: str | None = None  # Link to external docs
     location_hint: str | None = None  # File/directory hint for SARIF location mapping
 
-    model_config = ConfigDict(extra="allow")
+    # Feature 044 (framework-design 2.3): a control key the schema does not
+    # define fails loading instead of being ignored.
+    model_config = ConfigDict(extra="forbid")
 
     @field_validator("tags", mode="before")
     @classmethod
@@ -1752,6 +1754,9 @@ class FrameworkConfig(BaseModel):
     compose: list[ComposeBlock] = Field(default_factory=list)
     overrides: dict[str, OverrideBlock] = Field(default_factory=dict)
     allow_conflicts: bool = False
+
+    # The file this framework was loaded from, for load errors (feature 044).
+    _source_path: str | None = PrivateAttr(default=None)
 
     model_config = ConfigDict(extra="allow")
 

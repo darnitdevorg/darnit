@@ -288,7 +288,7 @@ files = ["SECURITY.md", ".github/SECURITY.md", "docs/SECURITY.md"]
 [[controls."PH-SEC-01".passes]]
 handler = "regex"
 files = ["README.md", "README.rst", "README"]
-patterns = { security_section = "(?i)(security|vulnerability|report.*vulnerabilit)" }
+pattern = { patterns = { security_section = "(?i)(security|vulnerability|report.*vulnerabilit)" } }
 pass_if_any = true
 
 [[controls."PH-SEC-01".passes]]

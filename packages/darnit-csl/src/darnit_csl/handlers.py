@@ -45,11 +45,21 @@ def csl_llm_if_present(config: dict[str, Any], context: HandlerContext) -> Handl
     )
 
 
-get_sieve_handler_registry().register(
-    "csl_llm_if_present",
-    phase="llm",
-    handler_fn=csl_llm_if_present,
-    description="Fail if the target file is missing; otherwise defer to the LLM content check.",
-    ceiling={"fail"},
-    settings={"prompt", "confidence_threshold", "analysis_hints", "files_to_include"},
-)
+def register_sieve_handlers() -> None:
+    """Register the step type under the plugin's name, so the registry records it as this plugin's (feature 044)."""
+    registry = get_sieve_handler_registry()
+    registry.set_plugin_context("community-spec")
+    try:
+        registry.register(
+            "csl_llm_if_present",
+            phase="llm",
+            handler_fn=csl_llm_if_present,
+            description="Fail if the target file is missing; otherwise defer to the LLM content check.",
+            ceiling={"fail"},
+            settings={"prompt", "confidence_threshold", "analysis_hints", "files_to_include"},
+        )
+    finally:
+        registry.set_plugin_context(None)
+
+
+register_sieve_handlers()

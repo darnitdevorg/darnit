@@ -9,7 +9,7 @@ A mixed fixture runs through the real orchestrator, executor and re-check
 | T-CONTRIB| CONTRIBUTING.md created          | ``fixed``                        |
 | T-STILL  | changed but still failing        | ``changed_not_passing``          |
 | T-LOOKUP | re-check lookup fails            | ``changed_not_verified``         |
-| T-ERR    | handler error                    | ``error``                        |
+| T-ERR    | handler error (raises)           | ``error``                        |
 | T-INC    | handler returns INCONCLUSIVE     | never ``fixed``                  |
 """
 
@@ -39,6 +39,9 @@ from darnit_baseline.remediation import orchestrator
 
 OWNER, REPO = "example-org", "example"
 INCONCLUSIVE_HANDLER = "test_inconclusive_remediation"
+# A registered step type that fails when run: an unregistered one fails
+# loading (feature 044, FR-009), so it no longer reaches the executor.
+CRASHING_HANDLER = "test_crashing_remediation"
 
 
 def _present(path: str) -> list[HandlerInvocation]:
@@ -62,7 +65,9 @@ FRAMEWORK = FrameworkConfig(
         "T-LOOKUP": _control(
             [HandlerInvocation(handler="exec", command=["darnit-test-no-such-binary"])], _create("LOOKUP.md")
         ),
-        "T-ERR": _control(_present("ERR.md"), RemediationConfig(handlers=[HandlerInvocation(handler="no_such_handler")])),
+        "T-ERR": _control(
+            _present("ERR.md"), RemediationConfig(handlers=[HandlerInvocation(handler=CRASHING_HANDLER)])
+        ),
         "T-INC": _control(
             _present("INC.md"), RemediationConfig(handlers=[HandlerInvocation(handler=INCONCLUSIVE_HANDLER)])
         ),
@@ -87,12 +92,20 @@ def _inconclusive(config: dict, context) -> HandlerResult:
     )
 
 
+def _crashing(config: dict, context) -> HandlerResult:
+    raise RuntimeError("remediation handler failed")
+
+
 @pytest.fixture(autouse=True)
 def inconclusive_handler():
     registry = get_sieve_handler_registry()
-    registry.register(INCONCLUSIVE_HANDLER, phase="deterministic", handler_fn=_inconclusive, supports_plan=True)
+    registry.register(
+        INCONCLUSIVE_HANDLER, phase="deterministic", handler_fn=_inconclusive, supports_plan=True, settings=()
+    )
+    registry.register(CRASHING_HANDLER, phase="deterministic", handler_fn=_crashing, supports_plan=True, settings=())
     yield
     registry._handlers.pop(INCONCLUSIVE_HANDLER, None)
+    registry._handlers.pop(CRASHING_HANDLER, None)
 
 
 @pytest.fixture(autouse=True)

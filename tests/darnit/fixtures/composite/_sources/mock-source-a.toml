@@ -21,8 +21,8 @@ level = 1
 domain = "AC"
 
 [[controls."MOCK-AC-01.01".passes]]
-handler = "file_must_exist"
-paths = ["DOES_NOT_EXIST.fixture"]
+handler = "file_exists"
+files = ["DOES_NOT_EXIST.fixture"]
 description = "Unsatisfiable by design — fixture only."
 
 [controls."MOCK-AC-02.01"]
@@ -32,8 +32,8 @@ level = 1
 domain = "AC"
 
 [[controls."MOCK-AC-02.01".passes]]
-handler = "file_must_exist"
-paths = ["DOES_NOT_EXIST.fixture"]
+handler = "file_exists"
+files = ["DOES_NOT_EXIST.fixture"]
 
 [controls."MOCK-VM-01.01"]
 name = "MockVulnMgmtOne"
@@ -42,8 +42,8 @@ level = 2
 domain = "VM"
 
 [[controls."MOCK-VM-01.01".passes]]
-handler = "file_must_exist"
-paths = ["DOES_NOT_EXIST.fixture"]
+handler = "file_exists"
+files = ["DOES_NOT_EXIST.fixture"]
 
 [controls."MOCK-VM-02.01"]
 name = "MockVulnMgmtTwo"
@@ -52,8 +52,8 @@ level = 3
 domain = "VM"
 
 [[controls."MOCK-VM-02.01".passes]]
-handler = "file_must_exist"
-paths = ["DOES_NOT_EXIST.fixture"]
+handler = "file_exists"
+files = ["DOES_NOT_EXIST.fixture"]
 
 [controls."MOCK-QA-01.01"]
 name = "MockQualityOne"
@@ -62,5 +62,5 @@ level = 2
 domain = "QA"
 
 [[controls."MOCK-QA-01.01".passes]]
-handler = "file_must_exist"
-paths = ["DOES_NOT_EXIST.fixture"]
+handler = "file_exists"
+files = ["DOES_NOT_EXIST.fixture"]

@@ -52,13 +52,8 @@ PLUGIN_STEP_TYPES = (
 )
 
 # Keys shipped TOML sets that no code reads. Each is a silent no-op (#481)
-# and fails strict loading (T017) until its TOML is fixed.
-UNREAD_SHIPPED_KEYS = {
-    ("regex", "patterns"): "the handler reads `pattern` (a string, or `{patterns = {...}}`)",
-    ("file_create", "create_dirs"): "the executor always creates parent directories",
-    ("manual", "context_hints"): "nothing reads it",
-    ("github_branch_protection", "timeout"): "the handler takes no timeout",
-}
+# and fails strict loading, so the list stays empty (044 T016a fixed the last).
+UNREAD_SHIPPED_KEYS: dict[tuple[str, str], str] = {}
 
 
 def _noop(config, context):  # noqa: ARG001

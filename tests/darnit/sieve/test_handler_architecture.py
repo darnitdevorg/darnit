@@ -161,8 +161,8 @@ class TestHandlerRegistry:
         assert result.status == HandlerResultStatus.FAIL
 
     @pytest.mark.unit
-    def test_plugin_override_core(self):
-        """Test plugin handler overrides core handler."""
+    def test_plugin_cannot_override_core(self):
+        """A plugin registration under a core name is refused (feature 044, FR-005)."""
         registry = SieveHandlerRegistry()
         registry.register(
             "file_exists", "deterministic", _make_handler(HandlerResultStatus.PASS),
@@ -177,7 +177,8 @@ class TestHandlerRegistry:
         registry.set_plugin_context(None)
 
         info = registry.get("file_exists")
-        assert info.plugin == "my-plugin"
+        assert info.plugin is None
+        assert [r.attempted_by for r in registry.refused_registrations] == ["my-plugin"]
 
     @pytest.mark.unit
     def test_list_handlers_by_phase(self):

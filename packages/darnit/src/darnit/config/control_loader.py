@@ -221,6 +221,7 @@ def control_from_effective(
     control_id: str,
     effective: EffectiveControl,
     framework: str | None = None,
+    source: str | None = None,
 ) -> ControlSpec:
     """Convert EffectiveControl to ControlSpec.
 
@@ -228,6 +229,7 @@ def control_from_effective(
         control_id: Control identifier
         effective: Merged effective control
         framework: Framework name, for load-time validation errors
+        source: Framework file, for load-time validation errors
 
     Returns:
         Executable ControlSpec
@@ -272,7 +274,13 @@ def control_from_effective(
             HandlerInvocation(**p) if isinstance(p, dict) else p
             for p in effective.passes_config
         ]
-        validate_step_authority(framework, control_id, metadata["handler_invocations"])
+        validate_step_authority(
+            framework,
+            control_id,
+            metadata["handler_invocations"],
+            source=None if effective.steps_from_operator else source,
+            operator_supplied=effective.steps_from_operator,
+        )
 
     return ControlSpec(
         control_id=control_id,
@@ -290,6 +298,7 @@ def control_from_framework(
     control_config: Any,  # ControlConfig from framework_schema
     shared_handlers: dict[str, SharedHandlerConfig] | None = None,
     framework: str | None = None,
+    source: str | None = None,
 ) -> ControlSpec:
     """Convert ControlConfig from framework to ControlSpec.
 
@@ -303,6 +312,7 @@ def control_from_framework(
         control_config: Framework control configuration
         shared_handlers: Top-level shared handler definitions for resolution
         framework: Framework name, for load-time validation errors
+        source: Framework file, for load-time validation errors
 
     Returns:
         Executable ControlSpec
@@ -359,13 +369,14 @@ def control_from_framework(
 
     # Carry handler invocations through metadata for orchestrator dispatch
     if control_config.passes:
-        validate_step_authority(framework, control_id, control_config.passes)
+        validate_step_authority(framework, control_id, control_config.passes, source=source)
         metadata["handler_invocations"] = control_config.passes
 
     # Carry remediation handler invocations if present
     if hasattr(control_config, "remediation") and control_config.remediation:
         rem = control_config.remediation
         if rem.handlers:
+            validate_remediation_steps(framework, control_id, rem.handlers, source=source)
             metadata["remediation_handler_invocations"] = rem.handlers
 
     return ControlSpec(
@@ -401,13 +412,21 @@ def load_controls_from_effective(config: EffectiveConfig) -> list[ControlSpec]:
         List of executable ControlSpec objects
     """
     controls = []
+    framework_config = config._framework_config
+    source = framework_config._source_path if framework_config is not None else None
 
     for control_id, effective in config.controls.items():
         try:
-            control = control_from_effective(control_id, effective, framework=config.framework_name)
+            control = control_from_effective(control_id, effective, framework=config.framework_name, source=source)
             controls.append(control)
         except (TypeError, ValueError, KeyError) as e:
             logger.warning(f"Could not load control {control_id}: {e}")
+            continue
+        framework_control = framework_config.controls.get(control_id) if framework_config is not None else None
+        if effective.from_framework and framework_control is not None and framework_control.remediation:
+            validate_remediation_steps(
+                config.framework_name, control_id, framework_control.remediation.handlers, source=source
+            )
 
     return controls
 
@@ -434,7 +453,11 @@ def load_controls_from_framework(config: FrameworkConfig) -> list[ControlSpec]:
     for control_id, control_config in config.controls.items():
         try:
             control = control_from_framework(
-                control_id, control_config, shared_handlers=shared_handlers, framework=config.metadata.name
+                control_id,
+                control_config,
+                shared_handlers=shared_handlers,
+                framework=config.metadata.name,
+                source=config._source_path,
             )
             controls.append(control)
         except (TypeError, ValueError, KeyError) as e:
@@ -528,31 +551,117 @@ def register_controls_from_config(
 
 _LEGACY_AUTHORITIES = frozenset(("dispositive", "suggestive", "asserted"))
 
+# Feature 044 (framework-design 3.0.3): accepted on every step, whatever its
+# step type declares.
+COMMON_STEP_FIELDS = frozenset(HandlerInvocation.model_fields) | {"description", "expr"}
 
-def validate_step_authority(framework: str | None, control_id: str, invocations: list) -> None:
+# Plugin step types already reported as not declaring their settings, so
+# each is reported once per process.
+_UNCHECKED_SETTINGS_WARNED: set[str] = set()
+
+
+def _registered_step_type(registry: Any, handler: str, framework: str | None) -> Any:
+    """The registered step type, registering ``framework``'s own plugin step types first if it is missing.
+
+    Validation runs after plugin step types register (framework-design
+    3.0.3); a caller that loads a framework before registering its plugin
+    must not see that plugin's step types reported as unregistered.
+    """
+    info = registry.get(handler)
+    if info is None and framework:
+        from darnit.core.discovery import register_implementation_handlers
+
+        if register_implementation_handlers(framework):
+            info = registry.get(handler)
+    return info
+
+
+def _where(framework: str | None, source: str | None) -> str:
+    where = f"framework {framework or '<unknown>'!r}"
+    return f"{where} (file {source})" if source else where
+
+
+def _validate_step_keys(inv: HandlerInvocation, info: Any, reject: Callable[[str], None]) -> None:
+    """A step key must be a common step field or one its step type declares (feature 044, FR-008)."""
+    if info.settings is None:
+        if info.name not in _UNCHECKED_SETTINGS_WARNED:
+            _UNCHECKED_SETTINGS_WARNED.add(info.name)
+            logger.warning(
+                "Settings for step type %r (plugin %r) are not checked: it does not declare them",
+                info.name,
+                info.plugin or "core",
+            )
+        return
+    unknown = sorted(set(inv.model_extra or {}) - COMMON_STEP_FIELDS - info.settings)
+    if unknown:
+        accepted = ", ".join(sorted(info.settings)) or "none"
+        reject(
+            f"unknown step key {', '.join(repr(k) for k in unknown)} for step type {inv.handler!r}; "
+            f"correct or remove it (its settings: {accepted}; plus the common step fields)"
+        )
+
+
+def validate_remediation_steps(
+    framework: str | None, control_id: str, handlers: list, *, source: str | None = None
+) -> None:
+    """Remediation steps name a registered step type and only keys it accepts (feature 044, framework-design 3.0.3)."""
+    from darnit.core.errors import AuthorityViolation
+    from darnit.sieve.handler_registry import get_sieve_handler_registry
+
+    registry = get_sieve_handler_registry()
+    where = _where(framework, source)
+    for idx, inv in enumerate(handlers):
+        step_id = f"remediation[{idx}]:{inv.handler}"
+
+        def reject(message: str, _step_id: str = step_id) -> None:
+            raise AuthorityViolation(control_id=control_id, step_id=_step_id, message=f"{where}: {message}")
+
+        info = _registered_step_type(registry, inv.handler, framework)
+        if info is None:
+            reject(f"step type {inv.handler!r} is not registered")
+        _validate_step_keys(inv, info, reject)
+
+
+def validate_step_authority(
+    framework: str | None,
+    control_id: str,
+    invocations: list,
+    *,
+    source: str | None = None,
+    operator_supplied: bool = False,
+) -> None:
     """Reject step declarations that break the per-claim authority rules.
 
     Called from every control-loading path (``control_from_framework`` and
     ``control_from_effective``) after plugin handlers register. Raises
-    ``AuthorityViolation`` naming the framework, control, step index, and
-    outcome. A step whose handler is not registered is skipped here; the
-    orchestrator warns and skips it at dispatch, and computes the effective
-    set from the registry there too, so nothing unvalidated can widen.
+    ``AuthorityViolation`` naming the framework (and ``source`` file),
+    control, step index, and outcome.
+
+    Feature 044 (framework-design 3.0.3): it also rejects a step type that
+    is not registered, a step key outside the common step fields and the
+    step type's declared settings, and an ``expr`` its step type cannot
+    take. For ``operator_supplied`` steps (operator custom controls and
+    pass overrides) an unregistered step type loads instead: the
+    orchestrator reports it ERROR, class ``missing_tool``, at dispatch.
     """
     from darnit.core.errors import AuthorityViolation
     from darnit.sieve.handler_registry import HandlerPhase, effective_outcomes, get_sieve_handler_registry
 
     registry = get_sieve_handler_registry()
-    where = f"framework {framework or '<unknown>'!r}"
+    where = _where(framework, source)
 
     for idx, inv in enumerate(invocations):
-        info = registry.get(inv.handler) if hasattr(inv, "handler") else None
-        if info is None:
-            continue
         step_id = f"pass[{idx}]:{inv.handler}"
 
         def reject(message: str, _step_id: str = step_id) -> None:
             raise AuthorityViolation(control_id=control_id, step_id=_step_id, message=f"{where}: {message}")
+
+        info = _registered_step_type(registry, inv.handler, framework)
+        if info is None:
+            if operator_supplied:
+                continue
+            reject(f"step type {inv.handler!r} is not registered")
+        _validate_step_keys(inv, info, reject)
 
         existence = bool(getattr(inv, "existence", False))
         if existence and info.existence_ceiling is None:

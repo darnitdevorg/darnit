@@ -55,6 +55,12 @@ class CommunitySpecImplementation:
         """No Python-registered controls — everything is in the TOML."""
         return None
 
+    def register_sieve_handlers(self) -> None:
+        """Register the ``csl_llm_if_present`` step type (again, after a registry reset)."""
+        from .handlers import register_sieve_handlers
+
+        register_sieve_handlers()
+
     def get_all_controls(self) -> list[Any]:
         return []
 

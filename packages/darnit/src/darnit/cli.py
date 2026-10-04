@@ -544,17 +544,19 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 
 def cmd_list(args: argparse.Namespace) -> int:
-    """List available frameworks."""
+    """List available frameworks, and step type registrations that were refused (feature 044)."""
     from darnit.config import list_available_frameworks, load_framework_by_name
+    from darnit.core.discovery import register_implementation_handlers
+    from darnit.sieve.handler_registry import get_sieve_handler_registry
 
     frameworks = list_available_frameworks()
 
     if not frameworks:
         logger.info("No frameworks found. Install a framework package like darnit-baseline.")
-        return 0
-
-    logger.info("Available Frameworks:")
+    else:
+        logger.info("Available Frameworks:")
     for name in frameworks:
+        register_implementation_handlers(name)
         try:
             config = load_framework_by_name(name)
             logger.info(f"  • {name}")
@@ -565,6 +567,12 @@ def cmd_list(args: argparse.Namespace) -> int:
             logger.info(f"    Controls: {len(config.controls)}")
         except Exception as e:
             logger.info(f"  • {name} (error loading: {e})")
+
+    refused = get_sieve_handler_registry().refused_registrations
+    if refused:
+        logger.info("Refused step type registrations:")
+        for refusal in refused:
+            logger.info(f"  • {refusal.message()}")
 
     return 0
 

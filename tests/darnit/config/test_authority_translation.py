@@ -144,10 +144,14 @@ class TestAuthorityLoosening:
 
 
 class TestUnknownHandler:
-    """Case: a step names a handler not in the registry -> validation
-    silently skips (the orchestrator warns and skips at dispatch time)."""
+    """Case: a step names a handler not in the registry -> loading fails
+    (feature 044, FR-009, replacing the silent skip)."""
 
-    def test_unknown_handler_does_not_raise_at_validation(self) -> None:
+    def test_unknown_handler_raises_at_validation(self) -> None:
         inv = HandlerInvocation(handler="nonexistent_handler_xyz")
-        # No AuthorityViolation; orchestrator handles unknown handlers.
-        validate_step_authority(None, "TEST-UNKNOWN", [inv])
+        with pytest.raises(AuthorityViolation, match="nonexistent_handler_xyz"):
+            validate_step_authority(None, "TEST-UNKNOWN", [inv])
+
+    def test_operator_supplied_unknown_handler_loads(self) -> None:
+        inv = HandlerInvocation(handler="nonexistent_handler_xyz")
+        validate_step_authority(None, "TEST-UNKNOWN", [inv], operator_supplied=True)

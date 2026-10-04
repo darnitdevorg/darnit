@@ -1,6 +1,7 @@
 # Mock source-B: minimal non-composite framework with 3 level-1 controls.
 # Version 0.9.0 (for version-pin tests). Uses the same unsatisfiable
-# file_must_exist pattern as source-A.
+# file_exists pattern as source-A (a registered step type; feature 044,
+# FR-009).
 
 [metadata]
 name = "mock-source-b"
@@ -19,8 +20,8 @@ level = 1
 domain = "B"
 
 [[controls."MOCK-B-01.01".passes]]
-handler = "file_must_exist"
-paths = ["DOES_NOT_EXIST.fixture"]
+handler = "file_exists"
+files = ["DOES_NOT_EXIST.fixture"]
 
 [controls."MOCK-B-02.01"]
 name = "MockBTwo"
@@ -29,8 +30,8 @@ level = 1
 domain = "B"
 
 [[controls."MOCK-B-02.01".passes]]
-handler = "file_must_exist"
-paths = ["DOES_NOT_EXIST.fixture"]
+handler = "file_exists"
+files = ["DOES_NOT_EXIST.fixture"]
 
 [controls."MOCK-B-03.01"]
 name = "MockBThree"
@@ -39,5 +40,5 @@ level = 1
 domain = "B"
 
 [[controls."MOCK-B-03.01".passes]]
-handler = "file_must_exist"
-paths = ["DOES_NOT_EXIST.fixture"]
+handler = "file_exists"
+files = ["DOES_NOT_EXIST.fixture"]

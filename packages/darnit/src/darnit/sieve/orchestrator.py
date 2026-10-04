@@ -421,11 +421,33 @@ class SieveOrchestrator:
 
             handler_info = registry.get(invocation.handler)
             if not handler_info:
-                logger.warning(
-                    "Control %s: handler '%s' not found in registry",
-                    control_spec.control_id,
-                    invocation.handler,
+                # Feature 044 (FR-009): never skip a step silently. Loading
+                # rejects unregistered step types in framework files, so only
+                # an operator-supplied step (a plugin not installed) gets here.
+                message = f"step type {invocation.handler!r} is not registered"
+                logger.warning("Control %s: %s", control_spec.control_id, message)
+                pass_history.append(
+                    PassAttempt(
+                        phase=VerificationPhase.DETERMINISTIC,
+                        checks_performed=[f"handler:{invocation.handler}"],
+                        result=PassResult(
+                            phase=VerificationPhase.DETERMINISTIC,
+                            outcome=PassOutcome.ERROR,
+                            message=message,
+                            evidence={"handler": invocation.handler},
+                        ),
+                    )
                 )
+                last_error_class = "missing_tool"
+                if first_error is None:
+                    first_error = {
+                        "message": message,
+                        "error_class": "missing_tool",
+                        "phase": VerificationPhase.DETERMINISTIC,
+                        "pass_index": pass_index,
+                        "handler": invocation.handler,
+                        "authority": "suggestive",
+                    }
                 continue
 
             # Use handler's registered phase for recording, or DETERMINISTIC as default

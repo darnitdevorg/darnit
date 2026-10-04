@@ -1,7 +1,9 @@
 # US1 / T029: small composite (3 composed + 1 inline) used to verify that
 # the audit pipeline sees a composite as shape-identical to a non-composite.
-# Per F-3, the test is SHAPE-only — file_must_exist paths are unsatisfiable,
+# Per F-3, the test is SHAPE-only — file_exists files are unsatisfiable,
 # so audits return FAIL across the board, which is fine for shape checking.
+# Steps name the registered file_exists step type: an unregistered one
+# fails loading (feature 044, FR-009).
 
 [metadata]
 name = "test-audit-pipeline"
@@ -23,5 +25,5 @@ level = 1
 domain = "PIPE"
 
 [[controls."AUDITPIPE-01.01".passes]]
-handler = "file_must_exist"
-paths = ["DOES_NOT_EXIST.fixture"]
+handler = "file_exists"
+files = ["DOES_NOT_EXIST.fixture"]

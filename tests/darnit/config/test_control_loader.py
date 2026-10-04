@@ -52,9 +52,10 @@ class TestControlFromFramework:
             domain="DO",
             description="Check files exist",
             passes=[
+                # Feature 044 FR-008: file_exists reads files, not path.
                 HandlerInvocation(
                     handler="file_exists",
-                    path="README.md",
+                    files=["README.md"],
                 ),
                 HandlerInvocation(
                     handler="manual",
