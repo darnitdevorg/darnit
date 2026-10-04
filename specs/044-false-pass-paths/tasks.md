@@ -26,14 +26,14 @@ Commits: `git commit -s` with an `Assisted-by: Claude:claude-opus-5-5` trailer, 
 
 ## Phase 1: Setup
 
-- [ ] T001 Update `docs/architecture/framework-design.md` first, then run `uv run python scripts/validate_sync.py --verbose`. Changes, per contracts/step-contract.md and research R1-R8:
+- [X] T001 Update `docs/architecture/framework-design.md` first, then run `uv run python scripts/validate_sync.py --verbose`. Changes, per contracts/step-contract.md and research R1-R8:
   - CEL table: names per step type; remove `response.headers` and regex `files`/`matches`; add `project` (usable values) and the repository-aware `file_exists`.
   - Rule: an expression that fails to evaluate or is not boolean makes the step ERROR (`evaluation`).
   - Step registration: `settings`, `expression_names`, and refusal of name collisions.
   - Strict loading: control keys, step keys, unregistered step types (and ERROR `missing_tool` for operator-supplied controls), expression references.
   - Reproducibility step types: ceiling `{"fail"}`.
   - `gh_api` `evidence_fields`, and the `/user` rule.
-- [ ] T002 [P] Add a reusable zizmor stand-in fixture to `tests/conftest_helpers.py`: an executable on `PATH` whose output and exit code the test chooses. Move it from the pattern in `tests/darnit/remediation/test_plan_contract.py`.
+- [X] T002 [P] Add a reusable zizmor stand-in fixture to `tests/conftest_helpers.py`: an executable on `PATH` whose output and exit code the test chooses. Move it from the pattern in `tests/darnit/remediation/test_plan_contract.py`.
 
 ---
 
@@ -41,14 +41,14 @@ Commits: `git commit -s` with an `Assisted-by: Claude:claude-opus-5-5` trailer, 
 
 **CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T003 [P] Write registry metadata tests in `tests/darnit/sieve/test_handler_registry_metadata.py`:
+- [X] T003 [P] Write registry metadata tests in `tests/darnit/sieve/test_handler_registry_metadata.py`:
   - `register(settings=..., expression_names=...)` stores both;
   - the defaults are `settings=None` and `expression_names=frozenset()`;
   - every core built-in declares `settings`;
   - `exec`, `pattern`, and `regex` declare `{"output", "project"}`, and `gh_api` declares `{"response"}`.
-- [ ] T004 Add `settings` and `expression_names` to `register` and `SieveHandlerInfo` in `packages/darnit/src/darnit/sieve/handler_registry.py`.
-- [ ] T005 Declare `settings` (the keys each handler reads, from its `config.get` calls) and `expression_names` for every built-in check and remediation step type in `packages/darnit/src/darnit/sieve/builtin_handlers.py`. Also declare `settings` on the Baseline's `github_branch_protection` and `generate_threat_model` in `packages/darnit-baseline/src/darnit_baseline/implementation.py`, and on the reproducibility, gittuf, and CSL step types in their `implementation.py` files.
-- [ ] T006 [P] Fix #501: replace `file_must_exist` / `paths` with `file_exists` / `files` in:
+- [X] T004 Add `settings` and `expression_names` to `register` and `SieveHandlerInfo` in `packages/darnit/src/darnit/sieve/handler_registry.py`.
+- [X] T005 Declare `settings` (the keys each handler reads, from its `config.get` calls) and `expression_names` for every built-in check and remediation step type in `packages/darnit/src/darnit/sieve/builtin_handlers.py`. Also declare `settings` on the Baseline's `github_branch_protection` and `generate_threat_model` in `packages/darnit-baseline/src/darnit_baseline/implementation.py`, and on the reproducibility, gittuf, and CSL step types in their `implementation.py` files.
+- [X] T006 [P] Fix #501: replace `file_must_exist` / `paths` with `file_exists` / `files` in:
   - `packages/darnit-hello/src/darnit_hello/hello.toml`
   - `packages/darnit-example/example-hygiene.toml`
   - `docs/packaging-plugins.md`
@@ -124,6 +124,13 @@ Commits: `git commit -s` with an `Assisted-by: Claude:claude-opus-5-5` trailer, 
 
 - [ ] T015 [US2] Refuse collisions in `register` (core name taken by a plugin, or a different plugin's name) and record each one in `refused_registrations`, in `packages/darnit/src/darnit/sieve/handler_registry.py`. Surface `refused_registrations` in `darnit list` (`packages/darnit/src/darnit/cli.py`) and in the audit warnings.
 - [ ] T016 [US2] Set `ControlConfig` to `extra="forbid"` in `packages/darnit/src/darnit/config/framework_schema.py`. Make the error name the framework file and control.
+- [ ] T016a [US2] Fix the shipped keys no handler reads, which tests/darnit/sieve/test_handler_registry_metadata.py lists in `UNREAD_SHIPPED_KEYS`, before strict loading. Then empty that list.
+  - OSPS-LE-02.01's regex step uses `patterns`; convert it to the handler's `pattern` form so the step runs. Do the same for the example's PH-SEC-01.
+  - Remove `create_dirs` from the Baseline `file_create` steps (the executor always creates parent directories).
+  - Remove `context_hints` from the Baseline `manual` remediations, unless something reads it.
+  - Remove `timeout` from the `github_branch_protection` steps.
+
+  Files: `packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml`, `packages/darnit-example/example-hygiene.toml`.
 - [ ] T017 [US2] In `validate_step_authority` (`packages/darnit/src/darnit/config/control_loader.py`):
   - reject step keys outside the common fields plus the type's `settings` when `settings` is declared;
   - warn once per type when it is not declared;
@@ -198,6 +205,7 @@ Commits: `git commit -s` with an `Assisted-by: Claude:claude-opus-5-5` trailer, 
   - **BREAKING**: unknown control and step keys and unregistered step types fail loading; reproducibility controls no longer PASS from text signals.
   - **Changed**: `/user` evidence is limited to the fields the check reads.
   - **Fixed**: the templates use `file_exists` (#501).
+- [ ] T030 Amend `.specify/memory/constitution.md` with a PATCH (1.3.1 to 1.3.2): Principle V and Architecture Constraints name `file_exists` instead of the removed `file_must_exist`. Add a Sync Impact Report entry.
 - [ ] T028 Run quickstart V1-V6 and record the results in a "Validation log" section of `specs/044-false-pass-paths/quickstart.md`.
 - [ ] T029 Run `uv run ruff check .`, `uv run pytest tests/ -q`, and `uv run python scripts/validate_sync.py --verbose`, then fix failures. Rerun the integration tests with the GitHub Actions environment variables set, since CI identity differs (see the 043 CI fix).
 
