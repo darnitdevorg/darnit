@@ -277,7 +277,12 @@ class TestExprDecides:
 
     @pytest.mark.parametrize(
         "status",
-        [HandlerResultStatus.FAIL, HandlerResultStatus.WARN, HandlerResultStatus.INCONCLUSIVE, HandlerResultStatus.ERROR],
+        [
+            HandlerResultStatus.FAIL,
+            HandlerResultStatus.WARN,
+            HandlerResultStatus.INCONCLUSIVE,
+            HandlerResultStatus.ERROR,
+        ],
     )
     def test_other_handler_results_are_unchanged(self, status: HandlerResultStatus) -> None:
         assert self._apply(status, "output.json.x == 1").status == status
