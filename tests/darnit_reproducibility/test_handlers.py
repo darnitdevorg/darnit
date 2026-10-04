@@ -620,9 +620,10 @@ class TestRepoDepsPin:
         """FR-007: "we could not read it" must not read as "we read it and it
         is unpinned".
 
-        Feature 044 (FR-010): this was FAIL ("judged on presence alone"). The
-        included file may be hash-pinned, so the presence of a file we could
-        not read proves nothing; it is INCONCLUSIVE."""
+        Feature 044 (FR-010, superseding 037 FR-007 for this case): this was
+        FAIL ("judged on presence alone"). The included file may be
+        hash-pinned, so the presence of a file we could not read proves
+        nothing; it is INCONCLUSIVE."""
         repo = self._repo(tmp_path, "-r base.txt\n")
         result = repro_deps_pinned_handler({}, make_ctx(repo))
         assert result.status == HandlerResultStatus.INCONCLUSIVE
