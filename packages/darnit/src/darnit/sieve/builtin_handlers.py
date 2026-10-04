@@ -480,6 +480,9 @@ def gh_api_handler(config: dict[str, Any], context: HandlerContext) -> HandlerRe
         expr: str - CEL over ``response.status_code`` and ``response.body``
             on a 2xx answer: true -> PASS, false -> FAIL (no expr: PASS)
         fail_on_status: list[int] - Step field. Statuses that prove failure.
+        evidence_fields: list[str] - Feature 044. Top-level ``response.body``
+            keys kept in evidence; every other key is dropped (``expr``
+            still sees the full response). Required on personal records.
 
     Evidence: ``endpoint`` (after substitution) and ``response``
     (``status_code``, ``body``). See framework-design.md section 3.8.
@@ -498,7 +501,10 @@ def gh_api_handler(config: dict[str, Any], context: HandlerContext) -> HandlerRe
 
     body, status, error = gh_api_with_status(endpoint)
     response: dict[str, Any] = {"status_code": status, "body": body}
-    evidence: dict[str, Any] = {"endpoint": endpoint, "response": response}
+    evidence: dict[str, Any] = {
+        "endpoint": endpoint,
+        "response": {"status_code": status, "body": _evidence_body(body, config.get("evidence_fields"))},
+    }
 
     if 200 <= status < 300:
         expr = config.get("expr")
@@ -557,6 +563,17 @@ def gh_api_handler(config: dict[str, Any], context: HandlerContext) -> HandlerRe
         evidence=evidence,
         error_class=error_class,
     )
+
+
+def _evidence_body(body: Any, fields: list[str] | None) -> Any:
+    """``body`` limited to the top-level ``fields`` (each item's, for a list); unchanged when ``fields`` is None."""
+    if fields is None:
+        return body
+    if isinstance(body, dict):
+        return {key: body[key] for key in fields if key in body}
+    if isinstance(body, list):
+        return [_evidence_body(item, fields) for item in body]
+    return body
 
 
 def regex_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResult:
@@ -1731,7 +1748,7 @@ def register_builtin_handlers() -> None:
         handler_fn=gh_api_handler,
         description="Call the platform API via gh; decide from HTTP status and CEL over response.*",
         ceiling={"pass", "fail"},
-        settings={"endpoint"},
+        settings={"endpoint", "evidence_fields"},
         expression_names={"response"},
     )
     registry.register(

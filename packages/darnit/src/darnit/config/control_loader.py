@@ -704,6 +704,22 @@ def validate_step_authority(
         if expr is not None:
             _validate_expression_references(inv.handler, str(expr), info.expression_names, reject)
 
+        if inv.handler == "gh_api":
+            _validate_evidence_fields(inv.model_extra or {}, reject)
+
+
+def _validate_evidence_fields(step: dict[str, Any], reject: Callable[[str], None]) -> None:
+    """A gh_api step reading a person's account keeps only declared fields (feature 044, framework-design 3.8)."""
+    fields = step.get("evidence_fields")
+    if fields is not None and not (isinstance(fields, list) and all(isinstance(f, str) for f in fields)):
+        reject(f"evidence_fields must be a list of response body keys, not {fields!r}")
+    endpoint = "/" + str(step.get("endpoint", "")).split("?", 1)[0].lstrip("/")
+    if fields is None and (endpoint == "/user" or endpoint.startswith("/users/")):
+        reject(
+            f"endpoint {endpoint!r} reads a person's account; declare evidence_fields listing only "
+            "the response fields the check needs"
+        )
+
 
 def _validate_expression_references(
     handler: str, expr: str, provided: frozenset[str], reject: Callable[[str], None]
