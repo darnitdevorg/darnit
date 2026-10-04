@@ -1,6 +1,39 @@
 <!--
 Sync Impact Report
 ==================
+Version change: 1.3.1 -> 1.3.2
+Modified sections:
+  - V. Sieve Pipeline Integrity: the pipeline reads
+    `file_exists -> exec/regex -> llm_eval -> manual`.
+  - Architecture Constraints, Layer 1 (Checking): the list of
+    built-in handlers reads `file_exists`, `exec`, `pattern`,
+    `manual`.
+Modified principles: none (the five Core Principles I-V are
+  unchanged in substance).
+Rationale for PATCH rather than MINOR:
+  The amendment corrects a step type name to match the authoritative
+  framework specification. No principle is added, removed, or
+  redefined, and no guidance is expanded. `file_must_exist` was never
+  registered: steps naming it were skipped. Feature 044 (close
+  remaining false-PASS paths) makes an unregistered step type fail
+  loading, and the shipped templates and documentation now name the
+  registered `file_exists` (#501).
+Added sections: none
+Removed sections: none
+Templates requiring updates:
+  - .specify/templates/plan-template.md -- no changes needed
+  - .specify/templates/spec-template.md -- no changes needed
+  - .specify/templates/tasks-template.md -- no changes needed
+Dependent documents:
+  - docs/architecture/framework-design.md -- updated first in the
+    same feature (Sections 3.0.3, 3.2).
+  - CLAUDE.md, docs/packaging-plugins.md, docs/IMPLEMENTATION_GUIDE.md
+    -- updated in feature 044 (task T006).
+Follow-up TODOs: none
+==================
+
+Sync Impact Report
+==================
 Version change: 1.3.0 -> 1.3.1
 Modified sections:
   - Architecture Constraints, Layer 2 (Remediation): the list of
@@ -243,7 +276,7 @@ conclude the value on its own.
 
 ### V. Sieve Pipeline Integrity
 
-The 4-phase verification pipeline (`file_must_exist → exec/regex →
+The 4-phase verification pipeline (`file_exists → exec/regex →
 llm_eval → manual`) MUST be respected. The orchestrator stops at
 the first conclusive result.
 
@@ -259,7 +292,7 @@ the first conclusive result.
 The project follows a three-layer architecture:
 
 - **Layer 1 — Checking (sieve passes):** Built-in handlers
-  (`file_must_exist`, `exec`, `pattern`, `manual`) plus plugin
+  (`file_exists`, `exec`, `pattern`, `manual`) plus plugin
   Python functions. Determines control status.
 - **Layer 2 — Remediation:** Built-in actions (`file_create`, `exec`,
   `platform_setting`, `project_update`, `yaml_inject`) plus plugin
@@ -311,4 +344,4 @@ Compliance with these principles MUST be verified during code review.
 The CLAUDE.md project instructions serve as the runtime development
 guidance and MUST remain consistent with this constitution.
 
-**Version**: 1.3.1 | **Ratified**: 2026-03-08 | **Last Amended**: 2026-10-02
+**Version**: 1.3.2 | **Ratified**: 2026-03-08 | **Last Amended**: 2026-10-04
