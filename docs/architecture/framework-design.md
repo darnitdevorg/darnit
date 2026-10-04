@@ -163,6 +163,7 @@ steps = ["Verify branch protection in repository settings"]
 #### Requirement: No Unknown Control Keys
 - **WHEN** a control declares a key the control schema does not define
 - **THEN** loading the framework file MUST fail with an error naming the file, the control, and the key (feature 044; step keys are checked as in section 3.0.3)
+- **AND** a custom control defined in `.baseline.toml` MUST fail the same way, the error naming `.baseline.toml`; an operator custom control's unknown key fails loading the operator configuration (section 14)
 
 #### Requirement: SARIF Metadata
 - **WHEN** SARIF output is generated

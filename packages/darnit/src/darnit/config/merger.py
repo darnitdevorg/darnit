@@ -479,8 +479,7 @@ def merge_configs(
             if isinstance(user_control, dict):
                 # Check if this is a custom control definition
                 if all(k in user_control for k in ("name", "level", "domain")):
-                    # Create a ControlConfig from user definition
-                    framework_control = ControlConfig(**user_control)
+                    framework_control = _custom_control_config(control_id, user_control)
 
         effective.controls[control_id] = merge_control(
             control_id=control_id,
@@ -509,6 +508,32 @@ def merge_configs(
 # =============================================================================
 # Loading Functions
 # =============================================================================
+
+
+def _unknown_keys(error: ValidationError, loc_prefix: tuple[Any, ...], depth: int) -> list[tuple[Any, ...]]:
+    """The location after ``loc_prefix`` of each unknown key ``depth`` levels below it in ``error``."""
+    width = len(loc_prefix)
+    return [
+        tuple(err["loc"][width:])
+        for err in error.errors()
+        if err["type"] == "extra_forbidden" and len(err["loc"]) == width + depth and tuple(err["loc"][:width]) == loc_prefix
+    ]
+
+
+def _unknown_control_keys_message(source: str, unknown: list[tuple[Any, Any]]) -> str:
+    keys = "; ".join(f"control {control!r} has unknown key {key!r}" for control, key in unknown)
+    return f"{source}: {keys} (framework-design 2.3)"
+
+
+def _custom_control_config(control_id: str, definition: dict[str, Any]) -> ControlConfig:
+    """A ``.baseline.toml`` custom control, held to the control schema like a framework file's (framework-design 2.3)."""
+    try:
+        return ControlConfig(**definition)
+    except ValidationError as e:
+        unknown = [(control_id, key) for (key,) in _unknown_keys(e, (), 1)]
+        if not unknown:
+            raise
+        raise ValueError(_unknown_control_keys_message(f"User configuration {USER_CONFIG_FILENAME}", unknown)) from e
 
 
 def _parse_framework_only(path: Path) -> FrameworkConfig:
@@ -546,14 +571,10 @@ def _parse_framework_only(path: Path) -> FrameworkConfig:
     try:
         config = FrameworkConfig(**data)
     except ValidationError as e:
-        unknown = [
-            f"control {err['loc'][1]!r} has unknown key {err['loc'][2]!r}"
-            for err in e.errors()
-            if err["type"] == "extra_forbidden" and len(err["loc"]) == 3 and err["loc"][0] == "controls"
-        ]
+        unknown = _unknown_keys(e, ("controls",), 2)
         if not unknown:
             raise
-        raise ValueError(f"Framework file {path}: {'; '.join(unknown)} (framework-design 2.3)") from e
+        raise ValueError(_unknown_control_keys_message(f"Framework file {path}", unknown)) from e
     config._source_path = str(path)
 
     # Validate template file paths at load time

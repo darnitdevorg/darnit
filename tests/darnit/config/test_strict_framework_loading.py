@@ -92,6 +92,39 @@ class TestControlKeys:
             assert fragment in text, (fragment, text)
 
 
+    def test_unknown_key_on_a_baseline_toml_custom_control_names_file_control_and_key(self, tmp_path: Path) -> None:
+        """A .baseline.toml custom control merged as a raw table is held to 2.3, with its error shape (044 review).
+
+        ``model_construct`` hands ``merge_configs`` the raw table, as it
+        receives one when neither union member of ``UserConfig.controls``
+        validates it.
+        """
+        from pydantic import ValidationError
+
+        from darnit.config.user_schema import UserConfig
+
+        framework = load_framework_config(_toml(tmp_path, ""))
+        user = UserConfig.model_construct(
+            controls={
+                "CUSTOM-01": {
+                    "name": "Custom",
+                    "description": "A repository's custom control",
+                    "level": 1,
+                    "domain": "CU",
+                    "sevrity": "high",
+                }
+            }
+        )
+
+        with pytest.raises(ValueError) as excinfo:
+            merge_configs(framework, user)
+
+        assert not isinstance(excinfo.value, ValidationError)
+        text = str(excinfo.value)
+        for fragment in (".baseline.toml", "'CUSTOM-01'", "'sevrity'", "framework-design 2.3"):
+            assert fragment in text, (fragment, text)
+
+
 @pytest.mark.unit
 class TestStepKeys:
     """FR-008."""
