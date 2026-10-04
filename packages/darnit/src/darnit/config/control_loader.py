@@ -22,6 +22,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from darnit.core.composition import _TAG_COMPOSED_FROM
 from darnit.core.logging import get_logger
 from darnit.sieve.models import (
     ControlSpec,
@@ -280,6 +281,7 @@ def control_from_effective(
             metadata["handler_invocations"],
             source=None if effective.steps_from_operator else source,
             operator_supplied=effective.steps_from_operator,
+            composed_from=tags.get(_TAG_COMPOSED_FROM),
         )
 
     return ControlSpec(
@@ -369,14 +371,18 @@ def control_from_framework(
 
     # Carry handler invocations through metadata for orchestrator dispatch
     if control_config.passes:
-        validate_step_authority(framework, control_id, control_config.passes, source=source)
+        validate_step_authority(
+            framework, control_id, control_config.passes, source=source, composed_from=tags.get(_TAG_COMPOSED_FROM)
+        )
         metadata["handler_invocations"] = control_config.passes
 
     # Carry remediation handler invocations if present
     if hasattr(control_config, "remediation") and control_config.remediation:
         rem = control_config.remediation
         if rem.handlers:
-            validate_remediation_steps(framework, control_id, rem.handlers, source=source)
+            validate_remediation_steps(
+                framework, control_id, rem.handlers, source=source, composed_from=tags.get(_TAG_COMPOSED_FROM)
+            )
             metadata["remediation_handler_invocations"] = rem.handlers
 
     return ControlSpec(
@@ -425,7 +431,11 @@ def load_controls_from_effective(config: EffectiveConfig) -> list[ControlSpec]:
         framework_control = framework_config.controls.get(control_id) if framework_config is not None else None
         if effective.from_framework and framework_control is not None and framework_control.remediation:
             validate_remediation_steps(
-                config.framework_name, control_id, framework_control.remediation.handlers, source=source
+                config.framework_name,
+                control_id,
+                framework_control.remediation.handlers,
+                source=source,
+                composed_from=framework_control.tags.get(_TAG_COMPOSED_FROM),
             )
 
     return controls
@@ -560,18 +570,23 @@ COMMON_STEP_FIELDS = frozenset(HandlerInvocation.model_fields) | {"description",
 _UNCHECKED_SETTINGS_WARNED: set[str] = set()
 
 
-def _registered_step_type(registry: Any, handler: str, framework: str | None) -> Any:
-    """The registered step type, registering ``framework``'s own plugin step types first if it is missing.
+def _registered_step_type(registry: Any, handler: str, framework: str | None, composed_from: str | None) -> Any:
+    """The registered step type, registering its owners' plugin step types first if it is missing.
 
     Validation runs after plugin step types register (framework-design
     3.0.3); a caller that loads a framework before registering its plugin
-    must not see that plugin's step types reported as unregistered.
+    must not see that plugin's step types reported as unregistered. The
+    owners are the framework and, for a control a composite took from
+    another framework, that source (``_composed_from``): the composite's
+    own name need not be an implementation at all.
     """
     info = registry.get(handler)
-    if info is None and framework:
+    for owner in dict.fromkeys(o for o in (framework, composed_from) if o):
+        if info is not None:
+            break
         from darnit.core.discovery import register_implementation_handlers
 
-        if register_implementation_handlers(framework):
+        if register_implementation_handlers(owner):
             info = registry.get(handler)
     return info
 
@@ -602,7 +617,12 @@ def _validate_step_keys(inv: HandlerInvocation, info: Any, reject: Callable[[str
 
 
 def validate_remediation_steps(
-    framework: str | None, control_id: str, handlers: list, *, source: str | None = None
+    framework: str | None,
+    control_id: str,
+    handlers: list,
+    *,
+    source: str | None = None,
+    composed_from: str | None = None,
 ) -> None:
     """Remediation steps name a registered step type and only keys it accepts (feature 044, framework-design 3.0.3)."""
     from darnit.core.errors import AuthorityViolation
@@ -616,7 +636,7 @@ def validate_remediation_steps(
         def reject(message: str, _step_id: str = step_id) -> None:
             raise AuthorityViolation(control_id=control_id, step_id=_step_id, message=f"{where}: {message}")
 
-        info = _registered_step_type(registry, inv.handler, framework)
+        info = _registered_step_type(registry, inv.handler, framework, composed_from)
         if info is None:
             reject(f"step type {inv.handler!r} is not registered")
         _validate_step_keys(inv, info, reject)
@@ -629,6 +649,7 @@ def validate_step_authority(
     *,
     source: str | None = None,
     operator_supplied: bool = False,
+    composed_from: str | None = None,
 ) -> None:
     """Reject step declarations that break the per-claim authority rules.
 
@@ -643,6 +664,8 @@ def validate_step_authority(
     take. For ``operator_supplied`` steps (operator custom controls and
     pass overrides) an unregistered step type loads instead: the
     orchestrator reports it ERROR, class ``missing_tool``, at dispatch.
+    ``composed_from`` is the framework a composite took the control from,
+    whose plugin step types it uses.
     """
     from darnit.core.errors import AuthorityViolation
     from darnit.sieve.handler_registry import HandlerPhase, effective_outcomes, get_sieve_handler_registry
@@ -656,7 +679,7 @@ def validate_step_authority(
         def reject(message: str, _step_id: str = step_id) -> None:
             raise AuthorityViolation(control_id=control_id, step_id=_step_id, message=f"{where}: {message}")
 
-        info = _registered_step_type(registry, inv.handler, framework)
+        info = _registered_step_type(registry, inv.handler, framework, composed_from)
         if info is None:
             if operator_supplied:
                 continue

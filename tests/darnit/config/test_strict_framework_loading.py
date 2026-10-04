@@ -227,6 +227,51 @@ class TestStepTypes:
         assert result.error["class"] == "missing_tool"
 
 
+COMPOSITE_WITH_REPRODUCIBILITY = """\
+[metadata]
+name = "test-repro-composite"
+display_name = "Composite with reproducibility"
+version = "1.0.0"
+
+[[compose]]
+source = "reproducibility"
+include_controls = ["RE-01.01"]
+"""
+
+LOAD_COMPOSITE = """\
+import sys
+from pathlib import Path
+
+from darnit.config import load_framework_config
+from darnit.config.control_loader import load_controls_from_effective, load_controls_from_framework
+from darnit.config.merger import merge_configs
+
+framework = load_framework_config(Path(sys.argv[1]))
+print(len(load_controls_from_framework(framework)), len(load_controls_from_effective(merge_configs(framework))))
+"""
+
+
+@pytest.mark.unit
+def test_composite_registers_its_sources_step_types(tmp_path: Path) -> None:
+    """A composite's controls use their source's plugin step types (044 review).
+
+    A fresh process, so no earlier test has registered the reproducibility
+    step types: the composite's own name is not an implementation, and only
+    the composed source's registration provides ``repro_deps_pinned``.
+    """
+    import subprocess
+
+    path = tmp_path / "composite.toml"
+    path.write_text(COMPOSITE_WITH_REPRODUCIBILITY, encoding="utf-8")
+
+    run = subprocess.run(
+        [sys.executable, "-c", LOAD_COMPOSITE, str(path)], capture_output=True, text=True, timeout=120, check=False
+    )
+
+    assert run.returncode == 0, run.stderr[-2000:]
+    assert run.stdout.split() == ["1", "1"]
+
+
 @pytest.mark.unit
 @pytest.mark.usefixtures("plugin_step_types")
 @pytest.mark.parametrize("path", _shipped_tomls(), ids=lambda p: p.name)
