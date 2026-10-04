@@ -16,6 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nothing is written. Platform changes need a person's approval of the exact
   change by default, and the result is read back from the platform rather
   than taken from response text.
+- A step whose `expr` cannot be evaluated (it does not compile, reads data
+  that is missing, or is not boolean) is `ERROR`, class `evaluation`, never
+  the handler's PASS or FAIL. Before, the handler's verdict stood: OpenSSF
+  Baseline OSPS-BR-01.01 and OSPS-AC-04.02 passed when zizmor exited with an
+  accepted code and printed no findings.
+- Plugins cannot redefine a step type. A plugin registering a name that core
+  or another plugin already registered (for example `manual` with a PASS
+  ceiling) is refused, logged at WARNING naming both registrants, and listed
+  by `darnit list` and in the audit warnings; the existing step type is
+  unchanged.
 
 ### Removed
 
@@ -201,9 +211,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Exec remediation steps declare `effects = "working_tree"` and `offline =
   true` to be previewed in a scratch copy of the working tree; other exec
   steps are labelled "cannot be previewed exactly".
+- `expr_decides` step field: on a handler PASS the step's `expr` alone
+  decides, true PASS and false FAIL, within the step's effective set. It is
+  accepted only on `exec`, `regex`, and `pattern` steps that have an `expr`.
+  The OpenSSF Baseline zizmor steps (OSPS-BR-01.01, OSPS-AC-04.02) set it, so
+  a matching finding is FAIL.
+- `evidence_fields` on `gh_api` steps: the response body keys kept in the
+  step's evidence, and so in reports and attestations; `expr` still sees the
+  full response. A step reading a person's account (`/user`, `/user/...`,
+  `/users/...`) must declare it.
+- Expressions on `exec`, `regex`, and `pattern` steps can read `project`
+  (the usable project context values; reading an unconfirmed one is an
+  evaluation error), and `file_exists(path)` answers for the audited
+  repository (it always answered false). Each step type declares the names
+  its expressions may use, and a reference to any other name fails loading.
+- Step types declare the settings they read (`settings`) and the names their
+  expressions may use (`expression_names`) when they register. A plugin step
+  type that declares no settings loads with one warning per step type.
 
 ### Changed
 
+- **BREAKING:** framework loading is strict. An unknown control key, a step
+  key that is neither a common step field nor a setting its step type
+  declares (a misspelled `fail_on_mis`, for example), an `expr` its step
+  type cannot take, and a step naming a step type that is not registered
+  fail loading, naming the framework file, control, step, and key. Before,
+  they were ignored, or the step was skipped. A pass override or custom
+  control in operator configuration that names the step type of a plugin
+  that is not installed still loads, and the control is `ERROR`, class
+  `missing_tool`.
+- **BREAKING:** reproducibility controls no longer PASS from text or
+  file-presence signals. The five reproducibility step types may conclude
+  only FAIL; the signals they find are evidence for the control's later
+  steps, so such a control ends WARN unless a person or a corpus-backed
+  promotion concludes it. A workflow mentioning `cosign sign` in a comment
+  no longer passes RE-02.02.
+- **BREAKING:** an unreadable `requirements.txt`, or one whose include
+  cannot be resolved, no longer fails RE-01.01: it shows nothing about
+  pinning, so it decides nothing and another manifest may still fail the
+  control. This supersedes feature 037 FR-007 for that case.
+- OSPS-AC-01.01 keeps only `login` and `two_factor_authentication` from the
+  auditor's `/user` record; email, location, company, and biography no
+  longer appear in evidence, JSON output, or attestations.
+- The `darnit-hello` and `darnit-example` file controls now FAIL when the
+  file is missing: they named the unregistered `file_must_exist`, so the
+  step was skipped and the control could never fail.
+- A repository that builds with a Nix flake in CI and also fetches over the
+  network in CI now FAILs RE-02.01. The Nix signal counts only when RE-01.02
+  passed, and RE-01.02 no longer concludes PASS on its own, so the fetch is
+  no longer outweighed.
 - Per-control `status` and `reason` in a repository's `.baseline.toml`, ignored
   since 0.1.1, are read during the deprecation release as not-applicable
   claims under the trust rules: a claim counts only for a repository the
@@ -352,6 +408,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `operator_config`, `trust`, `ignored_repository_settings`,
   `unknown_assertions`, `summary`, `results`, and `warnings` when present)
   instead of a bare list of results.
+
+### Fixed
+
+- The `darnit-hello` and `darnit-example` templates and the documentation
+  use the registered `file_exists` step type instead of `file_must_exist`
+  (#501).
+- The OpenSSF Baseline OSPS-LE-02.01 regex step runs: it set `patterns`
+  where the handler read `pattern`, so it recorded "Missing pattern" instead
+  of the SPDX evidence. The control's outcome is unchanged.
 
 ## [0.1.1] - 2026-10-03
 
