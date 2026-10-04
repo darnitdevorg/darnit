@@ -209,6 +209,39 @@ class TestStepTypes:
         assert "absent_plugin_check" in result.error["cause"]
         assert "not registered" in result.error["cause"]
 
+    def test_plugin_registration_is_attempted_once_per_load(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """N steps naming missing step types register the framework's plugin once per load (044 review)."""
+        import darnit.core.discovery as discovery
+
+        attempts: list[str | None] = []
+
+        def register(framework_name: str | None) -> bool:
+            attempts.append(framework_name)
+            return False
+
+        monkeypatch.setattr(discovery, "register_implementation_handlers", register)
+        framework = load_framework_config(_toml(tmp_path, ""))
+        operator = OperatorConfig.model_validate(
+            {
+                "schema_version": 1,
+                "custom_controls": {
+                    f"OP-0{n}": {
+                        "name": f"Operator control {n}",
+                        "description": "Uses a plugin that is not installed",
+                        "level": 1,
+                        "passes": [{"handler": f"absent_plugin_check_{n}"}, {"handler": "absent_plugin_other"}],
+                    }
+                    for n in range(1, 4)
+                },
+            }
+        )
+
+        load_controls_from_effective(merge_configs(framework, None, operator))
+
+        assert attempts == ["strict-fw"]
+
     def test_operator_pass_override_naming_a_missing_plugin_step_type_is_error(self, tmp_path: Path) -> None:
         framework = load_framework_config(
             _toml(tmp_path, '[[controls."STR-01".passes]]\nhandler = "file_exists"\nfiles = ["README.md"]\n')

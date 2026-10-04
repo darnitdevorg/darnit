@@ -223,6 +223,7 @@ def control_from_effective(
     effective: EffectiveControl,
     framework: str | None = None,
     source: str | None = None,
+    registration_attempts: set[str] | None = None,
 ) -> ControlSpec:
     """Convert EffectiveControl to ControlSpec.
 
@@ -231,6 +232,8 @@ def control_from_effective(
         effective: Merged effective control
         framework: Framework name, for load-time validation errors
         source: Framework file, for load-time validation errors
+        registration_attempts: Frameworks whose plugin step types this
+            load already registered (shared across one load)
 
     Returns:
         Executable ControlSpec
@@ -282,6 +285,7 @@ def control_from_effective(
             source=None if effective.steps_from_operator else source,
             operator_supplied=effective.steps_from_operator,
             composed_from=tags.get(_TAG_COMPOSED_FROM),
+            registration_attempts=registration_attempts,
         )
 
     return ControlSpec(
@@ -301,6 +305,7 @@ def control_from_framework(
     shared_handlers: dict[str, SharedHandlerConfig] | None = None,
     framework: str | None = None,
     source: str | None = None,
+    registration_attempts: set[str] | None = None,
 ) -> ControlSpec:
     """Convert ControlConfig from framework to ControlSpec.
 
@@ -315,11 +320,14 @@ def control_from_framework(
         shared_handlers: Top-level shared handler definitions for resolution
         framework: Framework name, for load-time validation errors
         source: Framework file, for load-time validation errors
+        registration_attempts: Frameworks whose plugin step types this
+            load already registered (shared across one load)
 
     Returns:
         Executable ControlSpec
     """
     shared_handlers = shared_handlers or {}
+    registration_attempts = set() if registration_attempts is None else registration_attempts
 
     # Resolve handler invocations at load time
     locator_discover = None
@@ -372,7 +380,12 @@ def control_from_framework(
     # Carry handler invocations through metadata for orchestrator dispatch
     if control_config.passes:
         validate_step_authority(
-            framework, control_id, control_config.passes, source=source, composed_from=tags.get(_TAG_COMPOSED_FROM)
+            framework,
+            control_id,
+            control_config.passes,
+            source=source,
+            composed_from=tags.get(_TAG_COMPOSED_FROM),
+            registration_attempts=registration_attempts,
         )
         metadata["handler_invocations"] = control_config.passes
 
@@ -381,7 +394,12 @@ def control_from_framework(
         rem = control_config.remediation
         if rem.handlers:
             validate_remediation_steps(
-                framework, control_id, rem.handlers, source=source, composed_from=tags.get(_TAG_COMPOSED_FROM)
+                framework,
+                control_id,
+                rem.handlers,
+                source=source,
+                composed_from=tags.get(_TAG_COMPOSED_FROM),
+                registration_attempts=registration_attempts,
             )
             metadata["remediation_handler_invocations"] = rem.handlers
 
@@ -420,10 +438,17 @@ def load_controls_from_effective(config: EffectiveConfig) -> list[ControlSpec]:
     controls = []
     framework_config = config._framework_config
     source = framework_config._source_path if framework_config is not None else None
+    registration_attempts: set[str] = set()
 
     for control_id, effective in config.controls.items():
         try:
-            control = control_from_effective(control_id, effective, framework=config.framework_name, source=source)
+            control = control_from_effective(
+                control_id,
+                effective,
+                framework=config.framework_name,
+                source=source,
+                registration_attempts=registration_attempts,
+            )
             controls.append(control)
         except (TypeError, ValueError, KeyError) as e:
             logger.warning(f"Could not load control {control_id}: {e}")
@@ -436,6 +461,7 @@ def load_controls_from_effective(config: EffectiveConfig) -> list[ControlSpec]:
                 framework_control.remediation.handlers,
                 source=source,
                 composed_from=framework_control.tags.get(_TAG_COMPOSED_FROM),
+                registration_attempts=registration_attempts,
             )
 
     return controls
@@ -459,6 +485,7 @@ def load_controls_from_framework(config: FrameworkConfig) -> list[ControlSpec]:
 
     shared_handlers = config.shared_handlers or {}
     controls = []
+    registration_attempts: set[str] = set()
 
     for control_id, control_config in config.controls.items():
         try:
@@ -468,6 +495,7 @@ def load_controls_from_framework(config: FrameworkConfig) -> list[ControlSpec]:
                 shared_handlers=shared_handlers,
                 framework=config.metadata.name,
                 source=config._source_path,
+                registration_attempts=registration_attempts,
             )
             controls.append(control)
         except (TypeError, ValueError, KeyError) as e:
@@ -570,7 +598,9 @@ COMMON_STEP_FIELDS = frozenset(HandlerInvocation.model_fields) | {"description",
 _UNCHECKED_SETTINGS_WARNED: set[str] = set()
 
 
-def _registered_step_type(registry: Any, handler: str, framework: str | None, composed_from: str | None) -> Any:
+def _registered_step_type(
+    registry: Any, handler: str, framework: str | None, composed_from: str | None, attempted: set[str]
+) -> Any:
     """The registered step type, registering its owners' plugin step types first if it is missing.
 
     Validation runs after plugin step types register (framework-design
@@ -578,12 +608,16 @@ def _registered_step_type(registry: Any, handler: str, framework: str | None, co
     must not see that plugin's step types reported as unregistered. The
     owners are the framework and, for a control a composite took from
     another framework, that source (``_composed_from``): the composite's
-    own name need not be an implementation at all.
+    own name need not be an implementation at all. Each owner is
+    registered at most once per ``attempted`` set (one per load).
     """
     info = registry.get(handler)
     for owner in dict.fromkeys(o for o in (framework, composed_from) if o):
         if info is not None:
             break
+        if owner in attempted:
+            continue
+        attempted.add(owner)
         from darnit.core.discovery import register_implementation_handlers
 
         if register_implementation_handlers(owner):
@@ -623,6 +657,7 @@ def validate_remediation_steps(
     *,
     source: str | None = None,
     composed_from: str | None = None,
+    registration_attempts: set[str] | None = None,
 ) -> None:
     """Remediation steps name a registered step type and only keys it accepts (feature 044, framework-design 3.0.3)."""
     from darnit.core.errors import AuthorityViolation
@@ -630,13 +665,14 @@ def validate_remediation_steps(
 
     registry = get_sieve_handler_registry()
     where = _where(framework, source)
+    registration_attempts = set() if registration_attempts is None else registration_attempts
     for idx, inv in enumerate(handlers):
         step_id = f"remediation[{idx}]:{inv.handler}"
 
         def reject(message: str, _step_id: str = step_id) -> None:
             raise AuthorityViolation(control_id=control_id, step_id=_step_id, message=f"{where}: {message}")
 
-        info = _registered_step_type(registry, inv.handler, framework, composed_from)
+        info = _registered_step_type(registry, inv.handler, framework, composed_from, registration_attempts)
         if info is None:
             reject(f"step type {inv.handler!r} is not registered")
         _validate_step_keys(inv, info, reject)
@@ -650,6 +686,7 @@ def validate_step_authority(
     source: str | None = None,
     operator_supplied: bool = False,
     composed_from: str | None = None,
+    registration_attempts: set[str] | None = None,
 ) -> None:
     """Reject step declarations that break the per-claim authority rules.
 
@@ -665,13 +702,16 @@ def validate_step_authority(
     pass overrides) an unregistered step type loads instead: the
     orchestrator reports it ERROR, class ``missing_tool``, at dispatch.
     ``composed_from`` is the framework a composite took the control from,
-    whose plugin step types it uses.
+    whose plugin step types it uses. ``registration_attempts`` holds the
+    frameworks whose plugin step types were already registered during
+    this load, so each is registered once however many steps miss.
     """
     from darnit.core.errors import AuthorityViolation
     from darnit.sieve.handler_registry import HandlerPhase, effective_outcomes, get_sieve_handler_registry
 
     registry = get_sieve_handler_registry()
     where = _where(framework, source)
+    registration_attempts = set() if registration_attempts is None else registration_attempts
 
     for idx, inv in enumerate(invocations):
         step_id = f"pass[{idx}]:{inv.handler}"
@@ -679,7 +719,7 @@ def validate_step_authority(
         def reject(message: str, _step_id: str = step_id) -> None:
             raise AuthorityViolation(control_id=control_id, step_id=_step_id, message=f"{where}: {message}")
 
-        info = _registered_step_type(registry, inv.handler, framework, composed_from)
+        info = _registered_step_type(registry, inv.handler, framework, composed_from, registration_attempts)
         if info is None:
             if operator_supplied:
                 continue
