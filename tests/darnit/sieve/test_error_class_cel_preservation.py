@@ -117,8 +117,8 @@ class TestCelPostStepPreservesErrorClass:
         assert out.error_class == "not_found"
 
     @pytest.mark.unit
-    def test_cel_evaluation_failure_returns_original_object(self) -> None:
-        """A malformed expr logs and returns the input unchanged."""
+    def test_cel_evaluation_failure_is_an_evaluation_error(self) -> None:
+        """A malformed expr makes the step ERROR, class evaluation (feature 044, FR-001)."""
         incoming = HandlerResult(
             status=HandlerResultStatus.FAIL,
             message="command failed",
@@ -127,7 +127,8 @@ class TestCelPostStepPreservesErrorClass:
         )
         out = _apply_cel_expr({"expr": "this is (not valid CEL"}, incoming)
 
-        assert out.error_class == "auth"
+        assert out.status == HandlerResultStatus.ERROR
+        assert out.error_class == "evaluation"
 
     @pytest.mark.unit
     def test_authority_still_preserved_alongside_error_class(self) -> None:

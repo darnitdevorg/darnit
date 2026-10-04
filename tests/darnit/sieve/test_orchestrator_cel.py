@@ -116,12 +116,12 @@ class TestPassThroughInvariants:
         assert result is original
 
     @pytest.mark.unit
-    def test_cel_syntax_error_passes_through(self):
-        """FR-006: CEL evaluation error -> handler result unchanged."""
+    def test_cel_syntax_error_is_error(self):
+        """Feature 044 FR-001 replaces 020 FR-006: CEL evaluation error -> ERROR (evaluation)."""
         original = _mk(HandlerResultStatus.PASS, {"any_match": True})
         result = _apply_cel_expr({"expr": "not valid CEL !!"}, original)
-        assert result.status == HandlerResultStatus.PASS
-        assert result is original
+        assert result.status == HandlerResultStatus.ERROR
+        assert result.error_class == "evaluation"
 
     @pytest.mark.unit
     def test_unknown_exec_exit_code_returns_inconclusive_and_passes_through(self):

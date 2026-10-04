@@ -590,3 +590,28 @@ def validate_step_authority(framework: str | None, control_id: str, invocations:
                 reject(f"fail_on_status is only for gh_api steps, not {inv.handler!r}")
             if "fail" not in effective_outcomes(info, inv):
                 reject("fail_on_status requires outcome 'fail' in the step's effective set")
+
+        expr = (getattr(inv, "model_extra", None) or {}).get("expr")
+        if expr is not None:
+            _validate_expression_references(inv.handler, str(expr), info.expression_names, reject)
+
+
+def _validate_expression_references(
+    handler: str, expr: str, provided: frozenset[str], reject: Callable[[str], None]
+) -> None:
+    """An ``expr`` may use only the names its step type provides (feature 044, framework-design 3.7)."""
+    from darnit.sieve.cel_evaluator import CELCompilationError, expression_free_names
+
+    if not provided:
+        reject(f"step type {handler!r} does not accept expr")
+    try:
+        names = expression_free_names(expr)
+    except CELCompilationError as e:
+        reject(f"expr {expr!r} does not compile: {e}")
+        return
+    undeclared = sorted(names - provided)
+    if undeclared:
+        reject(
+            f"expr references {', '.join(repr(n) for n in undeclared)}, which step type {handler!r} "
+            f"does not provide (it provides {', '.join(sorted(provided))})"
+        )

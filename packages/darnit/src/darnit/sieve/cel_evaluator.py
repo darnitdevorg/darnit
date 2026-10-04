@@ -494,6 +494,67 @@ def validate_cel(expression: str) -> tuple[bool, str | None]:
     return evaluator.validate_expression(expression)
 
 
+_COMPREHENSION_MACROS = frozenset({"exists", "all", "exists_one", "map", "filter"})
+_CEL_TYPE_NAMES = frozenset(
+    {"bool", "bytes", "double", "duration", "dyn", "int", "list", "map", "null_type", "string", "timestamp", "type", "uint"}
+)
+
+
+def expression_free_names(expression: str) -> frozenset[str]:
+    """The top-level names ``expression`` reads from its activation (feature 044, framework-design 3.7).
+
+    Variables bound by a comprehension macro (``exists``, ``all``,
+    ``exists_one``, ``map``, ``filter``) are free only outside the macro;
+    function names and CEL type names are never free.
+
+    Raises:
+        CELCompilationError: The expression does not compile.
+    """
+    import celpy
+    from lark import Token, Tree
+
+    try:
+        tree = celpy.Environment().compile(expression)
+    except Exception as e:
+        raise CELCompilationError(f"CEL syntax error: {e}") from e
+
+    names: set[str] = set()
+
+    def bound_variable(arg: Tree) -> str | None:
+        node: Tree | Token = arg
+        while isinstance(node, Tree) and len(node.children) == 1:
+            if node.data == "ident":
+                return str(node.children[0])
+            node = node.children[0]
+        return None
+
+    def walk(node: Tree | Token, bound: frozenset[str]) -> None:
+        if isinstance(node, Token):
+            return
+        if node.data in ("ident", "dot_ident"):
+            name = str(node.children[0])
+            if name not in bound:
+                names.add(name)
+            return
+        if node.data == "member_dot_arg":
+            target, method, *rest = node.children
+            walk(target, bound)
+            args = list(rest[0].children) if rest else []
+            variable = bound_variable(args[0]) if str(method) in _COMPREHENSION_MACROS and args else None
+            if variable is not None:
+                for arg in args[1:]:
+                    walk(arg, bound | {variable})
+                return
+            for arg in args:
+                walk(arg, bound)
+            return
+        for child in node.children:
+            walk(child, bound)
+
+    walk(tree, frozenset())
+    return frozenset(names - _CEL_TYPE_NAMES)
+
+
 __all__ = [
     # Classes
     "CELEvaluator",
@@ -507,6 +568,7 @@ __all__ = [
     # Functions
     "compile_cel",
     "evaluate_cel",
+    "expression_free_names",
     "validate_cel",
     # Constants
     "DEFAULT_TIMEOUT_SECONDS",

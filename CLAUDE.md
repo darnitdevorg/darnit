@@ -278,13 +278,17 @@ output_format = "json"
 expr = 'output.json.two_factor_requirement_enabled == true'
 ```
 
-Available context variables:
-- `output.stdout`, `output.stderr`, `output.exit_code`, `output.json` (for exec)
-- `response.status_code`, `response.body`, `response.headers` (for API)
-- `files`, `matches` (for pattern pass)
-- `project.*` (from .project/ context)
+Names by step type (each step type declares its `expression_names`; one with none rejects `expr`):
+- `exec`: `output.stdout`, `output.stderr`, `output.exit_code`, `output.json`, and `project.*`
+- `regex` / `pattern`: `output.*` (the handler's evidence, e.g. `output.any_match`, `output.files_found`), and `project.*`
+- `gh_api`: `response.status_code`, `response.body` (evaluated by the handler; no headers)
+- `mcp`: `result.*` (evaluated by the handler)
 
-Custom functions: `file_exists(path)`, `json_path(obj, path)`
+`project.*` holds only usable values (confirmed, or concluded for detectable keys); reading anything else is an evaluation error.
+
+Custom functions: `file_exists(path)` (relative to the audited repository), `json_path(obj, path)`
+
+An expression that does not compile, cannot be evaluated, or is not boolean makes the step ERROR (`evaluation`), never PASS or FAIL. A name its step type does not provide fails loading (feature 044; framework-design.md 3.7).
 
 ### Context System
 

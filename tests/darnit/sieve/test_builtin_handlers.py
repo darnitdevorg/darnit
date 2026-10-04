@@ -720,16 +720,16 @@ class TestApplyCelExpr:
         result = _apply_cel_expr({"handler": "pattern"}, original)
         assert result is original
 
-    def test_cel_error_falls_through(self):
-        """CEL syntax error → fall through to handler's own verdict."""
+    def test_cel_error_is_error(self):
+        """CEL syntax error → ERROR (evaluation), not the handler's verdict (feature 044, FR-001)."""
         original = HandlerResult(
             status=HandlerResultStatus.PASS,
             message="Handler passed",
             evidence={"any_match": True},
         )
         result = _apply_cel_expr({"expr": "invalid!!syntax"}, original)
-        assert result.status == HandlerResultStatus.PASS
-        assert result is original
+        assert result.status == HandlerResultStatus.ERROR
+        assert result.error_class == "evaluation"
 
     def test_skipped_on_error_status(self):
         """Handler ERROR → expr is not evaluated."""
