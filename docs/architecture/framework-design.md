@@ -713,7 +713,7 @@ A response that is ambiguous between "not found" and "not permitted to see" is E
 
 **Evidence**: `endpoint` (after substitution), `response` (`status_code`, `body`, limited to `evidence_fields` when declared), and on a non-2xx answer the `gh` error text.
 
-**Personal records**: a step whose endpoint is `/user` or starts with `/users/` reads a person's account (for `/user`, the auditor's own). It MUST declare `evidence_fields`, listing only the fields its check needs; loading fails otherwise (section 3.0.3). OSPS-AC-01.01 reads `/user` with `evidence_fields = ["login", "two_factor_authentication"]`, so the auditor's email, location, company, and biography never reach evidence, JSON output, or attestations (feature 044).
+**Personal records**: a step whose endpoint is `/user`, or starts with `/user/` (for example `/user/emails`) or `/users/`, reads a person's account (for `/user` and `/user/...`, the auditor's own). It MUST declare `evidence_fields`, listing only the fields its check needs; loading fails otherwise (section 3.0.3). OSPS-AC-01.01 reads `/user` with `evidence_fields = ["login", "two_factor_authentication"]`, so the auditor's email, location, company, and biography never reach evidence, JSON output, or attestations (feature 044).
 
 **Recorded responses**: the handler calls the platform through `darnit.core.utils.gh_api_with_status`. `set_gh_api_responder(responder)` routes every such call (including the `github_branch_protection` plugin handler's) through a responder instead of `gh`; `RecordedGhApi({path: {status, body, error}})` serves recorded responses keyed by API path, answers an unrecorded path as a transport failure (status 0), and with `gh_missing = True` answers as if `gh` were not installed. Tests and the adversarial corpus (section 5.5) use it to run platform checks offline and deterministically. Platform writes (`gh_api_write`, section 4.5) go through the same seam: the responder is called with `(method, endpoint, body)` and returns `(body, status, error)`; GET-only responders keep working, and `RecordedGhApi` also serves keys of the form `"PUT /repos/o/r/branches/main/protection"` and records each request body in `.calls`.
 
@@ -730,7 +730,7 @@ A response that is ambiguous between "not found" and "not permitted to see" is E
 - **THEN** the handler MUST return ERROR, class `rate_limit`
 
 #### Scenario: Personal record without evidence_fields
-- **WHEN** a `gh_api` step reads `/user` and declares no `evidence_fields`
+- **WHEN** a `gh_api` step reads `/user`, `/user/emails`, or `/users/someone` and declares no `evidence_fields`
 - **THEN** loading MUST fail naming the control and the step
 
 #### Scenario: Evidence limited to declared fields

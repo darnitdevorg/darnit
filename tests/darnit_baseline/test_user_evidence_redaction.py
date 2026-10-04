@@ -153,7 +153,7 @@ class TestGhApiEvidenceFields:
 
 @pytest.mark.unit
 class TestPersonalRecordLoadRule:
-    @pytest.mark.parametrize("endpoint", ["/user", "/users/someone", "user"])
+    @pytest.mark.parametrize("endpoint", ["/user", "user", "/user/emails", "/user/", "/users/someone", "/user?x=1"])
     def test_personal_record_without_evidence_fields_fails_loading(self, endpoint: str) -> None:
         step = HandlerInvocation(handler="gh_api", endpoint=endpoint, expr="response.body.x == true")
 
@@ -169,8 +169,9 @@ class TestPersonalRecordLoadRule:
 
         validate_step_authority("fw", "PRIV-01", [step])
 
-    def test_other_endpoints_need_no_evidence_fields(self) -> None:
-        validate_step_authority("fw", "PRIV-01", [HandlerInvocation(handler="gh_api", endpoint="/repos/o/r")])
+    @pytest.mark.parametrize("endpoint", ["/repos/o/r", "/users", "/userinfo", "/orgs/o/users"])
+    def test_other_endpoints_need_no_evidence_fields(self, endpoint: str) -> None:
+        validate_step_authority("fw", "PRIV-01", [HandlerInvocation(handler="gh_api", endpoint=endpoint)])
 
     def test_evidence_fields_must_be_a_list_of_names(self) -> None:
         step = HandlerInvocation(handler="gh_api", endpoint="/user", evidence_fields="login")

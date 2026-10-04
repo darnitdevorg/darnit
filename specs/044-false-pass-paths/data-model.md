@@ -51,7 +51,7 @@ A step key outside these fields and the step type's `settings` is a load error.
 
 | Setting | Type | Meaning |
 |---|---|---|
-| `evidence_fields` | `list[str]` | Top-level response-body keys kept in evidence. Required when the endpoint is `/user` or `/users/...`. |
+| `evidence_fields` | `list[str]` | Top-level response-body keys kept in evidence. Required when the endpoint is `/user`, `/user/...`, or `/users/...`. |
 
 ## Load errors
 

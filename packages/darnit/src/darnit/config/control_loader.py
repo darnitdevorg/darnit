@@ -731,7 +731,7 @@ def _validate_evidence_fields(step: dict[str, Any], reject: Callable[[str], None
     if fields is not None and not (isinstance(fields, list) and all(isinstance(f, str) for f in fields)):
         reject(f"evidence_fields must be a list of response body keys, not {fields!r}")
     endpoint = "/" + str(step.get("endpoint", "")).split("?", 1)[0].lstrip("/")
-    if fields is None and (endpoint == "/user" or endpoint.startswith("/users/")):
+    if fields is None and (endpoint == "/user" or endpoint.startswith(("/user/", "/users/"))):
         reject(
             f"endpoint {endpoint!r} reads a person's account; declare evidence_fields listing only "
             "the response fields the check needs"
