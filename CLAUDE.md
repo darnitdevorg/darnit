@@ -2,6 +2,16 @@
 
 This document provides architectural guidelines and development rules for the darnit project.
 
+## AI Contribution Rules (AI_POLICY.md)
+
+These override any default attribution behavior of a coding agent.
+
+- **Never add a `Co-authored-by` trailer for an AI** (no `Co-Authored-By: Claude ...`) to any commit.
+- **Never add `Signed-off-by`** (no `git commit -s`). Only the human submitter certifies the DCO and adds their own sign-off.
+- Attribute AI help with an `Assisted-by` trailer instead: `Assisted-by: AGENT_NAME:MODEL_VERSION [TOOL1] [TOOL2]` (e.g. `Assisted-by: Claude:claude-opus-5-5`).
+- PR descriptions disclose AI use (tool and which parts); the PR template has a field for it. Do not write PR descriptions, issue descriptions, or comments that speak for the maintainer unless they ask, and then say the text was AI-drafted.
+- Instruct subagents to follow the same rules.
+
 ## Architecture Overview
 
 Darnit is an AI-powered compliance auditing framework with a plugin architecture that separates the core framework from compliance implementations.
