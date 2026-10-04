@@ -69,14 +69,14 @@ Commits: `git commit -s` with an `Assisted-by: Claude:claude-opus-5-5` trailer, 
 
 ### Tests for User Story 1
 
-- [ ] T007 [P] [US1] Write tests in `tests/darnit/sieve/test_expr_failure.py`:
+- [X] T007 [P] [US1] Write tests in `tests/darnit/sieve/test_expr_failure.py`:
   - Zizmor stand-in for OSPS-BR-01.01 and OSPS-AC-04.02: exit 0 with no output gives ERROR (`evaluation`); a matching finding gives FAIL; an empty list gives PASS.
   - A handler FAIL with an evaluation error gives ERROR.
   - A non-boolean value gives ERROR.
   - `project.ci_provider == "github"` evaluates true when the value is confirmed, and gives ERROR when it is only a candidate.
   - `file_exists("README.md")` is true when the file exists.
   - The original handler result does not conclude the control.
-- [ ] T008 [P] [US1] Write load-time reference tests in `tests/darnit/config/test_expr_references.py`:
+- [X] T008 [P] [US1] Write load-time reference tests in `tests/darnit/config/test_expr_references.py`:
   - `expr = 'response.body.x'` on an `exec` step fails loading and names the control and the reference;
   - `expr = 'ouput.x'` fails;
   - a syntax error fails;
@@ -86,13 +86,13 @@ Commits: `git commit -s` with an `Assisted-by: Claude:claude-opus-5-5` trailer, 
 
 ### Implementation for User Story 1
 
-- [ ] T009 [US1] Add a free-identifier helper to `packages/darnit/src/darnit/sieve/cel_evaluator.py`. It compiles the expression, collects `ident` names in primary positions, and excludes comprehension-bound variables and known functions.
-- [ ] T010 [US1] Make `_apply_cel_expr` in `packages/darnit/src/darnit/sieve/orchestrator.py`:
+- [X] T009 [US1] Add a free-identifier helper to `packages/darnit/src/darnit/sieve/cel_evaluator.py`. It compiles the expression, collects `ident` names in primary positions, and excludes comprehension-bound variables and known functions.
+- [X] T010 [US1] Make `_apply_cel_expr` in `packages/darnit/src/darnit/sieve/orchestrator.py`:
   - return ERROR (`error_class="evaluation"`, with `expr` and `expr_error` in the evidence) when the expression fails or is not boolean, for a PASS or a FAIL handler result;
   - pass `{"output": evidence, "project": project_context}` and `repo_path=Path(local_path)`;
   - update its docstring table.
-- [ ] T011 [US1] Validate `expr` references against the step type's `expression_names` in `validate_step_authority` (`packages/darnit/src/darnit/config/control_loader.py`). Raise the load error defined in data-model.md.
-- [ ] T012 [US1] Update the CEL documentation in CLAUDE.md ("Available context variables") to match framework-design.md.
+- [X] T011 [US1] Validate `expr` references against the step type's `expression_names` in `validate_step_authority` (`packages/darnit/src/darnit/config/control_loader.py`). Raise the load error defined in data-model.md.
+- [X] T012 [US1] Update the CEL documentation in CLAUDE.md ("Available context variables") to match framework-design.md.
 
 **Checkpoint**: SC-001 holds.
 
@@ -106,12 +106,12 @@ Commits: `git commit -s` with an `Assisted-by: Claude:claude-opus-5-5` trailer, 
 
 ### Tests for User Story 2
 
-- [ ] T013 [P] [US2] Write collision tests in `tests/darnit/sieve/test_registration_collisions.py`:
+- [X] T013 [P] [US2] Write collision tests in `tests/darnit/sieve/test_registration_collisions.py`:
   - a plugin registering `manual` with ceiling `{"pass"}` is refused, logs a WARNING, appears in `refused_registrations`, and a manual-only control still does not PASS;
   - when two plugins register the same name, the second is refused and both are named;
   - the same plugin re-registering its own name is allowed;
   - core built-ins are registered before any plugin.
-- [ ] T014 [P] [US2] Write strict-loading tests in `tests/darnit/config/test_strict_framework_loading.py`:
+- [X] T014 [P] [US2] Write strict-loading tests in `tests/darnit/config/test_strict_framework_loading.py`:
   - control key `nmae` fails loading and names the file and control;
   - step key `fail_on_mis` fails and names the file, control, step, and key;
   - `handler = "file_must_exst"` fails;
@@ -122,22 +122,22 @@ Commits: `git commit -s` with an `Assisted-by: Claude:claude-opus-5-5` trailer, 
 
 ### Implementation for User Story 2
 
-- [ ] T015 [US2] Refuse collisions in `register` (core name taken by a plugin, or a different plugin's name) and record each one in `refused_registrations`, in `packages/darnit/src/darnit/sieve/handler_registry.py`. Surface `refused_registrations` in `darnit list` (`packages/darnit/src/darnit/cli.py`) and in the audit warnings.
-- [ ] T016 [US2] Set `ControlConfig` to `extra="forbid"` in `packages/darnit/src/darnit/config/framework_schema.py`. Make the error name the framework file and control.
-- [ ] T016a [US2] Fix the shipped keys no handler reads, which tests/darnit/sieve/test_handler_registry_metadata.py lists in `UNREAD_SHIPPED_KEYS`, before strict loading. Then empty that list.
+- [X] T015 [US2] Refuse collisions in `register` (core name taken by a plugin, or a different plugin's name) and record each one in `refused_registrations`, in `packages/darnit/src/darnit/sieve/handler_registry.py`. Surface `refused_registrations` in `darnit list` (`packages/darnit/src/darnit/cli.py`) and in the audit warnings.
+- [X] T016 [US2] Set `ControlConfig` to `extra="forbid"` in `packages/darnit/src/darnit/config/framework_schema.py`. Make the error name the framework file and control.
+- [X] T016a [US2] Fix the shipped keys no handler reads, which tests/darnit/sieve/test_handler_registry_metadata.py lists in `UNREAD_SHIPPED_KEYS`, before strict loading. Then empty that list.
   - OSPS-LE-02.01's regex step uses `patterns`; convert it to the handler's `pattern` form so the step runs. Do the same for the example's PH-SEC-01.
   - Remove `create_dirs` from the Baseline `file_create` steps (the executor always creates parent directories).
   - Remove `context_hints` from the Baseline `manual` remediations, unless something reads it.
   - Remove `timeout` from the `github_branch_protection` steps.
 
   Files: `packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml`, `packages/darnit-example/example-hygiene.toml`.
-- [ ] T017 [US2] In `validate_step_authority` (`packages/darnit/src/darnit/config/control_loader.py`):
+- [X] T017 [US2] In `validate_step_authority` (`packages/darnit/src/darnit/config/control_loader.py`):
   - reject step keys outside the common fields plus the type's `settings` when `settings` is declared;
   - warn once per type when it is not declared;
   - reject unregistered step types for framework-file controls.
 
   Apply the same key check to remediation handler steps.
-- [ ] T018 [US2] Replace the dispatch-time skip of an unregistered step type with an ERROR result (`error_class="missing_tool"`, naming the type) in `packages/darnit/src/darnit/sieve/orchestrator.py`. The only path that can reach it is operator-supplied controls (feature 040).
+- [X] T018 [US2] Replace the dispatch-time skip of an unregistered step type with an ERROR result (`error_class="missing_tool"`, naming the type) in `packages/darnit/src/darnit/sieve/orchestrator.py`. The only path that can reach it is operator-supplied controls (feature 040).
 
 **Checkpoint**: SC-002 and SC-003 hold.
 
@@ -151,7 +151,7 @@ Commits: `git commit -s` with an `Assisted-by: Claude:claude-opus-5-5` trailer, 
 
 ### Tests for User Story 3
 
-- [ ] T019 [P] [US3] Write tests in `tests/darnit_reproducibility/test_no_pass_from_signals.py`:
+- [X] T019 [P] [US3] Write tests in `tests/darnit_reproducibility/test_no_pass_from_signals.py`:
   - a workflow mentioning `cosign sign` only in a comment: RE-02.02 is not PASS, and the signal is in evidence;
   - each of the five step types is registered with ceiling `{"fail"}`;
   - a manifest without a lockfile still FAILs `repro_deps_pinned`;
@@ -159,8 +159,8 @@ Commits: `git commit -s` with an `Assisted-by: Claude:claude-opus-5-5` trailer, 
 
 ### Implementation for User Story 3
 
-- [ ] T020 [US3] Register `repro_hermetic_build`, `repro_provenance_exists`, `repro_bit_for_bit`, `repro_deps_pinned`, and `repro_build_env_declared` with `ceiling={"fail"}` in `packages/darnit-reproducibility/src/darnit_reproducibility/implementation.py`. Check that each handler's FAIL paths are genuine proof of non-compliance and keep them; turn any FAIL that comes from a mere absence of signals into INCONCLUSIVE.
-- [ ] T021 [US3] Update the reproducibility tests and fixtures that expected a PASS from signals, naming FR-010 in each, under `tests/darnit_reproducibility/`. Update the reproducibility README/docs to say that automatic PASS needs a corpus-backed promotion.
+- [X] T020 [US3] Register `repro_hermetic_build`, `repro_provenance_exists`, `repro_bit_for_bit`, `repro_deps_pinned`, and `repro_build_env_declared` with `ceiling={"fail"}` in `packages/darnit-reproducibility/src/darnit_reproducibility/implementation.py`. Check that each handler's FAIL paths are genuine proof of non-compliance and keep them; turn any FAIL that comes from a mere absence of signals into INCONCLUSIVE.
+- [X] T021 [US3] Update the reproducibility tests and fixtures that expected a PASS from signals, naming FR-010 in each, under `tests/darnit_reproducibility/`. Update the reproducibility README/docs to say that automatic PASS needs a corpus-backed promotion.
 
 **Checkpoint**: SC-004 holds.
 
@@ -174,7 +174,7 @@ Commits: `git commit -s` with an `Assisted-by: Claude:claude-opus-5-5` trailer, 
 
 ### Tests for User Story 4
 
-- [ ] T022 [P] [US4] Write tests in `tests/darnit_baseline/test_user_evidence_redaction.py`:
+- [X] T022 [P] [US4] Write tests in `tests/darnit_baseline/test_user_evidence_redaction.py`:
   - a recorded `/user` response with email, location, company, and bio produces AC-01.01 evidence containing only `login` and `two_factor_authentication`;
   - the JSON report and the attestation predicate contain none of the other values;
   - a `gh_api` step on `/user` without `evidence_fields` fails loading;
@@ -182,8 +182,8 @@ Commits: `git commit -s` with an `Assisted-by: Claude:claude-opus-5-5` trailer, 
 
 ### Implementation for User Story 4
 
-- [ ] T023 [US4] Add the `evidence_fields` setting to `gh_api_handler` and keep only those body keys in the stored evidence, in `packages/darnit/src/darnit/sieve/builtin_handlers.py`. Add the `/user` and `/users/` load rule in `packages/darnit/src/darnit/config/control_loader.py`.
-- [ ] T024 [US4] Declare `evidence_fields = ["login", "two_factor_authentication"]` on the OSPS-AC-01.01 `/user` step in `packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml`.
+- [X] T023 [US4] Add the `evidence_fields` setting to `gh_api_handler` and keep only those body keys in the stored evidence, in `packages/darnit/src/darnit/sieve/builtin_handlers.py`. Add the `/user` and `/users/` load rule in `packages/darnit/src/darnit/config/control_loader.py`.
+- [X] T024 [US4] Declare `evidence_fields = ["login", "two_factor_authentication"]` on the OSPS-AC-01.01 `/user` step in `packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml`.
 
 **Checkpoint**: SC-005 holds.
 
