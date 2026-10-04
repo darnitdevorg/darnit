@@ -467,7 +467,7 @@ wheels = [
 
 [[package]]
 name = "darnit-baseline"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "packages/darnit-baseline" }
 dependencies = [
     { name = "darnit-core" },
@@ -484,7 +484,7 @@ requires-dist = [
 
 [[package]]
 name = "darnit-core"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "packages/darnit" }
 dependencies = [
     { name = "cel-python" },
@@ -547,7 +547,7 @@ requires-dist = [{ name = "darnit-core", editable = "packages/darnit" }]
 
 [[package]]
 name = "darnit-gittuf"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "packages/darnit-gittuf" }
 dependencies = [
     { name = "darnit-core" },
@@ -569,7 +569,7 @@ requires-dist = [{ name = "darnit-core", editable = "packages/darnit" }]
 
 [[package]]
 name = "darnit-mcp"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "darnit-baseline" },
@@ -663,7 +663,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "darnit-reproducibility"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "packages/darnit-reproducibility" }
 dependencies = [
     { name = "darnit-core" },

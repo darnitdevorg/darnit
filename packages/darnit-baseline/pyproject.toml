@@ -1,6 +1,6 @@
 [project]
 name = "darnit-baseline"
-version = "0.1.0"
+version = "0.1.1"
 description = "OpenSSF Baseline (OSPS v2025.10.10) compliance checks for darnit"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -21,7 +21,7 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
 ]
 dependencies = [
-    "darnit-core>=0.1.0",
+    "darnit-core>=0.1.1",
     "tree-sitter>=0.25",
     # tree-sitter-language-pack 1.8+ changed two APIs the threat-model
     # pipeline depends on:
