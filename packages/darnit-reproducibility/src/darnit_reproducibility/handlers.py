@@ -69,7 +69,8 @@ def repro_deps_pinned_handler(
     Failing that, a `requirements.txt` is READ rather than merely noticed
     (feature 037, issue #429): a file pinned with hashes passes, one pinned
     with `==` alone warns because its transitive dependencies still float, and
-    one with open ranges fails naming an offender.
+    one with open ranges fails naming an offender. One that cannot be read
+    decides nothing (feature 044).
 
     Every other loose manifest is still judged by presence alone; extending
     content inspection to them needs ecosystem-specific handling and is out of
@@ -139,6 +140,7 @@ def repro_deps_pinned_handler(
         )
 
     requirements = path / "requirements.txt"
+    not_inspectable: str | None = None
     if requirements.exists():
         from .requirements_pins import FileClassification
 
@@ -148,29 +150,18 @@ def repro_deps_pinned_handler(
         if unreadable is not None:
             evidence["classification"] = "not_inspectable"
             evidence["not_inspectable_reason"] = unreadable
-            return HandlerResult(
-                status=HandlerResultStatus.FAIL,
-                message=(f"requirements.txt contents could not be inspected: {unreadable}. Judged on presence alone."),
-                confidence=0.8,
-                evidence=evidence,
-            )
+            not_inspectable = f"requirements.txt contents could not be inspected: {unreadable}"
+        else:
+            evidence["classification"] = report.classification.value
+            evidence["requirement_count"] = len(report.lines)
 
-        evidence["classification"] = report.classification.value
-        evidence["requirement_count"] = len(report.lines)
+            if report.classification is FileClassification.NOT_INSPECTABLE:
+                evidence["not_inspectable_reason"] = report.reason
+                not_inspectable = f"requirements.txt contents could not be fully inspected: {report.reason}"
 
-        if report.classification is FileClassification.NOT_INSPECTABLE:
-            evidence["not_inspectable_reason"] = report.reason
-            return HandlerResult(
-                status=HandlerResultStatus.FAIL,
-                message=(
-                    f"requirements.txt contents could not be fully inspected: "
-                    f"{report.reason}. Judged on presence alone."
-                ),
-                confidence=0.8,
-                evidence=evidence,
-            )
+        classification = None if report is None else report.classification
 
-        if report.classification is FileClassification.HASH_PINNED:
+        if classification is FileClassification.HASH_PINNED:
             return HandlerResult(
                 status=HandlerResultStatus.PASS,
                 message=(
@@ -180,7 +171,7 @@ def repro_deps_pinned_handler(
                 evidence=evidence,
             )
 
-        if report.classification is FileClassification.VERSION_PINNED:
+        if classification is FileClassification.VERSION_PINNED:
             evidence["unhashed_examples"] = _sample(report.unhashed)
             evidence["unhashed_count"] = len(report.unhashed)
             return HandlerResult(
@@ -195,7 +186,7 @@ def repro_deps_pinned_handler(
                 evidence=evidence,
             )
 
-        if report.classification is FileClassification.UNPINNED:
+        if classification is FileClassification.UNPINNED:
             evidence["unpinned_examples"] = _sample(report.unpinned)
             evidence["unpinned_count"] = len(report.unpinned)
             shown = ", ".join(_sample(report.unpinned)[:3])
@@ -207,8 +198,11 @@ def repro_deps_pinned_handler(
             )
 
         # NO_REQUIREMENTS: the file declares no dependencies, so it is evidence
-        # of neither good nor bad pinning practice. Treat it as absent and let
-        # any other loose manifest decide (FR-011).
+        # of neither good nor bad pinning practice (feature 037, FR-011).
+        # Not inspectable: contents we could not read are not proof that the
+        # dependencies are unpinned -- an unresolved `-r` include may be
+        # hash-pinned (feature 044, FR-010). Either way the file decides
+        # nothing; treat it as absent and let any other loose manifest decide.
         found_loose = [f for f in found_loose if not f.startswith("requirements.txt")]
         evidence["loose_manifests_found"] = found_loose
 
@@ -217,6 +211,14 @@ def repro_deps_pinned_handler(
             status=HandlerResultStatus.FAIL,
             message=f"Dependency manifests found but no lock files: {', '.join(found_loose)}",
             confidence=0.8,
+            evidence=evidence,
+        )
+
+    if not_inspectable is not None:
+        return HandlerResult(
+            status=HandlerResultStatus.INCONCLUSIVE,
+            message=f"{not_inspectable} -- cannot determine if deps are pinned",
+            confidence=0.0,
             evidence=evidence,
         )
 
@@ -751,7 +753,8 @@ def repro_hermetic_build_handler(
 
     Result semantics (conservative-by-default):
     - PASS:           strong hermeticity signal (verified Witness attestation,
-                      Nix flake CI, Bazel sandbox)
+                      Nix flake CI, Bazel sandbox). Evidence only: this step
+                      type's ceiling is `{fail}` (feature 044, FR-010)
     - FAIL:           suspicious live network-fetch pattern in any scanned file,
                       or a verified Witness attestation that recorded network activity
     - INCONCLUSIVE:   files scanned, no violations, no strong signal
@@ -902,6 +905,11 @@ def repro_provenance_exists_handler(
 
     Looks for sigstore/cosign or SLSA provenance steps in CI.
     PASS if found, INCONCLUSIVE if not.
+
+    A signal is a string in a workflow file, which a comment satisfies as
+    well as a signing step, so this step type's ceiling is `{fail}` (feature
+    044, FR-010): its PASS is evidence for the control's later steps, never
+    the verdict.
     """
     path = Path(ctx.local_path)
     workflows_dir = path / ".github" / "workflows"
@@ -960,21 +968,22 @@ def repro_bit_for_bit_handler(
 
     Looks for SOURCE_DATE_EPOCH, reprotest and diffoscope in CI.
 
-    These are evidence of INTENT, not of achievement, and feature 038 (#445)
-    changed the verdict accordingly: signals found produce WARN, not PASS. A
+    These are evidence of INTENT, not of achievement (feature 038, #445): a
     build can set SOURCE_DATE_EPOCH and still embed absolute paths,
     non-deterministic ordering, or a timestamp from elsewhere. Confirming the
     control's actual claim -- that output is identical across independent
     builds -- means building twice and comparing, which this scan does not do.
 
-    No signals found remains INCONCLUSIVE: a workflow-only scan cannot show
-    that their absence means a non-reproducible build.
+    Signals found are INCONCLUSIVE, carried as evidence to the control's later
+    steps (feature 044, FR-011). No signals found is INCONCLUSIVE too: a
+    workflow-only scan cannot show that their absence means a
+    non-reproducible build.
     """
     path = Path(ctx.local_path)
     workflows_dir = path / ".github" / "workflows"
 
-    # Positive signals only. A workflow-only scan can confirm that good
-    # reproducibility practices are present (PASS) but cannot prove that their
+    # Positive signals only. A workflow-only scan can show that good
+    # reproducibility practices are present but cannot prove that their
     # absence means a non-reproducible build, so we return INCONCLUSIVE rather
     # than FAIL when nothing is found. (Dropped __DATE__/__TIME__/"date +":
     # those are C-source macros / routine log timestamps that this
@@ -1007,18 +1016,14 @@ def repro_bit_for_bit_handler(
     }
 
     if found_good:
-        # Feature 038 (#445). These signals are evidence of intent, not of
-        # achievement: a build can set SOURCE_DATE_EPOCH and still embed
-        # absolute paths, non-deterministic ordering, or a timestamp from
-        # elsewhere. Verifying the control's actual claim means building twice
-        # and comparing, which this scan does not do.
-        #
-        # WARN rather than PASS or INCONCLUSIVE. PASS asserts a property nobody
-        # checked. INCONCLUSIVE would send the pipeline on to `manual`, whose
-        # message discards the signal found here and leaves the operator unable
-        # to tell "no evidence" from "promising evidence, unverified".
+        # Feature 038 (#445): not PASS, which would assert a property nobody
+        # checked. Feature 044 (FR-011): not WARN either. WARN concludes the
+        # control under the `{fail}` ceiling, so the later steps (model
+        # judgment, human review) would never see the signal. The control
+        # still ends non-compliant, and the signal stays in its evidence and
+        # this step's message in the pass history.
         return HandlerResult(
-            status=HandlerResultStatus.WARN,
+            status=HandlerResultStatus.INCONCLUSIVE,
             message=(
                 f"Reproducibility signals found ({'; '.join(found_good)}), but "
                 "bit-for-bit reproducibility was not verified -- confirming it "

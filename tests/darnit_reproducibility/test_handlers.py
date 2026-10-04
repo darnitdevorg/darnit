@@ -1,4 +1,9 @@
-"""Tests for reproducibility sieve handlers."""
+"""Tests for reproducibility sieve handlers.
+
+These assert what each handler reports. A handler PASS here is not a control
+PASS: feature 044 (FR-010) registers these step types with the ceiling `{fail}`,
+so a PASS is evidence for the control's later steps (test_no_pass_from_signals.py).
+"""
 
 from pathlib import Path
 
@@ -613,17 +618,35 @@ class TestRepoDepsPin:
 
     def test_unresolved_include_is_reported_as_not_inspected(self, tmp_path: Path) -> None:
         """FR-007: "we could not read it" must not read as "we read it and it
-        is unpinned"."""
+        is unpinned".
+
+        Feature 044 (FR-010): this was FAIL ("judged on presence alone"). The
+        included file may be hash-pinned, so the presence of a file we could
+        not read proves nothing; it is INCONCLUSIVE."""
         repo = self._repo(tmp_path, "-r base.txt\n")
         result = repro_deps_pinned_handler({}, make_ctx(repo))
-        assert result.status == HandlerResultStatus.FAIL
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
         assert "could not be" in result.message
         assert "inspect" in result.message
+        assert result.evidence["classification"] == "not_inspectable"
+
+    def test_not_inspected_requirements_lets_another_manifest_decide(self, tmp_path: Path) -> None:
+        """Feature 044 (FR-010): an unreadable requirements.txt decides nothing,
+        but a loose manifest beside it still proves the control unmet."""
+        repo = self._repo(tmp_path, "-r base.txt\n")
+        (repo / "setup.py").write_text("x", encoding="utf-8")
+        result = repro_deps_pinned_handler({}, make_ctx(repo))
+        assert result.status == HandlerResultStatus.FAIL
+        assert "setup.py" in result.message
+        assert "requirements.txt" not in result.message
 
     def test_unreadable_file_never_reaches_the_classifier(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Contract T-7. Cannot be a committed fixture: needs a runtime chmod."""
+        """Contract T-7. Cannot be a committed fixture: needs a runtime chmod.
+
+        Feature 044 (FR-010): INCONCLUSIVE, was FAIL. Unreadable is not unpinned.
+        """
         import darnit_reproducibility.requirements_pins as pins
 
         calls = []
@@ -641,15 +664,18 @@ class TestRepoDepsPin:
             result = repro_deps_pinned_handler({}, make_ctx(repo))
         finally:
             (repo / "requirements.txt").chmod(0o644)
-        assert result.status == HandlerResultStatus.FAIL
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
         assert "could not be inspected" in result.message
         assert calls == []
 
     def test_undecodable_file_never_reaches_the_classifier(self, tmp_path: Path) -> None:
-        """Contract T-7: invalid UTF-8 is unreadable, not unpinned."""
+        """Contract T-7: invalid UTF-8 is unreadable, not unpinned.
+
+        Feature 044 (FR-010): INCONCLUSIVE, was FAIL.
+        """
         (tmp_path / "requirements.txt").write_bytes(b"numpy==1.0\n\xff\xfe\x00bad\n")
         result = repro_deps_pinned_handler({}, make_ctx(tmp_path))
-        assert result.status == HandlerResultStatus.FAIL
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
         assert "could not be inspected" in result.message
         assert result.evidence["classification"] == "not_inspectable"
 
@@ -1179,20 +1205,25 @@ class TestBitForBit:
 
     HASH_SIGNALS = ("SOURCE_DATE_EPOCH", "reprotest", "diffoscope")
 
-    def test_warn_with_source_date_epoch(self, tmp_path: Path) -> None:
+    def test_signal_with_source_date_epoch_is_evidence(self, tmp_path: Path) -> None:
         """Feature 038 (#445). This asserted PASS until 2026-09.
 
         One occurrence of an environment variable name in one workflow used to
         produce a dispositive PASS on "Build output is identical across
         independent builds". Nothing was built; nothing was compared.
+
+        Feature 044 (FR-010, FR-011): INCONCLUSIVE, was WARN. Under the `{fail}`
+        ceiling a WARN concludes the control, so the signal would never reach
+        the later steps; INCONCLUSIVE carries it to them as evidence.
         """
         wf_dir = tmp_path / ".github" / "workflows"
         wf_dir.mkdir(parents=True)
         (wf_dir / "ci.yml").write_text("env:\n  SOURCE_DATE_EPOCH: 0")
         result = repro_bit_for_bit_handler({}, make_ctx(tmp_path))
-        assert result.status == HandlerResultStatus.WARN
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
+        assert result.evidence["reproducibility_signals"] == ["ci.yml: SOURCE_DATE_EPOCH"]
 
-    def test_warn_message_names_signal_and_the_gap(self, tmp_path: Path) -> None:
+    def test_signal_message_names_signal_and_the_gap(self, tmp_path: Path) -> None:
         """SC-001, FR-012: "no evidence" and "promising but unverified" must be
         distinguishable from the message alone."""
         wf_dir = tmp_path / ".github" / "workflows"
@@ -1203,12 +1234,13 @@ class TestBitForBit:
         assert "not verified" in result.message
 
     @pytest.mark.parametrize("signal", ["reprotest", "diffoscope"])
-    def test_other_signals_warn_the_same_way(self, tmp_path: Path, signal: str) -> None:
+    def test_other_signals_are_evidence_the_same_way(self, tmp_path: Path, signal: str) -> None:
+        """Feature 044 (FR-010, FR-011): INCONCLUSIVE, was WARN."""
         wf_dir = tmp_path / ".github" / "workflows"
         wf_dir.mkdir(parents=True)
         (wf_dir / "ci.yml").write_text(f"steps:\n  - run: {signal} ./build.sh\n")
         result = repro_bit_for_bit_handler({}, make_ctx(tmp_path))
-        assert result.status == HandlerResultStatus.WARN
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
         assert signal in result.message
 
     def test_date_macro_not_flagged(self, tmp_path: Path) -> None:

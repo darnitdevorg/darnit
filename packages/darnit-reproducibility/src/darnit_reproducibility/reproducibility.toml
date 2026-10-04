@@ -14,6 +14,12 @@ description = "Run scientific reproducibility checks on a repository"
 builtin = "audit"
 description = "Run reproducibility checks"
 
+# Every repro_* step type registers the ceiling {fail} (feature 044, FR-010):
+# it decides from text and file-presence signals, so its FAIL concludes the
+# control but its PASS is evidence passed to the later steps. A control here
+# concludes PASS only through a `promotion` on the step backed by a corpus
+# measurement (framework-design 3.0.1, 5.5).
+
 # =============================================================================
 # Control: Are dependencies pinned to exact versions?
 # Unpinned deps mean two builds on different days can produce different results.
@@ -87,8 +93,9 @@ steps = [
 # System-package installs (apt-get, apk, yum) inside Dockerfiles are DEFERRED —
 # building the image environment is acceptable; app-dep fetches at build time are not.
 # Strong signals (Witness runtime attestation, Nix flake CI, Bazel network sandbox)
-# short-circuit to PASS.  A clean grep alone returns INCONCLUSIVE — grep absence is
-# not proof of hermeticity.  Roadmap: https://github.com/kusari-oss/darnit/issues/227
+# short-circuit the scan with a handler PASS.  A clean grep alone returns
+# INCONCLUSIVE — grep absence is not proof of hermeticity.  Roadmap:
+# https://github.com/kusari-oss/darnit/issues/227
 [controls."RE-02.01"]
 name = "HermeticBuild"
 description = "Build does not fetch dependencies at build time"

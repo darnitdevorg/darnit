@@ -90,12 +90,10 @@ class TestPluginHandlersAreDispositive:
         # darnit-gittuf
         "gittuf_verify_policy",
         "gittuf_commits_signed",
-        # darnit-reproducibility
-        "repro_deps_pinned",
-        "repro_build_env_declared",
-        "repro_hermetic_build",
-        "repro_provenance_exists",
-        "repro_bit_for_bit",
+        # darnit-reproducibility's repro_* step types left this list in
+        # feature 044 (FR-010): they decide from text and file-presence
+        # signals and register {fail} (tests/darnit_reproducibility/
+        # test_no_pass_from_signals.py).
         # darnit-baseline
         "generate_threat_model",
         "github_branch_protection",

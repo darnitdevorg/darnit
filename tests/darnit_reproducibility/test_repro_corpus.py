@@ -40,11 +40,17 @@ CORPUS: dict[str, dict[str, str]] = {
     "empty": {},
 }
 
+# These are handler outcomes, not control verdicts. Feature 044 (FR-010): the
+# reproducibility step types register the ceiling `{fail}`, so a "pass" below is
+# evidence for the control's later steps and the control does not conclude PASS
+# on it (test_no_pass_from_signals.py). "signals_only" was "warn" until feature
+# 044 (FR-011): a WARN concludes under `{fail}`, which kept the signal from the
+# later steps.
 EXPECTED: dict[str, dict[str, str]] = {
     "pinned_container": {"RE-01.02": "pass"},
     "floating_container": {"RE-01.02": "warn"},
     "flake_only": {"RE-01.02": "pass"},
-    "signals_only": {"RE-03.01": "warn"},
+    "signals_only": {"RE-03.01": "inconclusive"},
     "go_installer": {"RE-02.01": "fail"},
     "native_flags": {"RE-02.01": "fail"},
     "empty": {"RE-01.02": "inconclusive", "RE-03.01": "inconclusive"},
