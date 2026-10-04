@@ -98,7 +98,7 @@ def resolve_step_result(
 # Handlers that evaluate ``expr`` themselves over their own binding
 # (``gh_api`` binds ``response``, ``mcp`` binds ``result``); the post-step
 # would re-evaluate it over ``output`` and fail.
-_HANDLERS_EVALUATING_OWN_EXPR = frozenset({"gh_api", "mcp"})
+STEP_TYPES_EVALUATING_OWN_EXPR = frozenset({"gh_api", "mcp"})
 
 
 def _expression_project(project: dict[str, Any]) -> dict[str, Any]:
@@ -112,6 +112,7 @@ def _apply_cel_expr(
     *,
     project: dict[str, Any] | None = None,
     repo_path: str | Path | None = None,
+    decides: bool = False,
 ) -> "HandlerResult":
     """Evaluate a step's CEL ``expr`` against its handler evidence (framework-design 3.7).
 
@@ -141,17 +142,19 @@ def _apply_cel_expr(
     conclusion. When they disagree, defer to INCONCLUSIVE so the pipeline
     continues to the next pass (Principle V; issue #343).
 
+    With ``decides`` (the step's ``expr_decides``, feature 044 FR-015) the
+    expression runs only on a handler PASS and alone decides: true is
+    PASS, false is FAIL. Any other handler result is returned unchanged.
+
     See ``specs/020-definitive-fail-verdict/contracts/cel-post-step.md``.
     """
     expr = handler_config.get("expr")
-    if not expr or handler_config.get("handler") in _HANDLERS_EVALUATING_OWN_EXPR:
+    if not expr or handler_config.get("handler") in STEP_TYPES_EVALUATING_OWN_EXPR:
         return handler_result
 
     # Only override conclusive verdicts — ERROR and INCONCLUSIVE pass through
-    if handler_result.status not in (
-        HandlerResultStatus.PASS,
-        HandlerResultStatus.FAIL,
-    ):
+    evaluated = (HandlerResultStatus.PASS,) if decides else (HandlerResultStatus.PASS, HandlerResultStatus.FAIL)
+    if handler_result.status not in evaluated:
         return handler_result
 
     evidence = dict(handler_result.evidence or {})
@@ -178,6 +181,16 @@ def _apply_cel_expr(
         return broken(cel_result.error or "evaluation failed")
     if not isinstance(cel_result.value, bool):
         return broken(f"expr evaluated to {type(cel_result.value).__name__}, not a boolean")
+
+    if decides:
+        return HandlerResult(
+            status=HandlerResultStatus.PASS if cel_result.value else HandlerResultStatus.FAIL,
+            message=f"expr {'holds' if cel_result.value else 'does not hold'}: {expr}",
+            confidence=1.0,
+            evidence=evidence,
+            authority=handler_result.authority,
+            error_class=handler_result.error_class,
+        )
 
     agreement = (handler_result.status == HandlerResultStatus.PASS and cel_result.value) or (
         handler_result.status == HandlerResultStatus.FAIL and not cel_result.value
@@ -527,6 +540,7 @@ class SieveOrchestrator:
                     handler_result,
                     project=handler_ctx.project_context,
                     repo_path=context.local_path,
+                    decides=getattr(invocation, "expr_decides", False),
                 )
 
                 # Feature 036: remember the most recent environmental

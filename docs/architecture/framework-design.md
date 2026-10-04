@@ -303,7 +303,7 @@ registry.register(
 | `settings` | `None` | The step keys this step type reads, beyond the common step fields. `None` means not declared, which only a plugin step type may leave: it loads with one warning per step type that its settings are not checked. Every core step type, check and remediation, declares its settings. |
 | `expression_names` | `{}` | The top-level names an `expr` on this step type may reference (section 3.7). Empty means the step type does not accept `expr`. |
 
-**Common step fields**, accepted on every step: `handler`, `when`, `shared`, `use_locator`, `authority`, `existence`, `concludes`, `fail_on_miss`, `fail_on_status`, `promotion` (3.0.1), `description` (documentation only), and `expr` (only when the step type declares expression names).
+**Common step fields**, accepted on every step: `handler`, `when`, `shared`, `use_locator`, `authority`, `existence`, `concludes`, `fail_on_miss`, `fail_on_status`, `promotion` (3.0.1), `description` (documentation only), `expr` (only when the step type declares expression names), and `expr_decides` (only with `expr`, on a step type whose expression the orchestrator evaluates, section 3.7).
 
 **Name collisions.** Core step types register before any plugin. A registration is refused, logged at WARNING naming both registrants, and recorded in the registry's `refused_registrations` (shown by `darnit list` and in the audit warnings) when:
 
@@ -316,7 +316,7 @@ The same plugin registering its own name again is allowed. No setting lets a plu
 
 1. a step, a verification pass or a remediation handler, has a key that is neither a common step field nor in its step type's declared `settings`;
 2. a step names a step type that is not registered;
-3. a step has `expr` and its step type declares no expression names, the expression does not compile, or it references a name its step type does not provide (section 3.7);
+3. a step has `expr` and its step type declares no expression names, the expression does not compile, or it references a name its step type does not provide (section 3.7), or a step sets `expr_decides` without `expr` or on a step type that evaluates its own expression or accepts none;
 4. a `gh_api` step reads a personal record without `evidence_fields` (section 3.8).
 
 Unknown control keys fail loading as well (section 2.3). These checks run where 3.0.1's validation runs: on every control-loading path, after plugin step types register. No step is silently skipped. The one exception to rule 2 is a step from operator configuration (a pass override or custom control, section 14.1) that names the step type of a plugin that is not installed: that control loads, and the audit reports it ERROR, class `missing_tool`, with the cause "step type X is not registered".
@@ -425,6 +425,7 @@ env = { "TOOL_VERBOSE" = "true" }
 | `fail_exit_codes` | `list[int]` | Exit codes that indicate FAIL |
 | `output_format` | `str` | `text` (default) or `json`; with `json`, stdout is parsed into `output.json` |
 | `expr` | `str` | CEL expression over `output` and `project` (section 3.7) |
+| `expr_decides` | `bool` | Common step field: on a handler PASS, `expr` alone decides, true PASS and false FAIL (section 3.7) |
 | `timeout` | `int` | Timeout in seconds (default: 300) |
 | `env` | `dict` | Additional environment variables |
 | `cwd` | `str` | Working directory (default: the repository) |
@@ -634,6 +635,17 @@ expr = 'output.json.status == "pass" && size(output.json.issues) == 0'
 | true | FAIL | INCONCLUSIVE |
 | does not compile, cannot be evaluated, or is not boolean | PASS or FAIL | ERROR, class `evaluation` |
 
+**An expression that decides.** A step may set `expr_decides = true` when its handler's own PASS means only that the measurement ran, and the expression reads the verdict from its output. A scanner that exits with an accepted code whether or not it found anything is the usual case. When the handler returns PASS, the expression alone decides:
+
+| Expression result | Handler result | Step result |
+|-------------------|----------------|-------------|
+| true | PASS | PASS |
+| false | PASS | FAIL |
+| does not compile, cannot be evaluated, or is not boolean | PASS | ERROR, class `evaluation` |
+| (not evaluated) | FAIL, WARN, INCONCLUSIVE, or ERROR | unchanged |
+
+The step's effective set (section 3.0.1) still applies: a PASS or FAIL concludes only when the step may conclude it. `expr_decides` requires `expr`, and is accepted only on step types whose expression the orchestrator evaluates (`exec`, `regex`, `pattern`); `gh_api` and `mcp` evaluate their own expression, which already decides. OSPS-BR-01.01 and OSPS-AC-04.02 set it on their zizmor steps, so a matching finding is FAIL (feature 044, FR-015).
+
 On ERROR the step's evidence keeps the handler's evidence and adds `expr` and `expr_error`. A broken expression is a broken measurement: it is neither PASS nor FAIL (section 3.0), whatever the handler returned.
 
 **Load-time check.** When controls load, each `expr` is compiled and its free names are collected (names bound by the comprehension macros `exists`, `all`, `exists_one`, `map`, and `filter`, and function names, are not free). Loading fails, naming the control, the step, and the name, when the expression does not compile, when it uses a name its step type does not provide (for example `response` on an `exec` step, or a misspelled `ouput`), or when the step type accepts no `expr` (section 3.0.3).
@@ -651,6 +663,14 @@ On ERROR the step's evidence keeps the handler's evidence and adds `expr` and `e
 #### Scenario: An expression reads an unconfirmed project value
 - **WHEN** an expression reads `project.<key>` and the key holds only a candidate
 - **THEN** the step result MUST be ERROR, class `evaluation`
+
+#### Scenario: An expression that decides finds a failure
+- **WHEN** a step with `expr_decides = true` has a handler PASS and its expression evaluates false
+- **THEN** the step result MUST be FAIL
+
+#### Scenario: expr_decides on a step type without expressions
+- **WHEN** a `file_exists` step sets `expr_decides = true`
+- **THEN** loading MUST fail naming the control and the step
 
 #### Scenario: An expression names data its step type does not provide
 - **WHEN** an `exec` step declares `expr = 'response.body.x'`
@@ -2220,7 +2240,7 @@ The following requirements have been superseded: by the handler dispatch archite
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.0.0-alpha.11 | 2026-10-04 | Close remaining false-PASS paths (feature 044): an expression that cannot be evaluated or is not boolean makes the step ERROR, expression names per step type with usable `project` values and a repository-aware `file_exists`, load-time expression reference check (Section 3.7); step registration declares `settings` and `expression_names`, plugins cannot replace a registered step type, and unknown control keys, unknown step keys, and unregistered step types fail loading (Sections 2.3, 3.0.3); reproducibility step types conclude only FAIL (Sections 3.0.1, 12); `gh_api` `evidence_fields`, required for personal records (Section 3.8); `file_must_exist` replaced by the registered `file_exists` (Section 3.2); field tables corrected to what each handler reads (Sections 3.3-3.5) |
+| 1.0.0-alpha.11 | 2026-10-04 | Close remaining false-PASS paths (feature 044): an expression that cannot be evaluated or is not boolean makes the step ERROR, expression names per step type with usable `project` values and a repository-aware `file_exists`, load-time expression reference check (Section 3.7); step registration declares `settings` and `expression_names`, plugins cannot replace a registered step type, and unknown control keys, unknown step keys, and unregistered step types fail loading (Sections 2.3, 3.0.3); reproducibility step types conclude only FAIL (Sections 3.0.1, 12); `expr_decides`, an expression that decides on a handler PASS (Sections 3.0.3, 3.7); `gh_api` `evidence_fields`, required for personal records (Section 3.8); `file_must_exist` replaced by the registered `file_exists` (Section 3.2); field tables corrected to what each handler reads (Sections 3.3-3.5) |
 | 1.0.0-alpha.10 | 2026-10-02 | Remediation safety (feature 043): plan/apply protocol and single writer (Section 4.2), `platform_setting` (4.5), exec `effects`/`offline` and no platform state from exec (4.4), `file_create.project_reference` (4.3), remediation policy, digest-bound approval, outcomes, re-check, run manifest, and version-control rules (Section 15); removed `api_call`, `requires_confirmation`, `dry_run_supported`, `dry_run_command` (Appendix C) |
 | 1.0.0-alpha.9 | 2026-09-29 | Context value standing, confirmation records, lapse, detection fallbacks, canonical keys, reads never write, targeted project-file writes, confirmation tool contract (Sections 7.4-7.11, feature 042) |
 | 1.0.0-alpha.8 | 2026-02-16 | Added audit result cache (Section 10.4): audit writes cache, remediate reads cache, post-remediation invalidation |

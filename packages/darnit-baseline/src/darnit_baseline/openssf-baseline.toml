@@ -673,7 +673,8 @@ run: |
 
 # Primary: Run zizmor static analysis for template injection
 # Exit codes: 0=clean, 10=info, 11=low, 12=medium, 13=high, 14=mixed severity
-# All are valid — CEL expr evaluates JSON findings, not exit code
+# All are valid — CEL expr evaluates JSON findings, not exit code, and
+# decides on its own (expr_decides): a template-injection finding is FAIL
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-BR-01.01"
 location_hint = ".github/workflows"
 
@@ -683,6 +684,7 @@ command = ["zizmor", "--format", "json", "--offline", "$PATH"]
 pass_exit_codes = [0, 10, 11, 12, 13, 14]
 output_format = "json"
 expr = '!output.json.exists(f, f.ident == "template-injection")'
+expr_decides = true
 timeout = 60
 
 # Keyword scan for common injection expressions, evidence only (feature
@@ -2990,6 +2992,7 @@ command = ["zizmor", "--format", "json", "--offline", "$PATH"]
 pass_exit_codes = [0, 10, 11, 12, 13, 14]
 output_format = "json"
 expr = '!output.json.exists(f, f.ident == "excessive-permissions")'
+expr_decides = true
 timeout = 60
 
 # Fallback: structural pattern check. Confirms each workflow has SOME form

@@ -36,6 +36,8 @@ Added to them:
 - `description` (documentation only);
 - `expr`, accepted only when `expression_names` is non-empty.
 
+`expr_decides` (bool, default false) is a declared `HandlerInvocation` field (FR-015). It needs `expr` and is accepted only on step types whose expression the orchestrator evaluates (`exec`, `pattern`, `regex`).
+
 A step key outside these fields and the step type's `settings` is a load error.
 
 ## Step result (unchanged model; new uses)

@@ -289,6 +289,10 @@ class HandlerInvocation(BaseModel):
     fail_on_status: list[int] | None = None
     promotion: Promotion | None = None
 
+    # Feature 044 (FR-015, framework-design 3.7): on a handler PASS the
+    # step's ``expr`` alone decides, true PASS and false FAIL.
+    expr_decides: bool = False
+
     # All other fields pass through to the handler
     model_config = ConfigDict(extra="allow")
 

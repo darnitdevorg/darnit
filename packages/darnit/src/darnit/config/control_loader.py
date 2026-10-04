@@ -704,8 +704,25 @@ def validate_step_authority(
         if expr is not None:
             _validate_expression_references(inv.handler, str(expr), info.expression_names, reject)
 
+        if getattr(inv, "expr_decides", False):
+            _validate_expr_decides(inv.handler, expr, info.expression_names, reject)
+
         if inv.handler == "gh_api":
             _validate_evidence_fields(inv.model_extra or {}, reject)
+
+
+def _validate_expr_decides(
+    handler: str, expr: Any, provided: frozenset[str], reject: Callable[[str], None]
+) -> None:
+    """``expr_decides`` needs an expression the orchestrator evaluates (feature 044, FR-015, framework-design 3.7)."""
+    from darnit.sieve.orchestrator import STEP_TYPES_EVALUATING_OWN_EXPR
+
+    if not provided:
+        reject(f"expr_decides is set but step type {handler!r} does not accept expr")
+    if handler in STEP_TYPES_EVALUATING_OWN_EXPR:
+        reject(f"expr_decides is not needed on {handler!r}: its expr already decides; remove it")
+    if expr is None:
+        reject("expr_decides is set but the step has no expr")
 
 
 def _validate_evidence_fields(step: dict[str, Any], reject: Callable[[str], None]) -> None:

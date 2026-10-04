@@ -51,6 +51,7 @@ An unregistered step type in a framework file fails loading. In an operator-supp
 - `expr` is allowed only on step types with expression names.
 - A reference to a name the step type doesn't provide fails loading.
 - A syntax error fails loading.
+- `expr_decides` needs `expr`, and is allowed only on `exec`, `pattern`, and `regex`; `gh_api` and `mcp` evaluate their own expression, which already decides.
 
 ## 3. Expression evaluation
 
@@ -77,6 +78,17 @@ It is resolved against the audited repository.
 | false | FAIL | FAIL |
 | true | FAIL | INCONCLUSIVE |
 | Compile or evaluation error, or a non-boolean value | PASS or FAIL | ERROR, `error.class = evaluation` |
+
+**With `expr_decides = true`** (FR-015), the expression alone decides on a handler PASS:
+
+| Expression result | Handler result | Step result |
+|---|---|---|
+| true | PASS | PASS |
+| false | PASS | FAIL |
+| Compile or evaluation error, or a non-boolean value | PASS | ERROR, `error.class = evaluation` |
+| Not evaluated | FAIL, WARN, INCONCLUSIVE, or ERROR | Unchanged |
+
+PASS and FAIL still conclude only within the step's effective set. The OSPS-BR-01.01 and OSPS-AC-04.02 zizmor steps set it.
 
 ## 4. `gh_api` evidence
 

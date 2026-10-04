@@ -18,9 +18,10 @@ import yaml
 
 from darnit.config import load_framework_config
 from darnit.config.context_keys import value_digest
-from darnit.config.control_loader import control_from_framework
+from darnit.config.control_loader import control_from_framework, validate_step_authority
 from darnit.config.framework_schema import HandlerInvocation
 from darnit.config.operator.schema import OperatorConfig
+from darnit.core.errors import AuthorityViolation
 from darnit.sieve.handler_registry import HandlerResult, HandlerResultStatus
 from darnit.sieve.models import CheckContext, ControlSpec, SieveResult
 from darnit.sieve.orchestrator import SieveOrchestrator, _apply_cel_expr
@@ -120,17 +121,25 @@ class TestShippedZizmorControls:
         assert first.evidence["expr_error"]
 
     @pytest.mark.parametrize("control_id", sorted(ZIZMOR_CONTROLS))
-    def test_matching_finding_is_not_pass(self, control_id: str, repo: Path, zizmor) -> None:
+    def test_matching_finding_is_fail(self, control_id: str, repo: Path, zizmor) -> None:
         # zizmor exits in pass_exit_codes for findings of any kind, so the
-        # handler PASSes and the false expression makes the step INCONCLUSIVE
-        # (framework-design 3.7 outcome rules); the later steps do not pass it.
+        # handler PASSes; the step sets expr_decides, so the false expression
+        # is FAIL (FR-015, framework-design 3.7).
         zizmor(stdout=json.dumps([{"ident": ZIZMOR_CONTROLS[control_id]}]), exit_code=14)
 
         result = _verify(_shipped(control_id), repo)
 
-        assert result.status == "WARN"
-        assert result.pass_history[0].result.outcome.value == "inconclusive"
+        assert result.status == "FAIL"
+        assert result.resolving_pass_index == 0
         assert result.pass_history[0].result.evidence["json"] == [{"ident": ZIZMOR_CONTROLS[control_id]}]
+
+    @pytest.mark.parametrize("control_id", sorted(ZIZMOR_CONTROLS))
+    def test_other_findings_are_pass(self, control_id: str, repo: Path, zizmor) -> None:
+        zizmor(stdout=json.dumps([{"ident": "unpinned-uses"}]), exit_code=13)
+
+        result = _verify(_shipped(control_id), repo)
+
+        assert result.status == "PASS"
 
     @pytest.mark.parametrize("control_id", sorted(ZIZMOR_CONTROLS))
     def test_no_matching_finding_is_pass(self, control_id: str, repo: Path, zizmor) -> None:
@@ -241,6 +250,67 @@ class TestExpressionNames:
 
         assert result.status == "ERROR"
         assert result.error["class"] == "evaluation"
+
+
+@pytest.mark.unit
+class TestExprDecides:
+    """FR-015: with expr_decides the expression alone decides on a handler PASS."""
+
+    def _apply(self, status: HandlerResultStatus, expr: str = "output.exit_code == 0") -> HandlerResult:
+        handler = HandlerResult(status=status, message="handler", evidence={"exit_code": 0})
+        return _apply_cel_expr({"handler": "exec", "expr": expr}, handler, decides=True)
+
+    def test_true_is_pass(self) -> None:
+        assert self._apply(HandlerResultStatus.PASS).status == HandlerResultStatus.PASS
+
+    def test_false_is_fail(self) -> None:
+        result = self._apply(HandlerResultStatus.PASS, "output.exit_code == 1")
+
+        assert result.status == HandlerResultStatus.FAIL
+        assert result.evidence["expr"] == "output.exit_code == 1"
+
+    def test_evaluation_error_is_error(self) -> None:
+        result = self._apply(HandlerResultStatus.PASS, "output.json.x == 1")
+
+        assert result.status == HandlerResultStatus.ERROR
+        assert result.error_class == "evaluation"
+
+    @pytest.mark.parametrize(
+        "status",
+        [HandlerResultStatus.FAIL, HandlerResultStatus.WARN, HandlerResultStatus.INCONCLUSIVE, HandlerResultStatus.ERROR],
+    )
+    def test_other_handler_results_are_unchanged(self, status: HandlerResultStatus) -> None:
+        assert self._apply(status, "output.json.x == 1").status == status
+
+    def test_fail_concludes_only_within_the_effective_set(self, repo: Path) -> None:
+        spec = _step_control(
+            handler="exec", command=["true"], expr="output.exit_code == 1", expr_decides=True, concludes=["pass"]
+        )
+
+        result = _verify(spec, repo)
+
+        assert result.status != "FAIL"
+        assert result.pass_history[0].result.outcome.value == "fail"
+
+    @pytest.mark.parametrize(
+        ("step", "message"),
+        [
+            ({"handler": "file_exists", "files": ["README.md"]}, "does not accept expr"),
+            ({"handler": "exec", "command": ["true"]}, "has no expr"),
+            ({"handler": "gh_api", "endpoint": "/repos/o/r", "expr": "response.body.private"}, "already decides"),
+        ],
+    )
+    def test_invalid_use_fails_loading(self, step: dict[str, Any], message: str) -> None:
+        with pytest.raises(AuthorityViolation) as excinfo:
+            validate_step_authority("expr-fw", "EXPR-01", [HandlerInvocation(**step, expr_decides=True)])
+
+        text = str(excinfo.value)
+        for fragment in ("EXPR-01", f"pass[0]:{step['handler']}", message):
+            assert fragment in text, (fragment, text)
+
+    def test_shipped_zizmor_steps_declare_it(self) -> None:
+        for control_id in ZIZMOR_CONTROLS:
+            assert _shipped(control_id).metadata["handler_invocations"][0].expr_decides is True
 
 
 def _write_project(repo: Path, darnit: dict[str, Any]) -> None:
