@@ -58,3 +58,8 @@ def test_report_counts_every_step_and_outcome(report: CorpusReport) -> None:
         else:
             assert conclusions == 0, row
         assert row.false_pass <= row.incorrect
+
+
+def test_plugin_redefining_a_step_type_is_refused(report: CorpusReport) -> None:
+    """Feature 044 FR-013: the corpus case for a plugin redefining ``manual`` (SC-002)."""
+    assert report.fixtures["plugin-redefines-manual"]["refused_registrations"] == ["manual"]

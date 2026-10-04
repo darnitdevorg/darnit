@@ -45,6 +45,14 @@ change.
 | `platform-permission-denied` | 403 and 401 from the platform |
 | `platform-rate-limited` | 429, and a 403 whose message is a rate limit |
 | `platform-org-2fa-hidden` | Org hides its 2FA requirement; the auditor has 2FA |
+| `zizmor-no-findings-document` | zizmor exits 0 and prints nothing; the workflow has a template injection and `write-all` (feature 044, #479) |
+| `plugin-redefines-manual` | A plugin tries to register `manual` as a step type that concludes PASS (feature 044, #486) |
+
+The reproducibility framework has its own corpus in
+`tests/darnit_reproducibility/corpus/`, measured by the same runner and gated by
+`tests/darnit_reproducibility/test_repro_corpus_gate.py`. Its `text-signals-only`
+fixture is the #453 reproduction: workflow text that mentions signing or sets
+`SOURCE_DATE_EPOCH` without the property.
 
 ## labels.toml
 
@@ -64,6 +72,17 @@ status = 200
 body = { private = false, has_issues = true }
 jq = { ".has_issues" = "true" }
 
+# Optional stand-in tools, first on PATH: print stdout, exit with exit_code.
+[fixture.tools.zizmor]
+stdout = ""
+exit_code = 0
+
+# Optional plugin that tries to register step types before the audit; each
+# returns, and registers as its ceiling, the given outcome.
+[fixture.plugin]
+name = "corpus-redefines-manual"
+step_types = { manual = "pass" }
+
 [labels."OSPS-DO-01.01"]
 expected = "NOT_PASS"
 why = "A README that says only TODO does not explain how to use the project."
@@ -77,6 +96,8 @@ why = "No LICENSE file."
 |---|---|---|
 | `[fixture].description` | str | What the fixture represents. |
 | `[fixture.platform."<path>"]` | table | Recorded response: `status` (int), `body`, optional `error` (the `gh` error text), optional `jq` (output of `gh api --jq <expr>` keyed by expression). |
+| `[fixture.tools.<name>]` | table | Stand-in executable `<name>`: `stdout` (str, default empty), `exit_code` (int, default 0). |
+| `[fixture.plugin]` | table | `name` (the plugin) and `step_types` (`{ <step type> = "pass" \| "fail" }`). The run reports the names the registry refused under `refused_registrations`. |
 | `[labels."<control_id>"].expected` | str | `PASS`, `FAIL`, `NOT_PASS`, or `N/A`. |
 | `[labels."<control_id>"].why` | str | Short rationale against the upstream requirement text. |
 
@@ -107,8 +128,10 @@ operator configuration, not-applicable claims ignored, and no model
 calls through `gh_api_with_status` are served by `RecordedGhApi`; `gh`
 subprocesses from `exec` steps are served the same recordings by a stub
 first on a `PATH` that otherwise holds only `/usr/bin` and `/bin`. An
-unrecorded path answers as a transport failure. `HOME` and the XDG
-directories point into the scratch directory.
+unrecorded path answers as a transport failure. Stand-in tools are written to
+the same directory as the `gh` stub. A fixture's plugin registers its step
+types before the audit and the registry is restored after it. `HOME` and the
+XDG directories point into the scratch directory.
 
 ## What a run reports
 

@@ -1,0 +1,10 @@
+[fixture]
+description = "Workflows mention signing only in a comment and set SOURCE_DATE_EPOCH; nothing produces provenance or compares builds"
+
+[labels."RE-02.02"]
+expected = "NOT_PASS"
+why = "A comment mentioning cosign produces no signed provenance attestation."
+
+[labels."RE-03.01"]
+expected = "NOT_PASS"
+why = "Setting SOURCE_DATE_EPOCH does not show that independent builds produce identical output."

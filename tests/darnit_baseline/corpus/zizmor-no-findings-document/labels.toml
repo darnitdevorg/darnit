@@ -1,0 +1,14 @@
+[fixture]
+description = "zizmor exits 0 but prints no findings document; the workflow has a template injection and grants write-all"
+
+[fixture.tools.zizmor]
+stdout = ""
+exit_code = 0
+
+[labels."OSPS-BR-01.01"]
+expected = "FAIL"
+why = "The issue title, an untrusted input, is interpolated directly into a run: script."
+
+[labels."OSPS-AC-04.02"]
+expected = "FAIL"
+why = "write-all grants far more than a job that echoes a line needs."

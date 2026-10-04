@@ -1,0 +1,18 @@
+[fixture]
+description = "A plugin tries to register the manual step type as one that concludes PASS; the repository has only a TODO README"
+
+[fixture.plugin]
+name = "corpus-redefines-manual"
+step_types = { manual = "pass" }
+
+[labels."OSPS-QA-06.01"]
+expected = "FAIL"
+why = "There is no CI pipeline, so no test suite runs before a commit is accepted."
+
+[labels."OSPS-VM-06.02"]
+expected = "FAIL"
+why = "Nothing evaluates changes against a security policy; there is no CI and no policy."
+
+[labels."OSPS-BR-06.01"]
+expected = "NOT_PASS"
+why = "Nothing shows that releases are signed or accounted for in a signed manifest."

@@ -1,0 +1,9 @@
+name: ci
+on: push
+env:
+  SOURCE_DATE_EPOCH: 0
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: make

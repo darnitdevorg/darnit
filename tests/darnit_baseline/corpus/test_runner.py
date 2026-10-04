@@ -3,7 +3,9 @@
 A synthetic framework, independent of the Baseline TOML, checks that the
 runner fails on a false PASS by a promoted step and names the step and the
 fixture, that a fixture directory holding only ``labels.toml`` is measured
-with no code change, and that platform recordings are served offline.
+with no code change, that platform recordings are served offline, and that
+a fixture's stand-in tools and plugin registrations (feature 044) take effect
+only for that fixture.
 """
 
 from __future__ import annotations
@@ -73,6 +75,29 @@ handler = "exec"
 command = ["gh", "api", "/repos/$OWNER/$REPO"]
 output_format = "json"
 expr = "output.json.private == false"
+
+[controls."SYN-05"]
+name = "Tool"
+description = "An exec step running a stand-in tool"
+level = 1
+domain = "SY"
+
+[[controls."SYN-05".passes]]
+handler = "exec"
+command = ["corpus-tool"]
+output_format = "json"
+expr = "output.json.ok"
+expr_decides = true
+
+[controls."SYN-06"]
+name = "Review"
+description = "A control only a person can conclude"
+level = 1
+domain = "SY"
+
+[[controls."SYN-06".passes]]
+handler = "manual"
+steps = ["Review it"]
 """
 
 
@@ -178,6 +203,34 @@ def test_platform_recordings_are_served_offline(framework: Framework, corpus: Pa
     assert results[("unrecorded", "SYN-04")].status != "PASS"
 
 
+def test_stand_in_tools_are_first_on_path(framework: Framework, corpus: Path) -> None:
+    tool = "[fixture.tools.corpus-tool]\nstdout = '{\"ok\": false}'\nexit_code = 0\n\n"
+    _fixture(corpus, "with-tool", tool + _label("SYN-05", "FAIL"))
+    _fixture(corpus, "without-tool", _label("SYN-05", "FAIL"))
+
+    results = {(c.fixture, c.control_id): c for c in run_corpus(framework, corpus).controls}
+
+    assert results[("with-tool", "SYN-05")].status == "FAIL"
+    assert results[("without-tool", "SYN-05")].status == "ERROR"
+
+
+def test_plugin_registration_is_refused_and_registry_restored(framework: Framework, corpus: Path) -> None:
+    from darnit.sieve.handler_registry import get_sieve_handler_registry
+
+    registry = get_sieve_handler_registry()
+    manual = registry.get("manual")
+    refused_before = list(registry.refused_registrations)
+    plugin = '[fixture.plugin]\nname = "selftest-plugin"\nstep_types = { manual = "pass" }\n\n'
+    _fixture(corpus, "hostile", plugin + _label("SYN-06", "NOT_PASS"))
+
+    report = run_corpus(framework, corpus)
+
+    assert report.fixtures["hostile"]["refused_registrations"] == ["manual"]
+    assert {c.control_id: c for c in report.controls}["SYN-06"].status != "PASS"
+    assert registry.get("manual") is manual
+    assert registry.refused_registrations == refused_before
+
+
 def test_corpus_version_covers_labels(corpus: Path) -> None:
     path = _fixture(corpus, "one", _label("SYN-02", "FAIL"))
     first = corpus_version(corpus)
@@ -188,7 +241,13 @@ def test_corpus_version_covers_labels(corpus: Path) -> None:
 
 @pytest.mark.parametrize(
     "labels",
-    ['[labels."SYN-01"]\nexpected = "MAYBE"\nwhy = "x"\n', '[labels."SYN-01"]\nexpected = "FAIL"\n'],
+    [
+        '[labels."SYN-01"]\nexpected = "MAYBE"\nwhy = "x"\n',
+        '[labels."SYN-01"]\nexpected = "FAIL"\n',
+        '[fixture.tools.t]\nexit_code = "0"\n',
+        '[fixture.plugin]\nname = "p"\n',
+        '[fixture.plugin]\nname = "p"\nstep_types = { manual = "maybe" }\n',
+    ],
 )
 def test_invalid_labels_are_rejected(corpus: Path, labels: str) -> None:
     path = _fixture(corpus, "bad", labels)

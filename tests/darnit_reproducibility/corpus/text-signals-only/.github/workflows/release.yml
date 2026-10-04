@@ -1,0 +1,9 @@
+name: release
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # TODO: cosign sign the artifacts once we have a key
+      - run: make dist

@@ -14,6 +14,10 @@ configuration, confirmations, and caches are never read or written.
 
 Deterministic only: no model is consulted. A control waiting for a model
 judgment is ``PENDING``, which is simply not PASS.
+
+A fixture may also declare stand-in tools (``[fixture.tools]``, put first on
+``PATH``) and a plugin that tries to register step types before the audit
+(``[fixture.plugin]``, feature 044); the registry is restored afterwards.
 """
 
 from __future__ import annotations
@@ -108,6 +112,8 @@ class Fixture:
     description: str
     platform: dict[str, dict[str, Any]]
     labels: dict[str, Label]
+    tools: dict[str, dict[str, Any]] = field(default_factory=dict)
+    plugin: dict[str, Any] | None = None
 
     def recordings(self) -> dict[str, dict[str, Any]]:
         """Recorded platform responses keyed by concrete API path."""
@@ -144,6 +150,7 @@ class FixtureRun:
     fixture: Fixture
     results: dict[str, dict[str, Any]]
     steps: list[StepObservation]
+    refused_registrations: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -269,6 +276,20 @@ def load_fixture(path: Path) -> Fixture:
     for key, response in platform.items():
         if not isinstance(response, dict) or not isinstance(response.get("status", 200), int):
             raise CorpusError(f"{labels_path}: [fixture.platform.{key!r}] needs an integer status")
+    tools = meta.get("tools") or {}
+    for name, tool in tools.items():
+        if not isinstance(tool, dict) or not isinstance(tool.get("stdout", ""), str):
+            raise CorpusError(f"{labels_path}: [fixture.tools.{name}] needs a string stdout")
+        if not isinstance(tool.get("exit_code", 0), int):
+            raise CorpusError(f"{labels_path}: [fixture.tools.{name}] needs an integer exit_code")
+    plugin = meta.get("plugin")
+    if plugin is not None:
+        step_types = plugin.get("step_types") if isinstance(plugin, dict) else None
+        if not isinstance(plugin.get("name") if isinstance(plugin, dict) else None, str) or not step_types:
+            raise CorpusError(f"{labels_path}: [fixture.plugin] needs a name and step_types")
+        for name, status in step_types.items():
+            if status not in ("pass", "fail"):
+                raise CorpusError(f"{labels_path}: [fixture.plugin].step_types.{name} must be 'pass' or 'fail'")
     labels: dict[str, Label] = {}
     for control_id, entry in (data.get("labels") or {}).items():
         expected = entry.get("expected") if isinstance(entry, dict) else None
@@ -280,7 +301,15 @@ def load_fixture(path: Path) -> Fixture:
         if not isinstance(why, str) or not why.strip():
             raise CorpusError(f"{labels_path}: {control_id}.why is required")
         labels[control_id] = Label(expected=expected, why=why.strip())
-    return Fixture(name=path.name, path=path, description=description.strip(), platform=platform, labels=labels)
+    return Fixture(
+        name=path.name,
+        path=path,
+        description=description.strip(),
+        platform=platform,
+        labels=labels,
+        tools=tools,
+        plugin=plugin,
+    )
 
 
 def fixture_dirs(root: Path = CORPUS_ROOT) -> list[Path]:
@@ -457,6 +486,56 @@ def _observe_steps(sink: list[StepObservation]) -> Iterator[None]:
         yield
 
 
+def _write_tools(bin_dir: Path, tools: dict[str, dict[str, Any]]) -> None:
+    """Stand-in executables that print the declared stdout and exit with the declared code."""
+    for name, tool in tools.items():
+        output = bin_dir / f"{name}.stdout"
+        output.write_text(tool.get("stdout", ""), encoding="utf-8")
+        script = bin_dir / name
+        script.write_text(f"#!/bin/sh\ncat '{output}'\nexit {int(tool.get('exit_code', 0))}\n", encoding="utf-8")
+        script.chmod(0o755)
+
+
+@contextmanager
+def _plugin_registrations(plugin: dict[str, Any] | None, refused: list[str]) -> Iterator[None]:
+    """Let ``plugin`` try to register its step types; restore the registry afterwards.
+
+    Each step type's handler returns the declared status and registers that
+    status as its ceiling, so a registration that took effect would let it
+    conclude. ``refused`` receives the names the registry refused.
+    """
+    if plugin is None:
+        yield
+        return
+    from darnit.sieve.handler_registry import HandlerResult, HandlerResultStatus, get_sieve_handler_registry
+
+    registry = get_sieve_handler_registry()
+    saved_handlers = dict(registry._handlers)
+    saved_refused = list(registry.refused_registrations)
+
+    def handler_for(status: str) -> Any:
+        def handler(config: dict[str, Any], context: Any) -> HandlerResult:  # noqa: ARG001
+            return HandlerResult(status=HandlerResultStatus(status), message=f"plugin step type says {status}")
+
+        return handler
+
+    registry.set_plugin_context(plugin["name"])
+    try:
+        for name, status in plugin["step_types"].items():
+            registry.register(name, "deterministic", handler_for(status), ceiling={status}, settings=())
+    finally:
+        registry.set_plugin_context(None)
+    refused.extend(
+        r.name for r in registry.refused_registrations if r not in saved_refused and r.attempted_by == plugin["name"]
+    )
+    try:
+        yield
+    finally:
+        registry._handlers.clear()
+        registry._handlers.update(saved_handlers)
+        registry.refused_registrations[:] = saved_refused
+
+
 def _builtin_operator_config() -> Any:
     from darnit.config.operator.loader import BUILTIN_DEFAULTS, LoadedOperatorConfig
     from darnit.config.operator.schema import OperatorConfig
@@ -476,6 +555,7 @@ def run_fixture(fixture: Fixture, framework: Framework) -> FixtureRun:
     from darnit.tools.audit import run_sieve_audit
 
     observations: list[StepObservation] = []
+    refused: list[str] = []
     with tempfile.TemporaryDirectory(prefix="darnit-corpus-") as scratch_name:
         scratch = Path(scratch_name).resolve()
         repo = scratch / fixture.name
@@ -487,6 +567,7 @@ def run_fixture(fixture: Fixture, framework: Framework) -> FixtureRun:
         gh = bin_dir / "gh"
         gh.write_text(f"#!{sys.executable}\n{_GH_STUB}", encoding="utf-8")
         gh.chmod(0o755)
+        _write_tools(bin_dir, fixture.tools)
         recordings = fixture.recordings()
         recordings_path = scratch / "platform.json"
         recordings_path.write_text(json.dumps(recordings), encoding="utf-8")
@@ -501,7 +582,12 @@ def run_fixture(fixture: Fixture, framework: Framework) -> FixtureRun:
         }
         previous = set_gh_api_responder(RecordedGhApi(recordings))
         try:
-            with _environment(env), _control_registry_restored(), _observe_steps(observations):
+            with (
+                _environment(env),
+                _control_registry_restored(),
+                _plugin_registrations(fixture.plugin, refused),
+                _observe_steps(observations),
+            ):
                 results, _summary = run_sieve_audit(
                     OWNER,
                     fixture.name,
@@ -516,7 +602,12 @@ def run_fixture(fixture: Fixture, framework: Framework) -> FixtureRun:
                 )
         finally:
             set_gh_api_responder(previous)
-    return FixtureRun(fixture=fixture, results={r["id"]: dict(r) for r in results}, steps=observations)
+    return FixtureRun(
+        fixture=fixture,
+        results={r["id"]: dict(r) for r in results},
+        steps=observations,
+        refused_registrations=refused,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -564,6 +655,8 @@ def measure(framework: Framework, fixtures: list[Fixture], version: str) -> Corp
             counts[label.expected] = counts.get(label.expected, 0) + 1
         fixture_meta[fixture.name] = {"description": fixture.description, "labels": dict(sorted(counts.items()))}
         run = run_fixture(fixture, framework)
+        if fixture.plugin is not None:
+            fixture_meta[fixture.name]["refused_registrations"] = run.refused_registrations
 
         for obs in run.steps:
             label = fixture.labels.get(obs.control_id)
