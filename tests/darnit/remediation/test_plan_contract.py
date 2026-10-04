@@ -35,7 +35,7 @@ from darnit.remediation.executor import RemediationExecutor, RemediationResult
 from darnit.remediation.plan import FileChange, PlanItem
 from darnit.remediation.platform import PlatformSession, ResolvedPolicy
 from darnit.sieve.handler_registry import get_sieve_handler_registry
-from tests.conftest_helpers import snapshot
+from tests.conftest_helpers import snapshot, stand_in_tool
 from tests.darnit.remediation.platform.conftest import SimulatedGitHub, _base, recorded_gh
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -83,20 +83,14 @@ def _id(path: Path, control_id: str) -> str:
 
 
 ZIZMOR_FIX = "# fixed by zizmor\n"
-FAKE_ZIZMOR = f"""#!/bin/sh
-for target; do :; done
+FAKE_ZIZMOR_FIX = f"""for target; do :; done
 printf '{ZIZMOR_FIX.strip()}\\n' >> "$target/.github/workflows/ci.yml"
-exit 0
 """
 
 
 @pytest.fixture(autouse=True)
 def _fake_zizmor(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:
-    bin_dir = tmp_path_factory.mktemp("bin")
-    tool = bin_dir / "zizmor"
-    tool.write_text(FAKE_ZIZMOR, encoding="utf-8")
-    tool.chmod(0o755)
-    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    stand_in_tool(monkeypatch, tmp_path_factory.mktemp("bin"), "zizmor", script=FAKE_ZIZMOR_FIX)
 
 
 @pytest.fixture(autouse=True, scope="module")
