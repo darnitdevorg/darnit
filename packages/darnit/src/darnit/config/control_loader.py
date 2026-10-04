@@ -18,6 +18,7 @@ Example:
         register_control(control)
 """
 
+import shlex
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -676,6 +677,8 @@ def validate_remediation_steps(
         if info is None:
             reject(f"step type {inv.handler!r} is not registered")
         _validate_step_keys(inv, info, reject)
+        if inv.handler == "exec":
+            _validate_exec_personal_record(inv.model_extra or {}, reject)
 
 
 def validate_step_authority(
@@ -772,6 +775,8 @@ def validate_step_authority(
 
         if inv.handler == "gh_api":
             _validate_evidence_fields(inv.model_extra or {}, reject)
+        if inv.handler == "exec":
+            _validate_exec_personal_record(inv.model_extra or {}, reject)
 
 
 def _validate_expr_decides(handler: str, expr: Any, provided: frozenset[str], reject: Callable[[str], None]) -> None:
@@ -786,17 +791,65 @@ def _validate_expr_decides(handler: str, expr: Any, provided: frozenset[str], re
         reject("expr_decides is set but the step has no expr")
 
 
+# Feature 044 (FR-012, framework-design 3.8): endpoints returning people's
+# account records, each covering every path under it; "*" is one segment.
+PERSONAL_RECORD_ENDPOINTS = (
+    "/user",
+    "/users/*",
+    "/orgs/*/members",
+    "/orgs/*/outside_collaborators",
+    "/orgs/*/teams/*/members",
+    "/repos/*/*/collaborators",
+)
+
+
+def _endpoint_path(endpoint: Any) -> str:
+    return "/" + str(endpoint).split("?", 1)[0].strip("/")
+
+
+def reads_personal_record(endpoint: Any) -> bool:
+    """Whether a platform API path returns people's account records (framework-design 3.8)."""
+    segments = _endpoint_path(endpoint).strip("/").split("/")
+    for template in PERSONAL_RECORD_ENDPOINTS:
+        parts = template.strip("/").split("/")
+        if len(segments) >= len(parts) and all(
+            (part == "*" and bool(segment)) or part == segment for part, segment in zip(parts, segments, strict=False)
+        ):
+            return True
+    return False
+
+
 def _validate_evidence_fields(step: dict[str, Any], reject: Callable[[str], None]) -> None:
-    """A gh_api step reading a person's account keeps only declared fields (feature 044, framework-design 3.8)."""
+    """A gh_api step reading a personal record keeps only declared fields (feature 044, framework-design 3.8)."""
     fields = step.get("evidence_fields")
     if fields is not None and not (isinstance(fields, list) and all(isinstance(f, str) for f in fields)):
         reject(f"evidence_fields must be a list of response body keys, not {fields!r}")
-    endpoint = "/" + str(step.get("endpoint", "")).split("?", 1)[0].lstrip("/")
-    if fields is None and (endpoint == "/user" or endpoint.startswith(("/user/", "/users/"))):
+    endpoint = step.get("endpoint", "")
+    if fields is None and reads_personal_record(endpoint):
         reject(
-            f"endpoint {endpoint!r} reads a person's account; declare evidence_fields listing only "
-            "the response fields the check needs"
+            f"endpoint {_endpoint_path(endpoint)!r} reads people's account records; declare evidence_fields "
+            "listing only the response fields the check needs"
         )
+
+
+def _validate_exec_personal_record(step: dict[str, Any], reject: Callable[[str], None]) -> None:
+    """An exec step may not run ``gh api`` against a personal record (feature 044, framework-design 3.8)."""
+    command = step.get("command")
+    if isinstance(command, str):
+        command = shlex.split(command)
+    if not isinstance(command, list):
+        return
+    args = [str(a) for a in command]
+    for i in range(len(args) - 1):
+        if Path(args[i]).name != "gh" or args[i + 1] != "api":
+            continue
+        for arg in args[i + 2 :]:
+            if not arg.startswith("-") and reads_personal_record(arg):
+                reject(
+                    f"command runs 'gh api {arg}', which reads people's account records and would keep the "
+                    "whole record in the step's output; use a gh_api step with evidence_fields listing only "
+                    "the fields the check needs"
+                )
 
 
 def _validate_expression_references(

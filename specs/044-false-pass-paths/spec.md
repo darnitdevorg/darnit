@@ -137,7 +137,7 @@ The person running an audit should not find their email, location, or biography 
 
 **Personal data (#493)**
 
-- **FR-012**: A step that reads a person's account record (`/user`, anything under `/user/`, or anything under `/users/`) MUST declare the fields it keeps and record only those; the auditor's other profile fields MUST NOT appear in evidence, output files, or attestations.
+- **FR-012**: A step that reads people's account records MUST declare the fields it keeps and record only those; the auditor's other profile fields MUST NOT appear in evidence, output files, or attestations. The personal-record endpoints are a documented list (framework-design 3.8), each including every path under it, with any one path segment standing for a placeholder: `/user`, `/users/*`, `/orgs/*/members`, `/orgs/*/outside_collaborators`, `/orgs/*/teams/*/members`, and `/repos/*/*/collaborators`. A command step that runs `gh api` against one of them MUST fail loading, directing the author to the platform API step, which can declare the fields it keeps.
 
 **Verification**
 

@@ -51,7 +51,7 @@ A step key outside these fields and the step type's `settings` is a load error.
 
 | Setting | Type | Meaning |
 |---|---|---|
-| `evidence_fields` | `list[str]` | Top-level response-body keys kept in evidence. Required when the endpoint is `/user`, `/user/...`, or `/users/...`. |
+| `evidence_fields` | `list[str]` | Top-level response-body keys kept in evidence. Required when the endpoint is a personal record (framework-design 3.8: `/user`, `/users/*`, `/orgs/*/members`, `/orgs/*/outside_collaborators`, `/orgs/*/teams/*/members`, `/repos/*/*/collaborators`, and paths under them). |
 
 ## Load errors
 
@@ -61,4 +61,5 @@ All load errors are raised as the existing `AuthorityViolation`, or as a new `Fr
 - an unregistered step type in a framework file;
 - an undeclared expression name;
 - an expression syntax error;
-- a missing `evidence_fields` on a personal-record endpoint.
+- a missing `evidence_fields` on a personal-record endpoint;
+- an `exec` step running `gh api` against a personal-record endpoint.

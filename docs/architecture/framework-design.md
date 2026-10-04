@@ -318,7 +318,7 @@ The same plugin registering its own name again is allowed. No setting lets a plu
 1. a step, a verification pass or a remediation handler, has a key that is neither a common step field nor in its step type's declared `settings`;
 2. a step names a step type that is not registered;
 3. a step has `expr` and its step type declares no expression names, the expression does not compile, or it references a name its step type does not provide (section 3.7), or a step sets `expr_decides` without `expr` or on a step type that evaluates its own expression or accepts none;
-4. a `gh_api` step reads a personal record without `evidence_fields` (section 3.8).
+4. a `gh_api` step reads a personal record without `evidence_fields`, or an `exec` step runs `gh api` against a personal record (section 3.8).
 
 Unknown control keys fail loading as well (section 2.3). These checks run where 3.0.1's validation runs: on every control-loading path, after plugin step types register. The plugin step types registered for a control are those of the framework being loaded and, for a control a composite takes from another framework (`[[compose]]`, feature 013), those of that source framework. No step is silently skipped. The one exception to rule 2 is a step from operator configuration (a pass override or custom control, section 14.1) that names the step type of a plugin that is not installed: that control loads, and the audit reports it ERROR, class `missing_tool`, with the cause "step type X is not registered".
 
@@ -714,7 +714,18 @@ A response that is ambiguous between "not found" and "not permitted to see" is E
 
 **Evidence**: `endpoint` (after substitution), `response` (`status_code`, `body`, limited to `evidence_fields` when declared), and on a non-2xx answer the `gh` error text.
 
-**Personal records**: a step whose endpoint is `/user`, or starts with `/user/` (for example `/user/emails`) or `/users/`, reads a person's account (for `/user` and `/user/...`, the auditor's own). It MUST declare `evidence_fields`, listing only the fields its check needs; loading fails otherwise (section 3.0.3). OSPS-AC-01.01 reads `/user` with `evidence_fields = ["login", "two_factor_authentication"]`, so the auditor's email, location, company, and biography never reach evidence, JSON output, or attestations (feature 044).
+**Personal records**: an endpoint that returns people's account records is a personal record. These are the endpoints (and every path under them; the query string is ignored), where `*` is any one path segment, a literal or a variable such as `$OWNER` or `{org}`:
+
+| Endpoint | Returns |
+|----------|---------|
+| `/user` | the auditor's own account (and, under it, for example `/user/emails`) |
+| `/users/*` | a named person's account |
+| `/orgs/*/members` | an organization's members |
+| `/orgs/*/outside_collaborators` | an organization's outside collaborators |
+| `/orgs/*/teams/*/members` | a team's members |
+| `/repos/*/*/collaborators` | a repository's collaborators (and, under it, a collaborator's permission record) |
+
+A `gh_api` step reading a personal record MUST declare `evidence_fields`, listing only the fields its check needs; loading fails otherwise (section 3.0.3). An `exec` step whose command runs `gh api` against a personal record fails loading: its output would carry the whole record, so the check belongs in a `gh_api` step with `evidence_fields`. OSPS-AC-01.01 reads `/user` with `evidence_fields = ["login", "two_factor_authentication"]`, so the auditor's email, location, company, and biography never reach evidence, JSON output, or attestations (feature 044).
 
 **Recorded responses**: the handler calls the platform through `darnit.core.utils.gh_api_with_status`. `set_gh_api_responder(responder)` routes every such call (including the `github_branch_protection` plugin handler's) through a responder instead of `gh`; `RecordedGhApi({path: {status, body, error}})` serves recorded responses keyed by API path, answers an unrecorded path as a transport failure (status 0), and with `gh_missing = True` answers as if `gh` were not installed. Tests and the adversarial corpus (section 5.5) use it to run platform checks offline and deterministically. Platform writes (`gh_api_write`, section 4.5) go through the same seam: the responder is called with `(method, endpoint, body)` and returns `(body, status, error)`; GET-only responders keep working, and `RecordedGhApi` also serves keys of the form `"PUT /repos/o/r/branches/main/protection"` and records each request body in `.calls`.
 
@@ -731,8 +742,12 @@ A response that is ambiguous between "not found" and "not permitted to see" is E
 - **THEN** the handler MUST return ERROR, class `rate_limit`
 
 #### Scenario: Personal record without evidence_fields
-- **WHEN** a `gh_api` step reads `/user`, `/user/emails`, or `/users/someone` and declares no `evidence_fields`
+- **WHEN** a `gh_api` step reads `/user`, `/user/emails`, `/users/someone`, `/orgs/$OWNER/members`, or `/repos/$OWNER/$REPO/collaborators` and declares no `evidence_fields`
 - **THEN** loading MUST fail naming the control and the step
+
+#### Scenario: exec reading a personal record
+- **WHEN** an `exec` step's command is `["gh", "api", "/orgs/$OWNER/members"]`
+- **THEN** loading MUST fail naming the control and the step, and directing the author to `gh_api` with `evidence_fields`
 
 #### Scenario: Evidence limited to declared fields
 - **WHEN** a `gh_api` step with `evidence_fields = ["login", "two_factor_authentication"]` receives a body that also has `email` and `bio`

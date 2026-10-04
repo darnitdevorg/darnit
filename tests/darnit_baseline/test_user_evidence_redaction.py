@@ -173,6 +173,58 @@ class TestPersonalRecordLoadRule:
     def test_other_endpoints_need_no_evidence_fields(self, endpoint: str) -> None:
         validate_step_authority("fw", "PRIV-01", [HandlerInvocation(handler="gh_api", endpoint=endpoint)])
 
+    @pytest.mark.parametrize(
+        "endpoint",
+        [
+            "/orgs/$OWNER/members",
+            "/orgs/{org}/members",
+            "orgs/kusari-oss/members?per_page=100",
+            "/orgs/$OWNER/outside_collaborators",
+            "/orgs/$OWNER/teams/maintainers/members",
+            "/repos/$OWNER/$REPO/collaborators",
+            "/repos/o/r/collaborators/someone/permission",
+        ],
+    )
+    def test_people_listings_are_personal_records(self, endpoint: str) -> None:
+        """People records beyond /user and /users/ (044 review, FR-012)."""
+        step = HandlerInvocation(handler="gh_api", endpoint=endpoint)
+
+        with pytest.raises(AuthorityViolation, match="evidence_fields"):
+            validate_step_authority("fw", "PRIV-01", [step])
+
+    @pytest.mark.parametrize(
+        "endpoint", ["/orgs/o", "/orgs/o/teams", "/orgs/o/teams/t/repos", "/repos/o/r/branches", "/members"]
+    )
+    def test_endpoints_near_people_listings_need_no_evidence_fields(self, endpoint: str) -> None:
+        validate_step_authority("fw", "PRIV-01", [HandlerInvocation(handler="gh_api", endpoint=endpoint)])
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            ["gh", "api", "/user"],
+            ["gh", "api", "user"],
+            ["gh", "api", "/orgs/$OWNER/members", "--paginate"],
+            ["gh", "api", "-H", "Accept: application/vnd.github+json", "/repos/$OWNER/$REPO/collaborators"],
+        ],
+    )
+    def test_exec_reading_a_personal_record_fails_loading(self, command: list[str]) -> None:
+        """An exec step would store the whole record in its output; gh_api with evidence_fields is the way (044 review)."""
+        step = HandlerInvocation(handler="exec", command=command)
+
+        with pytest.raises(AuthorityViolation) as excinfo:
+            validate_step_authority("fw", "PRIV-01", [step])
+
+        text = str(excinfo.value)
+        for fragment in ("PRIV-01", "pass[0]:exec", "gh_api", "evidence_fields"):
+            assert fragment in text, (fragment, text)
+
+    @pytest.mark.parametrize(
+        "command",
+        [["gh", "api", "/repos/$OWNER/$REPO"], ["echo", "/user"], ["gh", "pr", "list"], ["gh", "api", "--jq", ".login"]],
+    )
+    def test_exec_not_reading_a_personal_record_loads(self, command: list[str]) -> None:
+        validate_step_authority("fw", "PRIV-01", [HandlerInvocation(handler="exec", command=command)])
+
     def test_evidence_fields_must_be_a_list_of_names(self) -> None:
         step = HandlerInvocation(handler="gh_api", endpoint="/user", evidence_fields="login")
 

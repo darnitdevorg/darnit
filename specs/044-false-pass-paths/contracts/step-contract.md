@@ -92,7 +92,7 @@ PASS and FAIL still conclude only within the step's effective set. The OSPS-BR-0
 
 ## 4. `gh_api` evidence
 
-`evidence_fields = ["login", "two_factor_authentication"]` keeps only those keys of `response.body` in the stored evidence. It is required for `/user`, `/user/...`, and `/users/...` endpoints.
+`evidence_fields = ["login", "two_factor_authentication"]` keeps only those keys of `response.body` in the stored evidence. It is required for personal-record endpoints: `/user`, `/users/*`, `/orgs/*/members`, `/orgs/*/outside_collaborators`, `/orgs/*/teams/*/members`, `/repos/*/*/collaborators`, and paths under them (framework-design 3.8). An `exec` step running `gh api` against one of them fails loading.
 
 ## 5. Reproducibility framework
 
