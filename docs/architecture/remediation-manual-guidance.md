@@ -2,8 +2,12 @@
 The framework SHALL support a `manual` remediation type in TOML control definitions. A manual remediation provides structured human-readable guidance for controls that cannot be automated. This includes controls that require external tool installation (e.g., GitHub Apps) or platform-level configuration not accessible via API.
 
 #### Scenario: Manual remediation defined in TOML
-- **WHEN** a control defines `[controls."ID".remediation.manual]` with `steps` and optional `docs_url`
-- **THEN** the framework SHALL parse it into a `ManualRemediationConfig` with fields: `steps` (list of strings), `docs_url` (optional string), and `context_hints` (optional list of strings)
+- **WHEN** a control defines a `[[controls."ID".remediation.handlers]]` step with `handler = "manual"` (or `manual_steps`), `steps`, and optional `docs_url`
+- **THEN** the framework SHALL load it as a remediation step whose settings are `steps` (list of strings) and `docs_url` (optional string)
+
+#### Scenario: Unknown key on a manual remediation step
+- **WHEN** a manual remediation step declares a key that is neither a common step field nor `steps` or `docs_url` (for example the removed `context_hints`)
+- **THEN** loading SHALL fail naming the framework file, control, step, and key (framework-design 3.0.3)
 
 #### Scenario: Manual remediation coexists with automated types
 - **WHEN** a control defines both `manual` and another remediation type (e.g., `file_create`)
@@ -18,7 +22,7 @@ The remediation executor SHALL return a successful result containing the manual 
 
 #### Scenario: Executor processes manual remediation
 - **WHEN** the executor encounters a control with only a `manual` remediation block
-- **THEN** it SHALL return a `RemediationResult` with `success=True`, `remediation_type="manual"`, and `details` containing the `steps`, `docs_url`, and `context_hints` from the config
+- **THEN** it SHALL return a `RemediationResult` with `success=True`, `remediation_type="manual"`, and `details` containing the `steps` and `docs_url` from the config
 
 #### Scenario: Dry run of manual remediation
 - **WHEN** the executor processes a manual remediation in dry-run mode
@@ -34,18 +38,6 @@ The `remediate_audit_findings` MCP tool SHALL include manual remediations in its
 #### Scenario: MCP tool distinguishes manual from automated
 - **WHEN** `remediate_audit_findings` returns results for a mix of automated and manual remediations
 - **THEN** each result SHALL include a `remediation_type` field that is either an automated type name (e.g., `file_create`, `platform_setting`) or `manual`
-
-### Requirement: Context hints document automation path
-Manual remediation blocks MAY include a `context_hints` field listing context keys that, if confirmed, would enable future automation of the control.
-
-#### Scenario: Context hints present
-- **WHEN** a manual remediation includes `context_hints = ["ci.required_checks", "ci.provider"]`
-- **THEN** the executor SHALL include these hints in the result details under `context_hints`
-- **AND** the MCP tool MAY use these hints to suggest context collection to the AI
-
-#### Scenario: No context hints
-- **WHEN** a manual remediation omits `context_hints`
-- **THEN** the executor SHALL treat it as an empty list and not include the field in output
 
 ### Requirement: Template variable substitution in manual steps
 Manual remediation steps SHALL support `${owner}` and `${repo}` template variable substitution, enabling steps to include repo-specific URLs (e.g., direct links to GitHub settings pages).
