@@ -245,6 +245,17 @@ def _known_control_ids(controls: list[Any], framework: Any | None, operator: "Op
     return known
 
 
+def _framework_plugins(framework_name: str | None, framework: Any | None) -> set[str] | None:
+    """The plugins an audit of the framework registers step types for: its own and its composed sources'."""
+    from darnit.core.composition import _TAG_COMPOSED_FROM
+
+    plugins = {framework_name} if framework_name else set()
+    if framework is not None:
+        plugins.add(framework.metadata.name)
+        plugins |= {c.tags[_TAG_COMPOSED_FROM] for c in framework.controls.values() if c.tags.get(_TAG_COMPOSED_FROM)}
+    return plugins or None
+
+
 def audit_report_metadata(
     operator_config: "LoadedOperatorConfig",
     local_path: str,
@@ -264,7 +275,10 @@ def audit_report_metadata(
     deprecation warnings, the errors of a ``.project/`` file that is
     present but invalid (not read, and never written; feature 042, FR-019),
     and the plugin step type registrations that were refused (feature 044),
-    which are also logged.
+    which are also logged. Only refusals attempted by the audited framework's
+    plugins (including the frameworks it composes) are reported: the registry
+    is process-wide, and another framework's refusals change nothing this
+    audit runs. With no framework named, every refusal is reported.
     """
     from darnit.config.loader import load_project_config_checked
     from darnit.config.merger import baseline_toml_warnings, find_ignored_repository_settings
@@ -294,7 +308,12 @@ def audit_report_metadata(
         f"Invalid project file, not read and not written: {error}"
         for error in load_project_config_checked(local_path).errors
     ]
-    warnings += [refusal.message() for refusal in get_sieve_handler_registry().refused_registrations]
+    plugins = _framework_plugins(framework_name, framework)
+    warnings += [
+        refusal.message()
+        for refusal in get_sieve_handler_registry().refused_registrations
+        if plugins is None or refusal.attempted_by in plugins
+    ]
     for warning in warnings:
         logger.warning(warning)
     if warnings:

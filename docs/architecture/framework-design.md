@@ -306,7 +306,7 @@ registry.register(
 
 **Common step fields**, accepted on every step: `handler`, `when`, `shared`, `use_locator`, `authority`, `existence`, `concludes`, `fail_on_miss`, `fail_on_status`, `promotion` (3.0.1), `description` (documentation only), `expr` (only when the step type declares expression names), and `expr_decides` (only with `expr`, on a step type whose expression the orchestrator evaluates, section 3.7).
 
-**Name collisions.** Core step types register before any plugin. A registration is refused, logged at WARNING naming both registrants, and recorded in the registry's `refused_registrations` (shown by `darnit list` and in the audit warnings) when:
+**Name collisions.** Core step types register before any plugin. A registration is refused, logged at WARNING naming both registrants, and recorded in the registry's `refused_registrations` when the following apply. `darnit list` shows every refusal; an audit's warnings show those attempted by a plugin of the audited framework or of a framework it composes, since only those change what the audit runs:
 
 1. a plugin registers a name a core step type uses; the core step type is unchanged;
 2. a plugin registers a name a different plugin registered; the first registration is unchanged.

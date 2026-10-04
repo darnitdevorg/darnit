@@ -24,8 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Plugins cannot redefine a step type. A plugin registering a name that core
   or another plugin already registered (for example `manual` with a PASS
   ceiling) is refused, logged at WARNING naming both registrants, and listed
-  by `darnit list` and in the audit warnings; the existing step type is
-  unchanged.
+  by `darnit list` and in the warnings of an audit of that plugin's framework
+  (or a framework composing it); the existing step type is unchanged.
 
 ### Removed
 
