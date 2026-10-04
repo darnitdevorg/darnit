@@ -5,6 +5,10 @@ unmodified code before implementation began. That ordering is the whole point:
 a golden generated during implementation proves only that the code agrees with
 itself. Feature 028 reached the same conclusion when it rejected snapshot
 tooling whose update flag silently absorbs regressions.
+
+The baseline is the handler's output. Its lock-file "pass" is unchanged by
+feature 044 but no longer concludes RE-01.01: the step type's ceiling is
+`{fail}` (FR-010), so the control needs a corpus-backed promotion to PASS.
 """
 
 from __future__ import annotations
