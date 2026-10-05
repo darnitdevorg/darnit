@@ -29,6 +29,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- `.baseline.toml` reading and the code that existed only for it:
+  `load_user_config` (including its `trusted` path),
+  `load_user_config_with_report`, `validate_user_config`, `deep_merge`, and
+  `BASELINE_TOML_DEPRECATION_ACTIVE` (`darnit.config.merger`);
+  `darnit.config.user_schema` (`UserConfig`, `UserSettings`,
+  `ControlOverride`, `ControlGroup`, `CustomControl`, `ControlStatus`,
+  `create_user_config`, `create_user_config_with_kusari`) and their
+  `darnit.config` re-exports (`UserControlOverride`, `UserControlStatus`);
+  and `load_effective_audit_config`, `get_excluded_control_ids`, and
+  `get_adapter_for_control` (`darnit.tools.audit`). Custom controls and pass
+  overrides belong in operator configuration.
+- The root `example.baseline.toml`.
 - Python helpers that read or wrote raw context values: `load_context`,
   `load_stored_context`, `flatten_user_context`, `get_context_value`,
   `get_raw_value`, `is_context_confirmed`, `save_context_value`, and
@@ -49,6 +61,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inside the audited repository is refused, and a file writable by others is
   refused under `--strict-operator-config` (on by default in recognized CI).
   Reports record its source and digest.
+- `darnit run -f/--framework NAME` selects the framework, as `audit` and
+  `harness` do (#507).
 - `darnit config show` (resolved operator configuration, digest, permission
   check, and redacted settings), `darnit config trust add|list|remove`
   (edits `[trust].repos`), and `darnit config migrate [REPO] [--force]`
@@ -260,12 +274,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   network in CI now FAILs RE-02.01. The Nix signal counts only when RE-01.02
   passed, and RE-01.02 no longer concludes PASS on its own, so the fetch is
   no longer outweighed.
-- Per-control `status` and `reason` in a repository's `.baseline.toml`, ignored
-  since 0.1.1, are read during the deprecation release as not-applicable
-  claims under the trust rules: a claim counts only for a repository the
-  operator trusts, or after the operator confirms it; otherwise the control
-  is evaluated and counts as non-compliant. `darnit config migrate` moves
-  them to `.project/darnit.yaml`.
 - **BREAKING:** `PENDING_LLM` is removed; `PENDING` with
   `pending.kind = "llm_judgment"` replaces it in every output, including MCP
   tool results and JSON reports.
@@ -386,13 +394,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   replaces an invalid `.project/project.yaml` with a scaffold: when either
   `.project/` file is present but invalid, writes are refused with the
   validation errors, and audit reports list them as warnings.
-- `.baseline.toml` is deprecated. In this release darnit reads its
-  per-control `status`/`reason` as not-applicable claims under the same rules
-  as `.project/` claims, still honors `extends` naming a registered framework,
-  ignores its tool settings (see Security above), and warns once per setting
-  in the file with the setting's new home. A later release will ignore the
-  file with a notice. `darnit init` no longer creates `.baseline.toml`; it
-  explains `.project/` claims and operator configuration.
+- **BREAKING:** darnit no longer reads a repository's `.baseline.toml`.
+  Nothing in it has any effect: not per-control `status`/`reason` (even for
+  a repository the operator trusts), not `extends` (use `--framework`), and
+  not `version` or `settings`, which 0.1.1 still honored. When the file is
+  present, an audit logs one WARNING and adds the same notice to the report's
+  `warnings`, pointing at `darnit config migrate`, which moves its claims to
+  `.project/darnit.yaml` and prints an operator configuration fragment for
+  its other settings. Its keys are no longer listed in
+  `ignored_repository_settings`. `darnit init` no longer creates
+  `.baseline.toml`; it explains `.project/` claims and operator
+  configuration.
+- **BREAKING:** Python API changes from removing `.baseline.toml`:
+  `merge_configs(framework, operator=None)` and
+  `merge_control(control_id, framework_control, defaults)` take no user
+  configuration; `load_effective_config`, `load_effective_config_by_name`,
+  `load_controls_from_toml`, and `load_controls_by_name` take no repository
+  path, and `load_effective_config_auto(framework_path=None,
+  framework_name=None, *, operator=None)` no longer takes one;
+  `EffectiveControl` loses `status`, `status_reason`, `from_user`, and
+  `is_applicable()`, and `EffectiveConfig` loses `cache_results`,
+  `cache_ttl`, `timeout`, and `get_excluded_controls()`;
+  `run_checks`/`run_sieve_audit` `apply_user_config` is renamed
+  `evaluate_claims` (it still turns `.project/` claim evaluation on or off).
+  No MCP tool or CLI parameter served only `.baseline.toml`.
 - A not-applicable claim makes a control `N/A` (excluded from the level's
   denominator) only when it is honored: the repository is trusted, an
   explicit claim gives a reason, and no declared evidence contradicts it, or

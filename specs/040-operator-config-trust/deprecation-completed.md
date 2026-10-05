@@ -16,8 +16,8 @@ Removed with it:
 - The `BASELINE_TOML_DEPRECATION_ACTIVE` switch and the per-setting
   deprecation warnings.
 - `load_user_config` (with its `trusted` path) and
-  `load_user_config_with_report`, the untrusted-file restriction, and
-  `validate_user_config`.
+  `load_user_config_with_report`, the untrusted-file restriction,
+  `validate_user_config`, and `deep_merge`.
 - `.baseline.toml` claims in `darnit.trust.assertions`.
 - `darnit.config.user_schema` (`UserConfig`, `UserSettings`,
   `ControlOverride`, `ControlGroup`, `CustomControl`, `ControlStatus`,
@@ -29,6 +29,10 @@ Removed with it:
   `EffectiveConfig` loses the `.baseline.toml` settings and
   `get_excluded_controls()`; `load_effective_config*` and the control loaders
   take no repository path.
+- `darnit.tools.audit` `load_effective_audit_config`,
+  `get_excluded_control_ids`, and `get_adapter_for_control`, which read the
+  repository's file. `run_checks`/`run_sieve_audit` `apply_user_config` is
+  renamed `evaluate_claims`; it still gates `.project/` claim evaluation.
 
 ## The notice
 
