@@ -47,7 +47,7 @@ What happens inside `audit_openssf_baseline()`.
 ```mermaid
 flowchart TD
     A[audit_openssf_baseline called] --> B[Load framework TOML]
-    B --> C[Load .baseline.toml user overrides]
+    B --> C[Load operator configuration]
     C --> D[Merge configs → EffectiveConfig]
     D --> E[load_controls_from_effective]
     E --> F[Convert each control → ControlSpec + Pass objects]
@@ -227,7 +227,7 @@ flowchart TD
 | Term | Meaning |
 |------|---------|
 | **TOML config** | Framework control definitions (`openssf-baseline.toml`) |
-| **.baseline.toml** | User overrides (disable controls, change severity) |
+| **Operator configuration** | Tool settings owned by whoever runs darnit (pass overrides, custom controls, trust), kept outside the audited repository |
 | **.project/project.yaml** | Project context (maintainers, CI provider, etc.) |
 | **ControlSpec** | A control with its passes, remediation, and metadata |
 | **SieveResult** | Outcome of verifying a single control (PASS/FAIL/WARN) |

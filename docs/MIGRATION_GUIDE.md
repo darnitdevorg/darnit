@@ -53,9 +53,11 @@ expr = 'output.json.status == "pass"'
 ## Plugin Security Configuration
 
 ### New Configuration
-Add to your `.baseline.toml`:
+Add to your operator configuration (`~/.config/darnit/config.toml`, or the file named by `--operator-config`):
 
 ```toml
+schema_version = 1
+
 [plugins]
 # Require signed plugins in production
 allow_unsigned = false
@@ -64,11 +66,11 @@ allow_unsigned = false
 trusted_publishers = [
     "https://github.com/my-org",
 ]
-
-# Per-plugin configuration
-[plugins."my-plugin"]
-version = ">=1.0.0"
 ```
+
+## Repository `.baseline.toml`
+
+darnit no longer reads a repository's `.baseline.toml`; an audit of a repository that still has one reports a single notice. Run `darnit config migrate [REPO]` to move its per-control `status`/`reason` claims to `.project/darnit.yaml` and print a proposed operator configuration fragment for its other settings. Review both, add the fragment to your operator configuration, select the framework with `--framework` instead of `extends`, then delete `.baseline.toml`.
 
 ## Context System
 

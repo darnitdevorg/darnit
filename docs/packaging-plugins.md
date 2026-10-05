@@ -294,7 +294,7 @@ This works but bypasses the signing chain. Fine for development; not recommended
 
 darnit's plugin discovery has an optional verification step backed by Sigstore. By default it allows unsigned plugins (for backward compatibility), but production deployments can flip the switch.
 
-Configure trust in your project's `.baseline.toml`:
+Configure trust in operator configuration (`~/.config/darnit/config.toml`, or the file named by `--operator-config`; it is never read from the audited repository):
 
 ```toml
 [plugins]

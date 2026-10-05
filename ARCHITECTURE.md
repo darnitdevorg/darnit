@@ -42,8 +42,8 @@ Here's the end-to-end flow that an AI assistant (or human) goes through when aud
  Load existing project         DETERMINISTIC                   things actually live
  context from .project/        │ file exists? API call?        (e.g., "my security
                                ▼                               docs are at
- Merge user overrides          PATTERN                         docs/security.txt,
- from .baseline.toml           │ regex match? heuristics?      not SECURITY.md")
+ Apply operator config         PATTERN                         docs/security.txt,
+ (outside the repository)      │ regex match? heuristics?      not SECURITY.md")
                                ▼
                                LLM                          b) Framework needs user
                                │ ask calling AI to judge       to confirm values it
@@ -423,19 +423,19 @@ Three configuration layers, merged at runtime:
 │  Defines: controls, passes, templates, context prompts│
 │  Owner: implementation author                         │
 ├──────────────────────────────────────────────────────┤
-│  Layer 2: .baseline.toml (user overrides)             │
-│  Defines: disabled controls, severity overrides,      │
-│           custom tags, plugin trust settings           │
-│  Owner: project maintainer                            │
+│  Layer 2: Operator configuration (outside the repo)   │
+│  Defines: pass overrides, custom controls, plugins,   │
+│           MCP servers, stores, trust, policy          │
+│  Owner: whoever runs darnit                           │
 ├──────────────────────────────────────────────────────┤
-│  Layer 3: .project/project.yaml (project context)     │
+│  Layer 3: .project/ (project context and claims)      │
 │  Defines: maintainers, CI provider, governance model, │
-│           security contacts, release info              │
+│           security contacts, not-applicable claims    │
 │  Owner: project; darnit writes only confirmed values  │
 └──────────────────────────────────────────────────────┘
 ```
 
-At audit time, the framework merges Layer 1 + Layer 2 into an "effective config", then injects Layer 3 into each `CheckContext.project_context`.
+At audit time, the framework merges Layer 1 + Layer 2 into an "effective config", then injects Layer 3 into each `CheckContext.project_context`. Nothing in the audited repository changes Layers 1 and 2; a repository's `.baseline.toml` is not read (an audit reports one notice pointing at `darnit config migrate`).
 
 ### Context Collection
 
@@ -457,7 +457,7 @@ AI Assistant
     ▼
 audit_openssf_baseline(level=1)
     │
-    ├─► Load framework TOML + .baseline.toml → EffectiveConfig
+    ├─► Load framework TOML + operator configuration → EffectiveConfig
     ├─► Load .project/project.yaml → project_context
     ├─► Convert controls → ControlSpec + Pass objects
     ├─► Filter by level (and optionally by tags)
@@ -501,7 +501,7 @@ For detailed mermaid diagrams of audit internals, remediation flow, context life
 | **Config** | `config/loader.py` | Load and parse TOML framework configs |
 | | `config/framework_schema.py` | Schema for framework TOML validation |
 | | `config/control_loader.py` | Convert TOML controls → `ControlSpec` objects |
-| | `config/merger.py` | Merge framework + user configs → effective config |
+| | `config/merger.py` | Merge framework + operator configuration → effective config |
 | **Context** | `context/dot_project.py` | Load/save `.project/project.yaml` |
 | | `context/dot_project_mapper.py` | Map TOML context keys to project YAML paths |
 | | `context/sieve.py` | Context sieve (progressive auto-detection) |

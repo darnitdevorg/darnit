@@ -1,12 +1,13 @@
 # Plugin Discovery System Design
 
+> **Note**: This is a design record. Earlier revisions also let a repository-level user configuration (`.baseline.toml`) reference adapters; darnit no longer reads that file. Adapters are referenced from framework TOML, and tool settings live in operator configuration outside the audited repository (`docs/architecture/framework-design.md` section 14).
+
 ## Overview
 
 This document describes the design for a unified plugin discovery system that enables:
 
 1. **Framework packages** to define compliance frameworks via TOML + Python adapters
 2. **Plugin packages** to provide reusable adapters (checks, remediations) across frameworks
-3. **User configs** to reference adapters from any installed package
 
 ## Current State Analysis
 
@@ -283,7 +284,7 @@ class AdapterInfo:
 
 ## Adapter Resolution Algorithm
 
-When a framework or user config references an adapter, resolution follows this order:
+When a framework config references an adapter, resolution follows this order:
 
 ```
 1. Explicit module path (type = "python", module = "...")
@@ -303,16 +304,15 @@ When a framework or user config references an adapter, resolution follows this o
 ### Example Resolution
 
 ```toml
-# User's .baseline.toml
+# Framework TOML
 [controls."OSPS-VM-05.02"]
 check = { adapter = "kusari" }  # Just the name
 ```
 
 Resolution:
-1. Check if `kusari` is defined in `.baseline.toml` `[adapters]` section → No
-2. Check if `kusari` is defined in framework's `[adapters]` section → No
-3. Check `darnit.check_adapters` entry points → Found! `darnit_plugins.adapters.kusari:KusariAdapter`
-4. Load and instantiate `KusariAdapter`
+1. Check if `kusari` is defined in framework's `[adapters]` section → No
+2. Check `darnit.check_adapters` entry points → Found! `darnit_plugins.adapters.kusari:KusariAdapter`
+3. Load and instantiate `KusariAdapter`
 
 ---
 
@@ -350,26 +350,6 @@ class = "SCACheckAdapter"
 [controls."OSPS-VM-05.02"]
 name = "PreReleaseSCA"
 check = { adapter = "kusari" }  # Uses entry point
-```
-
-### User Config (.baseline.toml)
-
-```toml
-# .baseline.toml
-extends = "openssf-baseline"
-
-# Reference plugin adapter by name
-[controls."OSPS-VM-05.02"]
-check = { adapter = "kusari" }
-
-# Or define inline with full path
-[adapters.my_scanner]
-type = "python"
-module = "internal_tools.scanner"
-class = "InternalScanner"
-
-[controls."OSPS-SA-03.01"]
-check = { adapter = "my_scanner" }
 ```
 
 ---
@@ -528,7 +508,6 @@ class KusariCheckAdapter(CheckAdapter):
 
 1. **Existing frameworks** - No changes required, entry points still work
 2. **New adapter packages** - Use new `darnit.check_adapters` entry points
-3. **User configs** - Can reference adapters by name once plugins installed
 
 ---
 
@@ -560,9 +539,6 @@ class TestPluginRegistry:
 class TestCrossPackageAdapters:
     def test_framework_uses_plugin_adapter(self):
         """Framework should be able to use adapter from another package."""
-
-    def test_user_config_overrides_with_plugin(self):
-        """User config should override adapter with plugin."""
 ```
 
 ---
@@ -588,7 +564,6 @@ This design enables a pluggable architecture where:
 
 - **Framework authors** can reference adapters from any installed package
 - **Plugin authors** can provide reusable adapters via entry points
-- **Users** can mix and match adapters in their `.baseline.toml`
 - **Backwards compatibility** is preserved for existing implementations
 
 The key addition is the **`PluginRegistry`** that unifies discovery across all plugin types and provides a consistent API for resolution.

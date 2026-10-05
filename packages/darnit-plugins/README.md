@@ -44,18 +44,6 @@ description = "Test control using echo adapter"
 check = { adapter = "echo", config = { status = "PASS" } }
 ```
 
-### In User Config (.baseline.toml)
-
-Override framework adapters with plugins:
-
-```toml
-# .baseline.toml
-extends = "openssf-baseline"
-
-[controls."OSPS-VM-05.02"]
-check = { adapter = "kusari" }
-```
-
 ### Programmatic Usage
 
 ```python

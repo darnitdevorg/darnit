@@ -745,7 +745,7 @@ Only after the person accepts does the agent fill in the digest; the confirmatio
                               │
                               ▼
               ┌───────────────────────────────────┐
-              │  Check .baseline.toml for         │
+              │  Check framework TOML for         │
               │  control-specific adapter config  │
               └───────────────────────────────────┘
                               │
@@ -1467,16 +1467,16 @@ Use the provided verification script instead.
 │                           Configuration Files                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
-│  project.toml                      │  .baseline.toml                         │
+│  project.toml                      │  operator configuration (user-level)    │
 │  ─────────────────────────────────────────────────────────────────────────   │
-│  Purpose: Project metadata &       │  Purpose: MCP server configuration      │
-│           documentation locations  │           & adapter settings            │
+│  Purpose: Project metadata &       │  Purpose: tool settings, never read     │
+│           documentation locations  │           from the audited repository   │
 │                                    │                                         │
 │  Contains:                         │  Contains:                              │
 │  • schema_version                  │  • schema_version                       │
-│  • [project] name, type, controls  │  • [settings] defaults, timeouts        │
-│  • [security] policy, threat_model │  • [adapters.*] custom adapter configs  │
-│  • [governance] contributing, etc. │  • [controls.*] per-control overrides   │
+│  • [project] name, type, controls  │  • [plugins], [mcp_servers], [stores]   │
+│  • [security] policy, threat_model │  • [custom_controls.*]                  │
+│  • [governance] contributing, etc. │  • [controls.*] pass overrides          │
 │  • [testing] docs, requirements    │                                         │
 │  • [releases] verification         │                                         │
 │  • [ci.github] workflows, etc.     │                                         │

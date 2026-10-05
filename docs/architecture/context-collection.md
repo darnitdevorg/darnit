@@ -139,7 +139,7 @@ The framework SHALL persist context a person confirmed, with a confirmation reco
 
 #### Scenario: Project file is not written
 - **WHEN** a context value is persisted
-- **THEN** the framework SHALL NOT write it to `.project/project.yaml` or `.baseline.toml`
+- **THEN** the framework SHALL NOT write it to `.project/project.yaml`
 
 ### Requirement: Context validation
 The framework SHALL validate context values against defined constraints.

@@ -77,23 +77,23 @@ result = adapter.check(
 print(f"{result.control_id}: {result.status.value} - {result.message}")
 ```
 
-### User Customization
+### Selecting the Framework and Claiming Controls Not Applicable
 
-Users can customize checks with `.baseline.toml`:
+Select this framework per run:
 
-```toml
-version = "1.0"
-extends = "testchecks"
+```bash
+darnit audit --framework testchecks /path/to/repo
+```
 
-# Skip TODO check - we use TODOs in this project
-[controls."TEST-QA-01"]
-status = "n/a"
-reason = "TODOs are acceptable in this project"
+A project claims a control is not applicable in `.project/darnit.yaml`. The
+claim counts only when the operator trusts the repository and no evidence
+contradicts it, or after the operator confirms it:
 
-# Skip print statement check for scripts
-[controls."TEST-QA-02"]
-status = "n/a"
-reason = "Print statements OK in CLI scripts"
+```yaml
+controls:
+  TEST-QA-01:
+    status: n/a
+    reason: TODOs are acceptable in this project
 ```
 
 ## Creating Your Own Framework

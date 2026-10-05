@@ -1,6 +1,6 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.11
+> **Version**: 1.0.0-alpha.12
 > **Status**: Authoritative
 > **Last Updated**: 2026-10-04
 
@@ -163,7 +163,7 @@ steps = ["Verify branch protection in repository settings"]
 #### Requirement: No Unknown Control Keys
 - **WHEN** a control declares a key the control schema does not define
 - **THEN** loading the framework file MUST fail with an error naming the file, the control, and the key (feature 044; step keys are checked as in section 3.0.3)
-- **AND** a custom control defined in `.baseline.toml` MUST fail the same way, the error naming `.baseline.toml`; an operator custom control's unknown key fails loading the operator configuration (section 14)
+- **AND** an operator custom control's unknown key MUST fail loading the operator configuration (section 14)
 
 #### Requirement: SARIF Metadata
 - **WHEN** SARIF output is generated
@@ -1846,9 +1846,8 @@ The darnit framework package SHALL NOT contain code, modules, or string literals
 #### Requirement: Explicit implementation selection
 - **WHEN** callers need a compliance implementation
 - **THEN** they SHALL use `get_implementation(name)` with an explicit name
-- **AND** the name SHALL be resolved from `.baseline.toml` `extends` field,
-  an explicit parameter, or `discover_implementations()` to list available options
-- **AND** a repository may name a framework only by registered name (never by file path), and the operator's choice (Section 14) takes precedence
+- **AND** the name SHALL come from an explicit parameter (the `--framework` option or a tool's framework argument), or `discover_implementations()` to list available options
+- **AND** nothing in the audited repository selects the framework (Section 14.4)
 
 ---
 
@@ -1930,7 +1929,19 @@ Design principle: **the audited repository is untrusted input in its entirety, i
 
 ### 14.4 Repository-level .baseline.toml
 
-The repository-level `.baseline.toml` is deprecated. During the deprecation release only its per-control status and reason are read, as assertions under 14.3; every other setting is ignored with a warning naming its new home. `darnit config migrate` moves assertions into `.project/` and proposes an operator configuration fragment.
+darnit does not read a repository's `.baseline.toml` for anything: no per-control status or reason, no `extends`, no settings, no custom controls, and no other key. Not-applicable claims come only from `.project/` (14.3), the framework is selected only by the `--framework` option or a tool's framework argument, and tool settings come only from operator configuration (14.1).
+
+- When the file exists in an audited repository, the audit SHALL record exactly one notice, logged at WARNING and listed in the report's `warnings`: the file is ignored, and `darnit config migrate` moves its claims to `.project/darnit.yaml` and prints an operator configuration fragment for its tool settings. Its keys are not listed in `ignored_repository_settings`.
+- `darnit config migrate [REPO]` reads the file itself. It writes the per-control status and reason to `.project/darnit.yaml` (keeping an existing claim for the same control unless `--force` is given), prints a proposed operator configuration fragment for the other settings, never writes operator configuration, and never deletes the file.
+
+#### Scenario: Claim in .baseline.toml for a trusted repository
+- **WHEN** a repository the operator trusts has a `.baseline.toml` marking a control `status = "n/a"` with a reason
+- **THEN** the control MUST be evaluated as if the file were absent, with no assertion
+- **AND** the report MUST carry the single notice
+
+#### Scenario: extends in .baseline.toml
+- **WHEN** `.baseline.toml` sets `extends` to a registered framework and the run names no framework
+- **THEN** the audit MUST NOT use the framework the file names
 
 ## 15. Remediation Safety
 
@@ -1958,7 +1969,7 @@ high_impact = "prompt"  # prompt | manual | auto
 | `manual` | darnit makes no platform change; the outcome is `manual` with the exact steps for a person |
 | `auto` | darnit writes without asking, and records the change and its impact in the outcome |
 
-- The policy comes only from operator configuration. A `[remediation]` setting in the audited repository (`.project/`, `.baseline.toml`, or any other file) is ignored.
+- The policy comes only from operator configuration. A `[remediation]` setting in the audited repository (`.project/` or any other file) is ignored.
 - An absent section means both values are `prompt`. Unknown keys or values stop the run (section 14.1).
 - Every `RemediationRun` records the policy in effect and the operator configuration digest; `darnit config show` prints the resolved section.
 - Every value still follows the `platform_setting` rules (section 4.5: read first, never weaken, no write when already satisfied, default branch, read back). `auto` removes only the approval step for platform change sets. It never approves an item that requires individual approval because of `safe = false` or because it cannot be previewed (15.3); those need a person's approval under every policy.
@@ -2187,7 +2198,7 @@ The `confirm_*` tools are unchanged; approvals are not confirmations. Audit resu
 
 ## Appendix C: Removed Requirements
 
-The following requirements have been superseded: by the handler dispatch architecture, and (the last two entries) by the feature 043 remediation design.
+The following requirements have been superseded: by the handler dispatch architecture, by the feature 043 remediation design (the `api_call` and `requires_confirmation` entries), and by the operator configuration and trust boundary (the last entry, Section 14).
 
 ### Removed: VerificationPassProtocol
 **Reason**: Replaced by handler dispatch architecture. Pass classes that implemented this protocol (`DeterministicPass`, `PatternPass`, `LLMPass`, `ManualPass`, `ExecPass`) are superseded by handler functions registered in `SieveHandlerRegistry`.
@@ -2250,12 +2261,22 @@ The following requirements have been superseded: by the handler dispatch archite
 **Reason**: Feature 043. They were declared but never enforced (FR-025: a safety, confirmation, or preview property is enforced or absent).
 **Migration**: Use `safe = false` instead of `requires_confirmation` (section 15.3). Previews come from plan mode (section 4.2); an exec remediation declares `effects = "working_tree"` and `offline = true` instead of a `dry_run_command` (section 4.4).
 
+### Removed: Repository-level .baseline.toml
+**Reason**: The audited repository is untrusted input (Section 14). Feature 040 deprecated the file and, for one release, read only its per-control status and reason as claims and its `extends` by registered name; it is now ignored entirely (Section 14.4).
+**Migration**: Run `darnit config migrate [REPO]`: claims move to `.project/darnit.yaml`, and the printed fragment goes into operator configuration after review. Select the framework with `--framework`.
+
+#### Scenario: Repository still has .baseline.toml
+- **WHEN** an audited repository contains `.baseline.toml`
+- **THEN** no key in it MUST affect the audit
+- **AND** the audit MUST report one notice pointing at `darnit config migrate`
+
 ---
 
 ## Version History
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.12 | 2026-10-04 | Repository-level `.baseline.toml` is no longer read: one notice points at `darnit config migrate`, framework selection only by `--framework` or a tool argument (Sections 2.3, 10.5, 14.4, 15.1; Appendix C) |
 | 1.0.0-alpha.11 | 2026-10-04 | Close remaining false-PASS paths (feature 044): an expression that cannot be evaluated or is not boolean makes the step ERROR, expression names per step type with usable `project` values and a repository-aware `file_exists`, load-time expression reference check (Section 3.7); step registration declares `settings` and `expression_names`, plugins cannot replace a registered step type, and unknown control keys, unknown step keys, and unregistered step types fail loading (Sections 2.3, 3.0.3); reproducibility step types conclude only FAIL (Sections 3.0.1, 12); `expr_decides`, an expression that decides on a handler PASS (Sections 3.0.3, 3.7); `gh_api` `evidence_fields`, required for personal records (Section 3.8); `file_must_exist` replaced by the registered `file_exists` (Section 3.2); field tables corrected to what each handler reads (Sections 3.3-3.5) |
 | 1.0.0-alpha.10 | 2026-10-02 | Remediation safety (feature 043): plan/apply protocol and single writer (Section 4.2), `platform_setting` (4.5), exec `effects`/`offline` and no platform state from exec (4.4), `file_create.project_reference` (4.3), remediation policy, digest-bound approval, outcomes, re-check, run manifest, and version-control rules (Section 15); removed `api_call`, `requires_confirmation`, `dry_run_supported`, `dry_run_command` (Appendix C) |
 | 1.0.0-alpha.9 | 2026-09-29 | Context value standing, confirmation records, lapse, detection fallbacks, canonical keys, reads never write, targeted project-file writes, confirmation tool contract (Sections 7.4-7.11, feature 042) |

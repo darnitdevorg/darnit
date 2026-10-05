@@ -31,9 +31,9 @@ The `run_sieve_audit()` function SHALL accept a list of pre-loaded `ControlSpec`
 ### Requirement: Pipeline supports optional features
 The `run_sieve_audit()` function SHALL support optional parameters for features that not all callers need, with sensible defaults.
 
-#### Scenario: User config exclusions
-- **WHEN** `apply_user_config=True` (default)
-- **THEN** controls excluded in `.baseline.toml` SHALL be marked as `N/A` in results
+#### Scenario: Not-applicable claims
+- **WHEN** `evaluate_claims=True` (default)
+- **THEN** the repository's not-applicable claims (`.project/darnit.yaml` and applicability-changing `.project/` context values) SHALL be assessed under framework-design 14.3, and only an honored claim SHALL mark its control `N/A`
 
 #### Scenario: UnifiedLocator integration
 - **WHEN** the pipeline runs

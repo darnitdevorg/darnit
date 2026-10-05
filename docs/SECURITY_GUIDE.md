@@ -276,9 +276,9 @@ Project data in `.project/` that makes a control not applicable (for example a v
 
 An operator can confirm a pending claim through the `confirm_project_data` MCP tool (`confirm_not_applicable`). Confirmations are stored on the operator side, never in the repository, and lapse when they expire or when the claim's reason or evidence changes. An agent must only confirm a claim when the operator explicitly asks it to.
 
-### Deprecated: `.baseline.toml`
+### Removed: `.baseline.toml`
 
-`.baseline.toml` is deprecated. In this release darnit reads its per-control `status` and `reason` and treats them exactly like `.project/` claims; it also still honors `extends` naming a registered framework (use `--framework` instead). Every audit warns for each setting in the file, naming where it now belongs. Tool settings in it are not applied. A later release will ignore the file.
+darnit no longer reads `.baseline.toml`. Nothing in it has any effect: not per-control `status` and `reason` (even for a trusted repository), not `extends` (use `--framework`), and not tool settings. When the file is present, the audit reports one notice saying it was ignored.
 
 Run `darnit config migrate [REPO]` to write its claims to `.project/darnit.yaml` (existing claims are kept unless you pass `--force`) and print a proposed operator configuration fragment for its tool settings. The command never writes operator configuration. Review both, then delete `.baseline.toml`.
 

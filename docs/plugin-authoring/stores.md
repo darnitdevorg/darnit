@@ -82,7 +82,7 @@ class S3AttestationStore:
         return None
 ```
 
-### Selecting the backend in `.baseline.toml`
+### Selecting the backend in operator configuration
 
 ```toml
 [stores.attestation]
@@ -177,7 +177,7 @@ is expensive to establish.
 
 Feature 034 ships two additional filesystem-backed backends inside
 darnit-core alongside the in-repo defaults. Both are selectable from
-`.baseline.toml` under any `[stores.<kind>]` block; both write outside
+operator configuration under any `[stores.<kind>]` block; both write outside
 the audited repository. They exist because the in-repo defaults land
 attestations, reports, and audit-cache under `<repo>/.darnit/`, which
 is often not where an operator wants them (backups, CI artifact
@@ -228,17 +228,13 @@ root    = "$RUNNER_ARTIFACTS_DIR/darnit-reports"
 
 ### Multi-repo templating
 
-Darnit has no org-level or user-level config file. If you want the
-same `[stores.<kind>]` block active on 30 repos, use one of:
-
-1. **Env-var interpolation (easiest)**. Keep `root = "$DARNIT_ATT_ROOT"`
-   in every repo's `.baseline.toml`. Set `DARNIT_ATT_ROOT` once per
-   machine (shell profile, systemd unit, CI runner env). The 30 repos
-   share the destination without duplicating the literal path.
-2. **CI/CD templating**. Your workflow rewrites `.baseline.toml` before
-   invoking `darnit audit`.
-3. **Cookiecutter / repo-init tool**. One-shot copy the block into
-   each repo when you first onboard it.
+Store selection lives in operator configuration, which is per user
+(or per CI runner), not per repository, so one `[stores.<kind>]` block
+applies to every repository that user audits. To vary the destination
+per machine, keep `root = "$DARNIT_ATT_ROOT"` in the block and set
+`DARNIT_ATT_ROOT` in the shell profile, systemd unit, or CI runner
+environment; to vary it per run, point `--operator-config` at another
+file.
 
 ### The `.project/` layer (FR-009)
 
@@ -246,7 +242,7 @@ Neither `local-fs` nor `user-local` is registered under
 `darnit.stores.project`. `.project/project.yaml` is the CNCF
 `.project/` spec's canonical repo-committable artifact and stays in
 the repo by design. If you write `[stores.project] backend = "local-fs"`
-in `.baseline.toml`, `resolve_stores` raises `StoreNotInstalled`
+in operator configuration, `resolve_stores` raises `StoreNotInstalled`
 before any control runs -- the misconfiguration surfaces at audit
 start, not in a confusing runtime failure. Redirecting project state
 outside the repo means governance tooling can no longer find it, so

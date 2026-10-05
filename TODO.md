@@ -6,7 +6,7 @@ This document tracks future enhancements and design work needed.
 
 **Status**: Design needed
 **Priority**: Medium
-**Context**: Currently, configuration is per-repository via `.baseline.toml`. We need a more flexible system.
+**Context**: Tool configuration is one per-user operator configuration file (feature 040); a repository's `.baseline.toml` is no longer read. Organization-level policy is tracked in #503. We need a more flexible system.
 
 ### Problem Statement
 
@@ -20,7 +20,7 @@ Users need the ability to:
 
 1. **Enterprise Central Policy**
    ```toml
-   # .baseline.toml
+   # operator configuration
    extends = [
        "https://config.company.com/darnit/security-policy.toml",
        "https://config.company.com/darnit/team-backend.toml",
@@ -30,7 +30,7 @@ Users need the ability to:
 
 2. **Monorepo Shared Config**
    ```toml
-   # packages/my-service/.baseline.toml
+   # operator configuration for packages/my-service
    extends = [
        "../../.darnit-shared.toml",
        "openssf-baseline",
@@ -41,7 +41,7 @@ Users need the ability to:
    ```
    org-policy.toml (remote server)
        └── team-policy.toml (remote server)
-           └── .baseline.toml (local repo)
+           └── operator configuration (local)
    ```
 
 ### Design Considerations

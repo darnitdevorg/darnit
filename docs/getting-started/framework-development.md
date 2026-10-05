@@ -197,8 +197,8 @@ Changes here affect all controls across all implementations — be careful and t
 Configuration loading lives in `packages/darnit/src/darnit/config/`. The framework loads:
 
 1. Implementation TOML (via `get_framework_config_path()`)
-2. Project context (`.project/project.yaml`)
-3. Local overrides (`.baseline.toml`)
+2. Operator configuration (`config/operator/`; never from the audited repository)
+3. Project context and claims (`.project/project.yaml`, `.project/darnit.yaml`)
 
 ## Key Files Reference
 

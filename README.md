@@ -456,7 +456,7 @@ Darnit is designed with security in mind. Key security features include:
 
 ### Plugin Security
 
-Configure trusted publishers in `.baseline.toml`:
+Configure trusted publishers in operator configuration (`~/.config/darnit/config.toml`, or the file named by `--operator-config`):
 
 ```toml
 [plugins]
@@ -473,7 +473,7 @@ Default trusted publishers: `kusari-oss`, `kusaridev`
 
 - [ ] Use fine-grained GitHub tokens with minimal permissions
 - [ ] Always use `dry_run=True` first when remediating
-- [ ] Review `.baseline.toml` changes in pull requests
+- [ ] Review `.project/` changes (not-applicable claims) in pull requests
 - [ ] Name custom adapter packages with `darnit_` prefix
 - [ ] Enable plugin verification in production (`allow_unsigned = false`)
 
