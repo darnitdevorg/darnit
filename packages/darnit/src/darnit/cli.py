@@ -798,6 +798,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     from darnit.agent.feedback import get_feedback_handler
     from darnit.agent.graph import audit, collect_context, remediate, route
     from darnit.agent.state import AuditState
+    from darnit.config.merger import load_effective_config_auto
 
     repo_path = str(Path(args.repo_path).resolve())
 
@@ -811,6 +812,14 @@ def cmd_run(args: argparse.Namespace) -> int:
     from darnit.trust.decision import decide_trust, format_trust, owner_repo_from_identity
 
     trust = decide_trust(target, operator_config.config, repo_path).report()
+
+    try:
+        framework_name = load_effective_config_auto(
+            framework_name=args.framework, operator=operator_config.config
+        ).framework_name
+    except (ValueError, FileNotFoundError) as e:
+        logger.error(f"Failed to load framework {args.framework!r}: {e}")
+        return 1
 
     # Feedback mode — default to interactive if terminal, noninteractive if not
     feedback_mode = args.feedback_mode
@@ -832,7 +841,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         owner=owner,
         repo=repo,
         target=target,
-        framework_name=args.framework,
+        framework_name=framework_name,
         level=getattr(args, "level", 3),
     )
 

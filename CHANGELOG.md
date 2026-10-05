@@ -62,7 +62,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refused under `--strict-operator-config` (on by default in recognized CI).
   Reports record its source and digest.
 - `darnit run -f/--framework NAME` selects the framework, as `audit` and
-  `harness` do (#507).
+  `harness` do (#507). An unknown name exits 1 instead of reporting a clean
+  run over no controls; without the option, `run` audits `openssf-baseline`,
+  the same default as `audit`.
 - `darnit config show` (resolved operator configuration, digest, permission
   check, and redacted settings), `darnit config trust add|list|remove`
   (edits `[trust].repos`), and `darnit config migrate [REPO] [--force]`

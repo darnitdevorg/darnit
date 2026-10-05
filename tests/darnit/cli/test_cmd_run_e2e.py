@@ -579,3 +579,42 @@ class TestFrameworkOption:
         )
 
         assert _parse_counts(stdout)["total"] > 0
+
+    def test_unknown_framework_is_an_error(
+        self,
+        minimal_repo_tree: Path,
+        capsys: pytest.CaptureFixture[str],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """An unknown name exits 1 instead of reporting a clean run over no controls (Principle II)."""
+        exit_code, stdout, stderr = invoke_cmd_run(
+            [str(minimal_repo_tree), "--framework", "nonexistent-fw", "--feedback", "noninteractive"],
+            capsys,
+        )
+
+        assert exit_code == 1
+        assert "Run complete." not in stdout
+        assert "nonexistent-fw" in stderr + caplog.text
+
+    def test_default_framework_matches_audit(
+        self,
+        minimal_repo_tree: Path,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Without --framework, run audits the default framework, as ``darnit audit`` does."""
+        from darnit.agent import graph
+
+        seen: list[str | None] = []
+
+        def audited(state):
+            seen.append(state.framework_name)
+            state.audit_results = []
+            state.error = None
+            return state
+
+        monkeypatch.setattr(graph, "audit", audited)
+
+        invoke_cmd_run([str(minimal_repo_tree), "--feedback", "noninteractive"], capsys)
+
+        assert seen == ["openssf-baseline"]
