@@ -17,7 +17,7 @@ specified output format (markdown or SARIF).
 Usage:
     The adapter can be referenced by name in framework configs::
 
-        # In framework.toml or .baseline.toml
+        # In framework.toml
         [controls."OSPS-VM-05.02"]
         check = { adapter = "kusari" }
 

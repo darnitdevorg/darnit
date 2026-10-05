@@ -15,7 +15,11 @@ from darnit.config.framework_schema import (
     StoresConfig,
 )
 from darnit.config.merger import merge_configs
-from darnit.config.user_schema import UserConfig
+from darnit.config.operator.schema import OperatorConfig
+
+
+def _operator(**stores_kwargs) -> OperatorConfig:
+    return OperatorConfig(schema_version=1, stores=StoresConfig(**stores_kwargs))
 
 
 def _fw(**stores_kwargs):
@@ -73,39 +77,30 @@ class TestVarSubstitution:
 
 
 class TestPerKindMerger:
-    def test_user_replaces_framework_for_same_kind(self):
+    def test_operator_replaces_framework_for_same_kind(self):
         fw = _fw(project=StoreBlock(backend="fw-project"))
-        usr = UserConfig(
-            stores=StoresConfig(project=StoreBlock(backend="usr-project"))
-        )
-        eff = merge_configs(fw, usr)
-        assert eff.stores.project.backend == "usr-project"
+        eff = merge_configs(fw, _operator(project=StoreBlock(backend="op-project")))
+        assert eff.stores.project.backend == "op-project"
 
     def test_disjoint_kinds_coexist(self):
         fw = _fw(attestation=StoreBlock(backend="fw-att"))
-        usr = UserConfig(
-            stores=StoresConfig(project=StoreBlock(backend="usr-project"))
-        )
-        eff = merge_configs(fw, usr)
-        assert eff.stores.project.backend == "usr-project"
+        eff = merge_configs(fw, _operator(project=StoreBlock(backend="op-project")))
+        assert eff.stores.project.backend == "op-project"
         assert eff.stores.attestation.backend == "fw-att"
 
-    def test_user_only(self):
+    def test_operator_only(self):
         fw = _fw()
-        usr = UserConfig(
-            stores=StoresConfig(project=StoreBlock(backend="usr-project"))
-        )
-        eff = merge_configs(fw, usr)
-        assert eff.stores.project.backend == "usr-project"
+        eff = merge_configs(fw, _operator(project=StoreBlock(backend="op-project")))
+        assert eff.stores.project.backend == "op-project"
         assert eff.stores.attestation is None
 
     def test_framework_only(self):
         fw = _fw(project=StoreBlock(backend="fw-project"))
-        eff = merge_configs(fw, None)
+        eff = merge_configs(fw)
         assert eff.stores.project.backend == "fw-project"
 
     def test_neither_set(self):
         fw = _fw()
-        eff = merge_configs(fw, None)
+        eff = merge_configs(fw)
         for kind in ("project", "attestation", "report", "cache"):
             assert getattr(eff.stores, kind) is None

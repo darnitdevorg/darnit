@@ -593,7 +593,7 @@ def run_fixture(fixture: Fixture, framework: Framework) -> FixtureRun:
                     BRANCH,
                     LEVEL,
                     controls=list(framework.controls),
-                    apply_user_config=False,
+                    evaluate_claims=False,
                     stop_on_llm=True,
                     framework_name=framework.implementation,
                     operator_config=_builtin_operator_config(),

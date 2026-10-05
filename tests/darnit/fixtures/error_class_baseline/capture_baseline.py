@@ -150,7 +150,7 @@ def main() -> int:
         run_sieve_audit,
     )
 
-    config = load_effective_config_by_name("openssf-baseline", repo_path=fixture)
+    config = load_effective_config_by_name("openssf-baseline")
     all_controls = load_controls_from_effective(config)
     controls = filter_controls(
         all_controls, {}, set(DETERMINISTIC_CONTROL_IDS), None
@@ -164,7 +164,7 @@ def main() -> int:
         default_branch="main",
         level=1,
         controls=controls,
-        apply_user_config=False,
+        evaluate_claims=False,
         stop_on_llm=True,
     )
 

@@ -8,7 +8,7 @@ from darnit.config.framework_schema import (
     McpServerConfig,
 )
 from darnit.config.merger import merge_configs
-from darnit.config.user_schema import UserConfig
+from darnit.config.operator.schema import OperatorConfig
 
 
 def _framework(**servers: McpServerConfig) -> FrameworkConfig:
@@ -24,15 +24,15 @@ def _framework(**servers: McpServerConfig) -> FrameworkConfig:
 
 
 # ---------------------------------------------------------------------------
-# T026: baseline replaces per-name (no deep merge)
+# T026: operator configuration replaces per-name (no deep merge)
 # ---------------------------------------------------------------------------
 
 
-def test_mcp_servers_baseline_wins():
+def test_mcp_servers_operator_wins():
     fw = _framework(foo=McpServerConfig(command=["fw-cmd"]))
-    user = UserConfig(mcp_servers={"foo": McpServerConfig(command=["bl-cmd"])})
-    eff = merge_configs(fw, user)
-    assert eff.mcp_servers["foo"].command == ["bl-cmd"]
+    operator = OperatorConfig(schema_version=1, mcp_servers={"foo": McpServerConfig(command=["op-cmd"])})
+    eff = merge_configs(fw, operator)
+    assert eff.mcp_servers["foo"].command == ["op-cmd"]
 
 
 # ---------------------------------------------------------------------------
@@ -42,8 +42,8 @@ def test_mcp_servers_baseline_wins():
 
 def test_mcp_servers_disjoint_names_coexist():
     fw = _framework(a=McpServerConfig(command=["fw-a"]))
-    user = UserConfig(mcp_servers={"b": McpServerConfig(command=["bl-b"])})
-    eff = merge_configs(fw, user)
+    operator = OperatorConfig(schema_version=1, mcp_servers={"b": McpServerConfig(command=["op-b"])})
+    eff = merge_configs(fw, operator)
     assert set(eff.mcp_servers) == {"a", "b"}
     assert eff.mcp_servers["a"].command == ["fw-a"]
-    assert eff.mcp_servers["b"].command == ["bl-b"]
+    assert eff.mcp_servers["b"].command == ["op-b"]

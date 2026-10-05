@@ -175,8 +175,8 @@ class TestAuditedContextValues:
             assert "assertion" not in results[control_id]
             assert results[control_id]["status"] != "N/A"
 
-    def test_claims_ignored_when_user_config_is_not_applied(self, tmp_path: Path) -> None:
-        results = _audit(_repo(tmp_path), apply_user_config=False)
+    def test_claims_ignored_when_claims_are_not_evaluated(self, tmp_path: Path) -> None:
+        results = _audit(_repo(tmp_path), evaluate_claims=False)
 
         for control_id in RELEASE_CONTROLS:
             assert "assertion" not in results[control_id]

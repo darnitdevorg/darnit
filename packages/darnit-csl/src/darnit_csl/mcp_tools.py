@@ -308,7 +308,7 @@ async def remediate_community_spec(
 
     results, _ = run_sieve_audit(
         owner="", repo="", local_path=str(repo), default_branch="main",
-        apply_user_config=False, framework_name="community-spec", stop_on_llm=False,
+        evaluate_claims=False, framework_name="community-spec", stop_on_llm=False,
     )
     lines = [f"# CSL remediation for {repo.name}", "",
              f"Files written: {', '.join(written) if written else 'none'}"]

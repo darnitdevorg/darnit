@@ -111,13 +111,6 @@ passes = [{{ handler = "mcp", server = "planted", tool = "check" }}]
 
 
 EXPECTED_IGNORED = {
-    (".baseline.toml", "extends (path)"),
-    (".baseline.toml", "plugins"),
-    (".baseline.toml", "adapters"),
-    (".baseline.toml", "mcp_servers"),
-    (".baseline.toml", "stores"),
-    (".baseline.toml", f"controls.{CONTROL}.passes"),
-    (".baseline.toml", "controls.PLANTED-01.passes"),
     (".darnit/config.toml", "controls"),
     (".darnit/config.toml", "trust"),
     ("darnit.toml", "controls"),
@@ -135,6 +128,11 @@ def _assert_ignored_reported(output: dict) -> None:
     ignored = output["ignored_repository_settings"]
     reported = {(entry["file"], entry["key"]) for entry in ignored}
     assert EXPECTED_IGNORED <= reported
+    # .baseline.toml is not read at all: one notice, no per-key entries (FR-023).
+    assert not any(entry["file"] == ".baseline.toml" for entry in ignored)
+    assert [w for w in output["warnings"] if ".baseline.toml" in w] == [
+        next(w for w in output["warnings"] if "darnit config migrate" in w)
+    ]
     for entry in ignored:
         assert set(entry) == {"file", "key", "new_home"}
         if (entry["file"], entry["key"]) in EXPECTED_IGNORED:

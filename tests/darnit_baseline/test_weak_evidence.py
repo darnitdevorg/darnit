@@ -63,7 +63,7 @@ def _audit(repo: Path) -> dict[str, dict]:
         default_branch="main",
         level=3,
         stop_on_llm=True,
-        apply_user_config=False,
+        evaluate_claims=False,
         framework_name="openssf-baseline",
     )
     return {r["id"]: r for r in results}

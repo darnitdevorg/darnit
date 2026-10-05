@@ -1508,7 +1508,7 @@ def _recheck(
     wanted = set(control_ids)
     specs = [
         spec
-        for spec in load_controls_from_effective(merge_configs(framework, None, operator_config.config))
+        for spec in load_controls_from_effective(merge_configs(framework, operator_config.config))
         if spec.control_id in wanted
     ]
     results, _ = audit_tools.run_sieve_audit(

@@ -47,7 +47,7 @@ from .discovery import (
     sync_discovered_to_config,
 )
 
-# Framework and user configuration schemas
+# Framework configuration schema
 from .framework_schema import (
     AdapterType,
     CheckConfig,
@@ -91,19 +91,16 @@ from .loader import (
 from .merger import (
     EffectiveConfig,
     EffectiveControl,
-    deep_merge,
     list_available_frameworks,
     load_effective_config,
     load_effective_config_auto,
     load_effective_config_by_name,
     load_framework_by_name,
     load_framework_config,
-    load_user_config,
     merge_configs,
     merge_control,
     resolve_framework_path,
     validate_framework_config,
-    validate_user_config,
 )
 from .resolver import (
     resolve_file_for_control,
@@ -152,20 +149,6 @@ from .schema import (
     create_minimal_config,
     get_path_from_ref,
     parse_resource_ref,
-)
-from .user_schema import (
-    ControlGroup,
-    CustomControl,
-    UserConfig,
-    UserSettings,
-    create_user_config,
-    create_user_config_with_kusari,
-)
-from .user_schema import (
-    ControlOverride as UserControlOverride,
-)
-from .user_schema import (
-    ControlStatus as UserControlStatus,
 )
 
 __all__ = [
@@ -256,23 +239,12 @@ __all__ = [
     # Context definitions (interactive context collection)
     "ContextDefinitionConfig",
     "FrameworkContextConfig",
-    # User configuration schema
-    "UserConfig",
-    "UserSettings",
-    "UserControlOverride",
-    "ControlGroup",
-    "CustomControl",
-    "UserControlStatus",
-    "create_user_config",
-    "create_user_config_with_kusari",
     # Configuration merger
     "EffectiveConfig",
     "EffectiveControl",
     "merge_configs",
     "merge_control",
-    "deep_merge",
     "load_framework_config",
-    "load_user_config",
     "load_effective_config",
     "load_effective_config_by_name",
     "load_effective_config_auto",
@@ -280,7 +252,6 @@ __all__ = [
     "resolve_framework_path",
     "list_available_frameworks",
     "validate_framework_config",
-    "validate_user_config",
     # Control loader
     "load_controls_from_effective",
     "load_controls_from_framework",

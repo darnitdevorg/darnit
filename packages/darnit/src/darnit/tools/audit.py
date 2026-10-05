@@ -149,9 +149,7 @@ def _get_framework_config_path(framework_name: str | None = None) -> Path | None
     return None
 
 
-def _load_merged_stores(
-    local_path: str, framework_name: str | None, operator: "OperatorConfig | None" = None
-) -> Any:
+def _load_merged_stores(framework_name: str | None, operator: "OperatorConfig | None" = None) -> Any:
     """Return the merged ``StoresConfig`` for this audit run.
 
     Feature 033. Composes the framework TOML's ``[stores]`` block with
@@ -160,24 +158,16 @@ def _load_merged_stores(
     any stores; the caller treats None as "instantiate all filesystem
     defaults."
     """
-    from darnit.config import (
-        load_framework_config,
-        load_user_config,
-        merge_configs,
-    )
+    from darnit.config import load_framework_config, merge_configs
 
     framework_path = _get_framework_config_path(framework_name)
     if not framework_path:
         return operator.stores if operator is not None else None
-    framework = load_framework_config(framework_path)
-    user = load_user_config(Path(local_path))
-    effective = merge_configs(framework, user, operator)
+    effective = merge_configs(load_framework_config(framework_path), operator)
     return getattr(effective, "stores", None)
 
 
-def _load_merged_mcp_servers(
-    local_path: str, framework_name: str | None, operator: "OperatorConfig | None" = None
-) -> dict[str, Any]:
+def _load_merged_mcp_servers(framework_name: str | None, operator: "OperatorConfig | None" = None) -> dict[str, Any]:
     """Return the merged ``mcp_servers`` allowlist for this audit run.
 
     Composes the framework TOML's block with operator configuration via
@@ -185,18 +175,12 @@ def _load_merged_mcp_servers(
     FR-016). Returns an empty dict when neither surface declares any
     servers.
     """
-    from darnit.config import (
-        load_framework_config,
-        load_user_config,
-        merge_configs,
-    )
+    from darnit.config import load_framework_config, merge_configs
 
     framework_path = _get_framework_config_path(framework_name)
     if not framework_path:
         return dict(operator.mcp_servers) if operator is not None else {}
-    framework = load_framework_config(framework_path)
-    user = load_user_config(Path(local_path))
-    effective = merge_configs(framework, user, operator)
+    effective = merge_configs(load_framework_config(framework_path), operator)
     return dict(effective.mcp_servers)
 
 
@@ -213,7 +197,7 @@ def _apply_operator_controls(
     from darnit.config import load_framework_config, merge_configs
     from darnit.config.control_loader import control_from_effective
 
-    effective = merge_configs(load_framework_config(framework_path), None, operator)
+    effective = merge_configs(load_framework_config(framework_path), operator)
     replaced = {cid for cid, o in operator.controls.items() if o.passes is not None} | set(operator.custom_controls)
     result = [
         control_from_effective(c.control_id, effective.controls[c.control_id])
@@ -271,9 +255,10 @@ def audit_report_metadata(
     repository tried to supply, each with the place it now belongs,
     ``unknown_assertions`` lists not-applicable claims about controls
     ``framework_name`` does not define (they have no effect), and
-    ``warnings`` (present only when non-empty) carries the ``.baseline.toml``
-    deprecation warnings, the errors of a ``.project/`` file that is
-    present but invalid (not read, and never written; feature 042, FR-019),
+    ``warnings`` (present only when non-empty) carries the notice that a
+    ``.baseline.toml`` in the repository was ignored, the errors of a
+    ``.project/`` file that is present but invalid (not read, and never
+    written; feature 042, FR-019),
     and the plugin step type registrations that were refused (feature 044),
     which are also logged. Only refusals attempted by the audited framework's
     plugins (including the frameworks it composes) are reported: the registry
@@ -571,30 +556,6 @@ def judgment_consultations(
     }
 
 
-def load_effective_audit_config(local_path: str, framework_name: str | None = None) -> Any | None:
-    """Load the effective configuration for auditing.
-
-    This loads the framework config and merges it with any user config
-    (.baseline.toml) found in the repository.
-
-    Args:
-        local_path: Path to the repository
-        framework_name: Explicit framework name. If None, resolved from
-            .baseline.toml ``extends`` field or defaults to "openssf-baseline".
-
-    Returns:
-        EffectiveConfig if successful, None otherwise
-    """
-    try:
-        from darnit.config import load_effective_config_auto
-
-        return load_effective_config_auto(Path(local_path), framework_name=framework_name)
-
-    except Exception as e:
-        logger.warning(f"Error loading effective config: {e}")
-        return None
-
-
 def framework_metadata(framework_name: str | None) -> dict[str, str]:
     """Return the framework metadata block for the audit output header (issue #350).
 
@@ -644,39 +605,6 @@ def framework_metadata(framework_name: str | None) -> dict[str, str]:
         "spec_version": getattr(impl, "spec_version", "") or "",
         "generated_at": generated_at,
     }
-
-
-def get_excluded_control_ids(local_path: str) -> dict[str, str]:
-    """Get control IDs that are excluded via user config.
-
-    Args:
-        local_path: Path to the repository
-
-    Returns:
-        Dict mapping control_id to exclusion reason
-    """
-    effective = load_effective_audit_config(local_path)
-    if effective:
-        return effective.get_excluded_controls()
-    return {}
-
-
-def get_adapter_for_control(control_id: str, local_path: str) -> str | None:
-    """Get the adapter name configured for a specific control.
-
-    Args:
-        control_id: Control identifier
-        local_path: Path to the repository
-
-    Returns:
-        Adapter name if configured, None for builtin
-    """
-    effective = load_effective_audit_config(local_path)
-    if effective:
-        ctrl = effective.controls.get(control_id)
-        if ctrl and ctrl.check_adapter != "builtin":
-            return ctrl.check_adapter
-    return None
 
 
 @dataclass
@@ -743,7 +671,7 @@ def run_checks(
     default_branch: str,
     level: int = 3,
     stop_on_llm: bool = True,
-    apply_user_config: bool = True,
+    evaluate_claims: bool = True,
     framework_name: str | None = None,
     operator_config: "LoadedOperatorConfig | None" = None,
     target: str | None = None,
@@ -761,9 +689,9 @@ def run_checks(
         default_branch: Default branch name
         level: Maximum level to check (1, 2, or 3)
         stop_on_llm: Return PENDING (llm_judgment) for LLM consultation
-        apply_user_config: Apply .baseline.toml user config overrides
+        evaluate_claims: Evaluate the repository's not-applicable claims
+            (see :func:`run_sieve_audit`).
         framework_name: Explicit framework name (e.g., "openssf-baseline").
-            If None, resolved from .baseline.toml in the repo.
         operator_config: Operator configuration for this run. If None,
             resolved from the launch options for ``local_path``.
         target: Repository identity the operator named, for the trust decision.
@@ -779,7 +707,7 @@ def run_checks(
         local_path,
         default_branch,
         level,
-        apply_user_config=apply_user_config,
+        evaluate_claims=evaluate_claims,
         stop_on_llm=stop_on_llm,
         framework_name=framework_name,
         operator_config=operator_config,
@@ -803,7 +731,7 @@ def run_sieve_audit(
     *,
     controls: list | None = None,
     tags: list[str] | None = None,
-    apply_user_config: bool = True,
+    evaluate_claims: bool = True,
     stop_on_llm: bool = True,
     framework_name: str | None = None,
     operator_config: "LoadedOperatorConfig | None" = None,
@@ -830,15 +758,15 @@ def run_sieve_audit(
         controls: Pre-loaded ControlSpec objects. If None, loads from
             TOML/registry automatically.
         tags: Tag filters to apply to controls (e.g., ["domain=AC"]).
-        apply_user_config: Evaluate the repository's not-applicable claims
-            (``.project/darnit.yaml``, ``.baseline.toml``, and applicability-
-            changing ``.project/`` context values) and report each with the
+        evaluate_claims: Evaluate the repository's not-applicable claims
+            (``.project/darnit.yaml`` and applicability-changing
+            ``.project/`` context values) and report each with the
             claimed control's result. When False, claims are ignored and
             every control is evaluated normally.
         stop_on_llm: Return PENDING (llm_judgment) for LLM consultation.
         framework_name: Explicit framework name (e.g., "openssf-baseline").
             Required when controls is None and multiple implementations are
-            installed. If None, resolved from .baseline.toml in the repo.
+            installed.
         operator_config: Operator configuration for this run. If None,
             resolved from the launch options for ``local_path``; an
             unusable operator configuration raises ``OperatorConfigError``.
@@ -866,17 +794,7 @@ def run_sieve_audit(
         operator_config = resolve_operator_config(local_path)
     operator = operator_config.config
 
-    # Resolve framework name from .baseline.toml if not provided
     resolved_fw = framework_name
-    if not resolved_fw:
-        try:
-            from darnit.config import load_user_config
-
-            user_cfg = load_user_config(Path(local_path))
-            if user_cfg and user_cfg.extends:
-                resolved_fw = user_cfg.extends
-        except Exception:
-            pass
 
     if resolved_fw:
         from darnit.config.merger import ensure_framework_allowed
@@ -956,7 +874,7 @@ def run_sieve_audit(
     # simply see an empty allowlist and any mcp handler pass resolves
     # ERROR ("unknown MCP server: ...") at dispatch time.
     try:
-        execution_context.mcp_servers = _load_merged_mcp_servers(local_path, resolved_fw, operator)
+        execution_context.mcp_servers = _load_merged_mcp_servers(resolved_fw, operator)
     except Exception as err:  # noqa: BLE001 - config load must not break audit
         logger.debug("MCP allowlist load failed (non-fatal): %s", err)
     all_results: list[CheckResult] = []
@@ -965,7 +883,7 @@ def run_sieve_audit(
     # run. Zero-config produces filesystem defaults (constitution I).
     from darnit.stores.selection import resolve_stores
 
-    stores_config = _load_merged_stores(local_path, resolved_fw, operator)
+    stores_config = _load_merged_stores(resolved_fw, operator)
     stores_bundle = resolve_stores(stores_config, repo_path=Path(local_path))
     execution_context.stores = stores_bundle
 
@@ -1002,7 +920,7 @@ def run_sieve_audit(
     # read from the repository that make a control not applicable -- count
     # only when honored (trusted, reasoned, uncontradicted, or confirmed).
     assessments: dict[str, Any] = {}
-    if apply_user_config:
+    if evaluate_claims:
         assessments = _assess_assertions(
             local_path,
             all_controls,
@@ -1833,10 +1751,6 @@ __all__ = [
     "format_results_markdown",
     "list_available_checks",
     "audit_report_metadata",
-    # User config integration
-    "load_effective_audit_config",
-    "get_excluded_control_ids",
-    "get_adapter_for_control",
     # TOML framework support
     "_register_toml_controls",  # Internal but useful for testing
 ]

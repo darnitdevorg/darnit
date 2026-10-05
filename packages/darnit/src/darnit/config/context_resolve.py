@@ -15,7 +15,6 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from darnit.config.context_keys import canonical_key, normalize_value, value_digest
@@ -286,7 +285,7 @@ def _auto_accept_confidence(local_path: str) -> float:
     try:
         from darnit.config.merger import load_effective_config_auto
 
-        framework = load_effective_config_auto(Path(local_path))._framework_config
+        framework = load_effective_config_auto()._framework_config
         if framework is not None:
             return framework.context.auto_accept_confidence
     except Exception as exc:  # noqa: BLE001 - a read must not fail on config

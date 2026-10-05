@@ -60,7 +60,7 @@ def get_context_definitions(local_path: str) -> dict[str, ContextDefinition]:
     framework configuration (e.g., openssf-baseline.toml [context] section).
 
     Args:
-        local_path: Path to the repository
+        local_path: Path to the repository (the framework is not read from it)
 
     Returns:
         Dict of context_key -> ContextDefinition
@@ -68,7 +68,7 @@ def get_context_definitions(local_path: str) -> dict[str, ContextDefinition]:
     from darnit.config.merger import load_effective_config_auto
 
     try:
-        effective_config = load_effective_config_auto(local_path)
+        effective_config = load_effective_config_auto()
         # Access the underlying framework config
         framework = effective_config._framework_config
         if framework is None:
@@ -89,7 +89,7 @@ def get_context_definitions_with_detect(
     (list of HandlerInvocation) from the TOML framework config.
 
     Args:
-        local_path: Path to the repository
+        local_path: Path to the repository (the framework is not read from it)
 
     Returns:
         Dict of context_key -> (ContextDefinition, detect_pipeline_or_None)
@@ -97,7 +97,7 @@ def get_context_definitions_with_detect(
     from darnit.config.merger import load_effective_config_auto
 
     try:
-        effective_config = load_effective_config_auto(local_path)
+        effective_config = load_effective_config_auto()
         framework = effective_config._framework_config
         if framework is None:
             return {}

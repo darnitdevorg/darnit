@@ -152,7 +152,7 @@ class TestProtocolMethodNaming:
         from darnit.config.merger import load_effective_config_by_name
 
         monkeypatch.setattr(handler_registry, "_sieve_handler_registry", None)
-        config = load_effective_config_by_name("example-hygiene", repo_path=None)
+        config = load_effective_config_by_name("example-hygiene")
 
         assert len(load_controls_from_effective(config)) == len(config.controls)
         assert get_sieve_handler_registry().get("readme_description") is not None
@@ -172,7 +172,7 @@ class TestControlOrderDeterminism:
     def _merge(self):
         from darnit.config.merger import load_effective_config_by_name
 
-        return load_effective_config_by_name("openssf-baseline", repo_path=None)
+        return load_effective_config_by_name("openssf-baseline")
 
     @pytest.mark.unit
     def test_control_order_is_stable_across_merges(self) -> None:

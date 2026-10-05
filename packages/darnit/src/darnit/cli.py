@@ -286,12 +286,12 @@ def cmd_audit(args: argparse.Namespace) -> int:
         if args.framework:
             framework_path = Path(args.framework)
             if framework_path.exists():
-                config = load_effective_config(framework_path, repo_path, operator=operator)
+                config = load_effective_config(framework_path, operator=operator)
             else:
                 # Try as framework name
-                config = load_effective_config_by_name(args.framework, repo_path, operator=operator)
+                config = load_effective_config_by_name(args.framework, operator=operator)
         else:
-            config = load_effective_config_auto(repo_path, operator=operator)
+            config = load_effective_config_auto(operator=operator)
     except ValueError as e:
         logger.error(f"Failed to load framework: {e}")
         return 1
@@ -334,7 +334,6 @@ def cmd_audit(args: argparse.Namespace) -> int:
         default_branch=default_branch,
         level=3,
         controls=controls,
-        apply_user_config=True,
         stop_on_llm=True,
         # Issue #427: the framework name has to reach the audit driver, not
         # just the control loader above. Without it the driver cannot
@@ -386,11 +385,11 @@ def cmd_plan(args: argparse.Namespace) -> int:
         if args.framework:
             framework_path = Path(args.framework)
             if framework_path.exists():
-                config = load_effective_config(framework_path, repo_path if repo_path.exists() else None)
+                config = load_effective_config(framework_path)
             else:
-                config = load_effective_config_by_name(args.framework, repo_path if repo_path.exists() else None)
+                config = load_effective_config_by_name(args.framework)
         else:
-            config = load_effective_config_auto(repo_path)
+            config = load_effective_config_auto()
     except (ValueError, FileNotFoundError) as e:
         logger.error(f"Failed to load framework: {e}")
         return 1
@@ -446,22 +445,11 @@ def cmd_plan(args: argparse.Namespace) -> int:
 
         logger.info(f"Level {level} ({len(shown_controls)} controls):")
         for cid, ctrl in shown_controls:
-            if ctrl.is_applicable():
-                adapter = ctrl.check_adapter
-                logger.info(f"  • {cid}: {ctrl.name} [adapter: {adapter}]")
-            else:
-                logger.info(f"  - {cid}: {ctrl.name} [skipped: {ctrl.status_reason}]")
+            logger.info(f"  • {cid}: {ctrl.name} [adapter: {ctrl.check_adapter}]")
         total_shown += len(shown_controls)
 
     if total_filtered > 0:
         logger.info(f"({total_filtered} controls filtered out)")
-
-    # Show excluded controls
-    excluded = config.get_excluded_controls()
-    if excluded:
-        logger.info(f"Excluded ({len(excluded)}):")
-        for cid, reason in excluded.items():
-            logger.info(f"  - {cid}: {reason}")
 
     return 0
 
@@ -538,7 +526,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         f"Select the framework per run with --framework {framework}.",
     ]
     if (repo_path / ".baseline.toml").exists():
-        lines.extend(["", "This repository has a deprecated .baseline.toml; run `darnit config migrate` to move it."])
+        lines.extend(["", "This repository has a .baseline.toml, which darnit no longer reads; run `darnit config migrate` to move it."])
     sys.stdout.write("\n".join(lines) + "\n")
     return 0
 

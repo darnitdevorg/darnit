@@ -1,4 +1,4 @@
-"""Tests for the TrivialCheckAdapter and user config integration."""
+"""Tests for the TrivialCheckAdapter and the testchecks effective configuration."""
 
 import sys
 from pathlib import Path
@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "darnit" / "src"))
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from darnit.config.merger import load_effective_config, load_user_config
+from darnit.config.merger import load_effective_config
 from darnit.core.models import CheckStatus
 
 from darnit_testchecks import get_framework_path
@@ -215,101 +215,37 @@ class TestRemediation:
         assert "No remediation available" in result.message
 
 
-class TestUserConfigIntegration:
-    """Tests for user config override integration."""
+class TestEffectiveConfig:
+    """Tests for the framework's effective configuration."""
 
-    def test_load_user_config(self, temp_repo: Path, user_config_content: str):
-        """Should load user config from .baseline.toml."""
-        (temp_repo / ".baseline.toml").write_text(user_config_content)
+    def test_all_controls_load(self):
+        """Every control in the framework TOML is in the effective config."""
+        effective = load_effective_config(get_framework_path())
 
-        user_config = load_user_config(temp_repo)
-
-        assert user_config is not None
-        assert user_config.extends == "testchecks"
-        assert "TEST-QA-01" in user_config.controls
-        assert "TEST-QA-02" in user_config.controls
-
-    def test_effective_config_excludes_controls(self, temp_repo: Path, user_config_content: str):
-        """Effective config should exclude n/a controls."""
-        (temp_repo / ".baseline.toml").write_text(user_config_content)
-
-        effective = load_effective_config(get_framework_path(), temp_repo)
-
-        excluded = effective.get_excluded_controls()
-        assert "TEST-QA-01" in excluded
-        assert "TEST-QA-02" in excluded
-        assert excluded["TEST-QA-01"] == "TODOs are acceptable"
-
-    def test_effective_config_applicable_controls(self, temp_repo: Path, user_config_content: str):
-        """Effective config should have correct applicable controls."""
-        (temp_repo / ".baseline.toml").write_text(user_config_content)
-
-        effective = load_effective_config(get_framework_path(), temp_repo)
-
-        # 12 total - 2 excluded = 10 applicable
-        applicable = [c for c in effective.controls.values() if c.is_applicable()]
-        assert len(applicable) == 10
-
-        # Excluded controls should not be applicable
-        assert not effective.controls["TEST-QA-01"].is_applicable()
-        assert not effective.controls["TEST-QA-02"].is_applicable()
-
-        # Other controls should be applicable
-        assert effective.controls["TEST-DOC-01"].is_applicable()
-        assert effective.controls["TEST-SEC-01"].is_applicable()
-
-    def test_effective_config_without_user_config(self, temp_repo: Path):
-        """Effective config should work without user config."""
-        effective = load_effective_config(get_framework_path(), temp_repo)
-
-        # All 12 controls should be applicable
-        applicable = [c for c in effective.controls.values() if c.is_applicable()]
-        assert len(applicable) == 12
+        assert len(effective.controls) == 12
 
 
 class TestEndToEnd:
     """End-to-end tests combining multiple components."""
 
-    def test_full_audit_flow(self, complete_repo: Path, user_config_content: str):
-        """Should run full audit with user config."""
-        # Add user config
-        (complete_repo / ".baseline.toml").write_text(user_config_content)
+    def test_full_audit_flow(self, complete_repo: Path):
+        """Every control passes on a complete repository."""
+        effective = load_effective_config(get_framework_path())
 
-        # Load effective config
-        effective = load_effective_config(get_framework_path(), complete_repo)
-
-        # Get applicable controls
-        applicable_ids = [
-            cid for cid, ctrl in effective.controls.items()
-            if ctrl.is_applicable()
-        ]
-
-        # Run checks
         adapter = TrivialCheckAdapter()
         results = adapter.check_batch(
-            control_ids=applicable_ids,
+            control_ids=list(effective.controls),
             owner="",
             repo="test",
             local_path=str(complete_repo),
             config={},
         )
 
-        # All applicable controls should pass
         for result in results:
             assert result.status == CheckStatus.PASS, f"{result.control_id}: {result.message}"
 
-    def test_audit_violations_with_exclusions(self, repo_with_violations: Path, user_config_content: str):
-        """Should pass when violations are excluded."""
-        # Add user config that excludes the violated controls
-        (repo_with_violations / ".baseline.toml").write_text(user_config_content)
-
-        effective = load_effective_config(get_framework_path(), repo_with_violations)
-
-        # These should be excluded
-        assert not effective.controls["TEST-QA-01"].is_applicable()
-        assert not effective.controls["TEST-QA-02"].is_applicable()
-
-        # But TEST-SEC-01 is not excluded, should still fail
+    def test_audit_violations(self, repo_with_violations: Path):
+        """A hard-coded secret fails TEST-SEC-01."""
         adapter = TrivialCheckAdapter()
         result = adapter.check(
             control_id="TEST-SEC-01",

@@ -71,20 +71,3 @@ def repo_with_violations(temp_repo: Path) -> Path:
     )
 
     return temp_repo
-
-
-@pytest.fixture
-def user_config_content() -> str:
-    """Sample user config that skips some controls."""
-    return '''
-version = "1.0"
-extends = "testchecks"
-
-[controls."TEST-QA-01"]
-status = "n/a"
-reason = "TODOs are acceptable"
-
-[controls."TEST-QA-02"]
-status = "n/a"
-reason = "Print statements OK in scripts"
-'''

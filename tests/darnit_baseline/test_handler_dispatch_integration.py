@@ -437,11 +437,10 @@ class TestUseLocatorEffectivePath:
     @pytest.mark.unit
     def test_use_locator_controls_have_files_in_effective_config(self):
         """All use_locator=true controls must have files populated after effective loading."""
-        from pathlib import Path
 
         from darnit.config import load_controls_from_effective, load_effective_config_by_name
 
-        config = load_effective_config_by_name("openssf-baseline", Path("."))
+        config = load_effective_config_by_name("openssf-baseline")
         controls = load_controls_from_effective(config)
 
         # Known controls that use use_locator=true
@@ -478,11 +477,10 @@ class TestUseLocatorEffectivePath:
         pass now carries the full glob list including the bug*.* variants
         that used to be split between file_exists and pattern.
         """
-        from pathlib import Path
 
         from darnit.config import load_controls_from_effective, load_effective_config_by_name
 
-        config = load_effective_config_by_name("openssf-baseline", Path("."))
+        config = load_effective_config_by_name("openssf-baseline")
         controls = load_controls_from_effective(config)
         control = next(ctrl for ctrl in controls if ctrl.control_id == "OSPS-DO-02.01")
         invocations = control.metadata["handler_invocations"]
@@ -520,7 +518,6 @@ class TestIssueTemplateGlobbingRegression:
         waits for a model judgment (PENDING) rather than PASS; this test pins
         the globbing, which is what the regression was about.
         """
-        from pathlib import Path
 
         from darnit.config import load_controls_from_effective, load_effective_config_by_name
 
@@ -542,7 +539,7 @@ body:
 """,
         )
 
-        config = load_effective_config_by_name("openssf-baseline", Path("."))
+        config = load_effective_config_by_name("openssf-baseline")
         controls = load_controls_from_effective(config)
         control = next(ctrl for ctrl in controls if ctrl.control_id == "OSPS-DO-02.01")
 
@@ -583,7 +580,6 @@ body:
         INCONCLUSIVE for the no-matching-files case, and pass 3 still
         returns WARN. See specs/020-definitive-fail-verdict/.
         """
-        from pathlib import Path
 
         from darnit.config import load_controls_from_effective, load_effective_config_by_name
 
@@ -602,7 +598,7 @@ body:
 """,
         )
 
-        config = load_effective_config_by_name("openssf-baseline", Path("."))
+        config = load_effective_config_by_name("openssf-baseline")
         controls = load_controls_from_effective(config)
         control = next(ctrl for ctrl in controls if ctrl.control_id == "OSPS-DO-02.01")
 
@@ -628,7 +624,6 @@ body:
         is evidence for the control even without a .github/ISSUE_TEMPLATE/bug*
         file. Feature 041: that match is evidence, not a PASS.
         """
-        from pathlib import Path
 
         from darnit.config import load_controls_from_effective, load_effective_config_by_name
 
@@ -638,7 +633,7 @@ body:
             "To report a bug, file an issue at https://github.com/x/y/issues\n"
         )
 
-        config = load_effective_config_by_name("openssf-baseline", Path("."))
+        config = load_effective_config_by_name("openssf-baseline")
         controls = load_controls_from_effective(config)
         control = next(ctrl for ctrl in controls if ctrl.control_id == "OSPS-DO-02.01")
 

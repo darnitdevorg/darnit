@@ -99,7 +99,7 @@ class ExecutionContext:
     cached_results: dict[str, CheckResult] = field(default_factory=dict)
 
     # Feature 031: allowlist of external MCP servers (merged framework +
-    # `.baseline.toml`, per-name replacement) available to the built-in
+    # operator configuration, per-name replacement) available to the built-in
     # ``mcp`` sieve handler. Values are ``McpServerConfig`` instances but
     # typed as ``Any`` here to avoid a config->core import cycle. Empty
     # dict is the pre-feature default -- audits that never consult an

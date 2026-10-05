@@ -56,8 +56,7 @@ ANSWER_ORIGIN = {"kind": "answer", "method": "darnit run"}
 def audit(state: AuditState) -> AuditState:
     """Run a compliance audit and store results in state.
 
-    Uses the framework identified by state.framework_name (or auto-resolved
-    from .baseline.toml) and injects any context values already confirmed so
+    Uses the framework identified by state.framework_name and injects any context values already confirmed so
     that context-dependent controls can be resolved correctly on re-runs.
 
     Args:
@@ -88,7 +87,6 @@ def audit(state: AuditState) -> AuditState:
             default_branch=default_branch,
             level=state.level,
             stop_on_llm=True,
-            apply_user_config=True,
             framework_name=state.framework_name,
             target=state.target,
         )

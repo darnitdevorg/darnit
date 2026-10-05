@@ -9,7 +9,7 @@ This module defines a pluggable StorageBackend interface so teams can
 swap in a real database (Archivista, SQL, etc.) without changing the
 rest of the codebase.
 
-Configuration in .baseline.toml:
+Configuration (a ``[storage]`` mapping passed by the caller):
     [storage]
     backend = "file"          # file | archivista | memory
     archivista_url = "http://localhost:8082"  # only for archivista backend
@@ -388,7 +388,7 @@ def get_backend(config: dict[str, Any] | None = None) -> StorageBackend:
     """Return the configured storage backend.
 
     Args:
-        config: The [storage] section from .baseline.toml, e.g.:
+        config: A ``[storage]`` mapping, e.g.:
                 {"backend": "archivista", "archivista_url": "http://localhost:8082"}
 
     Returns:

@@ -1,7 +1,7 @@
 """US2 SC-003 zero-config invariance.
 
 Feature 033 T030. When no ``[stores.*]`` block is present in either the
-framework TOML or ``.baseline.toml``, ``resolve_stores`` must produce
+framework TOML or operator configuration, ``resolve_stores`` must produce
 the four filesystem defaults and NOT construct any plugin backend.
 Pre-feature audit paths (system tempdir cache, on-disk .project/,
 attestations to repo root) remain the ground truth for what darnit does

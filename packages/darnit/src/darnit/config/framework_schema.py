@@ -1197,8 +1197,8 @@ class StoreBlock(BaseModel):
     configuration keys through to that backend's ``__init__``. String
     values in the ``model_extra`` bag are passed through
     :func:`darnit.core.env_subst.substitute_dollar_vars` at load time so
-    secrets can be sourced from ``os.environ`` rather than committed in
-    ``.baseline.toml`` (FR-006).
+    secrets can be sourced from ``os.environ`` rather than written into
+    configuration files (FR-006).
 
     Example TOML::
 
@@ -1265,7 +1265,7 @@ class McpServerConfig(BaseModel):
 
     A control's ``handler = "mcp"`` pass declares ``server = "<name>"``;
     that name MUST match a key under ``[mcp_servers.<name>]`` in the
-    effective framework config (or in ``.baseline.toml``, which wins
+    effective framework config (or in operator configuration, which wins
     per-name per spec FR-016). Absence of the entry produces ERROR at
     audit time without spawning anything -- allowlist is the primary
     trust boundary.
@@ -1739,7 +1739,7 @@ class FrameworkConfig(BaseModel):
 
     # Per-artifact persistence backend selection (feature 033). Any unset
     # field means "use the filesystem default" for that artifact class;
-    # a `.baseline.toml` block for a given kind fully replaces the
+    # an operator configuration block for a given kind fully replaces the
     # framework TOML block for that kind (per-kind replacement).
     stores: StoresConfig = Field(default_factory=StoresConfig)
 

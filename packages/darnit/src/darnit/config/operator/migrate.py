@@ -18,7 +18,7 @@ import yaml
 from pydantic import ValidationError
 
 from darnit.config.loader import _write_yaml_file, get_default_extension
-from darnit.config.merger import USER_CONFIG_FILENAME
+from darnit.config.merger import BASELINE_TOML
 from darnit.config.schema import BaselineExtension, ControlOverride
 
 PROJECT_FILE = Path(".project") / "darnit.yaml"
@@ -177,11 +177,11 @@ def migrate_baseline_toml(repo: Path, *, force: bool = False) -> MigrationResult
             its schema. Nothing is written in that case.
     """
     repo = Path(repo)
-    source = repo / USER_CONFIG_FILENAME
+    source = repo / BASELINE_TOML
     try:
         data = tomllib.loads(source.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
-        raise MigrationError(f"no {USER_CONFIG_FILENAME} in {repo}") from exc
+        raise MigrationError(f"no {BASELINE_TOML} in {repo}") from exc
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
         raise MigrationError(f"cannot read {source}: {exc}") from exc
 

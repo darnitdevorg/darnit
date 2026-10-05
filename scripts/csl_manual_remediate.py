@@ -72,7 +72,7 @@ def main(target: str) -> None:
     print("\n== re-audit ==")
     results, _ = run_sieve_audit(
         owner="o", repo="r", local_path=target,
-        default_branch="main", apply_user_config=False,
+        default_branch="main", evaluate_claims=False,
         framework_name="community-spec", stop_on_llm=False,
     )
     for r in sorted(results, key=lambda r: r["id"]):

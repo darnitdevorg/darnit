@@ -420,7 +420,7 @@ class TestProjectBindingInAnAudit:
             str(repo),
             "main",
             controls=[_step_control(handler="exec", command=["true"], expr=self.EXPR)],
-            apply_user_config=False,
+            evaluate_claims=False,
             stop_on_llm=False,
             framework_name="openssf-baseline",
             operator_config=operator,

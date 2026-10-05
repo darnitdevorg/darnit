@@ -8,7 +8,7 @@ Example:
     from darnit.config.merger import load_effective_config_by_name
 
     # Load and merge configs
-    config = load_effective_config_by_name("openssf-baseline", Path("/path/to/repo"))
+    config = load_effective_config_by_name("openssf-baseline", operator=operator)
 
     # Convert to executable ControlSpec objects
     controls = load_controls_from_config(config)
@@ -424,7 +424,7 @@ def load_controls_from_effective(config: EffectiveConfig) -> list[ControlSpec]:
     """Load ControlSpec objects from effective configuration.
 
     This is the main entry point for loading controls from merged
-    framework + user configuration.
+    framework + operator configuration.
 
     Controls a repository claims are not applicable are still loaded: the
     claim is the repository's assertion, which the audit reports alongside
@@ -471,7 +471,7 @@ def load_controls_from_effective(config: EffectiveConfig) -> list[ControlSpec]:
 def load_controls_from_framework(config: FrameworkConfig) -> list[ControlSpec]:
     """Load ControlSpec objects directly from framework configuration.
 
-    Use this when you want framework controls without user customization.
+    Use this when you want framework controls without operator overrides.
     Performs load-time validation and resolution of shared handlers,
     use_locator, on_pass auto-derivation, and reference validation.
 
@@ -505,40 +505,26 @@ def load_controls_from_framework(config: FrameworkConfig) -> list[ControlSpec]:
     return controls
 
 
-def load_controls_from_toml(
-    framework_path: Path,
-    repo_path: Path | None = None,
-) -> list[ControlSpec]:
-    """Load controls from TOML files.
-
-    Convenience function that loads framework TOML, optionally merges
-    with user .baseline.toml, and returns executable controls.
+def load_controls_from_toml(framework_path: Path) -> list[ControlSpec]:
+    """Load executable controls from a framework TOML file.
 
     Args:
         framework_path: Path to framework TOML file
-        repo_path: Path to repository (for .baseline.toml)
 
     Returns:
         List of executable ControlSpec objects
     """
     from .merger import load_effective_config
 
-    config = load_effective_config(framework_path, repo_path)
+    config = load_effective_config(framework_path)
     return load_controls_from_effective(config)
 
 
-def load_controls_by_name(
-    framework_name: str,
-    repo_path: Path | None = None,
-) -> list[ControlSpec]:
-    """Load controls by framework name.
-
-    Resolves framework via entry points, merges with user config,
-    and returns executable controls.
+def load_controls_by_name(framework_name: str) -> list[ControlSpec]:
+    """Load executable controls for a framework resolved via entry points.
 
     Args:
         framework_name: Framework identifier (e.g., "openssf-baseline")
-        repo_path: Path to repository (for .baseline.toml)
 
     Returns:
         List of executable ControlSpec objects
@@ -548,7 +534,7 @@ def load_controls_by_name(
     """
     from .merger import load_effective_config_by_name
 
-    config = load_effective_config_by_name(framework_name, repo_path)
+    config = load_effective_config_by_name(framework_name)
     return load_controls_from_effective(config)
 
 

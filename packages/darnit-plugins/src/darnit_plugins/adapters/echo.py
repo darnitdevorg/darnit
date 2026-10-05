@@ -35,7 +35,7 @@ Configuration:
 Example:
     Testing a framework's control routing::
 
-        # .baseline.toml
+        # framework.toml
         [controls."MY-CTRL-01"]
         check = { adapter = "echo", config = { status = "PASS" } }
 

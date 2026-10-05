@@ -4,7 +4,7 @@ Caches audit results so the remediate tool can skip re-running the audit
 when results are fresh. Feature 035 refactored this module from a
 direct-tempdir implementation into a thin wrapper over feature 033's
 :class:`~darnit.stores.protocols.AuditCacheStore` Protocol, so an
-operator setting ``[stores.cache]`` in ``.baseline.toml`` actually
+operator setting ``[stores.cache]`` in operator configuration actually
 redirects the cache location.
 
 Two call forms:

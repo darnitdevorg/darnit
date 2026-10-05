@@ -217,7 +217,6 @@ def _audit_single_repo(
                 default_branch=default_branch,
                 level=level,
                 tags=tags,
-                apply_user_config=True,
                 stop_on_llm=True,
                 framework_name=framework_name,
                 operator_config=operator_config,

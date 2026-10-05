@@ -1,10 +1,10 @@
 """Project assertions: what the audited repository says about itself (feature 040, research R6).
 
 A not-applicable claim is read from ``.project/darnit.yaml`` ``controls``
-and, during the ``.baseline.toml`` deprecation period, from per-control
-``status``/``reason`` in ``.baseline.toml``. Project data in ``.project/``
-that makes a control not applicable is a claim too (FR-013a). Claims are
-repository content: a claim counts only when its outcome is ``honored`` --
+(a repository's ``.baseline.toml`` is not read, FR-023). Project data in
+``.project/`` that makes a control not applicable is a claim too
+(FR-013a). Claims are repository content: a claim counts only when its
+outcome is ``honored`` --
 the repository is trusted, an explicit claim gives a reason (a project data
 value states its own), and no declared evidence contradicts it -- or when an
 operator-side confirmation matches it (FR-014 to FR-019).
@@ -33,7 +33,6 @@ if TYPE_CHECKING:
 logger = get_logger("trust.assertions")
 
 PROJECT_ASSERTIONS_FILE = ".project/darnit.yaml"
-BASELINE_TOML = ".baseline.toml"
 DEFAULT_ASSERTER = "repository content"
 _NOT_APPLICABLE = frozenset({ControlStatusValue.NA.value, ControlStatusValue.DISABLED.value})
 
@@ -113,32 +112,9 @@ def _project_claims(repo: Path) -> list[ProjectAssertion]:
     return claims
 
 
-def _baseline_claims(repo: Path) -> list[ProjectAssertion]:
-    from darnit.config.merger import load_user_config_with_report
-
-    try:
-        user, _ignored = load_user_config_with_report(repo)
-    except Exception as exc:  # noqa: BLE001 - an unreadable repository file yields no claims
-        logger.warning("Could not read %s: %s", BASELINE_TOML, exc)
-        return []
-    if user is None:
-        return []
-
-    claims = []
-    for control_id in user.controls:
-        override = user.get_control_override(control_id)
-        status = getattr(override, "status", None)
-        if status is None:
-            continue
-        claim = _claim(control_id, getattr(status, "value", status), override.reason, None, BASELINE_TOML)
-        if claim:
-            claims.append(claim)
-    return claims
-
-
 def _claims(repo: Path) -> dict[str, ProjectAssertion]:
     claims: dict[str, ProjectAssertion] = {}
-    for claim in [*_project_claims(repo), *_baseline_claims(repo)]:
+    for claim in _project_claims(repo):
         claims.setdefault(claim.control_id, claim)
     return claims
 
@@ -146,10 +122,8 @@ def _claims(repo: Path) -> dict[str, ProjectAssertion]:
 def collect_assertions(local_path: str | Path, framework_control_ids: Collection[str]) -> list[ProjectAssertion]:
     """Explicit not-applicable claims the audited repository makes about the framework's controls.
 
-    A claim in ``.project/darnit.yaml`` takes precedence over one for the
-    same control in ``.baseline.toml``. Claims about controls the framework
-    does not define are logged and ignored; :func:`unknown_assertions`
-    returns them for reports.
+    Claims about controls the framework does not define are logged and
+    ignored; :func:`unknown_assertions` returns them for reports.
     """
     claims = []
     for claim in _claims(Path(local_path)).values():

@@ -78,7 +78,7 @@ def _run_audit_with_stores_config(repo: Path, stores_config: StoresConfig | None
 
     Patches ``_load_merged_stores`` to return ``stores_config`` (so we
     bypass the framework-registration step) and ``_register_toml_controls``
-    plus ``get_excluded_control_ids`` per the existing test pattern.
+    per the existing test pattern.
     """
     with (
         patch(
@@ -86,12 +86,10 @@ def _run_audit_with_stores_config(repo: Path, stores_config: StoresConfig | None
             return_value=_mock_sieve_components(),
         ),
         patch("darnit.tools.audit._register_toml_controls", return_value=0),
-        patch("darnit.tools.audit.get_excluded_control_ids", return_value={}),
         patch(
             "darnit.tools.audit._load_merged_stores",
             return_value=stores_config,
         ),
-        patch("darnit.config.load_user_config", return_value=None),
     ):
         from darnit.tools.audit import run_sieve_audit
 

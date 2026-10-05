@@ -102,36 +102,6 @@ class TestProjectClaims:
 
 
 @pytest.mark.unit
-class TestBaselineTomlClaims:
-    def test_status_and_reason_flow_into_the_same_path(self, tmp_path: Path) -> None:
-        (tmp_path / ".baseline.toml").write_text(
-            '[controls."OSPS-VM-02.01"]\nstatus = "n/a"\nreason = "library"\npasses = [{ handler = "manual" }]\n',
-            encoding="utf-8",
-        )
-
-        assert collect_assertions(tmp_path, FRAMEWORK_IDS) == [
-            ProjectAssertion(
-                control_id="OSPS-VM-02.01",
-                claim="not_applicable",
-                reason="library",
-                asserted_by="repository content",
-                location=".baseline.toml:controls.OSPS-VM-02.01",
-                origin="explicit_claim",
-            )
-        ]
-
-    def test_project_claim_takes_precedence(self, tmp_path: Path) -> None:
-        (tmp_path / ".baseline.toml").write_text(
-            '[controls."OSPS-DO-01.01"]\nstatus = "n/a"\nreason = "old"\n', encoding="utf-8"
-        )
-        _darnit_yaml(tmp_path, "controls:\n  OSPS-DO-01.01:\n    status: n/a\n    reason: new\n")
-
-        (claim,) = collect_assertions(tmp_path, FRAMEWORK_IDS)
-        assert claim.reason == "new"
-        assert claim.location == ".project/darnit.yaml:controls.OSPS-DO-01.01"
-
-
-@pytest.mark.unit
 def test_report_block_for_pending_claim() -> None:
     claim = ProjectAssertion(
         control_id="OSPS-DO-01.01",

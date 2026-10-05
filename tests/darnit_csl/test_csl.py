@@ -67,7 +67,7 @@ def _status(cid: str, repo: Path, framework_name: str = "community-spec") -> str
         repo="r",
         local_path=str(repo),
         default_branch="main",
-        apply_user_config=False,
+        evaluate_claims=False,
         framework_name=framework_name,
         stop_on_llm=False,
     )

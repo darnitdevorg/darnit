@@ -27,10 +27,8 @@ class TestAuditMapperIntegration:
 
     @patch("darnit.tools.audit._get_sieve_components")
     @patch("darnit.tools.audit._register_toml_controls")
-    @patch("darnit.tools.audit.get_excluded_control_ids", return_value={})
     def test_mapper_context_injected(
         self,
-        mock_excluded,
         mock_register,
         mock_get_sieve,
         mock_sieve_components,
@@ -61,10 +59,8 @@ class TestAuditMapperIntegration:
 
     @patch("darnit.tools.audit._get_sieve_components")
     @patch("darnit.tools.audit._register_toml_controls")
-    @patch("darnit.tools.audit.get_excluded_control_ids", return_value={})
     def test_user_context_overrides_mapper(
         self,
-        mock_excluded,
         mock_register,
         mock_get_sieve,
         mock_sieve_components,
@@ -117,10 +113,8 @@ class TestAuditMapperIntegration:
 
     @patch("darnit.tools.audit._get_sieve_components")
     @patch("darnit.tools.audit._register_toml_controls")
-    @patch("darnit.tools.audit.get_excluded_control_ids", return_value={})
     def test_mapper_failure_is_non_fatal(
         self,
-        mock_excluded,
         mock_register,
         mock_get_sieve,
         mock_sieve_components,
@@ -147,10 +141,8 @@ class TestAuditMapperIntegration:
 
     @patch("darnit.tools.audit._get_sieve_components")
     @patch("darnit.tools.audit._register_toml_controls")
-    @patch("darnit.tools.audit.get_excluded_control_ids", return_value={})
     def test_mapper_called_without_owner(
         self,
-        mock_excluded,
         mock_register,
         mock_get_sieve,
         mock_sieve_components,

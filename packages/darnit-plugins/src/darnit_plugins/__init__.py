@@ -9,9 +9,9 @@ Available Check Adapters:
 
 Usage:
     Adapters are automatically discovered via Python entry points.
-    Reference them by name in your framework TOML or user config::
+    Reference them by name in your framework TOML::
 
-        # In framework.toml or .baseline.toml
+        # In framework.toml
         [controls."CTRL-001"]
         check = { adapter = "kusari" }
 

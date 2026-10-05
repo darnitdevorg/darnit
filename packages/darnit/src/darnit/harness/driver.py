@@ -15,7 +15,6 @@ import asyncio
 import os
 import re
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from darnit.core.llm_step import ConsultationRequest, LLMJudgment, LLMStep, PydanticAILLMStep
@@ -270,7 +269,6 @@ class HarnessRun:
                 default_branch=default_branch,
                 level=self.level,
                 stop_on_llm=True,
-                apply_user_config=True,
                 framework_name=self.framework_name,
                 operator_config=self.operator_config,
                 target=self.target,
@@ -402,14 +400,8 @@ class HarnessRun:
 
         # Load the effective (composed) config so we can rebuild ControlSpecs
         # to feed back into verify_with_llm_response after LLM dispatch.
-        # PR #365 review fix: resolve framework via `load_effective_config_auto`
-        # so `.baseline.toml`'s `extends` (or --framework) determines the
-        # framework, matching how run_sieve_audit chose it for the initial
-        # pass. The previous code called `load_effective_config_by_name`
-        # with a hardcoded "openssf-baseline" fallback, so a non-baseline
-        # harness run would silently load the wrong framework.
+        # Resolve the framework from --framework, as the initial audit did.
         effective_config = load_effective_config_auto(
-            Path(self.local_path),
             framework_name=self.framework_name,
             operator=self.operator_config.config if self.operator_config else None,
         )

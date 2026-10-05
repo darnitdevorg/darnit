@@ -811,7 +811,7 @@ class TestUseLocatorAndOnPass:
         )
         defaults = FrameworkDefaults()
 
-        effective = merge_control("T-01", control, None, defaults)
+        effective = merge_control("T-01", control, defaults)
 
         # The passes_config should have files resolved from locator
         assert effective.passes_config is not None
@@ -955,7 +955,7 @@ class TestNAReportSection:
             {
                 "id": "OSPS-BR-01.01",
                 "status": "N/A",
-                "details": "Excluded via .baseline.toml",
+                "details": "Not applicable (asserted by repository content)",
                 "level": 1,
             },
         ]

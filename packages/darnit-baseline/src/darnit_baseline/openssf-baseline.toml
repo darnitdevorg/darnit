@@ -2,7 +2,7 @@
 # Declarative configuration for OSPS v2026.02.19 compliance controls
 #
 # This file defines all 65 controls across 3 maturity levels.
-# Users can override settings via .baseline.toml in their repository.
+# Operators can override passes and add controls in operator configuration.
 
 [metadata]
 name = "openssf-baseline"

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from darnit.config.framework_schema import (
@@ -15,11 +13,7 @@ from darnit.config.framework_schema import (
     StoreBlock,
     StoresConfig,
 )
-from darnit.config.merger import (
-    load_user_config,
-    load_user_config_with_report,
-    merge_configs,
-)
+from darnit.config.merger import merge_configs
 from darnit.config.operator.schema import OperatorConfig
 
 
@@ -119,40 +113,3 @@ def test_plugins_allowed_refuses_other_frameworks() -> None:
 
     effective = merge_configs(_framework(), operator=_operator(plugins={"allowed": ["test-framework"]}))
     assert effective.framework_name == "test-framework"
-
-
-@pytest.mark.unit
-def test_repository_config_cannot_supply_what_operator_config_does(tmp_path: Path) -> None:
-    (tmp_path / ".baseline.toml").write_text(
-        '[mcp_servers.shared]\ncommand = ["repo-shared"]\n\n[controls."TEST-02"]\npasses = [{ handler = "manual" }]\n',
-        encoding="utf-8",
-    )
-    operator = _operator(controls={"TEST-01": {"passes": [{"handler": "file_exists", "files": ["OPERATOR.md"]}]}})
-    effective = merge_configs(_framework(), load_user_config(tmp_path), operator=operator)
-
-    assert effective.mcp_servers["shared"].command == ["framework-shared"]
-    assert effective.controls["TEST-02"].passes_config is None
-    assert effective.controls["TEST-01"].passes_config[0]["files"] == ["OPERATOR.md"]
-
-
-@pytest.mark.unit
-def test_load_user_config_with_report_lists_ignored_keys(tmp_path: Path) -> None:
-    (tmp_path / ".baseline.toml").write_text(
-        'extends = "openssf-baseline"\n\n[stores.report]\nbackend = "filesystem"\n\n'
-        '[controls."TEST-01"]\nstatus = "n/a"\nreason = "not here"\npasses = [{ handler = "manual" }]\n',
-        encoding="utf-8",
-    )
-
-    user, ignored = load_user_config_with_report(tmp_path)
-
-    assert user is not None
-    assert user.extends == "openssf-baseline"
-    assert {(s.file, s.key, s.new_home) for s in ignored} == {
-        (".baseline.toml", "stores", "operator configuration"),
-        (".baseline.toml", "controls.TEST-01.passes", "operator configuration"),
-    }
-
-
-@pytest.mark.unit
-def test_load_user_config_with_report_without_file(tmp_path: Path) -> None:
-    assert load_user_config_with_report(tmp_path) == (None, [])

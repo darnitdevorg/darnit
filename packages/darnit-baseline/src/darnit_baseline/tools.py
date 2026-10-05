@@ -176,7 +176,7 @@ def audit_openssf_baseline(
 
     # Load framework config
     try:
-        config = load_effective_config_by_name("openssf-baseline", repo_path, operator=operator_config.config)
+        config = load_effective_config_by_name("openssf-baseline", operator=operator_config.config)
     except Exception as e:
         return f"❌ Error loading framework: {e}"
 
@@ -226,7 +226,6 @@ def audit_openssf_baseline(
         level=level,
         controls=controls,
         tags=tags_list,
-        apply_user_config=True,
         stop_on_llm=True,
         framework_name="openssf-baseline",
         operator_config=operator_config,

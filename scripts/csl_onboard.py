@@ -66,7 +66,7 @@ def audit(path: Path) -> dict[str, str]:
     controls = load_controls_from_effective(cfg)
     results, _ = run_sieve_audit(
         owner="", repo="", local_path=str(path), default_branch="main",
-        level=3, controls=controls, apply_user_config=False, stop_on_llm=False,
+        level=3, controls=controls, evaluate_claims=False, stop_on_llm=False,
     )
     return {r["id"]: r["status"] for r in results}
 

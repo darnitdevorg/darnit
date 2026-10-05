@@ -106,7 +106,7 @@ def test_control_from_effective_validates() -> None:
 def test_load_controls_from_effective_validates(tmp_path: Path) -> None:
     framework_path = tmp_path / "widening.toml"
     framework_path.write_text(FRAMEWORK_TOML, encoding="utf-8")
-    config = load_effective_config(framework_path, None)
+    config = load_effective_config(framework_path)
     with pytest.raises(AuthorityViolation) as excinfo:
         load_controls_from_effective(config)
     _assert_names_step(excinfo)

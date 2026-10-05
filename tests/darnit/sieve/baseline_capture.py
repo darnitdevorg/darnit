@@ -174,7 +174,7 @@ def _capture_one(framework: str, repo_path: str, neutralize: bool = False) -> di
         default_branch="main",
         level=3,
         stop_on_llm=True,
-        apply_user_config=False,
+        evaluate_claims=False,
         framework_name=framework,
     )
     return {_control_id(r): _status(r) for r in results}

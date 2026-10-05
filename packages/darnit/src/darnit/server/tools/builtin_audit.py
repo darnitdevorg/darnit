@@ -80,7 +80,7 @@ async def builtin_audit(
 
     # Load effective config (framework TOML merged with operator configuration)
     try:
-        config = load_effective_config_by_name(_framework_name, repo_path, operator=operator_config.config)
+        config = load_effective_config_by_name(_framework_name, operator=operator_config.config)
     except Exception as e:
         return f"Error loading framework config '{_framework_name}': {e}"
 
@@ -139,7 +139,6 @@ async def builtin_audit(
         level=level,
         controls=all_controls,
         tags=tags_list,
-        apply_user_config=True,
         stop_on_llm=True,
         framework_name=_framework_name,
         operator_config=operator_config,

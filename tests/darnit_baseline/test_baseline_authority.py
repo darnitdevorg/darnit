@@ -44,7 +44,7 @@ def _steps(control) -> list:
 
 
 def test_every_control_loads_on_the_effective_path(controls: list) -> None:
-    effective = load_controls_from_effective(load_effective_config_by_name(FRAMEWORK, repo_path=None))
+    effective = load_controls_from_effective(load_effective_config_by_name(FRAMEWORK))
     assert {c.control_id for c in effective} == {c.control_id for c in controls}
 
 

@@ -24,23 +24,18 @@ def _quiet_cli(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("darnit.cli.configure_logging", lambda level: None)
 
 
-def _repo(tmp_path: Path, *, readme: bool, claim_file: str) -> Path:
+def _repo(tmp_path: Path, *, readme: bool) -> Path:
     path = tmp_path / "repo"
     path.mkdir()
     if readme:
         (path / "README.md").write_text("# repo\n", encoding="utf-8")
     subprocess.run(["git", "init", "--initial-branch=main", "-q"], cwd=path, check=True)
     subprocess.run(["git", "remote", "add", "origin", "https://github.com/example/repo.git"], cwd=path, check=True)
-    if claim_file == "project":
-        (path / ".project").mkdir()
-        (path / ".project" / "darnit.yaml").write_text(
-            f"controls:\n  {CONTROL}:\n    status: n/a\n    reason: docs live elsewhere\n    asserted_by: '@alice'\n",
-            encoding="utf-8",
-        )
-    else:
-        (path / ".baseline.toml").write_text(
-            f'[controls."{CONTROL}"]\nstatus = "n/a"\nreason = "docs live elsewhere"\n', encoding="utf-8"
-        )
+    (path / ".project").mkdir()
+    (path / ".project" / "darnit.yaml").write_text(
+        f"controls:\n  {CONTROL}:\n    status: n/a\n    reason: docs live elsewhere\n    asserted_by: '@alice'\n",
+        encoding="utf-8",
+    )
     return path
 
 
@@ -48,14 +43,13 @@ def _result(results: list[dict]) -> dict:
     return next(r for r in results if r["id"] == CONTROL)
 
 
-def _expected_assertion(claim_file: str) -> dict:
-    location = ".project/darnit.yaml" if claim_file == "project" else ".baseline.toml"
+def _expected_assertion() -> dict:
     return {
         "outcome": "pending",
         "origin": "explicit_claim",
         "reason": "docs live elsewhere",
-        "asserted_by": "@alice" if claim_file == "project" else "repository content",
-        "location": f"{location}:controls.{CONTROL}",
+        "asserted_by": "@alice",
+        "location": f".project/darnit.yaml:controls.{CONTROL}",
         "confirmation": None,
         "contradiction": None,
     }
@@ -113,17 +107,15 @@ def _mcp_builtin(repo: Path) -> list[dict]:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("claim_file", ["project", "baseline"])
 @pytest.mark.parametrize("driver", ["sieve", "cli", "mcp_baseline", "mcp_builtin", "harness"])
 def test_claim_is_reported_pending_and_control_evaluated(
     driver: str,
-    claim_file: str,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")
-    repo = _repo(tmp_path, readme=False, claim_file=claim_file)
+    repo = _repo(tmp_path, readme=False)
     results = {
         "sieve": lambda: _run_sieve(repo),
         "cli": lambda: _cli(repo, capsys),
@@ -134,7 +126,7 @@ def test_claim_is_reported_pending_and_control_evaluated(
 
     result = _result(results)
     assert result["status"] == "FAIL"
-    assert result["assertion"] == _expected_assertion(claim_file)
+    assert result["assertion"] == _expected_assertion()
 
 
 @pytest.mark.integration
@@ -142,7 +134,7 @@ def test_evaluated_control_keeps_its_status(tmp_path: Path) -> None:
     # Feature 041: a README's presence no longer concludes DO-01.01; the
     # control awaits a model judgment, and the pending claim does not replace
     # that status.
-    result = _result(_run_sieve(_repo(tmp_path, readme=True, claim_file="project")))
+    result = _result(_run_sieve(_repo(tmp_path, readme=True)))
 
     assert result["status"] == "PENDING"
     assert result["pending"] == {"kind": "llm_judgment"}
@@ -151,7 +143,7 @@ def test_evaluated_control_keeps_its_status(tmp_path: Path) -> None:
 
 @pytest.mark.integration
 def test_unclaimed_controls_carry_no_assertion(tmp_path: Path) -> None:
-    results = _run_sieve(_repo(tmp_path, readme=True, claim_file="project"))
+    results = _run_sieve(_repo(tmp_path, readme=True))
 
     assert all("assertion" not in r for r in results if r["id"] != CONTROL)
 
@@ -164,7 +156,7 @@ def test_markdown_names_the_claim() -> None:
             "status": "FAIL",
             "details": "no README",
             "level": 1,
-            "assertion": _expected_assertion("project"),
+            "assertion": _expected_assertion(),
         }
     ]
     summary = {"PASS": 0, "FAIL": 1, "WARN": 0, "N/A": 0, "ERROR": 0, "PENDING": 0, "total": 1}
@@ -187,10 +179,10 @@ def test_markdown_shows_each_outcome_with_its_evidence() -> None:
     }
     results = [
         {"id": "A", "status": "N/A", "details": "", "level": 1, "assertion": {
-            **_expected_assertion("project"), "outcome": "honored", "confirmation": confirmation}},
+            **_expected_assertion(), "outcome": "honored", "confirmation": confirmation}},
         {"id": "B", "status": "FAIL", "details": "", "level": 1, "assertion": {
-            **_expected_assertion("project"), "outcome": "contradicted", "contradiction": contradiction}},
-        {"id": "C", "status": "PASS", "details": "", "level": 1, "assertion": _expected_assertion("project")},
+            **_expected_assertion(), "outcome": "contradicted", "contradiction": contradiction}},
+        {"id": "C", "status": "PASS", "details": "", "level": 1, "assertion": _expected_assertion()},
     ]
     summary = {"PASS": 1, "FAIL": 1, "WARN": 0, "N/A": 1, "ERROR": 0, "PENDING": 0, "total": 3}
 
@@ -209,7 +201,7 @@ def test_claims_about_unknown_controls_are_reported(tmp_path: Path) -> None:
     from darnit.config.operator.loader import resolve_operator_config
     from darnit.tools.audit import _format_audit_metadata_markdown, audit_report_metadata
 
-    repo = _repo(tmp_path, readme=True, claim_file="project")
+    repo = _repo(tmp_path, readme=True)
     (repo / ".project" / "darnit.yaml").write_text(
         "controls:\n  OSPS-XX-99.99:\n    status: n/a\n    reason: x\n", encoding="utf-8"
     )
