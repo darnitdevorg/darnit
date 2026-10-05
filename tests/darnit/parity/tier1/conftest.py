@@ -1,6 +1,6 @@
 """Tier 1 conftest: fixture auto-discovery + prepared-fixture helper (T012).
 
-Auto-discovers `tests/darnit/parity/fixtures/<name>/.baseline.toml` and
+Auto-discovers `tests/darnit/parity/fixtures/<name>/parity.toml` and
 parametrizes `fixture_dir`. Provides `prepared_fixture`, `mcp_tool_result`,
 and `harness_result` pytest fixtures that materialize a git-initialized
 copy of the fixture and run both audit paths against it.
@@ -65,7 +65,7 @@ def _ensure_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
 def _discover_fixtures() -> list[Path]:
     if not FIXTURES_DIR.exists():
         return []
-    return sorted(p for p in FIXTURES_DIR.iterdir() if p.is_dir() and (p / ".baseline.toml").exists())
+    return sorted(p for p in FIXTURES_DIR.iterdir() if p.is_dir() and (p / "parity.toml").exists())
 
 
 def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
@@ -156,8 +156,11 @@ def harness_result(prepared_fixture: Path) -> AuditResult:
             reasoning="tier1-mock: no LLM decision",
         )
     )
+    # The MCP side is `audit_openssf_baseline`; name the same framework so
+    # the harness does not depend on anything in the fixture selecting it.
     run = HarnessRun(
         local_path=str(prepared_fixture),
+        framework_name="openssf-baseline",
         level=3,
         llm_step=mock,
         per_call_timeout_s=5,

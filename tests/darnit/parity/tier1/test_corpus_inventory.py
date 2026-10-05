@@ -23,7 +23,7 @@ FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 def _discover_fixtures() -> list[Path]:
     if not FIXTURES_DIR.exists():
         return []
-    return sorted(p for p in FIXTURES_DIR.iterdir() if p.is_dir() and (p / ".baseline.toml").exists())
+    return sorted(p for p in FIXTURES_DIR.iterdir() if p.is_dir() and (p / "parity.toml").exists())
 
 
 class TestCorpusInventory:

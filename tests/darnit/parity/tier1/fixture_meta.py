@@ -46,8 +46,8 @@ class ParityMetadata:
     controls: tuple[ExpectedControl, ...] = ()
     # Optional per-fixture filter: if non-empty, the parity comparison
     # only considers these control IDs from both paths' outputs. If empty,
-    # all controls (which will be every OSPS control since neither path
-    # auto-applies audit_profiles from .baseline.toml today) are compared.
+    # all controls (every OSPS control, since neither path applies a
+    # fixture-declared subset) are compared.
     control_ids: tuple[str, ...] = ()
 
 

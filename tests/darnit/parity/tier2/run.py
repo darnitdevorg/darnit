@@ -58,7 +58,7 @@ def _provider_filename_prefix(backend_name: str) -> str:
 def _discover_fixtures(fixture_glob: str) -> list[Path]:
     if not FIXTURES_DIR.exists():
         return []
-    all_fixtures = sorted(p for p in FIXTURES_DIR.iterdir() if p.is_dir() and (p / ".baseline.toml").exists())
+    all_fixtures = sorted(p for p in FIXTURES_DIR.iterdir() if p.is_dir() and (p / "parity.toml").exists())
     if fixture_glob == "*":
         return all_fixtures
     import fnmatch

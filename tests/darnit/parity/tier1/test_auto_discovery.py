@@ -15,7 +15,7 @@ FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 def _discovered_fixture_dirs() -> list[Path]:
     if not FIXTURES_DIR.exists():
         return []
-    return sorted(p for p in FIXTURES_DIR.iterdir() if p.is_dir() and (p / ".baseline.toml").exists())
+    return sorted(p for p in FIXTURES_DIR.iterdir() if p.is_dir() and (p / "parity.toml").exists())
 
 
 def test_fixture_count_matches_directory_count() -> None:
@@ -25,11 +25,11 @@ def test_fixture_count_matches_directory_count() -> None:
     fixtures = _discovered_fixture_dirs()
     # Sanity: at least the four MVP fixtures.
     assert len(fixtures) >= 4, f"Expected at least 4 fixtures, got {len(fixtures)}: {[f.name for f in fixtures]}"
-    # Every discovered directory contains a `.baseline.toml` -- the
+    # Every discovered directory contains a `parity.toml` -- the
     # required marker file. If a maintainer adds a directory without
-    # `.baseline.toml`, it's silently ignored (not counted as a fixture).
+    # `parity.toml`, it's silently ignored (not counted as a fixture).
     for fixture in fixtures:
-        assert (fixture / ".baseline.toml").exists()
+        assert (fixture / "parity.toml").exists()
 
 
 def test_new_fixture_is_picked_up() -> None:
@@ -51,10 +51,10 @@ def test_new_fixture_is_picked_up() -> None:
         # Add a synthetic fixture.
         new_dir = tmp_root / "synthetic_extra"
         new_dir.mkdir()
-        (new_dir / ".baseline.toml").write_text('extends = "openssf-baseline"\n')
+        (new_dir / "parity.toml").write_text('[expected]\ncategory = "all_pass"\n')
 
         # Rediscover using the same pattern.
-        discovered = sorted(p for p in tmp_root.iterdir() if p.is_dir() and (p / ".baseline.toml").exists())
+        discovered = sorted(p for p in tmp_root.iterdir() if p.is_dir() and (p / "parity.toml").exists())
         names = {p.name for p in discovered}
         assert "synthetic_extra" in names
         assert len(discovered) == len(_discovered_fixture_dirs()) + 1
