@@ -42,7 +42,7 @@ def _stub_framework_pending(monkeypatch: pytest.MonkeyPatch) -> None:
     Feature 027 QuestionResolver tests (and other harness tests) assemble
     synthesized fake results and count how many end up answered/pending.
     Once PR #365 wired the framework's own `get_pending_context` into
-    `_collect_unanswered`, running against a real .baseline.toml fixture
+    `_collect_unanswered`, running against a real framework fixture
     starts emitting real per-key questions -- polluting those counts.
     Tests that want the enumerator active un-stub via `monkeypatch.undo()`
     or set `run._enumerate_framework_pending = <real fn>`.
@@ -132,6 +132,7 @@ def harness_run_factory(
     ) -> HarnessRun:
         return HarnessRun(
             local_path=local_path,
+            framework_name="openssf-baseline",
             level=level,
             answer_resolver=answer_resolver or AnswerResolver(),
             llm_step=mock_llm_step,

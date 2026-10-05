@@ -92,7 +92,9 @@ def test_mcp_walks_loop_to_termination(tmp_path: Path) -> None:
     from darnit.agent.graph import remediate
 
     fixture = _copy_minimal_repo(tmp_path)
-    state_dict: dict[str, Any] = HarnessState(local_path=str(fixture)).model_dump(mode="json")
+    state_dict: dict[str, Any] = HarnessState(local_path=str(fixture), framework_name="testchecks").model_dump(
+        mode="json"
+    )
 
     for _ in range(20):  # safety bound; loop should terminate well before
         plan_dict = _run(run_next_action_tool(state_dict))
@@ -144,7 +146,7 @@ def test_mcp_equals_direct_equals_cli(tmp_path: Path) -> None:
     fixture = _copy_minimal_repo(tmp_path)
 
     # Path 1: direct-Python (next_action/submit_result loop)
-    direct_state = HarnessState(local_path=str(fixture))
+    direct_state = HarnessState(local_path=str(fixture), framework_name="testchecks")
     while True:
         plan = next_action(direct_state)
         if plan is None:
@@ -190,7 +192,7 @@ def test_mcp_equals_direct_equals_cli(tmp_path: Path) -> None:
             break
 
     # Path 2: cmd_run-style CLI loop
-    cli_state = AuditState(local_path=str(fixture))
+    cli_state = AuditState(local_path=str(fixture), framework_name="testchecks")
     fb = get_feedback_handler("noninteractive")
     cli_state = audit(cli_state)
     for _ in range(10):
@@ -215,7 +217,9 @@ def test_mcp_equals_direct_equals_cli(tmp_path: Path) -> None:
             break
 
     # Path 3: MCP tools driving through JSON round-trips at every step
-    mcp_state_dict: dict[str, Any] = HarnessState(local_path=str(fixture)).model_dump(mode="json")
+    mcp_state_dict: dict[str, Any] = HarnessState(local_path=str(fixture), framework_name="testchecks").model_dump(
+        mode="json"
+    )
     for _ in range(20):
         plan_dict = _run(run_next_action_tool(mcp_state_dict))
         if plan_dict is None:

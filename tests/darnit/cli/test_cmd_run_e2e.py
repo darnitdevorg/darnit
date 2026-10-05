@@ -61,7 +61,7 @@ class TestGoldenPath:
         """Pins exit-code contract (spec FR-003(a), acceptance #1/#3;
         contracts C10/C12 and the top-of-file exit-code rule)."""
         exit_code, stdout, _stderr = invoke_cmd_run(
-            [str(minimal_repo_tree), "--feedback", "noninteractive"],
+            [str(minimal_repo_tree), "--framework", "testchecks", "--feedback", "noninteractive"],
             capsys,
         )
         counts = _parse_counts(stdout)
@@ -85,7 +85,7 @@ class TestGoldenPath:
     ) -> None:
         """Pins the `Darnit run` header string (contract C1, C2)."""
         _exit, stdout, _stderr = invoke_cmd_run(
-            [str(minimal_repo_tree), "--feedback", "noninteractive"],
+            [str(minimal_repo_tree), "--framework", "testchecks", "--feedback", "noninteractive"],
             capsys,
         )
         # C1: header appears exactly once, on its own line.
@@ -108,7 +108,7 @@ class TestGoldenPath:
     ) -> None:
         """Pins `Run complete.` footer and count-line structure (contracts C3, C4)."""
         _exit, stdout, _stderr = invoke_cmd_run(
-            [str(minimal_repo_tree), "--feedback", "noninteractive"],
+            [str(minimal_repo_tree), "--framework", "testchecks", "--feedback", "noninteractive"],
             capsys,
         )
         # C3: `Run complete.` appears exactly once on its own line.
@@ -132,7 +132,7 @@ class TestGoldenPath:
         Controls in no printed bucket are N/A, ERROR, or PENDING.
         """
         _exit, stdout, _stderr = invoke_cmd_run(
-            [str(minimal_repo_tree), "--feedback", "noninteractive"],
+            [str(minimal_repo_tree), "--framework", "testchecks", "--feedback", "noninteractive"],
             capsys,
         )
         counts = _parse_counts(stdout)
@@ -151,7 +151,7 @@ class TestGoldenPath:
         """Pins FR-003(d) + contracts C7 (no Error line on success path)
         and C8 (no Python traceback ever)."""
         _exit, stdout, _stderr = invoke_cmd_run(
-            [str(minimal_repo_tree), "--feedback", "noninteractive"],
+            [str(minimal_repo_tree), "--framework", "testchecks", "--feedback", "noninteractive"],
             capsys,
         )
         assert not re.search(r"^Error:", stdout, re.MULTILINE), (
@@ -169,7 +169,7 @@ class TestGoldenPath:
     ) -> None:
         """Pins FR-012 and contract C9: cmd_run stdout is ASCII-only."""
         _exit, stdout, _stderr = invoke_cmd_run(
-            [str(minimal_repo_tree), "--feedback", "noninteractive"],
+            [str(minimal_repo_tree), "--framework", "testchecks", "--feedback", "noninteractive"],
             capsys,
         )
         non_ascii = [(i, ch) for i, ch in enumerate(stdout) if ord(ch) > 127]
@@ -188,7 +188,7 @@ class TestGoldenPath:
         so a broken exit-code rule surfaces here.
         """
         exit_code, stdout, _stderr = invoke_cmd_run(
-            [str(failing_repo_tree), "--feedback", "noninteractive"],
+            [str(failing_repo_tree), "--framework", "testchecks", "--feedback", "noninteractive"],
             capsys,
         )
         counts = _parse_counts(stdout)
@@ -222,7 +222,7 @@ class TestDeterministicOnly:
         fails with a message identifying the offending call site.
         """
         exit_code, _stdout, _stderr = invoke_cmd_run(
-            [str(minimal_repo_tree), "--feedback", "noninteractive"],
+            [str(minimal_repo_tree), "--framework", "testchecks", "--feedback", "noninteractive"],
             capsys,
         )
         # Golden fixture design produces zero FAIL, so exit must be 0.
@@ -245,7 +245,7 @@ class TestDeterministicOnly:
         are routed to the canned fake, not to the real system.
         """
         invoke_cmd_run(
-            [str(minimal_repo_tree), "--feedback", "noninteractive"],
+            [str(minimal_repo_tree), "--framework", "testchecks", "--feedback", "noninteractive"],
             capsys,
         )
         recorded = deterministic_run._recorded_calls
@@ -289,7 +289,7 @@ class TestDeterministicOnly:
 
         caplog.set_level(logging.WARNING)
         invoke_cmd_run(
-            [str(minimal_repo_tree), "--feedback", "noninteractive"],
+            [str(minimal_repo_tree), "--framework", "testchecks", "--feedback", "noninteractive"],
             capsys,
         )
         blocklist = ("llm", "anthropic", "openai", "mcp")
@@ -336,7 +336,7 @@ class TestFailurePaths:
         """
         missing = tmp_path / "does-not-exist"
         exit_code, stdout, stderr = invoke_cmd_run(
-            [str(missing), "--feedback", "noninteractive"],
+            [str(missing), "--framework", "testchecks", "--feedback", "noninteractive"],
             capsys,
         )
         combined = stdout + stderr
@@ -360,7 +360,7 @@ class TestFailurePaths:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Pins US3 acceptance #2, FR-005: when the plugin registry cannot
-        resolve the framework named in .baseline.toml, cmd_run's behavior
+        resolve the framework named with --framework, cmd_run's behavior
         is pinned as-observed. Reference contract E3.
 
         NOTE: current production behavior swallows the missing-framework
@@ -374,7 +374,7 @@ class TestFailurePaths:
         monkeypatch.setattr(discovery, "get_implementation", lambda *_a, **_kw: None)
 
         exit_code, stdout, _stderr = invoke_cmd_run(
-            [str(minimal_repo_tree), "--feedback", "noninteractive"],
+            [str(minimal_repo_tree), "--framework", "testchecks", "--feedback", "noninteractive"],
             capsys,
         )
         # Pin the RULE (exit code follows the Failed count) and the SHAPE
@@ -406,7 +406,7 @@ class TestFailurePaths:
         be updated deliberately in that PR.
         """
         exit_code, stdout, _stderr = invoke_cmd_run(
-            [str(malformed_project_tree), "--feedback", "noninteractive"],
+            [str(malformed_project_tree), "--framework", "testchecks", "--feedback", "noninteractive"],
             capsys,
         )
         counts = _parse_counts(stdout)
@@ -541,3 +541,41 @@ class TestPreviewByDefault:
         assert "created CONTRIBUTING.md" in stdout
         assert exit_code == 1
         assert stdout.isascii()
+
+
+class TestFrameworkOption:
+    """#507: ``darnit run --framework NAME`` selects the framework the audit runs."""
+
+    def test_framework_option_reaches_the_audit(
+        self,
+        minimal_repo_tree: Path,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from darnit.agent import graph
+
+        seen: list[str | None] = []
+
+        def audited(state):
+            seen.append(state.framework_name)
+            state.audit_results = []
+            state.error = None
+            return state
+
+        monkeypatch.setattr(graph, "audit", audited)
+
+        invoke_cmd_run([str(minimal_repo_tree), "-f", "testchecks", "--feedback", "noninteractive"], capsys)
+
+        assert seen == ["testchecks"]
+
+    def test_testchecks_controls_are_audited(
+        self,
+        minimal_repo_tree: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        _exit, stdout, _stderr = invoke_cmd_run(
+            [str(minimal_repo_tree), "--framework", "testchecks", "--feedback", "noninteractive"],
+            capsys,
+        )
+
+        assert _parse_counts(stdout)["total"] > 0

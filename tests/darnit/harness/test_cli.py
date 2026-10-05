@@ -82,7 +82,7 @@ class TestExitCodes:
     ) -> None:
         """T037: fixture with FAIL result -> exit 1, stderr names FAIL count."""
         exit_code, _stdout, _stderr, records = _invoke_cli(
-            [str(minimal_llm_repo_tree), "--level", "1"],
+            [str(minimal_llm_repo_tree), "--framework", "openssf-baseline", "--level", "1"],
             capsys,
             caplog,
             mock_llm=mock_llm_step,
@@ -124,7 +124,7 @@ class TestFailFast:
         saved_handlers = list(darnit_logger.handlers)
         saved_level = darnit_logger.level
         try:
-            exit_code = darnit_main(argv=["harness", str(minimal_llm_repo_tree)])
+            exit_code = darnit_main(argv=["harness", str(minimal_llm_repo_tree), "--framework", "openssf-baseline"])
         finally:
             darnit_logger.handlers[:] = saved_handlers
             darnit_logger.setLevel(saved_level)
@@ -157,7 +157,7 @@ class TestMissingRepoPath:
         capsys: pytest.CaptureFixture[str],
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """CLI-1: missing / no .baseline.toml -> exit 2."""
+        """CLI-1: missing repository path -> exit 2."""
         exit_code, _stdout, _stderr, records = _invoke_cli(
             [str(tmp_path / "nonexistent")],
             capsys,
@@ -189,7 +189,7 @@ class TestStderrGrepPattern:
         """
         # Case 1: success/failure path (audit runs).
         _exit1, _stdout1, _stderr1, records1 = _invoke_cli(
-            [str(minimal_llm_repo_tree), "--level", "1"],
+            [str(minimal_llm_repo_tree), "--framework", "openssf-baseline", "--level", "1"],
             capsys,
             caplog,
             mock_llm=mock_llm_step,
@@ -198,7 +198,7 @@ class TestStderrGrepPattern:
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         caplog.clear()
         _exit2, _stdout2, _stderr2, records2 = _invoke_cli(
-            [str(minimal_llm_repo_tree)],
+            [str(minimal_llm_repo_tree), "--framework", "openssf-baseline"],
             capsys,
             caplog,
         )
@@ -243,7 +243,7 @@ class TestOutputFlag:
         """CLI-16: --output writes to file; stdout is empty."""
         output_path = tmp_path / "report.md"
         _exit, stdout, _stderr, _records = _invoke_cli(
-            [str(minimal_llm_repo_tree), "--level", "1", "--output", str(output_path)],
+            [str(minimal_llm_repo_tree), "--framework", "openssf-baseline", "--level", "1", "--output", str(output_path)],
             capsys,
             caplog,
             mock_llm=mock_llm_step,
@@ -299,7 +299,7 @@ class TestApiKeyRedaction:
 
         # Success/failure path
         _e1, stdout1, _s1, records1 = _invoke_cli(
-            [str(minimal_llm_repo_tree), "--level", "1"],
+            [str(minimal_llm_repo_tree), "--framework", "openssf-baseline", "--level", "1"],
             capsys,
             caplog,
             mock_llm=mock_llm_step,
@@ -333,7 +333,7 @@ class TestInteractiveFlag:
 
         start = time.monotonic()
         exit_code, _stdout, _stderr, records = _invoke_cli(
-            [str(minimal_llm_repo_tree), "--interactive", "--level", "1"],
+            [str(minimal_llm_repo_tree), "--framework", "openssf-baseline", "--interactive", "--level", "1"],
             capsys,
             caplog,
             mock_llm=mock_llm_step,
@@ -379,7 +379,7 @@ class TestInteractiveFlag:
         monkeypatch.setattr(builtins, "open", _fail_open)
 
         exit_code, _stdout, _stderr, records = _invoke_cli(
-            [str(minimal_llm_repo_tree), "--interactive", "--level", "1"],
+            [str(minimal_llm_repo_tree), "--framework", "openssf-baseline", "--interactive", "--level", "1"],
             capsys,
             caplog,
             mock_llm=mock_llm_step,

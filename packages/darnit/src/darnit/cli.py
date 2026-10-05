@@ -838,14 +838,13 @@ def cmd_run(args: argparse.Namespace) -> int:
     print(f"  Remediate  : {'apply' if args.apply else 'preview (nothing is written; pass --apply to write)'}")
     print()
 
-    # framework_name=None auto-resolves from .baseline.toml inside audit().
     owner, repo = owner_repo_from_identity(target) if target else (None, None)
     state = AuditState(
         local_path=repo_path,
         owner=owner,
         repo=repo,
         target=target,
-        framework_name=getattr(args, "framework", None),
+        framework_name=args.framework,
         level=getattr(args, "level", 3),
     )
 
@@ -1571,6 +1570,10 @@ def create_parser() -> argparse.ArgumentParser:
         help="Path to repository (default: current directory)",
     )
     run_parser.add_argument(
+        "-f", "--framework",
+        help="Framework name to use (e.g., openssf-baseline)",
+    )
+    run_parser.add_argument(
         "--feedback",
         dest="feedback_mode",
         choices=["interactive", "noninteractive", "auto"],
@@ -1606,7 +1609,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     harness_parser.add_argument(
         "--framework",
-        help="Framework name (e.g., openssf-baseline). Overrides .baseline.toml.",
+        help="Framework name (e.g., openssf-baseline).",
     )
     harness_parser.add_argument(
         "--level",
