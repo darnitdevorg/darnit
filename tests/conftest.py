@@ -1,5 +1,7 @@
 """Pytest configuration and shared fixtures."""
 
+import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -7,6 +9,65 @@ from collections.abc import Generator
 from pathlib import Path
 
 import pytest
+
+from tests.conftest_helpers import write_stand_in_tool
+
+# Markers whose tests reach the network or run real tools. They run only
+# when the -m expression names the marker (#548).
+_OPT_IN_MARKERS = ("live", "upstream")
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Skip a ``live`` or ``upstream`` test unless ``-m`` names its marker (#548).
+
+    ``--update-hash`` (tests/darnit/context/conftest.py) also selects the
+    ``upstream`` tests, since refreshing the tracked hash is what it is for.
+    """
+    markexpr = config.getoption("markexpr", "") or ""
+    selected = {name for name in _OPT_IN_MARKERS if re.search(rf"\b{name}\b", markexpr)}
+    if config.getoption("--update-hash", default=False):
+        selected.add("upstream")
+    for item in items:
+        opted_in = [name for name in _OPT_IN_MARKERS if item.get_closest_marker(name)]
+        if opted_in and not selected.intersection(opted_in):
+            item.add_marker(pytest.mark.skip(reason=f"needs the network; select with -m {opted_in[0]}"))
+
+
+@pytest.fixture(scope="session")
+def _offline_tools(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Stand-ins for ``gh`` (not authenticated) and ``zizmor`` (no findings), written once."""
+    bin_dir = tmp_path_factory.mktemp("offline-tools")
+    write_stand_in_tool(
+        bin_dir,
+        "gh",
+        exit_code=4,
+        script="echo 'gh: not authenticated in tests (#548); run gh auth login' >&2",
+    )
+    write_stand_in_tool(bin_dir, "zizmor", stdout="[]\n")
+    return bin_dir
+
+
+@pytest.fixture(autouse=True)
+def _offline_platform(
+    request: pytest.FixtureRequest, _offline_tools: Path, monkeypatch: pytest.MonkeyPatch
+) -> Generator[None, None, None]:
+    """Keep every test off GitHub and away from the real ``gh`` and ``zizmor`` (#548).
+
+    Platform calls get ``RecordedGhApi({})``: an unrecorded endpoint answers
+    status 0, an ERROR ``unavailable``. A test or fixture that installs its own
+    responder replaces this one and restores it. Stand-ins for ``gh`` and
+    ``zizmor`` go first on ``PATH``; ``stand_in_tool`` puts a test's own in
+    front of them. Tests marked ``live`` get none of this.
+    """
+    if request.node.get_closest_marker("live"):
+        yield
+        return
+    from darnit.core.utils import RecordedGhApi, set_gh_api_responder
+
+    monkeypatch.setenv("PATH", f"{_offline_tools}{os.pathsep}{os.environ.get('PATH', '')}")
+    previous = set_gh_api_responder(RecordedGhApi({}))
+    yield
+    set_gh_api_responder(previous)
 
 
 @pytest.fixture(autouse=True)

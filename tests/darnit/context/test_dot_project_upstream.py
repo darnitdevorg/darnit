@@ -4,8 +4,9 @@ These tests verify that our implementation stays in sync with the upstream
 CNCF .project/ specification at:
 https://github.com/cncf/automation/tree/main/utilities/dot-project
 
-Run locally to check for upstream changes:
-    uv run pytest tests/darnit/context/test_dot_project_upstream.py -v
+Run locally to check for upstream changes (the upstream tests reach the
+network, so they are skipped unless selected; #548):
+    uv run pytest tests/darnit/context/test_dot_project_upstream.py -v -m upstream
 
 Update the tracked hash after syncing with upstream:
     uv run pytest tests/darnit/context/test_dot_project_upstream.py -v --update-hash

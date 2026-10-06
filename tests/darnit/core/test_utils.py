@@ -15,6 +15,7 @@ from darnit.core.utils import (
     gh_api_safe,
     make_result,
     read_file,
+    set_gh_api_responder,
     validate_local_path,
 )
 
@@ -235,6 +236,13 @@ class TestGitRef:
 
 class TestGithubCliErrors:
     """Tests for GitHub CLI helper failures."""
+
+    @pytest.fixture(autouse=True)
+    def _no_responder(self):
+        """These tests drive the real ``gh`` path with a mocked ``subprocess.run``; drop the suite's responder (#548)."""
+        previous = set_gh_api_responder(None)
+        yield
+        set_gh_api_responder(previous)
 
     @pytest.mark.unit
     def test_gh_api_missing_cli_shows_helpful_message(self):

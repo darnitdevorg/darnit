@@ -17,6 +17,14 @@ import pytest
 from darnit.core import utils
 
 
+@pytest.fixture(autouse=True)
+def _no_responder():
+    """These tests drive the real ``gh`` path with a mocked ``subprocess.run``; drop the suite's responder (#548)."""
+    previous = utils.set_gh_api_responder(None)
+    yield
+    utils.set_gh_api_responder(previous)
+
+
 def _cp(returncode: int, stdout: str = "", stderr: str = "") -> subprocess.CompletedProcess:
     return subprocess.CompletedProcess(
         args=["gh", "api", "..."], returncode=returncode, stdout=stdout, stderr=stderr

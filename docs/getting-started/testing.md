@@ -36,13 +36,33 @@ uv run pytest tests/darnit/sieve/test_orchestrator.py::test_deterministic_pass -
 
 ### Integration tests
 
-Integration tests require GitHub API access (`gh auth login`) and network connectivity:
-
 ```bash
 uv run pytest tests/integration/ -v
 ```
 
-These are excluded from the default test run because they're slower and require external access.
+These are excluded from the default test run because they're slower.
+
+### Network and external tools
+
+No test reaches GitHub or runs the real `gh` or `zizmor` by default (#548). An autouse
+fixture in `tests/conftest.py` gives every test:
+
+- `RecordedGhApi({})` as the platform responder, so an unrecorded endpoint answers
+  status 0 (ERROR `unavailable`) on every run. Install your own responder with
+  `set_gh_api_responder` (restoring the previous one afterwards) to serve the
+  responses a test needs.
+- Stand-ins first on `PATH`: `gh` exits 4 as if not authenticated, and `zizmor`
+  prints `[]` (no findings). Use `stand_in_tool` from `tests/conftest_helpers.py`
+  to put a test's own stand-in in front of them.
+
+A test that must reach the network or run a real tool is marked `live`
+(`@pytest.mark.live`); it gets none of the above and is skipped unless the `-m`
+expression names `live`. The `upstream` marker works the same way (`--update-hash`
+also selects it).
+
+```bash
+uv run pytest tests/ -m live -v
+```
 
 ## Test Structure
 
@@ -173,7 +193,7 @@ def test_cel_expression_with_json_output():
 - Use descriptive test names: `test_<what>_<when>_<expected>`
 - One assertion per test when practical
 - Use `tmp_path` for filesystem operations (auto-cleaned up)
-- Mock external services (GitHub API, network calls)
+- Mock external services (GitHub API, network calls); see [Network and external tools](#network-and-external-tools)
 - Keep tests fast — no network calls in unit tests
 
 ## Next Steps
