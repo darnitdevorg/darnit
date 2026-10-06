@@ -834,13 +834,23 @@ def run_sieve_audit(
         # Register controls from TOML framework definition (primary source of truth)
         _register_toml_controls(resolved_fw)
 
-        registry = get_control_registry()
-        all_controls = []
-        for lvl in range(1, level + 1):
-            all_controls.extend(registry.get_specs_by_level(lvl))
+    framework = _load_framework(resolved_fw)
+
+    if controls is None:
+        if framework is not None:
+            # The audit's controls come from its own framework definition, not
+            # from the process-wide registry, which also holds every control an
+            # earlier audit in this process registered (#442).
+            from darnit.config import load_controls_from_framework
+
+            all_controls = [c for c in load_controls_from_framework(framework) if (c.level or 0) <= level]
+        else:
+            registry = get_control_registry()
+            all_controls = []
+            for lvl in range(1, level + 1):
+                all_controls.extend(registry.get_specs_by_level(lvl))
         all_controls = _apply_operator_controls(all_controls, resolved_fw, operator)
 
-    framework = _load_framework(resolved_fw)
     known_control_ids = _known_control_ids(all_controls, framework, operator)
 
     # Filter by level (applies to both provided and loaded controls)

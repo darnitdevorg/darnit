@@ -438,6 +438,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- An audit evaluates only its own framework's controls. A long-lived process
+  such as the MCP server used to evaluate every control an earlier audit had
+  registered, so auditing `reproducibility` after `openssf-baseline` returned
+  71 controls instead of 5 (#442).
+
 - The `darnit-hello` and `darnit-example` templates and the documentation
   use the registered `file_exists` step type instead of `file_must_exist`
   (#501).

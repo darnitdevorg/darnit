@@ -1397,6 +1397,13 @@ The `packages/darnit/src/darnit/` source tree SHALL NOT contain hardcoded contro
 - **THEN** zero `register_control()` calls SHALL execute as module-level side effects
 - **AND** the global registry SHALL contain zero controls until TOML loading occurs
 
+The global registry is process-wide and keyed by control id, so it holds every control any earlier audit in the process registered. An audit therefore takes its controls from its own framework definition (including controls composed from other frameworks) plus operator custom controls, never from the registry. The registry is used only when no framework definition can be resolved.
+
+#### Scenario: Two frameworks audited in one process (#442)
+- **WHEN** a long-lived process (such as the MCP server) audits framework A and then framework B
+- **THEN** the audit of B SHALL evaluate exactly the controls it evaluates in a fresh process
+- **AND** no control defined only by A SHALL appear in B's results
+
 #### Scenario: Searching framework source for control IDs
 - **WHEN** the `packages/darnit/src/darnit/` source tree is searched for patterns like `OSPS-AC-03.01`
 - **THEN** no hardcoded OSPS control ID patterns SHALL exist in executable code
