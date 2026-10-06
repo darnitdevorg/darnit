@@ -14,7 +14,7 @@ Maintainer-facing documentation for the darnit release pipeline. End-user instal
 
 The tag-driven pipeline in `release.yml` currently ships **PyPI + container** only. Binary, Homebrew, and Claude Code plugin channels are designed but not wired up; they will be re-introduced per waybill's incremental pattern as separate PRs.
 
-PyPI publishing uses an **account-scoped API token** (`PYPI_API_TOKEN` repo secret) rather than trusted publishers. Trusted publishers are the better long-term posture (no long-lived secrets, per-project scoping) but the per-project PyPI UI setup was blocking; tokens ship the pipeline today and can be migrated later. See "External setup" below for the token flow.
+PyPI publishing uses **project-scoped API tokens** stored as secrets of the `release` environment, one per public package. Every `publish-*` job runs in that environment, which requires approval from a maintainer (mlieberman85 or Marc-cn) and deploys only from `v*` tags or `main`. No PyPI credential is a repository secret. Trusted publishers remain the better long-term posture (no long-lived secrets); see "External setup" below.
 
 Sections below marked *(deferred)* describe channels the workflow does not currently drive.
 
@@ -40,26 +40,26 @@ Authoritative list: [`packaging/pypi/public-packages.txt`](pypi/public-packages.
 
 Before the first release works end-to-end, a maintainer with admin access must:
 
-### PyPI API token (current)
+### PyPI API tokens (current)
 
-The workflow authenticates every `publish-*` job with the `PYPI_API_TOKEN` repo secret. Setup, one time:
+Each `publish-*` job reads its package's project-scoped token from the `release` environment. Setup, per public package (`darnit-core`, `darnit-baseline`, `darnit-gittuf`, `darnit-reproducibility`, `darnit-mcp`):
 
-1. Under a PyPI account with 2FA enabled (Account settings -> Two-factor authentication), create a new API token:
-   - https://pypi.org/manage/account/token/
-   - Name: `darnit-github-actions` (or similar)
-   - Scope: **Entire account (all projects)**. Project-scoped tokens require the projects to already exist; the account-scoped token is only needed for first-time publish, then narrow down.
-2. Copy the full token (starts with `pypi-`).
-3. Add as a **repository secret** (not environment secret) on `darnitdevorg/darnit`:
+1. Under a PyPI account with 2FA enabled that maintains the project, create an API token at https://pypi.org/manage/account/token/ with **Scope: Project: <package>**.
+2. Add it as a **`release` environment secret** (not a repository secret):
    ```bash
-   gh secret set PYPI_API_TOKEN --repo darnitdevorg/darnit
+   gh secret set PYPI_TOKEN_DARNIT_CORE --env release --repo darnitdevorg/darnit
+   gh secret set PYPI_TOKEN_DARNIT_BASELINE --env release --repo darnitdevorg/darnit
+   gh secret set PYPI_TOKEN_DARNIT_GITTUF --env release --repo darnitdevorg/darnit
+   gh secret set PYPI_TOKEN_DARNIT_REPRODUCIBILITY --env release --repo darnitdevorg/darnit
+   gh secret set PYPI_TOKEN_DARNIT_MCP --env release --repo darnitdevorg/darnit
    ```
-4. After the first release lands and the five projects exist on PyPI, replace with per-project tokens for scope reduction (optional; not required for correctness).
+3. A brand-new package has no project on PyPI yet, so it cannot have a project-scoped token. Publish its first release with a temporary token, then replace it with a project-scoped one and revoke the temporary token.
 
-If the token is bad, the first `publish-*` job in `release.yml` fails immediately with a 403 and no packages are published. Fix the secret and re-trigger via `workflow_dispatch` on the same tag; no need to bump the version.
+The `release` environment (Settings -> Environments) requires a reviewer to approve each run's publish jobs, and its deployment policy allows only `v*` tags and the `main` branch (used by the `workflow_dispatch` re-release path). If a token is wrong, the first `publish-*` job fails with a 403 and nothing is published. Fix the secret and re-trigger with `workflow_dispatch` on the same tag.
 
 ### PyPI Trusted Publishing *(deferred)*
 
-Better long-term posture; skipped for v0.1.0 because per-project UI setup was blocking. To migrate later, per public package: on the project's "Publishing" page add a Trusted Publisher with Owner: `darnitdevorg`, Repository: `darnit`, Workflow: `release.yml`, Environment: `release`. Then swap `password: ${{ secrets.PYPI_API_TOKEN }}` in each `publish-*` job for the trusted-publisher config, add `id-token: write` permission, and re-add `environment: release`.
+Better long-term posture; skipped for v0.1.0 because per-project UI setup was blocking. To migrate later, per public package: on the project's "Publishing" page add a Trusted Publisher with Owner: `darnitdevorg`, Repository: `darnit`, Workflow: `release.yml`, Environment: `release`. Then drop the `password:` line in each `publish-*` job and add `id-token: write` permission; the jobs already run in `environment: release`.
 
 ### TestPyPI *(deferred)*
 
