@@ -206,13 +206,17 @@ class TestAggregateOrgResults:
             {
                 "repo": "a",
                 "status": "OK",
-                "results": [],
+                "results": [
+                    {"id": f"C-{i}", "status": "PASS", "level": 1} for i in range(5)
+                ],
                 "summary": {"PASS": 5, "FAIL": 0, "WARN": 0, "N/A": 0, "total": 5},
             },
             {
                 "repo": "b",
                 "status": "OK",
-                "results": [],
+                "results": [
+                    {"id": f"C-{i}", "status": "PASS", "level": 1} for i in range(5)
+                ],
                 "summary": {"PASS": 5, "FAIL": 0, "WARN": 0, "N/A": 0, "total": 5},
             },
         ]
@@ -227,13 +231,21 @@ class TestAggregateOrgResults:
             {
                 "repo": "good",
                 "status": "OK",
-                "results": [],
+                "results": [
+                    {"id": f"C-{i}", "status": "PASS", "level": 1} for i in range(5)
+                ],
                 "summary": {"PASS": 5, "FAIL": 0, "WARN": 0, "N/A": 0, "total": 5},
             },
             {
                 "repo": "bad",
                 "status": "OK",
-                "results": [],
+                "results": [
+                    {"id": "C-1", "status": "PASS", "level": 1},
+                    {"id": "C-2", "status": "PASS", "level": 1},
+                    {"id": "C-3", "status": "PASS", "level": 1},
+                    {"id": "C-4", "status": "FAIL", "level": 1},
+                    {"id": "C-5", "status": "FAIL", "level": 1},
+                ],
                 "summary": {"PASS": 3, "FAIL": 2, "WARN": 0, "N/A": 0, "total": 5},
             },
         ]
@@ -247,7 +259,9 @@ class TestAggregateOrgResults:
             {
                 "repo": "good",
                 "status": "OK",
-                "results": [],
+                "results": [
+                    {"id": f"C-{i}", "status": "PASS", "level": 1} for i in range(5)
+                ],
                 "summary": {"PASS": 5, "FAIL": 0, "WARN": 0, "N/A": 0, "total": 5},
             },
             {
@@ -269,7 +283,13 @@ class TestAggregateOrgResults:
             {
                 "repo": "warned",
                 "status": "OK",
-                "results": [],
+                "results": [
+                    {"id": "C-1", "status": "PASS", "level": 1},
+                    {"id": "C-2", "status": "PASS", "level": 1},
+                    {"id": "C-3", "status": "PASS", "level": 1},
+                    {"id": "C-4", "status": "PASS", "level": 1},
+                    {"id": "C-5", "status": "WARN", "level": 1},
+                ],
                 "summary": {"PASS": 4, "FAIL": 0, "WARN": 1, "N/A": 0, "total": 5},
             },
         ]
@@ -287,7 +307,7 @@ class TestAggregateOrgResults:
                     {"id": "OSPS-AC-01.01", "status": "PASS", "level": 1},
                     {"id": "OSPS-BR-01.01", "status": "WARN", "level": 1},
                     {"id": "OSPS-QA-01.01", "status": "ERROR", "level": 1},
-                    {"id": "OSPS-DO-01.01", "status": "PENDING_LLM", "level": 1},
+                    {"id": "OSPS-DO-01.01", "status": "PENDING", "level": 1},
                 ],
                 "summary": {
                     "PASS": 1,
@@ -295,7 +315,7 @@ class TestAggregateOrgResults:
                     "WARN": 1,
                     "N/A": 0,
                     "ERROR": 1,
-                    "PENDING_LLM": 1,
+                    "PENDING": 1,
                     "total": 4,
                 },
             },
@@ -349,6 +369,44 @@ class TestAggregateOrgResults:
         assert summary_l2["non_compliant_repos"] == 1
         assert summary_l2["repos"][0]["status"] == "NON_COMPLIANT"
         assert summary_l2["repos"][0]["compliance"] == {1: True, 2: False}
+
+    def test_level_2_audit_requires_level_1_to_pass(self):
+        """A repo with L1 FAIL and L2 PASS is non-compliant when audited at level 2."""
+        results = [
+            {
+                "repo": "l1-fail-l2-pass",
+                "status": "OK",
+                "results": [
+                    {"id": "L1-01", "status": "FAIL", "level": 1},
+                    {"id": "L2-01", "status": "PASS", "level": 2},
+                ],
+            },
+        ]
+        summary = aggregate_org_results("org", results, 2)
+        assert summary["compliant_repos"] == 0
+        assert summary["non_compliant_repos"] == 1
+        repo = summary["repos"][0]
+        assert repo["status"] == "NON_COMPLIANT"
+        assert repo["compliance"] == {1: False, 2: True}
+
+    def test_level_2_audit_passes_when_all_levels_pass(self):
+        """A repo with L1 PASS and L2 PASS is compliant when audited at level 2."""
+        results = [
+            {
+                "repo": "fully-compliant",
+                "status": "OK",
+                "results": [
+                    {"id": "L1-01", "status": "PASS", "level": 1},
+                    {"id": "L2-01", "status": "PASS", "level": 2},
+                ],
+            },
+        ]
+        summary = aggregate_org_results("org", results, 2)
+        assert summary["compliant_repos"] == 1
+        assert summary["non_compliant_repos"] == 0
+        repo = summary["repos"][0]
+        assert repo["status"] == "COMPLIANT"
+        assert repo["compliance"] == {1: True, 2: True}
 
 
 class TestFormatOrgResults:

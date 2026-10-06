@@ -274,30 +274,14 @@ def aggregate_org_results(
             continue
 
         check_results = result.get("results") or []
-        compliance: dict[int, bool] | None = None
+        from darnit.tools.audit import calculate_compliance, summarize_results
 
-        if check_results:
-            from darnit.tools.audit import calculate_compliance
-
-            compliance = calculate_compliance(check_results, level)
-            is_compliant = compliance.get(level, False)
-            if not summary:
-                from darnit.tools.audit import summarize_results
-
-                summary = summarize_results(check_results)
-        else:
-            # Fallback if check_results is not provided (e.g. legacy summary-only mocks)
-            pass_count = summary.get("PASS", 0)
-            fail_count = summary.get("FAIL", 0)
-            warn_count = summary.get("WARN", 0)
-            total = summary.get("total", 0)
-            na_count = summary.get("N/A", 0)
-            is_compliant = (
-                fail_count == 0
-                and warn_count == 0
-                and (pass_count + na_count == total)
-                and total > 0
-            )
+        compliance = calculate_compliance(check_results, level)
+        is_compliant = bool(compliance) and all(
+            compliance.get(lvl, False) for lvl in range(1, level + 1)
+        )
+        if not summary:
+            summary = summarize_results(check_results)
 
         if is_compliant:
             org_summary["compliant_repos"] += 1
@@ -311,9 +295,8 @@ def aggregate_org_results(
             "fail": summary.get("FAIL", 0),
             "warn": summary.get("WARN", 0),
             "total": summary.get("total", 0),
+            "compliance": compliance,
         }
-        if compliance is not None:
-            repo_entry["compliance"] = compliance
         org_summary["repos"].append(repo_entry)
 
     return org_summary
