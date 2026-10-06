@@ -91,7 +91,7 @@ async def builtin_audit(
         return f"Error loading controls: {e}"
 
     # Register and load Python-defined controls if implementation exists
-    impl = get_implementation(_framework_name)
+    impl = get_implementation(_framework_name, operator_config.config.plugins)
     if impl and hasattr(impl, "register_controls"):
         try:
             impl.register_controls()
