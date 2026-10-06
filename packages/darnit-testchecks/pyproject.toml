@@ -30,7 +30,7 @@ classifiers = [
     "Topic :: Software Development :: Testing",
 ]
 dependencies = [
-    "darnit-core>=0.1.0",
+    "darnit-core>=0.2.0",
 ]
 
 [project.optional-dependencies]
