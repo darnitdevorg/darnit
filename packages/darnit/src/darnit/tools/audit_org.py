@@ -279,28 +279,31 @@ def aggregate_org_results(
             })
             continue
 
-        pass_count = summary.get("PASS", 0)
-        fail_count = summary.get("FAIL", 0)
-        warn_count = summary.get("WARN", 0)
-        total = summary.get("total", 0)
+        check_results = result.get("results") or []
+        from darnit.tools.audit import calculate_compliance, summarize_results
 
-        # A repo is compliant only if all non-N/A controls pass
-        na_count = summary.get("N/A", 0)
-        is_compliant = fail_count == 0 and warn_count == 0 and (pass_count + na_count == total)
+        compliance = calculate_compliance(check_results, level)
+        is_compliant = bool(compliance) and all(
+            compliance.get(lvl, False) for lvl in range(1, level + 1)
+        )
+        if not summary:
+            summary = summarize_results(check_results)
 
         if is_compliant:
             org_summary["compliant_repos"] += 1
         else:
             org_summary["non_compliant_repos"] += 1
 
-        org_summary["repos"].append({
+        repo_entry: dict[str, Any] = {
             "repo": repo_name,
             "status": "COMPLIANT" if is_compliant else "NON_COMPLIANT",
-            "pass": pass_count,
-            "fail": fail_count,
-            "warn": warn_count,
-            "total": total,
-        })
+            "pass": summary.get("PASS", 0),
+            "fail": summary.get("FAIL", 0),
+            "warn": summary.get("WARN", 0),
+            "total": summary.get("total", 0),
+            "compliance": compliance,
+        }
+        org_summary["repos"].append(repo_entry)
 
     return org_summary
 
