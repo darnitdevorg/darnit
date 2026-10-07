@@ -1,8 +1,8 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.12
+> **Version**: 1.0.0-alpha.13
 > **Status**: Authoritative
-> **Last Updated**: 2026-10-04
+> **Last Updated**: 2026-10-06
 
 This specification defines the authoritative design of the Darnit framework, including the sieve orchestrator, TOML schema, built-in pass types, remediation actions, and plugin protocol.
 
@@ -440,6 +440,18 @@ These are the step type's declared `settings` (section 3.0.3); any other key fai
 
 **Broken measurements**: a command whose binary is not installed is ERROR, class `missing_tool`; a timeout is ERROR, class `timeout`. Neither is FAIL.
 
+**Undeclared exit codes**: an exit code in neither `pass_exit_codes` nor `fail_exit_codes` concludes nothing; the step is evidence only and carries a class taken from the command's exit code and stderr, first match wins (#562):
+
+| Evidence | Class |
+|----------|-------|
+| A rate-limit message (`api rate limit exceeded`, `secondary rate limit`, `abuse detection mechanism`) | `rate_limit` |
+| An authentication message (`http 401`, `bad credentials`, `requires authentication`, `gh auth login`, `authentication token`, `not logged in`) | `auth` |
+| Exit code 127, or stderr says the command was not found | `missing_tool` |
+| A connection error: name resolution, connection refused, reset, or timed out, network or host unreachable, a TLS or certificate failure, or git's `unable to access` | `network` |
+| Anything else | `unexpected_exit` |
+
+The step's message names the command, the exit code, and the start of stderr, so an operator can act on an `unexpected_exit` without rerunning the command.
+
 #### Scenario: CEL expression evaluated
 - **WHEN** an `exec` step has an `expr` field and the exit code gives PASS or FAIL
 - **THEN** the expression MUST be evaluated after the command, and the step result MUST follow the outcome rules of section 3.7
@@ -449,6 +461,11 @@ These are the step type's declared `settings` (section 3.0.3); any other key fai
 - **WHEN** an `exec` handler runs
 - **THEN** the handler MUST evaluate the exit code against `pass_exit_codes` and `fail_exit_codes`
 - **AND** an exit code in neither list MUST NOT give PASS or FAIL
+
+#### Scenario: Undeclared exit code with no identified cause
+- **WHEN** an `exec` command exits with a code in neither list and its stderr shows no rate limit, authentication failure, missing command, or connection error (for example `grep` exiting 2 on a missing directory, or `git` exiting 128 outside a repository)
+- **THEN** the step MUST carry class `unexpected_exit`, not `network`
+- **AND** its message MUST name the command, the exit code, and an excerpt of stderr
 
 ### 3.4 regex Handler
 
@@ -1236,7 +1253,7 @@ Result fields beyond `status`:
 |-------|-------------|
 | `authority` | `dispositive` (a step concluded within its effective set), `suggestive` (no step concluded, or a model finding), `asserted` (a person confirmed it) |
 | `concluded_by` | Step handler name, `llm_judgment`, `confirmation`, `inferred_from`, or `none` |
-| `error` | `{class, cause}`; present on every ERROR. Classes include `auth`, `rate_limit`, `unavailable`, `missing_tool`, `evaluation`, and the feature 036 classes |
+| `error` | `{class, cause}`; present on every ERROR. Classes include `auth`, `rate_limit`, `unavailable`, `missing_tool`, `evaluation`, `unexpected_exit` (#562), and the feature 036 classes |
 | `pending` | `{kind}`; present on every PENDING |
 | `candidate` | Present with `pending.kind = "confirmation"`: `verdict = "pass"`, `reasoning`, `cited_evidence`, `model`, `model_version`, `evidence_digest`, `source` (`harness` or `mcp_agent`) |
 | `confirmation` | Present on a PASS from a confirmed candidate: `confirmed_by`, `confirmed_at`, `expires_at` |
@@ -2301,6 +2318,7 @@ The following requirements have been superseded: by the handler dispatch archite
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.13 | 2026-10-06 | Error class `unexpected_exit`: an `exec` step whose undeclared exit code has no identified cause no longer reports `network`; exit code 127 reports `missing_tool` (Sections 3.3, 5.2; #562) |
 | 1.0.0-alpha.12 | 2026-10-04 | Repository-level `.baseline.toml` is no longer read: one notice points at `darnit config migrate`, framework selection only by `--framework` or a tool argument (Sections 2.3, 10.5, 14.4, 15.1; Appendix C) |
 | 1.0.0-alpha.11 | 2026-10-04 | Close remaining false-PASS paths (feature 044): an expression that cannot be evaluated or is not boolean makes the step ERROR, expression names per step type with usable `project` values and a repository-aware `file_exists`, load-time expression reference check (Section 3.7); step registration declares `settings` and `expression_names`, plugins cannot replace a registered step type, and unknown control keys, unknown step keys, and unregistered step types fail loading (Sections 2.3, 3.0.3); reproducibility step types conclude only FAIL (Sections 3.0.1, 12); `expr_decides`, an expression that decides on a handler PASS (Sections 3.0.3, 3.7); `gh_api` `evidence_fields`, required for personal records (Section 3.8); `file_must_exist` replaced by the registered `file_exists` (Section 3.2); field tables corrected to what each handler reads (Sections 3.3-3.5) |
 | 1.0.0-alpha.10 | 2026-10-02 | Remediation safety (feature 043): plan/apply protocol and single writer (Section 4.2), `platform_setting` (4.5), exec `effects`/`offline` and no platform state from exec (4.4), `file_create.project_reference` (4.3), remediation policy, digest-bound approval, outcomes, re-check, run manifest, and version-control rules (Section 15); removed `api_call`, `requires_confirmation`, `dry_run_supported`, `dry_run_command` (Appendix C) |
