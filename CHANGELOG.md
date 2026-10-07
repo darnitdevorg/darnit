@@ -456,6 +456,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the command, and the start of stderr. Before, `grep` exiting 2 on a missing
   directory or `git` exiting 128 outside a repository was reported as a
   network failure (#562).
+- **BREAKING:** Witness / in-toto attestation verification moves out of
+  `repro_hermetic_build` into a new step type, `repro_witness_attestation`,
+  which runs first in RE-02.01 and can conclude only FAIL. It verifies the
+  attestations of the successful CI runs for the audited commit (`git
+  rev-parse HEAD`), with a signing policy bound to the repository and that
+  commit, instead of the latest run on the default branch. It reads network
+  events only from a statement whose predicate type is exactly
+  `https://in-toto.io/attestation/runtime-trace/v0.1` (`monitorLog.network`),
+  plus the existing Witness `command-run` installer scan; a `network` key on
+  any other predicate is ignored. A verified attestation that records
+  network access concludes RE-02.01 FAIL even when the repository also has a
+  Nix or Bazel strong signal. A verified clean trace is evidence only, no
+  longer a PASS signal: an empty network log is also what a monitor that
+  does not trace sockets records. A missing prerequisite (no `gh`, no
+  login, no run, no attestation, `sigstore` not installed) leaves the step
+  INCONCLUSIVE with the reason, as before (#553).
+- **BREAKING:** the `verify_witness_attestations` step setting moves from
+  `repro_hermetic_build` to `repro_witness_attestation`. A pass override or
+  custom control that sets it on `repro_hermetic_build` now fails loading
+  under strict step settings; set it on the `repro_witness_attestation` step
+  instead (#553).
 
 ### Fixed
 

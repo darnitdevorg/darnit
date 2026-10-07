@@ -78,10 +78,3 @@ def repro_ctx(repo: Path, dependency_results: dict[str, str] | None = None) -> H
         shared_cache={},
         dependency_results=dependency_results or {},
     )
-
-
-# Feature 038: keeps the corpus test off the network. Tests added to the classes
-# in test_handlers.py do NOT need this -- that module has an autouse
-# `_stub_witness_attestation` fixture (line 33) which already isolates them.
-# Two mechanisms for one concern would be worse than one.
-OFFLINE_CONFIG: dict[str, object] = {"verify_witness_attestations": False}

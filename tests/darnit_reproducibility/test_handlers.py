@@ -15,7 +15,6 @@ from darnit_reproducibility.handlers import (
     _iter_container_files,
     _iter_other_ci_files,
     _iter_workflow_files,
-    _maybe_check_witness_attestation,
     _scan_line,
     _strip_comment,
     repro_bit_for_bit_handler,
@@ -23,14 +22,14 @@ from darnit_reproducibility.handlers import (
     repro_deps_pinned_handler,
     repro_hermetic_build_handler,
     repro_provenance_exists_handler,
+    repro_witness_attestation_handler,
 )
 from darnit_reproducibility.witness_attestation import WitnessCheckResult
 
 from darnit.sieve.handler_registry import HandlerContext, HandlerResultStatus
 
-# _detect_strong_hermeticity_signal and repro_hermetic_build_handler both call
-# check_witness_attestation(), which shells out to `gh` and the network. Tests
-# that aren't specifically exercising that path stub it out to a no-op result;
+# repro_witness_attestation_handler calls check_witness_attestation(), which
+# shells out to `gh` and the network. It is stubbed to a no-op result here;
 # witness-specific tests override it again with monkeypatch.setattr.
 NO_WITNESS_EVIDENCE = WitnessCheckResult(attempted=False)
 
@@ -245,72 +244,25 @@ class TestFileCollectors:
 
 
 class TestDetectStrongSignal:
-    """Unit tests for _detect_strong_hermeticity_signal.
-
-    ``check_witness_attestation`` is stubbed to a no-op by the module-level
-    ``_stub_witness_attestation`` fixture unless a test overrides it below.
-    """
+    """Unit tests for _detect_strong_hermeticity_signal."""
 
     def test_returns_none_with_no_signals(self, tmp_path: Path) -> None:
-        signal, _ = _detect_strong_hermeticity_signal(tmp_path, [], {}, make_ctx(tmp_path), {})
+        signal = _detect_strong_hermeticity_signal(tmp_path, [], {})
         assert signal is None
 
     def test_witness_mention_alone_is_not_a_signal(self, tmp_path: Path) -> None:
         # Merely mentioning "witness run" in CI text proves the tool ran, not
-        # what it observed — only a verified attestation with a clean network
-        # log counts now (see test_verified_witness_attestation_is_a_signal).
+        # what it observed. Attestations are the repro_witness_attestation
+        # step's concern (#553), and even a verified clean one is not a signal.
         wf = tmp_path / "ci.yml"
         wf.write_text("- run: witness run -- make build\n")
-        signal, witness_result = _detect_strong_hermeticity_signal(tmp_path, [wf], {}, make_ctx(tmp_path), {})
-        assert signal is None
-        assert witness_result.verified is False
-
-    def test_verified_witness_attestation_is_a_signal(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        verified = WitnessCheckResult(
-            attempted=True,
-            verified=True,
-            network_clean=True,
-            detail="runtime-trace predicate recorded an empty network log",
-        )
-        monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", lambda ctx: verified)
-        signal, witness_result = _detect_strong_hermeticity_signal(tmp_path, [], {}, make_ctx(tmp_path), {})
-        assert signal is not None
-        assert "Witness" in signal
-        assert witness_result is verified
-
-    def test_verified_witness_attestation_with_network_activity_is_not_a_pass_signal(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        dirty = WitnessCheckResult(
-            attempted=True,
-            verified=True,
-            network_clean=False,
-            detail="runtime-trace predicate recorded 2 network event(s)",
-        )
-        monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", lambda ctx: dirty)
-        signal, witness_result = _detect_strong_hermeticity_signal(tmp_path, [], {}, make_ctx(tmp_path), {})
-        assert signal is None
-        assert witness_result.network_clean is False
-
-    def test_witness_check_disabled_via_config(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        verified = WitnessCheckResult(attempted=True, verified=True, network_clean=True, detail="clean")
-        monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", lambda ctx: verified)
-        signal, witness_result = _detect_strong_hermeticity_signal(
-            tmp_path, [], {}, make_ctx(tmp_path), {"verify_witness_attestations": False}
-        )
-        # The mocked check_witness_attestation returns a verified/clean result,
-        # but the config toggle must prevent it from ever being called.
-        assert signal is None
-        assert witness_result.attempted is False
-        assert "disabled via config" in witness_result.detail
+        assert _detect_strong_hermeticity_signal(tmp_path, [wf], {}) is None
 
     def test_nix_flake_with_nix_build_in_ci(self, tmp_path: Path) -> None:
         (tmp_path / "flake.nix").write_text("{ outputs = {}; }")
         wf = tmp_path / "ci.yml"
         wf.write_text("- run: nix build .#default\n")
-        signal, _ = _detect_strong_hermeticity_signal(
-            tmp_path, [wf], {"RE-01.02": "PASS"}, make_ctx(tmp_path, {"RE-01.02": "PASS"}), {}
-        )
+        signal = _detect_strong_hermeticity_signal(tmp_path, [wf], {"RE-01.02": "PASS"})
         assert signal is not None
         assert "Nix" in signal
 
@@ -318,9 +270,7 @@ class TestDetectStrongSignal:
         (tmp_path / "flake.nix").write_text("{ outputs = {}; }")
         wf = tmp_path / "ci.yml"
         wf.write_text("- run: uv sync\n")
-        signal, _ = _detect_strong_hermeticity_signal(
-            tmp_path, [wf], {"RE-01.02": "PASS"}, make_ctx(tmp_path, {"RE-01.02": "PASS"}), {}
-        )
+        signal = _detect_strong_hermeticity_signal(tmp_path, [wf], {"RE-01.02": "PASS"})
         assert signal is None
 
     def test_nix_flake_not_gated_without_build_env_declared_pass(self, tmp_path: Path) -> None:
@@ -329,23 +279,21 @@ class TestDetectStrongSignal:
         (tmp_path / "flake.nix").write_text("{ outputs = {}; }")
         wf = tmp_path / "ci.yml"
         wf.write_text("- run: nix build .#default\n")
-        signal, _ = _detect_strong_hermeticity_signal(tmp_path, [wf], {}, make_ctx(tmp_path), {})
+        signal = _detect_strong_hermeticity_signal(tmp_path, [wf], {})
         assert signal is None
 
     def test_nix_flake_not_gated_when_build_env_declared_failed(self, tmp_path: Path) -> None:
         (tmp_path / "flake.nix").write_text("{ outputs = {}; }")
         wf = tmp_path / "ci.yml"
         wf.write_text("- run: nix build .#default\n")
-        signal, _ = _detect_strong_hermeticity_signal(
-            tmp_path, [wf], {"RE-01.02": "FAIL"}, make_ctx(tmp_path, {"RE-01.02": "FAIL"}), {}
-        )
+        signal = _detect_strong_hermeticity_signal(tmp_path, [wf], {"RE-01.02": "FAIL"})
         assert signal is None
 
     def test_bazel_with_network_sandbox_flag(self, tmp_path: Path) -> None:
         (tmp_path / "MODULE.bazel").write_text("module(name = 'myproject')")
         wf = tmp_path / "ci.yml"
         wf.write_text("- run: bazel build //... --sandbox_default_allow_network=false\n")
-        signal, _ = _detect_strong_hermeticity_signal(tmp_path, [wf], {}, make_ctx(tmp_path), {})
+        signal = _detect_strong_hermeticity_signal(tmp_path, [wf], {})
         assert signal is not None
         assert "Bazel" in signal
 
@@ -354,32 +302,14 @@ class TestDetectStrongSignal:
         (tmp_path / "WORKSPACE").write_text("")
         wf = tmp_path / "ci.yml"
         wf.write_text("- run: bazel build //...\n")
-        signal, _ = _detect_strong_hermeticity_signal(tmp_path, [wf], {}, make_ctx(tmp_path), {})
+        signal = _detect_strong_hermeticity_signal(tmp_path, [wf], {})
         assert signal is None
-
-    def test_witness_takes_priority_over_nix(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        # No CI file mentions "witness" at all here — the point of this test
-        # is that a verified attestation still wins even though there is no
-        # text-based hint that Witness is in use (e.g. it ran via a reusable
-        # workflow the caller's own CI files never name).
-        verified = WitnessCheckResult(attempted=True, verified=True, network_clean=True, detail="clean")
-        monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", lambda ctx: verified)
-        (tmp_path / "flake.nix").write_text("{ outputs = {}; }")
-        wf = tmp_path / "ci.yml"
-        wf.write_text("- run: nix build .#default\n")
-        signal, _ = _detect_strong_hermeticity_signal(
-            tmp_path, [wf], {"RE-01.02": "PASS"}, make_ctx(tmp_path, {"RE-01.02": "PASS"}), {}
-        )
-        assert signal is not None
-        assert "Witness" in signal
 
     def test_commented_nix_reference_is_not_a_signal(self, tmp_path: Path) -> None:
         (tmp_path / "flake.nix").write_text("{ outputs = {}; }")
         wf = tmp_path / "ci.yml"
         wf.write_text("# TODO: nix build .#default someday\nsteps:\n  - run: uv sync\n")
-        signal, _ = _detect_strong_hermeticity_signal(
-            tmp_path, [wf], {"RE-01.02": "PASS"}, make_ctx(tmp_path, {"RE-01.02": "PASS"}), {}
-        )
+        signal = _detect_strong_hermeticity_signal(tmp_path, [wf], {"RE-01.02": "PASS"})
         assert signal is None
 
     def test_commented_bazel_sandbox_flag_is_not_a_signal(self, tmp_path: Path) -> None:
@@ -388,37 +318,99 @@ class TestDetectStrongSignal:
         wf.write_text(
             "steps:\n  # TODO: bazel build //... --sandbox_default_allow_network=false\n  - run: bazel build //...\n"
         )
-        signal, _ = _detect_strong_hermeticity_signal(tmp_path, [wf], {}, make_ctx(tmp_path), {})
+        signal = _detect_strong_hermeticity_signal(tmp_path, [wf], {})
         assert signal is None
 
 
-class TestMaybeCheckWitnessAttestation:
-    """Unit tests for the config-toggle wrapper around check_witness_attestation()."""
+class TestReproWitnessAttestationHandler:
+    """The FAIL-only attestation step (#553): a verified record of network access FAILs; nothing PASSes."""
 
-    def test_disabled_via_config_short_circuits(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        called = False
+    def _verified(self, network_recorded: bool | None, detail: str) -> WitnessCheckResult:
+        return WitnessCheckResult(
+            attempted=True,
+            verified=True,
+            network_recorded=network_recorded,
+            detail=detail,
+            evidence={
+                "commit": "0123456789abcdef0123456789abcdef01234567",
+                "artifact": "build.att.json",
+                "monitor_types": ["https://tetragon.io/"],
+            },
+        )
+
+    def test_recorded_network_events_fail(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        dirty = self._verified(True, "runtime-trace predicate recorded 3 network event(s) (monitor: x)")
+        monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", lambda ctx: dirty)
+        result = repro_witness_attestation_handler({}, make_ctx(tmp_path))
+        assert result.status == HandlerResultStatus.FAIL
+        assert "build.att.json" in result.message
+        assert "3 network event(s)" in result.message
+        assert "0123456789ab" in result.message
+        assert result.evidence["witness_attestation"]["network_recorded"] is True
+
+    def test_suspicious_command_line_fails(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        dirty = self._verified(True, "command-run process matched 'curl': /usr/bin/curl curl https://x")
+        monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", lambda ctx: dirty)
+        result = repro_witness_attestation_handler({}, make_ctx(tmp_path))
+        assert result.status == HandlerResultStatus.FAIL
+        assert "command-run process matched 'curl'" in result.message
+
+    @pytest.mark.parametrize("network_recorded", [False, None])
+    def test_verified_clean_attestation_is_never_pass(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, network_recorded: bool | None
+    ) -> None:
+        clean = self._verified(network_recorded, "runtime-trace predicate recorded no network events")
+        monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", lambda ctx: clean)
+        result = repro_witness_attestation_handler({}, make_ctx(tmp_path))
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
+        assert "cannot by itself establish that the build had no network access" in result.message
+        assert "build.att.json" in result.message
+        assert "https://tetragon.io/" in result.message
+        assert result.evidence["witness_attestation"]["artifact"] == "build.att.json"
+        assert result.evidence["witness_attestation"]["monitor_types"] == ["https://tetragon.io/"]
+
+    def test_missing_evidence_is_inconclusive_with_reason(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        missing = WitnessCheckResult(attempted=True, detail="gh is not authenticated for this repository")
+        monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", lambda ctx: missing)
+        result = repro_witness_attestation_handler({}, make_ctx(tmp_path))
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
+        assert "gh is not authenticated" in result.message
+
+    def test_disabled_via_config_makes_no_calls(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(
+            "darnit_reproducibility.handlers.check_witness_attestation",
+            lambda ctx: pytest.fail("verification must not run when disabled"),
+        )
+        monkeypatch.setattr(
+            "darnit_reproducibility.witness_attestation._run_gh",
+            lambda args: pytest.fail("gh must not run when disabled"),
+        )
+        result = repro_witness_attestation_handler({"verify_witness_attestations": False}, make_ctx(tmp_path))
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
+        assert "disabled" in result.message
+
+    @pytest.mark.parametrize("config", [{}, {"verify_witness_attestations": True}])
+    def test_enabled_by_default(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, config: dict[str, bool]) -> None:
+        called: list[HandlerContext] = []
 
         def spy(ctx: HandlerContext) -> WitnessCheckResult:
-            nonlocal called
-            called = True
-            return WitnessCheckResult(attempted=True, verified=True, network_clean=True)
+            called.append(ctx)
+            return NO_WITNESS_EVIDENCE
 
         monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", spy)
-        result = _maybe_check_witness_attestation(make_ctx(tmp_path), {"verify_witness_attestations": False})
-        assert called is False
-        assert result.attempted is False
+        repro_witness_attestation_handler(config, make_ctx(tmp_path))
+        assert len(called) == 1
 
-    def test_enabled_by_default(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        expected = WitnessCheckResult(attempted=True, verified=True, network_clean=True)
-        monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", lambda ctx: expected)
-        result = _maybe_check_witness_attestation(make_ctx(tmp_path), {})
-        assert result is expected
+    def test_never_raises(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        def boom(ctx: HandlerContext) -> WitnessCheckResult:
+            raise RuntimeError("unexpected")
 
-    def test_explicitly_enabled_via_config(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        expected = WitnessCheckResult(attempted=True, verified=True, network_clean=True)
-        monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", lambda ctx: expected)
-        result = _maybe_check_witness_attestation(make_ctx(tmp_path), {"verify_witness_attestations": True})
-        assert result is expected
+        monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", boom)
+        result = repro_witness_attestation_handler({}, make_ctx(tmp_path))
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
+        assert "unexpected" in result.message
 
 
 class TestRepoDepsPin:
@@ -953,57 +945,28 @@ class TestHermeticBuild:
     # ------------------------------------------------------------------
 
     def test_witness_mention_alone_does_not_pass(self, tmp_path: Path) -> None:
-        # Text-only mention of witness in CI is no longer sufficient for a
-        # PASS — see test_pass_verified_witness_attestation below.
+        # Text-only mention of witness in CI is not a strong signal.
         wf_dir = tmp_path / ".github" / "workflows"
         wf_dir.mkdir(parents=True)
         (wf_dir / "ci.yml").write_text("steps:\n  - uses: testifysec/witness-run-action@v0.1\n")
         result = repro_hermetic_build_handler({}, make_ctx(tmp_path))
         assert result.status == HandlerResultStatus.INCONCLUSIVE
 
-    def test_pass_verified_witness_attestation(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        verified = WitnessCheckResult(
-            attempted=True,
-            verified=True,
-            network_clean=True,
-            detail="runtime-trace predicate recorded an empty network log",
-        )
-        monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", lambda ctx: verified)
-        wf_dir = tmp_path / ".github" / "workflows"
-        wf_dir.mkdir(parents=True)
-        (wf_dir / "ci.yml").write_text("steps:\n  - uses: testifysec/witness-run-action@v0.1\n")
-        result = repro_hermetic_build_handler({}, make_ctx(tmp_path))
-        assert result.status == HandlerResultStatus.PASS
-        assert "Witness" in result.message
+    def test_does_not_consult_attestations(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        # #553: attestations are the repro_witness_attestation step's; this
+        # step reads only the checkout, so it makes no gh (or other) calls.
+        def no_calls(*args: object, **kwargs: object) -> None:
+            pytest.fail("repro_hermetic_build must not consult attestations or run a subprocess")
 
-    def test_fail_verified_witness_attestation_with_network_activity(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        dirty = WitnessCheckResult(
-            attempted=True,
-            verified=True,
-            network_clean=False,
-            detail="runtime-trace predicate recorded 1 network event(s)",
-            evidence={"artifact": "witness-attestation.json"},
-        )
-        monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", lambda ctx: dirty)
+        monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", no_calls)
+        monkeypatch.setattr("darnit_reproducibility.witness_attestation._run_gh", no_calls)
+        monkeypatch.setattr("subprocess.run", no_calls)
         wf_dir = tmp_path / ".github" / "workflows"
         wf_dir.mkdir(parents=True)
-        (wf_dir / "ci.yml").write_text("steps:\n  - run: uv sync\n")
+        (wf_dir / "ci.yml").write_text("steps:\n  - uses: testifysec/witness-run-action@v0.1\n  - run: make\n")
         result = repro_hermetic_build_handler({}, make_ctx(tmp_path))
-        assert result.status == HandlerResultStatus.FAIL
-        assert any("witness attestation" in v for v in result.evidence["violations_found"])
-
-    def test_witness_verification_disabled_via_config(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        # Even a mocked verified/clean attestation must not produce a PASS
-        # when the pass config opts out of the network round-trip.
-        verified = WitnessCheckResult(attempted=True, verified=True, network_clean=True, detail="clean")
-        monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", lambda ctx: verified)
-        wf_dir = tmp_path / ".github" / "workflows"
-        wf_dir.mkdir(parents=True)
-        (wf_dir / "ci.yml").write_text("steps:\n  - uses: testifysec/witness-run-action@v0.1\n")
-        result = repro_hermetic_build_handler({"verify_witness_attestations": False}, make_ctx(tmp_path))
         assert result.status == HandlerResultStatus.INCONCLUSIVE
+        assert "Witness" not in result.message
 
     def test_pass_nix_flake_build_in_ci(self, tmp_path: Path) -> None:
         (tmp_path / "flake.nix").write_text("{ outputs = {}; }")

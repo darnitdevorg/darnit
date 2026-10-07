@@ -12,14 +12,18 @@ is what the control concludes from it.
 
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 
 import pytest
+from darnit_reproducibility.handlers import repro_hermetic_build_handler
 from darnit_reproducibility.implementation import ReproducibilityImplementation
+from darnit_reproducibility.witness_attestation import WitnessCheckResult
 
 from darnit.config import load_controls_from_framework, load_framework_config
 from darnit.config.framework_schema import HandlerInvocation
-from darnit.sieve.handler_registry import get_sieve_handler_registry
+from darnit.core.errors import AuthorityViolation
+from darnit.sieve.handler_registry import HandlerContext, get_sieve_handler_registry
 from darnit.sieve.models import CheckContext, ControlSpec, SieveResult
 from darnit.sieve.orchestrator import SieveOrchestrator
 
@@ -29,6 +33,7 @@ STEP_TYPES = (
     "repro_bit_for_bit",
     "repro_deps_pinned",
     "repro_build_env_declared",
+    "repro_witness_attestation",
 )
 
 # A release workflow that mentions signing only in a comment and produces no
@@ -66,7 +71,7 @@ SIGNAL_REPOS: dict[str, tuple[dict[str, str], str]] = {
 }
 
 # The only network call in the plugin; off so every verdict is a filesystem function.
-OFFLINE = {"repro_hermetic_build": {"verify_witness_attestations": False}}
+OFFLINE = {"repro_witness_attestation": {"verify_witness_attestations": False}}
 
 
 @pytest.fixture(autouse=True)
@@ -82,12 +87,14 @@ def _build(root: Path, files: dict[str, str]) -> Path:
     return root
 
 
-def _shipped_control(control_id: str) -> ControlSpec:
+def _shipped_control(control_id: str, *, offline: bool = True) -> ControlSpec:
     path = ReproducibilityImplementation().get_framework_config_path()
     controls = {c.control_id: c for c in load_controls_from_framework(load_framework_config(path))}
-    spec = controls[control_id]
+    # A copy: the loaded configuration is cached and shared, so setting a step
+    # field on it would carry into every later load in the process.
+    spec = copy.deepcopy(controls[control_id])
     for step in spec.metadata["handler_invocations"]:
-        for key, value in OFFLINE.get(step.handler, {}).items():
+        for key, value in (OFFLINE.get(step.handler, {}) if offline else {}).items():
             setattr(step, key, value)
     return spec
 
@@ -110,6 +117,52 @@ def test_step_type_registers_fail_ceiling(step_type: str) -> None:
     info = get_sieve_handler_registry().get(step_type)
     assert info is not None
     assert info.ceiling == frozenset({"fail"})
+
+
+@pytest.mark.unit
+def test_witness_setting_belongs_to_the_attestation_step() -> None:
+    """#553: `verify_witness_attestations` moved; on repro_hermetic_build it fails strict loading."""
+    registry = get_sieve_handler_registry()
+    assert registry.get("repro_witness_attestation").settings == frozenset({"verify_witness_attestations"})
+    assert registry.get("repro_hermetic_build").settings == frozenset()
+
+
+_STRICT_FRAMEWORK = """\
+[metadata]
+name = "repro-strict"
+display_name = "Strict"
+version = "0.0.1"
+spec_version = "t"
+
+[controls."RE-X"]
+name = "X"
+description = "A control"
+level = 1
+domain = "RE"
+
+[[controls."RE-X".passes]]
+handler = "{handler}"
+verify_witness_attestations = false
+"""
+
+
+@pytest.mark.unit
+def test_witness_setting_on_the_scan_fails_loading(tmp_path: Path) -> None:
+    """#553: a configuration that set it on repro_hermetic_build is now refused, naming the key."""
+    path = tmp_path / "fw.toml"
+    path.write_text(_STRICT_FRAMEWORK.format(handler="repro_hermetic_build"), encoding="utf-8")
+    with pytest.raises(AuthorityViolation, match="verify_witness_attestations"):
+        load_controls_from_framework(load_framework_config(path))
+
+    path.write_text(_STRICT_FRAMEWORK.format(handler="repro_witness_attestation"), encoding="utf-8")
+    assert load_controls_from_framework(load_framework_config(path))
+
+
+@pytest.mark.unit
+def test_attestation_step_runs_before_the_scan() -> None:
+    """#553: a recorded network access concludes FAIL before the scan's evidence-only PASS."""
+    handlers = [step.handler for step in _shipped_control("RE-02.01").metadata["handler_invocations"]]
+    assert handlers == ["repro_witness_attestation", "repro_hermetic_build", "manual"]
 
 
 @pytest.mark.unit
@@ -211,3 +264,56 @@ def test_partial_signals_reach_llm_eval(tmp_path: Path, case: str) -> None:
     assert result.status == "PENDING", result.message
     gathered = result.evidence["llm_consultation"]["gathered_evidence"]
     assert gathered.get(evidence_key), f"{evidence_key} missing from {sorted(gathered)}"
+
+
+def _attestation(monkeypatch: pytest.MonkeyPatch, network_recorded: bool | None, detail: str) -> None:
+    """A verified attestation for the audited commit, without gh or sigstore (#553)."""
+    result = WitnessCheckResult(
+        attempted=True,
+        verified=True,
+        network_recorded=network_recorded,
+        detail=detail,
+        evidence={"commit": "a" * 40, "artifact": "build.att.json", "monitor_types": ["https://tetragon.io/"]},
+    )
+    monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", lambda ctx: result)
+
+
+@pytest.mark.unit
+def test_recorded_network_access_fails_despite_a_strong_signal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """#553: a verified attestation recording network access concludes RE-02.01 FAIL.
+
+    The repository also carries the Bazel network-sandbox strong signal, which
+    repro_hermetic_build reports as a PASS; it does not outweigh the record.
+    """
+    files, _ = SIGNAL_REPOS["repro_hermetic_build"]
+    repo = _build(tmp_path, files)
+    assert repro_hermetic_build_handler({}, _handler_ctx(repo)).status.value == "pass"
+    _attestation(monkeypatch, True, "runtime-trace predicate recorded 2 network event(s) (monitor: x)")
+
+    result = _verify(_shipped_control("RE-02.01", offline=False), repo)
+
+    assert result.status == "FAIL", result.message
+    assert result.concluded_by == "repro_witness_attestation"
+    assert "2 network event(s)" in result.message
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("network_recorded", [False, None])
+def test_verified_clean_trace_does_not_pass(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, network_recorded: bool | None
+) -> None:
+    """#553: a verified clean trace, with every other signal present, is no RE-02.01 PASS."""
+    files: dict[str, str] = {}
+    for repo_files, _ in SIGNAL_REPOS.values():
+        files.update(repo_files)
+    repo = _build(tmp_path, files)
+    _attestation(monkeypatch, network_recorded, "runtime-trace predicate recorded no network events")
+
+    result = _verify(_shipped_control("RE-02.01", offline=False), repo)
+
+    assert result.status != "PASS", result.message
+    assert result.evidence["witness_attestation"]["verified"] is True
+
+
+def _handler_ctx(repo: Path) -> HandlerContext:
+    return HandlerContext(local_path=str(repo), owner="org", repo="repo", default_branch="main")

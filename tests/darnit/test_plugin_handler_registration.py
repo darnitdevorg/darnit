@@ -28,6 +28,7 @@ _REPRO_HANDLERS = (
     "repro_deps_pinned",
     "repro_build_env_declared",
     "repro_hermetic_build",
+    "repro_witness_attestation",
     "repro_provenance_exists",
     "repro_bit_for_bit",
 )
