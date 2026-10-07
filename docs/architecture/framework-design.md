@@ -1436,16 +1436,34 @@ handler = "my_audit"  # Short name instead of "my_plugin.tools:my_audit"
 
 ### 6.5 Function Reference Security
 
-TOML can reference Python functions via `module:function` syntax:
+A TOML handler reference may name a Python attribute as `package.module:attribute` instead of a registered short name (Section 6.4):
 
 ```toml
-api_check = "darnit_baseline.checks:check_branch_protection"
+[mcp.tools.remediate_community_spec]
+handler = "darnit_csl.mcp_tools:remediate_community_spec"
 ```
 
-**Security Rules**:
-- Only whitelisted module prefixes are allowed
-- Base whitelist: `darnit.`, `darnit_baseline.`, `darnit_plugins.`
-- Additional prefixes discovered from registered entry points
+Every place that turns such a string into an import SHALL resolve it through one function, `darnit.core.handlers.resolve_module_path`. That covers MCP tool handlers (`ToolRegistry.load_handler`), handler-registry lookups (`HandlerRegistry.get_handler`), and Python adapter configuration (`PluginRegistry` and `AdapterRegistry`). No other code in the framework SHALL call `importlib.import_module` on a configured string.
+
+**Resolution policy**:
+- The path SHALL have the form `a.b.c:attr`: exactly one `:`, every dotted module part and the attribute a Python identifier. A relative path (leading `.`), an empty part, a dotted attribute, or any other form is refused.
+- The module's top-level package SHALL be `darnit`, or the top-level package of an implementation that discovery loaded from the `darnit.implementations` entry point group (Section 6.2). The set is read from the entry points' module names (`darnit_csl:register` gives `darnit_csl`), not from a list in code, so an installed third-party implementation is covered and an uninstalled one is not. It is computed once per process with the implementation cache and recomputed when that cache is cleared.
+- The policy is checked before any import. A refused module is never imported.
+
+**Failure behavior**:
+- A refused path SHALL raise `HandlerImportRefused` (a `ValueError`) whose message names the path and the allowed top-level packages, logged at WARNING. A refusal is an error, never "not found": `HandlerRegistry.get_handler` raises it rather than returning `None`.
+- An allowed path whose module or attribute does not exist raises `ImportError` or `AttributeError`. `HandlerRegistry.get_handler` reports that as not found (`None`, with a warning).
+- At MCP server start a refused tool handler SHALL NOT be registered, and the server SHALL log an ERROR naming the tool and the refused path. The remaining tools still load.
+
+This policy limits which installed code a configured string can reach. It is not a sandbox: the allowed packages are code the operator installed, and `[mcp.tools]` comes only from an installed framework TOML or an operator-supplied `darnit serve <config.toml>`, never from the audited repository (Section 14).
+
+#### Scenario: Shipped plugin tool by module path
+- **WHEN** the community-spec server starts and its TOML names `darnit_csl.mcp_tools:remediate_community_spec`
+- **THEN** the tool SHALL load, because `darnit_csl` is the module of the `community-spec` entry point
+
+#### Scenario: Tool handler outside the policy
+- **WHEN** an `[mcp.tools]` entry names `os:system`, or a module of a package that is not an installed implementation
+- **THEN** the module SHALL NOT be imported, the tool SHALL NOT be registered, and server start SHALL report the refusal at ERROR
 
 ### 6.6 Plugin Verification with Sigstore
 

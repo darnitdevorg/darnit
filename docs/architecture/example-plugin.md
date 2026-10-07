@@ -97,11 +97,11 @@ The implementation SHALL provide a `register_handlers()` method that registers a
 - **THEN** the returned path has filename `example-hygiene.toml` and `path.exists()` is `True`
 
 ### Requirement: Framework integration with minimal changes
-The package SHALL integrate into the darnit workspace with only two framework-side changes: adding `"darnit_example."` to `ALLOWED_MODULE_PREFIXES` in handlers.py, and adding `darnit-example` to the root `pyproject.toml` workspace sources and ruff config.
+The package SHALL integrate into the darnit workspace with only one framework-side change: adding `darnit-example` to the root `pyproject.toml` workspace sources and ruff config. Its modules are importable by handler path because `darnit_example` is the module of its `darnit.implementations` entry point (framework-design.md 6.5); no list in the framework names it.
 
-#### Scenario: Module prefix allowlisted
+#### Scenario: Module path permitted by the entry point
 - **WHEN** handler resolution attempts to load a `darnit_example.*` module
-- **THEN** the security allowlist permits the import
+- **THEN** the module resolution policy permits the import
 
 ### Requirement: Documentation cross-references
 The package README SHALL map each section of `docs/IMPLEMENTATION_GUIDE.md` to its corresponding example file. The implementation guide SHALL reference `packages/darnit-example/` as a working companion example.
