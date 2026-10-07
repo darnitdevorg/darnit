@@ -6,12 +6,12 @@ that can load tool definitions from TOML configuration files.
 Supports three handler resolution modes:
 1. builtin = "audit" — uses framework-provided generic tool
 2. handler = "short_name" — looks up in handler registry
-3. handler = "module.path:function_name" — imports directly
+3. handler = "module.path:function_name" — imported under the module
+   resolution policy (darnit or an installed implementation's package)
 """
 
 from __future__ import annotations
 
-import importlib
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -113,7 +113,8 @@ class ToolRegistry:
         Supports three formats:
         1. Built-in: builtin = "audit" - uses framework-provided generic tool
         2. Short name: "audit_openssf_baseline" - looks up in handler registry
-        3. Module path: "module.path:function_name" - imports directly
+        3. Module path: "module.path:function_name" - imported under the
+           module resolution policy
 
         Args:
             spec: Tool specification containing the handler name or import path
@@ -123,6 +124,8 @@ class ToolRegistry:
             The imported function
 
         Raises:
+            HandlerImportRefused: If the module path is outside the module
+                resolution policy (``darnit.core.handlers.resolve_module_path``)
             ValueError: If handler cannot be resolved
             ImportError: If module cannot be imported
             AttributeError: If function doesn't exist in module
@@ -146,10 +149,9 @@ class ToolRegistry:
                 "full module path 'module.path:function_name'"
             )
 
-        # Full module path format
-        module_path, func_name = spec.handler.rsplit(":", 1)
-        module = importlib.import_module(module_path)
-        return getattr(module, func_name)
+        from darnit.core.handlers import resolve_module_path
+
+        return resolve_module_path(spec.handler)
 
     def _load_builtin(
         self, spec: ToolSpec, framework_name: str | None

@@ -1560,23 +1560,16 @@ Or by full module path:
 handler = "darnit_mystandard.tools:audit_mystandard"
 ```
 
-### Module allowlist security
+### Module path policy
 
-When handlers are referenced by `module:function` path in TOML, the registry only
-allows imports from approved module prefixes. The default allowlist in
-`packages/darnit/src/darnit/core/handlers.py`:
-
-```python
-ALLOWED_MODULE_PREFIXES = (
-    "darnit.",
-    "darnit_baseline.",
-    "darnit_testchecks.",
-)
-```
-
-If your implementation uses `module:function` references, you'll need to add your
-module prefix to this allowlist. Using short names (via `register_handler()`) avoids
-this restriction entirely.
+When a handler is referenced by `module:function` path in TOML, darnit imports it
+only if the module's top-level package is `darnit` or the package of an installed
+implementation, read from the `darnit.implementations` entry points. If your entry
+point is `mystandard = "darnit_mystandard:register"`, any `darnit_mystandard.*`
+module may be named; nothing needs to be added to darnit. Any other path is refused
+with `HandlerImportRefused`, and an MCP tool that names one does not load
+(framework-design.md 6.5). Short names (via `register_handler()`) need no import at
+all and remain the recommended form.
 
 > **Reference**: See `packages/darnit-baseline/src/darnit_baseline/implementation.py:92`
 > for the OpenSSF Baseline's `register_handlers()` method and
@@ -1755,15 +1748,12 @@ def my_handler(config: dict, context: HandlerContext) -> HandlerResult:
     )
 ```
 
-### Module allowlist for dynamic loading
+### Module path policy for dynamic loading
 
-If you reference handlers by `module:function` path in TOML, the handler registry
-enforces a module allowlist. Your module must start with an approved prefix
-(`darnit.`, `darnit_baseline.`, `darnit_testchecks.`). For new implementations,
-either:
-
-1. Use short names via `register_handler()` (recommended), or
-2. Add your module prefix to `HandlerRegistry.ALLOWED_MODULE_PREFIXES`
+A `module:function` handler path must name a module in `darnit` or in your own
+implementation's package (the module of your `darnit.implementations` entry point).
+A path into any other package is refused at load time. Prefer short names via
+`register_handler()`.
 
 ### TOML path resolution
 

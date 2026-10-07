@@ -1,5 +1,8 @@
 """Tests for darnit.server.factory module."""
 
+import asyncio
+import logging
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -41,7 +44,7 @@ class TestCreateServerFromDict:
                 "name": "test-server",
                 "tools": {
                     "my_tool": {
-                        "handler": "json:dumps",
+                        "handler": "darnit.core.logging:get_logger",
                         "description": "Serialize to JSON",
                     }
                 },
@@ -69,9 +72,9 @@ class TestCreateServer:
 [mcp]
 name = "from-file-server"
 
-[mcp.tools.json_dump]
-handler = "json:dumps"
-description = "JSON serializer"
+[mcp.tools.get_logger]
+handler = "darnit.core.logging:get_logger"
+description = "Logger"
 ''')
         server = create_server(str(config_path))
         assert server.name == "from-file-server"
@@ -87,25 +90,57 @@ name = "path-server"
         assert server.name == "path-server"
 
     def test_handles_invalid_handler(self, tmp_path, caplog):
-        """Test that invalid handlers are skipped with warning."""
+        """A missing handler is skipped with a warning; the other tools still load."""
         config_path = tmp_path / "test.toml"
         config_path.write_text('''
 [mcp]
 name = "test-server"
 
 [mcp.tools.valid_tool]
-handler = "json:dumps"
+handler = "darnit.core.logging:get_logger"
 description = "Valid tool"
 
 [mcp.tools.invalid_tool]
-handler = "nonexistent_module:func"
+handler = "darnit.nonexistent_module:func"
 description = "Invalid tool"
 ''')
-        server = create_server(str(config_path))
-        # Server should still be created
-        assert server.name == "test-server"
-        # Should log warning about invalid tool
-        assert "Failed to load tool" in caplog.text or True  # May not have logging configured
+        with caplog.at_level(logging.WARNING):
+            server = create_server(str(config_path))
+        tools = {tool.name for tool in asyncio.run(server.list_tools())}
+        assert "valid_tool" in tools
+        assert "invalid_tool" not in tools
+        assert "Failed to load tool 'invalid_tool'" in caplog.text
+
+    @pytest.mark.parametrize("handler", ["os:system", "subprocess:run", "darnit_not_installed_xyz.tools:run"])
+    def test_refused_handler_is_reported_at_startup(self, tmp_path, caplog, handler):
+        """A tool whose module path the policy refuses does not load, and startup says so."""
+        config_path = tmp_path / "test.toml"
+        config_path.write_text(f'''
+[mcp]
+name = "test-server"
+
+[mcp.tools.valid_tool]
+handler = "darnit.core.logging:get_logger"
+description = "Valid tool"
+
+[mcp.tools.refused_tool]
+handler = "{handler}"
+description = "Refused tool"
+''')
+        with caplog.at_level(logging.WARNING):
+            server = create_server(str(config_path))
+        tools = {tool.name for tool in asyncio.run(server.list_tools())}
+        assert "valid_tool" in tools
+        assert "refused_tool" not in tools
+        refusals = [r for r in caplog.records if r.levelno == logging.ERROR and "refused_tool" in r.getMessage()]
+        assert refusals and handler in refusals[0].getMessage()
+
+    def test_refused_handler_is_reported_from_dict(self, caplog):
+        config = {"mcp": {"tools": {"refused_tool": {"handler": "os:system", "description": "x"}}}}
+        with caplog.at_level(logging.WARNING):
+            server = create_server_from_dict(config)
+        assert "refused_tool" not in {tool.name for tool in asyncio.run(server.list_tools())}
+        assert any(r.levelno == logging.ERROR and "refused_tool" in r.getMessage() for r in caplog.records)
 
     def test_openssf_baseline_toml(self):
         """Test loading the actual openssf-baseline.toml file."""
@@ -127,3 +162,32 @@ description = "Invalid tool"
                 pytest.skip("darnit_baseline not installed")
         else:
             pytest.skip("openssf-baseline.toml not found")
+
+
+def _shipped_framework_configs() -> list[tuple[str, Path]]:
+    from darnit.core.discovery import discover_implementations
+
+    configs = []
+    for name, impl in sorted(discover_implementations().items()):
+        path = impl.get_framework_config_path()
+        if path is not None and Path(path).is_file():
+            configs.append((name, Path(path)))
+    return configs
+
+
+SHIPPED_FRAMEWORKS = _shipped_framework_configs()
+
+
+class TestShippedFrameworkTools:
+    """Every [mcp.tools] entry of every installed framework loads (#490)."""
+
+    def test_the_community_spec_module_path_tool_is_among_them(self):
+        assert "community-spec" in dict(SHIPPED_FRAMEWORKS)
+
+    @pytest.mark.parametrize(("name", "config_path"), SHIPPED_FRAMEWORKS, ids=[name for name, _ in SHIPPED_FRAMEWORKS])
+    def test_all_declared_tools_register(self, name, config_path, caplog):
+        declared = set(tomllib.loads(config_path.read_text(encoding="utf-8")).get("mcp", {}).get("tools", {}))
+        with caplog.at_level(logging.WARNING, logger="darnit"):
+            server = create_server(config_path)
+        registered = {tool.name for tool in asyncio.run(server.list_tools())}
+        assert declared <= registered, f"{name}: {sorted(declared - registered)} did not load\n{caplog.text}"

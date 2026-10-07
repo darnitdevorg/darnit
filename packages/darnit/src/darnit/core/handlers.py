@@ -30,13 +30,10 @@ from __future__ import annotations
 
 import importlib
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypeVar
-
-if TYPE_CHECKING:
-    from collections.abc import Iterable
+from typing import Any, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -173,6 +170,10 @@ class HandlerRegistry:
 
         Returns:
             Handler function or None if not found
+
+        Raises:
+            HandlerImportRefused: If ``name`` is a module path the resolution
+                policy refuses (see :func:`resolve_module_path`)
         """
         # First check the registry
         if name in self._handlers:
@@ -202,41 +203,17 @@ class HandlerRegistry:
             handlers = [h for h in handlers if h.plugin == plugin]
         return handlers
 
-    # Allowed module prefixes for handler imports (security allowlist)
-    # Only modules starting with these prefixes can be dynamically loaded
-    ALLOWED_MODULE_PREFIXES = (
-        "darnit.",
-        "darnit_baseline.",
-        "darnit_example.",
-        "darnit_testchecks.",
-    )
-
     def _load_handler_from_path(self, path: str) -> Callable[..., Any] | None:
-        """Load handler from module:function path.
+        """Load a handler from a module:function path under the resolution policy.
 
-        Security: Only modules matching ALLOWED_MODULE_PREFIXES can be loaded
-        to prevent arbitrary code execution via malicious module paths.
+        Returns None when an allowed module or its attribute does not exist.
 
-        Args:
-            path: String in format "module.path:function_name"
-
-        Returns:
-            Handler function or None if loading fails or module not allowed
+        Raises:
+            HandlerImportRefused: If the policy refuses the path
         """
         try:
-            module_path, func_name = path.rsplit(":", 1)
-
-            # Validate module path against allowlist to prevent arbitrary imports
-            if not any(module_path.startswith(prefix) for prefix in self.ALLOWED_MODULE_PREFIXES):
-                logger.warning(
-                    f"Module path '{module_path}' not in allowed prefixes: "
-                    f"{self.ALLOWED_MODULE_PREFIXES}"
-                )
-                return None
-
-            module = importlib.import_module(module_path)
-            return getattr(module, func_name, None)
-        except (ValueError, ImportError, AttributeError) as e:
+            return resolve_module_path(path)
+        except (ImportError, AttributeError) as e:
             logger.warning(f"Failed to load handler from path '{path}': {e}")
             return None
 
@@ -390,6 +367,63 @@ class HandlerRegistry:
 
 
 # =============================================================================
+# Module Path Resolution
+# =============================================================================
+
+CORE_PACKAGE = "darnit"
+
+
+class HandlerImportRefused(ValueError):
+    """A ``module:attribute`` path the module resolution policy refuses."""
+
+    def __init__(self, path: str, reason: str, allowed: Iterable[str]) -> None:
+        self.path = path
+        self.allowed = tuple(sorted(allowed))
+        super().__init__(
+            f"Refused to import '{path}': {reason}. "
+            f"Allowed top-level packages: {', '.join(self.allowed)}"
+        )
+
+
+def allowed_module_packages() -> frozenset[str]:
+    """Top-level packages a configured module path may name: core plus installed implementations."""
+    from darnit.core.discovery import implementation_packages
+
+    return frozenset({CORE_PACKAGE}) | implementation_packages()
+
+
+def _refuse(path: str, reason: str) -> HandlerImportRefused:
+    error = HandlerImportRefused(path, reason, allowed_module_packages())
+    logger.warning(str(error))
+    return error
+
+
+def resolve_module_path(path: str) -> Any:
+    """Import the attribute named by ``package.module:attribute``.
+
+    This is the only place the framework imports a module named by
+    configuration. The module's top-level package must be ``darnit`` or the
+    package of an implementation discovered from the ``darnit.implementations``
+    entry points; anything else is refused before it is imported.
+
+    Raises:
+        HandlerImportRefused: If the path is malformed or outside the policy
+        ImportError: If an allowed module cannot be imported
+        AttributeError: If the module has no such attribute
+    """
+    module_path, sep, attr = path.rpartition(":")
+    parts = module_path.split(".")
+    if not sep or ":" in module_path or not attr.isidentifier() or not all(part.isidentifier() for part in parts):
+        raise _refuse(path, "not of the form 'package.module:attribute'")
+
+    if parts[0] != CORE_PACKAGE and parts[0] not in allowed_module_packages():
+        raise _refuse(path, f"'{parts[0]}' is neither darnit nor an installed darnit implementation")
+
+    module = importlib.import_module(module_path)
+    return getattr(module, attr)
+
+
+# =============================================================================
 # Global Registry Instance
 # =============================================================================
 
@@ -492,6 +526,7 @@ def get_template(name: str) -> TemplateInfo | None:
 
 __all__ = [
     # Classes
+    "HandlerImportRefused",
     "HandlerRegistry",
     "HandlerInfo",
     "PassInfo",
@@ -504,4 +539,6 @@ __all__ = [
     "get_handler",
     "list_handlers",
     "get_template",
+    "allowed_module_packages",
+    "resolve_module_path",
 ]

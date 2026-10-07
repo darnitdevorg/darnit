@@ -1,7 +1,10 @@
 """Tests for darnit.server.registry module."""
 
+import re
+
 import pytest
 
+from darnit.core.handlers import HandlerImportRefused
 from darnit.server.registry import ToolRegistry, ToolSpec
 
 
@@ -148,16 +151,36 @@ class TestToolRegistry:
 
     def test_load_handler_success(self):
         """Test successfully loading a handler function."""
+        from darnit.core.logging import get_logger
+
         spec = ToolSpec(
             name="test",
-            handler="json:dumps",  # json.dumps is a real function
+            handler="darnit.core.logging:get_logger",
             description="Test",
         )
         registry = ToolRegistry()
-        handler = registry.load_handler(spec)
-        assert callable(handler)
-        # Verify it's actually json.dumps
-        assert handler([1, 2, 3]) == "[1, 2, 3]"
+        assert registry.load_handler(spec) is get_logger
+
+    def test_load_handler_from_installed_implementation(self):
+        """The shipped community-spec tool names a module of its own package."""
+        from darnit_csl.mcp_tools import remediate_community_spec
+
+        spec = ToolSpec(
+            name="remediate_community_spec",
+            handler="darnit_csl.mcp_tools:remediate_community_spec",
+            description="Test",
+        )
+        assert ToolRegistry().load_handler(spec) is remediate_community_spec
+
+    @pytest.mark.parametrize(
+        "handler",
+        ["os:system", "subprocess:run", "json:dumps", "darnit_not_installed_xyz.tools:run"],
+    )
+    def test_load_handler_refuses_module_outside_policy(self, handler):
+        """A module path outside darnit and the installed implementations is never imported."""
+        spec = ToolSpec(name="test", handler=handler, description="Test")
+        with pytest.raises(HandlerImportRefused, match=re.escape(handler)):
+            ToolRegistry().load_handler(spec)
 
     def test_load_handler_invalid_format(self):
         """Test loading handler with invalid format raises ValueError."""
@@ -174,7 +197,7 @@ class TestToolRegistry:
         """Test loading handler from non-existent module raises ImportError."""
         spec = ToolSpec(
             name="test",
-            handler="nonexistent_module_xyz:func",
+            handler="darnit.nonexistent_module_xyz:func",
             description="Test",
         )
         registry = ToolRegistry()
@@ -185,7 +208,7 @@ class TestToolRegistry:
         """Test loading non-existent function raises AttributeError."""
         spec = ToolSpec(
             name="test",
-            handler="json:nonexistent_function_xyz",
+            handler="darnit.core.logging:nonexistent_function_xyz",
             description="Test",
         )
         registry = ToolRegistry()

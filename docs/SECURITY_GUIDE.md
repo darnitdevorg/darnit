@@ -18,67 +18,25 @@ This document describes security considerations, best practices, and configurati
 
 ## Dynamic Module Loading Security
 
-Darnit uses dynamic module loading to instantiate adapters defined in configuration files. To prevent arbitrary code execution, **module paths are validated against a allowlist** before loading.
+Darnit can import a Python attribute named in configuration as `package.module:attribute`: MCP tool handlers in `[mcp.tools]`, handler references, and `type = "python"` adapters. Every such import goes through one function, `darnit.core.handlers.resolve_module_path` (framework-design.md 6.5).
 
-### Allowed Module Prefixes
+### Resolution Policy
 
-By default, only modules from these prefixes can be dynamically loaded:
+- The path must be `a.b.c:attr`, with every part a Python identifier. Relative paths, empty parts, and dotted attributes are refused.
+- The module's top-level package must be `darnit`, or the package of an implementation that discovery loaded from the `darnit.implementations` entry points (`darnit_csl:register` allows `darnit_csl.*`).
+- The allowed set is derived from installed entry point metadata. There is no list to extend: installing an implementation package allows its modules, and nothing else does.
+- The check runs before the import, so a refused module is never imported.
 
-```python
-ALLOWED_MODULE_PREFIXES = (
-    "darnit.",
-    "darnit_baseline.",
-    "darnit_plugins.",
-    "darnit_testchecks.",
-)
-```
+### Failure Behavior
+
+- A refused path raises `HandlerImportRefused` (a `ValueError`) naming the path and the allowed packages, logged at WARNING.
+- At MCP server start, a tool whose handler is refused is not registered, and the server logs an ERROR naming the tool.
 
 ### Security Implications
 
-- **Configuration-defined adapters** must reference modules within the allowed prefixes
-- **Malicious configurations** cannot load arbitrary Python code
-- **Custom adapters** must be installed as proper Python packages with `darnit_` prefix
-
-### Extending the Whitelist
-
-If you need to use custom adapters from your own packages, you have two options:
-
-#### Option 1: Use the `darnit_` Prefix Convention (Recommended)
-
-Name your custom adapter package with the `darnit_` prefix:
-
-```
-darnit_mycompany/
-├── adapters/
-│   └── custom.py
-└── __init__.py
-```
-
-This automatically allows your module to be loaded:
-
-```toml
-# Framework TOML shipped in your plugin package
-[adapters.mycompany]
-type = "python"
-module = "darnit_mycompany.adapters.custom"
-class = "MyCustomAdapter"
-```
-
-#### Option 2: Modify the Whitelist (Advanced)
-
-For enterprise deployments, you can subclass `AdapterRegistry` or `PluginRegistry` to extend the allowlist:
-
-```python
-from darnit.core.registry import PluginRegistry
-
-class EnterprisePluginRegistry(PluginRegistry):
-    ALLOWED_MODULE_PREFIXES = PluginRegistry.ALLOWED_MODULE_PREFIXES + (
-        "mycompany.",
-        "mycompany_compliance.",
-    )
-```
-
-> **Warning**: Extending the allowlist increases your attack surface. Only add trusted module prefixes.
+- A configuration string cannot reach `os`, `subprocess`, or any other package that is not darnit or an installed implementation.
+- The policy is not a sandbox. Allowed packages are code the operator installed, and `[mcp.tools]` is read only from an installed framework TOML or an operator-supplied `darnit serve <config.toml>`, never from the audited repository.
+- To use your own adapter or tool module, ship it in a package registered under `darnit.implementations`.
 
 ---
 
@@ -437,18 +395,7 @@ dev_verifier = PluginVerifier(dev_config)
 
 ### Handler Registration Security
 
-Plugins register handlers using the `@register_handler` decorator. Only modules matching the allowlist can register handlers.
-
-#### Allowlist
-
-```python
-ALLOWED_MODULE_PREFIXES = (
-    "darnit.",           # Core framework
-    "darnit_baseline.",  # OpenSSF Baseline implementation
-    "darnit_plugins.",   # Official plugins
-    "darnit_testchecks.",# Test utilities
-)
-```
+Plugins register handlers using the `@register_handler` decorator or `register_handlers()`. Registration needs no import by name. A handler referenced by `module:function` path instead is resolved under the policy in [Dynamic Module Loading Security](#dynamic-module-loading-security).
 
 #### Registering Handlers
 

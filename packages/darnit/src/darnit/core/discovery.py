@@ -14,16 +14,18 @@ logger = get_logger("core.discovery")
 
 # Cache for discovered implementations
 _implementations: dict[str, ComplianceImplementation] | None = None
+_implementation_packages: frozenset[str] = frozenset()
 
 
 def discover_implementations() -> dict[str, ComplianceImplementation]:
     """Discover compliance implementations from entry points."""
-    global _implementations
+    global _implementations, _implementation_packages
 
     if _implementations is not None:
         return _implementations
 
     _implementations = {}
+    packages: set[str] = set()
 
     # Use importlib.metadata for Python 3.9+
     from importlib.metadata import entry_points
@@ -66,6 +68,7 @@ def discover_implementations() -> dict[str, ComplianceImplementation]:
 
             if isinstance(impl, ComplianceImplementation):
                 _implementations[impl.name] = impl
+                packages.add(ep.module.partition(".")[0])
                 logger.info(f"Discovered implementation: {impl.name} v{impl.version}")
             else:
                 logger.warning(
@@ -80,8 +83,20 @@ def discover_implementations() -> dict[str, ComplianceImplementation]:
             logger.error(f"Error occurred while verifying or loading plugin '{ep.name}': {e}")
             continue
 
+    _implementation_packages = frozenset(packages)
     logger.info(f"Discovered {len(_implementations)} implementation(s)")
     return _implementations
+
+
+def implementation_packages() -> frozenset[str]:
+    """Top-level packages of the discovered implementations' entry points.
+
+    Read from entry point metadata (``darnit_csl:register`` gives
+    ``darnit_csl``), so the framework names no implementation package
+    itself. Only implementations that discovery accepted are included.
+    """
+    discover_implementations()
+    return _implementation_packages
 
 
 def get_implementation(name: str) -> ComplianceImplementation | None:
@@ -165,13 +180,15 @@ def clear_cache() -> None:
 
     Useful for testing or when implementations may have changed.
     """
-    global _implementations
+    global _implementations, _implementation_packages
     _implementations = None
+    _implementation_packages = frozenset()
 
 
 __all__ = [
     "clear_cache",
     "discover_implementations",
     "get_implementation",
+    "implementation_packages",
     "register_implementation_handlers",
 ]

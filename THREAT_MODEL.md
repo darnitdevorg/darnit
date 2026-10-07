@@ -13,7 +13,7 @@
 |------------|-------|
 | 🔴 Critical | 0 |
 | 🟠 High | 4 |
-| 🟡 Medium | 20 |
+| 🟡 Medium | 17 |
 | 🟢 Low | 93 |
 | ℹ️ Info | 0 |
 
@@ -782,138 +782,27 @@ The `local_path` MCP parameter is the primary trust boundary — the user (MCP c
 #### TM-E-001: Dynamic import via importlib.import_module(module_path)
 
 **Risk:** MEDIUM (severity × confidence = 3.50)
-**Location:** `packages/darnit/src/darnit/core/registry.py:821`
+**Location:** `packages/darnit/src/darnit/core/handlers.py:422`
 **Source:** `tree_sitter_structural` — query `python.eop.dynamic_import_attr`
 
 Dynamic imports allow loading arbitrary modules at runtime. If the module name originates from untrusted input, an attacker can achieve arbitrary code execution.
 
-> **Mitigation (verified):** Module path is validated against `ALLOWED_MODULE_PREFIXES` allowlist before import (visible in the code snippet at lines 812-818). Only modules from trusted package prefixes can be loaded. An attacker would need to modify the allowlist or the TOML config, both of which require write access to the installation.
+> **Mitigation (verified, #490):** This is the only place darnit-core imports a module named by configuration. `resolve_module_path` serves every caller that turns a `module:attribute` string into an import: MCP tool handlers (`ToolRegistry.load_handler`, `server/registry.py`), handler-registry lookups (`HandlerRegistry.get_handler`), and Python adapter configuration (`PluginRegistry` in `core/registry.py`, `AdapterRegistry` in `core/adapters.py`). Before importing, it requires the form `a.b.c:attr` (identifiers only, no relative or empty parts) and a top-level package that is `darnit` or the package of an implementation discovery loaded from the `darnit.implementations` entry points. The allowed set is derived from installed entry point metadata, not a list in code, so it covers third-party implementations and excludes packages that are not installed implementations. A refused path raises `HandlerImportRefused` naming the path and the allowed packages; at MCP server start the tool is not registered and the refusal is logged at ERROR. Residual risk: an allowed package is code the operator installed, so the policy narrows what a configured string can reach but does not sandbox it. `[mcp.tools]` comes from an installed framework TOML or an operator-supplied `darnit serve <config.toml>`, never from the audited repository (framework-design.md 6.5, 14).
 
 ```
-     811 | 
-     812 |         # Security: Validate module path against allowlist to prevent arbitrary code loading
-     813 |         if not any(module_path.startswith(prefix) for prefix in self.ALLOWED_MODULE_PREFIXES):
-     814 |             logger.error(
-     815 |                 f"Adapter {name}: module '{module_path}' not in allowed prefixes. "
-     816 |                 f"Allowed: {self.ALLOWED_MODULE_PREFIXES}"
-     817 |             )
-     818 |             return None
-     819 | 
-     820 |         try:
->>>  821 |             module = importlib.import_module(module_path)
-     822 |             adapter_class = getattr(module, class_name)
-     823 |             return adapter_class()
-     824 | 
-     825 |         except ImportError as e:
-     826 |             logger.error(f"Failed to import adapter {name}: {e}")
-     827 |             return None
-     828 |         except AttributeError as e:
-     829 |             logger.error(f"Adapter {name}: class {class_name} not found: {e}")
-     830 |             return None
-     831 | 
+     414 |     module_path, sep, attr = path.rpartition(":")
+     415 |     parts = module_path.split(".")
+     416 |     if not sep or ":" in module_path or not attr.isidentifier() or not all(part.isidentifier() for part in parts):
+     417 |         raise _refuse(path, "not of the form 'package.module:attribute'")
+     418 | 
+     419 |     if parts[0] != CORE_PACKAGE and parts[0] not in allowed_module_packages():
+     420 |         raise _refuse(path, f"'{parts[0]}' is neither darnit nor an installed darnit implementation")
+     421 | 
+>>>  422 |     module = importlib.import_module(module_path)
+     423 |     return getattr(module, attr)
 ```
 
-#### TM-E-002: Dynamic import via importlib.import_module(module_path)
-
-**Risk:** MEDIUM (severity × confidence = 3.50)
-**Location:** `packages/darnit/src/darnit/core/handlers.py:237`
-**Source:** `tree_sitter_structural` — query `python.eop.dynamic_import_attr`
-
-Dynamic imports allow loading arbitrary modules at runtime. If the module name originates from untrusted input, an attacker can achieve arbitrary code execution.
-
-> **Mitigation (verified):** Module path is validated against `ALLOWED_MODULE_PREFIXES` allowlist before import (visible in the code snippet at lines 812-818). Only modules from trusted package prefixes can be loaded. An attacker would need to modify the allowlist or the TOML config, both of which require write access to the installation.
-
-```
-     227 |             module_path, func_name = path.rsplit(":", 1)
-     228 | 
-     229 |             # Validate module path against allowlist to prevent arbitrary imports
-     230 |             if not any(module_path.startswith(prefix) for prefix in self.ALLOWED_MODULE_PREFIXES):
-     231 |                 logger.warning(
-     232 |                     f"Module path '{module_path}' not in allowed prefixes: "
-     233 |                     f"{self.ALLOWED_MODULE_PREFIXES}"
-     234 |                 )
-     235 |                 return None
-     236 | 
->>>  237 |             module = importlib.import_module(module_path)
-     238 |             return getattr(module, func_name, None)
-     239 |         except (ValueError, ImportError, AttributeError) as e:
-     240 |             logger.warning(f"Failed to load handler from path '{path}': {e}")
-     241 |             return None
-     242 | 
-     243 |     # =========================================================================
-     244 |     # Pass Registration
-     245 |     # =========================================================================
-     246 | 
-     247 |     def register_pass(
-```
-
-#### TM-E-003: Dynamic import via importlib.import_module(module_path)
-
-**Risk:** MEDIUM (severity × confidence = 3.50)
-**Location:** `packages/darnit/src/darnit/core/adapters.py:666`
-**Source:** `tree_sitter_structural` — query `python.eop.dynamic_import_attr`
-
-Dynamic imports allow loading arbitrary modules at runtime. If the module name originates from untrusted input, an attacker can achieve arbitrary code execution.
-
-> **Mitigation (verified):** Module path is validated against `ALLOWED_MODULE_PREFIXES` allowlist before import (visible in the code snippet at lines 812-818). Only modules from trusted package prefixes can be loaded. An attacker would need to modify the allowlist or the TOML config, both of which require write access to the installation.
-
-```
-     656 | 
-     657 |         # Security: Validate module path against allowlist to prevent arbitrary code loading
-     658 |         if not any(module_path.startswith(prefix) for prefix in self.ALLOWED_MODULE_PREFIXES):
-     659 |             logger.error(
-     660 |                 f"Adapter {name}: module '{module_path}' not in allowed prefixes. "
-     661 |                 f"Allowed: {self.ALLOWED_MODULE_PREFIXES}"
-     662 |             )
-     663 |             return None
-     664 | 
-     665 |         try:
->>>  666 |             module = importlib.import_module(module_path)
-     667 |             adapter_class = getattr(module, class_name)
-     668 | 
-     669 |             if not issubclass(adapter_class, expected_type):
-     670 |                 logger.error(
-     671 |                     f"Adapter {name}: {class_name} is not a {expected_type.__name__}"
-     672 |                 )
-     673 |                 return None
-     674 | 
-     675 |             return adapter_class()
-     676 | 
-```
-
-#### TM-E-004: Dynamic import via importlib.import_module(module_path)
-
-**Risk:** MEDIUM (severity × confidence = 3.50)
-**Location:** `packages/darnit/src/darnit/server/registry.py:151`
-**Source:** `tree_sitter_structural` — query `python.eop.dynamic_import_attr`
-
-Dynamic imports allow loading arbitrary modules at runtime. If the module name originates from untrusted input, an attacker can achieve arbitrary code execution.
-
-> **Mitigation (partial):** Unlike the other dynamic imports, this path does NOT validate against an allowlist — it directly imports `spec.handler` after splitting on `:`. The handler name comes from TOML tool configuration, which is a trusted source. However, adding an `ALLOWED_MODULE_PREFIXES` check here (as exists in registry.py, handlers.py, and adapters.py) would improve defense-in-depth. **Recommendation:** Add allowlist validation to `ToolRegistry.load_handler()`.
-
-```
-     141 |                 return handler
-     142 | 
-     143 |             raise ValueError(
-     144 |                 f"Handler '{spec.handler}' not found in registry. "
-     145 |                 "Either register it via register_handlers() or use "
-     146 |                 "full module path 'module.path:function_name'"
-     147 |             )
-     148 | 
-     149 |         # Full module path format
-     150 |         module_path, func_name = spec.handler.rsplit(":", 1)
->>>  151 |         module = importlib.import_module(module_path)
-     152 |         return getattr(module, func_name)
-     153 | 
-     154 |     def _load_builtin(
-     155 |         self, spec: ToolSpec, framework_name: str | None
-     156 |     ) -> Callable[..., Any]:
-     157 |         """Load a built-in tool and bind it to a framework.
-     158 | 
-     159 |         Built-in tools receive the framework name as a bound parameter
-     160 |         so they know which TOML config to load.
-     161 | 
-```
+This entry replaces the four earlier dynamic-import entries (TM-E-001 `core/registry.py`, TM-E-002 `HandlerRegistry._load_handler_from_path`, TM-E-003 `core/adapters.py`, TM-E-004 `server/registry.py`). Those sites no longer import; they call `resolve_module_path`. Before #490 three of them kept their own hardcoded prefix tuple, none of which named every shipped implementation, and the MCP tool loader, the path that loads `[mcp.tools]` handlers, checked nothing.
 
 ## Attack Chains
 
@@ -932,27 +821,23 @@ No compound attack paths identified.
 
 1. **Unauthenticated mcp tool (mcp): (dynamic — registered from registry.tools)** — `packages/darnit/src/darnit/server/factory.py:149` (mitigated: MCP stdio transport auth)
 2. **Unauthenticated mcp tool (mcp): (dynamic — registered from registry.tools)** — `packages/darnit/src/darnit/server/factory.py:195` (mitigated: MCP stdio transport auth)
-3. **Dynamic import via importlib.import_module(module_path)** — `packages/darnit/src/darnit/core/registry.py:821` (mitigated: ALLOWED_MODULE_PREFIXES allowlist)
-4. **Dynamic import via importlib.import_module(module_path)** — `packages/darnit/src/darnit/core/handlers.py:237` (mitigated: ALLOWED_MODULE_PREFIXES allowlist)
-5. **Dynamic import via importlib.import_module(module_path)** — `packages/darnit/src/darnit/core/adapters.py:666` (mitigated: ALLOWED_MODULE_PREFIXES allowlist)
-6. **Dynamic import via importlib.import_module(module_path)** — `packages/darnit/src/darnit/server/registry.py:151` (NO allowlist — recommend adding one)
-7. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/tools/audit_org.py:62` (mitigated: list-form subprocess, gh validates)
-8. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/tools/audit_org.py:113` (mitigated: list-form subprocess, gh validates)
-9. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/core/utils.py:27` (mitigated: list-form subprocess, gh validates)
-10. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/core/adapters.py:354` (mitigated: trusted TOML config)
-11. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/server/tools/test_repository.py:141` (test tool only)
-12. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/server/tools/git_operations.py:45` (mitigated: list-form subprocess)
-13. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/server/tools/git_operations.py:53` (mitigated: list-form subprocess)
-14. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/server/tools/git_operations.py:68` (mitigated: list-form subprocess)
-15. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/server/tools/git_operations.py:98` (mitigated: list-form subprocess)
-16. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/server/tools/git_operations.py:209` (mitigated: list-form subprocess)
-17. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/server/tools/git_operations.py:295` (mitigated: list-form subprocess)
-18. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/remediation/github.py:268` (mitigated: stdin input, not shell args)
+3. **Dynamic import via importlib.import_module(module_path)** — `packages/darnit/src/darnit/core/handlers.py:422` (mitigated: the one module path resolver; top-level package must be darnit or an installed implementation's)
+4. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/tools/audit_org.py:62` (mitigated: list-form subprocess, gh validates)
+5. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/tools/audit_org.py:113` (mitigated: list-form subprocess, gh validates)
+6. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/core/utils.py:27` (mitigated: list-form subprocess, gh validates)
+7. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/core/adapters.py:354` (mitigated: trusted TOML config)
+8. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/server/tools/test_repository.py:141` (test tool only)
+9. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/server/tools/git_operations.py:45` (mitigated: list-form subprocess)
+10. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/server/tools/git_operations.py:53` (mitigated: list-form subprocess)
+11. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/server/tools/git_operations.py:68` (mitigated: list-form subprocess)
+12. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/server/tools/git_operations.py:98` (mitigated: list-form subprocess)
+13. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/server/tools/git_operations.py:209` (mitigated: list-form subprocess)
+14. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/server/tools/git_operations.py:295` (mitigated: list-form subprocess)
+15. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/remediation/github.py:268` (mitigated: stdin input, not shell args)
 
 ### Recommended Code Improvements
 
-1. **Add allowlist to `ToolRegistry.load_handler()`** (server/registry.py:151) — The only dynamic import path without `ALLOWED_MODULE_PREFIXES` validation. Low urgency since handler names come from trusted TOML.
-2. **Add timeouts to git_operations.py subprocess calls** — 42 of the 43 DoS findings are missing `timeout=` on subprocess calls in this file.
+1. **Add timeouts to git_operations.py subprocess calls** — 42 of the 43 DoS findings are missing `timeout=` on subprocess calls in this file.
 
 ## Verification Prompts
 

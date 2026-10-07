@@ -7,7 +7,6 @@ This module provides:
 - Resolution functions for loading adapters from configuration
 """
 
-import importlib
 import json
 import logging
 import subprocess
@@ -15,6 +14,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
+from darnit.core.handlers import resolve_module_path
 from darnit.core.models import (
     AdapterCapability,
     CheckResult,
@@ -453,14 +453,6 @@ class AdapterRegistry:
     # Config-based adapter definitions
     _adapter_configs: dict[str, dict[str, Any]] = field(default_factory=dict)
 
-    # Allowed module prefixes for dynamic imports (security allowlist)
-    ALLOWED_MODULE_PREFIXES: tuple = (
-        "darnit.",
-        "darnit_baseline.",
-        "darnit_plugins.",
-        "darnit_testchecks.",
-    )
-
     def register_check_adapter(
         self,
         name: str,
@@ -646,6 +638,10 @@ class AdapterRegistry:
 
         Returns:
             Adapter instance or None
+
+        Raises:
+            HandlerImportRefused: If the module is outside the module
+                resolution policy
         """
         module_path = config.get("module")
         class_name = config.get("class", "Adapter")
@@ -654,17 +650,8 @@ class AdapterRegistry:
             logger.error(f"Adapter {name} missing 'module' in config")
             return None
 
-        # Security: Validate module path against allowlist to prevent arbitrary code loading
-        if not any(module_path.startswith(prefix) for prefix in self.ALLOWED_MODULE_PREFIXES):
-            logger.error(
-                f"Adapter {name}: module '{module_path}' not in allowed prefixes. "
-                f"Allowed: {self.ALLOWED_MODULE_PREFIXES}"
-            )
-            return None
-
         try:
-            module = importlib.import_module(module_path)
-            adapter_class = getattr(module, class_name)
+            adapter_class = resolve_module_path(f"{module_path}:{class_name}")
 
             if not issubclass(adapter_class, expected_type):
                 logger.error(

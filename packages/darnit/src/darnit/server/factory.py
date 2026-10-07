@@ -14,6 +14,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
 
+from darnit.core.handlers import HandlerImportRefused
+
 from .registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
@@ -193,6 +195,9 @@ def create_server(
             server.add_tool(handler, name=name, description=spec.description)
             registered_count += 1
             logger.debug(f"Registered tool: {name}")
+        except HandlerImportRefused as e:
+            logger.error(f"Refused to load tool '{name}': {e}")
+            continue
         except (ImportError, AttributeError, ValueError) as e:
             logger.warning(f"Failed to load tool '{name}': {e}")
             continue
@@ -258,6 +263,8 @@ def create_server_from_dict(config: dict) -> FastMCP:
             if spec.parameters:
                 handler = _bind_tool_config(handler, spec.parameters)
             server.add_tool(handler, name=name, description=spec.description)
+        except HandlerImportRefused as e:
+            logger.error(f"Refused to load tool '{name}': {e}")
         except (ImportError, AttributeError, ValueError) as e:
             logger.warning(f"Failed to load tool '{name}': {e}")
 

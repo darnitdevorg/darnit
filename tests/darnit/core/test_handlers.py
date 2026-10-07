@@ -1,8 +1,12 @@
 """Tests for handler registration system."""
 
+import re
 from pathlib import Path
 
+import pytest
+
 from darnit.core.handlers import (
+    HandlerImportRefused,
     HandlerRegistry,
     TemplateInfo,
     get_handler,
@@ -98,22 +102,16 @@ class TestHandlerRegistry:
         assert handler is not None
         assert callable(handler)
 
-    def test_load_handler_blocked_module_path(self) -> None:
-        """Test that non-allowlisted module paths are blocked."""
+    def test_load_handler_refused_module_path(self) -> None:
+        """A module outside the resolution policy is refused, not "not found"."""
         registry = HandlerRegistry()
 
-        # os.path is not in ALLOWED_MODULE_PREFIXES, should be blocked
-        handler = registry._load_handler_from_path("os.path:exists")
-        assert handler is None
+        for path in ("os.path:exists", "subprocess:run", "invalid"):
+            with pytest.raises(HandlerImportRefused, match=re.escape(path)):
+                registry._load_handler_from_path(path)
 
-        # subprocess is not allowed either
-        handler = registry._load_handler_from_path("subprocess:run")
-        assert handler is None
-
-    def test_load_handler_invalid_path(self) -> None:
-        """Test loading handler from invalid path returns None."""
+    def test_load_handler_missing_module_returns_none(self) -> None:
         registry = HandlerRegistry()
-        assert registry._load_handler_from_path("invalid") is None
         assert registry._load_handler_from_path("darnit.nonexistent.module:func") is None
 
 
@@ -297,26 +295,25 @@ class TestDarnitBaselineIntegration:
         assert handler is not None
         assert callable(handler)
 
-    def test_resolve_blocked_module_path(self) -> None:
-        """Test that non-allowlisted modules are blocked."""
+    def test_resolve_refused_module_path(self) -> None:
+        """Arbitrary modules are refused with an error naming the path."""
         registry = HandlerRegistry()
 
-        # Should block arbitrary modules
-        handler = registry.get_handler("os:system")
-        assert handler is None
+        for path in ("os:system", "subprocess:run"):
+            with pytest.raises(HandlerImportRefused, match=re.escape(path)):
+                registry.get_handler(path)
 
-        handler = registry.get_handler("subprocess:run")
-        assert handler is None
+    def test_resolve_other_installed_implementation_modules(self) -> None:
+        """Every installed implementation's package resolves, not only a fixed few."""
+        registry = HandlerRegistry()
 
-    def test_allowlist_includes_darnit_packages(self) -> None:
-        """Test that allowlist includes all darnit package prefixes."""
-        from darnit.core.handlers import HandlerRegistry
-
-        allowed = HandlerRegistry.ALLOWED_MODULE_PREFIXES
-
-        assert "darnit." in allowed
-        assert "darnit_baseline." in allowed
-        assert "darnit_testchecks." in allowed
+        for path in (
+            "darnit_gittuf.implementation:GittufImplementation",
+            "darnit_reproducibility.implementation:ReproducibilityImplementation",
+            "darnit_hello.implementation:HelloImplementation",
+            "darnit_csl.mcp_tools:remediate_community_spec",
+        ):
+            assert callable(registry.get_handler(path))
 
     def test_get_handler_with_colon_tries_module_resolution(self) -> None:
         """Test that handler names with ':' trigger module resolution."""

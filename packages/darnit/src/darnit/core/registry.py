@@ -42,7 +42,6 @@ See Also:
 
 from __future__ import annotations
 
-import importlib
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -52,6 +51,7 @@ from typing import (
 )
 
 from .adapters import CheckAdapter, RemediationAdapter
+from .handlers import resolve_module_path
 from .models import AdapterCapability
 
 logger = logging.getLogger(__name__)
@@ -218,14 +218,6 @@ class PluginRegistry:
 
     # Discovery state
     _discovered: set[str] = field(default_factory=set)
-
-    # Allowed module prefixes for dynamic imports (security allowlist)
-    ALLOWED_MODULE_PREFIXES: tuple = (
-        "darnit.",
-        "darnit_baseline.",
-        "darnit_plugins.",
-        "darnit_testchecks.",
-    )
 
     # =========================================================================
     # Discovery Methods
@@ -809,17 +801,8 @@ class PluginRegistry:
             logger.error(f"Adapter {name} missing 'module' in config")
             return None
 
-        # Security: Validate module path against allowlist to prevent arbitrary code loading
-        if not any(module_path.startswith(prefix) for prefix in self.ALLOWED_MODULE_PREFIXES):
-            logger.error(
-                f"Adapter {name}: module '{module_path}' not in allowed prefixes. "
-                f"Allowed: {self.ALLOWED_MODULE_PREFIXES}"
-            )
-            return None
-
         try:
-            module = importlib.import_module(module_path)
-            adapter_class = getattr(module, class_name)
+            adapter_class = resolve_module_path(f"{module_path}:{class_name}")
             return adapter_class()
 
         except ImportError as e:

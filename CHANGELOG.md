@@ -26,6 +26,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ceiling) is refused, logged at WARNING naming both registrants, and listed
   by `darnit list` and in the warnings of an audit of that plugin's framework
   (or a framework composing it); the existing step type is unchanged.
+- One policy governs every import of a `module:attribute` path from
+  configuration (MCP tool handlers, handler references, Python adapters):
+  the module's top-level package must be `darnit` or the package of an
+  installed implementation, read from the `darnit.implementations` entry
+  points. Before, the MCP tool loader imported any module named in
+  `[mcp.tools]`, and the other loaders checked hardcoded prefix lists that
+  missed most shipped implementations. A refused path raises
+  `HandlerImportRefused` naming the path and the allowed packages; at server
+  start the tool is not registered and the refusal is logged at ERROR.
+  `HandlerRegistry.get_handler` raises it instead of returning `None` (#490).
 
 ### Removed
 
@@ -49,6 +59,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `darnit.config.context_resolve.resolve_context` (read) and
   `darnit.config.context_writes` (write); `detect_ci_provider` is the one CI
   detector.
+- `ALLOWED_MODULE_PREFIXES` on `HandlerRegistry`, `PluginRegistry`, and
+  `AdapterRegistry`. The allowed packages come from installed
+  implementations; there is no list to extend (#490).
 
 ### Added
 
