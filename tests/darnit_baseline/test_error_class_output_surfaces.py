@@ -169,3 +169,75 @@ class TestAttestationPredicate:
         """Regression guard: the feature-025 field is untouched."""
         controls = self._controls_by_id(self._predicate([ENV_FAILURE]))
         assert controls["OSPS-LE-02.02"]["authority"] == "dispositive"
+
+
+class TestUnexpectedExitSurfaces:
+    """#562: every surface carries `unexpected_exit` as-is, never as `network`."""
+
+    UNEXPECTED = _result("OSPS-BR-01.02", status="WARN", error_class="unexpected_exit")
+    ERRORED = {
+        **_result("OSPS-BR-01.02", status="ERROR", error_class="unexpected_exit"),
+        "error": {
+            "class": "unexpected_exit",
+            "cause": "Command exited with unexpected code 2: grep -r uses: .github/workflows/; stderr: grep: "
+            ".github/workflows/: No such file or directory",
+        },
+    }
+
+    @pytest.mark.unit
+    def test_summary_json(self) -> None:
+        from darnit_baseline.tools import _compact_result
+
+        assert _compact_result(self.UNEXPECTED)["error_class"] == "unexpected_exit"
+
+    @pytest.mark.unit
+    def test_sarif(self) -> None:
+        from darnit_baseline.formatters.sarif import result_to_sarif_result
+
+        out = result_to_sarif_result(self.UNEXPECTED, rule_index=0, local_path="/tmp/x", repo="r")
+        assert out["properties"]["errorClass"] == "unexpected_exit"
+
+    @pytest.mark.unit
+    def test_predicate(self) -> None:
+        from darnit_baseline.attestation.predicate import build_assessment_predicate
+
+        predicate = build_assessment_predicate(
+            owner="o",
+            repo="r",
+            commit="a" * 40,
+            ref="refs/heads/main",
+            level=1,
+            results=[self.ERRORED],
+            project_config=None,
+            adapters_used=["builtin"],
+        )
+        control = next(c for c in predicate["controls"] if c["id"] == "OSPS-BR-01.02")
+        assert control["error_class"] == "unexpected_exit"
+        assert control["error"]["class"] == "unexpected_exit"
+        assert "unexpected code 2" in control["error"]["cause"]
+
+    @pytest.mark.unit
+    def test_markdown(self) -> None:
+        from darnit.tools.audit import format_result_contract_markdown, format_results_markdown
+
+        md = format_results_markdown(
+            owner="o",
+            repo="r",
+            results=[self.UNEXPECTED],
+            summary={"PASS": 0, "FAIL": 0, "WARN": 1, "N/A": 0, "ERROR": 0, "total": 1},
+            compliance={1: False},
+            level=1,
+        )
+        line = next(ln for ln in md.splitlines() if "OSPS-BR-01.02" in ln)
+        assert "[unexpected_exit]" in line
+        assert "network" not in md
+
+        contract = "\n".join(format_result_contract_markdown(self.ERRORED))
+        assert "`unexpected_exit`" in contract
+        assert "No such file or directory" in contract
+
+    @pytest.mark.unit
+    def test_cli_text(self) -> None:
+        from darnit.cli import format_result_text
+
+        assert "[unexpected_exit]" in format_result_text(self.UNEXPECTED)

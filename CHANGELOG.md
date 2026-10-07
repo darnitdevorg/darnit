@@ -448,6 +448,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `operator_config`, `trust`, `ignored_repository_settings`,
   `unknown_assertions`, `summary`, `results`, and `warnings` when present)
   instead of a bare list of results.
+- An `exec` step whose command exits with a code the step does not declare
+  reports error class `unexpected_exit` instead of `network` unless stderr
+  shows a connection error (name resolution, refused or reset connection,
+  unreachable host, TLS or certificate failure). Exit code 127 or "command
+  not found" reports `missing_tool`. The step's message gives the exit code,
+  the command, and the start of stderr. Before, `grep` exiting 2 on a missing
+  directory or `git` exiting 128 outside a repository was reported as a
+  network failure (#562).
 
 ### Fixed
 

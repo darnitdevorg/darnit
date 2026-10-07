@@ -1,6 +1,7 @@
 """Environmental failure classification.
 
-Feature 036. See specs/036-tier2-error-class/contracts/error-class.md.
+Feature 036. See specs/036-tier2-error-class/contracts/error-class.md and
+its #562 addendum, contracts/error-class-addendum-562.md.
 
 When a sieve pass cannot run to completion -- the network is unreachable,
 the auth token expired, a subprocess timed out, a required binary is
@@ -16,31 +17,34 @@ means "the check could not run to completion." None of them means "the
 check ran and the repository does not comply" -- that stays a bare
 FAIL/WARN with no ``error_class``.
 
-=============  ===============================================================
-Value          Meaning
-=============  ===============================================================
-network        Host unreachable, DNS failure, TLS error, MCP server unusable,
-               or any non-zero subprocess exit whose stderr matched no
-               more-specific pattern.
-auth           HTTP 401, bad credentials, expired token, "requires
-               authentication", or MCP plugin signature-verification failure.
-timeout        Subprocess exceeded its ``timeout`` budget, or an MCP tool
-               call exceeded ``MCP_DEFAULT_TIMEOUT_SECONDS``.
-rate_limit     GitHub primary or secondary rate limit, or abuse-detection
-               throttle.
-not_found      A control names an MCP server the operator never configured.
-               (Before feature 041 this also covered an absent binary; step
-               results now report that as ``missing_tool``.)
-crashed        A handler raised an unexpected exception, or an MCP tool
-               returned unparseable output. The handler did not complete
-               cleanly.
-missing_tool   Feature 041. A tool the step needs (``gh``, a command's
-               binary, a required MCP server executable) is not installed.
-unavailable    Feature 041. The platform API answered with a 5xx or a status
-               the step did not declare, or the request never got a response.
-evaluation     Feature 041. The step ran but its result could not be
-               evaluated (for example a CEL ``expr`` error over a response).
-=============  ===============================================================
+===============  =============================================================
+Value            Meaning
+===============  =============================================================
+network          Host unreachable, DNS failure, connection refused or reset,
+                 TLS error, or MCP server unusable. An ``exec`` step reports it
+                 only when stderr shows a connection error (#562).
+auth             HTTP 401, bad credentials, expired token, "requires
+                 authentication", or MCP plugin signature-verification failure.
+timeout          Subprocess exceeded its ``timeout`` budget, or an MCP tool
+                 call exceeded ``MCP_DEFAULT_TIMEOUT_SECONDS``.
+rate_limit       GitHub primary or secondary rate limit, or abuse-detection
+                 throttle.
+not_found        A control names an MCP server the operator never configured.
+                 (Before feature 041 this also covered an absent binary; step
+                 results now report that as ``missing_tool``.)
+crashed          A handler raised an unexpected exception, or an MCP tool
+                 returned unparseable output. The handler did not complete
+                 cleanly.
+missing_tool     Feature 041. A tool the step needs (``gh``, a command's
+                 binary, a required MCP server executable) is not installed,
+                 or a command exited 127 or said "command not found".
+unavailable      Feature 041. The platform API answered with a 5xx or a status
+                 the step did not declare, or the request never got a response.
+evaluation       Feature 041. The step ran but its result could not be
+                 evaluated (for example a CEL ``expr`` error over a response).
+unexpected_exit  #562. A command exited with a code its step did not declare,
+                 and nothing in its output identified the cause.
+===============  =============================================================
 
 Two names are exported because ``typing.Literal`` is erased at runtime
 and enforces nothing on its own. ``ErrorClass`` gives static-analysis
@@ -74,6 +78,7 @@ ErrorClass = Literal[
     "missing_tool",
     "unavailable",
     "evaluation",
+    "unexpected_exit",
 ]
 
 # Runtime-checkable companion to ``ErrorClass``. See module docstring for
@@ -89,6 +94,7 @@ ERROR_CLASSES: frozenset[ErrorClass] = frozenset(
         "missing_tool",
         "unavailable",
         "evaluation",
+        "unexpected_exit",
     )
 )
 

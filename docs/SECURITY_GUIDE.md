@@ -568,6 +568,8 @@ When reviewing a framework TOML or plugin change, treat any new `existence = tru
 
 A step that could not measure returns ERROR with a class and cause: `auth` (401/403), `rate_limit` (429 or a rate-limit 403), `unavailable` (5xx, transport failure, undeclared status), `missing_tool` (an absent binary or required MCP server), or `evaluation`. ERROR never concludes FAIL: later steps still run, and if none concludes the control ends ERROR. A platform response proves failure only when the `gh_api` step lists its status in `fail_on_status` (for example 404 for "no branch protection"), and a rate limit never does. A token that cannot read a setting therefore shows up as ERROR `[auth]`, not as a failing project. ERROR is non-compliant.
 
+An `exec` command that exits with a code its step does not declare concludes nothing either. Its class comes from the exit code and stderr: `rate_limit`, `auth`, `missing_tool` (exit 127 or "command not found"), `network` only when stderr shows a connection error, and otherwise `unexpected_exit`, whose message gives the exit code, the command, and the start of stderr.
+
 ### PASS Candidates Confirmed by the Operator
 
 Controls that need judgment of document content end `PENDING` (`pending.kind = "llm_judgment"`) after the deterministic steps. A judgment comes from the harness's model step or from a coding agent through the `submit_judgment` MCP tool; both follow the same rules:

@@ -85,6 +85,17 @@ class TestHandlerResultValidation:
         assert result.error_class == value
 
     @pytest.mark.unit
+    def test_unexpected_exit_is_a_known_class(self) -> None:
+        """#562: the Literal and the frozenset are edited together."""
+        from typing import get_args
+
+        from darnit.core.error_class import ErrorClass
+
+        assert "unexpected_exit" in ERROR_CLASSES
+        assert "unexpected_exit" in get_args(ErrorClass)
+        assert set(get_args(ErrorClass)) == set(ERROR_CLASSES)
+
+    @pytest.mark.unit
     def test_none_is_always_allowed_including_on_pass(self) -> None:
         result = HandlerResult(status=HandlerResultStatus.PASS, message="ok")
         assert result.error_class is None
@@ -178,8 +189,8 @@ class TestExecHandlerClassification:
         assert result.error_class == "rate_limit"
 
     @pytest.mark.unit
-    def test_unmatched_stderr_falls_back_to_network(self, tmp_path: Path) -> None:
-        """FR-005a: non-GitHub / unrecognized failure is the network bucket."""
+    def test_unmatched_stderr_is_unexpected_exit_not_network(self, tmp_path: Path) -> None:
+        """#562: an unrecognized failure no longer claims a network cause."""
         with patch(
             "darnit.sieve.builtin_handlers.subprocess.run",
             return_value=_proc(128, stderr="fatal: not a git repository"),
@@ -188,7 +199,51 @@ class TestExecHandlerClassification:
                 {"handler": "exec", "command": ["git", "rev-parse", "HEAD"]},
                 _ctx(tmp_path),
             )
-        assert result.error_class == "network"
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
+        assert result.error_class == "unexpected_exit"
+
+    @pytest.mark.unit
+    def test_unexpected_exit_message_names_command_code_and_stderr(self, tmp_path: Path) -> None:
+        """#562: the cause is actionable without rerunning the command."""
+        stderr = "grep: .github/workflows/: No such file or directory\n" + "x" * 500 + "\u2603"
+        with patch(
+            "darnit.sieve.builtin_handlers.subprocess.run",
+            return_value=_proc(2, stderr=stderr),
+        ):
+            result = exec_handler(
+                {"handler": "exec", "command": ["grep", "-r", "uses:", ".github/workflows/"]},
+                _ctx(tmp_path),
+            )
+        assert result.error_class == "unexpected_exit"
+        assert "grep -r uses: .github/workflows/" in result.message
+        assert "code 2" in result.message
+        assert "grep: .github/workflows/: No such file or directory x" in result.message
+        assert "\n" not in result.message
+        assert result.message.isascii()
+        assert "x" * 300 not in result.message
+
+    @pytest.mark.unit
+    def test_unexpected_exit_with_empty_stderr_says_so(self, tmp_path: Path) -> None:
+        with patch(
+            "darnit.sieve.builtin_handlers.subprocess.run",
+            return_value=_proc(3),
+        ):
+            result = exec_handler({"handler": "exec", "command": ["some-checker"]}, _ctx(tmp_path))
+        assert result.error_class == "unexpected_exit"
+        assert "code 3" in result.message
+        assert "some-checker" in result.message
+        assert "no stderr" in result.message
+
+    @pytest.mark.unit
+    def test_exit_127_is_missing_tool(self, tmp_path: Path) -> None:
+        """#562: a shell or env wrapper reports a missing binary as exit 127."""
+        with patch(
+            "darnit.sieve.builtin_handlers.subprocess.run",
+            return_value=_proc(127, stderr="env: 'scorecard': No such file or directory"),
+        ):
+            result = exec_handler({"handler": "exec", "command": ["env", "scorecard"]}, _ctx(tmp_path))
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
+        assert result.error_class == "missing_tool"
 
     @pytest.mark.unit
     def test_success_carries_no_error_class(self, tmp_path: Path) -> None:
@@ -227,6 +282,74 @@ class TestExecHandlerClassification:
             )
         assert result.status == HandlerResultStatus.FAIL
         assert result.error_class is None
+
+
+class TestClassifyExecFailure:
+    """#562: the undeclared-exit decision table, first match wins."""
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        ("stderr", "exit_code", "expected"),
+        [
+            ("gh: API rate limit exceeded for user ID 1234.", 1, "rate_limit"),
+            ("You have exceeded a secondary rate limit.", 1, "rate_limit"),
+            ("gh: HTTP 403: You have exceeded a secondary rate limit.", 1, "rate_limit"),
+            ("gh: Bad credentials (HTTP 401)", 1, "auth"),
+            ("To get started with GitHub CLI, please run:  gh auth login", 4, "auth"),
+            ("You are not logged into any GitHub hosts.", 4, "auth"),
+            ("", 127, "missing_tool"),
+            ("bash: scorecard: command not found", 1, "missing_tool"),
+            ("sh: 1: scorecard: not found", 2, "missing_tool"),
+            ("fatal: unable to access 'https://github.com/o/r/': Could not resolve host: github.com", 128, "network"),
+            ("curl: (6) Could not resolve host: example.com", 6, "network"),
+            ("ssh: Could not resolve hostname github.com: Name or service not known", 255, "network"),
+            ("ssh: github.com: Temporary failure in name resolution", 255, "network"),
+            (
+                "ssh: Could not resolve hostname github.com: nodename nor servname provided, or not known",
+                255,
+                "network",
+            ),
+            ("dial tcp: lookup api.github.com: no such host", 1, "network"),
+            ("curl: (7) Failed to connect to localhost port 1: Connection refused", 7, "network"),
+            ("fetch-pack: unexpected disconnect: Connection reset by peer", 128, "network"),
+            ("connect: Network is unreachable", 1, "network"),
+            ("ssh: connect to host github.com port 22: No route to host", 255, "network"),
+            ("ssh: connect to host github.com port 22: Connection timed out", 255, "network"),
+            ("curl: (28) Failed to connect to example.com port 443: Operation timed out", 28, "network"),
+            ("dial tcp 140.82.112.6:443: i/o timeout", 1, "network"),
+            ("error connecting to api.github.com", 1, "network"),
+            ("curl: (35) OpenSSL SSL_connect: SSL_ERROR_SYSCALL in connection to example.com:443", 35, "network"),
+            ("net/http: TLS handshake timeout", 1, "network"),
+            ("SSL certificate problem: unable to get local issuer certificate", 60, "network"),
+            ("x509: certificate signed by unknown authority", 1, "network"),
+            ("server certificate verification failed. CAfile: none CRLfile: none", 128, "network"),
+            ("error: RPC failed; curl 56 OpenSSL SSL_read: Connection was reset, errno 10054", 128, "network"),
+            ("fatal: unable to access 'https://example.com/r/': gnutls_handshake() failed", 128, "network"),
+            (
+                "fatal: unable to access 'https://example.com/r/': The requested URL returned error: 404",
+                128,
+                "unexpected_exit",
+            ),
+            ("grep: .github/workflows/: No such file or directory", 2, "unexpected_exit"),
+            ("fatal: not a git repository (or any of the parent directories): .git", 128, "unexpected_exit"),
+            ("error: No such remote 'upstream'", 2, "unexpected_exit"),
+            ("gh: Not Found (HTTP 404)", 1, "unexpected_exit"),
+            ("", 1, "unexpected_exit"),
+            ("", None, "unexpected_exit"),
+        ],
+    )
+    def test_table(self, stderr: str, exit_code: int | None, expected: str) -> None:
+        from darnit.sieve.builtin_handlers import _classify_exec_failure
+
+        assert _classify_exec_failure(stderr, exit_code, "scorecard") == expected
+
+    @pytest.mark.unit
+    def test_not_found_names_only_the_executable(self) -> None:
+        """A bare "not found" about some other thing is not a missing tool."""
+        from darnit.sieve.builtin_handlers import _classify_exec_failure
+
+        assert _classify_exec_failure("gh: Not Found (HTTP 404)", 1, "gh") == "unexpected_exit"
+        assert _classify_exec_failure("sh: 1: gh: not found", 1, "/usr/bin/gh") == "missing_tool"
 
 
 class TestExecHandlerWarnLogging:

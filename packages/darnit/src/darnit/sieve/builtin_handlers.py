@@ -54,11 +54,12 @@ it without stubbing the whole handler.
 # Feature 036: environmental-failure classification
 # =============================================================================
 
-# GitHub-only stderr patterns for v0 (clarify Q4). The `exec` handler sees
-# only stdout/stderr/exit-code -- it has no access to response headers -- so
-# classification is substring matching against `gh` CLI stderr shape. Other
-# exec targets (git, curl, syft, cosign) fall through to `network`; per-target
-# pattern packs are a follow-up if real audits show they are needed.
+# The `exec` handler sees only stdout/stderr/exit-code -- it has no access to
+# response headers -- so classification is substring matching against stderr.
+# The rate-limit and auth patterns follow `gh` CLI stderr shape (clarify Q4).
+# A failure no pattern identifies is `unexpected_exit`, not `network` (#562):
+# most undeclared exits (grep on a missing directory, git outside a
+# repository) never touch the network.
 #
 # Rate-limit is checked BEFORE auth: GitHub answers 403 for both rate limits
 # and permission failures, and the rate-limit body is the more specific signal.
@@ -74,22 +75,75 @@ _GH_AUTH_PATTERNS: tuple[str, ...] = (
     "requires authentication",
     "gh auth login",
     "authentication token",
+    "not logged in",
 )
 
 
-def _classify_exec_failure(stderr: str) -> ErrorClass:
-    """Classify a non-zero-exit subprocess failure from its stderr.
+_MISSING_TOOL_EXIT_CODE = 127
+
+_MISSING_TOOL_PATTERNS: tuple[str, ...] = ("command not found",)
+
+_NETWORK_PATTERNS: tuple[str, ...] = (
+    "could not resolve host",
+    "name or service not known",
+    "temporary failure in name resolution",
+    "nodename nor servname provided",
+    "no such host",
+    "connection refused",
+    "connection reset",
+    "connection was reset",
+    "network is unreachable",
+    "no route to host",
+    "connection timed out",
+    "failed to connect to",
+    "i/o timeout",
+    "error connecting to",
+    "tls handshake",
+    "ssl_connect",
+    "gnutls_handshake",
+    "ssl certificate problem",
+    "certificate verify failed",
+    "x509:",
+    "server certificate verification failed",
+    "unable to access 'http",
+)
+
+# git's "unable to access" also wraps an HTTP status the server sent back;
+# an answer from the server is not a connection failure.
+_HTTP_RESPONSE_PATTERNS: tuple[str, ...] = ("the requested url returned error",)
+
+_STDERR_EXCERPT_CHARS = 200
+
+
+def _classify_exec_failure(stderr: str, exit_code: int | None = None, executable: str | None = None) -> ErrorClass:
+    """Classify an undeclared-exit subprocess failure from its exit code and stderr.
 
     Only called on paths where the command did not complete as expected.
     Callers must NOT invoke this for a declared ``fail_exit_codes`` hit --
     that is a check that ran and concluded, not an environmental failure.
+    ``executable`` lets a shell's "<name>: not found" count as a missing tool
+    without reading every "not found" (an HTTP 404, say) as one.
     """
     haystack = (stderr or "").lower()
     if any(p in haystack for p in _GH_RATE_LIMIT_PATTERNS):
         return "rate_limit"
     if any(p in haystack for p in _GH_AUTH_PATTERNS):
         return "auth"
-    return "network"
+    if exit_code == _MISSING_TOOL_EXIT_CODE or any(p in haystack for p in _MISSING_TOOL_PATTERNS):
+        return "missing_tool"
+    if executable:
+        name = re.escape(os.path.basename(executable).lower())
+        if re.search(rf"(^|[\s:]){name}: not found\s*$", haystack, re.MULTILINE):
+            return "missing_tool"
+    if any(p in haystack for p in _NETWORK_PATTERNS) and not any(p in haystack for p in _HTTP_RESPONSE_PATTERNS):
+        return "network"
+    return "unexpected_exit"
+
+
+def _excerpt(text: str) -> str:
+    """The start of ``text`` on one ASCII line, for an operator-facing cause."""
+    line = " ".join((text or "").split())[:_STDERR_EXCERPT_CHARS]
+    return line.encode("ascii", "replace").decode("ascii")
 
 
 def _log_environmental_failure(
@@ -369,10 +423,14 @@ def exec_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResu
         )
     else:
         # Undeclared exit code: we cannot tell whether the check concluded.
-        # Classify from stderr so the operator can distinguish a rate limit
-        # or expired token from a genuine non-compliance signal.
-        error_class = _classify_exec_failure(evidence["stderr"])
-        message = f"Command exited with unexpected code {proc.returncode}"
+        # Classify from exit code and stderr so the operator can distinguish
+        # a rate limit or expired token from a genuine non-compliance signal.
+        error_class = _classify_exec_failure(evidence["stderr"], proc.returncode, resolved_cmd[0])
+        excerpt = _excerpt(evidence["stderr"]) or "(no stderr)"
+        message = (
+            f"Command exited with unexpected code {proc.returncode}: "
+            f"{_excerpt(' '.join(resolved_cmd))}; stderr: {excerpt}"
+        )
         _log_environmental_failure(context.control_id, "exec", error_class, message)
         return HandlerResult(
             status=HandlerResultStatus.INCONCLUSIVE,
