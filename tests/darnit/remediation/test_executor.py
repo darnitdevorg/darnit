@@ -41,20 +41,6 @@ class TestRemediationResult:
         assert result.dry_run
         assert "Would" in result.message
 
-    def test_to_markdown(self):
-        """Test markdown formatting."""
-        result = RemediationResult(
-            success=True,
-            message="Created file",
-            control_id="TEST-01",
-            remediation_type="file_create",
-            dry_run=False,
-            details={"path": "test.md"},
-        )
-        md = result.to_markdown()
-        assert "✅" in md
-        assert "Created file" in md
-
 
 class TestRemediationExecutor:
     """Test RemediationExecutor class."""
@@ -746,34 +732,6 @@ class TestLlmEnhancePropagation:
             assert result.success
             handlers = result.details["handlers"]
             assert "llm_enhance" not in handlers[0]
-
-    def test_llm_enhance_in_markdown_output(self):
-        """to_markdown() should mention AI Enhancement when llm_enhance is present."""
-        result = RemediationResult(
-            success=True,
-            message="Executed 1 remediation handler(s)",
-            control_id="TEST-01",
-            remediation_type="handler_pipeline",
-            dry_run=False,
-            details={
-                "handlers": [
-                    {
-                        "handler": "file_create",
-                        "status": "pass",
-                        "message": "Created file: README.md",
-                        "llm_enhance": {
-                            "prompt": "Customize this README.",
-                            "file_path": "README.md",
-                        },
-                    }
-                ]
-            },
-        )
-
-        md = result.to_markdown()
-        assert "AI Enhancement Available" in md
-        assert "README.md" in md
-        assert "Customize this README." in md
 
 
 if __name__ == "__main__":

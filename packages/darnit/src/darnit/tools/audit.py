@@ -944,18 +944,6 @@ def run_sieve_audit(
             repository_values,
         )
 
-    # Create UnifiedLocator for .project/-aware file resolution
-    locator = None
-    try:
-        from darnit.locate import UnifiedLocator
-
-        locator = UnifiedLocator(local_path)
-        logger.debug("UnifiedLocator created for .project/ integration")
-    except ImportError:
-        logger.debug("UnifiedLocator not available, using direct file resolution")
-    except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as e:
-        logger.warning(f"Failed to create UnifiedLocator: {e}")
-
     from darnit.sieve.models import SieveResult
     from darnit.sieve.orchestrator import evaluate_when_clause
     from darnit.trust.assertions import neutral_context
@@ -1000,7 +988,6 @@ def run_sieve_audit(
                 "description": spec.description,
                 "full": spec.metadata.get("full", ""),
             },
-            locator=locator,
             locator_config=spec.locator_config,
             project_context=dict(control_context),
             usable_project=dict(usable_project),

@@ -13,19 +13,6 @@ spec_version = "test-v1"
 description = "Trivial checks for testing the darnit declarative configuration system"
 url = "https://github.com/kusaridev/baseline-mcp"
 
-[defaults]
-check_adapter = "builtin"
-remediation_adapter = "builtin"
-
-# =============================================================================
-# Adapter Definitions
-# =============================================================================
-
-[adapters.builtin]
-type = "python"
-module = "darnit_testchecks.adapters.builtin"
-class = "TestCheckAdapter"
-
 # =============================================================================
 # Level 1 Controls - Basic Project Setup
 # =============================================================================

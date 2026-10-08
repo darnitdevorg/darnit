@@ -13,10 +13,6 @@ spec_version = "OSPS v2026.02.19"
 description = "OpenSSF Baseline security controls for open source projects"
 url = "https://baseline.openssf.org/"
 
-[defaults]
-check_adapter = "builtin"
-remediation_adapter = "builtin"
-
 # =============================================================================
 # Audit Profiles
 # =============================================================================

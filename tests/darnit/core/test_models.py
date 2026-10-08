@@ -6,7 +6,6 @@ from darnit.core.models import (
     AuditResult,
     CheckResult,
     CheckStatus,
-    RemediationResult,
 )
 
 
@@ -35,37 +34,6 @@ class TestCheckResult:
         assert d["details"] == "Control satisfied"
         assert d["level"] == 2
         assert d["source"] == "sieve"
-
-
-class TestRemediationResult:
-    """Tests for RemediationResult dataclass."""
-
-    @pytest.mark.unit
-    def test_successful_remediation(self):
-        """Test successful remediation result."""
-        result = RemediationResult(
-            control_id="OSPS-VM-02.01",
-            success=True,
-            message="Created SECURITY.md",
-            changes_made=["Created SECURITY.md"],
-        )
-        assert result.success is True
-        assert len(result.changes_made) == 1
-        assert result.requires_manual_action is False
-
-    @pytest.mark.unit
-    def test_manual_action_required(self):
-        """Test remediation requiring manual action."""
-        result = RemediationResult(
-            control_id="OSPS-GV-01.01",
-            success=False,
-            message="Cannot automate governance structure",
-            requires_manual_action=True,
-            manual_steps=["Define governance roles", "Document in GOVERNANCE.md"],
-        )
-        assert result.success is False
-        assert result.requires_manual_action is True
-        assert len(result.manual_steps) == 2
 
 
 class TestAuditResult:

@@ -1,8 +1,7 @@
 """Data model for the tree-sitter based discovery pipeline.
 
-These types power the tree-sitter discovery pipeline. They live in a separate
-module from the legacy ``models.py`` types, which are retained only for
-backward compatibility of the ``StrideCategory`` enum.
+These types power the tree-sitter discovery pipeline. ``models.py`` holds only
+the ``StrideCategory`` enum they share.
 
 See `specs/010-threat-model-ast/data-model.md` for the authoritative definitions.
 """
@@ -108,9 +107,6 @@ def _asset_id(kind_prefix: str, language: str, location: Location) -> str:
 @dataclass(frozen=True)
 class DiscoveredEntryPoint:
     """An attack-surface entry point discovered by a tree-sitter query.
-
-    Named ``Discovered*`` to distinguish from the legacy
-    ``threat_model.models.EntryPoint`` type which has a different shape.
 
     The ``id`` field is derived from ``kind``, ``language``, and ``location``;
     callers must not pass an override unless they know what they're doing.

@@ -49,20 +49,16 @@ from .discovery import (
 
 # Framework configuration schema
 from .framework_schema import (
-    AdapterType,
-    CheckConfig,
     # Context definitions (interactive context collection)
     ContextDefinitionConfig,
     ControlConfig,
     FrameworkConfig,
     FrameworkContextConfig,
-    FrameworkDefaults,
     FrameworkMetadata,
     HandlerInvocation,
     # Locator configuration (evidence location)
     LocatorConfig,
     LocatorLLMHints,
-    OutputMapping,
     ProjectUpdateRemediationConfig,
     RemediationConfig,
 )
@@ -225,17 +221,13 @@ __all__ = [
     # Framework configuration schema
     "FrameworkConfig",
     "FrameworkMetadata",
-    "FrameworkDefaults",
     "ControlConfig",
-    "CheckConfig",
     "RemediationConfig",
     "HandlerInvocation",
     "ProjectUpdateRemediationConfig",
-    "AdapterType",
     # Locator configuration (evidence location)
     "LocatorConfig",
     "LocatorLLMHints",
-    "OutputMapping",
     # Context definitions (interactive context collection)
     "ContextDefinitionConfig",
     "FrameworkContextConfig",

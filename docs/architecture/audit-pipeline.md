@@ -35,9 +35,9 @@ The `run_sieve_audit()` function SHALL support optional parameters for features 
 - **WHEN** `evaluate_claims=True` (default)
 - **THEN** the repository's not-applicable claims (`.project/darnit.yaml` and applicability-changing `.project/` context values) SHALL be assessed under framework-design 14.3, and only an honored claim SHALL mark its control `N/A`
 
-#### Scenario: UnifiedLocator integration
+#### Scenario: Locator configuration
 - **WHEN** the pipeline runs
-- **THEN** it SHALL create a `UnifiedLocator` for `.project/` file resolution and pass it to each `CheckContext`
+- **THEN** it SHALL pass each control's `locator` configuration to its `CheckContext` as `locator_config`
 
 #### Scenario: Tag filtering
 - **WHEN** a `tags` parameter is provided

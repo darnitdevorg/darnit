@@ -5,8 +5,6 @@ that allow compliance frameworks to be defined declaratively instead of in Pytho
 
 Schema Structure:
     - metadata: Framework identification (name, version, spec_version)
-    - defaults: Default adapter settings
-    - adapters: Adapter definitions (python, command, script, http)
     - controls: Control definitions with passes and remediation
 
 Example:
@@ -83,7 +81,6 @@ Example:
 #    - Single tool run (e.g., Scorecard) serves multiple controls
 #    - Cache results with `cache_key` in adapter config
 #    - Extract per-control results with JSONPath
-#    - Already has TODOs in CheckConfig and CommandAdapterConfig
 #
 # -----------------------------------------------------------------------------
 # LOWER PRIORITY
@@ -126,95 +123,9 @@ Example:
 # =============================================================================
 """
 
-from enum import Enum
 from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
-
-# =============================================================================
-# Enums
-# =============================================================================
-
-
-class AdapterType(str, Enum):
-    """Types of adapters for check/remediation execution."""
-
-    PYTHON = "python"  # Python module + function
-    COMMAND = "command"  # External CLI tool
-    SCRIPT = "script"  # Shell script
-    HTTP = "http"  # REST API endpoint
-
-
-# =============================================================================
-# Adapter Configuration
-# =============================================================================
-
-
-class PythonAdapterConfig(BaseModel):
-    """Configuration for Python module-based adapters."""
-
-    type: AdapterType = AdapterType.PYTHON
-    module: str  # e.g., "darnit_baseline.tools"
-    class_name: str | None = Field(default=None, alias="class")
-
-    model_config = ConfigDict(extra="allow", populate_by_name=True)
-
-
-class CommandAdapterConfig(BaseModel):
-    """Configuration for external command adapters.
-
-    # TODO: Add cache_key and batch_controls for shared execution
-    # ```toml
-    # [adapters.scorecard]
-    # type = "command"
-    # command = "scorecard"
-    # cache_key = "scorecard"      # Cache results under this key
-    # batch_controls = true        # Single run serves multiple controls
-    # ```
-    """
-
-    type: AdapterType = AdapterType.COMMAND
-    command: str  # e.g., "kusari", "trivy"
-    output_format: str = "json"  # json, text, sarif
-    timeout: int = 300  # seconds
-    # TODO: cache_key: Optional[str] = None  # Key for caching in ExecutionContext
-    # TODO: batch_controls: bool = False  # Single run serves multiple controls
-
-    model_config = ConfigDict(extra="allow")
-
-
-class ScriptAdapterConfig(BaseModel):
-    """Configuration for shell script adapters."""
-
-    type: AdapterType = AdapterType.SCRIPT
-    command: str  # e.g., "./scripts/check.sh"
-    output_format: str = "json"
-    timeout: int = 300
-
-    model_config = ConfigDict(extra="allow")
-
-
-class HttpAdapterConfig(BaseModel):
-    """Configuration for HTTP API adapters."""
-
-    type: AdapterType = AdapterType.HTTP
-    endpoint: str  # e.g., "https://api.example.com/check"
-    method: str = "POST"
-    auth: dict[str, str] | None = None  # auth config
-    timeout: int = 30
-
-    model_config = ConfigDict(extra="allow")
-
-
-# Union of all adapter configs
-AdapterConfig = (
-    PythonAdapterConfig
-    | CommandAdapterConfig
-    | ScriptAdapterConfig
-    | HttpAdapterConfig
-    | dict[str, Any]  # Fallback for simple inline definitions
-)
-
 
 # =============================================================================
 # Pass Configuration (Verification Phases)
@@ -372,107 +283,9 @@ class LocatorConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
-class OutputMapping(BaseModel):
-    """Map external tool output to standardized CheckOutput contract.
-
-    When using external tools that produce their own output format,
-    this mapping extracts the relevant fields using JSONPath expressions.
-
-    Example:
-        ```toml
-        [controls."OSPS-AC-03.01".check.output_mapping]
-        status_path = "$.checks.BranchProtection.pass"
-        score_path = "$.checks.BranchProtection.score"
-        pass_threshold = 8
-        message_path = "$.checks.BranchProtection.reason"
-        found_path = "$.checks.BranchProtection.details.url"
-        ```
-    """
-
-    # JSONPath to extract pass/fail status (bool or "pass"/"fail" string)
-    status_path: str | None = None
-
-    # JSONPath to extract numeric score (0-10 scale)
-    score_path: str | None = None
-
-    # Score threshold for pass (when using score_path)
-    # If score >= pass_threshold, status = "pass"
-    pass_threshold: float | None = None
-
-    # JSONPath to extract message/reason
-    message_path: str | None = None
-
-    # JSONPath to extract found evidence location (file path or URL)
-    found_path: str | None = None
-
-    # JSONPath to extract evidence kind (file, url, api, config)
-    found_kind_path: str | None = None
-
-    # Default kind if not extractable
-    found_kind_default: str = "file"
-
-    model_config = ConfigDict(extra="allow")
-
-
 # =============================================================================
-# Check and Remediation Routing
+# Remediation Routing
 # =============================================================================
-
-
-class CheckConfig(BaseModel):
-    """Configuration for how a control is checked.
-
-    Supports both builtin adapters and external tools with output mapping.
-
-    Example with builtin:
-        ```toml
-        [controls."OSPS-VM-01.01".check]
-        adapter = "builtin"
-        handler = "check_security_policy"
-        ```
-
-    Example with external tool and output mapping:
-        ```toml
-        [controls."OSPS-AC-03.01".check]
-        adapter = "scorecard"
-
-        [controls."OSPS-AC-03.01".check.output_mapping]
-        status_path = "$.checks.BranchProtection.pass"
-        score_path = "$.checks.BranchProtection.score"
-        pass_threshold = 8
-        ```
-
-    # TODO: Add 'extract' field for shared tool result extraction
-    # This would allow multiple controls to share a single tool run (e.g., Scorecard):
-    #
-    # ```toml
-    # [adapters.scorecard]
-    # type = "command"
-    # command = "scorecard"
-    # cache_key = "scorecard"  # Results cached under this key
-    #
-    # [controls."OSPS-AC-03.01"]
-    # check = { adapter = "scorecard", extract = "checks.BranchProtection" }
-    #
-    # [controls."OSPS-QA-02.01"]
-    # check = { adapter = "scorecard", extract = "checks.CITests" }
-    # ```
-    #
-    # The 'extract' field would be a JSONPath or dot-notation path to extract
-    # the specific result from the cached tool output.
-    """
-
-    adapter: str = "builtin"  # Adapter name
-    handler: str | None = None  # Specific handler function
-    config: dict[str, Any] = Field(default_factory=dict)  # Adapter-specific config
-
-    # Output mapping for external tools
-    # Maps tool output to standardized CheckOutput contract
-    output_mapping: OutputMapping | None = None
-
-    # TODO: extract: Optional[str] = None  # JSONPath to extract from cached tool output
-
-    model_config = ConfigDict(extra="allow")
 
 
 class RemediationConfig(BaseModel):
@@ -850,9 +663,6 @@ class ControlConfig(BaseModel):
                     f'passes = [{{ handler = "exec", command = [...] }}]'
                 )
         return v
-
-    # Check routing (which adapter verifies this control)
-    check: CheckConfig | None = None
 
     # Remediation routing
     remediation: RemediationConfig | None = None
@@ -1449,20 +1259,6 @@ class PluginsConfig(BaseModel):
 
 
 # =============================================================================
-# Framework Defaults
-# =============================================================================
-
-
-class FrameworkDefaults(BaseModel):
-    """Default settings for the framework."""
-
-    check_adapter: str = "builtin"
-    remediation_adapter: str = "builtin"
-
-    model_config = ConfigDict(extra="allow")
-
-
-# =============================================================================
 # Framework Metadata
 # =============================================================================
 
@@ -1683,13 +1479,6 @@ class FrameworkConfig(BaseModel):
         version = "0.1.0"
         spec_version = "OSPS v2025.10.10"
 
-        [defaults]
-        check_adapter = "builtin"
-
-        [adapters.builtin]
-        type = "python"
-        module = "darnit_baseline.tools"
-
         [templates.security_policy]
         content = '''
         # Security Policy
@@ -1706,12 +1495,6 @@ class FrameworkConfig(BaseModel):
 
     # Framework identification
     metadata: FrameworkMetadata
-
-    # Default settings
-    defaults: FrameworkDefaults = Field(default_factory=FrameworkDefaults)
-
-    # Adapter definitions
-    adapters: dict[str, AdapterConfig] = Field(default_factory=dict)
 
     # Template definitions for remediation
     templates: dict[str, TemplateConfig] = Field(default_factory=dict)
@@ -1782,21 +1565,6 @@ class FrameworkConfig(BaseModel):
         """
         return {control_id: control for control_id, control in self.controls.items() if control.domain == domain}
 
-    def get_adapter_config(self, name: str) -> AdapterConfig | None:
-        """Get adapter configuration by name."""
-        return self.adapters.get(name)
-
-    def get_check_adapter(self, control_id: str) -> str:
-        """Get the adapter name for checking a control."""
-        control = self.controls.get(control_id)
-        if control and control.check:
-            return control.check.adapter
-        return self.defaults.check_adapter
-
-    def get_remediation_adapter(self, control_id: str) -> str:
-        """Get the adapter name for remediating a control."""
-        return self.defaults.remediation_adapter
-
 
 # =============================================================================
 # Factory Functions
@@ -1827,7 +1595,5 @@ def create_framework_config(
             version=version,
             spec_version=spec_version,
         ),
-        defaults=FrameworkDefaults(),
-        adapters={},
         controls={},
     )

@@ -449,7 +449,7 @@ The MCP server respects these environment variables:
 
 Darnit is designed with security in mind. Key security features include:
 
-- **Module Whitelist**: Dynamic adapter loading is restricted to trusted module prefixes (`darnit.*`, `darnit_baseline.*`, `darnit_plugins.*`, `darnit_testchecks.*`)
+- **Module Path Policy**: A configured `module:attribute` handler reference resolves only to `darnit` or a package registered under the `darnit.implementations` entry points
 - **Dry-Run Mode**: All remediation actions support dry-run to preview changes before applying
 - **Sigstore Attestations**: Cryptographically signed compliance attestations with transparency logging
 - **Plugin Verification**: Sigstore-based verification of plugin packages
@@ -474,7 +474,7 @@ Default trusted publishers: `kusari-oss`, `kusaridev`
 - [ ] Use fine-grained GitHub tokens with minimal permissions
 - [ ] Always use `dry_run=True` first when remediating
 - [ ] Review `.project/` changes (not-applicable claims) in pull requests
-- [ ] Name custom adapter packages with `darnit_` prefix
+- [ ] Ship custom handler modules in a package registered under `darnit.implementations`
 - [ ] Enable plugin verification in production (`allow_unsigned = false`)
 
 For comprehensive security guidance, see [docs/SECURITY_GUIDE.md](docs/SECURITY_GUIDE.md).

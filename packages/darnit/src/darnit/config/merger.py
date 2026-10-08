@@ -33,10 +33,8 @@ except ImportError:
 from darnit.core.logging import get_logger
 
 from .framework_schema import (
-    AdapterConfig,
     ControlConfig,
     FrameworkConfig,
-    FrameworkDefaults,
     McpServerConfig,
     StoresConfig,
 )
@@ -70,13 +68,7 @@ class EffectiveControl:
     # Source tracking
     from_framework: bool = True
 
-    # Check routing
-    check_adapter: str = "builtin"
-    check_handler: str | None = None
-    check_config: dict[str, Any] = field(default_factory=dict)
-
     # Remediation routing
-    remediation_adapter: str = "builtin"
     remediation_handler: str | None = None
     remediation_config: dict[str, Any] = field(default_factory=dict)
 
@@ -110,9 +102,6 @@ class EffectiveConfig:
     framework_version: str
     spec_version: str | None = None
 
-    # Framework adapters
-    adapters: dict[str, AdapterConfig] = field(default_factory=dict)
-
     # Merged controls
     controls: dict[str, EffectiveControl] = field(default_factory=dict)
 
@@ -143,10 +132,6 @@ class EffectiveConfig:
         """
         return {cid: ctrl for cid, ctrl in self.controls.items() if ctrl.domain == domain}
 
-    def get_adapter(self, name: str) -> AdapterConfig | None:
-        """Get adapter configuration by name."""
-        return self.adapters.get(name)
-
 
 # =============================================================================
 # Merge Functions
@@ -156,7 +141,6 @@ class EffectiveConfig:
 def merge_control(
     control_id: str,
     framework_control: ControlConfig,
-    defaults: FrameworkDefaults,
 ) -> EffectiveControl:
     """Build a control's effective configuration from its definition.
 
@@ -164,7 +148,6 @@ def merge_control(
         control_id: Control identifier
         framework_control: The control's definition (framework TOML or an
             operator custom control)
-        defaults: Framework defaults
 
     Returns:
         EffectiveControl
@@ -185,8 +168,6 @@ def merge_control(
         domain=framework_control.domain,
         description=framework_control.description,
         from_framework=True,
-        check_adapter=defaults.check_adapter,
-        remediation_adapter=defaults.remediation_adapter,
         tags=tags,
         security_severity=framework_control.security_severity,
         docs_url=framework_control.docs_url,
@@ -195,12 +176,6 @@ def merge_control(
         inferred_from=framework_control.inferred_from,
         on_pass=framework_control.on_pass.model_dump() if framework_control.on_pass else None,
     )
-
-    # Apply framework check config
-    if framework_control.check:
-        effective.check_adapter = framework_control.check.adapter
-        effective.check_handler = framework_control.check.handler
-        effective.check_config = dict(framework_control.check.config)
 
     # Apply framework remediation config
     if framework_control.remediation:
@@ -263,8 +238,6 @@ def merge_configs(
         _framework_config=framework,
     )
 
-    effective.adapters = dict(framework.adapters)
-
     # Merge MCP-server allowlist (spec FR-016): each operator entry REPLACES
     # the framework's block for that name entirely; disjoint names coexist.
     effective.mcp_servers = dict(framework.mcp_servers)
@@ -289,7 +262,6 @@ def merge_configs(
         effective.controls[control_id] = merge_control(
             control_id=control_id,
             framework_control=framework_control,
-            defaults=framework.defaults,
         )
 
     if operator:
@@ -297,7 +269,6 @@ def merge_configs(
             effective.controls[control_id] = merge_control(
                 control_id=control_id,
                 framework_control=control,
-                defaults=framework.defaults,
             )
             effective.controls[control_id].steps_from_operator = True
         for control_id, override in operator.controls.items():
@@ -756,13 +727,5 @@ def validate_framework_config(config: FrameworkConfig) -> list[str]:
         # Level and domain are optional - only validate if present
         if control.level is not None and control.level not in (1, 2, 3):
             errors.append(f"Control {control_id} has invalid level: {control.level}")
-
-        # Check adapter references exist
-        if control.check and control.check.adapter != "builtin":
-            if control.check.adapter not in config.adapters:
-                errors.append(
-                    f"Control {control_id} references unknown adapter: "
-                    f"{control.check.adapter}"
-                )
 
     return errors

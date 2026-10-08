@@ -127,10 +127,10 @@ class TestNotFound:
 
 class TestOnePolicy:
     def test_no_prefix_allowlist_remains(self) -> None:
-        from darnit.core.adapters import AdapterRegistry
         from darnit.core.registry import PluginRegistry
+        from darnit.server.registry import ToolRegistry
 
-        for owner in (HandlerRegistry, PluginRegistry, AdapterRegistry):
+        for owner in (HandlerRegistry, PluginRegistry, ToolRegistry):
             assert not hasattr(owner, "ALLOWED_MODULE_PREFIXES")
         offenders = [p for p in CORE_SRC.rglob("*.py") if "ALLOWED_MODULE_PREFIXES" in p.read_text(encoding="utf-8")]
         assert offenders == []
@@ -142,12 +142,3 @@ class TestOnePolicy:
             if "import_module(" in p.read_text(encoding="utf-8")
         ]
         assert sites == ["core/handlers.py"]
-
-    def test_adapter_loaders_use_the_policy(self) -> None:
-        from darnit.core.adapters import AdapterRegistry, CheckAdapter
-        from darnit.core.registry import PluginRegistry
-
-        with pytest.raises(HandlerImportRefused):
-            AdapterRegistry()._load_python_adapter("x", {"module": "os", "class": "system"}, CheckAdapter)
-        with pytest.raises(HandlerImportRefused):
-            PluginRegistry()._load_python_adapter("x", {"module": "os", "class": "system"})

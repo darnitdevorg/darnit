@@ -54,7 +54,6 @@ def generate_attestation_from_results(
     staging: bool = False,
     output_path: str | None = None,
     output_dir: str | None = None,
-    storage_config: dict | None = None,
     attestation_store: Any = None,
 ) -> str:
     """Generate attestation from audit results.
@@ -173,23 +172,6 @@ def generate_attestation_from_results(
                 "error": f"Failed to write to {output_path}: {e}",
                 "attestation": json.loads(output)
             }, indent=2)
-
-    # Store via pluggable storage backend if configured
-    if storage_config is not None:
-        # TODO: repo_url is hardcoded to GitHub — will break for GitLab/Gitea/etc.
-        # Open issue to track multi-forge support
-        repo_url = f"https://github.com/{audit_result.owner}/{audit_result.repo}"
-        try:
-            from darnit.storage.backends import get_backend
-            storage = get_backend(storage_config)
-            storage_ref = storage.store_attestation(
-                repo_url=repo_url,
-                commit=audit_result.commit,
-                attestation=unsigned,
-            )
-            logger.info(f"Attestation stored via backend: {storage_ref}")
-        except Exception as e:
-            logger.warning(f"Storage backend failed (file save succeeded): {e}")
 
     return f"✅ Attestation saved to: {output_path}\n\n{output}"
 

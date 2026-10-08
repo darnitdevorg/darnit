@@ -22,10 +22,6 @@ spec_version = "Example v1.0"
 description = "A minimal example showing declarative framework definition"
 url = "https://example.com/compliance"
 
-[defaults]
-check_adapter = "builtin"
-remediation_adapter = "builtin"
-
 # =============================================================================
 # Templates - Reusable content for remediation
 # =============================================================================

@@ -55,7 +55,6 @@ class TestCheckContext:
         assert context.control_metadata == {}
         assert context.gathered_evidence == {}
         assert context.project_context == {}
-        assert context.locator is None
         assert context.locator_config is None
 
     @pytest.mark.unit

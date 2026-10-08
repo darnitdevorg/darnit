@@ -27,7 +27,6 @@ ALLOWED = {
     # Applied (non-dry-run) remediation.
     "darnit/src/darnit/remediation/executor.py",
     # File-location references, not context values.
-    "darnit/src/darnit/locate/locator.py",
     "darnit/src/darnit/config/resolver.py",
     # `darnit config migrate` moves .baseline.toml claims into `controls:` (feature 040).
     "darnit/src/darnit/config/operator/migrate.py",

@@ -8,10 +8,6 @@ display_name = "Mock Source A Variant (test fixture)"
 version = "1.0.0"
 spec_version = "mock-variant v1"
 
-[defaults]
-check_adapter = "builtin"
-remediation_adapter = "builtin"
-
 [controls."MOCK-AC-01.01"]
 name = "MockAccessControlOne_Variant"
 description = "VARIANT: a-variant's redefinition of MOCK-AC-01.01."

@@ -259,8 +259,6 @@ def control_from_effective(
     metadata: dict = {
         "security_severity": security_severity,
         "docs_url": effective.docs_url,
-        "check_adapter": effective.check_adapter,
-        "remediation_adapter": effective.remediation_adapter,
     }
 
     if effective.when:

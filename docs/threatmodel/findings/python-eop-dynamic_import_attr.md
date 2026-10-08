@@ -75,7 +75,7 @@
 </details>
 
 <details>
-<summary><code>packages/darnit/src/darnit/core/adapters.py:666</code></summary>
+<summary><code>packages/darnit/src/darnit/core/adapters.py:666</code> (removed in 0.2.0, #487)</summary>
 
 ```
      656 | 

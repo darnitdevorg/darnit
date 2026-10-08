@@ -8,7 +8,6 @@ This package demonstrates how to create a custom compliance framework using the 
 
 - **12 trivial controls** across 3 maturity levels
 - **Declarative framework definition** in `testchecks.toml`
-- **Python check implementations** in the builtin adapter
 - **Simple remediations** for basic controls
 
 ## Installation
@@ -54,27 +53,14 @@ pip install -e packages/darnit-testchecks
 
 ## Usage
 
-### Running Checks
+### Loading the Framework
 
 ```python
 from darnit_testchecks import get_framework_path
-from darnit_testchecks.adapters import get_test_check_adapter
 from darnit.config.merger import load_framework_config
 
-# Load framework
 framework = load_framework_config(get_framework_path())
 print(f"Loaded {len(framework.controls)} controls")
-
-# Run checks
-adapter = get_test_check_adapter()
-result = adapter.check(
-    control_id="TEST-DOC-01",
-    owner="",
-    repo="",
-    local_path="/path/to/repo",
-    config={},
-)
-print(f"{result.control_id}: {result.status.value} - {result.message}")
 ```
 
 ### Selecting the Framework and Claiming Controls Not Applicable
@@ -102,7 +88,7 @@ Use this package as a template:
 
 1. Copy the package structure
 2. Edit `testchecks.toml` with your controls
-3. Implement check functions in `adapters/builtin.py`
+3. Declare each control's `passes` in the TOML
 4. Update `pyproject.toml` entry points
 
 ## License

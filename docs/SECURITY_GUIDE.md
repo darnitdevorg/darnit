@@ -6,7 +6,7 @@ This document describes security considerations, best practices, and configurati
 
 - [Dynamic Module Loading Security](#dynamic-module-loading-security)
 - [GitHub Token Security](#github-token-security)
-- [Custom Adapter Security](#custom-adapter-security)
+- [Custom Handler Security](#custom-handler-security)
 - [Configuration Security](#configuration-security)
 - [MCP Server Security](#mcp-server-security)
 - [Plugin Security Model](#plugin-security-model)
@@ -18,7 +18,7 @@ This document describes security considerations, best practices, and configurati
 
 ## Dynamic Module Loading Security
 
-Darnit can import a Python attribute named in configuration as `package.module:attribute`: MCP tool handlers in `[mcp.tools]`, handler references, and `type = "python"` adapters. Every such import goes through one function, `darnit.core.handlers.resolve_module_path` (framework-design.md 6.5).
+Darnit can import a Python attribute named in configuration as `package.module:attribute`: MCP tool handlers in `[mcp.tools]` and handler references. Every such import goes through one function, `darnit.core.handlers.resolve_module_path` (framework-design.md 6.5).
 
 ### Resolution Policy
 
@@ -36,7 +36,7 @@ Darnit can import a Python attribute named in configuration as `package.module:a
 
 - A configuration string cannot reach `os`, `subprocess`, or any other package that is not darnit or an installed implementation.
 - The policy is not a sandbox. Allowed packages are code the operator installed, and `[mcp.tools]` is read only from an installed framework TOML or an operator-supplied `darnit serve <config.toml>`, never from the audited repository.
-- To use your own adapter or tool module, ship it in a package registered under `darnit.implementations`.
+- To use your own handler or tool module, ship it in a package registered under `darnit.implementations`.
 
 ---
 
@@ -96,11 +96,11 @@ jobs:
 
 ---
 
-## Custom Adapter Security
+## Custom Handler Security
 
-When creating custom adapters, follow these security guidelines.
+When creating custom sieve handlers, follow these security guidelines.
 
-### Adapter Development Checklist
+### Handler Development Checklist
 
 - [ ] **Validate all inputs** from configuration and control definitions
 - [ ] **Sanitize file paths** to prevent path traversal attacks
@@ -111,26 +111,25 @@ When creating custom adapters, follow these security guidelines.
 
 ### Secure Command Execution
 
-For command-based adapters, use safe execution patterns:
+For handlers that run external commands, use safe execution patterns:
 
 ```python
 import subprocess
-import shlex
 
-class SecureCommandAdapter(CheckAdapter):
-    def check(self, control_id, owner, repo, local_path, config):
-        command = config.get("command", "")
+from darnit.sieve.handler_registry import HandlerContext, HandlerResult
 
-        # NEVER do this - shell injection vulnerability
-        # subprocess.run(f"tool {local_path}", shell=True)
+def my_tool_check(config: dict, context: HandlerContext) -> HandlerResult:
+    # NEVER do this - shell injection vulnerability
+    # subprocess.run(f"tool {context.local_path}", shell=True)
 
-        # DO this - use list arguments, no shell
-        subprocess.run(
-            ["tool", "--path", local_path],
-            shell=False,
-            timeout=300,
-            capture_output=True,
-        )
+    # DO this - use list arguments, no shell
+    proc = subprocess.run(
+        ["tool", "--path", context.local_path],
+        shell=False,
+        timeout=300,
+        capture_output=True,
+    )
+    ...
 ```
 
 ### Input Validation
