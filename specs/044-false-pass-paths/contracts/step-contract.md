@@ -97,3 +97,5 @@ PASS and FAIL still conclude only within the step's effective set. The OSPS-BR-0
 ## 5. Reproducibility framework
 
 All five reproducibility step types have ceiling `{"fail"}`. A PASS needs a corpus-backed `promotion` (041) declared on the step.
+
+`repro_witness_attestation` (#553), split out of `repro_hermetic_build`, also has ceiling `{"fail"}`: a verified runtime trace can show network access but not its absence. See [witness-step-addendum-553.md](witness-step-addendum-553.md).

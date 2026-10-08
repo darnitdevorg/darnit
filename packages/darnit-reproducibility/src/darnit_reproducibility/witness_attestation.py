@@ -1,37 +1,36 @@
-"""Verified Witness/in-toto runtime attestation check for RE-02.01.
+"""Verified Witness / in-toto runtime-trace attestation check (``repro_witness_attestation``).
 
 Unlike every other check in this plugin (pure local filesystem inspection),
-this module reaches out to GitHub to fetch the latest CI run's attestation
-artifacts and cryptographically verifies them before trusting anything they
-claim. A JSON file that merely *says* "no network access" is not evidence —
-only a Sigstore-verified DSSE envelope bound to the repo's GitHub Actions
-OIDC identity is.
+this module reaches out to GitHub for the attestation artifacts of the CI runs
+that built the audited commit, and cryptographically verifies them before
+reading anything they claim. A JSON file that merely *says* "no network
+access" is not evidence -- only a Sigstore-verified DSSE envelope signed by a
+GitHub Actions workflow of this repository, running on the audited commit, is.
 
-Two predicate shapes are recognized:
+What is read from a verified statement (#553):
 
-- Witness's own ``attestation-collection/v0.1``, whose nested ``command-run``
-  attestation records ``processes[].cmdline``/``program`` (and opened file
-  digests) but has **no dedicated network field** — Witness's built-in tracer
-  does not observe sockets. For this shape we can only fall back to scanning
-  process command lines for the same suspicious substrings used by the grep
-  heuristic in ``handlers.py``, which is not an authoritative "no network
-  access" claim, only a negative-evidence hint.
-- The newer, monitor-agnostic ``runtime-trace/v0.1`` predicate, which *does*
-  define a top-level ``network`` array. An empty array is treated as an
-  authoritative "no network access" claim; a non-empty one is authoritative
-  evidence of network access. (The spec still defers the internal shape of
-  each event to ``monitor.type``, so we only rely on emptiness, not content.)
+- ``runtime-trace/v0.1``, as the statement's predicate type or as an entry of
+  a Witness ``attestation-collection/v0.1`` whose ``type`` is exactly that URI:
+  ``monitorLog.network`` only. A non-empty list shows network access. An empty
+  or absent list does NOT show its absence: under the in-toto parsing rules an
+  absent optional list equals an empty one, and what the log records depends
+  on ``monitor.type`` and its ``tracePolicy``, so a monitor that does not trace
+  sockets records the same empty log.
+- Witness ``command-run``: process ``program``/``cmdline`` scanned for the
+  installer substrings also used by the CI-file scan in ``handlers.py``. A
+  match shows network access; no match shows nothing.
 
-Every failure mode here (no ``gh`` CLI, no auth, no matching run/artifact,
-``sigstore`` not installed, verification failure, unrecognized predicate)
-degrades to "no attestation evidence" rather than raising — this must never
-be able to fail an audit outright.
+So this check can produce FAIL evidence and nothing else. Every failure mode
+(no ``gh`` CLI, no auth, no commit, no matching run or artifact, ``sigstore``
+not installed, verification failure, unrecognized predicate) degrades to "no
+attestation evidence" with the specific reason rather than raising.
 """
 
 from __future__ import annotations
 
 import base64
 import json
+import re
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
@@ -46,7 +45,7 @@ logger = get_logger("darnit_reproducibility.witness_attestation")
 try:
     from sigstore.models import Bundle
     from sigstore.verify import Verifier
-    from sigstore.verify.policy import AllOf, GitHubWorkflowRepository, OIDCIssuer
+    from sigstore.verify.policy import AllOf, GitHubWorkflowRepository, GitHubWorkflowSHA, OIDCIssuer
 
     SIGSTORE_VERIFY_AVAILABLE = True
 except ImportError:
@@ -71,7 +70,11 @@ _SUSPICIOUS_CMDLINE_PATTERNS: tuple[str, ...] = (
 )
 
 _GH_TIMEOUT_SECONDS = 60
+_GIT_TIMEOUT_SECONDS = 15
+_MAX_RUNS = 5
 _MAX_ARTIFACT_FILES = 20
+
+_COMMIT_SHA = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
 
 # Filenames ending in these suffixes are far more likely to be the actual
 # attestation bundle than an incidental *.json artifact (e.g. a build log
@@ -94,11 +97,18 @@ _AUTH_ERROR_HINTS: tuple[str, ...] = (
 
 @dataclass
 class WitnessCheckResult:
-    """Outcome of attempting to verify a Witness/runtime-trace attestation."""
+    """Outcome of attempting to verify Witness/runtime-trace attestations.
+
+    ``network_recorded`` is True only when a verified attestation recorded
+    network access during the build. False means a verified runtime trace
+    recorded no network events, which is not proof that none happened (see the
+    module docstring). None means no verified runtime trace and no suspicious
+    command line was found.
+    """
 
     attempted: bool
     verified: bool = False
-    network_clean: bool | None = None  # True/False = authoritative; None = no authoritative signal
+    network_recorded: bool | None = None
     detail: str = ""
     evidence: dict[str, Any] = field(default_factory=dict)
 
@@ -133,42 +143,82 @@ def _run_gh(args: list[str]) -> _GhOutcome:
     return _GhOutcome(None, f"gh exited {proc.returncode}: {proc.stderr.strip()[:200]}")
 
 
-def _latest_successful_run_id(owner: str, repo: str, branch: str) -> tuple[str | None, str | None]:
-    """Returns (run_id, failure_reason) — exactly one is None."""
+def _head_commit(local_path: str) -> tuple[str | None, str | None]:
+    """The audited commit: ``git rev-parse HEAD`` in the audited checkout.
+
+    Returns (sha, failure_reason) -- exactly one is None.
+    """
+    if not local_path or not Path(local_path).is_dir():
+        return None, "audited path is not a directory, so there is no commit to bind attestations to"
+    try:
+        proc = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=local_path,
+            capture_output=True,
+            text=True,
+            timeout=_GIT_TIMEOUT_SECONDS,
+        )
+    except FileNotFoundError:
+        return None, "git not found in PATH, so the audited commit is unknown"
+    except subprocess.TimeoutExpired:
+        return None, f"git rev-parse HEAD timed out after {_GIT_TIMEOUT_SECONDS}s"
+    except OSError as exc:
+        return None, f"git rev-parse HEAD could not run: {exc}"
+    sha = proc.stdout.strip()
+    if proc.returncode != 0 or not _COMMIT_SHA.fullmatch(sha):
+        return (
+            None,
+            "audited path has no commit (git rev-parse HEAD failed), so there is nothing to bind attestations to",
+        )
+    return sha, None
+
+
+def _successful_run_ids(owner: str, repo: str, sha: str) -> tuple[list[str], str | None]:
+    """Successful CI runs for the audited commit.
+
+    Returns (run_ids, failure_reason) -- run_ids is empty iff failure_reason is set.
+    """
     outcome = _run_gh(
         [
             "run",
             "list",
             "--repo",
             f"{owner}/{repo}",
-            "--branch",
-            branch,
+            "--commit",
+            sha,
             "--status",
             "success",
             "--limit",
-            "1",
+            str(_MAX_RUNS),
             "--json",
             "databaseId",
         ]
     )
     if outcome.proc is None:
-        return None, outcome.reason
+        return [], outcome.reason
     if not outcome.proc.stdout:
-        return None, "gh returned no output for the run list query"
+        return [], "gh returned no output for the run list query"
     try:
         rows = json.loads(outcome.proc.stdout)
     except json.JSONDecodeError:
-        return None, "gh returned unparseable output for the run list query"
-    if not rows:
-        return None, f"no successful CI run found on branch '{branch}'"
-    run_id = rows[0].get("databaseId")
-    if not run_id:
-        return None, "latest successful run has no databaseId"
-    return str(run_id), None
+        return [], "gh returned unparseable output for the run list query"
+    if not isinstance(rows, list) or not rows:
+        return [], f"no successful CI run found for commit {sha[:12]}"
+    run_ids = [str(row["databaseId"]) for row in rows if isinstance(row, dict) and row.get("databaseId")]
+    if not run_ids:
+        return [], f"successful runs for commit {sha[:12]} have no databaseId"
+    return run_ids, None
+
+
+def _order_candidates(files: list[Path]) -> list[Path]:
+    priority = [f for f in files if f.name.endswith(_PRIORITY_ARTIFACT_SUFFIXES)]
+    rest = [f for f in files if f not in priority]
+    return (priority + rest)[:_MAX_ARTIFACT_FILES]
 
 
 def _download_candidate_artifacts(owner: str, repo: str, run_id: str, dest: Path) -> tuple[list[Path], str | None]:
-    """Returns (files, failure_reason) — files is empty iff failure_reason is set."""
+    """Returns (files, failure_reason) -- files is empty iff failure_reason is set."""
+    dest.mkdir(parents=True, exist_ok=True)
     outcome = _run_gh(
         [
             "run",
@@ -184,32 +234,47 @@ def _download_candidate_artifacts(owner: str, repo: str, run_id: str, dest: Path
     )
     if outcome.proc is None:
         return [], outcome.reason
-    all_files = sorted(dest.rglob("*.json"))
-    priority = [f for f in all_files if f.name.endswith(_PRIORITY_ARTIFACT_SUFFIXES)]
-    rest = [f for f in all_files if f not in priority]
-    found = (priority + rest)[:_MAX_ARTIFACT_FILES]
+    found = _order_candidates(sorted(dest.rglob("*.json")))
     if not found:
         return [], f"run {run_id} has no artifacts matching '*witness*'"
     return found, None
 
 
-def _fetch_candidate_files(ctx: HandlerContext, scratch_dir: Path) -> tuple[list[Path], str | None]:
-    """Best-effort fetch of Witness attestation artifacts from the latest CI run.
+def _fetch_candidate_files(
+    owner: str, repo: str, run_ids: list[str], scratch_dir: Path
+) -> tuple[list[Path], str | None]:
+    """Attestation artifacts of the given runs, priority files first, capped.
 
-    Returns (files, failure_reason) — files is empty iff failure_reason is set.
+    Returns (files, failure_reason) -- files is empty iff failure_reason is set.
     """
-    if not ctx.owner or not ctx.repo:
-        return [], "repository owner/name not available in this context"
-    run_id, reason = _latest_successful_run_id(ctx.owner, ctx.repo, ctx.default_branch)
-    if not run_id:
-        return [], reason
-    return _download_candidate_artifacts(ctx.owner, ctx.repo, run_id, scratch_dir)
+    files: list[Path] = []
+    reasons: list[str] = []
+    for run_id in run_ids:
+        found, reason = _download_candidate_artifacts(owner, repo, run_id, scratch_dir / run_id)
+        files.extend(found)
+        if reason and reason not in reasons:
+            reasons.append(reason)
+    candidates = _order_candidates(files)
+    if not candidates:
+        return [], "; ".join(reasons) or "no Witness attestation artifacts found"
+    return candidates, None
 
 
-def _verify_bundle(raw_bytes: bytes, owner: str, repo: str) -> dict[str, Any] | None:
-    """Verify a Sigstore-bundled DSSE envelope against the repo's GitHub
-    Actions OIDC identity. Returns the decoded in-toto statement on success,
-    or None if verification is unavailable or fails.
+def _verification_policy(owner: str, repo: str, sha: str) -> Any:
+    """Signed by a GitHub Actions workflow of this repository, running on the audited commit."""
+    return AllOf(
+        [
+            OIDCIssuer(GITHUB_ACTIONS_OIDC_ISSUER),
+            GitHubWorkflowRepository(f"{owner}/{repo}"),
+            GitHubWorkflowSHA(sha),
+        ]
+    )
+
+
+def _verify_bundle(raw_bytes: bytes, owner: str, repo: str, sha: str) -> dict[str, Any] | None:
+    """Verify a Sigstore-bundled DSSE envelope against the repository's GitHub
+    Actions OIDC identity for the audited commit. Returns the decoded in-toto
+    statement on success, or None if verification is unavailable or fails.
     """
     if not SIGSTORE_VERIFY_AVAILABLE:
         return None
@@ -219,15 +284,8 @@ def _verify_bundle(raw_bytes: bytes, owner: str, repo: str) -> dict[str, Any] | 
         logger.debug("not a Sigstore bundle: %s", exc)
         return None
 
-    policy = AllOf(
-        [
-            OIDCIssuer(GITHUB_ACTIONS_OIDC_ISSUER),
-            GitHubWorkflowRepository(f"{owner}/{repo}"),
-        ]
-    )
-
     try:
-        payload_type, payload_bytes = Verifier.production().verify_dsse(bundle, policy)
+        payload_type, payload_bytes = Verifier.production().verify_dsse(bundle, _verification_policy(owner, repo, sha))
     except Exception as exc:
         logger.debug("Sigstore verification failed: %s", exc)
         return None
@@ -235,9 +293,10 @@ def _verify_bundle(raw_bytes: bytes, owner: str, repo: str) -> dict[str, Any] | 
     if "in-toto" not in payload_type:
         return None
     try:
-        return json.loads(payload_bytes)
+        statement = json.loads(payload_bytes)
     except json.JSONDecodeError:
         return None
+    return statement if isinstance(statement, dict) else None
 
 
 def _decode_raw_dsse(raw_bytes: bytes) -> dict[str, Any] | None:
@@ -256,62 +315,115 @@ def _decode_raw_dsse(raw_bytes: bytes) -> dict[str, Any] | None:
 
 
 def _nested_attestations(statement: dict[str, Any]) -> list[dict[str, Any]]:
-    predicate = statement.get("predicate", {})
+    predicate = statement.get("predicate")
+    if not isinstance(predicate, dict):
+        return []
     if statement.get("predicateType") == _WITNESS_COLLECTION_TYPE:
-        return predicate.get("attestations", [])
+        entries = predicate.get("attestations")
+        return [e for e in entries if isinstance(e, dict)] if isinstance(entries, list) else []
     return [{"type": statement.get("predicateType", ""), "attestation": predicate}]
 
 
-def _check_network_cleanliness(statement: dict[str, Any]) -> tuple[bool | None, str]:
-    """Inspect a verified in-toto statement for network-access evidence.
+def _monitor_type(trace: dict[str, Any]) -> str | None:
+    monitor = trace.get("monitor")
+    if isinstance(monitor, dict) and isinstance(monitor.get("type"), str):
+        return monitor["type"]
+    return None
 
-    Returns ``(network_clean, detail)``:
-    - ``(True, ...)``  — authoritative: a runtime-trace ``network`` array was
-      present and empty.
-    - ``(False, ...)`` — authoritative: a non-empty ``network`` array, or a
-      command-run process cmdline matched a suspicious pattern.
-    - ``(None, ...)``  — no authoritative signal (command-run only, nothing
-      suspicious found — absence of evidence, not evidence of absence).
+
+def _check_network_evidence(statement: dict[str, Any]) -> tuple[bool | None, str, list[str]]:
+    """Inspect a verified in-toto statement for evidence of network access.
+
+    Returns ``(network_recorded, detail, monitor_types)``:
+    - ``True``  -- a runtime-trace ``monitorLog.network`` list is non-empty, or
+      a command-run process command line matched a suspicious pattern.
+    - ``False`` -- a runtime trace was present and recorded no network events.
+      Not proof of no network access (see the module docstring).
+    - ``None``  -- no runtime trace and nothing suspicious.
+
+    Only a predicate whose type is exactly the runtime-trace URI is read for
+    network events; a ``network`` key under any other predicate type is ignored.
     """
+    monitor_types: list[str] = []
+    traced_without_network = False
     for entry in _nested_attestations(statement):
         entry_type = entry.get("type", "")
-        payload = entry.get("attestation", {})
+        payload = entry.get("attestation")
+        if not isinstance(entry_type, str) or not isinstance(payload, dict):
+            continue
 
-        if "runtime-trace" in entry_type or "network" in payload:
-            network_events = payload.get("monitorLog", {}).get("network", payload.get("network"))
-            if network_events is not None:
-                if len(network_events) == 0:
-                    return True, "runtime-trace predicate recorded an empty network log"
-                return False, f"runtime-trace predicate recorded {len(network_events)} network event(s)"
+        if entry_type == _RUNTIME_TRACE_TYPE:
+            monitor_type = _monitor_type(payload)
+            if monitor_type:
+                monitor_types.append(monitor_type)
+            monitor_log = payload.get("monitorLog")
+            network_events = monitor_log.get("network") if isinstance(monitor_log, dict) else None
+            if network_events is None or network_events == []:
+                traced_without_network = True
+            elif isinstance(network_events, list):
+                return (
+                    True,
+                    f"runtime-trace predicate recorded {len(network_events)} network event(s) "
+                    f"(monitor: {monitor_type or 'unknown'})",
+                    monitor_types,
+                )
+            continue
 
         if "command-run" in entry_type or "commandrun" in entry_type:
-            for proc in payload.get("processes", []) or []:
+            processes = payload.get("processes")
+            for proc in processes if isinstance(processes, list) else []:
+                if not isinstance(proc, dict):
+                    continue
                 haystack = f"{proc.get('program', '')} {proc.get('cmdline', '')}"
                 for pattern in _SUSPICIOUS_CMDLINE_PATTERNS:
                     if pattern in haystack:
-                        return False, f"command-run process matched '{pattern.strip()}': {haystack.strip()[:120]}"
+                        return (
+                            True,
+                            f"command-run process matched '{pattern.strip()}': {haystack.strip()[:120]}",
+                            monitor_types,
+                        )
 
-    return None, "no authoritative network signal in verified attestation"
+    if traced_without_network:
+        return False, "runtime-trace predicate recorded no network events", monitor_types
+    return None, "no runtime-trace network log or suspicious command line in verified attestation", monitor_types
 
 
 def check_witness_attestation(ctx: HandlerContext) -> WitnessCheckResult:
-    """Fetch, verify, and inspect the latest CI run's Witness attestation.
+    """Fetch, verify, and inspect the attestations of the CI runs that built the audited commit.
 
-    Returns a result with ``verified=False`` (and no PASS-worthy signal) for
-    any missing prerequisite. Never raises.
+    Returns a result with ``verified=False`` and the specific reason for any
+    missing prerequisite. Never raises for a missing prerequisite.
     """
     if not SIGSTORE_VERIFY_AVAILABLE:
         return WitnessCheckResult(
             attempted=False,
             detail="sigstore not installed — install darnit-core[attestation] to enable",
         )
+    if not ctx.owner or not ctx.repo:
+        return WitnessCheckResult(attempted=False, detail="repository owner/name not available in this context")
+
+    sha, reason = _head_commit(ctx.local_path)
+    if sha is None:
+        return WitnessCheckResult(attempted=False, detail=reason or "audited commit unknown")
+    evidence: dict[str, Any] = {"commit": sha}
+
+    run_ids, reason = _successful_run_ids(ctx.owner, ctx.repo, sha)
+    if not run_ids:
+        return WitnessCheckResult(attempted=True, detail=reason or "no successful CI run found", evidence=evidence)
+    evidence["runs"] = run_ids
 
     with tempfile.TemporaryDirectory(prefix="darnit-witness-") as tmp:
-        candidates, reason = _fetch_candidate_files(ctx, Path(tmp))
+        candidates, reason = _fetch_candidate_files(ctx.owner, ctx.repo, run_ids, Path(tmp))
         if not candidates:
-            return WitnessCheckResult(attempted=True, detail=reason or "no Witness attestation artifacts found")
+            return WitnessCheckResult(
+                attempted=True, detail=reason or "no Witness attestation artifacts found", evidence=evidence
+            )
 
         checked_files: list[str] = []
+        verified_artifacts: list[str] = []
+        monitor_types: list[str] = []
+        traced_without_network = False
+        evidence.update(checked_files=checked_files, verified_artifacts=verified_artifacts, monitor_types=monitor_types)
         for f in candidates:
             checked_files.append(f.name)
             try:
@@ -320,21 +432,42 @@ def check_witness_attestation(ctx: HandlerContext) -> WitnessCheckResult:
                 logger.debug("could not read %s: %s", f, exc)
                 continue
 
-            statement = _verify_bundle(raw_bytes, ctx.owner, ctx.repo)
+            statement = _verify_bundle(raw_bytes, ctx.owner, ctx.repo, sha)
             if statement is None:
                 continue  # not verifiable — do not fall back to trusting unsigned content
 
-            network_clean, detail = _check_network_cleanliness(statement)
+            verified_artifacts.append(f.name)
+            network_recorded, detail, types = _check_network_evidence(statement)
+            monitor_types.extend(t for t in types if t not in monitor_types)
+            if network_recorded:
+                evidence["artifact"] = f.name
+                return WitnessCheckResult(
+                    attempted=True, verified=True, network_recorded=True, detail=detail, evidence=evidence
+                )
+            traced_without_network = traced_without_network or network_recorded is False
+
+        if not verified_artifacts:
+            return WitnessCheckResult(
+                attempted=True,
+                detail=(
+                    "attestation artifact(s) found but none verified against the repo's GitHub Actions "
+                    f"identity for commit {sha[:12]}"
+                ),
+                evidence=evidence,
+            )
+
+        evidence["artifact"] = verified_artifacts[0]
+        if traced_without_network:
             return WitnessCheckResult(
                 attempted=True,
                 verified=True,
-                network_clean=network_clean,
-                detail=detail,
-                evidence={"artifact": f.name, "checked_files": checked_files},
+                network_recorded=False,
+                detail="runtime-trace predicate recorded no network events",
+                evidence=evidence,
             )
-
         return WitnessCheckResult(
             attempted=True,
-            detail="attestation artifact(s) found but none verified against the repo's GitHub Actions identity",
-            evidence={"checked_files": checked_files},
+            verified=True,
+            detail="no runtime-trace network log or suspicious command line in verified attestation",
+            evidence=evidence,
         )

@@ -603,27 +603,6 @@ _BAZEL_NETWORK_BLOCK_FLAGS: tuple[str, ...] = (
 )
 
 
-def _maybe_check_witness_attestation(
-    ctx: HandlerContext,
-    config: dict[str, Any],
-) -> WitnessCheckResult:
-    """Call check_witness_attestation() unless disabled via config.
-
-    ``verify_witness_attestations = false`` in the TOML pass config opts out
-    of the network round-trip entirely — for air-gapped audits or
-    environments without a usable `gh` login for the audited repo. There is
-    deliberately no automatic "skip if CI text doesn't mention witness"
-    heuristic: that would reintroduce exactly the kind of unreliable text-only
-    guess this real verification replaced (e.g. a reusable/composite workflow
-    can produce a valid attestation without the calling repo's own CI files
-    ever spelling out "witness").
-    """
-    if not config.get("verify_witness_attestations", True):
-        return WitnessCheckResult(attempted=False, detail="witness attestation verification disabled via config")
-
-    return check_witness_attestation(ctx)
-
-
 _NIX_CI_COMMANDS: tuple[str, ...] = ("nix build", "nix develop", "nix run", "nix flake")
 
 
@@ -658,38 +637,30 @@ def _detect_strong_hermeticity_signal(
     path: Path,
     ci_files: list[Path],
     dependency_results: dict[str, Any],
-    ctx: HandlerContext,
-    config: dict[str, Any],
-) -> tuple[str | None, WitnessCheckResult]:
-    """Return (signal description, witness check result). Signal is None if no
-    build-system-enforced hermeticity guarantee was found.
+) -> str | None:
+    """Return a signal description, or None if no build-system-enforced
+    hermeticity guarantee was found.
+
+    Witness runtime attestations are not checked here: that is the separate
+    ``repro_witness_attestation`` step (#553), and a mention of "witness run"
+    in CI text proves only that the tool ran, not what it observed.
 
     Checks in priority order:
-    1. Witness runtime attestation — a Sigstore-verified DSSE envelope from the
-       repo's latest CI run, bound to its GitHub Actions OIDC identity, asserting
-       no network access occurred during the build (see witness_attestation.py).
-       Merely mentioning "witness run" in CI text is NOT sufficient — that only
-       proves the tool ran, not what it observed, so text mentions alone are no
-       longer treated as a strong signal.
-    2. Nix flake used in CI — fixed-output derivations run network-isolated by default.
+    1. Nix flake used in CI — fixed-output derivations run network-isolated by default.
        Gated on RE-01.02 (BuildEnvDeclared) having PASSED: a bare flake.nix that isn't
        the project's confirmed, declared build environment isn't a strong signal on its
        own. If RE-01.02 hasn't run (e.g. this control invoked standalone), the signal is
        withheld rather than assumed — conservative-by-default.
-    3. Bazel with explicit network sandbox — Bazel allows network by default, so the
+    2. Bazel with explicit network sandbox — Bazel allows network by default, so the
        blocking flag must be present to count as a strong signal. Checked in both CI
        files (where "bazel" must also appear, to avoid matching an unrelated tool that
        happens to share a flag name) and .bazelrc (the canonical place to set it, where
        the file itself is the bazel signal).
 
     Comments are stripped before matching (same as ``_scan_line``) so a
-    commented-out reference (e.g. ``# TODO: add witness run``) can't be
+    commented-out reference (e.g. ``# TODO: nix build``) can't be
     mistaken for the real thing.
     """
-    witness_result = _maybe_check_witness_attestation(ctx, config)
-    if witness_result.verified and witness_result.network_clean is True:
-        return f"Witness attestation verified — {witness_result.detail}", witness_result
-
     ci_content: dict[str, str] = {}
     for f in ci_files:
         try:
@@ -703,7 +674,7 @@ def _detect_strong_hermeticity_signal(
             name for name, content in ci_content.items() if any(cmd in content for cmd in _NIX_CI_COMMANDS)
         )
         if nix_hits:
-            return f"Nix flake build in CI ({', '.join(nix_hits)})", witness_result
+            return f"Nix flake build in CI ({', '.join(nix_hits)})"
 
     has_bazel = any((path / f).exists() for f in ("WORKSPACE", "WORKSPACE.bazel", "MODULE.bazel", "BUILD.bazel"))
     if has_bazel:
@@ -724,9 +695,9 @@ def _detect_strong_hermeticity_signal(
                 bazel_hits.append(".bazelrc")
 
         if bazel_hits:
-            return f"Bazel with network sandbox ({', '.join(sorted(bazel_hits))})", witness_result
+            return f"Bazel with network sandbox ({', '.join(sorted(bazel_hits))})"
 
-    return None, witness_result
+    return None
 
 
 def repro_hermetic_build_handler(
@@ -742,27 +713,15 @@ def repro_hermetic_build_handler(
     inside Dockerfiles are DEFERRED — building the image environment is fine;
     fetching application dependencies at build time is not.
 
-    v0.3: Adds a Sigstore-verified Witness/runtime-trace attestation check
-    (see witness_attestation.py) — fetches attestation artifacts from the
-    repo's latest successful CI run via the `gh` CLI, cryptographically
-    verifies them against the repo's GitHub Actions OIDC identity, and only
-    treats an empty, verified network log as a strong PASS signal. A verified
-    attestation that *does* record network activity is fed into the violation
-    list — stronger evidence than the CI-text grep below it. Requires the
-    `gh` CLI and `darnit-core[attestation]`; any missing prerequisite (no gh,
-    not authenticated, no matching CI run/artifact, sigstore not installed,
-    verification failure) degrades to a specific "no attestation evidence"
-    reason in ``evidence["strong_signal"]``/the witness result's ``detail``,
-    never to failing the audit. Set ``verify_witness_attestations = false`` in
-    the TOML pass config to skip the network round-trip entirely (air-gapped
-    audits, or repos with no usable `gh` login).
+    Reads only the local checkout: Witness runtime attestations are checked by
+    the separate ``repro_witness_attestation`` step (#553), which runs before
+    this one in RE-02.01.
 
     Result semantics (conservative-by-default):
-    - PASS:           strong hermeticity signal (verified Witness attestation,
-                      Nix flake CI, Bazel sandbox). Evidence only: this step
-                      type's ceiling is `{fail}` (feature 044, FR-010)
-    - FAIL:           suspicious live network-fetch pattern in any scanned file,
-                      or a verified Witness attestation that recorded network activity
+    - PASS:           strong hermeticity signal (Nix flake CI, Bazel sandbox).
+                      Evidence only: this step type's ceiling is `{fail}`
+                      (feature 044, FR-010)
+    - FAIL:           suspicious live network-fetch pattern in any scanned file
     - INCONCLUSIVE:   files scanned, no violations, no strong signal
                       (grep absence ≠ proof of hermeticity)
     - INCONCLUSIVE
@@ -792,9 +751,7 @@ def repro_hermetic_build_handler(
             },
         )
 
-    strong_signal, witness_result = _detect_strong_hermeticity_signal(
-        path, all_ci_files, ctx.dependency_results, ctx, config
-    )
+    strong_signal = _detect_strong_hermeticity_signal(path, all_ci_files, ctx.dependency_results)
     if strong_signal:
         return HandlerResult(
             status=HandlerResultStatus.PASS,
@@ -813,14 +770,6 @@ def repro_hermetic_build_handler(
     deferred: list[str] = []
     nondeterministic: list[str] = []
     files_scanned: list[str] = []
-
-    # A verified Witness attestation that positively recorded network activity
-    # is stronger evidence than the grep heuristic below — surface it as a
-    # violation on its own rather than waiting for a matching CI-text pattern.
-    if witness_result.verified and witness_result.network_clean is False:
-        violations.append(
-            f"witness attestation ({witness_result.evidence.get('artifact', '?')}): {witness_result.detail}"
-        )
 
     for f in all_files:
         is_dockerfile = f in container_file_set
@@ -895,10 +844,101 @@ def repro_hermetic_build_handler(
         message=(
             f"No suspicious patterns found in {len(files_scanned)} scanned file(s) — "
             "grep absence alone cannot confirm hermeticity; "
-            "a strong signal (Witness, Nix, Bazel sandbox) or manual review is needed."
+            "a strong signal (Nix flake build, Bazel network sandbox) or manual review is needed."
             f"{nix_note}"
         ),
         confidence=0.4,
+        evidence=evidence,
+    )
+
+
+def repro_witness_attestation_handler(
+    config: dict[str, Any],
+    ctx: HandlerContext,
+) -> HandlerResult:
+    """Check verified Witness / in-toto runtime-trace attestations for network access (#553).
+
+    Fetches the attestation artifacts of the successful CI runs for the audited
+    commit, verifies each against this repository's GitHub Actions identity and
+    that commit (see witness_attestation.py), and reads only the runtime-trace
+    predicate's ``monitorLog.network`` and Witness command-run process command
+    lines.
+
+    Registered with the ceiling ``{fail}``: a verified trace can show that the
+    build accessed the network, but an empty or absent network log is also what
+    a monitor that does not trace sockets records, so it cannot show the
+    opposite.
+
+    ``verify_witness_attestations = false`` skips the network round-trip (air-
+    gapped audits, or no usable `gh` login). There is deliberately no "skip if
+    CI text doesn't mention witness" heuristic: a reusable or composite workflow
+    can produce a valid attestation without the calling repo's own CI files
+    ever spelling out "witness".
+
+    Result semantics:
+    - FAIL:          a verified attestation recorded network events, or a
+                     verified command-run process matched an installer pattern
+    - INCONCLUSIVE:  everything else, including a verified clean trace (evidence
+                     only) and every missing prerequisite (disabled, no sigstore,
+                     no repository identity or commit, no gh or auth, no run,
+                     artifact, or verifiable bundle). Never ERROR: this step can
+                     only add FAIL evidence, so a missing optional source must
+                     not turn the control's WARN into ERROR.
+    """
+    if not config.get("verify_witness_attestations", True):
+        return HandlerResult(
+            status=HandlerResultStatus.INCONCLUSIVE,
+            message="Witness attestation verification is disabled (verify_witness_attestations = false)",
+            confidence=0.0,
+            evidence={"witness_attestation": {"verified": False, "detail": "verification disabled via config"}},
+        )
+
+    try:
+        result = check_witness_attestation(ctx)
+    except Exception as exc:  # every known failure degrades inside the check; an unknown one must not fail the audit
+        logger.warning("witness attestation check failed unexpectedly: %s", exc)
+        result = WitnessCheckResult(attempted=True, detail=f"attestation check failed unexpectedly: {exc}")
+
+    evidence = {
+        "witness_attestation": {
+            "verified": result.verified,
+            "network_recorded": result.network_recorded,
+            "detail": result.detail,
+            **result.evidence,
+        }
+    }
+    artifact = result.evidence.get("artifact", "?")
+    commit = str(result.evidence.get("commit", ""))[:12] or "?"
+
+    if result.verified and result.network_recorded:
+        return HandlerResult(
+            status=HandlerResultStatus.FAIL,
+            message=(
+                f"Verified Witness attestation ({artifact}) shows network access during the build of "
+                f"commit {commit}: {result.detail}"
+            ),
+            confidence=0.9,
+            evidence=evidence,
+        )
+
+    if result.verified:
+        monitors = ", ".join(result.evidence.get("monitor_types") or []) or "unknown"
+        return HandlerResult(
+            status=HandlerResultStatus.INCONCLUSIVE,
+            message=(
+                f"Verified Witness attestation ({artifact}, monitor: {monitors}) for commit {commit}: "
+                f"{result.detail}. A clean runtime trace is recorded as evidence but cannot by itself "
+                "establish that the build had no network access: what a monitor records depends on its "
+                "type and trace policy."
+            ),
+            confidence=0.4,
+            evidence=evidence,
+        )
+
+    return HandlerResult(
+        status=HandlerResultStatus.INCONCLUSIVE,
+        message=f"No verified Witness attestation evidence: {result.detail}",
+        confidence=0.0,
         evidence=evidence,
     )
 

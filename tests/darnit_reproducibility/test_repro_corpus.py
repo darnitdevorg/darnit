@@ -8,9 +8,10 @@ itself.
 Feature 037 needed a captured baseline because its claim was the opposite --
 "nothing changed" across 213 controls. It also learned that a stored golden of
 control statuses is not portable: statuses depend on whether `gh` is
-authenticated. That is avoided here by disabling witness verification, which
-removes the only network call in this plugin and makes every verdict a pure
-filesystem function.
+authenticated. The handlers measured here make no network call (#553 moved the
+only one, Witness attestation verification, into its own step), so every
+verdict is a pure filesystem function. The attestation step is measured below
+against verified statements, with fetching and verification faked.
 """
 
 from __future__ import annotations
@@ -18,14 +19,16 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from darnit_reproducibility import witness_attestation as wa
 from darnit_reproducibility.handlers import (
     repro_bit_for_bit_handler,
     repro_build_env_declared_handler,
     repro_deps_pinned_handler,
     repro_hermetic_build_handler,
+    repro_witness_attestation_handler,
 )
 
-from .conftest import OFFLINE_CONFIG, repro_ctx
+from .conftest import repro_ctx
 
 DIGEST = "sha256:" + "a" * 64
 
@@ -81,7 +84,7 @@ def test_corpus_matches_expected_verdicts(tmp_path: Path, fixture_name: str) -> 
     repo = _build(tmp_path, CORPUS[fixture_name])
     ctx = repro_ctx(repo)
     for control_id, expected in EXPECTED[fixture_name].items():
-        result = HANDLERS[control_id](dict(OFFLINE_CONFIG), ctx)
+        result = HANDLERS[control_id]({}, ctx)
         assert result.status.value == expected, (
             f"{fixture_name}: {control_id} expected {expected}, got {result.status.value} -- {result.message}"
         )
@@ -106,6 +109,74 @@ def test_deps_pinned_is_untouched_by_this_feature(tmp_path: Path) -> None:
     the later steps.
     """
     repo = _build(tmp_path, {"requirements.txt": "numpy==1.26.4\n"})
-    result = repro_deps_pinned_handler(dict(OFFLINE_CONFIG), repro_ctx(repo))
+    result = repro_deps_pinned_handler({}, repro_ctx(repo))
     assert result.status.value == "inconclusive"
     assert "transitive" in result.message
+
+
+# #553: verified attestation statements -> the repro_witness_attestation outcome.
+# Only recorded network access decides, and it decides FAIL. A clean or absent
+# network log is what a monitor that does not trace sockets also records, so it
+# is evidence and never "pass".
+_RUNTIME_TRACE = "https://in-toto.io/attestation/runtime-trace/v0.1"
+_COLLECTION = "https://witness.dev/attestation-collection/v0.1"
+_COMMAND_RUN = "https://witness.dev/attestations/command-run/v0.1"
+
+
+def _trace(monitor_log: dict) -> dict:
+    return {"monitor": {"type": "https://tetragon.io/", "tracePolicy": {}}, "monitorLog": monitor_log}
+
+
+def _collection(entry_type: str, attestation: dict) -> dict:
+    return {
+        "predicateType": _COLLECTION,
+        "predicate": {"attestations": [{"type": entry_type, "attestation": attestation}]},
+    }
+
+
+ATTESTATION_CORPUS: dict[str, tuple[dict, str]] = {
+    "trace_with_network_events": (
+        {"predicateType": _RUNTIME_TRACE, "predicate": _trace({"network": [{"connect": "203.0.113.7:443"}]})},
+        "fail",
+    ),
+    "trace_with_empty_network_log": (
+        {"predicateType": _RUNTIME_TRACE, "predicate": _trace({"network": []})},
+        "inconclusive",
+    ),
+    # The runtime-trace spec's own Tetragon example: a `connect` policy, no `network` field.
+    "trace_without_network_field": (
+        {"predicateType": _RUNTIME_TRACE, "predicate": _trace({"process": [{"exec": "make"}]})},
+        "inconclusive",
+    ),
+    "collection_trace_with_network_events": (_collection(_RUNTIME_TRACE, _trace({"network": [{}, {}]})), "fail"),
+    "collection_command_run_installer": (
+        _collection(_COMMAND_RUN, {"processes": [{"program": "/usr/bin/curl", "cmdline": "curl -O https://x"}]}),
+        "fail",
+    ),
+    "collection_command_run_clean": (
+        _collection(_COMMAND_RUN, {"processes": [{"program": "/usr/bin/make", "cmdline": "make"}]}),
+        "inconclusive",
+    ),
+    "other_predicate_with_network_key": (
+        {"predicateType": "https://slsa.dev/provenance/v1", "predicate": {"network": [{"host": "x"}]}},
+        "inconclusive",
+    ),
+}
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("case", sorted(ATTESTATION_CORPUS))
+def test_attestation_corpus(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str) -> None:
+    verified, expected = ATTESTATION_CORPUS[case]
+    artifact = tmp_path / "build.att.json"
+    artifact.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(wa, "SIGSTORE_VERIFY_AVAILABLE", True)
+    monkeypatch.setattr(wa, "_head_commit", lambda local_path: ("a" * 40, None))
+    monkeypatch.setattr(wa, "_successful_run_ids", lambda owner, repo, sha: (["1"], None))
+    monkeypatch.setattr(wa, "_fetch_candidate_files", lambda owner, repo, run_ids, scratch: ([artifact], None))
+    monkeypatch.setattr(wa, "_verify_bundle", lambda raw, owner, repo, sha: verified)
+
+    result = repro_witness_attestation_handler({}, repro_ctx(tmp_path))
+
+    assert result.status.value == expected, f"{case}: {result.message}"
+    assert result.evidence["witness_attestation"]["verified"] is True

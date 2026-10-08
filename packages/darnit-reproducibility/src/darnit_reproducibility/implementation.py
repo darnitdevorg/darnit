@@ -113,7 +113,7 @@ class ReproducibilityImplementation:
         registry = get_sieve_handler_registry()
         registry.set_plugin_context(self.name)
 
-        # Feature 044 (FR-010): all five decide from text and file-presence
+        # Feature 044 (FR-010): these five decide from text and file-presence
         # signals, which can show a requirement is unmet but not that it is
         # met. They register {fail}: a PASS they report is evidence for the
         # control's later steps, and concludes only with a corpus-backed
@@ -141,6 +141,21 @@ class ReproducibilityImplementation:
             phase="pattern",
             handler_fn=handlers.repro_hermetic_build_handler,
             description="Scan CI workflows for live network fetches during build",
+            ceiling={"fail"},
+            settings=frozenset(),
+        )
+        # #553: a verified runtime trace can show the build accessed the
+        # network, but an empty or absent network log is also what a monitor
+        # that does not trace sockets records, so it cannot show the opposite.
+        # {fail} until monitor types are allowlisted against real attestations.
+        registry.register(
+            "repro_witness_attestation",
+            phase="deterministic",
+            handler_fn=handlers.repro_witness_attestation_handler,
+            description=(
+                "Verify the audited commit's Witness / in-toto runtime-trace attestations "
+                "and fail on recorded network access"
+            ),
             ceiling={"fail"},
             settings={"verify_witness_attestations"},
         )

@@ -2,6 +2,8 @@
 
 **Feature**: 038 (#430, #432) | **Package**: `darnit-reproducibility` | **Status**: proposed
 
+> **Amended by #553**: Witness attestation verification no longer runs in `repro_hermetic_build`. It is the separate step `repro_witness_attestation`, which can only conclude FAIL; a verified clean network log is no longer a PASS signal. See `specs/044-false-pass-paths/contracts/witness-step-addendum-553.md`. Statements below about a verified Witness attestation describe the behavior at feature 038.
+
 ## Problem
 
 `repro_hermetic_build` is careful about its PASS -- it requires a verified Witness attestation with a clean network log, a Nix flake build, or Bazel with a blocking flag, and explicitly rejects a mere mention of `witness run` in CI text. The defect is coverage, not credulity.

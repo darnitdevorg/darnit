@@ -92,9 +92,11 @@ steps = [
 # Dockerfiles/Containerfiles.  Strips comments before pattern matching to cut FPs.
 # System-package installs (apt-get, apk, yum) inside Dockerfiles are DEFERRED —
 # building the image environment is acceptable; app-dep fetches at build time are not.
-# Strong signals (Witness runtime attestation, Nix flake CI, Bazel network sandbox)
-# short-circuit the scan with a handler PASS.  A clean grep alone returns
-# INCONCLUSIVE — grep absence is not proof of hermeticity.  Roadmap:
+# Strong signals (Nix flake CI, Bazel network sandbox) short-circuit the scan
+# with a handler PASS, which is evidence only (step ceiling {fail}).  A clean
+# grep alone returns INCONCLUSIVE — grep absence is not proof of hermeticity.
+# Witness / in-toto runtime-trace attestations are a separate step that runs
+# first and can only FAIL (#553).  Roadmap:
 # https://github.com/kusari-oss/darnit/issues/227
 [controls."RE-02.01"]
 name = "HermeticBuild"
@@ -102,11 +104,19 @@ description = "Build does not fetch dependencies at build time"
 tags = { level = 2, domain = "RE" }
 depends_on = ["RE-01.02"]  # Nix flake strong signal is gated on BuildEnvDeclared having confirmed it
 
-# verify_witness_attestations (bool, default true): fetches and Sigstore-verifies
-# Witness/runtime-trace attestation artifacts from the repo's latest CI run via
-# `gh`. Set to false to skip that network round-trip entirely (air-gapped
-# audits, or repos with no usable `gh` login) — falls back to the CI-text/Nix/
-# Bazel signals below it. See witness_attestation.py for details.
+# repro_witness_attestation fetches the Witness / in-toto attestation artifacts
+# of the successful CI runs for the audited commit via `gh`, Sigstore-verifies
+# them against this repository's GitHub Actions identity and that commit, and
+# FAILs when a verified runtime trace records network events (or a verified
+# command-run process line matches an installer).  A verified clean trace is
+# evidence only: an empty network log is also what a monitor that does not
+# trace sockets records (#553).
+# verify_witness_attestations (bool, default true): set to false to skip the
+# network round-trip entirely (air-gapped audits, or repos with no usable `gh`
+# login).  See witness_attestation.py for details.
+[[controls."RE-02.01".passes]]
+handler = "repro_witness_attestation"
+
 [[controls."RE-02.01".passes]]
 handler = "repro_hermetic_build"
 
@@ -117,7 +127,7 @@ steps = [
     "Review Makefiles, build scripts (scripts/build*, scripts/install*), and Dockerfiles for the same",
     "Check for curl, wget, pip install (without --no-index), npm install (without --ci), brew install in build steps",
     "Verify all dependencies come from the lock file, not fetched live at build time",
-    "For a PASS without a strong signal, confirm via Witness attestation, Nix flake build, or Bazel network sandbox",
+    "For a PASS, confirm via a Nix flake build, a Bazel network sandbox, or a runtime trace whose monitor is known to record network access (an empty network log alone does not confirm it)",
 ]
 
 # =============================================================================
