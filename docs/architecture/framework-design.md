@@ -1,8 +1,8 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.14
+> **Version**: 1.0.0-alpha.15
 > **Status**: Authoritative
-> **Last Updated**: 2026-10-07
+> **Last Updated**: 2026-10-08
 
 This specification defines the authoritative design of the Darnit framework, including the sieve orchestrator, TOML schema, built-in pass types, remediation actions, and plugin protocol.
 
@@ -78,10 +78,6 @@ schema_version = "0.1.0-alpha"    # REQUIRED: TOML schema version
 spec_version = "Spec v1.0"        # OPTIONAL: Upstream spec version
 description = "..."               # OPTIONAL: Framework description
 url = "https://..."               # OPTIONAL: Spec URL
-
-[defaults]
-check_adapter = "builtin"         # Default check adapter
-remediation_adapter = "builtin"   # Default remediation adapter
 
 [templates]
 # Reusable templates for remediation
@@ -1466,7 +1462,7 @@ A TOML handler reference may name a Python attribute as `package.module:attribut
 handler = "darnit_csl.mcp_tools:remediate_community_spec"
 ```
 
-Every place that turns such a string into an import SHALL resolve it through one function, `darnit.core.handlers.resolve_module_path`. That covers MCP tool handlers (`ToolRegistry.load_handler`), handler-registry lookups (`HandlerRegistry.get_handler`), and Python adapter configuration (`PluginRegistry` and `AdapterRegistry`). No other code in the framework SHALL call `importlib.import_module` on a configured string.
+Every place that turns such a string into an import SHALL resolve it through one function, `darnit.core.handlers.resolve_module_path`. That covers MCP tool handlers (`ToolRegistry.load_handler`) and handler-registry lookups (`HandlerRegistry.get_handler`). No other code in the framework SHALL call `importlib.import_module` on a configured string.
 
 **Resolution policy**:
 - The path SHALL have the form `a.b.c:attr`: exactly one `:`, every dotted module part and the attribute a Python identifier. A relative path (leading `.`), an empty part, a dotted attribute, or any other form is refused.
@@ -1652,7 +1648,7 @@ Each context key has one canonical name and one vocabulary, taken from the frame
 - Auditing (every driver), listing pending data, report generation, a remediation preview (plan mode, section 4.2), the remediation context guard in every mode, and the harness collect phase SHALL NOT create, modify, or delete any file in the audited repository.
 - `darnit.config.context_writes` is the only code that writes context values and in-repository confirmation records. It writes only `.project/darnit.yaml` (never `.project/project.yaml`), preserves sections and comments it does not change (including feature 040 `controls:` claims), and refuses every write, returning the errors, when `.project/project.yaml` or `.project/darnit.yaml` is present but unparseable or invalid. The loader distinguishes absent, valid, and invalid files (`load_project_config_checked`).
 - `init_project_config` (MCP) creates only an empty `.project/darnit.yaml` when `.project/` is absent, and reports instead of overwriting when it is present.
-- An applied remediation's `project_update` (written by the remediation executor, section 4.2) and the file-reference sync after a remediation creates a file (`update_config_after_file_create`, `UnifiedLocator.sync_to_project`) write only the dotted paths they target, through the loader's round-trip helper (`update_project_config`): CNCF fields to `.project/project.yaml`, other fields to `.project/darnit.yaml`, preserving comments, ordering, indentation, and fields darnit does not own. An absent `.project/project.yaml` is created with `name` and the targeted fields only. No darnit code replaces a whole project file. The file-reference sync after remediation records only a `project_reference` declared on the `file_create` step, only for a file created in this run, and only when the field is empty or already equal (section 4.3). When either file is present but invalid they write nothing: planning the update (`plan_project_update`, used by the `project_update` handler and the remediation's `project_update`) raises with the validation errors (an applied remediation reports `project_update: failed: <errors>`), and the sync functions return false.
+- An applied remediation's `project_update` (written by the remediation executor, section 4.2) and the file-reference sync after a remediation creates a file (`update_config_after_file_create`) write only the dotted paths they target, through the loader's round-trip helper (`update_project_config`): CNCF fields to `.project/project.yaml`, other fields to `.project/darnit.yaml`, preserving comments, ordering, indentation, and fields darnit does not own. An absent `.project/project.yaml` is created with `name` and the targeted fields only. No darnit code replaces a whole project file. The file-reference sync after remediation records only a `project_reference` declared on the `file_create` step, only for a file created in this run, and only when the field is empty or already equal (section 4.3). When either file is present but invalid they write nothing: planning the update (`plan_project_update`, used by the `project_update` handler and the remediation's `project_update`) raises with the validation errors (an applied remediation reports `project_update: failed: <errors>`), and the sync function returns false.
 - An audit reads nothing from a present-but-invalid `.project/` file and reports each validation error in the report's `warnings` (JSON) and as a warning line (Markdown).
 
 ### 7.10 Confirmation Tool Contract
@@ -2247,7 +2243,7 @@ The `confirm_*` tools are unchanged; approvals are not confirmations. Audit resu
 
 ## Appendix C: Removed Requirements
 
-The following requirements have been superseded: by the handler dispatch architecture, by the feature 043 remediation design (the `api_call` and `requires_confirmation` entries), and by the operator configuration and trust boundary (the last entry, Section 14).
+The following requirements have been superseded: by the handler dispatch architecture, by the feature 043 remediation design (the `api_call` and `requires_confirmation` entries), by the operator configuration and trust boundary (the `.baseline.toml` entry, Section 14), and by the removal of unused subsystems (the adapter and `UnifiedLocator` entries, #487).
 
 ### Removed: VerificationPassProtocol
 **Reason**: Replaced by handler dispatch architecture. Pass classes that implemented this protocol (`DeterministicPass`, `PatternPass`, `LLMPass`, `ManualPass`, `ExecPass`) are superseded by handler functions registered in `SieveHandlerRegistry`.
@@ -2319,12 +2315,30 @@ The following requirements have been superseded: by the handler dispatch archite
 - **THEN** no key in it MUST affect the audit
 - **AND** the audit MUST report one notice pointing at `darnit config migrate`
 
+### Removed: Check and remediation adapters
+**Reason**: No audit or remediation path ever dispatched through them (#487). Verification runs only through the handler pipeline (Sections 3, 5) and remediation only through remediation handlers (Section 4). The adapter classes and registry (`CheckAdapter`, `RemediationAdapter`, `AdapterRegistry`, the `darnit.check_adapters` and `darnit.remediation_adapters` entry point groups), the framework TOML `[adapters]` table, the `[defaults]` keys `check_adapter` and `remediation_adapter`, and the control-level `check` key are removed.
+**Migration**: Express verification as `[[controls."ID".passes]]` handler invocations; an external tool runs through `exec` (Section 3.3) or a plugin step type (Section 3.0.3). Delete `[adapters]` and `[defaults]` tables and control-level `check` keys.
+
+#### Scenario: Control declares a check key
+- **WHEN** a framework TOML control declares `check`
+- **THEN** loading MUST fail as for any unknown control key (Section 2.3)
+
+#### Scenario: Framework declares adapter tables
+- **WHEN** a framework TOML has an `[adapters]` table or `[defaults]` with `check_adapter` or `remediation_adapter`
+- **THEN** the framework MUST load
+- **AND** no key in those tables MUST affect an audit or a remediation
+
+### Removed: UnifiedLocator
+**Reason**: `CheckContext` carried a `UnifiedLocator` that no handler read, and its uncalled `sync_to_project` was a second writer of `.project/` file references beside the remediation file-reference sync (Section 7.9). The control-level `locator` configuration and `use_locator` (Section 11) are unaffected.
+**Migration**: None. Handlers read `locator.discover` through `use_locator`.
+
 ---
 
 ## Version History
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.15 | 2026-10-08 | Removed the never-dispatched adapter system (`[adapters]`, `[defaults]` adapter keys, control-level `check`, `AdapterRegistry`) and `UnifiedLocator` with its `sync_to_project` writer (Sections 2.1, 6.5, 7.9; Appendix C; #487) |
 | 1.0.0-alpha.14 | 2026-10-07 | `repro_witness_attestation`: Witness/in-toto runtime-trace verification moves out of `repro_hermetic_build` into its own step type with ceiling `{fail}`, bound to the audited commit and reading only the runtime-trace predicate; a verified clean trace is evidence, not PASS (Sections 3.0.1, 12; #553) |
 | 1.0.0-alpha.13 | 2026-10-06 | Error class `unexpected_exit`: an `exec` step whose undeclared exit code has no identified cause no longer reports `network`; exit code 127 reports `missing_tool` (Sections 3.3, 5.2; #562) |
 | 1.0.0-alpha.12 | 2026-10-04 | Repository-level `.baseline.toml` is no longer read: one notice points at `darnit config migrate`, framework selection only by `--framework` or a tool argument (Sections 2.3, 10.5, 14.4, 15.1; Appendix C) |
