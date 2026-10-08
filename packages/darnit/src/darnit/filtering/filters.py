@@ -13,7 +13,7 @@ Usage:
 Grammar:
     filter := key_value | bare_tag
     key_value := key operator value
-    key := "level" | "domain" | "severity" | "adapter" | <any_tag_key>
+    key := "level" | "domain" | "severity" | <any_tag_key>
     operator := "=" | "<=" | ">=" | "<" | ">" | "!="
     bare_tag := string  # Matches against tags dict (key exists with truthy value)
 
@@ -44,7 +44,7 @@ OPERATORS = ["<=", ">=", "!=", "=", "<", ">"]
 class ControlFilter:
     """A single filter condition."""
 
-    field: str  # 'level', 'domain', 'tags', 'severity', 'adapter'
+    field: str  # 'level', 'domain', 'tags', 'severity'
     operator: str  # '=', '<=', '>=', '<', '>', '!=', 'in'
     value: Any  # The value to compare
 
@@ -226,18 +226,6 @@ def matches_filter(control: Any, f: ControlFilter) -> bool:
             severity = control.security_severity or 0.0
 
         return compare(severity, f.operator, float(f.value))
-
-    elif f.field == "adapter":
-        # Match by check adapter name
-        adapter = getattr(control, "check_adapter", None)
-        if adapter is None and hasattr(control, "check"):
-            adapter = getattr(control.check, "adapter", None)
-
-        if f.operator == "=":
-            return adapter == f.value
-        elif f.operator == "!=":
-            return adapter != f.value
-        return False
 
     else:
         # Check if field exists in control's tags dict (for arbitrary tag filtering)

@@ -67,13 +67,6 @@ class TestFrameworkLoading:
         assert framework.controls["TEST-SEC-01"].domain == "SEC"
         assert framework.controls["TEST-CI-01"].domain == "CI"
 
-    def test_framework_has_defaults(self):
-        """Framework should have defaults."""
-        framework = load_framework_config(get_framework_path())
-
-        assert framework.defaults.check_adapter == "builtin"
-        assert framework.defaults.remediation_adapter == "builtin"
-
     def test_package_version(self):
         """Package version should match framework version."""
         framework = load_framework_config(get_framework_path())

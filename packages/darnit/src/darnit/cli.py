@@ -445,7 +445,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
 
         logger.info(f"Level {level} ({len(shown_controls)} controls):")
         for cid, ctrl in shown_controls:
-            logger.info(f"  • {cid}: {ctrl.name} [adapter: {ctrl.check_adapter}]")
+            logger.info(f"  • {cid}: {ctrl.name}")
         total_shown += len(shown_controls)
 
     if total_filtered > 0:
@@ -479,7 +479,6 @@ def cmd_validate(args: argparse.Namespace) -> int:
     else:
         logger.info(f"Framework '{config.metadata.name}' is valid")
         logger.info(f"  Controls: {len(config.controls)}")
-        logger.info(f"  Adapters: {len(config.adapters)}")
 
         # Show level breakdown
         by_level = {}

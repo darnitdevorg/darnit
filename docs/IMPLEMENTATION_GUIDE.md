@@ -409,10 +409,6 @@ schema_version = "0.1.0-alpha"
 spec_version = "MySpec v1.0"
 description = "Compliance controls for My Standard"
 url = "https://example.com/mystandard"
-
-[defaults]
-check_adapter = "builtin"
-remediation_adapter = "builtin"
 ```
 
 ### Control definitions

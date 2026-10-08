@@ -790,7 +790,6 @@ class TestUseLocatorAndOnPass:
         """
         from darnit.config.framework_schema import (
             ControlConfig,
-            FrameworkDefaults,
             HandlerInvocation,
             LocatorConfig,
         )
@@ -809,9 +808,8 @@ class TestUseLocatorAndOnPass:
                 kind="file",
             ),
         )
-        defaults = FrameworkDefaults()
 
-        effective = merge_control("T-01", control, defaults)
+        effective = merge_control("T-01", control)
 
         # The passes_config should have files resolved from locator
         assert effective.passes_config is not None

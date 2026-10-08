@@ -7,10 +7,8 @@ import pytest
 
 from darnit.config.control_loader import control_from_effective
 from darnit.config.framework_schema import (
-    CheckConfig,
     ControlConfig,
     FrameworkConfig,
-    FrameworkDefaults,
     FrameworkMetadata,
     OnPassConfig,
 )
@@ -35,28 +33,63 @@ class TestMergeControl:
             description="Test description",
             tags={"category": "test"},
         )
-        defaults = FrameworkDefaults()
 
-        result = merge_control("TEST-01", framework_control, defaults)
+        result = merge_control("TEST-01", framework_control)
 
         assert isinstance(result, EffectiveControl)
         assert result.name == "TestControl"
         assert result.level == 1
         assert result.domain == "AC"
 
-    def test_framework_check_adapter(self):
-        """Test the framework's check adapter carries through."""
-        framework_control = ControlConfig(
-            name="TestControl",
-            level=1,
-            domain="AC",
-            description="Test description",
-            check=CheckConfig(adapter="kusari"),
+
+class TestRemovedAdapterConfiguration:
+    """The adapter keys removed in #487 (framework-design Appendix C)."""
+
+    METADATA = '''[metadata]
+name = "removed-adapters"
+display_name = "Removed Adapters"
+version = "0.1.0"
+'''
+
+    def test_control_check_key_fails_loading(self, tmp_path):
+        path = tmp_path / "framework.toml"
+        path.write_text(
+            self.METADATA
+            + '''
+[controls."TEST-01"]
+name = "TestControl"
+description = "Test description"
+check = { adapter = "kusari" }
+'''
         )
 
-        result = merge_control("TEST-01", framework_control, FrameworkDefaults(check_adapter="builtin"))
+        with pytest.raises(ValueError, match="control 'TEST-01' has unknown key 'check'"):
+            load_framework_config(path)
 
-        assert result.check_adapter == "kusari"
+    def test_adapter_tables_still_load_and_are_not_read(self, tmp_path):
+        path = tmp_path / "framework.toml"
+        path.write_text(
+            self.METADATA
+            + '''
+[defaults]
+check_adapter = "kusari"
+remediation_adapter = "builtin"
+
+[adapters.kusari]
+type = "command"
+command = "kusari"
+
+[controls."TEST-01"]
+name = "TestControl"
+description = "Test description"
+'''
+        )
+
+        effective = merge_configs(load_framework_config(path))
+
+        assert list(effective.controls) == ["TEST-01"]
+        assert not hasattr(effective, "adapters")
+        assert not hasattr(effective.controls["TEST-01"], "check_adapter")
 
 
 class TestMergeConfigs:
@@ -158,9 +191,8 @@ class TestSieveGatingMetadataPreservation:
     def test_merge_control_preserves_gating_metadata(self):
         """All four gating fields must survive merge_control into EffectiveControl."""
         framework_control = self._make_framework_control_with_gating()
-        defaults = FrameworkDefaults()
 
-        effective = merge_control("OSPS-QA-02.01", framework_control, defaults)
+        effective = merge_control("OSPS-QA-02.01", framework_control)
 
         assert effective.when == {"has_releases": True}, (
             "merge_control dropped 'when' — when-gates will be silently ignored"
@@ -179,9 +211,8 @@ class TestSieveGatingMetadataPreservation:
     def test_control_from_effective_preserves_gating_metadata(self):
         """All four gating fields must survive control_from_effective into ControlSpec.metadata."""
         framework_control = self._make_framework_control_with_gating()
-        defaults = FrameworkDefaults()
 
-        effective = merge_control("OSPS-QA-02.01", framework_control, defaults)
+        effective = merge_control("OSPS-QA-02.01", framework_control)
         spec = control_from_effective("OSPS-QA-02.01", effective)
 
         assert "when" in spec.metadata, (
@@ -212,9 +243,8 @@ class TestSieveGatingMetadataPreservation:
             domain="BR",
             description="A control with no optional gating fields",
         )
-        defaults = FrameworkDefaults()
 
-        effective = merge_control("OSPS-BR-01.01", framework_control, defaults)
+        effective = merge_control("OSPS-BR-01.01", framework_control)
         spec = control_from_effective("OSPS-BR-01.01", effective)
 
         # Optional fields default to None — must not appear in metadata

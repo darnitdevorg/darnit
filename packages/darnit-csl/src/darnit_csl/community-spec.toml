@@ -38,10 +38,6 @@ spec_version = "CSL 1.0"
 description = "Compliance for repositories that develop specifications under the Community Specification License 1.0"
 url = "https://github.com/CommunitySpecification/1.0"
 
-[defaults]
-check_adapter = "builtin"
-remediation_adapter = "builtin"
-
 # -----------------------------------------------------------------------------
 # MCP integration. Built-in audit + list tools are enough for a TOML-only
 # plugin; remediation is driven generically from the [remediation] blocks below.

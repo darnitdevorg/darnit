@@ -29,10 +29,6 @@ spec_version = "CSL 1.0"
 description = "Facultative presence check for the optional Community Specification files (contributing, spec-template, code-of-conduct)"
 url = "https://github.com/CommunitySpecification/1.0"
 
-[defaults]
-check_adapter = "builtin"
-remediation_adapter = "builtin"
-
 # -----------------------------------------------------------------------------
 # CSL-OPT-01  ->  06-contributing.md
 # -----------------------------------------------------------------------------

@@ -64,10 +64,6 @@ schema_version = "0.1.0-alpha"
 spec_version = "Hygiene v1.0"
 description = "Basic code hygiene checks for any project"
 
-[defaults]
-check_adapter = "builtin"
-remediation_adapter = "builtin"
-
 # Templates for remediation
 [templates.readme]
 description = "Basic README template"

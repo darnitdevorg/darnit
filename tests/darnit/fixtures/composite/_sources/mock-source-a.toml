@@ -10,10 +10,6 @@ display_name = "Mock Source A (test fixture)"
 version = "1.5.0"
 spec_version = "mock v1"
 
-[defaults]
-check_adapter = "builtin"
-remediation_adapter = "builtin"
-
 [controls."MOCK-AC-01.01"]
 name = "MockAccessControlOne"
 description = "Mock AC control at level 1, domain AC. Sources tests."

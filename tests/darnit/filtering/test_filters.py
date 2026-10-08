@@ -30,7 +30,6 @@ class MockControl:
     domain: str | None = None
     name: str = "Test Control"
     metadata: dict[str, Any] = None
-    check_adapter: str = "builtin"
 
     def __post_init__(self):
         if self.metadata is None:
@@ -318,20 +317,6 @@ class TestMatchesFilter:
         assert matches_filter(control, f) is True
 
         f = ControlFilter(field="severity", operator=">=", value=8.0)
-        assert matches_filter(control, f) is False
-
-    def test_match_adapter(self):
-        """Test matching adapter."""
-        control = MockControl(
-            control_id="OSPS-AC-01.01",
-            level=1,
-            check_adapter="scorecard",
-        )
-
-        f = ControlFilter(field="adapter", operator="=", value="scorecard")
-        assert matches_filter(control, f) is True
-
-        f = ControlFilter(field="adapter", operator="=", value="builtin")
         assert matches_filter(control, f) is False
 
     def test_unknown_field(self):

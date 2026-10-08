@@ -12,10 +12,6 @@ schema_version = "0.1.0-alpha"
 spec_version = "PH v1.0"
 description = "Example project hygiene controls for open source projects"
 
-[defaults]
-check_adapter = "builtin"
-remediation_adapter = "builtin"
-
 # =============================================================================
 # Templates for Remediation
 # =============================================================================
