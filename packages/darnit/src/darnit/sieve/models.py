@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any, Literal, NotRequired, Optional, TypedDict
 if TYPE_CHECKING:
     from darnit.config.framework_schema import LocatorConfig
     from darnit.core.models import ExecutionContext
-    from darnit.locate import UnifiedLocator
 
 
 class VerificationPhase(Enum):
@@ -43,8 +42,6 @@ class CheckContext:
     gathered_evidence: dict[str, Any] = field(default_factory=dict)
 
     # Locator integration
-    # UnifiedLocator instance for .project/-aware file resolution
-    locator: Optional["UnifiedLocator"] = None
     # LocatorConfig for this specific control (from TOML)
     locator_config: Optional["LocatorConfig"] = None
 

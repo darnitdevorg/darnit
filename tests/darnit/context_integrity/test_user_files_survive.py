@@ -9,11 +9,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from darnit.config.framework_schema import HandlerInvocation, LocatorConfig, ProjectUpdateRemediationConfig
+from darnit.config.framework_schema import HandlerInvocation, ProjectUpdateRemediationConfig
 from darnit.config.framework_schema import RemediationConfig as RemediationSpec
 from darnit.config.resolver import update_config_after_file_create
-from darnit.locate.locator import UnifiedLocator
-from darnit.locate.models import FoundEvidence
 from darnit.remediation.executor import RemediationExecutor, plan_project_update
 from darnit.server.tools.project_data import confirm_project_data_impl
 from darnit_baseline.tools import audit_openssf_baseline
@@ -187,14 +185,6 @@ class TestInvalidFilesAreNotWritten:
         before = snapshot(repo)
 
         assert update_config_after_file_create(str(repo), "OSPS-VM-02.01", "SECURITY.md", POLICY) is False
-        assert (
-            UnifiedLocator(str(repo)).sync_to_project(
-                "OSPS-VM-02.01",
-                FoundEvidence(path="SECURITY.md", kind="file"),
-                LocatorConfig(project_path="security.policy", discover=["SECURITY.md"], kind="file"),
-            )
-            is False
-        )
         assert_unchanged(repo, before)
 
 
@@ -234,18 +224,6 @@ class TestTargetedFieldsOnly:
 
         assert (repo / ".project" / "project.yaml").read_text(encoding="utf-8") == HAND_WRITTEN_WITH_POLICY
         assert (repo / ".project" / "darnit.yaml").read_text(encoding="utf-8") == HAND_WRITTEN_DARNIT_YAML
-
-    def test_locator_sync_changes_only_the_targeted_field(self, tmp_path: Path) -> None:
-        repo = _hand_written(tmp_path)
-
-        synced = UnifiedLocator(str(repo)).sync_to_project(
-            "OSPS-VM-02.01",
-            FoundEvidence(path="SECURITY.md", kind="file"),
-            LocatorConfig(project_path="security.policy", discover=["SECURITY.md"], kind="file"),
-        )
-
-        assert synced is True
-        assert (repo / ".project" / "project.yaml").read_text(encoding="utf-8") == HAND_WRITTEN_WITH_POLICY
 
     def test_an_absent_project_directory_gets_only_what_is_needed(self, tmp_path: Path) -> None:
         assert _apply_update(tmp_path, {"security.policy.path": "SECURITY.md"}).changed
