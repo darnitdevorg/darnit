@@ -18,15 +18,6 @@ check_adapter = "builtin"
 remediation_adapter = "builtin"
 
 # =============================================================================
-# Adapter Definitions
-# =============================================================================
-
-[adapters.builtin]
-type = "python"
-module = "darnit_testchecks.adapters.builtin"
-class = "TestCheckAdapter"
-
-# =============================================================================
 # Level 1 Controls - Basic Project Setup
 # =============================================================================
 

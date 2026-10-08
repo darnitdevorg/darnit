@@ -47,16 +47,6 @@ Repository = "https://github.com/kusari-oss/darnit"
 [project.entry-points."darnit.frameworks"]
 testchecks = "darnit_testchecks:get_framework_path"
 
-[project.entry-points."darnit.check_adapters"]
-testchecks = "darnit_testchecks.adapters.builtin:TrivialCheckAdapter"
-
-[project.entry-points."darnit.remediation_adapters"]
-testchecks = "darnit_testchecks.adapters.builtin:TrivialRemediationAdapter"
-
-# Legacy entry point (deprecated, kept for backwards compatibility)
-[project.entry-points."darnit.adapters"]
-testchecks = "darnit_testchecks.adapters.builtin:get_test_check_adapter"
-
 # In-memory reference store backends (feature 033 T020)
 [project.entry-points."darnit.stores.project"]
 in-memory = "darnit_testchecks.stores:InMemoryProjectStateStore"
