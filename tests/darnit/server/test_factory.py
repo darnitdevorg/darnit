@@ -145,23 +145,16 @@ description = "Refused tool"
     def test_openssf_baseline_toml(self):
         """Test loading the actual openssf-baseline.toml file."""
         # Find the openssf-baseline.toml file
-        baseline_path = (
-            Path(__file__).parent.parent.parent.parent
-            / "packages"
-            / "darnit-baseline"
-            / "openssf-baseline.toml"
-        )
-        if baseline_path.exists():
-            # Should be able to create server from it
-            # Note: This test may fail if darnit_baseline tools have import errors
-            try:
-                server = create_server(str(baseline_path))
-                assert server.name == "openssf-baseline"
-            except ImportError:
-                # Skip if darnit_baseline not installed
-                pytest.skip("darnit_baseline not installed")
-        else:
-            pytest.skip("openssf-baseline.toml not found")
+        from importlib.resources import files
+
+        baseline_path = Path(str(files("darnit_baseline") / "openssf-baseline.toml"))
+        assert baseline_path.is_file(), f"openssf-baseline.toml not found at {baseline_path}"
+        try:
+            server = create_server(str(baseline_path))
+            assert server.name == "openssf-baseline"
+        except ImportError:
+            # Skip if darnit_baseline not installed
+            pytest.skip("darnit_baseline not installed")
 
 
 def _shipped_framework_configs() -> list[tuple[str, Path]]:
