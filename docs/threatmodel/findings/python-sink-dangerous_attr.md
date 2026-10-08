@@ -12,7 +12,7 @@
 
 **Examples:** `packages/darnit/src/darnit/core/adapters.py:231`, `packages/darnit-plugins/src/darnit_plugins/adapters/kusari.py:253`, `packages/darnit/src/darnit/core/adapters.py:354`
 
-> **Note (#487):** `packages/darnit-plugins/` was removed in 0.2.0; the `kusari.py` instances below no longer exist.
+> **Note (#487):** `packages/darnit-plugins/` and `packages/darnit/src/darnit/core/adapters.py` were removed in 0.2.0; the `kusari.py` and `adapters.py` instances below no longer exist.
 
 ### Strategy 2 (1 instances)
 
@@ -83,7 +83,7 @@
 ## Representative Examples
 
 <details>
-<summary><code>packages/darnit/src/darnit/core/adapters.py:231</code></summary>
+<summary><code>packages/darnit/src/darnit/core/adapters.py:231</code> (removed in 0.2.0, #487)</summary>
 
 ```
      221 |             # Add any extra config

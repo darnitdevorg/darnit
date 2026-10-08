@@ -44,29 +44,6 @@ class CheckResult:
 
 
 @dataclass
-class RemediationResult:
-    """Result of a remediation action."""
-
-    control_id: str
-    success: bool
-    message: str
-    changes_made: list[str] = field(default_factory=list)
-    requires_manual_action: bool = False
-    manual_steps: list[str] = field(default_factory=list)
-    source: str = "builtin"
-
-
-@dataclass
-class AdapterCapability:
-    """Describes what controls an adapter can handle."""
-
-    control_ids: set[str]  # Specific control IDs, or {"*"} for all
-    supports_batch: bool = False  # Can handle multiple controls in one call
-    batch_command: str | None = None  # Command for batch mode
-    cache_key: str | None = None  # Key for caching tool output (e.g., "scorecard")
-
-
-@dataclass
 class ExecutionContext:
     """Shared context for an audit run, enabling result caching across controls.
 

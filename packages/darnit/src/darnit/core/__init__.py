@@ -5,39 +5,23 @@ This module provides fundamental utilities used across the framework:
 - **Logging**: Structured logging configuration
 - **Models**: Data models for audit results, check results
 - **Utilities**: Git detection, path validation
-- **Adapters**: Check and remediation adapter interfaces
-- **Plugin Registry**: Unified discovery for frameworks and adapters
+- **Plugin Registry**: Discovery of frameworks
 
 Plugin System:
-    The plugin registry discovers plugins via Python entry points:
-
-    - ``darnit.frameworks`` - Framework TOML path providers
-    - ``darnit.check_adapters`` - Check adapter classes
-    - ``darnit.remediation_adapters`` - Remediation adapter classes
+    The plugin registry discovers frameworks via the ``darnit.frameworks``
+    entry point group (framework TOML path providers).
 
     Example::
 
         from darnit.core import get_plugin_registry
 
         registry = get_plugin_registry()
-        registry.discover_all()
-
-        # List available plugins
         print(registry.list_frameworks())
-        print(registry.list_check_adapters())
-
-        # Get an adapter by name
-        adapter = registry.get_check_adapter("kusari")
 
 See Also:
     - :mod:`darnit.core.registry` for the plugin registry
-    - :mod:`darnit.core.adapters` for adapter base classes
 """
 
-from .adapters import (
-    CheckAdapter,
-    RemediationAdapter,
-)
 from .discovery import (
     discover_implementations,
     get_implementation,
@@ -61,10 +45,7 @@ from .plugin import (
     ControlSpec,
 )
 from .registry import (
-    ENTRY_POINT_CHECK_ADAPTERS,
     ENTRY_POINT_FRAMEWORKS,
-    ENTRY_POINT_REMEDIATION_ADAPTERS,
-    AdapterInfo,
     FrameworkInfo,
     PluginRegistry,
     get_plugin_registry,
@@ -101,9 +82,6 @@ __all__ = [
     "get_git_commit",
     "get_git_ref",
     "gh_api_safe",
-    # Adapters
-    "CheckAdapter",
-    "RemediationAdapter",
     # Legacy plugin system
     "ControlSpec",
     "ComplianceImplementation",
@@ -114,10 +92,7 @@ __all__ = [
     "get_plugin_registry",
     "reset_plugin_registry",
     "FrameworkInfo",
-    "AdapterInfo",
     "ENTRY_POINT_FRAMEWORKS",
-    "ENTRY_POINT_CHECK_ADAPTERS",
-    "ENTRY_POINT_REMEDIATION_ADAPTERS",
     # Handler registry (new)
     "HandlerRegistry",
     "HandlerInfo",

@@ -9,10 +9,9 @@ This document maps out the decision-making processes in the OpenSSF Baseline MCP
 3. [Project Context Flow](#project-context-flow) *(NEW)*
 4. [Context Sieve Flow](#context-sieve-flow) *(NEW - Remediation)*
 5. [Project Configuration Lifecycle](#project-configuration-lifecycle)
-6. [Adapter Selection & Check Routing](#adapter-selection--check-routing)
-7. [Control Applicability](#control-applicability)
-8. [CI Discovery](#ci-discovery)
-9. [Attestation Generation](#attestation-generation)
+6. [Control Applicability](#control-applicability)
+7. [CI Discovery](#ci-discovery)
+8. [Attestation Generation](#attestation-generation)
 
 ---
 
@@ -733,142 +732,6 @@ Only after the person accepts does the agent fill in the digest; the confirmatio
 
 ---
 
-## Adapter Selection & Check Routing
-
-### 5.1 Which Adapter to Use?
-
-```text
-┌──────────────────────────────────────────────────────────────────┐
-│                 get_check_adapter(control_id)                     │
-│                      (from ToolRegistry)                          │
-└──────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-              ┌───────────────────────────────────┐
-              │  Check framework TOML for         │
-              │  control-specific adapter config  │
-              └───────────────────────────────────┘
-                              │
-              ┌───────────────┼───────────────┐
-              │               │               │
-              ▼               ▼               ▼
-      [Custom Adapter]  [Default Setting]  [No Config]
-              │               │               │
-              │               │               │
-              ▼               ▼               ▼
-      ┌───────────┐    ┌───────────┐   ┌───────────┐
-      │  "kusari" │    │ "builtin" │   │ "builtin" │
-      │  "script" │    │  (from    │   │ (hardcoded│
-      │  "custom" │    │  settings)│   │  default) │
-      └───────────┘    └───────────┘   └───────────┘
-              │               │               │
-              └───────────────┼───────────────┘
-                              │
-                              ▼
-              ┌───────────────────────────────────┐
-              │     Look up adapter instance      │
-              │   check_adapters[adapter_name]    │
-              └───────────────────────────────────┘
-                              │
-                    ┌─────────┴─────────┐
-                    │                   │
-                    ▼                   ▼
-             [Adapter Found]     [Adapter Not Found]
-                    │                   │
-                    │                   ▼
-                    │           ┌───────────────────┐
-                    │           │ Fallback to       │
-                    │           │ "builtin" adapter │
-                    │           └───────────────────┘
-                    │                   │
-                    └─────────┬─────────┘
-                              │
-                              ▼
-              ┌───────────────────────────────────┐
-              │     Return CheckAdapter instance   │
-              └───────────────────────────────────┘
-```
-
-### 5.2 Adapter Types
-
-```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              ADAPTER TYPES                                   │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  ┌──────────────────────────────────────────────────────────────────────┐   │
-│  │                     BuiltinCheckAdapter                               │   │
-│  │  - Default adapter for all controls                                   │   │
-│  │  - Hardcoded check logic in Python                                    │   │
-│  │  - Routes by control prefix (OSPS-AC, OSPS-BR, etc.)                  │   │
-│  │  - Uses GitHub API + local file analysis                              │   │
-│  └──────────────────────────────────────────────────────────────────────┘   │
-│                                                                              │
-│  ┌──────────────────────────────────────────────────────────────────────┐   │
-│  │                       KusariAdapter                                   │   │
-│  │  - Integration with Kusari security scanner                           │   │
-│  │  - Maps controls to Kusari check names                                │   │
-│  │  - Runs: kusari repo scan --format json                               │   │
-│  │  - Supports: OSPS-VM-05.*, OSPS-SA-02.*                               │   │
-│  └──────────────────────────────────────────────────────────────────────┘   │
-│                                                                              │
-│  ┌──────────────────────────────────────────────────────────────────────┐   │
-│  │                       ScriptAdapter                                   │   │
-│  │  - Runs custom shell commands                                         │   │
-│  │  - Passes context via environment variables:                          │   │
-│  │      OSPS_CONTROL_ID, OSPS_OWNER, OSPS_REPO, OSPS_LOCAL_PATH          │   │
-│  │  - Expects JSON output: {status, message, details}                    │   │
-│  │  - Supports batch mode for multiple controls                          │   │
-│  └──────────────────────────────────────────────────────────────────────┘   │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### 5.3 Builtin Adapter - Check Routing
-
-```text
-┌──────────────────────────────────────────────────────────────────┐
-│            BuiltinCheckAdapter.check(control_id)                  │
-└──────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-              ┌───────────────────────────────────┐
-              │  Extract prefix from control_id   │
-              │  "OSPS-AC-03.01" → "OSPS-AC"      │
-              └───────────────────────────────────┘
-                              │
-                              ▼
-              ┌───────────────────────────────────┐
-              │  Map prefix to category:          │
-              │                                   │
-              │  OSPS-AC → access_control         │
-              │  OSPS-BR → build_release          │
-              │  OSPS-DO → documentation          │
-              │  OSPS-GV → governance             │
-              │  OSPS-LI → legal                  │
-              │  OSPS-QA → quality                │
-              │  OSPS-SA → security_architecture  │
-              │  OSPS-VM → vulnerability          │
-              └───────────────────────────────────┘
-                              │
-                              ▼
-              ┌───────────────────────────────────┐
-              │  Determine level from control_id  │
-              │  and call appropriate function:   │
-              │                                   │
-              │  check_level1_{category}()        │
-              │  check_level2_{category}()        │
-              │  check_level3_{category}()        │
-              └───────────────────────────────────┘
-                              │
-                              ▼
-              ┌───────────────────────────────────┐
-              │   Return List[CheckResult]        │
-              └───────────────────────────────────┘
-```
-
----
-
 ## Control Applicability
 
 ```text
@@ -1526,11 +1389,3 @@ Use the provided verification script instead.
 | `get_pending_context()` | config/context_storage.py | Pending questions with candidates as data (read-only) |
 | `context_writes` | config/context_writes.py | The only writer of context values and confirmation records |
 | `[context.*]` | framework TOML | Context keys, vocabularies, and affected controls |
-
-### Adapter Functions (Legacy)
-
-| Function | Location | Purpose |
-|----------|----------|---------|
-| `ToolRegistry.get_check_adapter()` | main.py | Get adapter for control |
-| `BuiltinCheckAdapter.check()` | main.py | Route to builtin checks |
-| `check_level{1,2,3}_{category}()` | checks/level{1,2,3}.py | Actual check implementations |

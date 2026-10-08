@@ -116,7 +116,7 @@ No authentication decorator was found on this endpoint. If the endpoint handles 
 #### TM-T-001: Potential command injection via subprocess.run
 
 **Risk:** HIGH (severity × confidence = 5.40)
-**Location:** `packages/darnit/src/darnit/core/adapters.py:231`
+**Location:** `packages/darnit/src/darnit/core/adapters.py:231` (removed in 0.2.0, #487)
 **Source:** `tree_sitter_structural` — query `python.sink.dangerous_attr`
 
 [subprocess/dynamic] Entire command built dynamically — highest injection risk without taint confirmation. Command argument is populated from configuration/dict lookup within the same function scope. Opengrep taint analysis will lift confirmed cases to high confidence.
@@ -354,7 +354,7 @@ No authentication decorator was found on this endpoint. If the endpoint handles 
 #### TM-T-021: Potential command injection via subprocess.run
 
 **Risk:** MEDIUM (severity × confidence = 2.40)
-**Location:** `packages/darnit/src/darnit/core/adapters.py:354`
+**Location:** `packages/darnit/src/darnit/core/adapters.py:354` (removed in 0.2.0, #487)
 **Source:** `tree_sitter_structural` — query `python.sink.dangerous_attr`
 
 [subprocess/parameterized] Command list contains variable arguments that may originate from external input. Opengrep taint analysis will lift confirmed cases to high confidence.
@@ -787,7 +787,7 @@ The `local_path` MCP parameter is the primary trust boundary — the user (MCP c
 
 Dynamic imports allow loading arbitrary modules at runtime. If the module name originates from untrusted input, an attacker can achieve arbitrary code execution.
 
-> **Mitigation (verified, #490):** This is the only place darnit-core imports a module named by configuration. `resolve_module_path` serves every caller that turns a `module:attribute` string into an import: MCP tool handlers (`ToolRegistry.load_handler`, `server/registry.py`), handler-registry lookups (`HandlerRegistry.get_handler`), and Python adapter configuration (`PluginRegistry` in `core/registry.py`, `AdapterRegistry` in `core/adapters.py`). Before importing, it requires the form `a.b.c:attr` (identifiers only, no relative or empty parts) and a top-level package that is `darnit` or the package of an implementation discovery loaded from the `darnit.implementations` entry points. The allowed set is derived from installed entry point metadata, not a list in code, so it covers third-party implementations and excludes packages that are not installed implementations. A refused path raises `HandlerImportRefused` naming the path and the allowed packages; at MCP server start the tool is not registered and the refusal is logged at ERROR. Residual risk: an allowed package is code the operator installed, so the policy narrows what a configured string can reach but does not sandbox it. `[mcp.tools]` comes from an installed framework TOML or an operator-supplied `darnit serve <config.toml>`, never from the audited repository (framework-design.md 6.5, 14).
+> **Mitigation (verified, #490):** This is the only place darnit-core imports a module named by configuration. `resolve_module_path` serves every caller that turns a `module:attribute` string into an import: MCP tool handlers (`ToolRegistry.load_handler`, `server/registry.py`) and handler-registry lookups (`HandlerRegistry.get_handler`); the Python adapter loaders that also used it were removed in 0.2.0 (#487). Before importing, it requires the form `a.b.c:attr` (identifiers only, no relative or empty parts) and a top-level package that is `darnit` or the package of an implementation discovery loaded from the `darnit.implementations` entry points. The allowed set is derived from installed entry point metadata, not a list in code, so it covers third-party implementations and excludes packages that are not installed implementations. A refused path raises `HandlerImportRefused` naming the path and the allowed packages; at MCP server start the tool is not registered and the refusal is logged at ERROR. Residual risk: an allowed package is code the operator installed, so the policy narrows what a configured string can reach but does not sandbox it. `[mcp.tools]` comes from an installed framework TOML or an operator-supplied `darnit serve <config.toml>`, never from the audited repository (framework-design.md 6.5, 14).
 
 ```
      414 |     module_path, sep, attr = path.rpartition(":")
@@ -812,7 +812,7 @@ No compound attack paths identified.
 
 ### Immediate Actions (Critical / High)
 
-1. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/core/adapters.py:231` (mitigated: TOML config source, list-form subprocess)
+1. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/core/adapters.py:231` (mitigated: TOML config source, list-form subprocess; file removed in 0.2.0, #487)
 2. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/sieve/builtin_handlers.py:137` (mitigated: TOML control definitions, list-form subprocess)
 3. **Potential command injection via subprocess.run** — `packages/darnit-plugins/src/darnit_plugins/adapters/kusari.py:253` (mitigated: hardcoded binary, list-form subprocess; file removed in 0.2.0, #487)
 4. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/server/tools/git_operations.py:382` (mitigated: list-form subprocess, gh CLI validates args)
@@ -825,7 +825,7 @@ No compound attack paths identified.
 4. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/tools/audit_org.py:62` (mitigated: list-form subprocess, gh validates)
 5. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/tools/audit_org.py:113` (mitigated: list-form subprocess, gh validates)
 6. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/core/utils.py:27` (mitigated: list-form subprocess, gh validates)
-7. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/core/adapters.py:354` (mitigated: trusted TOML config)
+7. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/core/adapters.py:354` (mitigated: trusted TOML config; file removed in 0.2.0, #487)
 8. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/server/tools/test_repository.py:141` (test tool only)
 9. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/server/tools/git_operations.py:45` (mitigated: list-form subprocess)
 10. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/server/tools/git_operations.py:53` (mitigated: list-form subprocess)
