@@ -60,7 +60,7 @@ from darnit_baseline.controls import level1
 from darnit.core.discovery import get_implementation
 impl = get_implementation("openssf-baseline")
 if impl:
-    controls = impl.get_all_controls()
+    config_path = impl.get_framework_config_path()
 ```
 
 **Why?** This ensures any compliance standard can be implemented as a plugin without modifying the framework. The framework ships with zero knowledge of any specific standard.
@@ -84,10 +84,11 @@ sequenceDiagram
     EP-->>F: List of entry point references
     F->>I: Call register() function
     I-->>F: Return ComplianceImplementation instance
+    F->>I: impl.register_handlers() (if defined)
+    Note over F,I: Plugin step types and MCP tool handlers registered
     F->>I: impl.get_framework_config_path()
     I-->>F: Path to TOML config
     F->>F: Load and parse TOML controls
-    F->>I: impl.register_controls()
     Note over F,I: Framework ready — controls loaded from TOML
 ```
 
@@ -99,12 +100,10 @@ The protocol interface (defined in `packages/darnit/src/darnit/core/plugin.py`):
 | `display_name` | `str` | Human-readable name |
 | `version` | `str` | Implementation version |
 | `spec_version` | `str` | Spec version implemented |
-| `get_all_controls()` | `list[ControlSpec]` | All controls |
-| `get_controls_by_level(n)` | `list[ControlSpec]` | Controls at level n |
-| `get_rules_catalog()` | `dict` | SARIF rule definitions |
-| `get_remediation_registry()` | `dict` | Auto-fix mappings |
 | `get_framework_config_path()` | `Path \| None` | TOML config location |
-| `register_controls()` | `None` | Register TOML controls |
+| `register_handlers()` (optional) | `None` | Register the plugin's sieve step types and MCP tool handlers |
+
+`register_handlers()` is the one handler hook (framework-design.md 6.4). The framework also calls `register_sieve_handlers()` for compatibility with older out-of-tree plugins; it is not a supported choice for new ones. Registering handlers at module import works, but the framework cannot introspect it.
 
 ## The Sieve Pipeline
 

@@ -5,25 +5,25 @@ The `darnit-example` package SHALL export a `register()` function that returns a
 
 #### Scenario: Protocol compliance check
 - **WHEN** `register()` is called
-- **THEN** the returned object satisfies all required protocol properties (`name`, `display_name`, `version`, `spec_version`) and methods (`get_all_controls`, `get_controls_by_level`, `get_rules_catalog`, `get_remediation_registry`, `get_framework_config_path`, `register_controls`)
+- **THEN** the returned object satisfies all required protocol properties (`name`, `display_name`, `version`, `spec_version`) and the method `get_framework_config_path`
 
 #### Scenario: Entry point discovery
 - **WHEN** the package is installed via `uv sync`
 - **THEN** darnit's plugin discovery system finds it under the `darnit.implementations` entry point group with key `example-hygiene`
 
 ### Requirement: Package defines 8 controls across 2 levels
-The implementation SHALL define exactly 8 controls: 6 at level 1 and 2 at level 2. Control IDs SHALL follow the `PH-{DOMAIN}-NN` format.
+The framework TOML SHALL define exactly 8 controls: 6 at level 1 and 2 at level 2. Control IDs SHALL follow the `PH-{DOMAIN}-NN` format.
 
 #### Scenario: Level 1 controls
-- **WHEN** `get_controls_by_level(1)` is called
-- **THEN** 6 controls are returned with IDs `PH-DOC-01`, `PH-DOC-02`, `PH-DOC-03`, `PH-SEC-01`, `PH-CFG-01`, `PH-CFG-02`
+- **WHEN** the controls are loaded from `get_framework_config_path()` with `load_controls_from_framework`
+- **THEN** 6 controls have level 1, with IDs `PH-DOC-01`, `PH-DOC-02`, `PH-DOC-03`, `PH-SEC-01`, `PH-CFG-01`, `PH-CFG-02`
 
 #### Scenario: Level 2 controls
-- **WHEN** `get_controls_by_level(2)` is called
-- **THEN** 2 controls are returned with IDs `PH-QA-01`, `PH-CI-01`
+- **WHEN** the controls are loaded from `get_framework_config_path()` with `load_controls_from_framework`
+- **THEN** 2 controls have level 2, with IDs `PH-QA-01`, `PH-CI-01`
 
 #### Scenario: Total control count
-- **WHEN** `get_all_controls()` is called
+- **WHEN** the controls are loaded from `get_framework_config_path()` with `load_controls_from_framework`
 - **THEN** exactly 8 `ControlSpec` instances are returned
 
 ### Requirement: TOML-defined controls use file_exists pass
@@ -83,7 +83,7 @@ The package SHALL provide remediation actions `create_readme` and `create_gitign
 - **THEN** the existing file is not modified and the result status is `"skipped"`
 
 ### Requirement: Handler registration with plugin context
-The implementation SHALL provide a `register_handlers()` method that registers at least one handler with the framework's handler registry. The handler SHALL be tagged with the plugin name `"example-hygiene"`.
+The implementation SHALL provide a `register_handlers()` method, its only handler registration method, that registers its sieve step types and at least one MCP tool handler with the framework's handler registries. The handler SHALL be tagged with the plugin name `"example-hygiene"`.
 
 #### Scenario: Handler appears in registry
 - **WHEN** `register_handlers()` is called

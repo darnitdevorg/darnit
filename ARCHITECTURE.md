@@ -153,7 +153,7 @@ from darnit_baseline.controls import level1
 # CORRECT — use plugin discovery
 from darnit.core.discovery import get_implementation
 impl = get_implementation("openssf-baseline")
-controls = impl.get_all_controls()
+config_path = impl.get_framework_config_path()
 ```
 
 ---
@@ -380,13 +380,8 @@ class ComplianceImplementation(Protocol):
     @property
     def spec_version(self) -> str: ...                      # "OSPS v2025.10.10"
 
-    def get_all_controls(self) -> list[ControlSpec]: ...
-    def get_controls_by_level(self, level: int) -> list[ControlSpec]: ...
-    def get_rules_catalog(self) -> dict[str, Any]: ...
-    def get_remediation_registry(self) -> dict[str, Any]: ...
     def get_framework_config_path(self) -> Path | None: ...
-    def register_controls(self) -> None: ...
-    # Optional: register_handlers() — checked via hasattr()
+    # Optional: register_handlers() — the handler hook, checked via hasattr()
 ```
 
 ### Entry Point Registration

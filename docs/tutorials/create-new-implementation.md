@@ -144,9 +144,6 @@ Create `packages/darnit-hygiene/src/darnit_hygiene/implementation.py`:
 """Code Hygiene compliance implementation for darnit."""
 
 from pathlib import Path
-from typing import Any
-
-from darnit.core.plugin import ControlSpec
 
 
 class HygieneImplementation:
@@ -168,34 +165,17 @@ class HygieneImplementation:
     def spec_version(self) -> str:
         return "Hygiene v1.0"
 
-    def get_all_controls(self) -> list[ControlSpec]:
-        controls = []
-        for level in [1, 2, 3]:
-            controls.extend(self.get_controls_by_level(level))
-        return controls
-
-    def get_controls_by_level(self, level: int) -> list[ControlSpec]:
-        from darnit.sieve.registry import get_control_registry
-
-        registry = get_control_registry()
-        return registry.get_specs_by_level(level)
-
-    def get_rules_catalog(self) -> dict[str, Any]:
-        return {}
-
-    def get_remediation_registry(self) -> dict[str, Any]:
-        return {}
-
     def get_framework_config_path(self) -> Path | None:
         # Navigate: implementation.py → darnit_hygiene/ → src/ → darnit-hygiene/ → hygiene.toml
         return Path(__file__).parent.parent.parent / "hygiene.toml"
 
-    def register_controls(self) -> None:
-        """TOML-first: controls are defined in hygiene.toml.
+    def register_handlers(self) -> None:
+        """Optional hook for custom step types and MCP tool handlers.
 
-        No Python registration needed for simple implementations.
+        Every control in hygiene.toml uses built-in step types, so there is
+        nothing to register. Controls, SARIF rules, and remediations all come
+        from hygiene.toml.
         """
-        pass
 ```
 
 ## Step 5: Create the Register Function
