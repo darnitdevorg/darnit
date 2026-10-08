@@ -5,9 +5,6 @@ the darnit ComplianceImplementation protocol for OpenSSF Baseline (OSPS v2025.10
 """
 
 from pathlib import Path
-from typing import Any
-
-from darnit.core.plugin import ControlSpec
 
 
 class OSPSBaselineImplementation:
@@ -34,98 +31,6 @@ class OSPSBaselineImplementation:
     @property
     def spec_version(self) -> str:
         return "OSPS v2026.02.19"
-
-    def get_all_controls(self) -> list[ControlSpec]:
-        """Get all OSPS controls."""
-        controls = []
-        for level in [1, 2, 3]:
-            controls.extend(self.get_controls_by_level(level))
-        return controls
-
-    def get_controls_by_level(self, level: int) -> list[ControlSpec]:
-        """Get controls for a specific maturity level."""
-        from darnit.config.merger import load_framework_by_name
-
-        config = load_framework_by_name("openssf-baseline")
-        controls = []
-        for control_id, control in config.controls.items():
-            ctrl_level = control.level
-            if ctrl_level is None and control.tags:
-                ctrl_level = control.tags.get("level")
-            if ctrl_level == level:
-                domain = control.domain
-                if domain is None and control.tags:
-                    domain = control.tags.get("domain", "")
-                controls.append(
-                    ControlSpec(
-                        control_id=control_id,
-                        name=control.name,
-                        description=control.description or "",
-                        level=level,
-                        domain=domain or (control_id.split("-")[1] if "-" in control_id else "UNKNOWN"),
-                        # Preserve TOML tags on the ControlSpec so downstream
-                        # consumers (e.g., tag-based filtering, feature 025's
-                        # STAGE1-REF-* opt-out from OSPS-format tests) can see
-                        # them. ControlSpec.__post_init__ still adds level/domain.
-                        tags=dict(control.tags) if control.tags else {},
-                        metadata={
-                            "full": control.description or "",
-                            "help_uri": control.docs_url
-                            or f"https://baseline.openssf.org/versions/2025-10-10#{control_id}",
-                        },
-                    )
-                )
-        return controls
-
-    def get_rules_catalog(self) -> dict[str, Any]:
-        """Get the rules catalog for SARIF output."""
-        from darnit.config.merger import load_framework_by_name
-
-        config = load_framework_by_name("openssf-baseline")
-        catalog: dict[str, Any] = {}
-        for control_id, control in config.controls.items():
-            level = control.level
-            if level is None and control.tags:
-                level = control.tags.get("level", 1)
-            catalog[control_id] = {
-                "name": control.name,
-                "shortDescription": {"text": control.description[:100] if control.description else control.name},
-                "level": level or 1,
-            }
-        return catalog
-
-    def get_remediation_registry(self) -> dict[str, Any]:
-        """Get remediation metadata derived from TOML.
-
-        Returns a dict mapping control IDs to their remediation metadata
-        (safe, requires_api, handler types).
-        """
-        registry: dict[str, Any] = {}
-        try:
-            import tomllib
-
-            toml_path = self.get_framework_config_path()
-            if not toml_path or not toml_path.exists():
-                return registry
-
-            with open(toml_path, "rb") as f:
-                data = tomllib.load(f)
-
-            from darnit.config.framework_schema import FrameworkConfig
-
-            fw = FrameworkConfig(**data)
-            for cid, control in fw.controls.items():
-                if control.remediation and control.remediation.handlers:
-                    handler_types = [h.handler for h in control.remediation.handlers]
-                    registry[cid] = {
-                        "description": control.description or cid,
-                        "safe": control.remediation.safe,
-                        "requires_api": control.remediation.requires_api,
-                        "handler_types": handler_types,
-                    }
-        except Exception:
-            pass  # Best-effort
-        return registry
 
     def get_framework_config_path(self) -> Path | None:
         """Get path to the OpenSSF Baseline framework TOML file.
@@ -159,16 +64,6 @@ class OSPSBaselineImplementation:
         if config.audit_profiles:
             return dict(config.audit_profiles)
         return None
-
-    def register_controls(self) -> None:
-        """No-op. Control definitions come exclusively from TOML.
-
-        This method exists for ComplianceImplementation protocol compatibility.
-        All control definitions are loaded from openssf-baseline.toml by the
-        framework's TOML control loader. Plugins should use register_handlers()
-        to add custom sieve/remediation handlers.
-        """
-        pass
 
     def register_handlers(self) -> None:
         """Register handlers with the handler registry.

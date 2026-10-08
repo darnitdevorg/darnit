@@ -1,6 +1,6 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.15
+> **Version**: 1.0.0-alpha.16
 > **Status**: Authoritative
 > **Last Updated**: 2026-10-08
 
@@ -1358,7 +1358,7 @@ openssf-baseline = "darnit_baseline:register"
 ### 6.3 Implementation Protocol
 
 ```python
-from darnit.core.plugin import ComplianceImplementation, ControlSpec
+from pathlib import Path
 
 class MyImplementation:
     @property
@@ -1377,30 +1377,27 @@ class MyImplementation:
     def spec_version(self) -> str:
         return "MySpec v1.0"
 
-    def get_all_controls(self) -> list[ControlSpec]:
-        # Return control definitions
+    def get_framework_config_path(self) -> Path | None:
+        # Path to the framework TOML, the source of every control definition
         ...
 
-    def get_framework_config_path(self) -> Path | None:
-        # Return path to TOML config
-        return Path(__file__).parent / "my-framework.toml"
-
-    def register_controls(self) -> None:
-        # No-op. Control definitions MUST come from TOML.
-        # This method exists for protocol compatibility only.
-        pass
-
     def register_handlers(self) -> None:
-        # Register custom sieve/remediation handlers
+        # Optional: register custom step types and MCP tool handlers (section 6.4)
         ...
 ```
 
-The `register_controls()` method SHALL be a no-op. Implementations MUST NOT use this method to register `ControlSpec` objects with `passes` fields populated. All control definitions MUST originate from TOML configuration files and be loaded via the framework's TOML control loader. The only supported extension point for custom checking logic is `register_handlers()`, which registers named handler functions callable from TOML pass definitions.
+`ComplianceImplementation` (`darnit.core.plugin`) is a runtime-checkable protocol with exactly five required members: the properties `name`, `display_name`, `version`, and `spec_version`, and the method `get_framework_config_path()`. Discovery (`darnit.implementations` entry points) accepts an object that has all five and rejects one that lacks any. Extra attributes do not affect discovery, so a plugin that still defines a removed method (Appendix C) is discovered as before; the framework never calls it.
 
-#### Scenario: Implementation calls register_controls
-- **WHEN** the audit pipeline calls `impl.register_controls()`
-- **THEN** no `ControlSpec` objects SHALL be registered in the global registry
-- **AND** no side-effect imports of control definition modules SHALL occur
+All control definitions MUST originate from the framework TOML and be loaded by the framework's TOML control loader. The protocol has no method that returns or registers controls, SARIF rules, or remediations; the framework reads all three from the TOML. The only supported extension point for custom checking logic is `register_handlers()`, which registers named step types callable from TOML pass definitions.
+
+#### Scenario: Plugin still defines a removed protocol method
+- **WHEN** a discovered implementation defines `get_all_controls`, `get_controls_by_level`, `get_rules_catalog`, `get_remediation_registry`, or `register_controls` in addition to the five required members
+- **THEN** discovery MUST accept it
+- **AND** no audit, listing, or remediation path SHALL call those methods
+
+#### Scenario: Plugin lacks a required member
+- **WHEN** an object returned by a `darnit.implementations` entry point has no `get_framework_config_path`
+- **THEN** discovery MUST NOT register it as an implementation
 
 #### Scenario: Plugin extends checking with custom handler
 - **WHEN** a plugin needs custom checking logic beyond built-in pass types
@@ -1430,7 +1427,20 @@ The global registry is process-wide and keyed by control id, so it holds every c
 
 ### 6.4 Handler Registration
 
-Implementations can register handlers by short name for TOML reference:
+`register_handlers()` is the protocol hook through which an implementation registers its Python handlers: sieve step types and remediation handlers in `SieveHandlerRegistry` (section 3.0.3, section 12), and MCP tool handlers in the tool handler registry. It is optional, not one of the required members (section 6.3), so an implementation with no Python handlers may omit it; the reference template (`darnit-hello`) defines it as a documented no-op to show the shape. The framework calls it through `register_implementation_handlers` at the start of every audit and of `darnit list`, and while loading a framework whose steps name a step type not yet registered, whether or not plugin discovery has already run in the process. It MUST be safe to call more than once.
+
+A method named `register_sieve_handlers()` is called at the same points, as well as `register_handlers()` when both exist, for compatibility with plugins written before the hook was standardized (#451). It is not a supported choice for new plugins, and every in-tree plugin uses `register_handlers()`. Registering handlers as a side effect of importing the plugin's module also works, but the framework cannot see it: it cannot tell whether such a plugin has handlers, and a registry reset is not followed by a re-registration.
+
+#### Scenario: Plugin registers through the hook
+- **WHEN** an audit, `darnit list`, or a framework load needs an implementation's step types
+- **THEN** the framework SHALL call that implementation's `register_handlers()`
+- **AND** the step types it registers SHALL be available whether or not plugin discovery had already run in the process
+
+#### Scenario: Plugin written against the old name
+- **WHEN** an implementation defines only `register_sieve_handlers()`
+- **THEN** the framework SHALL call it at each of the points above, and its step types SHALL be available to the audit
+
+MCP tool handlers are registered by short name for TOML reference:
 
 ```python
 def register_handlers(self) -> None:
@@ -1926,7 +1936,7 @@ Project context from `.project/` SHALL be used to inform WHERE the sieve looks f
 
 ## 12. Handler Registry
 
-The framework SHALL provide a handler registry where handlers are registered by name with a phase affinity. Core SHALL register built-in handlers: `file_exists`, `exec`, `gh_api`, `regex`, `pattern`, `llm_eval`, `llm_extract`, `manual`, `manual_steps`, `mcp`, `file_create`, `platform_setting`, `project_update`, `yaml_inject`. Each registration declares its ceiling (section 3.0.1), its `settings` and `expression_names` (section 3.0.3), and, for remediation handlers, plan support (`supports_plan`, section 4.2). Core registers before any plugin, and the registry refuses a plugin registration that would replace a core step type or another plugin's step type (section 3.0.3). Implementations SHALL register domain-specific handlers via the existing `ComplianceImplementation.register_handlers()` method.
+The framework SHALL provide a handler registry where handlers are registered by name with a phase affinity. Core SHALL register built-in handlers: `file_exists`, `exec`, `gh_api`, `regex`, `pattern`, `llm_eval`, `llm_extract`, `manual`, `manual_steps`, `mcp`, `file_create`, `platform_setting`, `project_update`, `yaml_inject`. Each registration declares its ceiling (section 3.0.1), its `settings` and `expression_names` (section 3.0.3), and, for remediation handlers, plan support (`supports_plan`, section 4.2). Core registers before any plugin, and the registry refuses a plugin registration that would replace a core step type or another plugin's step type (section 3.0.3). Implementations SHALL register domain-specific handlers in their `register_handlers()` hook (section 6.4).
 
 Implementation-registered sieve handlers (non-exhaustive):
 
@@ -2243,7 +2253,7 @@ The `confirm_*` tools are unchanged; approvals are not confirmations. Audit resu
 
 ## Appendix C: Removed Requirements
 
-The following requirements have been superseded: by the handler dispatch architecture, by the feature 043 remediation design (the `api_call` and `requires_confirmation` entries), by the operator configuration and trust boundary (the `.baseline.toml` entry, Section 14), and by the removal of unused subsystems (the adapter and `UnifiedLocator` entries, #487).
+The following requirements have been superseded: by the handler dispatch architecture, by the feature 043 remediation design (the `api_call` and `requires_confirmation` entries), by the operator configuration and trust boundary (the `.baseline.toml` entry, Section 14), and by the removal of unused subsystems (the adapter, `UnifiedLocator`, and plugin protocol method entries, #487).
 
 ### Removed: VerificationPassProtocol
 **Reason**: Replaced by handler dispatch architecture. Pass classes that implemented this protocol (`DeterministicPass`, `PatternPass`, `LLMPass`, `ManualPass`, `ExecPass`) are superseded by handler functions registered in `SieveHandlerRegistry`.
@@ -2332,12 +2342,17 @@ The following requirements have been superseded: by the handler dispatch archite
 **Reason**: `CheckContext` carried a `UnifiedLocator` that no handler read, and its uncalled `sync_to_project` was a second writer of `.project/` file references beside the remediation file-reference sync (Section 7.9). The control-level `locator` configuration and `use_locator` (Section 11) are unaffected.
 **Migration**: None. Handlers read `locator.discover` through `use_locator`.
 
+### Removed: ComplianceImplementation control, catalog, and registration methods
+**Reason**: No production path called `get_all_controls()`, `get_controls_by_level()`, `get_rules_catalog()`, or `get_remediation_registry()`, and `register_controls()` was required to be a no-op (#487). Controls, SARIF rule metadata, and remediation configuration all come from the framework TOML (section 6.3). The five methods are no longer members of `ComplianceImplementation`, and the framework no longer calls `register_controls()`.
+**Migration**: Delete the methods. A plugin that keeps them is still discovered; they are not called. Code that read controls from an implementation loads its framework TOML instead (`load_framework_by_name`, `load_controls_from_framework`). `FrameworkConfig.get_controls_by_level()` and `EffectiveConfig.get_controls_by_level()` are unaffected.
+
 ---
 
 ## Version History
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.16 | 2026-10-08 | `ComplianceImplementation` reduced to its five used members; `get_all_controls`, `get_controls_by_level`, `get_rules_catalog`, `get_remediation_registry`, and `register_controls` removed (Section 6.3; Appendix C; #487). `register_handlers()` is the handler registration hook, `register_sieve_handlers()` accepted only for compatibility, import-time registration not introspectable (Sections 6.4, 12; #451) |
 | 1.0.0-alpha.15 | 2026-10-08 | Removed the never-dispatched adapter system (`[adapters]`, `[defaults]` adapter keys, control-level `check`, `AdapterRegistry`) and `UnifiedLocator` with its `sync_to_project` writer (Sections 2.1, 6.5, 7.9; Appendix C; #487) |
 | 1.0.0-alpha.14 | 2026-10-07 | `repro_witness_attestation`: Witness/in-toto runtime-trace verification moves out of `repro_hermetic_build` into its own step type with ceiling `{fail}`, bound to the audited commit and reading only the runtime-trace predicate; a verified clean trace is evidence, not PASS (Sections 3.0.1, 12; #553) |
 | 1.0.0-alpha.13 | 2026-10-06 | Error class `unexpected_exit`: an `exec` step whose undeclared exit code has no identified cause no longer reports `network`; exit code 127 reports `missing_tool` (Sections 3.3, 5.2; #562) |

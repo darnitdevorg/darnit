@@ -4,6 +4,14 @@
 from darnit_gittuf.implementation import GittufImplementation
 
 
+def _framework_controls(impl):
+    """Controls as the audit loads them, from the implementation's framework TOML."""
+    from darnit.config import load_controls_from_framework
+    from darnit.config.merger import load_framework_config
+
+    return load_controls_from_framework(load_framework_config(impl.get_framework_config_path()))
+
+
 class TestGittufImplementation:
     """Tests that GittufImplementation satisfies the plugin protocol."""
 
@@ -20,30 +28,19 @@ class TestGittufImplementation:
         assert isinstance(self.impl.version, str)
         assert len(self.impl.version) > 0
 
-    def test_get_all_controls_returns_three(self) -> None:
-        controls = self.impl.get_all_controls()
+    def test_framework_toml_defines_three_controls(self) -> None:
+        controls = _framework_controls(self.impl)
         assert len(controls) == 3
 
     def test_control_ids(self) -> None:
-        ids = {c.control_id for c in self.impl.get_all_controls()}
+        ids = {c.control_id for c in _framework_controls(self.impl)}
         assert "GT-01.01" in ids
         assert "GT-01.02" in ids
         assert "GT-02.01" in ids
 
-    def test_level_1_controls(self) -> None:
-        controls = self.impl.get_controls_by_level(1)
-        assert len(controls) == 2
-        for c in controls:
-            assert c.level == 1
-
-    def test_level_2_controls(self) -> None:
-        controls = self.impl.get_controls_by_level(2)
-        assert len(controls) == 1
-        assert controls[0].control_id == "GT-02.01"
-
-    def test_level_3_returns_empty(self) -> None:
-        controls = self.impl.get_controls_by_level(3)
-        assert controls == []
+    def test_control_levels(self) -> None:
+        levels = {c.control_id: c.level for c in _framework_controls(self.impl)}
+        assert levels == {"GT-01.01": 1, "GT-01.02": 1, "GT-02.01": 2}
 
     def test_framework_config_path_exists(self) -> None:
         path = self.impl.get_framework_config_path()

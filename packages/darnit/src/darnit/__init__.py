@@ -8,7 +8,7 @@ Usage:
 
     impl = get_implementation("openssf-baseline")
     if impl:
-        controls = impl.get_all_controls()
+        config_path = impl.get_framework_config_path()
 """
 
 __version__ = "0.1.0"

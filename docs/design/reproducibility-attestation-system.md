@@ -1876,9 +1876,11 @@ reproducibility:
 ```python
 # packages/darnit-reproducibility/src/darnit_reproducibility/__init__.py
 
-from darnit.core.plugin import ComplianceImplementation
+from importlib.resources import files
+from pathlib import Path
 
-def register() -> ComplianceImplementation:
+
+def register() -> "ReproducibilityImplementation":
     """Register darnit-reproducibility as a compliance implementation."""
     return ReproducibilityImplementation()
 
@@ -1890,78 +1892,76 @@ class ReproducibilityImplementation:
         return "reproducibility"
 
     @property
+    def display_name(self) -> str:
+        return "Scientific Reproducibility Checks"
+
+    @property
     def version(self) -> str:
         return "0.1.0"
 
-    def get_all_controls(self) -> List[ControlSpec]:
-        """Return reproducibility controls."""
-        return [
-            ControlSpec(
-                id="REPRO-ENV-01",
-                name="Environment Capture",
-                description="Build environment is fully captured and documented",
-                level=1,
-                category="environment",
-                passes=[
-                    DeterministicPass(
-                        file_must_exist=[".project/reproducibility.yaml"]
-                    ),
-                    PatternPass(
-                        patterns={"witness_config": r"witness:\s+attestors:"}
-                    )
-                ]
-            ),
-            ControlSpec(
-                id="REPRO-BUILD-01",
-                name="Reproducible Build Definition",
-                description="Project has reproducible build definition",
-                level=1,
-                category="build",
-                passes=[
-                    DeterministicPass(
-                        file_must_exist=[
-                            "Dockerfile",
-                            "Singularity.def",
-                            "flake.nix",
-                            "spack.yaml"
-                        ],
-                        any_of=True
-                    )
-                ]
-            ),
-            ControlSpec(
-                id="REPRO-ATTEST-01",
-                name="Reproducibility Attestation",
-                description="Build has reproducibility attestation",
-                level=2,
-                category="attestation",
-                passes=[
-                    DeterministicPass(
-                        file_must_exist=[".attestations/*.intoto.json"]
-                    ),
-                    PatternPass(
-                        patterns={
-                            "repro_predicate": r"darnit\.dev/attestations/reproducibility"
-                        },
-                        file_patterns=[".attestations/*.json"]
-                    )
-                ]
-            ),
-            ControlSpec(
-                id="REPRO-VERIFY-01",
-                name="Verified Reproducibility",
-                description="Build has been independently verified as reproducible",
-                level=3,
-                category="verification",
-                passes=[
-                    # Check GUAC for independent verification
-                    LLMPass(
-                        prompt="Analyze the reproducibility attestations in GUAC...",
-                        analysis_hints=["Look for independent verifications"]
-                    )
-                ]
-            )
-        ]
+    @property
+    def spec_version(self) -> str:
+        return "repro v0.1"
+
+    def get_framework_config_path(self) -> Path | None:
+        """The controls live in the framework TOML, not in Python."""
+        return Path(str(files(__package__) / "reproducibility.toml"))
+
+    def register_handlers(self) -> None:
+        """Register reproducibility-specific step types (framework-design 6.4)."""
+        ...
+```
+
+The controls are declared in `reproducibility.toml`:
+
+```toml
+[controls."REPRO-ENV-01"]
+name = "Environment Capture"
+description = "Build environment is fully captured and documented"
+tags = { level = 1, category = "environment" }
+
+[[controls."REPRO-ENV-01".passes]]
+handler = "file_exists"
+files = [".project/reproducibility.yaml"]
+
+[[controls."REPRO-ENV-01".passes]]
+handler = "pattern"
+files = [".witness.yaml"]  # wherever the project keeps its Witness configuration
+patterns = { witness_config = 'witness:\s+attestors:' }
+
+[controls."REPRO-BUILD-01"]
+name = "Reproducible Build Definition"
+description = "Project has reproducible build definition"
+tags = { level = 1, category = "build" }
+
+[[controls."REPRO-BUILD-01".passes]]
+handler = "file_exists"
+files = ["Dockerfile", "Singularity.def", "flake.nix", "spack.yaml"]
+
+[controls."REPRO-ATTEST-01"]
+name = "Reproducibility Attestation"
+description = "Build has reproducibility attestation"
+tags = { level = 2, category = "attestation" }
+
+[[controls."REPRO-ATTEST-01".passes]]
+handler = "file_exists"
+files = [".attestations/*.intoto.json"]
+
+[[controls."REPRO-ATTEST-01".passes]]
+handler = "pattern"
+files = [".attestations/*.json"]
+patterns = { repro_predicate = 'darnit\.dev/attestations/reproducibility' }
+
+[controls."REPRO-VERIFY-01"]
+name = "Verified Reproducibility"
+description = "Build has been independently verified as reproducible"
+tags = { level = 3, category = "verification" }
+
+# Check GUAC for independent verification
+[[controls."REPRO-VERIFY-01".passes]]
+handler = "llm_eval"
+prompt = "Analyze the reproducibility attestations in GUAC..."
+analysis_hints = ["Look for independent verifications"]
 ```
 
 ### Sieve Integration
@@ -1971,23 +1971,17 @@ The reproducibility system reuses darnit's sieve pipeline for verification:
 ```python
 # Example: Using sieve to verify reproducibility controls
 
-async def verify_reproducibility(local_path: str) -> SieveResult:
+def verify_reproducibility(local_path: str) -> list[dict]:
     """Verify reproducibility controls using the sieve pipeline."""
+    from darnit.tools.audit import run_sieve_audit
 
-    orchestrator = SieveOrchestrator()
-    impl = ReproducibilityImplementation()
-
-    results = []
-    for control in impl.get_all_controls():
-        result = await orchestrator.verify(
-            control,
-            CheckContext(
-                local_path=local_path,
-                project_config=load_project_config(local_path)
-            )
-        )
-        results.append(result)
-
+    results, _ = run_sieve_audit(
+        owner="",
+        repo="",
+        local_path=local_path,
+        default_branch="main",
+        framework_name="reproducibility",
+    )
     return results
 ```
 

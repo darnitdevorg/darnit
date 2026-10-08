@@ -133,7 +133,8 @@ def register_implementation_handlers(framework_name: str | None) -> bool:
     Returns:
         True if handlers were registered, False if there was nothing to do
         (no framework name, no such implementation, or the implementation
-        exposes neither ``register_sieve_handlers`` nor ``register_handlers``).
+        exposes neither ``register_handlers`` nor the compatibility name
+        ``register_sieve_handlers``).
     """
     if not framework_name:
         return False
@@ -143,18 +144,14 @@ def register_implementation_handlers(framework_name: str | None) -> bool:
         logger.debug("No implementation found for '%s'", framework_name)
         return False
 
-    # Two method names are in use across in-tree plugins:
-    #   register_handlers       -- documented in CLAUDE.md; darnit-baseline
-    #   register_sieve_handlers -- darnit-gittuf, darnit-reproducibility
-    # Those two work today only because their `register()` entry point calls
-    # register_sieve_handlers() during discovery. That is a side channel, not
-    # the protocol: discovery results are cached, so any caller that warmed
-    # the cache earlier in the process leaves the handlers unregistered and
-    # every plugin control silently falls through to `manual`. Accepting both
-    # names here makes registration explicit and cache-independent. A plugin
-    # may define both (darnit-example registers its step types in one and its
-    # MCP tools in the other), so every one present is called.
-    # hasattr per Constitution Principle I: missing methods degrade, never crash.
+    # register_handlers() is the protocol hook (framework-design 6.4, #451).
+    # register_sieve_handlers is accepted for compatibility with out-of-tree
+    # plugins written before the hook was standardized; it is not a supported
+    # choice, and no in-tree plugin uses it. A plugin defining both has each
+    # called. Calling here, rather than relying on a plugin's register()
+    # entry point, keeps registration independent of the discovery cache
+    # (#427). hasattr per Constitution Principle I: missing methods degrade,
+    # never crash.
     methods = [getattr(impl, name) for name in ("register_sieve_handlers", "register_handlers") if hasattr(impl, name)]
     if not methods:
         return False

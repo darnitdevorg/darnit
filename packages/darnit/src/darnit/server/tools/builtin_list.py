@@ -37,7 +37,6 @@ async def builtin_list_controls(
         load_controls_from_effective,
         load_effective_config_by_name,
     )
-    from darnit.core.discovery import get_implementation
     from darnit.sieve.registry import get_control_registry
 
     if not _framework_name:
@@ -54,14 +53,6 @@ async def builtin_list_controls(
         toml_controls = load_controls_from_effective(config)
     except Exception as e:
         return f"Error loading controls: {e}"
-
-    # Register Python controls
-    impl = get_implementation(_framework_name)
-    if impl and hasattr(impl, "register_controls"):
-        try:
-            impl.register_controls()
-        except Exception as e:
-            logger.warning(f"Error registering Python controls: {e}")
 
     registry = get_control_registry()
     toml_ids = {c.control_id for c in toml_controls}

@@ -815,22 +815,6 @@ def run_sieve_audit(
     if controls is not None:
         all_controls = list(controls)
     else:
-        # Register Python-defined controls via plugin system
-        if resolved_fw:
-            try:
-                from darnit.core.discovery import get_implementation
-
-                impl = get_implementation(resolved_fw)
-                if impl and hasattr(impl, "register_controls"):
-                    impl.register_controls()
-                    logger.debug(f"Registered Python control definitions from {impl.name}")
-                elif impl:
-                    logger.debug(f"Implementation {impl.name} does not provide register_controls()")
-                else:
-                    logger.debug("Implementation '%s' not found for control registration", resolved_fw)
-            except Exception as e:
-                logger.debug(f"Python control modules not available: {e}")
-
         # Register controls from TOML framework definition (primary source of truth)
         _register_toml_controls(resolved_fw)
 

@@ -21,9 +21,7 @@ import pytest
 from darnit.core.discovery import register_implementation_handlers
 from darnit.sieve.handler_registry import get_sieve_handler_registry
 
-# Handlers shipped by darnit-reproducibility. It is the in-tree plugin that
-# exercises the `register_sieve_handlers` spelling (see the naming note in
-# TestProtocolMethodNaming below).
+# Handlers shipped by darnit-reproducibility, the plugin #427 was reported against.
 _REPRO_HANDLERS = (
     "repro_deps_pinned",
     "repro_build_env_declared",
@@ -47,17 +45,16 @@ class TestRegisterImplementationHandlers:
 
     @pytest.mark.unit
     def test_registers_baseline_handlers(self) -> None:
-        """darnit-baseline uses the other spelling; both must work."""
         assert register_implementation_handlers("openssf-baseline") is True
 
     @pytest.mark.unit
     def test_works_when_discovery_cache_is_already_warm(self) -> None:
         """The regression that made #427 intermittent.
 
-        `discover_implementations()` is cached, and the plugins that
-        self-register do so from their `register()` entry point -- which
-        runs once, during the first discovery. Any caller that warmed the
-        cache earlier in the process therefore left handlers unregistered.
+        `discover_implementations()` is cached, and plugins that registered
+        from their `register()` entry point did so once, during the first
+        discovery. Any caller that warmed the cache earlier in the process
+        therefore left handlers unregistered.
         That timing dependence is why the bug presented as "3 of 5
         handlers missing" on one run and "5 of 5" on the next.
 
@@ -103,18 +100,75 @@ class TestRegisterImplementationHandlers:
 
 
 class TestProtocolMethodNaming:
-    """Both in-tree spellings of the registration method must be honored.
+    """`register_handlers()` is the hook; `register_sieve_handlers()` is a compatibility shim (#451).
 
-    `CLAUDE.md` documents `register_handlers()`, and darnit-baseline
-    implements it. darnit-gittuf and darnit-reproducibility implement
-    `register_sieve_handlers()` instead. Until those converge, the
-    framework accepts either -- otherwise two of four in-tree plugins
-    register nothing.
-
-    Reconciling the plugins onto one name is tracked separately; this
-    test pins current behavior so the tolerance is deliberate and
-    visible rather than accidental.
+    Every in-tree plugin uses `register_handlers()`. The framework still
+    calls `register_sieve_handlers()` so out-of-tree plugins written
+    against the old name keep their step types.
     """
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        ("module", "cls"),
+        [
+            ("darnit_baseline.implementation", "OSPSBaselineImplementation"),
+            ("darnit_csl.implementation", "CommunitySpecImplementation"),
+            ("darnit_example.implementation", "ExampleHygieneImplementation"),
+            ("darnit_gittuf.implementation", "GittufImplementation"),
+            ("darnit_hello.implementation", "HelloImplementation"),
+            ("darnit_reproducibility.implementation", "ReproducibilityImplementation"),
+        ],
+    )
+    def test_in_tree_plugins_use_only_register_handlers(self, module: str, cls: str) -> None:
+        import importlib
+
+        implementation = getattr(importlib.import_module(module), cls)
+        assert callable(getattr(implementation, "register_handlers", None))
+        assert not hasattr(implementation, "register_sieve_handlers")
+
+    @pytest.mark.unit
+    def test_plugin_with_only_the_compatibility_name_registers_its_step_types(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An out-of-tree plugin that predates #451 still gets its step types registered."""
+        from unittest.mock import patch
+
+        import darnit.sieve.handler_registry as handler_registry
+        from darnit.sieve.handler_registry import HandlerResult, HandlerResultStatus
+
+        monkeypatch.setattr(handler_registry, "_sieve_handler_registry", None)
+
+        class LegacyPlugin:
+            name = "legacy"
+
+            def register_sieve_handlers(self) -> None:
+                registry = get_sieve_handler_registry()
+                registry.set_plugin_context(self.name)
+                registry.register(
+                    "legacy_check",
+                    phase="deterministic",
+                    handler_fn=lambda config, context: HandlerResult(status=HandlerResultStatus.FAIL, message="x"),
+                    ceiling={"fail"},
+                    settings=frozenset(),
+                )
+                registry.set_plugin_context(None)
+
+        with patch("darnit.core.discovery.get_implementation", return_value=LegacyPlugin()):
+            assert register_implementation_handlers("legacy") is True
+        info = get_sieve_handler_registry().get("legacy_check")
+        assert info is not None
+        assert info.plugin == "legacy"
+
+    @pytest.mark.unit
+    def test_csl_step_type_registers_through_the_hook(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """darnit-csl registered at import before #451; a registry reset must not lose its step type."""
+        import darnit.sieve.handler_registry as handler_registry
+
+        monkeypatch.setattr(handler_registry, "_sieve_handler_registry", None)
+        assert get_sieve_handler_registry().get("csl_llm_if_present") is None
+
+        assert register_implementation_handlers("community-spec") is True
+        assert get_sieve_handler_registry().get("csl_llm_if_present") is not None
 
     @pytest.mark.unit
     def test_accepts_register_handlers_spelling(self) -> None:
@@ -136,7 +190,7 @@ class TestProtocolMethodNaming:
 
     @pytest.mark.unit
     def test_implementation_with_both_spellings_calls_both(self) -> None:
-        """darnit-example registers MCP tools in one and step types in the other (044 review)."""
+        """A plugin may define both names; neither is skipped."""
         from unittest.mock import MagicMock, patch
 
         impl = MagicMock(spec=["register_handlers", "register_sieve_handlers"])

@@ -1,9 +1,7 @@
 """Gittuf plugin implementation for darnit."""
 
 from pathlib import Path
-from typing import Any
 
-from darnit.core.plugin import ControlSpec
 from darnit_gittuf import handlers
 
 
@@ -30,48 +28,6 @@ class GittufImplementation:
     def spec_version(self) -> str:
         return "gittuf v0.1"
 
-    def get_all_controls(self) -> list[ControlSpec]:
-        """Get all controls by collecting across all known levels."""
-        all_controls = []
-        for level in [1, 2, 3]:
-            all_controls.extend(self.get_controls_by_level(level))
-        return all_controls
-
-    def get_controls_by_level(self, level: int) -> list[ControlSpec]:
-        all_controls = [
-            ControlSpec(
-                control_id="GT-01.01",
-                name="GittufInitialized",
-                description="Repository has Gittuf initialized",
-                level=1,
-                domain="GT",
-                metadata={},
-            ),
-            ControlSpec(
-                control_id="GT-01.02",
-                name="GittufPolicyValid",
-                description="Gittuf policy passes verification",
-                level=1,
-                domain="GT",
-                metadata={},
-            ),
-            ControlSpec(
-                control_id="GT-02.01",
-                name="CommitsSigned",
-                description="Recent commits are cryptographically signed",
-                level=2,
-                domain="GT",
-                metadata={},
-            ),
-        ]
-        return [c for c in all_controls if c.level == level]
-
-    def get_rules_catalog(self) -> dict[str, Any]:
-        return {}
-
-    def get_remediation_registry(self) -> dict[str, Any]:
-        return {}
-
     def get_framework_config_path(self) -> Path | None:
         from importlib.resources import files
 
@@ -85,10 +41,7 @@ class GittufImplementation:
             )
         return path
 
-    def register_controls(self) -> None:
-        pass
-
-    def register_sieve_handlers(self) -> None:
+    def register_handlers(self) -> None:
         """Register the Gittuf-specific check handlers."""
         from darnit.sieve.handler_registry import get_sieve_handler_registry
 

@@ -15,58 +15,38 @@ class FullyCompliantImplementation:
     version = "0.1.0"
     spec_version = "TEST v1"
 
-    def get_all_controls(self) -> list[ControlSpec]:
-        return [
-            ControlSpec(
-                control_id="TEST-01",
-                name="Test control",
-                description="A test control",
-                level=1,
-                domain="TEST",
-                metadata={},
-            )
-        ]
-
-    def get_controls_by_level(self, level: int) -> list[ControlSpec]:
-        return [
-            control for control in self.get_all_controls() if control.level == level
-        ]
-
-    def get_rules_catalog(self) -> dict[str, str]:
-        return {"version": self.spec_version}
-
-    def get_remediation_registry(self) -> dict[str, str]:
-        return {"test": "handler"}
-
     def get_framework_config_path(self) -> Path | None:
         return Path("/tmp/framework.toml")
+
+
+class LegacyMethodsImplementation(FullyCompliantImplementation):
+    """A plugin written before #487 that still defines the removed methods."""
+
+    name = "legacy-framework"
+
+    def get_all_controls(self) -> list[ControlSpec]:
+        return []
+
+    def get_controls_by_level(self, level: int) -> list[ControlSpec]:
+        return []
+
+    def get_rules_catalog(self) -> dict[str, str]:
+        return {}
+
+    def get_remediation_registry(self) -> dict[str, str]:
+        return {}
 
     def register_controls(self) -> None:
         return None
 
 
-class MissingRegisterControlsImplementation:
+class MissingConfigPathImplementation:
     """Deliberately incomplete implementation for protocol checks."""
 
     name = "broken-framework"
     display_name = "Broken Framework"
     version = "0.1.0"
     spec_version = "TEST v1"
-
-    def get_all_controls(self) -> list[ControlSpec]:
-        return []
-
-    def get_controls_by_level(self, level: int) -> list[ControlSpec]:
-        return []
-
-    def get_rules_catalog(self) -> dict[str, str]:
-        return {}
-
-    def get_remediation_registry(self) -> dict[str, str]:
-        return {}
-
-    def get_framework_config_path(self) -> Path | None:
-        return None
 
 
 class TestControlSpec:
@@ -116,18 +96,67 @@ class TestComplianceImplementationProtocol:
 
     @pytest.mark.unit
     def test_runtime_check_accepts_complete_implementation(self):
-        """A class implementing the full protocol satisfies isinstance()."""
+        """A class implementing the five required members satisfies isinstance()."""
         implementation = FullyCompliantImplementation()
 
         assert isinstance(implementation, ComplianceImplementation)
         assert implementation.get_framework_config_path() == Path(
             "/tmp/framework.toml"
         )
-        assert implementation.get_all_controls()[0].control_id == "TEST-01"
+
+    @pytest.mark.unit
+    def test_runtime_check_accepts_implementation_with_removed_methods(self):
+        """Methods removed from the protocol (#487) do not affect isinstance()."""
+        assert isinstance(LegacyMethodsImplementation(), ComplianceImplementation)
 
     @pytest.mark.unit
     def test_runtime_check_rejects_missing_required_method(self):
         """A class missing a required protocol method fails isinstance()."""
-        implementation = MissingRegisterControlsImplementation()
+        implementation = MissingConfigPathImplementation()
 
         assert not isinstance(implementation, ComplianceImplementation)
+
+
+class _EntryPoint:
+    def __init__(self, name: str, factory: type) -> None:
+        self.name = name
+        self.module = f"{name.replace('-', '_')}_pkg"
+        self._factory = factory
+
+    def load(self):
+        return self._factory
+
+
+class TestDiscoveryOfTrimmedProtocol:
+    """#487: dropping protocol members must not drop plugins out of discovery."""
+
+    @pytest.fixture(autouse=True)
+    def _fake_entry_points(self, monkeypatch: pytest.MonkeyPatch):
+        import importlib.metadata
+
+        from darnit.core.discovery import clear_cache
+
+        eps = [
+            _EntryPoint("test-framework", FullyCompliantImplementation),
+            _EntryPoint("legacy-framework", LegacyMethodsImplementation),
+            _EntryPoint("broken-framework", MissingConfigPathImplementation),
+        ]
+        monkeypatch.setattr(importlib.metadata, "entry_points", lambda **_: eps)
+        clear_cache()
+        yield
+        clear_cache()
+
+    @pytest.mark.unit
+    def test_plugin_with_and_without_removed_methods_is_discovered(self):
+        from darnit.core.discovery import discover_implementations
+
+        found = discover_implementations()
+
+        assert isinstance(found.get("test-framework"), FullyCompliantImplementation)
+        assert isinstance(found.get("legacy-framework"), LegacyMethodsImplementation)
+
+    @pytest.mark.unit
+    def test_plugin_missing_a_required_member_is_not_discovered(self):
+        from darnit.core.discovery import discover_implementations
+
+        assert "broken-framework" not in discover_implementations()

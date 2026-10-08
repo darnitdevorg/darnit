@@ -28,7 +28,7 @@ from darnit.core.discovery import get_implementation
 # Get a compliance implementation by name
 impl = get_implementation("openssf-baseline")
 if impl:
-    controls = impl.get_all_controls()
+    config_path = impl.get_framework_config_path()
 ```
 
 ### Configuration Management

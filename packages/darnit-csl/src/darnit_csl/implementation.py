@@ -9,7 +9,6 @@ the framework loads the TOML via :meth:`get_framework_config_path`.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 
 class CommunitySpecImplementation:
@@ -51,24 +50,8 @@ class CommunitySpecImplementation:
             )
         return path
 
-    def register_controls(self) -> None:
-        """No Python-registered controls — everything is in the TOML."""
-        return None
+    def register_handlers(self) -> None:
+        """Register the ``csl_llm_if_present`` step type."""
+        from .handlers import register_handlers
 
-    def register_sieve_handlers(self) -> None:
-        """Register the ``csl_llm_if_present`` step type (again, after a registry reset)."""
-        from .handlers import register_sieve_handlers
-
-        register_sieve_handlers()
-
-    def get_all_controls(self) -> list[Any]:
-        return []
-
-    def get_controls_by_level(self, level: int) -> list[Any]:
-        return []
-
-    def get_rules_catalog(self) -> dict[str, Any]:
-        return {}
-
-    def get_remediation_registry(self) -> dict[str, Any]:
-        return {}
+        register_handlers()

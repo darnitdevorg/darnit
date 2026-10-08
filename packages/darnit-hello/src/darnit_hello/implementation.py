@@ -14,16 +14,14 @@ and handlers as your scope grows.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 
 class HelloImplementation:
     """A single-control compliance implementation for documentation purposes.
 
     The framework discovers this class via the `register()` entry point in
-    `__init__.py`. At audit time, the framework calls `register_controls()`
-    (which is a no-op here because controls live in TOML), then queries the
-    `get_*` methods to enumerate controls and run them.
+    `__init__.py`. At audit time, it loads the controls from the TOML file
+    that `get_framework_config_path()` returns and runs them.
     """
 
     # ---- Required identity properties ---------------------------------------
@@ -61,34 +59,17 @@ class HelloImplementation:
         """
         return Path(__file__).parent / "hello.toml"
 
-    def register_controls(self) -> None:
-        """Register Python-defined controls (none here).
+    # ---- Optional handler hook ----------------------------------------------
 
-        Implementations with complex pass logic that doesn't fit the built-in
-        sieve handlers can register Python control functions here via
-        decorators. This minimal example has no Python controls — the single
-        control is fully defined in `hello.toml`.
+    def register_handlers(self) -> None:
+        """Register this plugin's Python handlers (none here).
+
+        The framework calls this before it loads or audits the `hello`
+        framework. A plugin with custom checks registers its step types here
+        with `darnit.sieve.handler_registry.get_sieve_handler_registry()`, and
+        its MCP tool handlers with `darnit.core.handlers.get_handler_registry()`;
+        see docs/packaging-plugins.md. Registering at module import instead
+        works, but the framework cannot see it. This example's single control
+        uses only built-in step types, so there is nothing to register.
         """
-        # No-op: this example has no Python-registered controls.
         return None
-
-    def get_all_controls(self) -> list[Any]:
-        """Return all controls. TOML-defined controls are surfaced by the
-        framework via the framework config path, not by this method, so the
-        list here can be empty for TOML-only plugins."""
-        return []
-
-    def get_controls_by_level(self, level: int) -> list[Any]:
-        """Same convention as get_all_controls — TOML controls are loaded by
-        the framework, not enumerated by the plugin's Python code."""
-        return []
-
-    def get_rules_catalog(self) -> dict[str, Any]:
-        """Return the SARIF rules catalog. Empty here; the framework derives
-        SARIF rules from the TOML config automatically."""
-        return {}
-
-    def get_remediation_registry(self) -> dict[str, Any]:
-        """Return the remediation handler registry. Empty here; this example
-        has no remediations."""
-        return {}

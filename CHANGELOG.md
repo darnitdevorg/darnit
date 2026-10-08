@@ -125,6 +125,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`classify_writeback`), the threat-model classes in
   `darnit_baseline.threat_model.models` other than `StrideCategory`, and
   `darnit.remediation.RemediationResult.to_markdown` (#487).
+- **BREAKING:** `ComplianceImplementation` no longer declares
+  `get_all_controls`, `get_controls_by_level`, `get_rules_catalog`,
+  `get_remediation_registry`, or `register_controls`, and the framework no
+  longer calls `register_controls()`. No production path called the others.
+  The protocol is `name`, `display_name`, `version`, `spec_version`, and
+  `get_framework_config_path()`; controls, SARIF rules, and remediations come
+  from the framework TOML (`load_framework_by_name`,
+  `load_controls_from_framework`). A plugin that still defines the methods is
+  discovered as before. The in-tree implementations drop them, and
+  `darnit-example` drops its `_RULES` catalog, `remediation/registry.py`, and
+  empty `controls` package (#487).
 
 ### Added
 
@@ -323,6 +334,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING:** `register_handlers()` is the one handler registration hook
+  for plugins (#451). `darnit-gittuf` and `darnit-reproducibility` rename
+  `register_sieve_handlers()` to `register_handlers()`, and their `register()`
+  entry points no longer register handlers during discovery;
+  `darnit-example` defines only `register_handlers()`; `darnit-csl` no longer
+  registers `csl_llm_if_present` when `darnit_csl` is imported (call
+  `CommunitySpecImplementation().register_handlers()`, which the framework
+  does on every audit and when a framework load needs the step type); `darnit-hello` defines it as a
+  no-op. The framework still calls `register_sieve_handlers()` on
+  out-of-tree plugins, for compatibility only.
 - **BREAKING:** framework loading is strict. An unknown control key, a step
   key that is neither a common step field nor a setting its step type
   declares (a misspelled `fail_on_mis`, for example), an `expr` its step

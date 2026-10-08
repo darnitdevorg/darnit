@@ -286,10 +286,11 @@ Guidelines for custom handlers:
 ## 5. Registering a Custom Handler
 
 Custom sieve handlers are registered with the `SieveHandlerRegistry` in your
-implementation's `register_sieve_handlers()` method:
+implementation's `register_handlers()` method, the protocol hook the framework
+calls before it loads or audits your framework (framework-design.md 6.4):
 
 ```python
-def register_sieve_handlers(self) -> None:
+def register_handlers(self) -> None:
     from darnit.sieve.handler_registry import get_sieve_handler_registry
     from . import handlers
 
@@ -325,10 +326,13 @@ steps = [
 ]
 ```
 
-Important distinction:
-
-- `register_sieve_handlers()` is for `[[controls."...".passes]]` handlers.
-- `register_handlers()` is for MCP tool handlers under `[mcp.tools.*]`.
+`register_handlers()` registers both kinds of handler: sieve step types for
+`[[controls."...".passes]]` (in `get_sieve_handler_registry()`) and MCP tool
+handlers for `[mcp.tools.*]` (in `darnit.core.handlers.get_handler_registry()`).
+A method named `register_sieve_handlers()` is still called for compatibility
+with older plugins, but new plugins should not use it. Registering at module
+import works, but the framework cannot see it, and a registry reset loses the
+handlers.
 
 ## 6. Testing One Control at a Time
 
@@ -396,7 +400,7 @@ steps = ["Confirm the README body explains the project"]
 
 2. Add the handler function to `src/<your_package>/handlers.py`.
 
-3. Register it in `register_sieve_handlers()`.
+3. Register it in `register_handlers()`.
 
 4. Test the handler directly with pytest.
 

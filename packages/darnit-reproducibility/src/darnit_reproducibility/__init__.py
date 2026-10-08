@@ -7,10 +7,7 @@ from .implementation import ReproducibilityImplementation
 
 def register() -> ReproducibilityImplementation:
     """Entry point called by darnit plugin discovery."""
-    impl = ReproducibilityImplementation()
-    impl.register_controls()
-    impl.register_sieve_handlers()
-    return impl
+    return ReproducibilityImplementation()
 
 
 def get_framework_path() -> Path:

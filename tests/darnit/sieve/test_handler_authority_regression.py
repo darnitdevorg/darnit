@@ -101,7 +101,7 @@ class TestPluginHandlersAreDispositive:
 
     def test_every_expected_dispositive_handler_is_dispositive(self) -> None:
         # Force plugin registration by calling each implementation's
-        # register_sieve_handlers / register_handlers method.
+        # register_handlers method.
         self._register_all_known_plugin_handlers()
 
         registry = get_sieve_handler_registry()
@@ -118,7 +118,7 @@ class TestPluginHandlersAreDispositive:
                 "PASS terminates the Check phase. Fix by adding "
                 "`ceiling={\"pass\", \"fail\"}` to the handler's "
                 "`registry.register(...)` call in its plugin's "
-                "`register_sieve_handlers()`."
+                "`register_handlers()`."
             )
 
     @staticmethod
@@ -135,7 +135,7 @@ class TestPluginHandlersAreDispositive:
                 GittufImplementation,
             )
 
-            GittufImplementation().register_sieve_handlers()
+            GittufImplementation().register_handlers()
         except Exception:
             pass
 
@@ -145,7 +145,7 @@ class TestPluginHandlersAreDispositive:
                 ReproducibilityImplementation,
             )
 
-            ReproducibilityImplementation().register_sieve_handlers()
+            ReproducibilityImplementation().register_handlers()
         except Exception:
             pass
 

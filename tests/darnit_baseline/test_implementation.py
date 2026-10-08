@@ -8,6 +8,14 @@ from darnit_baseline import register
 from darnit_baseline.implementation import OSPSBaselineImplementation
 
 
+def _framework_controls(impl):
+    """Controls as the audit loads them, from the implementation's framework TOML."""
+    from darnit.config import load_controls_from_framework
+    from darnit.config.merger import load_framework_config
+
+    return load_controls_from_framework(load_framework_config(impl.get_framework_config_path()))
+
+
 class TestOSPSBaselineImplementation:
     """Tests for OSPSBaselineImplementation class."""
 
@@ -30,35 +38,12 @@ class TestOSPSBaselineImplementation:
         assert isinstance(impl, ComplianceImplementation)
 
     @pytest.mark.unit
-    def test_get_all_controls(self, impl):
-        """Test get_all_controls returns all controls."""
-        controls = impl.get_all_controls()
+    def test_framework_toml_has_controls_at_every_level(self, impl):
+        """The framework TOML defines controls at all three levels."""
+        controls = _framework_controls(impl)
         assert len(controls) > 0
-        # Should have controls from all 3 levels
         levels = {c.level for c in controls}
-        assert 1 in levels
-        assert 2 in levels
-        assert 3 in levels
-
-    @pytest.mark.unit
-    def test_get_controls_by_level(self, impl):
-        """Test get_controls_by_level filters correctly."""
-        level1 = impl.get_controls_by_level(1)
-        level2 = impl.get_controls_by_level(2)
-        level3 = impl.get_controls_by_level(3)
-
-        # All should be non-empty
-        assert len(level1) > 0
-        assert len(level2) > 0
-        assert len(level3) > 0
-
-        # All controls should have correct level
-        assert all(c.level == 1 for c in level1)
-        assert all(c.level == 2 for c in level2)
-        assert all(c.level == 3 for c in level3)
-
-        # Sum should equal total
-        assert len(level1) + len(level2) + len(level3) == len(impl.get_all_controls())
+        assert {1, 2, 3} <= levels
 
     @pytest.mark.unit
     def test_control_ids_are_osps_format(self, impl):
@@ -69,7 +54,7 @@ class TestOSPSBaselineImplementation:
         with the OSPS-* set; the format check applies only to controls
         that are not explicitly marked as stage-reference fixtures.
         """
-        controls = impl.get_all_controls()
+        controls = _framework_controls(impl)
         for control in controls:
             # Skip stage-reference controls; they use STAGE1-REF-* naming.
             tags = control.tags or {}
@@ -85,18 +70,11 @@ class TestOSPSBaselineImplementation:
     @pytest.mark.unit
     def test_control_domains(self, impl):
         """Test controls have valid domains."""
-        controls = impl.get_all_controls()
+        controls = _framework_controls(impl)
         valid_domains = {"AC", "BR", "DO", "GV", "LE", "QA", "SA", "VM"}
         for control in controls:
             assert control.domain in valid_domains, f"Invalid domain: {control.domain}"
 
-    @pytest.mark.unit
-    def test_rules_catalog_has_required_fields(self, impl):
-        """Test rules catalog entries have required fields."""
-        catalog = impl.get_rules_catalog()
-        for rule_id, rule in catalog.items():
-            assert "name" in rule or "shortDescription" in rule
-            assert "level" in rule
 
 class TestHandlerRegistration:
     """Tests for auto-registration of handlers."""

@@ -54,7 +54,7 @@ class ComplianceImplementation(Protocol):
             version = "0.1.0"
             spec_version = "OSPS v2025.10.10"
 
-            def get_all_controls(self) -> List[ControlSpec]:
+            def get_framework_config_path(self) -> Path | None:
                 ...
     """
 
@@ -78,22 +78,6 @@ class ComplianceImplementation(Protocol):
         """Specification version this implements (e.g., 'OSPS v2025.10.10')."""
         ...
 
-    def get_all_controls(self) -> list[ControlSpec]:
-        """Get all controls defined by this implementation."""
-        ...
-
-    def get_controls_by_level(self, level: int) -> list[ControlSpec]:
-        """Get controls for a specific maturity level."""
-        ...
-
-    def get_rules_catalog(self) -> dict[str, Any]:
-        """Get the rules catalog for SARIF output."""
-        ...
-
-    def get_remediation_registry(self) -> dict[str, Any]:
-        """Get the remediation registry for auto-fixes."""
-        ...
-
     def get_framework_config_path(self) -> Path | None:
         """Get path to the framework configuration file (e.g., TOML).
 
@@ -111,21 +95,6 @@ class ComplianceImplementation(Protocol):
         """
         ...
 
-    def register_controls(self) -> None:
-            """Register this implementation's Python-defined controls.
-
-            Implementations should import their control modules here to trigger
-            registration via decorators (e.g., @register_control). This allows
-            the framework to load controls without knowing implementation-specific
-            module paths.
-
-            Example:
-                # In openssf-baseline implementation:
-                def register_controls(self) -> None:
-                    from .controls import level1, level2, level3  # noqa: F401
-            """
-            ...
-
     # -------------------------------------------------------------------------
     # Optional action handlers (NOT part of the Protocol — checked via hasattr)
     #
@@ -133,6 +102,10 @@ class ComplianceImplementation(Protocol):
     # actions. The framework calls hasattr() before invoking them, so a plugin
     # that only does checks does not need to implement the others.
     #
+    # def register_handlers(self) -> None: ...
+    #     The handler hook: registers sieve step types and MCP tool handlers
+    #     (framework-design 6.4). register_sieve_handlers() is still called
+    #     for compatibility, but is not a supported name for new plugins.
     # def get_check_handlers(self) -> dict[str, Any]: ...
     # def get_context_handlers(self) -> dict[str, Any]: ...
     # def get_remediation_handlers(self) -> dict[str, Any]: ...

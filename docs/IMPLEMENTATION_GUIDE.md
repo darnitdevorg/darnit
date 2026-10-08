@@ -280,12 +280,7 @@ class ComplianceImplementation(Protocol):
     @property
     def spec_version(self) -> str: ...
 
-    def get_all_controls(self) -> list[ControlSpec]: ...
-    def get_controls_by_level(self, level: int) -> list[ControlSpec]: ...
-    def get_rules_catalog(self) -> dict[str, Any]: ...
-    def get_remediation_registry(self) -> dict[str, Any]: ...
     def get_framework_config_path(self) -> Path | None: ...
-    def register_controls(self) -> None: ...
 ```
 
 ### Required properties (4)
@@ -297,31 +292,35 @@ class ComplianceImplementation(Protocol):
 | `version` | `str` | Implementation version (e.g., `"0.1.0"`) |
 | `spec_version` | `str` | Spec version implemented (e.g., `"MySpec v1.0"`) |
 
-### Required methods (6)
+### Required method (1)
 
 | Method | Purpose |
 |--------|---------|
-| `get_all_controls()` | Return all controls as `ControlSpec` objects |
-| `get_controls_by_level(level)` | Filter controls by maturity level |
-| `get_rules_catalog()` | Return SARIF rule definitions for output formatting |
-| `get_remediation_registry()` | Return mapping of remediation categories to fix functions |
 | `get_framework_config_path()` | Return path to the TOML configuration file |
-| `register_controls()` | Import Python control modules to trigger registration |
+
+Controls, SARIF rule metadata, and remediations all come from that TOML file;
+the implementation class does not return them. `get_all_controls`,
+`get_controls_by_level`, `get_rules_catalog`, `get_remediation_registry`, and
+`register_controls` were removed from the protocol in 0.2.0 (#487). A plugin
+that still defines them is discovered as before, and they are not called.
 
 ### Optional methods
 
 | Method | Purpose |
 |--------|---------|
-| `register_handlers()` | Register MCP tool handlers (checked via `hasattr`) |
+| `register_handlers()` | The handler hook: register custom sieve step types and MCP tool handlers (checked via `hasattr`; see Section 5) |
+
+`register_handlers()` is the one supported name. The framework also calls a
+`register_sieve_handlers()` method, for compatibility with plugins written
+before 0.2.0 only (#451). Registering handlers as a side effect of importing
+your module works, but the framework cannot see it, and a registry reset loses
+the handlers.
 
 ### Minimal implementation
 
 ```python
 # src/darnit_mystandard/implementation.py
 from pathlib import Path
-from typing import Any
-
-from darnit.core.plugin import ControlSpec
 
 
 class MyStandardImplementation:
@@ -343,36 +342,12 @@ class MyStandardImplementation:
     def spec_version(self) -> str:
         return "MySpec v1.0"
 
-    def get_all_controls(self) -> list[ControlSpec]:
-        controls = []
-        for level in [1, 2, 3]:
-            controls.extend(self.get_controls_by_level(level))
-        return controls
-
-    def get_controls_by_level(self, level: int) -> list[ControlSpec]:
-        # For now, delegate to the sieve registry
-        from darnit.sieve.registry import get_control_registry
-        registry = get_control_registry()
-        return registry.get_specs_by_level(level)
-
-    def get_rules_catalog(self) -> dict[str, Any]:
-        return {}  # Populate as needed for SARIF output
-
-    def get_remediation_registry(self) -> dict[str, Any]:
-        from .remediation.registry import REMEDIATION_REGISTRY
-        return REMEDIATION_REGISTRY
-
     def get_framework_config_path(self) -> Path | None:
         # Navigate from implementation.py to the TOML file
         return Path(__file__).parent.parent.parent / "mystandard.toml"
 
-    def register_controls(self) -> None:
-        """TOML-first: controls are defined in the TOML config file.
-
-        No Python registration is needed. Override this only if you need
-        to register custom sieve handlers (see Section 5).
-        """
-        pass
+    def register_handlers(self) -> None:
+        """Optional. Register custom sieve step types here (see Section 5)."""
 ```
 
 The `get_framework_config_path()` method deserves attention: it must return the
@@ -1021,7 +996,7 @@ framework knows which plugin owns each handler:
 ```python
 from darnit.sieve.handler_registry import get_sieve_handler_registry
 
-def register_sieve_handlers(self):
+def register_handlers(self):
     registry = get_sieve_handler_registry()
     registry.set_plugin_context(self.name)
 
@@ -1332,10 +1307,12 @@ def api_check_handler(config: dict, context: HandlerContext) -> HandlerResult:
 
 ### Registering the handler
 
-Register handlers in your implementation's `register_sieve_handlers()` method:
+Register handlers in your implementation's `register_handlers()` method, the
+protocol hook the framework calls before it loads or audits your framework
+(framework-design.md 6.4):
 
 ```python
-def register_sieve_handlers(self) -> None:
+def register_handlers(self) -> None:
     from darnit.sieve.handler_registry import get_sieve_handler_registry
     from . import handlers
 
@@ -1369,99 +1346,27 @@ steps = [
 
 ## 7. Remediation
 
-Remediation maps audit failures to automated fix actions. The registry tells the
-framework which function to call when a control fails.
-
-### Registry structure
-
-```python
-# src/darnit_mystandard/remediation/registry.py
-from typing import Any
-
-REMEDIATION_REGISTRY: dict[str, dict[str, Any]] = {
-    "security_policy": {
-        "description": "Create SECURITY.md with vulnerability reporting info",
-        "controls": ["MS-SEC-01", "MS-SEC-02"],
-        "function": "create_security_policy",
-        "safe": True,           # Safe to auto-apply without confirmation
-        "requires_api": False,  # Doesn't need GitHub API access
-    },
-}
-```
-
-### Registry fields
-
-| Field | Type | Purpose |
-|-------|------|---------|
-| `description` | `str` | Human-readable description of the fix |
-| `controls` | `list[str]` | Control IDs this remediation addresses |
-| `function` | `str` | Name of the function to call |
-| `safe` | `bool` | Whether auto-application is safe |
-| `requires_api` | `bool` | Whether the fix needs API access |
-| `requires_context` | `list[dict]` | Context values needed before applying |
+Remediation is declared in the framework TOML, under each control's
+`remediation` table (Section 3, "Remediation in TOML"; framework-design.md
+section 4). The framework's remediation executor reads it from there; nothing
+in your implementation class returns it. The Python `REMEDIATION_REGISTRY`
+dict that earlier versions of this guide described was read only by
+`get_remediation_registry()`, which was removed in 0.2.0 (#487).
 
 ### Context requirements
 
-Some remediations need user-confirmed context before they can run. A requirement
-is met by the key's standing (framework-design.md 7.3, 7.4): a candidate or unknown
-key is never ready. Independently of `requires_context`, a template or `when`
-clause that reads a key without a usable value stops the control with
-`confirmation required: <key>` and writes nothing (framework-design.md 7.11):
+Some remediations need user-confirmed context before they can run. Declare them
+with `[[controls."ID".remediation.requires_context]]` (framework-design.md 7.3).
+A requirement is met by the key's standing (framework-design.md 7.3, 7.4): a
+candidate or unknown key is never ready. Independently of `requires_context`, a
+template or `when` clause that reads a key without a usable value stops the
+control with `confirmation required: <key>` and writes nothing
+(framework-design.md 7.11).
 
-```python
-"codeowners": {
-    "description": "Create CODEOWNERS file",
-    "controls": ["MS-GV-01"],
-    "function": "create_codeowners",
-    "safe": True,
-    "requires_api": False,
-    "requires_context": [{
-        "key": "maintainers",
-        "required": True,
-        "confidence_threshold": 0.9,
-        "prompt_if_auto_detected": True,
-        "warning": "Please confirm who should be code owners.",
-    }],
-},
-```
-
-### Remediation action functions
-
-The actual remediation functions are defined separately and invoked by name from the
-registry. They typically create or modify files in the repository:
-
-```python
-# src/darnit_mystandard/remediation/actions.py
-
-def create_security_policy(owner: str, repo: str, local_path: str, **kwargs) -> dict:
-    """Create a SECURITY.md file.
-
-    Returns:
-        dict with keys: success (bool), message (str), files_created (list)
-    """
-    import os
-
-    security_path = os.path.join(local_path, "SECURITY.md")
-    if os.path.exists(security_path):
-        return {
-            "success": True,
-            "message": "SECURITY.md already exists",
-            "files_created": [],
-        }
-
-    content = f"# Security Policy\n\nReport vulnerabilities to security@{owner}.example.com\n"
-    with open(security_path, "w") as f:
-        f.write(content)
-
-    return {
-        "success": True,
-        "message": "Created SECURITY.md",
-        "files_created": ["SECURITY.md"],
-    }
-```
-
-> **Reference**: See `packages/darnit-baseline/src/darnit_baseline/remediation/registry.py`
-> for the full OpenSSF Baseline remediation registry with 11 categories.
+A remediation that needs logic the built-in remediation handlers cannot express
+is a plugin remediation handler, registered in `register_handlers()` like a
+sieve step type (Section 5). It returns planned `FileChange`s and never writes
+itself (framework-design.md 4.2).
 
 ---
 
@@ -1690,14 +1595,14 @@ def test_full_audit(tmp_path):
     (tmp_path / "LICENSE").write_text("MIT License")
     (tmp_path / "SECURITY.md").write_text("Report to security@test.com")
 
+    from darnit.config import load_controls_from_framework
+    from darnit.config.merger import load_framework_config
     from darnit_mystandard.implementation import MyStandardImplementation
     impl = MyStandardImplementation()
 
-    # Register controls
-    impl.register_controls()
-
-    # Get controls and verify they loaded
-    controls = impl.get_all_controls()
+    # Load the controls from the framework TOML and verify they loaded
+    config = load_framework_config(impl.get_framework_config_path())
+    controls = load_controls_from_framework(config)
     assert len(controls) > 0
 ```
 
@@ -1810,9 +1715,7 @@ unexpected results since the orchestrator assumes the order.
 
 ```
 Properties:  name, display_name, version, spec_version
-Methods:     get_all_controls(), get_controls_by_level(level),
-             get_rules_catalog(), get_remediation_registry(),
-             get_framework_config_path(), register_controls()
+Methods:     get_framework_config_path()
 Optional:    register_handlers()
 ```
 
@@ -1864,7 +1767,6 @@ from darnit.core.handlers import get_handler_registry
 | MCP tool handler registry | `packages/darnit/src/darnit/core/handlers.py` |
 | Reference implementation | `packages/darnit-baseline/src/darnit_baseline/implementation.py` |
 | Reference TOML | `packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml` |
-| Reference remediation | `packages/darnit-baseline/src/darnit_baseline/remediation/registry.py` |
 | Example implementation | `packages/darnit-example/src/darnit_example/implementation.py` |
 | Example TOML config | `packages/darnit-example/example-hygiene.toml` |
 | Example custom handlers | `packages/darnit-example/src/darnit_example/handlers.py` |

@@ -207,12 +207,12 @@ def my_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResult
 
 ### Registering handlers
 
-Register from your implementation class:
+Register from your implementation class's `register_handlers()` method, the hook the framework calls before it loads or audits your framework (framework-design.md 6.4):
 
 ```python
 from darnit.sieve.handler_registry import get_sieve_handler_registry
 
-def register_sieve_handlers(self):
+def register_handlers(self):
     registry = get_sieve_handler_registry()
     registry.set_plugin_context(self.name)
 

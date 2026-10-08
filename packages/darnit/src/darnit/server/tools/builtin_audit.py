@@ -90,13 +90,7 @@ async def builtin_audit(
     except Exception as e:
         return f"Error loading controls: {e}"
 
-    # Register and load Python-defined controls if implementation exists
     impl = get_implementation(_framework_name)
-    if impl and hasattr(impl, "register_controls"):
-        try:
-            impl.register_controls()
-        except Exception as e:
-            logger.warning(f"Error registering Python controls: {e}")
 
     # Merge Python-defined controls that aren't in TOML
     registry = get_control_registry()

@@ -101,12 +101,11 @@ def get_framework_path() -> Path:
 
 ## Step 3 — `implementation.py`
 
-The class needs to satisfy the [`ComplianceImplementation` protocol](../packages/darnit/src/darnit/core/plugin.py). For a TOML-only plugin (no Python-defined controls), most methods are stubs.
+The class needs to satisfy the [`ComplianceImplementation` protocol](../packages/darnit/src/darnit/core/plugin.py): four identity properties and `get_framework_config_path()`. Controls, SARIF rules, and remediations come from the TOML file, not from the class. `register_handlers()` is optional; it is the hook where a plugin registers its own Python step types and MCP tool handlers (see [The three-layer architecture](#the-three-layer-architecture)).
 
 ```python
 from __future__ import annotations
 from pathlib import Path
-from typing import Any
 
 
 class YourImplementation:
@@ -129,25 +128,12 @@ class YourImplementation:
     def get_framework_config_path(self) -> Path | None:
         return Path(__file__).parent / "your_framework.toml"
 
-    def register_controls(self) -> None:
-        # No-op for TOML-only plugins. If you write Python control handlers,
-        # import them here to trigger registration.
+    def register_handlers(self) -> None:
+        # Optional. A TOML-only plugin has nothing to register.
         return None
-
-    def get_all_controls(self) -> list[Any]:
-        # TOML-defined controls are loaded by the framework via the TOML path.
-        return []
-
-    def get_controls_by_level(self, level: int) -> list[Any]:
-        return []
-
-    def get_rules_catalog(self) -> dict[str, Any]:
-        # The framework derives SARIF rules from TOML automatically.
-        return {}
-
-    def get_remediation_registry(self) -> dict[str, Any]:
-        return {}
 ```
+
+`get_all_controls`, `get_controls_by_level`, `get_rules_catalog`, `get_remediation_registry`, and `register_controls` are no longer part of the protocol (removed in 0.2.0). A plugin that still defines them is discovered as before; the framework does not call them.
 
 The protocol is `@runtime_checkable`, so you can self-test:
 
@@ -342,6 +328,7 @@ See `CLAUDE.md` "Three-Layer Architecture" for the canonical reference.
 - **TOML control IDs must be unique within your plugin** (the framework deduplicates by ID, with TOML overriding Python registrations).
 - **CEL backslashes in TOML literal strings are literal.** Use `'\.'` to match a literal dot in a CEL regex, NOT `'\\.'` (the latter produces `\\` + `.` in CEL, which matches "backslash + any char").
 - **The framework imports your `register()` lazily** — don't do heavy work at module import time. If you need expensive setup, do it inside `register()` or lazily inside the methods that need it.
+- **Register handlers in `register_handlers()`, not at import or in `register()`.** The framework calls `register_handlers()` on every audit and whenever loading your framework needs a step type that is not registered, so your step types survive a registry reset and a cached discovery. Registering at module import works but the framework cannot see it. A method named `register_sieve_handlers()` is still called for compatibility with older plugins; new plugins should not use it.
 - **The plugin slug (entry-point key) and the `name` property in your implementation must match** — both should equal your framework's slug. If they diverge, some framework tools will see one and some will see the other.
 
 ---

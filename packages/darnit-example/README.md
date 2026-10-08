@@ -34,7 +34,7 @@ described in that guide has a concrete counterpart here.
 | Step 1: Package skeleton | `pyproject.toml`, `src/darnit_example/__init__.py` |
 | Step 2: Implementation class | `src/darnit_example/implementation.py` |
 | Step 3: TOML config | `example-hygiene.toml` |
-| Step 4: Python controls | `src/darnit_example/controls/level1.py` |
+| Step 4: Python handlers | `src/darnit_example/handlers.py` |
 | Step 5: Remediation | `src/darnit_example/remediation/` |
 | Step 6: Handler registration | `src/darnit_example/tools.py` |
 | Step 7: Testing | `tests/darnit_example/` |

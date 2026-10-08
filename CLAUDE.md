@@ -55,7 +55,7 @@ from darnit_baseline.controls import level1
 from darnit.core.discovery import get_implementation
 impl = get_implementation("openssf-baseline")
 if impl:
-    controls = impl.get_all_controls()
+    config_path = impl.get_framework_config_path()
 ```
 
 ### Rule 2: Implementations MAY Import Framework
@@ -78,13 +78,11 @@ impl.name                        # str: Implementation identifier
 impl.display_name                # str: Human-readable name
 impl.version                     # str: Implementation version
 impl.spec_version                # str: Spec version implemented
-impl.get_all_controls()          # List[ControlSpec]: All controls
-impl.get_controls_by_level(n)    # List[ControlSpec]: Controls at level n
-impl.get_rules_catalog()         # Dict: SARIF rule definitions
-impl.get_remediation_registry()  # Dict: Auto-fix mappings
 impl.get_framework_config_path() # Path | None: TOML config location
-impl.register_controls()         # None: Register TOML controls
+impl.register_handlers()         # None: optional hook, registers Python handlers
 ```
+
+Those five members are the whole protocol; `register_handlers()` is optional. Controls, SARIF rules, and remediations come from the framework TOML, never from the implementation. `get_all_controls`, `get_controls_by_level`, `get_rules_catalog`, `get_remediation_registry`, and `register_controls` were removed (#487); a plugin that still defines them is discovered, and they are not called.
 
 ## Plugin System
 
@@ -103,8 +101,8 @@ openssf-baseline = "darnit_baseline:register"
 
 ```python
 # my_framework/implementation.py
+from importlib.resources import files
 from pathlib import Path
-from darnit.core.plugin import ComplianceImplementation, ControlSpec
 
 class MyFrameworkImplementation:
     @property
@@ -123,15 +121,11 @@ class MyFrameworkImplementation:
     def spec_version(self) -> str:
         return "MySpec v1.0"
 
-    def get_all_controls(self) -> list[ControlSpec]:
-        # Return your control definitions
-        ...
-
     def get_framework_config_path(self) -> Path | None:
-        return Path(__file__).parent / "my-framework.toml"
+        return Path(str(files(__package__) / "my-framework.toml"))
 
-    def register_controls(self) -> None:
-        pass  # Controls are defined in TOML; no Python registration needed
+    def register_handlers(self) -> None:
+        pass  # Optional: register custom step types (see Handler Registration)
 ```
 
 2. Add the registration function:
@@ -318,7 +312,9 @@ Remediation plans, then applies only what it planned (feature 043; framework-des
 
 ### Handler Registration
 
-Plugins register handlers using the `register_handlers()` method:
+`register_handlers()` is the protocol hook for a plugin's Python handlers: sieve step types (`get_sieve_handler_registry().register(...)`, with ceiling and settings, framework-design.md 3.0.3) and MCP tool handlers. The framework calls it on every audit, on `darnit list`, and when loading a framework names a step type that is not yet registered, so it must be safe to call repeatedly. `register_sieve_handlers()` is still called for compatibility with out-of-tree plugins, but is not a supported choice; no in-tree plugin uses it. Registering at module import works but is not the protocol: the framework cannot introspect it, and a registry reset loses the handlers (#451; framework-design.md 6.4).
+
+MCP tool handlers, for example:
 
 ```python
 class MyImplementation:
@@ -373,10 +369,10 @@ Always handle missing implementations gracefully:
 ```python
 impl = get_implementation("openssf-baseline")
 if impl:
-    result = impl.get_all_controls()
+    config_path = impl.get_framework_config_path()
 else:
     logger.warning("No implementation found")
-    result = []
+    config_path = None
 ```
 
 ## Technology Stack
