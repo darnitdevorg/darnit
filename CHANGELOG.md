@@ -62,6 +62,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ALLOWED_MODULE_PREFIXES` on `HandlerRegistry`, `PluginRegistry`, and
   `AdapterRegistry`. The allowed packages come from installed
   implementations; there is no list to extend (#490).
+- **BREAKING:** the check and remediation adapter system, which no audit or
+  remediation ever dispatched to (#487). `darnit.core.adapters`
+  (`CheckAdapter`, `RemediationAdapter`, `CommandCheckAdapter`,
+  `ScriptCheckAdapter`, `AdapterRegistry`) is removed, with the `darnit.core`
+  re-exports `CheckAdapter`, `RemediationAdapter`, `AdapterInfo`,
+  `ENTRY_POINT_CHECK_ADAPTERS`, and `ENTRY_POINT_REMEDIATION_ADAPTERS`, and
+  `AdapterCapability` and the adapter `RemediationResult` in
+  `darnit.core.models` (`darnit.remediation.RemediationResult` is
+  unchanged). The `darnit.check_adapters` and `darnit.remediation_adapters`
+  entry point groups are no longer read. Verification runs through sieve
+  handlers; an external tool runs through `exec` or a plugin step type.
+- **BREAKING:** `darnit.core.registry.PluginRegistry` keeps only framework
+  discovery (`discover_frameworks`, `list_frameworks`,
+  `get_framework_info`, `get_framework_path`, `clear_cache`). Removed:
+  `AdapterInfo`, `discover_all`, `discover_check_adapters`,
+  `discover_remediation_adapters`, `list_check_adapters`,
+  `get_check_adapter_info`, `get_check_adapter`, `has_check_adapter`, the
+  matching remediation-adapter methods, `register_framework`,
+  `has_framework`, `register_check_adapter`,
+  `register_remediation_adapter`, `register_from_adapter_config`, and
+  `get_plugin_summary` (#487).
+- **BREAKING:** `darnit.config` no longer exports `AdapterType`,
+  `CheckConfig`, `OutputMapping`, or `FrameworkDefaults`, and
+  `darnit.config.framework_schema` drops them with the adapter config models
+  (`PythonAdapterConfig`, `CommandAdapterConfig`, `ScriptAdapterConfig`,
+  `HttpAdapterConfig`, `AdapterConfig`), `FrameworkConfig.defaults`,
+  `FrameworkConfig.adapters`, `get_adapter_config`, `get_check_adapter`, and
+  `get_remediation_adapter`. `EffectiveControl` loses `check_adapter`,
+  `check_handler`, `check_config`, and `remediation_adapter`;
+  `EffectiveConfig` loses `adapters` and `get_adapter`; `merge_control` no
+  longer takes `defaults`; and `ControlSpec.metadata` no longer carries
+  `check_adapter` or `remediation_adapter` (#487).
+- **BREAKING:** a control-level `check` key in a framework TOML or an
+  operator custom control now fails loading, like any unknown control key
+  (#487).
+- **BREAKING:** framework TOML `[adapters]` tables and `[defaults]`
+  `check_adapter` / `remediation_adapter` are no longer read. A framework
+  that still has them loads (unknown top-level tables are accepted), and
+  they have no effect. The shipped frameworks drop their `[defaults]`
+  blocks (#487).
+- **BREAKING:** `CheckContext.locator` and the `darnit.locate` package
+  (`UnifiedLocator` and its `sync_to_project` writer, `FoundEvidence`,
+  `LocateResult`, `CheckOutput`, and the tool output normalizer) are
+  removed; no handler read them. The control `locator`
+  configuration and `use_locator` are unchanged (#487).
+- **BREAKING:** `darnit.storage` (`StorageBackend`, `StorageRecord`,
+  `FileBackend`, `ArchivistaBackend`, `MemoryBackend`, `get_backend`) and the `storage_config` parameter of
+  `generate_attestation_from_results` are removed. Use the `darnit.stores`
+  attestation store (`attestation_store`) (#487).
+- **BREAKING:** the `adapter=` control filter (`--tags adapter=...`) is
+  removed; it never matched in `darnit audit`. `adapter` is now an ordinary
+  tag key (#487).
+- **BREAKING:** `darnit plan` no longer prints `[adapter: ...]` after each
+  control, and `darnit validate` no longer prints an `Adapters:` count
+  (#487).
+- The `darnit-plugins` workspace package (never published) and the
+  `darnit-testchecks` check adapters, their `darnit.check_adapters`,
+  `darnit.remediation_adapters`, and `darnit.adapters` entry points, and its
+  `[adapters.builtin]` table (#487).
+- Unused code: `darnit_baseline.remediation.routing`
+  (`classify_writeback`), the threat-model classes in
+  `darnit_baseline.threat_model.models` other than `StrideCategory`, and
+  `darnit.remediation.RemediationResult.to_markdown` (#487).
 
 ### Added
 
