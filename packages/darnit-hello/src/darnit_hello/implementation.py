@@ -58,3 +58,18 @@ class HelloImplementation:
         (see CLAUDE.md "TOML-First Architecture").
         """
         return Path(__file__).parent / "hello.toml"
+
+    # ---- Optional handler hook ----------------------------------------------
+
+    def register_handlers(self) -> None:
+        """Register this plugin's Python handlers (none here).
+
+        The framework calls this before it loads or audits the `hello`
+        framework. A plugin with custom checks registers its step types here
+        with `darnit.sieve.handler_registry.get_sieve_handler_registry()`, and
+        its MCP tool handlers with `darnit.core.handlers.get_handler_registry()`;
+        see docs/packaging-plugins.md. Registering at module import instead
+        works, but the framework cannot see it. This example's single control
+        uses only built-in step types, so there is nothing to register.
+        """
+        return None

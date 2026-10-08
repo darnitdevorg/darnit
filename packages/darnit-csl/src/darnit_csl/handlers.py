@@ -4,9 +4,9 @@
 file fails deterministically (no reason to consult the model about a file that is
 not there), while a file that exists is handed to the LLM for a content-quality
 judgment. It is registered in the sieve handler registry with the ``llm`` phase so
-the orchestrator's PENDING (llm_judgment) branch fires for the present-file case. darnit
-imports this package during framework/implementation discovery, so the handler is
-available in both the CLI audit path and `darnit serve`.
+the orchestrator's PENDING (llm_judgment) branch fires for the present-file case. The
+framework registers it through ``CommunitySpecImplementation.register_handlers()``
+(framework-design 6.4).
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ def csl_llm_if_present(config: dict[str, Any], context: HandlerContext) -> Handl
     )
 
 
-def register_sieve_handlers() -> None:
+def register_handlers() -> None:
     """Register the step type under the plugin's name, so the registry records it as this plugin's (feature 044)."""
     registry = get_sieve_handler_registry()
     registry.set_plugin_context("community-spec")
@@ -60,6 +60,3 @@ def register_sieve_handlers() -> None:
         )
     finally:
         registry.set_plugin_context(None)
-
-
-register_sieve_handlers()

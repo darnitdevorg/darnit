@@ -63,6 +63,3 @@ __all__ = [
     "get_framework_path",
     "get_optional_framework_path",
 ]
-
-# Register custom sieve handlers on import.
-from . import handlers  # noqa: E402,F401

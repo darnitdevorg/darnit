@@ -50,8 +50,8 @@ class CommunitySpecImplementation:
             )
         return path
 
-    def register_sieve_handlers(self) -> None:
-        """Register the ``csl_llm_if_present`` step type (again, after a registry reset)."""
-        from .handlers import register_sieve_handlers
+    def register_handlers(self) -> None:
+        """Register the ``csl_llm_if_present`` step type."""
+        from .handlers import register_handlers
 
-        register_sieve_handlers()
+        register_handlers()

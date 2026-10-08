@@ -63,19 +63,21 @@ def _noop(config, context):  # noqa: ARG001
 
 @pytest.fixture(scope="module")
 def plugin_step_types() -> None:
-    import importlib
-
-    import darnit_csl.handlers
+    from darnit_csl.implementation import CommunitySpecImplementation
     from darnit_gittuf.implementation import GittufImplementation
     from darnit_reproducibility.implementation import ReproducibilityImplementation
 
     from darnit_baseline.implementation import OSPSBaselineImplementation
     from darnit_example.implementation import ExampleHygieneImplementation
 
-    importlib.reload(darnit_csl.handlers)  # registers on import, possibly into a registry reset since
-    OSPSBaselineImplementation().register_handlers()
-    for implementation in (ExampleHygieneImplementation, GittufImplementation, ReproducibilityImplementation):
-        implementation().register_sieve_handlers()
+    for implementation in (
+        OSPSBaselineImplementation,
+        CommunitySpecImplementation,
+        ExampleHygieneImplementation,
+        GittufImplementation,
+        ReproducibilityImplementation,
+    ):
+        implementation().register_handlers()
 
 
 class TestRegister:

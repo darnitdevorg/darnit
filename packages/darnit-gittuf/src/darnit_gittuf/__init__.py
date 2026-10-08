@@ -7,9 +7,7 @@ from .implementation import GittufImplementation
 
 def register() -> GittufImplementation:
     """Entry point called by darnit plugin discovery."""
-    impl = GittufImplementation()
-    impl.register_sieve_handlers()
-    return impl
+    return GittufImplementation()
 
 
 def get_framework_path() -> Path:

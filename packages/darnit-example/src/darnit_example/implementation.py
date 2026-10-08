@@ -41,30 +41,31 @@ class ExampleHygieneImplementation:
         # Navigate from implementation.py -> darnit_example -> src -> darnit-example -> toml
         return Path(__file__).parent.parent.parent / "example-hygiene.toml"
 
-    def register_sieve_handlers(self) -> None:
-        """Register custom sieve handlers for verification passes."""
+    def register_handlers(self) -> None:
+        """Register the plugin's sieve step types and its MCP tool handlers."""
+        from darnit.core.handlers import get_handler_registry
         from darnit.sieve.handler_registry import get_sieve_handler_registry
 
-        from . import handlers
+        from . import handlers, tools
 
-        registry = get_sieve_handler_registry()
-        registry.set_plugin_context(self.name)
+        sieve_registry = get_sieve_handler_registry()
+        sieve_registry.set_plugin_context(self.name)
 
-        registry.register(
+        sieve_registry.register(
             "readme_description",
             phase="deterministic",
             handler_fn=handlers.readme_description_handler,
             description="Check README has substantive content",
             settings={"readme_names"},
         )
-        registry.register(
+        sieve_registry.register(
             "readme_quality",
             phase="pattern",
             handler_fn=handlers.readme_quality_handler,
             description="Heuristic check for common README sections",
             settings={"sections", "min_sections"},
         )
-        registry.register(
+        sieve_registry.register(
             "ci_config",
             phase="deterministic",
             handler_fn=handlers.ci_config_handler,
@@ -72,13 +73,7 @@ class ExampleHygieneImplementation:
             settings={"patterns"},
         )
 
-        registry.set_plugin_context(None)
-
-    def register_handlers(self) -> None:
-        """Register handlers with the handler registry."""
-        from darnit.core.handlers import get_handler_registry
-
-        from . import tools
+        sieve_registry.set_plugin_context(None)
 
         registry = get_handler_registry()
         registry.set_plugin_context(self.name)

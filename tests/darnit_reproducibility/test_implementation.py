@@ -45,7 +45,7 @@ class TestReproducibilityImplementation:
             reset_sieve_handler_registry,
         )
         reset_sieve_handler_registry()
-        self.impl.register_sieve_handlers()
+        self.impl.register_handlers()
         registry = get_sieve_handler_registry()
         expected = {
             "repro_deps_pinned", "repro_build_env_declared",
@@ -61,7 +61,7 @@ class TestReproducibilityImplementation:
             reset_sieve_handler_registry,
         )
         reset_sieve_handler_registry()
-        self.impl.register_sieve_handlers()
+        self.impl.register_handlers()
         registry = get_sieve_handler_registry()
         for name in [
             "repro_deps_pinned", "repro_build_env_declared",

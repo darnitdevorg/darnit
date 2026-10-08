@@ -76,7 +76,7 @@ OFFLINE = {"repro_witness_attestation": {"verify_witness_attestations": False}}
 
 @pytest.fixture(autouse=True)
 def _registered() -> None:
-    ReproducibilityImplementation().register_sieve_handlers()
+    ReproducibilityImplementation().register_handlers()
 
 
 def _build(root: Path, files: dict[str, str]) -> Path:
