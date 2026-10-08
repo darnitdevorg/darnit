@@ -33,7 +33,6 @@ Example:
 
 from __future__ import annotations
 
-import json
 import os
 import stat
 import subprocess
@@ -138,39 +137,6 @@ class RemediationResult:
     # ``approvals`` are the individual approvals the apply used.
     needs_approval: list[str] = field(default_factory=list)
     approvals: list[Approval] = field(default_factory=list)
-
-    def to_markdown(self) -> str:
-        """Format result as markdown."""
-        if self.dry_run:
-            prefix = "🔍 **DRY RUN**"
-        elif self.success:
-            prefix = "✅"
-        else:
-            prefix = "❌"
-
-        lines = [f"{prefix} {self.message}"]
-
-        if self.details:
-            lines.append("")
-            for key, value in self.details.items():
-                if isinstance(value, list):
-                    # Check for llm_enhance in handler results
-                    for item in value:
-                        if isinstance(item, dict) and "llm_enhance" in item:
-                            enhance = item["llm_enhance"]
-                            lines.append("")
-                            lines.append(f"**AI Enhancement Available** for `{enhance.get('file_path', '')}`:")
-                            lines.append(f"> {enhance.get('prompt', '')}")
-                    lines.append(f"**{key}:**")
-                    for item in value:
-                        lines.append(f"  - {item}")
-                elif isinstance(value, dict):
-                    lines.append(f"**{key}:**")
-                    lines.append(f"```json\n{json.dumps(value, indent=2)}\n```")
-                else:
-                    lines.append(f"**{key}:** {value}")
-
-        return "\n".join(lines)
 
 
 class RemediationExecutor:
