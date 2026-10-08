@@ -3,6 +3,14 @@
 from darnit_reproducibility.implementation import ReproducibilityImplementation
 
 
+def _framework_controls(impl):
+    """Controls as the audit loads them, from the implementation's framework TOML."""
+    from darnit.config import load_controls_from_framework
+    from darnit.config.merger import load_framework_config
+
+    return load_controls_from_framework(load_framework_config(impl.get_framework_config_path()))
+
+
 class TestReproducibilityImplementation:
     """Tests that ReproducibilityImplementation satisfies the plugin protocol."""
 
@@ -15,25 +23,16 @@ class TestReproducibilityImplementation:
     def test_display_name(self) -> None:
         assert len(self.impl.display_name) > 0
 
-    def test_get_all_controls_returns_five(self) -> None:
-        assert len(self.impl.get_all_controls()) == 5
+    def test_framework_toml_defines_five_controls(self) -> None:
+        assert len(_framework_controls(self.impl)) == 5
 
     def test_control_ids(self) -> None:
-        ids = {c.control_id for c in self.impl.get_all_controls()}
+        ids = {c.control_id for c in _framework_controls(self.impl)}
         assert ids == {"RE-01.01", "RE-01.02", "RE-02.01", "RE-02.02", "RE-03.01"}
 
-    def test_level_1_has_two_controls(self) -> None:
-        controls = self.impl.get_controls_by_level(1)
-        assert len(controls) == 2
-
-    def test_level_2_has_two_controls(self) -> None:
-        controls = self.impl.get_controls_by_level(2)
-        assert len(controls) == 2
-
-    def test_level_3_has_one_control(self) -> None:
-        controls = self.impl.get_controls_by_level(3)
-        assert len(controls) == 1
-        assert controls[0].control_id == "RE-03.01"
+    def test_control_levels(self) -> None:
+        levels = {c.control_id: c.level for c in _framework_controls(self.impl)}
+        assert levels == {"RE-01.01": 1, "RE-01.02": 1, "RE-02.01": 2, "RE-02.02": 2, "RE-03.01": 3}
 
     def test_framework_config_path_exists(self) -> None:
         path = self.impl.get_framework_config_path()

@@ -1,9 +1,7 @@
 """Scientific reproducibility plugin implementation for darnit."""
 
 from pathlib import Path
-from typing import Any
 
-from darnit.core.plugin import ControlSpec
 from darnit_reproducibility import handlers
 
 
@@ -31,65 +29,6 @@ class ReproducibilityImplementation:
     def spec_version(self) -> str:
         return "repro v0.1"
 
-    def get_all_controls(self) -> list[ControlSpec]:
-        controls = []
-        for level in [1, 2, 3]:
-            controls.extend(self.get_controls_by_level(level))
-        return controls
-
-    def get_controls_by_level(self, level: int) -> list[ControlSpec]:
-        all_controls = [
-            ControlSpec(
-                control_id="RE-01.01",
-                name="DependenciesPinned",
-                description="Dependencies are pinned to exact versions with checksums",
-                level=1,
-                domain="RE",
-                metadata={},
-            ),
-            ControlSpec(
-                control_id="RE-01.02",
-                name="BuildEnvDeclared",
-                description="Build environment is explicitly declared",
-                level=1,
-                domain="RE",
-                metadata={},
-            ),
-            ControlSpec(
-                control_id="RE-02.01",
-                name="HermeticBuild",
-                description="Build does not fetch dependencies at build time",
-                level=2,
-                domain="RE",
-                metadata={},
-            ),
-            ControlSpec(
-                control_id="RE-02.02",
-                name="ProvenanceExists",
-                description="Build produces a signed provenance attestation",
-                level=2,
-                domain="RE",
-                metadata={},
-            ),
-            ControlSpec(
-                control_id="RE-03.01",
-                name="BitForBitReproducible",
-                description="Build output is identical across independent builds",
-                level=3,
-                domain="RE",
-                metadata={},
-            ),
-        ]
-        return [c for c in all_controls if c.level == level]
-
-    def get_rules_catalog(self) -> dict[str, Any]:
-        return {}
-
-    def get_remediation_registry(self) -> dict[str, Any]:
-        # Intentionally empty: TOML is the source of truth for remediation.
-        # RemediationExecutor reads FrameworkConfig.controls[id].remediation directly.
-        return {}
-
     def get_framework_config_path(self) -> Path | None:
         from importlib.resources import files
 
@@ -102,9 +41,6 @@ class ReproducibilityImplementation:
                 f"wheel's force-include configuration."
             )
         return path
-
-    def register_controls(self) -> None:
-        pass
 
     def register_sieve_handlers(self) -> None:
         """Register the reproducibility-specific check handlers."""

@@ -20,15 +20,10 @@ def _load_all_controls(repo_path: Path, level: int):
         load_controls_from_effective,
         load_effective_config_by_name,
     )
-    from darnit.core.discovery import get_implementation
     from darnit.sieve.registry import get_control_registry
 
     config = load_effective_config_by_name("example-hygiene")
     toml_controls = load_controls_from_effective(config)
-
-    impl = get_implementation("example-hygiene")
-    if impl:
-        impl.register_controls()
 
     registry = get_control_registry()
     toml_ids = {c.control_id for c in toml_controls}

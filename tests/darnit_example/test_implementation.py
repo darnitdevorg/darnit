@@ -7,6 +7,14 @@ from darnit_example import register
 from darnit_example.implementation import ExampleHygieneImplementation
 
 
+def _framework_controls(impl):
+    """Controls as the audit loads them, from the implementation's framework TOML."""
+    from darnit.config import load_controls_from_framework
+    from darnit.config.merger import load_framework_config
+
+    return load_controls_from_framework(load_framework_config(impl.get_framework_config_path()))
+
+
 class TestExampleHygieneImplementation:
     """Tests for ExampleHygieneImplementation class."""
 
@@ -26,28 +34,15 @@ class TestExampleHygieneImplementation:
         assert isinstance(impl, ComplianceImplementation)
 
     @pytest.mark.unit
-    def test_get_all_controls(self, impl):
-        controls = impl.get_all_controls()
+    def test_framework_toml_controls(self, impl):
+        controls = _framework_controls(impl)
         assert len(controls) == 8
-        levels = {c.level for c in controls}
-        assert levels == {1, 2}
-
-    @pytest.mark.unit
-    def test_get_controls_by_level(self, impl):
-        level1 = impl.get_controls_by_level(1)
-        level2 = impl.get_controls_by_level(2)
-
-        assert len(level1) == 6
-        assert len(level2) == 2
-
-        assert all(c.level == 1 for c in level1)
-        assert all(c.level == 2 for c in level2)
-
-        assert len(level1) + len(level2) == len(impl.get_all_controls())
+        assert sum(c.level == 1 for c in controls) == 6
+        assert sum(c.level == 2 for c in controls) == 2
 
     @pytest.mark.unit
     def test_control_ids_are_ph_format(self, impl):
-        controls = impl.get_all_controls()
+        controls = _framework_controls(impl)
         for control in controls:
             assert control.control_id.startswith("PH-")
             parts = control.control_id.split("-")
@@ -55,22 +50,10 @@ class TestExampleHygieneImplementation:
 
     @pytest.mark.unit
     def test_control_domains(self, impl):
-        controls = impl.get_all_controls()
+        controls = _framework_controls(impl)
         valid_domains = {"DOC", "SEC", "CFG", "QA", "CI"}
         for control in controls:
             assert control.domain in valid_domains, f"Invalid domain: {control.domain}"
-
-    @pytest.mark.unit
-    def test_get_rules_catalog(self, impl):
-        catalog = impl.get_rules_catalog()
-        assert isinstance(catalog, dict)
-        assert len(catalog) == 8
-
-    @pytest.mark.unit
-    def test_get_remediation_registry(self, impl):
-        registry = impl.get_remediation_registry()
-        assert isinstance(registry, dict)
-        assert len(registry) > 0
 
     @pytest.mark.unit
     def test_get_framework_config_path(self, impl):
