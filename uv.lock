@@ -15,7 +15,6 @@ members = [
     "darnit-gittuf",
     "darnit-hello",
     "darnit-mcp",
-    "darnit-plugins",
     "darnit-reproducibility",
     "darnit-testchecks",
 ]
@@ -638,28 +637,6 @@ dev = [
     { name = "skills-ref", specifier = ">=0.1.1" },
     { name = "syrupy", specifier = ">=4.0.0" },
 ]
-
-[[package]]
-name = "darnit-plugins"
-version = "0.1.0"
-source = { editable = "packages/darnit-plugins" }
-dependencies = [
-    { name = "darnit-core" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-cov" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "darnit-core", editable = "packages/darnit" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0.0" },
-]
-provides-extras = ["dev"]
 
 [[package]]
 name = "darnit-reproducibility"

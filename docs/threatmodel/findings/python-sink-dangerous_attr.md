@@ -12,6 +12,8 @@
 
 **Examples:** `packages/darnit/src/darnit/core/adapters.py:231`, `packages/darnit-plugins/src/darnit_plugins/adapters/kusari.py:253`, `packages/darnit/src/darnit/core/adapters.py:354`
 
+> **Note (#487):** `packages/darnit-plugins/` was removed in 0.2.0; the `kusari.py` instances below no longer exist.
+
 ### Strategy 2 (1 instances)
 
 > Sieve exec handler — commands loaded from TOML control definitions (a trusted, admin-controlled source). Variable substitution uses an allowlisted set of placeholders ($OWNER, $REPO, $BRANCH, $PATH) with values from MCP CheckContext. List-form subprocess prevents shell metacharacter injection.
@@ -143,7 +145,7 @@
 </details>
 
 <details>
-<summary><code>packages/darnit-plugins/src/darnit_plugins/adapters/kusari.py:253</code></summary>
+<summary><code>packages/darnit-plugins/src/darnit_plugins/adapters/kusari.py:253</code> (removed in 0.2.0, #487)</summary>
 
 ```
      243 | 

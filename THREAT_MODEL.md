@@ -184,7 +184,7 @@ No authentication decorator was found on this endpoint. If the endpoint handles 
 #### TM-T-003: Potential command injection via subprocess.run
 
 **Risk:** HIGH (severity × confidence = 5.40)
-**Location:** `packages/darnit-plugins/src/darnit_plugins/adapters/kusari.py:253`
+**Location:** `packages/darnit-plugins/src/darnit_plugins/adapters/kusari.py:253` (removed in 0.2.0, #487)
 **Source:** `tree_sitter_structural` — query `python.sink.dangerous_attr`
 
 [subprocess/dynamic] Entire command built dynamically — highest injection risk without taint confirmation. Command argument is populated from configuration/dict lookup within the same function scope. Opengrep taint analysis will lift confirmed cases to high confidence.
@@ -814,7 +814,7 @@ No compound attack paths identified.
 
 1. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/core/adapters.py:231` (mitigated: TOML config source, list-form subprocess)
 2. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/sieve/builtin_handlers.py:137` (mitigated: TOML control definitions, list-form subprocess)
-3. **Potential command injection via subprocess.run** — `packages/darnit-plugins/src/darnit_plugins/adapters/kusari.py:253` (mitigated: hardcoded binary, list-form subprocess)
+3. **Potential command injection via subprocess.run** — `packages/darnit-plugins/src/darnit_plugins/adapters/kusari.py:253` (mitigated: hardcoded binary, list-form subprocess; file removed in 0.2.0, #487)
 4. **Potential command injection via subprocess.run** — `packages/darnit/src/darnit/server/tools/git_operations.py:382` (mitigated: list-form subprocess, gh CLI validates args)
 
 ### Short-term Actions (Medium)

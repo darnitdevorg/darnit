@@ -121,7 +121,6 @@ baseline-mcp/
 │   │       └── formatters/          # SARIF output generation
 │   │
 │   ├── darnit-example/              # Example implementation (docs reference)
-│   ├── darnit-plugins/              # Plugin utilities
 │   └── darnit-testchecks/           # Test implementation (for testing)
 │
 ├── docs/

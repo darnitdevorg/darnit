@@ -1,6 +1,6 @@
 # Plugin Discovery System Design
 
-> **Note**: This is a design record. Earlier revisions also let a repository-level user configuration (`.baseline.toml`) reference adapters; darnit no longer reads that file. Adapters are referenced from framework TOML, and tool settings live in operator configuration outside the audited repository (`docs/architecture/framework-design.md` section 14).
+> **Note**: This is a design record. The example `darnit-plugins` package it proposes (Phase 4) was never published and was removed in 0.2.0 (#487). Earlier revisions also let a repository-level user configuration (`.baseline.toml`) reference adapters; darnit no longer reads that file. Adapters are referenced from framework TOML, and tool settings live in operator configuration outside the audited repository (`docs/architecture/framework-design.md` section 14).
 
 ## Overview
 
