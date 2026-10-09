@@ -117,6 +117,7 @@ class TestProtocolMethodNaming:
             ("darnit_gittuf.implementation", "GittufImplementation"),
             ("darnit_hello.implementation", "HelloImplementation"),
             ("darnit_reproducibility.implementation", "ReproducibilityImplementation"),
+            ("darnit_testchecks.implementation", "CustomStepsImplementation"),
         ],
     )
     def test_in_tree_plugins_use_only_register_handlers(self, module: str, cls: str) -> None:
@@ -200,17 +201,17 @@ class TestProtocolMethodNaming:
         impl.register_sieve_handlers.assert_called_once()
 
     @pytest.mark.unit
-    def test_example_hygiene_loads_with_a_fresh_registry(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Strict loading (044) must find darnit-example's step types without a manual registration."""
+    def test_plugin_step_types_load_with_a_fresh_registry(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Strict loading (044) must find a plugin's step types without a manual registration."""
         import darnit.sieve.handler_registry as handler_registry
         from darnit.config.control_loader import load_controls_from_effective
         from darnit.config.merger import load_effective_config_by_name
 
         monkeypatch.setattr(handler_registry, "_sieve_handler_registry", None)
-        config = load_effective_config_by_name("example-hygiene")
+        config = load_effective_config_by_name("testchecks-steps")
 
         assert len(load_controls_from_effective(config)) == len(config.controls)
-        assert get_sieve_handler_registry().get("readme_description") is not None
+        assert get_sieve_handler_registry().get("testchecks_readme_description") is not None
 
     @pytest.mark.unit
     def test_implementation_with_neither_is_a_noop(self) -> None:

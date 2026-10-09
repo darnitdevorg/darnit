@@ -766,7 +766,7 @@ def test_resolution_performance():
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "impl_name",
-    # darnit-baseline and darnit-example load through the production
+    # darnit-baseline and darnit-testchecks load through the production
     # loader using the canonical `[metadata]` TOML root. darnit-gittuf
     # and darnit-hello currently use `[framework]` as the table name —
     # a pre-existing inconsistency unrelated to this feature (see
@@ -774,7 +774,7 @@ def test_resolution_performance():
     # here so the test does not regress on a latent issue; the
     # composition feature is purely additive and does not affect that
     # inconsistency.
-    ["openssf-baseline", "example-hygiene"],
+    ["openssf-baseline", "testchecks-steps"],
 )
 def test_existing_implementations_unaffected(impl_name):
     """T061 / SC-008: every installed non-composite implementation loads

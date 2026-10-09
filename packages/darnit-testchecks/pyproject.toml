@@ -43,9 +43,15 @@ dev = [
 Homepage = "https://github.com/kusari-oss/darnit"
 Repository = "https://github.com/kusari-oss/darnit"
 
-# Entry points for darnit plugin discovery
+# Entry points for darnit plugin discovery. `testchecks` uses only built-in
+# step types; `testchecks-steps` is the implementation that registers plugin
+# step types (handlers.py).
+[project.entry-points."darnit.implementations"]
+testchecks-steps = "darnit_testchecks:register"
+
 [project.entry-points."darnit.frameworks"]
 testchecks = "darnit_testchecks:get_framework_path"
+testchecks-steps = "darnit_testchecks:get_steps_framework_path"
 
 # In-memory reference store backends (feature 033 T020)
 [project.entry-points."darnit.stores.project"]

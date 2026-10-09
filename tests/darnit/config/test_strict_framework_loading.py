@@ -61,6 +61,7 @@ def plugin_step_types() -> None:
     from darnit_csl.implementation import CommunitySpecImplementation
     from darnit_gittuf.implementation import GittufImplementation
     from darnit_reproducibility.implementation import ReproducibilityImplementation
+    from darnit_testchecks.implementation import CustomStepsImplementation
 
     from darnit_baseline.implementation import OSPSBaselineImplementation
     from darnit_example.implementation import ExampleHygieneImplementation
@@ -71,6 +72,7 @@ def plugin_step_types() -> None:
         ExampleHygieneImplementation,
         GittufImplementation,
         ReproducibilityImplementation,
+        CustomStepsImplementation,
     ):
         implementation().register_handlers()
 

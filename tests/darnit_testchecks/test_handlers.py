@@ -1,13 +1,13 @@
-"""Tests for custom sieve handlers in darnit-example."""
+"""Tests for the plugin step types in darnit-testchecks."""
 
 import pytest
-
-from darnit.sieve.handler_registry import HandlerContext, HandlerResultStatus
-from darnit_example.handlers import (
+from darnit_testchecks.handlers import (
     ci_config_handler,
     readme_description_handler,
     readme_quality_handler,
 )
+
+from darnit.sieve.handler_registry import HandlerContext, HandlerResultStatus
 
 
 def _make_handler_context(tmp_path, files=None):
@@ -21,7 +21,7 @@ def _make_handler_context(tmp_path, files=None):
 
 
 class TestReadmeHasDescription:
-    """Tests for PH-DOC-03: ReadmeHasDescription handler."""
+    """Tests for the TCS-DOC-01 step types."""
 
     @pytest.mark.unit
     def test_pass_with_description(self, tmp_path):
@@ -57,7 +57,7 @@ class TestReadmeHasDescription:
 
 
 class TestCIConfigExists:
-    """Tests for PH-CI-01: CIConfigExists handler."""
+    """Tests for the TCS-CI-01 step type."""
 
     @pytest.mark.unit
     def test_pass_with_github_actions(self, tmp_path):

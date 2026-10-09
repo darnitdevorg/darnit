@@ -21,7 +21,7 @@ from importlib.resources import files
 from pathlib import Path
 
 __version__ = "0.1.0"
-__all__ = ["get_framework_path", "__version__"]
+__all__ = ["get_framework_path", "get_steps_framework_path", "register", "__version__"]
 
 
 def get_framework_path() -> Path:
@@ -37,3 +37,17 @@ def get_framework_path() -> Path:
     if not path.is_file():
         raise FileNotFoundError(f"testchecks.toml not found in the installed darnit_testchecks package at {path}")
     return path
+
+
+def get_steps_framework_path() -> Path:
+    """Get the path to the testchecks-steps.toml framework definition."""
+    from .implementation import CustomStepsImplementation
+
+    return CustomStepsImplementation().get_framework_config_path()
+
+
+def register():
+    """Entry point for the testchecks-steps implementation, which registers plugin step types."""
+    from .implementation import CustomStepsImplementation
+
+    return CustomStepsImplementation()

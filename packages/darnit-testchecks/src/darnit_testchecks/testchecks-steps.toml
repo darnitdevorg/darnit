@@ -1,0 +1,42 @@
+# Test Checks: Plugin Step Types
+# A test framework whose controls use step types the darnit-testchecks
+# plugin registers in register_handlers(). The step types register no
+# ceiling, so each control falls through to manual.
+
+[metadata]
+name = "testchecks-steps"
+display_name = "Test Checks: Plugin Step Types"
+version = "0.1.0"
+schema_version = "0.1.0-alpha"
+spec_version = "test-steps-v1"
+description = "Controls built on plugin-registered step types, for testing"
+
+[controls."TCS-DOC-01"]
+name = "ReadmeHasDescription"
+level = 1
+domain = "DOC"
+description = "README contains a project description"
+
+[[controls."TCS-DOC-01".passes]]
+handler = "testchecks_readme_description"
+
+[[controls."TCS-DOC-01".passes]]
+handler = "testchecks_readme_quality"
+min_sections = 2
+
+[[controls."TCS-DOC-01".passes]]
+handler = "manual"
+steps = ["Verify the README describes what the project does"]
+
+[controls."TCS-CI-01"]
+name = "CIConfigExists"
+level = 1
+domain = "CI"
+description = "Project has CI/CD configuration"
+
+[[controls."TCS-CI-01".passes]]
+handler = "testchecks_ci_config"
+
+[[controls."TCS-CI-01".passes]]
+handler = "manual"
+steps = ["Check for CI/CD configuration (GitHub Actions, GitLab CI, etc.)"]
