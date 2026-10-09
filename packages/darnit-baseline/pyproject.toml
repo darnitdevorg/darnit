@@ -29,7 +29,9 @@ dependencies = [
     #      separate parse_bytes() for the old contract.
     #   2. tree.root_node became a callable method instead of a property.
     # Cap at <1.8 until darnit's parsing layer supports both shapes. See #268.
-    "tree-sitter-language-pack>=1.5,<1.8",
+    # 1.6.3 installs without an importable tree_sitter_language_pack module
+    # (seen on Linux x86_64, Python 3.12), so stop below it too.
+    "tree-sitter-language-pack>=1.5,<1.6.3",
 ]
 
 [project.urls]
