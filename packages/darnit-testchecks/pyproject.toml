@@ -66,7 +66,6 @@ packages = ["src/darnit_testchecks"]
 [tool.hatch.build.targets.sdist]
 include = [
     "src/",
-    "testchecks.toml",
     "README.md",
 ]
 

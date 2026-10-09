@@ -17,6 +17,7 @@ Example usage:
     ```
 """
 
+from importlib.resources import files
 from pathlib import Path
 
 __version__ = "0.1.0"
@@ -32,16 +33,7 @@ def get_framework_path() -> Path:
     Returns:
         Path to testchecks.toml
     """
-    # Framework TOML is in the package root (parent of src/)
-    package_dir = Path(__file__).parent
-    # Go up: src/darnit_testchecks -> src -> darnit-testchecks
-    framework_path = package_dir.parent.parent / "testchecks.toml"
-
-    if not framework_path.exists():
-        # Fallback: check if it's installed as a package
-        # In that case, it might be in the package data
-        alt_path = package_dir / "testchecks.toml"
-        if alt_path.exists():
-            return alt_path
-
-    return framework_path
+    path = Path(str(files(__package__) / "testchecks.toml"))
+    if not path.is_file():
+        raise FileNotFoundError(f"testchecks.toml not found in the installed darnit_testchecks package at {path}")
+    return path

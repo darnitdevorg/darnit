@@ -7,8 +7,7 @@ A test compliance framework for [darnit](https://github.com/kusaridev/baseline-m
 This package demonstrates how to create a custom compliance framework using the darnit declarative configuration system. It includes:
 
 - **12 trivial controls** across 3 maturity levels
-- **Declarative framework definition** in `testchecks.toml`
-- **Simple remediations** for basic controls
+- **Declarative framework definition** in `src/darnit_testchecks/testchecks.toml`
 
 ## Installation
 
