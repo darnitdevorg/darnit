@@ -4,6 +4,26 @@ For users who want to **try an unreleased feature**, contribute to darnit, or ru
 
 This path is necessary today because darnit's packages aren't yet on PyPI. After the first stable release (`v0.1.0`), the published channels become the easier path; from-source becomes a contributor-or-feature-preview workflow.
 
+## One-command setup
+
+`scripts/quickstart.sh` does the steps on this page for you. It checks for git, offers to install uv and zizmor if they are missing, installs darnit with the dependency versions pinned in `uv.lock`, runs an OpenSSF Baseline level 1 audit on a repository, and offers to register the MCP server with Claude Code. It changes nothing in the audited repository.
+
+From a checkout:
+
+```bash
+./scripts/quickstart.sh /path/to/your/repo
+```
+
+Without a checkout (the script clones darnit into `~/.local/share/darnit`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/darnitdevorg/darnit/main/scripts/quickstart.sh -o quickstart.sh
+less quickstart.sh    # read it before you run it
+bash quickstart.sh /path/to/your/repo
+```
+
+Options: `--yes` answers yes to every prompt, `--all-levels` audits all Baseline levels, `--no-mcp` skips the Claude Code registration, and `--dir DIR` sets where darnit is cloned. `--help` lists them.
+
 ## Quick install
 
 ```bash
