@@ -12,7 +12,6 @@ These are static reference docs, not in-flight feature specs (those live under `
 - [Sieve handler authoring](./sieve-handler-authoring.md) -- contract for writing new sieve handlers
 - [Shared handlers](./shared-handlers.md) -- built-in handlers usable across implementations
 - [Implementation-provided tools](./implementation-provided-tools.md) -- MCP tool exposure model
-- [Example plugin](./example-plugin.md) -- canonical worked example
 
 ## Audit lifecycle
 

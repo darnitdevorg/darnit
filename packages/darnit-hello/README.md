@@ -40,11 +40,9 @@ darnit audit --implementation hello
 3. Replace `hello.toml` with your own framework + controls. The TOML schema is documented in [`docs/packaging-plugins.md`](https://github.com/kusari-oss/darnit/blob/main/docs/packaging-plugins.md).
 4. Publish to PyPI (or a private index), and darnit will discover it on any host where both are installed.
 
-## Why this exists separately from `darnit-example`
+## Where to go next
 
-`darnit-example` is a fuller reference implementation that exercises Python control handlers, custom tools, remediation actions, and multi-level scoring. It's a learning tool but it's a lot to read.
-
-`darnit-hello` is deliberately the smallest plugin that the framework will discover, audit, and report against. Read this one first; once you understand the entry-point + ComplianceImplementation surface, look at `darnit-example` for the richer patterns.
+`darnit-hello` is the plugin template: deliberately the smallest plugin that the framework will discover, audit, and report against. Read this one first. Once you understand the entry-point + ComplianceImplementation surface, look at `darnit-reproducibility` and `darnit-gittuf` for custom step types registered in `register_handlers()`, and `darnit-baseline` for a full framework. (`darnit-testchecks` is a test-only plugin, not a template.)
 
 ## License
 

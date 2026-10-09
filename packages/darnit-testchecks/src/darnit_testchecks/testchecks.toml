@@ -33,10 +33,6 @@ files = [
     "README",
 ]
 
-[controls."TEST-DOC-01".remediation]
-handler = "create_readme"
-safe = true
-
 [controls."TEST-DOC-02"]
 name = "HasChangelog"
 level = 1
@@ -80,10 +76,6 @@ tags = ["configuration", "git"]
 [[controls."TEST-IGN-01".passes]]
 handler = "file_exists"
 files = [".gitignore"]
-
-[controls."TEST-IGN-01".remediation]
-handler = "create_gitignore"
-safe = true
 
 # =============================================================================
 # Level 2 Controls - Code Quality

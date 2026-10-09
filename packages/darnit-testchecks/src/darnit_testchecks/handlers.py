@@ -1,10 +1,12 @@
-"""Custom sieve handlers for the Project Hygiene Standard.
+"""Plugin step types for the testchecks-steps framework.
 
-These handlers implement verification logic that requires Python beyond what
-built-in TOML handlers can express:
-- readme_description: Checks README has substantive content beyond the title
-- readme_quality: Heuristic check for common README sections
-- ci_config: Glob-based search for CI/CD configuration files
+Tests use these to exercise a plugin that registers its own sieve step
+types (registration, strict loading of declared settings, discovery). They
+register no ceiling, so their results are evidence only:
+
+- testchecks_readme_description: README has substantive content beyond the title
+- testchecks_readme_quality: README mentions common sections
+- testchecks_ci_config: a CI/CD configuration file exists
 """
 
 import glob as glob_module

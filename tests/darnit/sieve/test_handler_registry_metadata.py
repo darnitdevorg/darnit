@@ -47,9 +47,9 @@ PLUGIN_STEP_TYPES = (
     "repro_provenance_exists",
     "repro_bit_for_bit",
     "csl_llm_if_present",
-    "readme_description",
-    "readme_quality",
-    "ci_config",
+    "testchecks_readme_description",
+    "testchecks_readme_quality",
+    "testchecks_ci_config",
 )
 
 # Keys shipped TOML sets that no code reads. Each is a silent no-op (#481)
@@ -66,16 +66,16 @@ def plugin_step_types() -> None:
     from darnit_csl.implementation import CommunitySpecImplementation
     from darnit_gittuf.implementation import GittufImplementation
     from darnit_reproducibility.implementation import ReproducibilityImplementation
+    from darnit_testchecks.implementation import CustomStepsImplementation
 
     from darnit_baseline.implementation import OSPSBaselineImplementation
-    from darnit_example.implementation import ExampleHygieneImplementation
 
     for implementation in (
         OSPSBaselineImplementation,
         CommunitySpecImplementation,
-        ExampleHygieneImplementation,
         GittufImplementation,
         ReproducibilityImplementation,
+        CustomStepsImplementation,
     ):
         implementation().register_handlers()
 

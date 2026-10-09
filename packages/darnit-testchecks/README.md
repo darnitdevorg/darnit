@@ -1,28 +1,19 @@
 # darnit-testchecks
 
-A test compliance framework for [darnit](https://github.com/kusaridev/baseline-mcp) with trivial checks for testing and demonstration purposes.
+The test-only plugin for [darnit](https://github.com/kusari-oss/darnit). The test suite uses it; it is not published and is not a template. To write a plugin, start from [`darnit-hello`](../darnit-hello/).
 
-## Overview
+It provides two frameworks, both defined in TOML inside `src/darnit_testchecks/`:
 
-This package demonstrates how to create a custom compliance framework using the darnit declarative configuration system. It includes:
+- **`testchecks`** (`testchecks.toml`): 12 trivial controls across 3 levels, built only from built-in step types. The CLI and harness tests audit it.
+- **`testchecks-steps`** (`testchecks-steps.toml`): 2 controls built on step types this package registers in `register_handlers()` (`testchecks_readme_description`, `testchecks_readme_quality`, `testchecks_ci_config`, in `handlers.py`). Tests use it as the plugin with custom step types.
 
-- **12 trivial controls** across 3 maturity levels
-- **Declarative framework definition** in `testchecks.toml`
-- **Simple remediations** for basic controls
+It also provides in-memory store backends (`darnit_testchecks.stores`).
 
 ## Installation
 
-```bash
-pip install darnit-testchecks
-```
+It is in the workspace `dev` dependency group, so `uv sync` installs it.
 
-Or for development:
-
-```bash
-pip install -e packages/darnit-testchecks
-```
-
-## Controls
+## testchecks controls
 
 ### Level 1 - Basic Project Setup
 
@@ -81,15 +72,6 @@ controls:
     status: n/a
     reason: TODOs are acceptable in this project
 ```
-
-## Creating Your Own Framework
-
-Use this package as a template:
-
-1. Copy the package structure
-2. Edit `testchecks.toml` with your controls
-3. Declare each control's `passes` in the TOML
-4. Update `pyproject.toml` entry points
 
 ## License
 

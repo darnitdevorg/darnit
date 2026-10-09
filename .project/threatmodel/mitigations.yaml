@@ -146,7 +146,7 @@ entries:
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
-  file_hint: scripts/create-example-test-repo.py:142
+  file_hint: scripts/create-example-test-repo.py:142  # removed in 0.2.0, #487
 - fingerprint: sha256:39dcf5bd1ab43e91
   status: accepted
   note: Test fixture, example, or build script — not production code. Commands are
@@ -155,7 +155,7 @@ entries:
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
-  file_hint: scripts/create-example-test-repo.py:308
+  file_hint: scripts/create-example-test-repo.py:308  # removed in 0.2.0, #487
 - fingerprint: sha256:8da33a516f06a8ce
   status: mitigated
   note: Opengrep/Semgrep binary invocation with fully static argv. Binary path is
@@ -470,7 +470,7 @@ entries:
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
-  file_hint: scripts/create-example-test-repo.py:136
+  file_hint: scripts/create-example-test-repo.py:136  # removed in 0.2.0, #487
 - fingerprint: sha256:d8b8307b8c16479f
   status: accepted
   note: Test fixture, example, or build script — not production code. Commands are
@@ -479,7 +479,7 @@ entries:
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
-  file_hint: scripts/create-example-test-repo.py:139
+  file_hint: scripts/create-example-test-repo.py:139  # removed in 0.2.0, #487
 - fingerprint: sha256:2603b50ec203f5cc
   status: accepted
   note: Test fixture, example, or build script — not production code. Commands are
@@ -488,7 +488,7 @@ entries:
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
-  file_hint: scripts/create-example-test-repo.py:280
+  file_hint: scripts/create-example-test-repo.py:280  # removed in 0.2.0, #487
 - fingerprint: sha256:18143895dff565cf
   status: mitigated
   note: TOML-config-driven command execution using list-form subprocess. The base
@@ -837,7 +837,7 @@ entries:
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.info_disc.open_call
-  file_hint: packages/darnit-example/src/darnit_example/tools.py:89
+  file_hint: packages/darnit-example/src/darnit_example/tools.py:89  # removed in 0.2.0, #487
 - fingerprint: sha256:a29e1edb04ab00ed
   status: mitigated
   note: 'All file paths originate from trusted sources: TOML configuration, computed
@@ -847,7 +847,7 @@ entries:
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.info_disc.open_call
-  file_hint: packages/darnit-example/src/darnit_example/handlers.py:35
+  file_hint: packages/darnit-example/src/darnit_example/handlers.py:35  # removed in 0.2.0, #487; moved to darnit_testchecks/handlers.py
 - fingerprint: sha256:f488c060d5b16b9c
   status: mitigated
   note: 'All file paths originate from trusted sources: TOML configuration, computed
@@ -857,7 +857,7 @@ entries:
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.info_disc.open_call
-  file_hint: packages/darnit-example/src/darnit_example/handlers.py:85
+  file_hint: packages/darnit-example/src/darnit_example/handlers.py:85  # removed in 0.2.0, #487; moved to darnit_testchecks/handlers.py
 - fingerprint: sha256:1efd167695e4ea87
   status: accepted
   note: Test fixture, example, or build script — not production code. Commands are
@@ -866,7 +866,7 @@ entries:
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
-  file_hint: scripts/create-example-test-repo.py:297
+  file_hint: scripts/create-example-test-repo.py:297  # removed in 0.2.0, #487
 - fingerprint: sha256:74cd6b4caf19c0bc
   status: accepted
   note: Test fixture, example, or build script — not production code. Commands are
@@ -875,7 +875,7 @@ entries:
   reviewer: claude-opus-4-6
   reviewed_at: '2026-04-14'
   query_id: python.sink.dangerous_attr
-  file_hint: scripts/create-example-test-repo.py:329
+  file_hint: scripts/create-example-test-repo.py:329  # removed in 0.2.0, #487
 - fingerprint: sha256:2ef91acfef1096bd
   status: mitigated
   note: Git/gh CLI invocation with fixed binary name and list-form arguments. No shell=True,

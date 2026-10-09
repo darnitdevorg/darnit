@@ -107,6 +107,8 @@
 
 ## All Instances
 
+> **Note (#487):** `packages/darnit-example/` was removed in 0.2.0; instances 46-48 below no longer exist. The two `handlers.py` reads moved with the step types to `packages/darnit-testchecks/src/darnit_testchecks/handlers.py`, a test-only package.
+
 | # | File | Line | Severity | Confidence | Status |
 |---|------|------|----------|------------|--------|
 | 1 | `docs/examples/python-framework/example_framework/implementation.py` | 175 | MEDIUM | 0.40 | Mitigated |

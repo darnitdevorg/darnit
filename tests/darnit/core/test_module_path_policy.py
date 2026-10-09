@@ -41,7 +41,7 @@ class TestAccepted:
         packages = discovery.implementation_packages()
 
         assert {"darnit_baseline", "darnit_csl", "darnit_gittuf", "darnit_reproducibility", "darnit_hello"} <= packages
-        assert "darnit_testchecks" not in packages
+        assert "yaml" not in packages
 
     def test_allowed_set_is_recomputed_after_discovery_reset(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import importlib.metadata
@@ -69,7 +69,7 @@ class TestRefused:
             "os.path:exists",
             "darnit_not_installed_xyz.tools:run",
             "darnitx.core:thing",
-            "darnit_testchecks.adapters.builtin:TestCheckAdapter",
+            "yaml:safe_load",
         ],
     )
     def test_module_outside_policy_is_refused(self, path: str) -> None:

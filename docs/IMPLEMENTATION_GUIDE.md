@@ -22,10 +22,10 @@ against a fictional "My Compliance Standard". Along the way, we'll reference how
 - Familiarity with Python packaging (pyproject.toml, entry points)
 - A local clone of the darnit repository for reference
 
-> **Working example**: The `packages/darnit-example/` package is a complete,
-> installable implementation that follows every step in this guide. You can
-> study it alongside these instructions — see `packages/darnit-example/README.md`
-> for a mapping between guide sections and example files.
+> **Starting point**: `packages/darnit-hello/` is the minimal plugin template:
+> one control, the entry points, and a framework TOML inside the package. Copy
+> it and grow it with this guide. For real plugins with custom step types, see
+> `packages/darnit-reproducibility/` and `packages/darnit-gittuf/`.
 
 ## Architecture Overview
 
@@ -1339,8 +1339,9 @@ steps = [
 ]
 ```
 
-> **Reference**: See `packages/darnit-example/src/darnit_example/handlers.py` for
-> real custom handler examples (readme analysis, CI config detection).
+> **Reference**: See `packages/darnit-reproducibility/src/darnit_reproducibility/handlers.py`
+> and `packages/darnit-gittuf/src/darnit_gittuf/handlers.py` for real custom
+> handlers, registered in each package's `implementation.py`.
 
 ---
 
@@ -1767,10 +1768,9 @@ from darnit.core.handlers import get_handler_registry
 | MCP tool handler registry | `packages/darnit/src/darnit/core/handlers.py` |
 | Reference implementation | `packages/darnit-baseline/src/darnit_baseline/implementation.py` |
 | Reference TOML | `packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml` |
-| Example implementation | `packages/darnit-example/src/darnit_example/implementation.py` |
-| Example TOML config | `packages/darnit-example/example-hygiene.toml` |
-| Example custom handlers | `packages/darnit-example/src/darnit_example/handlers.py` |
-| Example tests | `tests/darnit_example/` |
+| Plugin template | `packages/darnit-hello/` |
+| Plugin with custom step types | `packages/darnit-reproducibility/src/darnit_reproducibility/implementation.py` |
+| Custom step type tests | `tests/darnit_reproducibility/test_handlers.py` |
 | Framework spec | `docs/architecture/framework-design.md` |
 | Composition resolver | `packages/darnit/src/darnit/core/composition.py` |
 | Composition spec | `specs/013-plugin-composition/spec.md` |

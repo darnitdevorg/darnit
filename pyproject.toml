@@ -70,7 +70,6 @@ members = ["packages/*"]
 [tool.uv.sources]
 darnit-core = { workspace = true }
 darnit-baseline = { workspace = true }
-darnit-example = { workspace = true }
 darnit-gittuf = { workspace = true }
 darnit-reproducibility = { workspace = true }
 darnit-hello = { workspace = true }
@@ -119,7 +118,6 @@ dev = [
     # Internal/test-only workspace packages -- not published to PyPI. Pinned here
     # so they install for development and tests via `uv sync`, but do not become
     # runtime dependencies of any published wheel.
-    "darnit-example",
     "darnit-hello",
     "darnit-testchecks",  # framework used by tests/darnit/cli/ (feature 024)
     "darnit-csl",  # optional CSL 1.0 framework; exercised by tests/darnit_csl
@@ -189,7 +187,7 @@ ignore = [
 "docs/examples/*" = ["B", "SIM", "E402"]  # Less strict for examples
 
 [tool.ruff.lint.isort]
-known-first-party = ["darnit", "darnit_baseline", "darnit_example"]
+known-first-party = ["darnit", "darnit_baseline"]
 
 [tool.bandit]
 exclude_dirs = ["tests", "docs/examples"]

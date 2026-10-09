@@ -136,6 +136,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   discovered as before. The in-tree implementations drop them, and
   `darnit-example` drops its `_RULES` catalog, `remediation/registry.py`, and
   empty `controls` package (#487).
+- The `darnit-example` workspace package (never published) and
+  `scripts/create-example-test-repo.py`. Plugin authors start from
+  `darnit-hello`; the custom step types the tests used moved to the test-only
+  `darnit-testchecks` package (#487).
 
 ### Added
 

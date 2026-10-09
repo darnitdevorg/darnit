@@ -11,7 +11,6 @@ members = [
     "darnit-baseline",
     "darnit-core",
     "darnit-csl",
-    "darnit-example",
     "darnit-gittuf",
     "darnit-hello",
     "darnit-mcp",
@@ -534,17 +533,6 @@ dependencies = [
 requires-dist = [{ name = "darnit-core", editable = "packages/darnit" }]
 
 [[package]]
-name = "darnit-example"
-version = "0.1.0"
-source = { editable = "packages/darnit-example" }
-dependencies = [
-    { name = "darnit-core" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "darnit-core", editable = "packages/darnit" }]
-
-[[package]]
 name = "darnit-gittuf"
 version = "0.1.1"
 source = { editable = "packages/darnit-gittuf" }
@@ -596,7 +584,6 @@ parity-tier2 = [
 [package.dev-dependencies]
 dev = [
     { name = "darnit-csl" },
-    { name = "darnit-example" },
     { name = "darnit-hello" },
     { name = "darnit-testchecks" },
     { name = "jsonschema" },
@@ -627,7 +614,6 @@ provides-extras = ["attestation", "dev", "parity-tier2"]
 [package.metadata.requires-dev]
 dev = [
     { name = "darnit-csl", editable = "packages/darnit-csl" },
-    { name = "darnit-example", editable = "packages/darnit-example" },
     { name = "darnit-hello", editable = "packages/darnit-hello" },
     { name = "darnit-testchecks", editable = "packages/darnit-testchecks" },
     { name = "jsonschema", specifier = ">=4.26.0" },

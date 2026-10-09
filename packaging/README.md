@@ -34,7 +34,7 @@ All releases are tag-driven. Tag patterns: `v<X.Y.Z>` (stable) or `v<X.Y.Z>rc<N>
 
 ## Public package set
 
-Authoritative list: [`packaging/pypi/public-packages.txt`](pypi/public-packages.txt). The release workflow refuses to publish anything not in that list. Internal packages (`darnit-example`, `darnit-testchecks`) live in `packages/` but are never published to PyPI.
+Authoritative list: [`packaging/pypi/public-packages.txt`](pypi/public-packages.txt). The release workflow refuses to publish anything not in that list. Internal packages (`darnit-testchecks`) live in `packages/` but are never published to PyPI.
 
 ## External setup (one-time)
 
