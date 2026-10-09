@@ -135,6 +135,46 @@ def test_install_preserves_existing_settings(tmp_path, monkeypatch):
     assert "darnit" in data["mcpServers"]
 
 
+def test_install_from_source_registers_local_executable(tmp_path, monkeypatch):
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    bin_dir = tmp_path / "venv" / "bin"
+    bin_dir.mkdir(parents=True)
+    exe_name = "darnit.exe" if sys.platform == "win32" else "darnit"
+    (bin_dir / exe_name).write_text("")
+    monkeypatch.setattr(sys, "executable", str(bin_dir / "python"))
+
+    exit_code = main(["install", "--mcp-only", "--from-source"])
+
+    assert exit_code == 0
+    entry = json.loads((tmp_path / ".claude.json").read_text())["mcpServers"]["darnit"]
+    assert entry == {"command": str(bin_dir / exe_name), "args": ["serve"]}
+
+
+def test_install_from_source_falls_back_to_path(tmp_path, monkeypatch):
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    on_path = tmp_path / "onpath" / "darnit"
+    monkeypatch.setattr(sys, "executable", str(tmp_path / "nowhere" / "python"))
+    monkeypatch.setattr("shutil.which", lambda name: str(on_path) if name == "darnit" else None)
+
+    exit_code = main(["install", "--mcp-only", "--from-source"])
+
+    assert exit_code == 0
+    entry = json.loads((tmp_path / ".claude.json").read_text())["mcpServers"]["darnit"]
+    assert entry == {"command": str(on_path), "args": ["serve"]}
+
+
+def test_install_from_source_fails_when_executable_is_missing(tmp_path, monkeypatch, caplog):
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    monkeypatch.setattr(sys, "executable", str(tmp_path / "nowhere" / "python"))
+    monkeypatch.setattr("shutil.which", lambda name: None)
+
+    exit_code = main(["install", "--mcp-only", "--from-source"])
+
+    assert exit_code == 1
+    assert not (tmp_path / ".claude.json").exists()
+    assert any("--from-source" in record.message for record in caplog.records)
+
+
 class TestCreateParser:
     """Tests for CLI argument parsing."""
 
