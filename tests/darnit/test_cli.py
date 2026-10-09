@@ -147,7 +147,7 @@ def test_install_from_source_registers_local_executable(tmp_path, monkeypatch):
 
     assert exit_code == 0
     entry = json.loads((tmp_path / ".claude.json").read_text())["mcpServers"]["darnit"]
-    assert entry == {"command": str(bin_dir / exe_name), "args": ["serve"]}
+    assert entry == {"command": str(bin_dir / exe_name), "args": ["serve", "--framework", "openssf-baseline"]}
 
 
 def test_install_from_source_falls_back_to_path(tmp_path, monkeypatch):
@@ -160,7 +160,7 @@ def test_install_from_source_falls_back_to_path(tmp_path, monkeypatch):
 
     assert exit_code == 0
     entry = json.loads((tmp_path / ".claude.json").read_text())["mcpServers"]["darnit"]
-    assert entry == {"command": str(on_path), "args": ["serve"]}
+    assert entry == {"command": str(on_path), "args": ["serve", "--framework", "openssf-baseline"]}
 
 
 def test_install_from_source_fails_when_executable_is_missing(tmp_path, monkeypatch, caplog):

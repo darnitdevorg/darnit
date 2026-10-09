@@ -712,7 +712,12 @@ def cmd_install(args: argparse.Namespace) -> int:
         if darnit_exe is None:
             logger.error("--from-source: the darnit executable of this installation was not found.")
             return 1
-        darnit_entry = {"command": str(darnit_exe), "args": ["serve"]}
+        # Name the framework: a source checkout installs every workspace plugin,
+        # and `darnit serve` without --framework takes the first one it finds.
+        darnit_entry = {
+            "command": str(darnit_exe),
+            "args": ["serve", "--framework", "openssf-baseline"],
+        }
     else:
         darnit_entry = {
             "command": "uvx",
