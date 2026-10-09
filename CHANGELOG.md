@@ -271,6 +271,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which is about 1 MB and too large for an MCP client's tool result (#644).
   `summary` rows of a PENDING control now carry `pending.kind`, and a PASS
   candidate's model, reasoning, and number of cited excerpts.
+- `scripts/quickstart.sh`: one-command setup from source. It installs uv and
+  zizmor if they are missing (asking first), installs darnit with the
+  versions pinned in `uv.lock`, runs an OpenSSF Baseline level 1 audit, and
+  offers to register the MCP server with Claude Code.
 - `darnit install --from-source` registers the darnit executable of the
   running installation as the MCP server command. Without it, the entry
   runs the darnit-mcp release on PyPI through `uvx`, even when darnit was

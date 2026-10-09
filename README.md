@@ -37,6 +37,8 @@ The Baseline isn't just about security—it covers testing requirements, build p
 
 ## Installation
 
+To try darnit from source with one command (it installs uv if needed, sets darnit up, and audits a repository), see [One-command setup](docs/install/from-source.md#one-command-setup).
+
 Install the `darnit` command with [`uv`](https://docs.astral.sh/uv/):
 
 ```bash
