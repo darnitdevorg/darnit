@@ -47,9 +47,6 @@ PLUGIN_STEP_TYPES = (
     "repro_provenance_exists",
     "repro_bit_for_bit",
     "csl_llm_if_present",
-    "readme_description",
-    "readme_quality",
-    "ci_config",
     "testchecks_readme_description",
     "testchecks_readme_quality",
     "testchecks_ci_config",
@@ -72,12 +69,10 @@ def plugin_step_types() -> None:
     from darnit_testchecks.implementation import CustomStepsImplementation
 
     from darnit_baseline.implementation import OSPSBaselineImplementation
-    from darnit_example.implementation import ExampleHygieneImplementation
 
     for implementation in (
         OSPSBaselineImplementation,
         CommunitySpecImplementation,
-        ExampleHygieneImplementation,
         GittufImplementation,
         ReproducibilityImplementation,
         CustomStepsImplementation,

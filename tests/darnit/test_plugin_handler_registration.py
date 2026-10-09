@@ -113,7 +113,6 @@ class TestProtocolMethodNaming:
         [
             ("darnit_baseline.implementation", "OSPSBaselineImplementation"),
             ("darnit_csl.implementation", "CommunitySpecImplementation"),
-            ("darnit_example.implementation", "ExampleHygieneImplementation"),
             ("darnit_gittuf.implementation", "GittufImplementation"),
             ("darnit_hello.implementation", "HelloImplementation"),
             ("darnit_reproducibility.implementation", "ReproducibilityImplementation"),
