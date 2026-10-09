@@ -120,8 +120,7 @@ baseline-mcp/
 │   │       ├── threat_model/        # STRIDE analysis engine
 │   │       └── formatters/          # SARIF output generation
 │   │
-│   ├── darnit-example/              # Example implementation (docs reference)
-│   └── darnit-testchecks/           # Test implementation (for testing)
+│   └── darnit-testchecks/           # Test-only plugin (not a template; see darnit-hello)
 │
 ├── docs/
 │   ├── WORKFLOW.md                  # Mermaid diagrams (audit, remediation, context, startup)

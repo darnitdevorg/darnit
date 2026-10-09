@@ -40,6 +40,8 @@
 **Examples:** `docs/examples/python-framework/example_framework/implementation.py:400`, `docs/examples/python-framework/example_framework/implementation.py:603`, `scripts/create-example-test-repo.py:142`
   ...and 14 more.
 
+> **Note (#487):** `scripts/create-example-test-repo.py` was removed in 0.2.0; its instances below no longer exist.
+
 ### Strategy 6 (1 instances)
 
 > Single git-remote-get-url invocation to derive repository display name. Fixed command, no user input, 5-second timeout, failure gracefully falls back to directory basename.

@@ -1,10 +1,8 @@
 """Test Checks Framework for darnit.
 
-A simple framework with trivial checks for testing the declarative
-configuration system.
-
-This package demonstrates how to create a custom compliance framework
-using the darnit declarative configuration system.
+The test-only plugin: a framework of trivial checks (testchecks) and one
+whose controls use step types this package registers (testchecks-steps).
+It is not a template; plugin authors start from darnit-hello.
 
 Example usage:
     ```python

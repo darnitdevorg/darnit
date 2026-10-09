@@ -722,7 +722,7 @@ Darnit is a compliance auditing tool — its core purpose is to read repository 
 - **Sieve handlers** (builtin_handlers.py): Read repository files to check compliance patterns. Paths come from TOML control definitions (file_exists, pattern handlers).
 - **Remediation pipeline** (executor.py, helpers.py, github.py, orchestrator.py): Read templates and write remediation files. Paths from package resources or MCP `local_path` parameter.
 - **Threat model generators** (remediation.py, dependencies.py): Read source files for structural analysis. Paths from directory traversal within `local_path`.
-- **Example/test code** (darnit_example, test_repository.py): Not production — example and test fixtures.
+- **Example/test code** (test_repository.py; darnit_example removed in 0.2.0, #487): Not production — example and test fixtures.
 - **Cache and verification** (audit_cache.py, verification.py): Read/write cache files in known locations.
 
 The `local_path` MCP parameter is the primary trust boundary — the user (MCP client) chooses which repository to audit. Reading files within that path is the intended behavior. Path traversal beyond `local_path` would be a valid concern but is not structurally present in these code paths.
@@ -733,13 +733,13 @@ The `local_path` MCP parameter is the primary trust boundary — the user (MCP c
 
 | # | Title | Location | Score |
 |---|-------|----------|-------|
-| TM-D-001 | No timeout on subprocess.run() | `scripts/create-example-test-repo.py:136` | 1.80 |
-| TM-D-002 | No timeout on subprocess.run() | `scripts/create-example-test-repo.py:139` | 1.80 |
-| TM-D-003 | No timeout on subprocess.run() | `scripts/create-example-test-repo.py:142` | 1.80 |
-| TM-D-004 | No timeout on subprocess.run() | `scripts/create-example-test-repo.py:280` | 1.80 |
-| TM-D-005 | No timeout on subprocess.run() | `scripts/create-example-test-repo.py:297` | 1.80 |
-| TM-D-006 | No timeout on subprocess.run() | `scripts/create-example-test-repo.py:308` | 1.80 |
-| TM-D-007 | No timeout on subprocess.run() | `scripts/create-example-test-repo.py:329` | 1.80 |
+| TM-D-001 | No timeout on subprocess.run() | `scripts/create-example-test-repo.py:136` (removed in 0.2.0, #487) | 1.80 |
+| TM-D-002 | No timeout on subprocess.run() | `scripts/create-example-test-repo.py:139` (removed in 0.2.0, #487) | 1.80 |
+| TM-D-003 | No timeout on subprocess.run() | `scripts/create-example-test-repo.py:142` (removed in 0.2.0, #487) | 1.80 |
+| TM-D-004 | No timeout on subprocess.run() | `scripts/create-example-test-repo.py:280` (removed in 0.2.0, #487) | 1.80 |
+| TM-D-005 | No timeout on subprocess.run() | `scripts/create-example-test-repo.py:297` (removed in 0.2.0, #487) | 1.80 |
+| TM-D-006 | No timeout on subprocess.run() | `scripts/create-example-test-repo.py:308` (removed in 0.2.0, #487) | 1.80 |
+| TM-D-007 | No timeout on subprocess.run() | `scripts/create-example-test-repo.py:329` (removed in 0.2.0, #487) | 1.80 |
 | TM-D-008 | No timeout on subprocess.run() | `packages/darnit-baseline/src/darnit_baseline/attestation/git.py:24` | 1.80 |
 | TM-D-009 | No timeout on subprocess.run() | `packages/darnit-baseline/src/darnit_baseline/attestation/git.py:48` | 1.80 |
 | TM-D-010 | No timeout on subprocess.run() | `packages/darnit-baseline/src/darnit_baseline/attestation/git.py:60` | 1.80 |

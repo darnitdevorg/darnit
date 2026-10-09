@@ -340,7 +340,7 @@ See `CLAUDE.md` "Three-Layer Architecture" for the canonical reference.
 | [`packages/darnit-hello/`](../packages/darnit-hello/) | Single-control toy plugin | The minimum viable shape — copy this to bootstrap |
 | [`packages/darnit-baseline/`](../packages/darnit-baseline/) | OpenSSF Baseline (production) | TOML+Python handlers, multi-level scoring, custom MCP tools, remediation suite |
 | [`packages/darnit-gittuf/`](../packages/darnit-gittuf/) | Gittuf policy checks | Compact real-world plugin (3 controls), Python handlers |
-| [`packages/darnit-example/`](../packages/darnit-example/) | Example/teaching framework | Custom controls, custom tools, remediation patterns |
+| [`packages/darnit-reproducibility/`](../packages/darnit-reproducibility/) | Scientific reproducibility checks | Custom step types registered in `register_handlers()`, corpus-tested handlers |
 
 ---
 

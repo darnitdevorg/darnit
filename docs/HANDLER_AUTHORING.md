@@ -213,8 +213,7 @@ def readme_description_handler(
     ...
 ```
 
-The real example package in `packages/darnit-example/` already contains a good
-reference implementation:
+A complete version of that handler:
 
 ```python
 import os
@@ -356,7 +355,7 @@ That catches bugs faster and avoids depending on unrelated controls:
 from pathlib import Path
 
 from darnit.sieve.handler_registry import HandlerContext, HandlerResultStatus
-from darnit_example.handlers import readme_description_handler
+from your_package.handlers import readme_description_handler
 
 
 def test_readme_description_handler(tmp_path: Path) -> None:
@@ -423,9 +422,11 @@ These files are the best companions while authoring handlers:
 
 - `docs/IMPLEMENTATION_GUIDE.md`
 - `CLAUDE.md` sections `Sieve Pattern` and `TOML Schema Features`
-- `packages/darnit-example/example-hygiene.toml`
-- `packages/darnit-example/src/darnit_example/handlers.py`
-- `packages/darnit-example/src/darnit_example/implementation.py`
+- `packages/darnit-hello/` -- the minimal plugin template
+- `packages/darnit-reproducibility/src/darnit_reproducibility/handlers.py` and
+  `implementation.py` -- a real plugin's custom step types and their
+  registration in `register_handlers()`
+- `packages/darnit-gittuf/src/darnit_gittuf/handlers.py` and `implementation.py`
 - `packages/darnit/src/darnit/sieve/builtin_handlers.py`
 - `packages/darnit/src/darnit/sieve/handler_registry.py`
 
