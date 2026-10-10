@@ -179,7 +179,7 @@ class CELEvaluator:
             from celpy.c7nlib import C7N_Interpreted_Runner
         except ImportError as e:
             raise CELCompilationError(
-                "cel-python not installed. Install with: pip install cel-python"
+                f"cel-python could not be imported: {e}"
             ) from e
 
         # Create environment with C7N runner that supports custom functions
@@ -275,7 +275,7 @@ class CELEvaluator:
             import celpy
         except ImportError as e:
             raise CELCompilationError(
-                "cel-python not installed. Install with: pip install cel-python"
+                f"cel-python could not be imported: {e}"
             ) from e
 
         env = self._get_environment()
@@ -344,7 +344,7 @@ class CELEvaluator:
             import celpy
         except ImportError as e:
             raise CELEvaluationError(
-                "cel-python not installed. Install with: pip install cel-python"
+                f"cel-python could not be imported: {e}"
             ) from e
 
         result_container: list[Any] = []
