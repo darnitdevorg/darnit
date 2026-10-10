@@ -334,6 +334,11 @@ def cmd_audit(args: argparse.Namespace) -> int:
         default_branch=default_branch,
         level=3,
         controls=controls,
+        # Issue #542: the CLI narrows `controls` itself, so it says whether
+        # it did. Without this a `--tags domain=VM` run would be cached as
+        # if it were a full audit.
+        cache_tags=",".join(sorted(args.tags)) if args.tags else "",
+        cache_filtered=bool(args.tags or args.include or args.exclude),
         stop_on_llm=True,
         # Issue #427: the framework name has to reach the audit driver, not
         # just the control loader above. Without it the driver cannot

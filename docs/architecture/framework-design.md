@@ -1870,8 +1870,24 @@ Cache files are stored in the system temp directory (`$TMPDIR/darnit/<repo-hash>
 - **AND** controls with `status == "WARN"` SHALL NOT be remediated (WARN means automated verification was inconclusive, not that the control is non-compliant)
 - **AND** controls with `status == "PASS"` SHALL NOT be remediated
 
+#### Requirement: The cache envelope records the audit's scope
+- **WHEN** `write_audit_cache()` is called
+- **THEN** the envelope SHALL record `framework`, `level`, `tags` (the tag filter, empty when none) and `filtered` (true when any filter narrowed the control set, including `--include` and `--exclude`)
+- **AND** a filtered audit SHALL be written under a distinct cache key, so it does not replace an unfiltered entry
+- **AND** `run_sieve_audit()` SHALL record an audit as filtered when it has tags, or when its caller passed `controls` without stating `cache_filtered`; a caller that passes the full control set SHALL state `cache_filtered=False`
+- **AND** the cache key SHALL be derived in one place (`audit_cache_key()`), used by the writer and by every reader
+
+#### Requirement: A cache read may constrain the scope it accepts
+- **WHEN** `read_audit_cache()` is called with any of `expected_framework`, `expected_level`, `expected_tags` or `expected_filtered`
+- **THEN** a mismatch on any supplied expectation SHALL be treated as a cache miss
+- **AND** a caller supplying none of them SHALL be unaffected
+- **AND** an envelope whose `version` differs from `CACHE_VERSION` SHALL be a miss, since an older envelope cannot express its own scope
+
 #### Requirement: Remediation consumes cached audit results
-- **WHEN** `remediate_audit_findings()` is called and `read_audit_cache()` returns valid cached results
+- **WHEN** `remediate_audit_findings()` is called
+- **THEN** it SHALL read through the store selected by `[stores.cache]`, the same store the audit writes to
+- **AND** it SHALL require an unfiltered level-3 `openssf-baseline` cache, matching the audit it would otherwise run
+- **WHEN** `read_audit_cache()` returns valid cached results
 - **THEN** it SHALL extract failed control IDs from the cached results (entries with `status == "FAIL"`)
 - **AND** it SHALL NOT run a redundant audit
 - **WHEN** `read_audit_cache()` returns `None` (cache miss)
