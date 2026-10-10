@@ -13,10 +13,12 @@ name: Release
 #   5. release      - create the GitHub Release with install instructions
 #   6. finalize     - summary line to the run's step summary
 #
-# Auth model: PyPI publishes use the `PYPI_API_TOKEN` repo secret (account-
-# scoped). Trusted-publisher setup is nicer long-term but requires per-project
-# UI config in PyPI, which was blocking. Container signing uses cosign keyless
-# OIDC as before; that path does not depend on PyPI auth.
+# Auth model: each publish job runs in the `release` environment, which needs
+# a maintainer's approval and deploys only from `v*` tags or `main`. Each job
+# reads its package's project-scoped PyPI token from that environment
+# (`PYPI_TOKEN_DARNIT_CORE`, ...). No PyPI credential is a repository secret,
+# so no other workflow can read one. Container signing uses cosign keyless
+# OIDC; that path does not depend on PyPI auth.
 #
 # Version format: `vX.Y.Z` or `vX.Y.ZrcN` (no dash before rc; matches PEP 440
 # canonical form and the preflight parse-tag regex). Pre-release tags are
@@ -218,8 +220,8 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Publish jobs use `password: ${{ secrets.PYPI_API_TOKEN }}` (account-scoped
-  # token). Migrate to project-scoped tokens once the projects exist on PyPI.
+  # Publish jobs run in the `release` environment and use that package's
+  # project-scoped token.
   #
   # Sequenced via `needs:` because darnit-baseline, darnit-gittuf,
   # darnit-reproducibility, and darnit-mcp declare `darnit-core>=...` runtime
@@ -231,6 +233,7 @@ jobs:
     needs: [preflight, build]
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment: release
     permissions:
       contents: read
     steps:
@@ -244,7 +247,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           packages-dir: dist/darnit-core/
-          password: ${{ secrets.PYPI_API_TOKEN }}
+          password: ${{ secrets.PYPI_TOKEN_DARNIT_CORE }}
           skip-existing: true
 
   publish-darnit-baseline:
@@ -252,6 +255,7 @@ jobs:
     needs: [preflight, build, publish-darnit-core]
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment: release
     permissions:
       contents: read
     steps:
@@ -265,7 +269,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           packages-dir: dist/darnit-baseline/
-          password: ${{ secrets.PYPI_API_TOKEN }}
+          password: ${{ secrets.PYPI_TOKEN_DARNIT_BASELINE }}
           skip-existing: true
 
   publish-darnit-gittuf:
@@ -273,6 +277,7 @@ jobs:
     needs: [preflight, build, publish-darnit-core]
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment: release
     permissions:
       contents: read
     steps:
@@ -286,7 +291,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           packages-dir: dist/darnit-gittuf/
-          password: ${{ secrets.PYPI_API_TOKEN }}
+          password: ${{ secrets.PYPI_TOKEN_DARNIT_GITTUF }}
           skip-existing: true
 
   publish-darnit-reproducibility:
@@ -294,6 +299,7 @@ jobs:
     needs: [preflight, build, publish-darnit-core]
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment: release
     permissions:
       contents: read
     steps:
@@ -307,7 +313,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           packages-dir: dist/darnit-reproducibility/
-          password: ${{ secrets.PYPI_API_TOKEN }}
+          password: ${{ secrets.PYPI_TOKEN_DARNIT_REPRODUCIBILITY }}
           skip-existing: true
 
   publish-darnit-mcp:
@@ -320,6 +326,7 @@ jobs:
       - publish-darnit-reproducibility
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment: release
     permissions:
       contents: read
     steps:
@@ -333,7 +340,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           packages-dir: dist/darnit-mcp/
-          password: ${{ secrets.PYPI_API_TOKEN }}
+          password: ${{ secrets.PYPI_TOKEN_DARNIT_MCP }}
           skip-existing: true
 
   # Build + push + cosign-sign the multi-arch container image. Depends on
