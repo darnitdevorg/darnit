@@ -554,6 +554,23 @@ def gh_api_handler(config: dict[str, Any], context: HandlerContext) -> HandlerRe
             message="No endpoint specified for gh_api handler",
             error_class="evaluation",
         )
+    # A checkout with no remote has no owner (detect_owner_repo returns "").
+    # Substituting it would ask the platform about "/repos//name", and the 404
+    # that comes back says nothing about this repository. It must not be
+    # reported as a platform answer, and never as a declared failure.
+    missing = [var for var, val in (("$OWNER", context.owner), ("$REPO", context.repo)) if var in endpoint and not val]
+    if missing:
+        message = (
+            f"Platform API call {endpoint} needs {' and '.join(missing)}, and this checkout has no "
+            "repository identity (no git remote was found)"
+        )
+        _log_environmental_failure(context.control_id, "gh_api", "unavailable", message)
+        return HandlerResult(
+            status=HandlerResultStatus.ERROR,
+            message=message,
+            evidence={"endpoint": endpoint},
+            error_class="unavailable",
+        )
     for var, val in (("$OWNER", context.owner), ("$REPO", context.repo), ("$BRANCH", context.default_branch)):
         endpoint = endpoint.replace(var, val or "")
 

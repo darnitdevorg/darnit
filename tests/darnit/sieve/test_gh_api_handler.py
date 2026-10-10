@@ -234,3 +234,34 @@ class TestThroughOrchestrator:
             )
         assert result.status == "PASS"
         assert not [r for r in caplog.records if "CEL evaluation failed" in r.getMessage()]
+
+
+class TestMissingRepositoryIdentity:
+    """A checkout with no remote has no owner; the platform is not asked about "/repos//name"."""
+
+    @staticmethod
+    def _run_without_owner(config: dict) -> object:
+        ctx = HandlerContext(local_path="/tmp", owner="", repo="hello", default_branch="main", control_id="GH-01")
+        return gh_api_handler({**STEP, **config}, ctx)
+
+    def test_no_owner_is_error_and_makes_no_call(self, recorded) -> None:
+        responder = recorded({})
+        result = self._run_without_owner({})
+        assert responder.calls == []
+        assert result.status == HandlerResultStatus.ERROR
+        assert result.error_class == "unavailable"
+        assert "$OWNER" in result.message
+        assert result.evidence == {"endpoint": STEP["endpoint"]}
+
+    def test_no_owner_never_proves_a_declared_failure(self, recorded) -> None:
+        responder = recorded({"/repos//hello/branches/main/protection": {"status": 404, "error": "HTTP 404: Not Found"}})
+        result = self._run_without_owner({"fail_on_status": [404]})
+        assert responder.calls == []
+        assert result.status == HandlerResultStatus.ERROR
+
+    def test_endpoint_that_needs_no_identity_still_runs(self, recorded) -> None:
+        responder = recorded({"/user": {"status": 200, "body": {}}})
+        ctx = HandlerContext(local_path="/tmp", owner="", repo="", default_branch="main", control_id="GH-01")
+        result = gh_api_handler({"handler": "gh_api", "endpoint": "/user"}, ctx)
+        assert responder.calls == ["/user"]
+        assert result.status == HandlerResultStatus.PASS
