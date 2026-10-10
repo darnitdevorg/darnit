@@ -32,6 +32,10 @@ dependencies = [
     "ruamel.yaml>=0.18.0",  # For .project/ round-trip YAML parsing
     "jinja2>=3.1.0",  # Template rendering for remediation files
     "cel-python>=0.5.0",  # CEL expression evaluation for pass logic
+    # PEP 440 version constraints in core/composition.py and
+    # config/framework_schema.py. celpy.c7nlib imports it too, and cel-python
+    # does not declare it.
+    "packaging>=23.0",
     "tomli>=2.0.0;python_version<'3.11'",
     "tomllib-stubs>=0.1.0;python_version<'3.11'",
     # RFC-0001 Stage 1 (feature 025): default LLMStep implementation. Required

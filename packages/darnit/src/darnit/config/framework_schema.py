@@ -1398,8 +1398,8 @@ class ComposeBlock(BaseModel):
         if v is None:
             return v
         try:
-            # Imported lazily; `packaging` is a transitive dep via setuptools
-            # and is already part of every Python install with pip available.
+            # Imported lazily; `packaging` is a declared dependency of
+            # darnit-core (see packages/darnit/pyproject.toml).
             from packaging.specifiers import SpecifierSet
 
             SpecifierSet(v)

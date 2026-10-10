@@ -568,6 +568,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Installs without the development dependencies work again (`uv tool install`
+  from a checkout, and any install from a built wheel). Two things broke
+  them: `tree-sitter-language-pack` 1.6.3, the newest release the old
+  `<1.8` cap allowed, installs without an importable module, so every audit
+  crashed while loading controls; and `packaging`, which darnit-core imports
+  directly and through `celpy.c7nlib`, was not declared (#441), so every
+  control with an `expr` was `ERROR`. The cap is now `<1.6.3` and `packaging`
+  is a declared dependency.
 - An audit evaluates only its own framework's controls. A long-lived process
   such as the MCP server used to evaluate every control an earlier audit had
   registered, so auditing `reproducibility` after `openssf-baseline` returned

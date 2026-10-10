@@ -477,7 +477,7 @@ dependencies = [
 requires-dist = [
     { name = "darnit-core", editable = "packages/darnit" },
     { name = "tree-sitter", specifier = ">=0.25" },
-    { name = "tree-sitter-language-pack", specifier = ">=1.5,<1.8" },
+    { name = "tree-sitter-language-pack", specifier = ">=1.5,<1.6.3" },
 ]
 
 [[package]]
@@ -488,6 +488,7 @@ dependencies = [
     { name = "cel-python" },
     { name = "jinja2" },
     { name = "mcp" },
+    { name = "packaging" },
     { name = "pydantic", extra = ["email"] },
     { name = "pydantic-ai-slim", extra = ["anthropic"] },
     { name = "pyyaml" },
@@ -509,6 +510,7 @@ requires-dist = [
     { name = "in-toto-attestation", marker = "extra == 'attestation'", specifier = ">=0.9.0" },
     { name = "jinja2", specifier = ">=3.1.0" },
     { name = "mcp", specifier = ">=1.23.0,<2" },
+    { name = "packaging", specifier = ">=23.0" },
     { name = "pydantic", specifier = ">=2.0.0" },
     { name = "pydantic", extras = ["email"], specifier = ">=2.0.0" },
     { name = "pydantic-ai-slim", extras = ["anthropic"], specifier = ">=0.0.14" },
