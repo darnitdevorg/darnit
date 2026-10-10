@@ -396,7 +396,7 @@ Recovery is generally simpler than for the other channels because the zip is ful
 **Symptom**: `plugin_behavioral_smoke` installs uv, extracts the plugin, then `darnit-mcp-runner --help` exits non-zero — but structural smoke passed.
 
 **Common causes**:
-- `uvx --from darnit-mcp==<version> darnit-mcp --help` failed because PyPI/TestPyPI hasn't propagated the new version yet (rare; the `container_build_push` job's PyPI-propagation wait usually fixes this for downstream jobs).
+- `uvx --from darnit-mcp==<version> darnit-mcp --help` failed because PyPI/TestPyPI hasn't propagated the new version yet.
 - A change to darnit-mcp's CLI broke `--help` (very unlikely — `--help` is one of the most stable surfaces).
 
 **Procedure**:

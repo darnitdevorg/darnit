@@ -38,24 +38,21 @@ The Baseline isn't just about security—it covers testing requirements, build p
 ## Installation
 
 > [!NOTE]
-> PyPI, pipx, `uv tool install`, container, Homebrew, and standalone-binary
-> channels are not published yet - tracked in
-> [#229](https://github.com/kusari-oss/darnit/issues/229) (which depends on
-> PyPI publishing, [#228](https://github.com/kusari-oss/darnit/issues/228)).
-> Until those land, install from source with [`uv`](https://docs.astral.sh/uv/):
+> PyPI packages are published as `darnit-mcp` plus the workspace packages it
+> depends on. `pipx` or `uv tool install` is the recommended path for most
+> users. Native install paths such as Homebrew and standalone binaries remain
+> tracked in [#229](https://github.com/darnitdevorg/darnit/issues/229).
 
 ```bash
-git clone https://github.com/kusari-oss/darnit
-cd darnit
-uv sync
+pipx install darnit-mcp
+# or
+uv tool install darnit-mcp
 
-uv run darnit audit /path/to/repo
-uv run darnit serve --framework openssf-baseline   # MCP server mode
+darnit audit /path/to/repo
+darnit serve --framework openssf-baseline   # MCP server mode
 ```
 
-Once [#229](https://github.com/kusari-oss/darnit/issues/229) lands, `pipx install darnit-mcp`
-and `uv tool install darnit-mcp` will become the recommended end-user paths, with
-container, Homebrew, standalone-binary, and Claude Code plugin channels documented in
+For source installs, pre-releases, containers, and other channels, see
 [`docs/install/README.md`](docs/install/README.md).
 ### Optional: Opengrep for taint analysis
 
@@ -93,12 +90,12 @@ The tree-sitter discovery pipeline is tuned for **web-service shapes**. What wor
 | Go HTTP service (`net/http`, chi, gorilla) | Thin — HTTP route registration + `sql.Open` only |
 | Go CLI built on [`spf13/cobra`](https://github.com/spf13/cobra) | Moderate — command families discovered, STRIDE assigned heuristically by import set; `needs reviewer attention` marker on every finding ([feature 014](specs/014-cobra-threat-model/spec.md)) |
 | YAML / GitHub Actions workflows | Some — overly-broad permissions and similar config issues |
-| Python CLI frameworks (argparse, click, typer) | Not modeled — sibling to the Go cobra work ([#264](https://github.com/kusari-oss/darnit/issues/264)) |
-| Other Go CLI frameworks (urfave/cli, kingpin) / message handlers / gRPC | Not modeled — out of scope for the cobra pass ([#262](https://github.com/kusari-oss/darnit/issues/262)) |
+| Python CLI frameworks (argparse, click, typer) | Not modeled — sibling to the Go cobra work ([#264](https://github.com/darnitdevorg/darnit/issues/264)) |
+| Other Go CLI frameworks (urfave/cli, kingpin) / message handlers / gRPC | Not modeled — out of scope for the cobra pass ([#262](https://github.com/darnitdevorg/darnit/issues/262)) |
 | Crypto/signing **client** libraries (sigstore-python, in-toto) | Out of scope — these call out rather than receive; entry-point queries don't fire |
 | Systems software, daemons, libraries, ML pipelines | Not modeled |
 
-If your project doesn't match a supported shape, the generator will still write a report — but it will likely show "Total findings: 0" because no entry points were discovered. That's a coverage gap on our side, not a clean bill of health. Expanding the query set is [tracked in our issue tracker](https://github.com/kusari-oss/darnit/issues?q=is%3Aissue+threat-model+coverage).
+If your project doesn't match a supported shape, the generator will still write a report — but it will likely show "Total findings: 0" because no entry points were discovered. That's a coverage gap on our side, not a clean bill of health. Expanding the query set is [tracked in our issue tracker](https://github.com/darnitdevorg/darnit/issues?q=is%3Aissue+threat-model+coverage).
 
 ## How to Use Darnit
 
