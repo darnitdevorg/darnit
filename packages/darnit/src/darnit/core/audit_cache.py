@@ -55,7 +55,7 @@ if TYPE_CHECKING:
 logger = get_logger("core.audit_cache")
 
 CACHE_FILENAME = "audit-cache.json"
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 
 # Invalidation via write-expired-envelope (feature 035 clarify Q3).
 # The AuditCacheStore Protocol has no delete(key) method; instead,
@@ -68,6 +68,8 @@ _EXPIRED_ENVELOPE: dict[str, Any] = {
     "commit_dirty": False,
     "level": 0,
     "framework": "",
+    "tags": "",
+    "filtered": False,
     "results": [],
     "summary": {},
 }
@@ -179,6 +181,8 @@ def write_audit_cache(
     level: int,
     framework: str,
     *,
+    tags: str = "",
+    filtered: bool = False,
     store: AuditCacheStore | None = None,
     cache_key: str | None = None,
 ) -> None:
@@ -214,6 +218,13 @@ def write_audit_cache(
         "commit_dirty": _is_working_tree_dirty(local_path),
         "level": level,
         "framework": framework,
+        # Issue #542: the scope the audit ran at. A later read that expects a
+        # different framework, level or tag filter must miss, not silently
+        # reuse a subset as if it were a full audit.
+        "tags": tags,
+        # True when ANY filter narrowed the control set: tags, --include,
+        # --exclude, or a profile. `tags` alone cannot express the others.
+        "filtered": filtered,
         "results": results,
         "summary": summary,
     }
@@ -232,6 +243,10 @@ def read_audit_cache(
     local_path: str,
     ttl_seconds: int = 3600,
     *,
+    expected_framework: str | None = None,
+    expected_level: int | None = None,
+    expected_tags: str | None = None,
+    expected_filtered: bool | None = None,
     store: AuditCacheStore | None = None,
     cache_key: str | None = None,
 ) -> dict[str, Any] | None:
@@ -266,8 +281,44 @@ def read_audit_cache(
 
     # Version check
     version = data.get("version")
-    if not isinstance(version, int) or version > CACHE_VERSION:
+    # Issue #542 review: an exact match, not an upper bound. A v1 envelope
+    # has no `tags`/`filtered` keys, so reading it would present a possibly
+    # filtered audit as unfiltered. Older caches miss and are re-audited.
+    if not isinstance(version, int) or version != CACHE_VERSION:
         logger.debug("Unknown audit cache version: %s", version)
+        return None
+
+    # Scope: the cached audit must cover what the caller is about to use it
+    # for (issue #542). A level-1, tag-filtered or other-framework run leaves a
+    # cache that is a subset of a full Baseline audit; reusing it would make a
+    # consumer act on results that were never produced.
+    if expected_framework is not None and data.get("framework") != expected_framework:
+        logger.debug(
+            "Audit cache scope mismatch: framework %r != expected %r",
+            data.get("framework"),
+            expected_framework,
+        )
+        return None
+    if expected_level is not None and data.get("level") != expected_level:
+        logger.debug(
+            "Audit cache scope mismatch: level %r != expected %r",
+            data.get("level"),
+            expected_level,
+        )
+        return None
+    if expected_filtered is not None and bool(data.get("filtered")) != expected_filtered:
+        logger.debug(
+            "Audit cache scope mismatch: filtered %r != expected %r",
+            data.get("filtered"),
+            expected_filtered,
+        )
+        return None
+    if expected_tags is not None and (data.get("tags") or "") != expected_tags:
+        logger.debug(
+            "Audit cache scope mismatch: tags %r != expected %r",
+            data.get("tags"),
+            expected_tags,
+        )
         return None
 
     # Staleness: TTL expiry

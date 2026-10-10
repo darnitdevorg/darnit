@@ -226,6 +226,9 @@ def audit_openssf_baseline(
         level=level,
         controls=controls,
         tags=tags_list,
+        # Issue #542: a profile narrows `controls` above. Tags are
+        # recorded by run_sieve_audit itself.
+        cache_filtered=bool(profile),
         stop_on_llm=True,
         framework_name="openssf-baseline",
         operator_config=operator_config,

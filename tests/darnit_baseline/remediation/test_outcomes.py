@@ -240,7 +240,11 @@ def test_run_sieve_audit_without_cache_write(repo: Path) -> None:
     audit.run_sieve_audit(OWNER, REPO, str(repo), "main", controls=_specs(), framework_name="openssf-baseline", write_cache=False)
     assert not cache_file.exists()
 
-    audit.run_sieve_audit(OWNER, REPO, str(repo), "main", controls=_specs(), framework_name="openssf-baseline")
+    # cache_filtered=False: a caller that passes its own controls says whether
+    # they are the full set. Unstated, the audit is cached as filtered (#542).
+    audit.run_sieve_audit(
+        OWNER, REPO, str(repo), "main", controls=_specs(), framework_name="openssf-baseline", cache_filtered=False
+    )
     assert cache_file.exists()
 
 
