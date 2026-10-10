@@ -38,6 +38,11 @@ from .handler_registry import (
 
 logger = logging.getLogger(__name__)
 
+# Issue #485: caps on what an llm_eval consultation carries. Named so the
+# payload can report what they cut instead of truncating silently.
+_LLM_EVAL_MAX_FILES = 5
+_LLM_EVAL_MAX_CHARS = 10000
+
 # =============================================================================
 # Feature 031: mcp handler constants
 # =============================================================================
@@ -146,9 +151,7 @@ def _excerpt(text: str) -> str:
     return line.encode("ascii", "replace").decode("ascii")
 
 
-def _log_environmental_failure(
-    control_id: str, handler: str, error_class: ErrorClass, message: str
-) -> None:
+def _log_environmental_failure(control_id: str, handler: str, error_class: ErrorClass, message: str) -> None:
     """Emit the contract-section-7 WARN line for an environmental failure.
 
     WARN rather than DEBUG so a degraded audit is visible at the default log
@@ -1015,19 +1018,36 @@ def llm_eval_handler(config: dict[str, Any], context: HandlerContext) -> Handler
     # Literal paths are opened directly; missing files are silently skipped.
     files_to_include = config.get("files_to_include", [])
     file_contents: dict[str, str] = {}
+    # Issue #485: record what was cut so the payload does not silently
+    # present a truncated file as the whole document. Maps relative path
+    # -> {"original_bytes": int, "included_bytes": int}.
+    truncated_files: dict[str, dict[str, int]] = {}
+    skipped_for_cap: list[str] = []
 
     def _read(resolved: str) -> None:
-        if not resolved or len(file_contents) >= 5:
+        if not resolved:
+            return
+        if len(file_contents) >= _LLM_EVAL_MAX_FILES:
+            skipped_for_cap.append(resolved)
             return
         full = os.path.join(context.local_path, resolved) if not os.path.isabs(resolved) else resolved
         try:
             with open(full, encoding="utf-8", errors="ignore") as fh:
-                rel = os.path.relpath(full, context.local_path)
-                file_contents[rel] = fh.read()[:10000]
+                content = fh.read()
+            rel = os.path.relpath(full, context.local_path)
+            if len(content) > _LLM_EVAL_MAX_CHARS:
+                truncated_files[rel] = {
+                    "original_chars": len(content),
+                    "included_chars": _LLM_EVAL_MAX_CHARS,
+                }
+                content = content[:_LLM_EVAL_MAX_CHARS]
+            file_contents[rel] = content
         except OSError:
             pass
 
-    for f in files_to_include[:5]:
+    # Issue #485: no slice here — _read owns the cap so it can record
+    # what it skipped instead of the list silently losing entries.
+    for f in files_to_include:
         if f == "$FOUND_FILE":
             _read(context.gathered_evidence.get("found_file", ""))
         elif f == "$RESOLVED_FILES":
@@ -1056,7 +1076,16 @@ def llm_eval_handler(config: dict[str, Any], context: HandlerContext) -> Handler
                 "analysis_hints": config.get("analysis_hints", []),
                 "gathered_evidence": context.gathered_evidence,
                 "file_contents": file_contents,
+                # Issue #485: name what the caps cut, so a reader (and the
+                # model) can tell a truncated document from a whole one.
+                "truncated_files": truncated_files,
+                "files_omitted_for_cap": skipped_for_cap,
             },
+        },
+        evidence={
+            "llm_eval_files_included": sorted(file_contents.keys()),
+            "llm_eval_truncated_files": truncated_files,
+            "llm_eval_files_omitted_for_cap": skipped_for_cap,
         },
     )
 
@@ -1615,9 +1644,7 @@ def mcp_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResul
 
     if server_config is not None:
         trust_label = (
-            "sigstore-verified"
-            if getattr(server_config, "trusted_publisher", None)
-            else "operator-trusted-path"
+            "sigstore-verified" if getattr(server_config, "trusted_publisher", None) else "operator-trusted-path"
         )
     else:
         trust_label = "operator-trusted-path"
@@ -1628,9 +1655,7 @@ def mcp_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResul
 
     if error_info is not None:
         status, message, error_class = error_info
-        _log_environmental_failure(
-            context.control_id, f"mcp:{server_name}.{tool_name}", error_class, message
-        )
+        _log_environmental_failure(context.control_id, f"mcp:{server_name}.{tool_name}", error_class, message)
         invocation_record = {
             "server": server_name,
             "tool": tool_name,
@@ -1725,9 +1750,7 @@ def _substitute_mcp_args(args: dict[str, Any], context: HandlerContext) -> dict[
     return out
 
 
-def _eval_cel_over_result(
-    expr: str, raw_response: dict[str, Any]
-) -> tuple[bool, Any, str | None]:
+def _eval_cel_over_result(expr: str, raw_response: dict[str, Any]) -> tuple[bool, Any, str | None]:
     """Evaluate ``expr`` against ``{"result": raw_response}``.
 
     Returns ``(ok, value, error)``. ``ok=False`` means evaluation itself
