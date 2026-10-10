@@ -568,6 +568,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `darnit serve` with no `--framework` now serves OpenSSF Baseline when it
+  is installed, the same default as `darnit audit`. It used to take the
+  first installed framework by name, which on a full `darnit-mcp` install
+  is `gittuf`, so the MCP entry that `darnit install` writes gave clients
+  the gittuf tools. With several frameworks installed and no baseline it
+  now asks for `--framework` instead of guessing.
 - Installs without the development dependencies work again (`uv tool install`
   from a checkout, and any install from a built wheel). Two things broke
   them: `tree-sitter-language-pack` 1.6.3, the newest release the old

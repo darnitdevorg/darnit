@@ -1097,6 +1097,24 @@ def _emit_exit_summary(reason: str, exit_code: int) -> None:
     harness_logger.info("harness: %s, exit %d", reason, int(exit_code))
 
 
+DEFAULT_FRAMEWORK = "openssf-baseline"
+
+
+def _default_framework(frameworks: list[str]) -> str | None:
+    """Pick the framework `darnit serve` uses when none is named.
+
+    The same default as `darnit audit` (``load_effective_config_auto``):
+    OpenSSF Baseline when it is installed. Otherwise the only installed
+    framework. With several installed and no baseline there is no safe guess,
+    so the caller has to ask for ``--framework``.
+    """
+    if DEFAULT_FRAMEWORK in frameworks:
+        return DEFAULT_FRAMEWORK
+    if len(frameworks) == 1:
+        return frameworks[0]
+    return None
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     """Start the MCP server.
 
@@ -1147,12 +1165,17 @@ def cmd_serve(args: argparse.Namespace) -> int:
             allowed = operator_config.config.plugins.allowed
             if allowed:
                 frameworks = [f for f in frameworks if f in allowed]
-            if frameworks:
-                framework_name = frameworks[0]  # Default to first available
-            else:
+            if not frameworks:
                 logger.error(
                     "No framework specified and none found. "
                     "Use 'darnit serve config.toml' or install a framework package."
+                )
+                return 1
+            framework_name = _default_framework(frameworks)
+            if framework_name is None:
+                logger.error(
+                    f"No framework specified and several are installed: {', '.join(frameworks)}. "
+                    "Choose one with --framework."
                 )
                 return 1
 
@@ -1395,7 +1418,7 @@ def create_parser() -> argparse.ArgumentParser:
                     "Usage:\n"
                     "  darnit serve config.toml      # Use TOML config file\n"
                     "  darnit serve --framework NAME # Use named framework\n"
-                    "  darnit serve                  # Auto-detect framework",
+                    "  darnit serve                  # OpenSSF Baseline, if installed",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     serve_parser.add_argument(
@@ -1405,7 +1428,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     serve_parser.add_argument(
         "-f", "--framework",
-        help="Framework to use (default: auto-detect). Ignored if config file is provided.",
+        help="Framework to use (default: openssf-baseline if installed, else the only installed framework). Ignored if config file is provided.",
     )
     _add_operator_config_args(serve_parser)
     serve_parser.set_defaults(func=cmd_serve)
