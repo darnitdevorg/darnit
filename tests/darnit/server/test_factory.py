@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import tomllib
+from importlib.resources import files
 from pathlib import Path
 
 import pytest
@@ -68,31 +69,31 @@ class TestCreateServer:
     def test_loads_from_toml_file(self, tmp_path):
         """Test loading server from TOML file."""
         config_path = tmp_path / "test.toml"
-        config_path.write_text('''
+        config_path.write_text("""
 [mcp]
 name = "from-file-server"
 
 [mcp.tools.get_logger]
 handler = "darnit.core.logging:get_logger"
 description = "Logger"
-''')
+""")
         server = create_server(str(config_path))
         assert server.name == "from-file-server"
 
     def test_loads_path_object(self, tmp_path):
         """Test loading server from Path object."""
         config_path = tmp_path / "test.toml"
-        config_path.write_text('''
+        config_path.write_text("""
 [mcp]
 name = "path-server"
-''')
+""")
         server = create_server(config_path)  # Pass Path directly
         assert server.name == "path-server"
 
     def test_handles_invalid_handler(self, tmp_path, caplog):
         """A missing handler is skipped with a warning; the other tools still load."""
         config_path = tmp_path / "test.toml"
-        config_path.write_text('''
+        config_path.write_text("""
 [mcp]
 name = "test-server"
 
@@ -103,7 +104,7 @@ description = "Valid tool"
 [mcp.tools.invalid_tool]
 handler = "darnit.nonexistent_module:func"
 description = "Invalid tool"
-''')
+""")
         with caplog.at_level(logging.WARNING):
             server = create_server(str(config_path))
         tools = {tool.name for tool in asyncio.run(server.list_tools())}
@@ -144,24 +145,10 @@ description = "Refused tool"
 
     def test_openssf_baseline_toml(self):
         """Test loading the actual openssf-baseline.toml file."""
-        # Find the openssf-baseline.toml file
-        baseline_path = (
-            Path(__file__).parent.parent.parent.parent
-            / "packages"
-            / "darnit-baseline"
-            / "openssf-baseline.toml"
-        )
-        if baseline_path.exists():
-            # Should be able to create server from it
-            # Note: This test may fail if darnit_baseline tools have import errors
-            try:
-                server = create_server(str(baseline_path))
-                assert server.name == "openssf-baseline"
-            except ImportError:
-                # Skip if darnit_baseline not installed
-                pytest.skip("darnit_baseline not installed")
-        else:
-            pytest.skip("openssf-baseline.toml not found")
+        baseline_path = Path(str(files("darnit_baseline") / "openssf-baseline.toml"))
+        assert baseline_path.is_file(), f"openssf-baseline.toml not found at {baseline_path}"
+        server = create_server(str(baseline_path))
+        assert server.name == "openssf-baseline"
 
 
 def _shipped_framework_configs() -> list[tuple[str, Path]]:

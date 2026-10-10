@@ -5,61 +5,86 @@ simulating how Claude Code would interact with the server.
 """
 
 import json
+import sys
+import tomllib
+from importlib.resources import files
 from pathlib import Path
 
 import pytest
 
-# Configure pytest-asyncio
-pytestmark = pytest.mark.asyncio(loop_scope="function")
+# Configure pytest-asyncio and mark as integration test
+pytestmark = [
+    pytest.mark.asyncio(loop_scope="function"),
+    pytest.mark.integration,
+]
 
 from mcp import StdioServerParameters
 from mcp.client.session import ClientSession
-from mcp.client.stdio import stdio_client
+from mcp.client.stdio import get_default_environment, stdio_client
 
 # Path to the openssf-baseline.toml config
-BASELINE_TOML = (
-    Path(__file__).parent.parent.parent
-    / "packages"
-    / "darnit-baseline"
-    / "openssf-baseline.toml"
-)
+BASELINE_TOML = Path(str(files("darnit_baseline") / "openssf-baseline.toml"))
+
+
+@pytest.fixture(scope="module", autouse=True)
+def require_baseline_toml():
+    """Ensure openssf-baseline.toml is present; fail if missing so tests do not go dark silently."""
+    assert BASELINE_TOML.is_file(), f"openssf-baseline.toml not found at {BASELINE_TOML}"
+
+
+@pytest.fixture
+def mcp_server_params(tmp_path):
+    """Build isolated environment and StdioServerParameters launching darnit directly."""
+    # Preserve existing tree-sitter language pack cache so the spawned server doesn't download over network
+    real_home = Path.home()
+    for rel in ("Library/Caches/tree-sitter-language-pack", ".cache/tree-sitter-language-pack"):
+        src = real_home / rel
+        if src.exists():
+            dest = tmp_path / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                dest.symlink_to(src)
+            except OSError:
+                pass
+
+    env = get_default_environment()
+    env["HOME"] = str(tmp_path)
+    env["XDG_CONFIG_HOME"] = str(tmp_path / ".config")
+    env["XDG_DATA_HOME"] = str(tmp_path / ".local" / "share")
+    darnit_bin = Path(sys.executable).with_name("darnit")
+    return StdioServerParameters(
+        command=str(darnit_bin),
+        args=["serve", str(BASELINE_TOML)],
+        env=env,
+    )
 
 
 @pytest.fixture
 def test_repo(tmp_path):
     """Create a minimal test repository for auditing."""
+    repo = tmp_path / "test-repo"
+    repo.mkdir(parents=True, exist_ok=True)
     # Create basic repo structure
-    (tmp_path / ".git").mkdir()
-    (tmp_path / ".git" / "config").write_text(
-        "[remote \"origin\"]\n\turl = https://github.com/test-org/test-repo.git\n"
-    )
-    (tmp_path / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
+    (repo / ".git").mkdir()
+    (repo / ".git" / "config").write_text('[remote "origin"]\n\turl = https://github.com/test-org/test-repo.git\n')
+    (repo / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
 
     # Create a README
-    (tmp_path / "README.md").write_text("# Test Repository\n\nA test repo for integration testing.\n")
+    (repo / "README.md").write_text("# Test Repository\n\nA test repo for integration testing.\n")
 
     # Create a LICENSE
-    (tmp_path / "LICENSE").write_text("MIT License\n\nCopyright 2024 Test Org\n")
+    (repo / "LICENSE").write_text("MIT License\n\nCopyright 2024 Test Org\n")
 
-    return tmp_path
+    return repo
 
 
 class TestMCPServerIntegration:
     """Integration tests that start the MCP server and call tools."""
 
     @pytest.mark.asyncio
-    async def test_server_starts_and_lists_tools(self):
+    async def test_server_starts_and_lists_tools(self, mcp_server_params):
         """Test that the server starts and exposes tools."""
-        if not BASELINE_TOML.exists():
-            pytest.skip("openssf-baseline.toml not found")
-
-        server_params = StdioServerParameters(
-            command="uv",
-            args=["run", "darnit", "serve", str(BASELINE_TOML)],
-            env=None,
-        )
-
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 # Initialize the session
                 await session.initialize()
@@ -68,7 +93,7 @@ class TestMCPServerIntegration:
                 tools_result = await session.list_tools()
                 tool_names = [t.name for t in tools_result.tools]
 
-                # Verify all 18 expected tools are present
+                # Verify all 22 expected tools are present
                 expected_tools = [
                     # Audit
                     "audit_openssf_baseline",
@@ -94,26 +119,23 @@ class TestMCPServerIntegration:
                     # Org & Test Repository
                     "list_org_repos",
                     "create_test_repository",
+                    # Harness Loop (Feature 025)
+                    "run_next_action",
+                    "submit_action_result",
+                    # Judgments & Candidates (Feature 041)
+                    "submit_judgment",
+                    "confirm_pass_candidate",
                 ]
                 for tool in expected_tools:
                     assert tool in tool_names, f"Missing tool: {tool}"
 
-                # Should have exactly 18 tools
-                assert len(tool_names) == 18, f"Expected 18 tools, got {len(tool_names)}: {tool_names}"
+                # Should have exactly 22 tools
+                assert len(tool_names) == 22, f"Expected 22 tools, got {len(tool_names)}: {tool_names}"
 
     @pytest.mark.asyncio
-    async def test_list_available_checks(self):
+    async def test_list_available_checks(self, mcp_server_params):
         """Test calling the list_available_checks tool."""
-        if not BASELINE_TOML.exists():
-            pytest.skip("openssf-baseline.toml not found")
-
-        server_params = StdioServerParameters(
-            command="uv",
-            args=["run", "darnit", "serve", str(BASELINE_TOML)],
-            env=None,
-        )
-
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
@@ -134,18 +156,9 @@ class TestMCPServerIntegration:
                 assert len(checks["level1"]) > 0
 
     @pytest.mark.asyncio
-    async def test_audit_on_test_repo(self, test_repo):
+    async def test_audit_on_test_repo(self, test_repo, mcp_server_params):
         """Test running an audit on a test repository."""
-        if not BASELINE_TOML.exists():
-            pytest.skip("openssf-baseline.toml not found")
-
-        server_params = StdioServerParameters(
-            command="uv",
-            args=["run", "darnit", "serve", str(BASELINE_TOML)],
-            env=None,
-        )
-
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
@@ -177,18 +190,9 @@ class TestMCPServerIntegration:
                 assert len(audit_result["results"]) > 0
 
     @pytest.mark.asyncio
-    async def test_audit_with_tags_filter(self, test_repo):
+    async def test_audit_with_tags_filter(self, test_repo, mcp_server_params):
         """Test running an audit with tags filtering."""
-        if not BASELINE_TOML.exists():
-            pytest.skip("openssf-baseline.toml not found")
-
-        server_params = StdioServerParameters(
-            command="uv",
-            args=["run", "darnit", "serve", str(BASELINE_TOML)],
-            env=None,
-        )
-
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
@@ -214,25 +218,21 @@ class TestMCPServerIntegration:
                 # Should have results
                 assert "results" in audit_result
                 results = audit_result["results"]
+                assert results
 
-                # All results should be from VM domain
+                # All returned controls should belong to the VM domain
+                baseline_controls = tomllib.loads(BASELINE_TOML.read_text(encoding="utf-8")).get("controls", {})
                 for r in results:
                     control_id = r.get("id", "")
-                    assert "VM" in control_id, f"Expected VM domain control, got {control_id}"
+                    assert control_id in baseline_controls, f"Unknown control: {control_id}"
+                    ctrl = baseline_controls[control_id]
+                    domain = ctrl.get("domain") or ctrl.get("tags", {}).get("domain")
+                    assert domain == "VM", f"Expected VM domain control, got {control_id} with domain {domain}"
 
     @pytest.mark.asyncio
-    async def test_get_project_config_no_config(self, test_repo):
+    async def test_get_project_config_no_config(self, test_repo, mcp_server_params):
         """Test get_project_config when no config exists."""
-        if not BASELINE_TOML.exists():
-            pytest.skip("openssf-baseline.toml not found")
-
-        server_params = StdioServerParameters(
-            command="uv",
-            args=["run", "darnit", "serve", str(BASELINE_TOML)],
-            env=None,
-        )
-
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
@@ -249,23 +249,65 @@ class TestMCPServerIntegration:
                 # Should indicate no config found
                 assert "No .project.yaml found" in content.text or "init_project_config" in content.text
 
+    @pytest.mark.asyncio
+    async def test_get_pending_data_and_confirm_project_data(self, test_repo, mcp_server_params):
+        """Test get_pending_data and confirm_project_data round trip."""
+        async with stdio_client(mcp_server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                # Call get_pending_data before confirm
+                pending_res = await session.call_tool(
+                    "get_pending_data",
+                    {
+                        "local_path": str(test_repo),
+                        "owner": "test-org",
+                        "repo": "test-repo",
+                    },
+                )
+                assert pending_res.content
+                content_before = pending_res.content[0].text
+                assert "AskUserQuestion" in content_before
+                parsed_before = json.loads(content_before.split("\n---\n", 1)[-1])
+                keys_before = [q["key"] for q in parsed_before.get("questions", [])]
+                assert "security_contact" in keys_before
+
+                # Call confirm_project_data
+                confirm_res = await session.call_tool(
+                    "confirm_project_data",
+                    {
+                        "local_path": str(test_repo),
+                        "owner": "test-org",
+                        "repo": "test-repo",
+                        "security_contact": "security@test-org.com",
+                    },
+                )
+                assert confirm_res.content
+                assert "security_contact: confirmed" in confirm_res.content[0].text
+
+                # Call get_pending_data after confirm; security_contact should now be gone
+                after_res = await session.call_tool(
+                    "get_pending_data",
+                    {
+                        "local_path": str(test_repo),
+                        "owner": "test-org",
+                        "repo": "test-repo",
+                    },
+                )
+                assert after_res.content
+                content_after = after_res.content[0].text
+                parsed_after = json.loads(content_after.split("\n---\n", 1)[-1])
+                keys_after = [q["key"] for q in parsed_after.get("questions", [])]
+                assert "security_contact" not in keys_after
+
 
 class TestMCPServerToolDescriptions:
     """Test that tool descriptions are properly exposed."""
 
     @pytest.mark.asyncio
-    async def test_tool_descriptions_are_set(self):
+    async def test_tool_descriptions_are_set(self, mcp_server_params):
         """Test that tools have descriptions from TOML."""
-        if not BASELINE_TOML.exists():
-            pytest.skip("openssf-baseline.toml not found")
-
-        server_params = StdioServerParameters(
-            command="uv",
-            args=["run", "darnit", "serve", str(BASELINE_TOML)],
-            env=None,
-        )
-
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
@@ -286,18 +328,9 @@ class TestMCPServerErrorHandling:
     """Test error handling in the MCP server."""
 
     @pytest.mark.asyncio
-    async def test_audit_nonexistent_path(self):
+    async def test_audit_nonexistent_path(self, mcp_server_params):
         """Test audit with a non-existent path returns error gracefully."""
-        if not BASELINE_TOML.exists():
-            pytest.skip("openssf-baseline.toml not found")
-
-        server_params = StdioServerParameters(
-            command="uv",
-            args=["run", "darnit", "serve", str(BASELINE_TOML)],
-            env=None,
-        )
-
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
