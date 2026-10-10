@@ -37,8 +37,6 @@ The Baseline isn't just about security—it covers testing requirements, build p
 
 ## Installation
 
-To try darnit from source with one command (it installs uv if needed, sets darnit up, and audits a repository), see [One-command setup](docs/install/from-source.md#one-command-setup).
-
 Install the `darnit` command with [`uv`](https://docs.astral.sh/uv/):
 
 ```bash
@@ -61,6 +59,8 @@ after 0.1.1, the first whose `darnit-mcp` provides the `darnit` command
 ([#621](https://github.com/darnitdevorg/darnit/issues/621)). See
 [`docs/install/from-source.md`](docs/install/from-source.md) for pinning a tag, and
 [`docs/install/README.md`](docs/install/README.md) for the other channels.
+
+To set up from source with one command (it offers to install uv, sets darnit up, and audits a repository), see [One-command setup](docs/install/from-source.md#one-command-setup).
 
 > [!NOTE]
 > Container, Homebrew, and standalone-binary channels are not published yet -

@@ -4,8 +4,6 @@
 #
 # Usage:
 #   ./scripts/quickstart.sh [options] [path/to/repo]
-#   curl -fsSL https://raw.githubusercontent.com/darnitdevorg/darnit/main/scripts/quickstart.sh \
-#     | bash -s -- [options] [path/to/repo]
 #
 # Requirements: git, and curl or wget if uv has to be installed.
 # Nothing in the audited repository is modified.
@@ -13,6 +11,10 @@
 set -euo pipefail
 
 REPO_URL="https://github.com/darnitdevorg/darnit.git"
+# The uv release installed when uv is missing. The script was tested with it.
+UV_VERSION="0.13.0"
+UV_INSTALLER="https://astral.sh/uv/${UV_VERSION}/install.sh"
+ORIGINAL_PATH="$PATH"
 DARNIT_HOME="${DARNIT_HOME:-$HOME/.local/share/darnit}"
 ASSUME_YES=0
 ALL_LEVELS=0
@@ -54,20 +56,27 @@ USAGE
 }
 
 confirm() {
-  local reply=""
+  # confirm QUESTION [DEFAULT]; DEFAULT is y or n and is what Enter means.
+  local reply="" default="${2:-y}" hint="[Y/n]"
+  if [ "$default" = "n" ]; then
+    hint="[y/N]"
+  fi
   if [ "$ASSUME_YES" -eq 1 ]; then
     return 0
   fi
   if [ -t 0 ]; then
-    read -r -p "$1 [Y/n] " reply || true
+    read -r -p "$1 $hint " reply || true
   elif { : </dev/tty; } 2>/dev/null; then
-    read -r -p "$1 [Y/n] " reply </dev/tty || true
+    read -r -p "$1 $hint " reply </dev/tty || true
   else
     warn "no terminal to ask on; assuming no. Re-run with --yes to accept."
     return 1
   fi
+  if [ -z "$reply" ]; then
+    reply="$default"
+  fi
   case "$reply" in
-    "" | y | Y | yes | YES) return 0 ;;
+    y | Y | yes | YES) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -102,13 +111,13 @@ main() {
   fi
   if ! command -v uv >/dev/null 2>&1; then
     info "uv is not installed. darnit uses it to manage Python and dependencies."
-    if ! confirm "Install uv from https://astral.sh/uv now?"; then
+    if ! confirm "Install uv $UV_VERSION from astral.sh into ~/.local/bin? Your shell profile is not changed." n; then
       die "uv is required. See https://docs.astral.sh/uv/getting-started/installation/"
     fi
     if command -v curl >/dev/null 2>&1; then
-      curl -LsSf https://astral.sh/uv/install.sh | sh
+      curl -LsSf "$UV_INSTALLER" | env UV_NO_MODIFY_PATH=1 sh
     elif command -v wget >/dev/null 2>&1; then
-      wget -qO- https://astral.sh/uv/install.sh | sh
+      wget -qO- "$UV_INSTALLER" | env UV_NO_MODIFY_PATH=1 sh
     else
       die "curl or wget is needed to install uv."
     fi
@@ -138,7 +147,9 @@ main() {
 
   # 3. Install from the lockfile, so users get the tested dependency versions
   info "Installing darnit from $src (the first run can take a minute)"
-  uv sync --frozen --quiet --project "$src"
+  # --inexact: leave packages from other extras or groups in place, so a
+  # contributor's checkout synced with --all-extras is not stripped.
+  uv sync --frozen --inexact --quiet --project "$src"
 
   local darnit="$src/.venv/bin/darnit"
   if [ ! -x "$darnit" ]; then
@@ -156,15 +167,15 @@ main() {
   if [ "$(readlink "$link" 2>/dev/null || true)" != "$darnit" ]; then
     warn "$link already exists and was left alone. Run $darnit directly, or remove it and re-run."
   else
-    case ":$PATH:" in
+    case ":$ORIGINAL_PATH:" in
       *":$bindir:"*) ;;
-      *) warn "$bindir is not on your PATH. Add it, or run $darnit directly." ;;
+      *) warn "$bindir is not on your PATH. Add it (export PATH=\"$bindir:\$PATH\"), or run $darnit directly." ;;
     esac
   fi
 
   # Optional tools that some checks shell out to
   if ! command -v zizmor >/dev/null 2>&1; then
-    if confirm "Install zizmor (used by the GitHub Actions workflow checks) with uv?"; then
+    if confirm "Install zizmor (used by the GitHub Actions workflow checks) with uv?" n; then
       uv tool install --quiet zizmor || warn "zizmor could not be installed."
     fi
   fi
@@ -200,7 +211,7 @@ main() {
   # 5. MCP registration (enables remediation through Claude Code)
   if [ "$WANT_MCP" -eq 1 ]; then
     if command -v claude >/dev/null 2>&1; then
-      if confirm "Register darnit in Claude Code (writes ~/.claude.json, replacing any existing darnit entry)?"; then
+      if confirm "Register darnit in Claude Code? This replaces any darnit entry in ~/.claude.json and reinstalls the darnit skills in ~/.claude/skills/." n; then
         if ! "$darnit" install --client claude-code --from-source --force; then
           warn "registration failed. Retry with: darnit install --client claude-code --from-source"
         fi
