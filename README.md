@@ -37,8 +37,6 @@ The Baseline isn't just about security—it covers testing requirements, build p
 
 ## Installation
 
-To try darnit from source with one command (it installs uv if needed, sets darnit up, and audits a repository), see [One-command setup](docs/install/from-source.md#one-command-setup).
-
 > [!NOTE]
 > PyPI, pipx, `uv tool install`, container, Homebrew, and standalone-binary
 > channels are not published yet - tracked in
@@ -59,6 +57,9 @@ Once [#229](https://github.com/kusari-oss/darnit/issues/229) lands, `pipx instal
 and `uv tool install darnit-mcp` will become the recommended end-user paths, with
 container, Homebrew, standalone-binary, and Claude Code plugin channels documented in
 [`docs/install/README.md`](docs/install/README.md).
+
+To set up from source with one command (it offers to install uv, sets darnit up, and audits a repository), see [One-command setup](docs/install/from-source.md#one-command-setup).
+
 ### Optional: Opengrep for taint analysis
 
 The threat model generator can use [Opengrep](https://github.com/opengrep/opengrep)

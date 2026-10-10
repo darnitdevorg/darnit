@@ -91,6 +91,11 @@ jobs:
           uv run python -c "from darnit.core.discovery import discover_implementations; print(discover_implementations())"
           uv run python -c "from darnit_baseline import register; print(register())"
 
+      - name: Lint and smoke-test the quick-start script
+        run: |
+          shellcheck scripts/quickstart.sh
+          scripts/quickstart.sh --help
+
   type-check:
     name: Type Check
     runs-on: ubuntu-latest
