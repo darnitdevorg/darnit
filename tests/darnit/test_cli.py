@@ -135,6 +135,58 @@ def test_install_preserves_existing_settings(tmp_path, monkeypatch):
     assert "darnit" in data["mcpServers"]
 
 
+def _baseline_controls():
+    from darnit.config import load_controls_from_effective, load_effective_config_by_name
+
+    return load_controls_from_effective(load_effective_config_by_name("openssf-baseline"))
+
+
+def test_resolve_profile_ids_selects_the_profile_controls():
+    from darnit.cli import _resolve_profile_ids
+
+    controls = _baseline_controls()
+    ids = _resolve_profile_ids("level1_quick", "openssf-baseline", controls)
+
+    assert ids == {c.control_id for c in controls if c.level == 1}
+    assert 0 < len(ids) < len(controls)
+    assert _resolve_profile_ids("openssf-baseline:level1_quick", "openssf-baseline", controls) == ids
+
+
+def test_resolve_profile_ids_rejects_an_unknown_profile(caplog):
+    from darnit.cli import _resolve_profile_ids
+
+    assert _resolve_profile_ids("no-such-profile", "openssf-baseline", _baseline_controls()) is None
+    assert any("Cannot use profile" in record.message for record in caplog.records)
+
+
+def test_resolve_profile_ids_rejects_a_framework_without_profiles(caplog):
+    from darnit.cli import _resolve_profile_ids
+
+    assert _resolve_profile_ids("level1_quick", "testchecks", []) is None
+    assert any("Cannot use profile" in record.message for record in caplog.records)
+
+
+def test_audit_profile_narrows_the_controls_that_run(tmp_path, monkeypatch):
+    """--profile reaches the control filter; before, the flag was parsed and ignored."""
+    seen = {}
+
+    def spy(controls, filters, include_ids, exclude_ids):
+        seen["include_ids"] = include_ids
+        return []
+
+    monkeypatch.setattr("darnit.filtering.filter_controls", spy)
+    try:
+        main(["audit", "-f", "openssf-baseline", "--profile", "level1_quick", "--no-fail", str(tmp_path)])
+    except Exception:
+        pass
+
+    assert seen["include_ids"] == {c.control_id for c in _baseline_controls() if c.level == 1}
+
+
+def test_audit_with_an_unknown_profile_fails_before_running(tmp_path):
+    assert main(["audit", "-f", "openssf-baseline", "--profile", "no-such-profile", "--no-fail", str(tmp_path)]) == 1
+
+
 class TestCreateParser:
     """Tests for CLI argument parsing."""
 

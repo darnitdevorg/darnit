@@ -247,6 +247,42 @@ def _operator_target(args: argparse.Namespace, operator) -> tuple[bool, str | No
     return True, canonical
 
 
+def _resolve_profile_ids(profile_name: str, framework_name: str, controls: list) -> set[str] | None:
+    """Return the control IDs an audit profile selects for this framework.
+
+    Logs the reason and returns None when the profile cannot be used: the
+    framework defines no such profile, the name is ambiguous, or the profile
+    selects no controls.
+    """
+    from darnit.config.profile_resolver import (
+        ProfileAmbiguousError,
+        ProfileNotFoundError,
+        resolve_profile,
+        resolve_profile_control_ids,
+    )
+    from darnit.core.discovery import discover_implementations
+
+    impl = discover_implementations().get(framework_name)
+    get_profiles = getattr(impl, "get_audit_profiles", None)
+    profiles = get_profiles() if callable(get_profiles) else None
+    try:
+        _, profile_config = resolve_profile(profile_name, {framework_name: dict(profiles)} if profiles else {})
+    except (ProfileNotFoundError, ProfileAmbiguousError) as e:
+        logger.error(f"Cannot use profile '{profile_name}': {e}")
+        return None
+
+    unknown = sorted(set(profile_config.controls or []) - {c.control_id for c in controls})
+    if unknown:
+        logger.warning(
+            f"Profile '{profile_name}' lists controls that {framework_name} does not define: {', '.join(unknown)}"
+        )
+    profile_ids = set(resolve_profile_control_ids(profile_config, controls))
+    if not profile_ids:
+        logger.error(f"Profile '{profile_name}' selects no controls in {framework_name}")
+        return None
+    return profile_ids
+
+
 def cmd_audit(args: argparse.Namespace) -> int:
     """Run compliance audit against a repository.
 
@@ -311,6 +347,16 @@ def cmd_audit(args: argparse.Namespace) -> int:
     # Parse include/exclude lists
     include_ids = set(args.include.split(",")) if args.include else None
     exclude_ids = set(args.exclude.split(",")) if args.exclude else set()
+
+    # --profile narrows the run to the controls the named audit profile selects
+    if getattr(args, "profile", None):
+        profile_ids = _resolve_profile_ids(args.profile, config.framework_name, controls)
+        if profile_ids is None:
+            return 1
+        include_ids = profile_ids if include_ids is None else include_ids & profile_ids
+        if not include_ids:
+            logger.error(f"Profile '{args.profile}' and --include have no controls in common")
+            return 1
 
     # Apply filters
     controls = filter_controls(controls, filters, include_ids, exclude_ids)
