@@ -49,7 +49,7 @@ A future hardened-image variant (Chainguard- or distroless-based) is tracked as 
 **Rationale**:
 - All three mechanisms share the same OIDC identity (the GitHub Actions workflow's identity), so one signing identity covers every artifact across every channel.
 - No long-lived publishing tokens or signing keys live anywhere — satisfies spec FR-007.
-- Sigstore attestations on PyPI are now the default expectation for serious open-source Python projects and integrate with `pip install --verify-attestations` (PEP 740).
+- Sigstore attestations on PyPI are now the default expectation for serious open-source Python projects (PEP 740). pip does not verify PEP 740 attestations at install time; verify a downloaded wheel with `pypi-attestations verify pypi`.
 - cosign + GHCR provides verifiable image signatures consumable by every major policy engine (Kyverno, Connaisseur, Sigstore Policy Controller).
 - The same cosign workflow signs detached blobs for binary downloads. Users verify with `cosign verify-blob`.
 
