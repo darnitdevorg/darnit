@@ -568,6 +568,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The `gh_api` step no longer calls the platform when its endpoint needs
+  `$OWNER` or `$REPO` and the checkout has no repository identity (no git
+  remote). It used to substitute an empty owner, ask for `/repos//name`,
+  and report the 404 that came back; a step declaring 404 in
+  `fail_on_status` would have turned that into FAIL. It is now `ERROR`,
+  class `unavailable`, with a message that says why.
 - Installs without the development dependencies work again (`uv tool install`
   from a checkout, and any install from a built wheel). Two things broke
   them: `tree-sitter-language-pack` 1.6.3, the newest release the old
