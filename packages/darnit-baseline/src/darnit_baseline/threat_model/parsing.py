@@ -29,15 +29,18 @@ try:
     from tree_sitter_language_pack import get_language, get_parser
 
     TREE_SITTER_AVAILABLE = True
-except ImportError:  # pragma: no cover — dependency is required in pyproject.toml
+except ImportError as _import_error:  # pragma: no cover — dependency is required in pyproject.toml
     TREE_SITTER_AVAILABLE = False
     ts = None  # type: ignore[assignment]
+    # Keep the real cause. A release that installs without an importable module
+    # (tree-sitter-language-pack 1.6.3, #573) is not "not installed".
+    _IMPORT_FAILURE = f"tree-sitter-language-pack could not be imported: {_import_error}"
 
     def get_language(name: str) -> Any:  # type: ignore[misc]
-        raise ImportError("tree-sitter-language-pack is not installed")
+        raise ImportError(_IMPORT_FAILURE)
 
     def get_parser(name: str) -> Any:  # type: ignore[misc]
-        raise ImportError("tree-sitter-language-pack is not installed")
+        raise ImportError(_IMPORT_FAILURE)
 
 
 logger = logging.getLogger("darnit_baseline.threat_model.parsing")

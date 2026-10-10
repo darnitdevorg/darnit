@@ -568,6 +568,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- When `cel-python` or `tree-sitter-language-pack` fails to import, the
+  error now gives the real cause. Both guards said "not installed" for any
+  import error, which was wrong for an installed package with a missing
+  dependency or a broken release (#573).
 - Installs without the development dependencies work again (`uv tool install`
   from a checkout, and any install from a built wheel). Two things broke
   them: `tree-sitter-language-pack` 1.6.3, the newest release the old
