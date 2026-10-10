@@ -135,6 +135,54 @@ def test_install_preserves_existing_settings(tmp_path, monkeypatch):
     assert "darnit" in data["mcpServers"]
 
 
+@pytest.mark.parametrize(
+    ("frameworks", "expected"),
+    [
+        (["gittuf", "openssf-baseline", "reproducibility"], "openssf-baseline"),
+        (["community-spec", "gittuf", "hello", "openssf-baseline"], "openssf-baseline"),
+        (["gittuf"], "gittuf"),
+        (["community-spec", "gittuf"], None),
+    ],
+)
+def test_default_framework(frameworks, expected):
+    from darnit.cli import _default_framework
+
+    assert _default_framework(frameworks) == expected
+
+
+def _serve_with(monkeypatch, frameworks):
+    """Run `darnit serve` with a fake framework list; return (exit code, served names)."""
+    served = []
+
+    class _Server:
+        def run(self):
+            pass
+
+    def fake_create_server(path, **kwargs):
+        served.append(path)
+        return _Server()
+
+    monkeypatch.setattr("darnit.config.list_available_frameworks", lambda: list(frameworks))
+    monkeypatch.setattr("darnit.config.resolve_framework_path", lambda name: name)
+    monkeypatch.setattr("darnit.server.create_server", fake_create_server)
+    return main(["serve"]), served
+
+
+def test_serve_defaults_to_the_baseline_not_the_first_name(monkeypatch):
+    code, served = _serve_with(monkeypatch, ["gittuf", "openssf-baseline", "reproducibility"])
+
+    assert code == 0
+    assert served == ["openssf-baseline"]
+
+
+def test_serve_refuses_to_guess_between_other_frameworks(monkeypatch, caplog):
+    code, served = _serve_with(monkeypatch, ["community-spec", "gittuf"])
+
+    assert code == 1
+    assert served == []
+    assert any("--framework" in record.message for record in caplog.records)
+
+
 class TestCreateParser:
     """Tests for CLI argument parsing."""
 
