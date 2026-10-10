@@ -133,6 +133,9 @@ async def builtin_audit(
         level=level,
         controls=all_controls,
         tags=tags_list,
+        # Issue #542: all_controls is the framework's full set. Tags are
+        # recorded by run_sieve_audit itself.
+        cache_filtered=False,
         stop_on_llm=True,
         framework_name=_framework_name,
         operator_config=operator_config,

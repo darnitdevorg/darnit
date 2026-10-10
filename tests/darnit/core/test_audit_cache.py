@@ -135,6 +135,8 @@ class TestWriteReadRoundTrip:
             "commit_dirty",
             "level",
             "framework",
+            "tags",
+            "filtered",
             "results",
             "summary",
         }
@@ -475,3 +477,155 @@ class TestConcurrency:
         final_data = read_audit_cache(repo_path_str)
         assert final_data is not None
         assert final_data["version"] == CACHE_VERSION
+
+
+class TestScopeMismatch:
+    """Issue #542: a cache from a narrower audit must not satisfy a wider read."""
+
+    def test_framework_mismatch_is_a_miss(self, temp_git_repo, sample_results, sample_summary):
+        write_audit_cache(str(temp_git_repo), sample_results, sample_summary, 3, "openssf-baseline")
+        assert read_audit_cache(str(temp_git_repo), expected_framework="openssf-baseline") is not None
+        assert read_audit_cache(str(temp_git_repo), expected_framework="amber") is None
+
+    def test_level_mismatch_is_a_miss(self, temp_git_repo, sample_results, sample_summary):
+        write_audit_cache(str(temp_git_repo), sample_results, sample_summary, 1, "openssf-baseline")
+        assert read_audit_cache(str(temp_git_repo), expected_level=1) is not None
+        assert read_audit_cache(str(temp_git_repo), expected_level=3) is None
+
+    def test_tag_filtered_cache_does_not_satisfy_an_unfiltered_read(
+        self, temp_git_repo, sample_results, sample_summary
+    ):
+        write_audit_cache(
+            str(temp_git_repo),
+            sample_results,
+            sample_summary,
+            3,
+            "openssf-baseline",
+            tags="domain=VM",
+        )
+        assert read_audit_cache(str(temp_git_repo), expected_tags="domain=VM") is not None
+        assert read_audit_cache(str(temp_git_repo), expected_tags="") is None
+
+    def test_unscoped_read_still_hits(self, temp_git_repo, sample_results, sample_summary):
+        """Existing callers that pass no expectations are unaffected."""
+        write_audit_cache(str(temp_git_repo), sample_results, sample_summary, 1, "amber", tags="domain=VM")
+        assert read_audit_cache(str(temp_git_repo)) is not None
+
+
+class TestCacheVersionAndFilteredFlag:
+    """Review on #549: v1 envelopes must miss, and `filtered` covers the
+    filters a tag string cannot express (--include/--exclude/profile)."""
+
+    def test_old_version_envelope_is_a_miss(self, temp_git_repo, sample_results, sample_summary):
+        write_audit_cache(str(temp_git_repo), sample_results, sample_summary, 3, "openssf-baseline")
+        cache_path = _get_cache_dir(str(temp_git_repo)) / CACHE_FILENAME
+        data = json.loads(cache_path.read_text())
+        data["version"] = 1
+        data.pop("tags", None)
+        data.pop("filtered", None)
+        cache_path.write_text(json.dumps(data))
+        assert read_audit_cache(str(temp_git_repo)) is None
+
+    def test_filtered_cache_does_not_satisfy_an_unfiltered_read(self, temp_git_repo, sample_results, sample_summary):
+        write_audit_cache(
+            str(temp_git_repo),
+            sample_results,
+            sample_summary,
+            3,
+            "openssf-baseline",
+            filtered=True,
+        )
+        assert read_audit_cache(str(temp_git_repo), expected_filtered=True) is not None
+        assert read_audit_cache(str(temp_git_repo), expected_filtered=False) is None
+
+    def test_filtered_is_independent_of_tags(self, temp_git_repo, sample_results, sample_summary):
+        """--include narrows the set without producing a tag string."""
+        write_audit_cache(
+            str(temp_git_repo),
+            sample_results,
+            sample_summary,
+            3,
+            "openssf-baseline",
+            tags="",
+            filtered=True,
+        )
+        assert read_audit_cache(str(temp_git_repo), expected_tags="") is not None
+        assert read_audit_cache(str(temp_git_repo), expected_filtered=False) is None
+
+
+class TestCacheScopeDecision:
+    """What run_sieve_audit records as an audit's scope (#542, review on #549)."""
+
+    @pytest.mark.parametrize(
+        ("tags", "controls", "cache_tags", "cache_filtered", "expected"),
+        [
+            (None, None, None, None, ("", False)),  # darnit loads the controls: a full audit
+            (["domain=VM"], None, None, None, ("domain=VM", True)),
+            (None, ["c"], None, None, ("", True)),  # caller's own list, not declared: fail closed
+            (None, ["c"], None, False, ("", False)),  # caller says it is the full set
+            (None, ["c"], None, True, ("", True)),  # caller says it narrowed, e.g. a profile
+            (["level=1"], ["c"], None, False, ("level=1", True)),  # tags win over "not filtered"
+            (None, ["c"], "domain=VM", False, ("domain=VM", True)),
+        ],
+    )
+    def test_scope(self, tags, controls, cache_tags, cache_filtered, expected):
+        from darnit.tools.audit import _cache_scope
+
+        assert _cache_scope(tags, controls, cache_tags, cache_filtered) == expected
+
+    def test_filtered_audits_get_their_own_key(self):
+        from darnit.tools.audit import audit_cache_key
+
+        assert audit_cache_key("/repo", None, filtered=False) == "audit-cache"
+        assert audit_cache_key("/repo", None, filtered=True) == "audit-cache-filtered"
+
+
+class TestFullAuditCacheRead:
+    """read_full_audit_cache is what remediation reads (#542)."""
+
+    @staticmethod
+    def _write(repo, results, summary, *, level=3, framework="openssf-baseline", filtered=False, tags=""):
+        # Write the way run_sieve_audit does: through the resolved store,
+        # under the shared key.
+        from darnit.stores.selection import resolve_stores
+        from darnit.tools.audit import audit_cache_key
+
+        bundle = resolve_stores(None, repo_path=Path(repo))
+        try:
+            write_audit_cache(
+                str(repo), results, summary, level, framework,
+                tags=tags, filtered=filtered,
+                store=bundle.cache,
+                cache_key=audit_cache_key(str(repo), None, filtered=filtered),
+            )
+        finally:
+            bundle.close_all()
+
+    @staticmethod
+    def _read(repo):
+        from darnit.tools.audit import read_full_audit_cache
+
+        return read_full_audit_cache(str(repo), "openssf-baseline", level=3)
+
+    def test_full_audit_is_a_hit(self, temp_git_repo, sample_results, sample_summary):
+        self._write(temp_git_repo, sample_results, sample_summary)
+        assert self._read(temp_git_repo) is not None
+
+    def test_filtered_audit_is_a_miss(self, temp_git_repo, sample_results, sample_summary):
+        self._write(temp_git_repo, sample_results, sample_summary, filtered=True)
+        assert self._read(temp_git_repo) is None
+
+    def test_filtered_audit_does_not_replace_the_full_one(self, temp_git_repo, sample_results, sample_summary):
+        self._write(temp_git_repo, sample_results, sample_summary)
+        self._write(temp_git_repo, [], {}, filtered=True, tags="domain=VM")
+        cache = self._read(temp_git_repo)
+        assert cache is not None
+        assert cache["results"] == sample_results
+
+    def test_level_1_audit_is_a_miss(self, temp_git_repo, sample_results, sample_summary):
+        self._write(temp_git_repo, sample_results, sample_summary, level=1)
+        assert self._read(temp_git_repo) is None
+
+    def test_other_framework_is_a_miss(self, temp_git_repo, sample_results, sample_summary):
+        self._write(temp_git_repo, sample_results, sample_summary, framework="gittuf")
+        assert self._read(temp_git_repo) is None

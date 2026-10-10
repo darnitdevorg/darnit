@@ -167,6 +167,78 @@ def _load_merged_stores(framework_name: str | None, operator: "OperatorConfig | 
     return getattr(effective, "stores", None)
 
 
+def audit_cache_key(local_path: str, stores_config: Any, *, filtered: bool = False) -> str:
+    """Return the key an audit of ``local_path`` is cached under.
+
+    The one derivation for the writer (:func:`run_sieve_audit`) and for every
+    reader. The default store's root already encodes the repository, so the
+    key is fixed; a configured store may be shared across repositories, so the
+    key encodes the path. A filtered audit gets its own key, so it never
+    replaces the full-audit entry (issue #542).
+    """
+    if stores_config is None or stores_config.cache is None:
+        key = "audit-cache"
+    else:
+        key = hashlib.sha256(str(Path(local_path).resolve()).encode()).hexdigest()[:16]
+    return f"{key}-filtered" if filtered else key
+
+
+def _cache_scope(
+    tags: list[str] | None,
+    controls: list | None,
+    cache_tags: str | None,
+    cache_filtered: bool | None,
+) -> tuple[str, bool]:
+    """Return the (tags, filtered) pair recorded in the audit cache (issue #542).
+
+    Tags always mean filtered. Otherwise the caller's word decides. A caller
+    that passed its own ``controls`` and did not say is treated as filtered:
+    this function cannot tell a narrowed list from the full set, and a subset
+    read back as a full audit makes remediation act on results that were never
+    produced.
+    """
+    if cache_tags is None:
+        cache_tags = ",".join(sorted(tags)) if tags else ""
+    if cache_filtered is None:
+        cache_filtered = controls is not None
+    return cache_tags, bool(cache_tags) or cache_filtered
+
+
+def read_full_audit_cache(
+    local_path: str,
+    framework_name: str,
+    level: int,
+    operator_config: "LoadedOperatorConfig | None" = None,
+) -> dict[str, Any] | None:
+    """Return the cached unfiltered audit of ``framework_name`` at ``level``, or None.
+
+    Reads through the store and key :func:`run_sieve_audit` writes to, so an
+    operator's ``[stores.cache]`` is honoured on both sides. A cache from
+    another framework, another level or a filtered run is a miss.
+    """
+    from darnit.core.audit_cache import read_audit_cache
+    from darnit.stores.selection import resolve_stores
+
+    if operator_config is None:
+        from darnit.config.operator.loader import resolve_operator_config
+
+        operator_config = resolve_operator_config(local_path)
+    stores_config = _load_merged_stores(framework_name, operator_config.config)
+    stores_bundle = resolve_stores(stores_config, repo_path=Path(local_path))
+    try:
+        return read_audit_cache(
+            local_path,
+            expected_framework=framework_name,
+            expected_level=level,
+            expected_tags="",
+            expected_filtered=False,
+            store=stores_bundle.cache,
+            cache_key=audit_cache_key(local_path, stores_config, filtered=False),
+        )
+    finally:
+        stores_bundle.close_all()
+
+
 def _load_merged_mcp_servers(framework_name: str | None, operator: "OperatorConfig | None" = None) -> dict[str, Any]:
     """Return the merged ``mcp_servers`` allowlist for this audit run.
 
@@ -731,6 +803,8 @@ def run_sieve_audit(
     *,
     controls: list | None = None,
     tags: list[str] | None = None,
+    cache_tags: str | None = None,
+    cache_filtered: bool | None = None,
     evaluate_claims: bool = True,
     stop_on_llm: bool = True,
     framework_name: str | None = None,
@@ -1014,10 +1088,10 @@ def run_sieve_audit(
     # already encodes repo identity (uses fixed "audit-cache"); configured
     # store's root is operator-picked and may be shared across repos, so
     # the key must encode repo identity.
-    if stores_config is None or stores_config.cache is None:
-        cache_key = "audit-cache"
-    else:
-        cache_key = hashlib.sha256(str(Path(local_path).resolve()).encode()).hexdigest()[:16]
+    # Issue #542: record the scope this audit ran at, and keep a filtered run
+    # out of the full-audit entry.
+    cache_tags, cache_filtered = _cache_scope(tags, controls, cache_tags, cache_filtered)
+    cache_key = audit_cache_key(local_path, stores_config, filtered=cache_filtered)
 
     from darnit.core.audit_cache import write_audit_cache
 
@@ -1033,6 +1107,8 @@ def run_sieve_audit(
                 summary,
                 level,
                 resolved_fw or "",
+                tags=cache_tags,
+                filtered=cache_filtered,
                 store=stores_bundle.cache,
                 cache_key=cache_key,
             )
