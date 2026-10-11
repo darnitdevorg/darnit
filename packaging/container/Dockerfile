@@ -45,7 +45,6 @@ RUN python -m venv /opt/venv \
        done \
     && /opt/venv/bin/pip install --no-cache-dir \
          --index-url https://pypi.org/simple/ \
-         --pre \
          /tmp/dist/darnit-core/*-${VERSION}-*.whl \
          /tmp/dist/darnit-baseline/*-${VERSION}-*.whl \
          /tmp/dist/darnit-gittuf/*-${VERSION}-*.whl \
