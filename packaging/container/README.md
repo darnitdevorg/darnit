@@ -83,13 +83,20 @@ Compressed-size target: 300 MB (soft). The release workflow records the size in 
 
 ## Building locally
 
-The image is normally built by the release pipeline, but you can build it locally for testing:
+The image is normally built by the release pipeline, but you can build it locally for testing. The Dockerfile installs the darnit wheels from `dist/` in the build context, so build them first:
 
 ```bash
-# Build for the current platform only. VERSION must be a real darnit-mcp
-# release on PyPI (or TestPyPI if you adjust the install command).
+# 1. Build the wheels into dist/<package>/, the layout the Dockerfile expects.
+while IFS= read -r pkg; do
+  [ -z "$pkg" ] && continue
+  uv build --package "$pkg" --out-dir "dist/$pkg"
+done < packaging/pypi/public-packages.txt
+
+# 2. Build the image for the current platform. VERSION must be the version
+#    of the wheels you just built.
+VERSION=$(awk -F'"' '/^version[[:space:]]*=/{print $2; exit}' pyproject.toml)
 docker build \
-  --build-arg VERSION=0.1.0 \
+  --build-arg VERSION="$VERSION" \
   -t darnit-local \
   -f packaging/container/Dockerfile \
   .
@@ -97,7 +104,7 @@ docker build \
 docker run --rm -v "$PWD:/repo" darnit-local audit
 ```
 
-The `--build-arg VERSION` is required — the Dockerfile refuses to build without an explicit pinned version.
+The `--build-arg VERSION` is required. The Dockerfile refuses to build without it, and fails if `dist/` has no wheel of that version for one of the darnit packages. Only the dependencies are downloaded, from PyPI.
 
 ## Recovery from a bad image
 
