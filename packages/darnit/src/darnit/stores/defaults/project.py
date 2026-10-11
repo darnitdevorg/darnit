@@ -1,6 +1,6 @@
 """Filesystem-backed ``ProjectStateStore`` default.
 
-Feature 033 T016. Reads/writes ``.project/project.yaml`` and
+Feature 033 T016. Reads ``.project/project.yaml`` and
 ``.project/maintainers.yaml`` on the local filesystem. The reader
 delegates to the existing :class:`darnit.context.dot_project.DotProjectReader`
 via a construction shape that avoids the store-routing path (so the
@@ -19,11 +19,11 @@ if TYPE_CHECKING:
 
 
 class FilesystemProjectStateStore:
-    """Read/write ``.project/`` YAML files on the local filesystem.
+    """Read ``.project/`` YAML files on the local filesystem.
 
     Args:
         repo_path: Root of the repository whose ``.project/`` this store
-            reads and writes.
+            reads.
     """
 
     def __init__(self, repo_path: Path) -> None:
@@ -58,32 +58,11 @@ class FilesystemProjectStateStore:
                 f"failed to read {self.project_yaml}: {err}"
             ) from err
 
-    def write_project(self, config: ProjectConfig) -> None:
-        # v0 write path piggybacks on the existing DotProjectWriter (which
-        # serializes ProjectConfig -> project.yaml). Alternative backends
-        # override this.
-        from darnit.context.dot_project import DotProjectWriter
-
-        try:
-            writer = DotProjectWriter(self._repo_path)
-            writer.write(config)
-        except Exception as err:  # noqa: BLE001
-            raise StoreOperationError(
-                f"failed to write {self.project_yaml}: {err}"
-            ) from err
-
     def read_maintainers(self) -> list[MaintainerEntry]:
         config = self.read_project()
         if config is None:
             return []
         return list(getattr(config, "maintainer_entries", []))
-
-    def write_maintainers(self, entries: list[MaintainerEntry]) -> None:
-        from darnit.context.dot_project import ProjectConfig
-
-        existing = self.read_project() or ProjectConfig(name="")
-        existing.maintainer_entries = list(entries)
-        self.write_project(existing)
 
     def close(self) -> None:
         return None

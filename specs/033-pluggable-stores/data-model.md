@@ -33,7 +33,7 @@ Not intended to be used as a standalone Protocol -- it exists to consolidate the
 
 ### `ProjectStateStore` (Protocol, `runtime_checkable`)
 
-Read + write surface for `.project/project.yaml`, `.project/maintainers.yaml`, extensions.
+Read surface for `.project/project.yaml`, `.project/maintainers.yaml`, extensions.
 
 ```python
 @runtime_checkable
@@ -42,20 +42,12 @@ class ProjectStateStore(Store, Protocol):
         """Load the project configuration. Returns None if not present.
         Raises `StoreOperationError` on backend failure."""
 
-    def write_project(self, config: ProjectConfig) -> None:
-        """Persist the project configuration.
-        Raises `StoreOperationError` on backend failure."""
-
     def read_maintainers(self) -> list[MaintainerEntry]:
         """Load the maintainer entries. Returns [] if not present."""
-
-    def write_maintainers(self, entries: list[MaintainerEntry]) -> None:
-        """Persist the maintainer entries."""
 ```
 
 Failure semantics per FR-011:
-- `read_project` failure -> caller resolves affected controls WARN (see `darnit.tools.audit.load_project_context`).
-- `write_project` / `write_maintainers` failure -> caller surfaces the error to the operator; the audit run fails.
+- `read_project` / `read_maintainers` failure -> caller resolves affected controls WARN (see `darnit.tools.audit.load_project_context`).
 
 ### `AttestationStore` (Protocol, `runtime_checkable`)
 
