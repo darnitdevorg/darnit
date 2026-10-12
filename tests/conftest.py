@@ -91,6 +91,38 @@ def _isolate_operator_config(
 
 TRUSTED_OWNER, TRUSTED_REPO = "test-owner", "test-repo"
 _CI_VARS = ("GITHUB_ACTIONS", "GITLAB_CI", "CI", "JENKINS_URL", "TF_BUILD", "BUILDKITE", "CIRCLECI", "TRAVIS")
+# Every variable darnit reads to recognize a CI run and its repository
+# (darnit.trust.ci). On a CI runner they name the runner's repository, which
+# takes precedence over a test's operator target (framework-design 14.2).
+_CI_METADATA_VARS = _CI_VARS + (
+    "GITHUB_EVENT_NAME",
+    "GITHUB_EVENT_PATH",
+    "GITHUB_HOST",
+    "GITHUB_REF",
+    "GITHUB_REF_TYPE",
+    "GITHUB_REPOSITORY",
+    "GITHUB_SERVER_URL",
+    "GITHUB_SHA",
+    "CI_COMMIT_BRANCH",
+    "CI_COMMIT_SHA",
+    "CI_DEFAULT_BRANCH",
+    "CI_MERGE_REQUEST_IID",
+    "CI_MERGE_REQUEST_PROJECT_ID",
+    "CI_MERGE_REQUEST_SOURCE_PROJECT_ID",
+    "CI_PIPELINE_SOURCE",
+    "CI_PROJECT_PATH",
+    "CI_SERVER_HOST",
+)
+
+
+@pytest.fixture(autouse=True)
+def _outside_ci(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run every test as a local run, wherever the suite itself runs (#591).
+
+    A test that exercises CI behavior sets the variables it needs itself.
+    """
+    for name in _CI_METADATA_VARS:
+        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.fixture
