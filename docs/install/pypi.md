@@ -40,7 +40,7 @@ Every release attaches a [PEP 740](https://peps.python.org/pep-0740/) Sigstore a
 If your pip is 25.0 or newer, `--verify-attestations` does the whole thing automatically:
 
 ```bash
-pip install --verify-attestations darnit-mcp==X.Y.Z
+pip install --verify-attestations darnit-mcp==0.1.0
 ```
 
 pip refuses to install if the attestation is missing or fails to verify against PyPI's public certs.
