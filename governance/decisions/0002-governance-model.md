@@ -81,13 +81,20 @@ only an agent applies can be skipped by the next agent.
    - whether a contract snapshot changed, and its BREAKING entry;
    - the issue behind any new suppression or allow-list entry;
    - the AI tool and model used, and the parts it wrote.
-6. **An AI review step is advisory.**
-   - If added, an agent reviews each pull request against the constitution and
-     comments on possible violations, citing the rule, file and line.
-   - Its comment is a claim, like a model judgment in darnit: a maintainer
-     confirms or dismisses it.
-   - It never approves, never labels, is never a required check, and never
-     reads secrets from a fork's code.
+6. **An agent review is a required check, but never an approval.**
+   - An independent agent reviews each pull request against the
+     constitution's review questions, and reports possible violations citing
+     the rule, file and line. It runs in a fresh session the author cannot
+     steer, under its own identity. It treats pull request text as untrusted,
+     and never reads secrets from a fork's code.
+   - Its findings are claims, like a model judgment in darnit. A blocking
+     finding stops the merge until a maintainer other than the author resolves
+     it. A clean review lets the author merge only on paths that CODEOWNERS
+     does not own.
+   - On owned paths, a code owner other than the author always approves. An
+     agent's review is never enough on its own where a wrong merge is
+     expensive. This mirrors darnit's rule that a model judgment never
+     concludes PASS by itself.
 7. **The Spec Kit constitution's principles become rules:**
    - Plugin Separation and TOML-First become F1.
    - Conservative-by-Default and Sieve Pipeline Integrity become S2. The
@@ -122,6 +129,19 @@ only an agent applies can be skipped by the next agent.
     proposal under discussion, and an accepted RFC becomes an ADR.
     `CHARTER.md`, `GOVERNANCE.md` and the TSC process still decide who
     decides.
+
+## Open question for the TSC
+
+R1 lets an author merge a change to a path CODEOWNERS does not own, after the
+required checks and an independent agent review pass. GOVERNANCE.md says "one
+maintainer approval required" for every pull request. The TSC decides between:
+
+- **R1 as written.** GOVERNANCE.md is amended to match.
+- **A second maintainer on every pull request.** The agent review stays
+  advisory.
+
+Whichever it chooses, R1 falls back to a second maintainer on every pull
+request until the `agent-review` check exists.
 
 ## Alternatives
 
@@ -158,8 +178,13 @@ read it.
 
   Each check starts with today's findings as an allow-list that can only
   shrink. That is work, spread over the build order in `ENFORCEMENT.md`.
-- **R1 slows merges.** It requires a second maintainer's approval and
-  includes administrators. That is slower, and it is the point.
+- **Nobody merges their own change unreviewed.**
+  - On paths where a wrong merge is expensive, R1 requires the other
+    maintainer, and includes administrators. With two maintainers, that is a
+    real constraint on speed.
+  - Elsewhere, an independent agent review stands in for the second person,
+    and a weekly digest lets the maintainers check its calls after the
+    fact.
 - **Blocked work stays visible.** Agents stop and file instead of editing a
   rule, so some work waits for a person.
 

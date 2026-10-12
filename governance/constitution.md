@@ -108,12 +108,22 @@ spec, and, when it breaks a user, MUST appear under a **BREAKING** entry in
 
 ## 4. Process
 
-**R1.** A change MUST reach `main` only through a pull request. The required
-checks MUST pass on its head, and they include the whole test suite, run
-hermetically: no real HOME, no network, no dependence on CI environment
-variables. The pull request MUST be approved by a maintainer other than its
-author, and administrators are not exempt. The one exception is a merge from
-a GitHub security advisory, which is recorded in the advisory. `[ENF-R1]`
+**R1.** A change MUST reach `main` only through a pull request whose
+required checks pass on its head. The required checks include:
+
+- the whole test suite, run hermetically: no real HOME, no network, no
+  dependence on CI environment variables;
+- an independent agent review.
+
+A pull request that touches a path owned in CODEOWNERS MUST also be approved
+by a code owner other than its author. The owned paths are the ones where a
+wrong merge is expensive: `governance/`, the release and CI workflows, trust
+and confirmation, the remediation executor and platform engine, and plugin
+discovery. A pull request whose agent review raises a blocking finding needs
+a maintainer other than the author to resolve it.
+
+Administrators are not exempt. The one exception is a merge from a GitHub
+security advisory, which is recorded in the advisory. `[ENF-R1]`
 
 **A1.** Every ratchet only tightens: suppressions, skips, baselines,
 allow-lists, the extension-point inventory and CI's test selection. Loosening
