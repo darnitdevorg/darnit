@@ -62,7 +62,7 @@ jobs:
       - name: Checkout at tag
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
         with:
-          ref: ${{ env.TAG_NAME }}
+          ref: refs/tags/${{ env.TAG_NAME }}
           persist-credentials: false
           fetch-depth: 0
 
@@ -184,7 +184,7 @@ jobs:
       - name: Checkout at tag
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
         with:
-          ref: ${{ env.TAG_NAME }}
+          ref: refs/tags/${{ env.TAG_NAME }}
           persist-credentials: false
 
       - name: Set up Python
@@ -395,7 +395,7 @@ jobs:
       - name: Checkout at tag
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
         with:
-          ref: ${{ env.TAG_NAME }}
+          ref: refs/tags/${{ env.TAG_NAME }}
           persist-credentials: false
 
       - name: Set up QEMU (multi-arch emulation for arm64 build on amd64 runner)

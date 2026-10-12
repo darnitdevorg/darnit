@@ -14,7 +14,7 @@ Maintainer-facing documentation for the darnit release pipeline. End-user instal
 
 The tag-driven pipeline in `release.yml` currently ships **PyPI + container** only. Binary, Homebrew, and Claude Code plugin channels are designed but not wired up; they will be re-introduced per waybill's incremental pattern as separate PRs.
 
-PyPI publishing uses **Trusted Publishing** (GitHub OIDC) for both PyPI and TestPyPI. Stable tags publish to PyPI; release-candidate tags publish to TestPyPI. No long-lived PyPI API token is required.
+PyPI publishing uses **Trusted Publishing** (GitHub OIDC) for both PyPI and TestPyPI. Stable tags publish to PyPI; release-candidate tags publish to TestPyPI. No long-lived PyPI API token is required. Every `publish-*` job runs in the `release` environment, which requires approval from a maintainer (mlieberman85 or Marc-cn) and deploys only from `v*` tags or `main`.
 
 Sections below marked *(deferred)* describe channels the workflow does not currently drive.
 
@@ -63,6 +63,22 @@ The public package set is currently:
 
 If a project does not exist yet on PyPI, create it with PyPI's pending publisher flow or ask a PyPI project owner to add the Trusted Publisher after the first manual creation. Do not reintroduce account-scoped API tokens.
 
+### `release` environment
+
+The publish jobs run in the `release` environment (Settings -> Environments). Its protection:
+
+- **Required reviewers:** `mlieberman85` and `Marc-cn`. One of them approves the publish jobs of each run. Self-review is prevented, so the maintainer who started the release cannot approve it, and administrators cannot bypass the rule.
+- **Deployment branches and tags:** only `v*` tags and the `main` branch. `main` is used by the `workflow_dispatch` re-release path.
+
+The Trusted Publishers above name this environment, so PyPI and TestPyPI reject an upload from any job outside it.
+
+### Cleanup once Trusted Publishing works
+
+The account-scoped token from the v0.1.x releases is still live as the `PYPI_API_TOKEN` repository secret. No workflow reads it any more. After the first release that publishes through Trusted Publishing:
+
+1. Delete the repository secret: `gh secret delete PYPI_API_TOKEN --repo darnitdevorg/darnit`.
+2. Revoke the token itself at https://pypi.org/manage/account/token/ under the account that created it.
+
 ### TestPyPI
 
 Configure the same Trusted Publisher entries on TestPyPI. Release-candidate tags (`vX.Y.ZrcN`) publish to TestPyPI. The container build installs Darnit packages from the workflow's built wheel artifacts and resolves external dependencies from PyPI.
@@ -88,7 +104,7 @@ Configure the same Trusted Publisher entries on TestPyPI. Release-candidate tags
 1. **Sync `main` from upstream and confirm CI is green.**
    ```bash
    git checkout main
-   git fetch origin && git merge --ff-only origin/main
+   git fetch upstream && git merge --ff-only upstream/main
    gh run list --branch main --limit 5
    ```
 2. **Decide the version.** Stable releases are `vX.Y.Z`; pre-releases are `vX.Y.ZrcN` (no hyphen — PEP 440 canonical). Use a pre-release tag if this is the first run after a non-trivial release-pipeline change.
@@ -110,14 +126,14 @@ Configure the same Trusted Publisher entries on TestPyPI. Release-candidate tags
    ```bash
    git add -p   # review carefully
    git commit -m "release: vX.Y.Z"
-   git push origin main
+   git push upstream main
    ```
 
 ### Cut the tag
 
 ```bash
 git tag vX.Y.Z          # or vX.Y.ZrcN for pre-release
-git push origin vX.Y.Z
+git push upstream vX.Y.Z
 ```
 
 The `release.yml` workflow triggers automatically. **No `--force` or amend** — once a tag is pushed and `release.yml` starts, the only way out of a bad release is roll-forward to a new tag.
