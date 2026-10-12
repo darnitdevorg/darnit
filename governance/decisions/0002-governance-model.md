@@ -22,10 +22,7 @@ None of these documents says which of its statements a check enforces. The
 wiring audit found rules that nothing enforced: dead code, single writer,
 confirmation. It also found a CI type check that could not fail.
 
-The swansong project governs itself with a short constitution in which every
-rule carries an enforcement id, an `ENFORCEMENT.md` that records each check's
-honest status, immutable ADRs for reasoning, and a document that says where
-each kind of decision lives. The maintainers asked darnit to follow it.
+The maintainers want a model in which the constitution is short, every rule carries an enforcement id, an `ENFORCEMENT.md` records each check's honest status, immutable ADRs hold the reasoning, and one document says where each kind of decision lives.
 
 ## Decision
 
@@ -63,7 +60,7 @@ each kind of decision lives. The maintainers asked darnit to follow it.
    `CHANGELOG.md` already record it.
 6. **`governance/` is not a Spec Kit feature.** It is plain files changed by
    tier-1 pull requests, with no `specs/NNN` folder, no tasks and no feature
-   number. This follows swansong's ADR-0006. Spec Kit organizes work that
+   number. Spec Kit organizes work that
    ships behavior, as specify, plan, tasks, implement. Governance changes when
    a rule turns out wrong, or a feature needs a decision. It has no backlog of
    its own, and a feature stream would invent one. A feature that needs a

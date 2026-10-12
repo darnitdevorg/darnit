@@ -4,7 +4,7 @@ Every normative rule in `governance/` maps to a row here. Once ENF-A4's check
 exists, CI fails when a MUST or MUST NOT carries an enforcement id with no row
 here, or when a row names a check that does not exist.
 
-Status values (the same as swansong's):
+Status values:
 
 - `enforced`: the check exists and runs in CI. The row says in its text what the
   check does not yet cover.
@@ -53,5 +53,5 @@ visible. It does not mean a failing run blocks a merge.
 5. ENF-S1's inventory check, once the scope-reset classification has decided
    which steps stay.
 
-Prove each new check the way swansong does: open a pull request built to
+Prove each new check: open a pull request built to
 violate it, watch the check fail, and close that pull request unmerged.

@@ -27,5 +27,5 @@ reused.
 | ADR | Title | Status |
 |-----|-------|--------|
 | [0001](0001-what-darnit-is.md) | darnit aligns a project's setup with a hygiene goal | proposed |
-| [0002](0002-governance-follows-swansong.md) | Governance is a short enforced constitution, ADRs and an enforcement table | proposed |
+| [0002](0002-governance-model.md) | Governance is a short enforced constitution, ADRs and an enforcement table | proposed |
 | [0003](0003-docs-consolidation.md) | Consolidate the docs into governance, contracts, design notes and user docs | proposed |

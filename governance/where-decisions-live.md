@@ -4,8 +4,6 @@ Read this before writing a rule, a spec or a design doc. Without it, every
 decision drifts into whichever document was open, the documents contradict
 each other, and nobody, human or agent, can tell which one binds.
 
-Adapted from swansong's `governance/where-decisions-live.md`.
-
 ## The first question: does it serve the scope?
 
 Before deciding where a decision lives, apply
