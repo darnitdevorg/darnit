@@ -1,9 +1,11 @@
 # ADR-0001: darnit aligns a project's setup with a hygiene goal
 
 - Status: proposed
-- Date: 2026-10-10
+- Date: 2026-10-12
+- Decided by: the TSC, because the Charter (2.g.ii) gives it changes to the
+  project's scope.
 - Rule impact: creates S1. Restates the existing conservative, trust and
-  authority principles as S2, S3, S5 and S6.
+  authority principles as S2-S5.
 
 ## Context
 
@@ -84,11 +86,21 @@ A control, step type, interface, configuration key or subsystem is admitted only
 if all three answers are yes:
 
 1. Does it read or change a project's setup?
-2. Would its answer stay the same across two runs with no change to that setup?
-3. Does something that exists today need it?
+2. Would its answer stay the same across two runs with no change to that
+   setup, on any machine, at any time, with any tool version darnit supports?
+3. Does something that exists today need it? A new extension point (a
+   Protocol, entry-point group, registry or plugin hook) needs two
+   implementations, or an ADR that says why the seam is needed before the
+   second.
 
 Question 2 catches outcome checks: the answer to "are the scans clean" changes
-without anyone touching the setup. Question 3 catches premature interfaces (F3).
+without anyone touching the setup. Question 3 catches premature interfaces.
+
+What a control's PASS claims matters as much as how the control measures it.
+A step can read only CI configuration and still back a claim about an outcome:
+`repro_bit_for_bit` reads CI files, but RE-03.01 claims "build output is
+identical across independent builds". S1 therefore says what a PASS may claim:
+that a practice is set up, never that its outcome holds.
 
 ## Alternatives
 
@@ -118,15 +130,18 @@ measured its result.
 - **Some controls are cut or reframed.** A scope-reset classification will
   mark every control, step type and subsystem as keep, reframe or cut, for the
   maintainers to decide. Expected outcomes:
-  - gittuf GT-02.01 is cut.
+  - gittuf GT-02.01 ("recent commits are signed") is cut, or reframed to
+    "commit signing is required", by gittuf policy or branch protection.
   - GT-01.02 is reframed from "policy passes verification" to "the policy is
     well formed and CI runs gittuf verification".
-  - Witness verification and RE-03.01 are cut.
+  - Witness verification is cut.
+  - RE-03.01 is reframed from "build output is identical" to "CI runs a
+    reproducibility check and normalizes build timestamps".
   - RE-02.01 is reframed to the parts that read build configuration.
-  - The Baseline controls that grade zizmor findings need a decision. Reading
-    a workflow file for a dangerous trigger is setup; running a scanner and
-    grading its findings is an outcome.
-  - Two areas are borderline and need a decision:
+  - The Baseline controls that grade zizmor findings are reframed to read the
+    workflow files themselves. A zizmor result can change with the zizmor
+    version, and with no workflows it is an exit-code WARN (#584).
+  - Two areas are deferred to the scope-reset classification:
     - The threat-model analysis engine (features 006, 010, 011 and 014:
       tree-sitter discovery and opengrep taint analysis). Producing a threat
       model document as a remediation is setup. An analysis engine that grades
@@ -136,9 +151,9 @@ measured its result.
 - **Some audit findings close by deletion, not repair.** W-01 is one; several
   P1s about unused interfaces are others.
 - **Some OSPS controls are phrased as outcomes.** For those, darnit reports
-  whether the practice is set up. Reports and the attestation predicate must
-  say "set up for", not "compliant with", wherever that is the truth. That is
-  a wording and predicate change, decided separately.
+  whether the practice is set up. Reports and the attestation predicate say
+  "set up for", not "compliant with", wherever that is the truth. The exact
+  wording and the predicate change are a contract change under C1.
 - **Fewer features.** Some contributions that work and were tested will be
   declined because they verify an outcome. The PR template and the S1 review
   make that visible before the work is done, not after.
@@ -147,9 +162,23 @@ measured its result.
   SECURITY.md names a reporting channel. They remain PASS candidates that a
   person confirms. That is still setup.
 
+## Decided in review
+
+The co-maintainer's review of the draft (#578, 2026-10-10) settled four of the
+open questions:
+
+- The zizmor-graded controls are reframed to read the workflow files.
+- Model judgments stay, as PASS candidates a person confirms.
+- Reports say "set up for" where the practice, not its outcome, is what darnit
+  observed.
+- Unknown step keys fail loading, and remediation acts on FAIL only. These two
+  belong to the docs-consolidation ADR, which follows separately.
+
 ## Enforcement
 
-- **S1 (`ENF-S1`):** manual review now. A planned inventory check covers every
-  `exec` step and plugin step type in a shipped framework.
-- **S2 and S3:** restate existing tested rules (`ENF-S2`, `ENF-S3`).
-- **F3, F4, F5:** cover question 3 of the admission test.
+- **S1 (`ENF-S1`):** a committed inventory of every `exec` command, plugin step
+  type and `gh_api` method in a shipped framework, plus maintainer review of
+  each new inventory row.
+- **S2-S5:** restate rules that existing tests check (`ENF-S2` to `ENF-S5`).
+- **Question 3 of the admission test** is checked by the F3 reader and
+  coverage ratchets and by the extension-point inventory in A1.

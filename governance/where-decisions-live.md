@@ -11,9 +11,13 @@ Before deciding where a decision lives, apply
 decided:
 
 1. Does it read or change a project's setup: files, CI configuration,
-   platform settings or declared project data?
-2. Would its answer stay the same across two runs with no change to that setup?
+   platform settings or confirmed project data?
+2. Would its answer stay the same across two runs with no change to that
+   setup, on any machine, at any time?
 3. Does a control, a remediation or an interface that exists today need it?
+   A new extension point (a Protocol, entry-point group, registry or plugin
+   hook) needs two implementations, or an ADR that says why the seam is
+   needed before the second.
 
 A "no" to any of these means the work is out of scope, or premature. Stop,
 and raise it in an issue before writing it down anywhere.
@@ -26,10 +30,15 @@ and raise it in an issue before writing it down anywhere.
 3. What must **already exist** for that check to mean anything, and what does
    the rule say before then?
 
-| | Enforceable by a check | Not enforceable |
+| | A test can check it | Only review can check it |
 |---|---|---|
-| **A rule for every change** | `constitution.md` rule plus an `ENFORCEMENT.md` row | ADR only; it creates no rule |
+| **A rule for every change** | `constitution.md` rule, plus an `ENFORCEMENT.md` row in `test` mode | A constitution rule in `agent` or `human` mode, only if it meets the conditions in the constitution's "How rules are enforced". Otherwise an ADR, which creates no rule. |
 | **A choice for one feature** | That feature's tests | That feature's `specs/NNN/plan.md` |
+
+Prefer a test. Most rules that look like they need judgment have a
+deterministic part: an inventory, a count that can only shrink, or a
+snapshot whose diff makes the change visible. Build that part as a test, and
+leave only the remaining judgment to agents and maintainers.
 
 ## The fourth question: can it fail?
 
@@ -89,17 +98,18 @@ stale. A design note creates no obligation, so it uses no MUST or SHALL.
 
 **User docs** (`docs/`). How to install, use, write a framework or write a
 plugin. Every command, flag, key and API a user doc tells someone to use must
-exist (F4). A doc that teaches a removed API is a bug.
+exist. A doc that teaches a removed API is a bug.
 
 ## Exceptions
 
 A change that cannot satisfy a rule gets an ADR that records the exception and
-its reasoning. Never a silent suppression and never a weakened check (A3).
+its reasoning. Never a silent suppression and never a weakened check (A1).
 
 ## Governance changes during feature work
 
-`governance/` is tier-1 (A2). An agent whose task needs a governance change
-stops and files an issue (A3). The work stays blocked until a maintainer makes
+Changes to `governance/` need a code owner's approval, and the TSC's where
+the Charter requires it (A3). An agent whose task needs a governance change
+stops and files an issue (A1). The work stays blocked until a maintainer makes
 or approves the change. That is the design: a blocked task is visible, and a
 rule quietly edited to fit is not.
 
