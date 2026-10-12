@@ -143,6 +143,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `scripts/quickstart.sh`: one-command setup from source. It installs uv and
+  zizmor if they are missing (asking first), installs darnit with the
+  versions pinned in `uv.lock`, runs an OpenSSF Baseline level 1 audit, and
+  offers to register the MCP server with Claude Code.
+- `darnit install --from-source` registers the darnit executable of the
+  running installation as the MCP server command, with
+  `--framework openssf-baseline`. Without it,
+  `darnit install` writes `uvx --from darnit-mcp darnit serve`, which runs
+  the PyPI package even when darnit was installed from a source checkout.
 - Operator configuration: a user-level TOML file found the same way by the
   CLI, MCP server, and harness (`--operator-config PATH`, else
   `$XDG_CONFIG_HOME/darnit/config.toml` or `~/.config/darnit/config.toml`,
