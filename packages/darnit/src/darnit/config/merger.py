@@ -164,12 +164,14 @@ def merge_control(
     effective = EffectiveControl(
         control_id=control_id,
         name=framework_control.name,
-        level=framework_control.level,
-        domain=framework_control.domain,
+        level=framework_control.level if framework_control.level is not None else tags.get("level"),
+        domain=framework_control.domain if framework_control.domain is not None else tags.get("domain"),
         description=framework_control.description,
         from_framework=True,
         tags=tags,
-        security_severity=framework_control.security_severity,
+        security_severity=framework_control.security_severity
+        if framework_control.security_severity is not None
+        else tags.get("security_severity"),
         docs_url=framework_control.docs_url,
         when=framework_control.when,
         depends_on=framework_control.depends_on,

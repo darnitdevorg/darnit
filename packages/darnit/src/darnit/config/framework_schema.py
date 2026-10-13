@@ -698,6 +698,41 @@ class ControlConfig(BaseModel):
             return {}
         return v
 
+    @model_validator(mode="after")
+    def _sync_level_and_domain_with_tags(self) -> "ControlConfig":
+        """Synchronize optional top-level attributes (level, domain, security_severity) with tags.
+
+        Framework controls may declare maturity level, domain, and severity either
+        as top-level attributes or inside the flexible tags dictionary (e.g. tags = { level = 1 }).
+        This validator establishes a single canonical source of truth by populating
+        the attribute from tags if omitted, and vice-versa.
+        """
+        if self.level is None and "level" in self.tags:
+            tag_level = self.tags["level"]
+            if isinstance(tag_level, int):
+                self.level = tag_level
+            elif isinstance(tag_level, str) and tag_level.isdigit():
+                self.level = int(tag_level)
+        elif self.level is not None and "level" not in self.tags:
+            self.tags["level"] = self.level
+
+        if self.domain is None and "domain" in self.tags:
+            tag_domain = self.tags["domain"]
+            if isinstance(tag_domain, str):
+                self.domain = tag_domain
+        elif self.domain is not None and "domain" not in self.tags:
+            self.tags["domain"] = self.domain
+
+        if self.security_severity is None and "security_severity" in self.tags:
+            try:
+                self.security_severity = float(self.tags["security_severity"])
+            except (ValueError, TypeError):
+                pass
+        elif self.security_severity is not None and "security_severity" not in self.tags:
+            self.tags["security_severity"] = self.security_severity
+
+        return self
+
 
 # =============================================================================
 # Context Configuration (Interactive Context Collection)
