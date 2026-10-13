@@ -712,8 +712,9 @@ def cmd_install(args: argparse.Namespace) -> int:
         if darnit_exe is None:
             logger.error("--from-source: the darnit executable of this installation was not found.")
             return 1
-        # Name the framework: a source checkout installs every workspace plugin,
-        # and `darnit serve` without --framework takes the first one it finds.
+        # Name the framework. Both entries do: `darnit serve` without
+        # --framework took the first installed framework by name until #577,
+        # and the uvx entry runs whatever darnit-mcp release is on PyPI.
         darnit_entry = {
             "command": str(darnit_exe),
             "args": ["serve", "--framework", "openssf-baseline"],
@@ -721,7 +722,7 @@ def cmd_install(args: argparse.Namespace) -> int:
     else:
         darnit_entry = {
             "command": "uvx",
-            "args": ["--from", "darnit-mcp", "darnit", "serve"],
+            "args": ["--from", "darnit-mcp", "darnit", "serve", "--framework", "openssf-baseline"],
         }
 
     if "darnit" in mcp_servers and not args.force:
