@@ -595,6 +595,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   audit of its framework, through the store the audit wrote to. Before,
   `darnit audit --tags level=1` left a cache that remediation treated as
   a full audit. Cache files from earlier versions are ignored and rebuilt.
+- A filtered audit is no longer reused as a full one (#542). Only an
+  unfiltered audit is cached: a run narrowed by `--tags`, `--include`,
+  `--exclude` or a profile does not write the audit cache. Remediation
+  reads only a level 3 audit of its framework, through the store the
+  audit wrote to, and expires it through that same store after it changes
+  something. Before, `darnit audit --tags level=1` left a cache that
+  remediation treated as a full audit, and with a configured
+  `[stores.cache]` a remediation left the old audit in place. Cache files
+  from earlier versions are ignored and rebuilt.
 - Installs without the development dependencies work again (`uv tool install`
   from a checkout, and any install from a built wheel). Two things broke
   them: `tree-sitter-language-pack` 1.6.3, the newest release the old

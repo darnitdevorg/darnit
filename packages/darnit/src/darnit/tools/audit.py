@@ -167,29 +167,22 @@ def _load_merged_stores(framework_name: str | None, operator: "OperatorConfig | 
     return getattr(effective, "stores", None)
 
 
-def audit_cache_key(local_path: str, stores_config: Any, *, filtered: bool = False) -> str:
-    """Return the key an audit of ``local_path`` is cached under.
+def audit_cache_key(local_path: str, stores_config: Any) -> str:
+    """Return the key the full audit of ``local_path`` is cached under.
 
-    The one derivation for the writer (:func:`run_sieve_audit`) and for every
-    reader. The default store's root already encodes the repository, so the
+    The one derivation for the writer (:func:`run_sieve_audit`), the reader
+    and the invalidation. The default store's root already encodes the repository, so the
     key is fixed; a configured store may be shared across repositories, so the
-    key encodes the path. A filtered audit gets its own key, so it never
-    replaces the full-audit entry (issue #542).
+    key encodes the path. Only unfiltered audits are cached (issue #542), so
+    there is one entry per repository.
     """
     if stores_config is None or stores_config.cache is None:
-        key = "audit-cache"
-    else:
-        key = hashlib.sha256(str(Path(local_path).resolve()).encode()).hexdigest()[:16]
-    return f"{key}-filtered" if filtered else key
+        return "audit-cache"
+    return hashlib.sha256(str(Path(local_path).resolve()).encode()).hexdigest()[:16]
 
 
-def _cache_scope(
-    tags: list[str] | None,
-    controls: list | None,
-    cache_tags: str | None,
-    cache_filtered: bool | None,
-) -> tuple[str, bool]:
-    """Return the (tags, filtered) pair recorded in the audit cache (issue #542).
+def _is_filtered(tags: list[str] | None, controls: list | None, cache_filtered: bool | None) -> bool:
+    """Return whether this audit covers less than the full control set (issue #542).
 
     Tags always mean filtered. Otherwise the caller's word decides. A caller
     that passed its own ``controls`` and did not say is treated as filtered:
@@ -197,26 +190,24 @@ def _cache_scope(
     read back as a full audit makes remediation act on results that were never
     produced.
     """
-    if cache_tags is None:
-        cache_tags = ",".join(sorted(tags)) if tags else ""
+    if tags:
+        return True
     if cache_filtered is None:
-        cache_filtered = controls is not None
-    return cache_tags, bool(cache_tags) or cache_filtered
+        return controls is not None
+    return cache_filtered
 
 
-def read_full_audit_cache(
+def _full_audit_cache_location(
     local_path: str,
     framework_name: str,
-    level: int,
-    operator_config: "LoadedOperatorConfig | None" = None,
-) -> dict[str, Any] | None:
-    """Return the cached unfiltered audit of ``framework_name`` at ``level``, or None.
+    operator_config: "LoadedOperatorConfig | None",
+) -> tuple[Any, str]:
+    """Return the (stores bundle, key) the full audit of ``local_path`` is cached at.
 
-    Reads through the store and key :func:`run_sieve_audit` writes to, so an
-    operator's ``[stores.cache]`` is honoured on both sides. A cache from
-    another framework, another level or a filtered run is a miss.
+    The store and key :func:`run_sieve_audit` writes to, so an operator's
+    ``[stores.cache]`` is honoured by the read and by the invalidation alike.
+    The caller closes the bundle.
     """
-    from darnit.core.audit_cache import read_audit_cache
     from darnit.stores.selection import resolve_stores
 
     if operator_config is None:
@@ -225,16 +216,52 @@ def read_full_audit_cache(
         operator_config = resolve_operator_config(local_path)
     stores_config = _load_merged_stores(framework_name, operator_config.config)
     stores_bundle = resolve_stores(stores_config, repo_path=Path(local_path))
+    return stores_bundle, audit_cache_key(local_path, stores_config)
+
+
+def read_full_audit_cache(
+    local_path: str,
+    framework_name: str,
+    level: int,
+    operator_config: "LoadedOperatorConfig | None" = None,
+) -> dict[str, Any] | None:
+    """Return the cached full audit of ``framework_name`` at ``level``, or None.
+
+    A cache from another framework or another level is a miss. A filtered
+    audit is never cached, so it cannot be returned here.
+    """
+    from darnit.core.audit_cache import read_audit_cache
+
+    stores_bundle, cache_key = _full_audit_cache_location(local_path, framework_name, operator_config)
     try:
         return read_audit_cache(
             local_path,
             expected_framework=framework_name,
             expected_level=level,
-            expected_tags="",
-            expected_filtered=False,
             store=stores_bundle.cache,
-            cache_key=audit_cache_key(local_path, stores_config, filtered=False),
+            cache_key=cache_key,
         )
+    finally:
+        stores_bundle.close_all()
+
+
+def invalidate_full_audit_cache(
+    local_path: str,
+    framework_name: str,
+    operator_config: "LoadedOperatorConfig | None" = None,
+) -> None:
+    """Expire the cached full audit, in the place :func:`read_full_audit_cache` reads it.
+
+    Remediation calls this after it changed something. With a configured
+    ``[stores.cache]``, expiring the default store's entry would leave the
+    configured one in place, and the next remediation would act on the audit
+    from before the change.
+    """
+    from darnit.core.audit_cache import invalidate_audit_cache
+
+    stores_bundle, cache_key = _full_audit_cache_location(local_path, framework_name, operator_config)
+    try:
+        invalidate_audit_cache(local_path, store=stores_bundle.cache, cache_key=cache_key)
     finally:
         stores_bundle.close_all()
 
@@ -803,7 +830,6 @@ def run_sieve_audit(
     *,
     controls: list | None = None,
     tags: list[str] | None = None,
-    cache_tags: str | None = None,
     cache_filtered: bool | None = None,
     evaluate_claims: bool = True,
     stop_on_llm: bool = True,
@@ -849,6 +875,9 @@ def run_sieve_audit(
         write_cache: Write the results to the audit cache. A subset run, such
             as remediation's re-check (feature 043), passes False so it does
             not replace the full-audit cache.
+        cache_filtered: Whether ``controls`` is narrower than the framework's
+            full set. A filtered audit is not cached (issue #542). When unset,
+            a caller that passes ``controls`` is treated as filtered.
 
     Returns:
         Tuple of (results, summary) where results is a list of check result
@@ -1088,10 +1117,10 @@ def run_sieve_audit(
     # already encodes repo identity (uses fixed "audit-cache"); configured
     # store's root is operator-picked and may be shared across repos, so
     # the key must encode repo identity.
-    # Issue #542: record the scope this audit ran at, and keep a filtered run
-    # out of the full-audit entry.
-    cache_tags, cache_filtered = _cache_scope(tags, controls, cache_tags, cache_filtered)
-    cache_key = audit_cache_key(local_path, stores_config, filtered=cache_filtered)
+    # Issue #542: only an unfiltered audit is cached. A subset stored here
+    # would be read back by remediation as if it were the full audit.
+    cache_filtered = _is_filtered(tags, controls, cache_filtered)
+    cache_key = audit_cache_key(local_path, stores_config)
 
     from darnit.core.audit_cache import write_audit_cache
 
@@ -1099,7 +1128,7 @@ def run_sieve_audit(
     # internally. The enclosing try/except is defensive belt-and-braces
     # against any unexpected exception path (e.g. TypeError from a
     # future signature change).
-    if write_cache:
+    if write_cache and not cache_filtered:
         try:
             write_audit_cache(
                 local_path,
@@ -1107,8 +1136,6 @@ def run_sieve_audit(
                 summary,
                 level,
                 resolved_fw or "",
-                tags=cache_tags,
-                filtered=cache_filtered,
                 store=stores_bundle.cache,
                 cache_key=cache_key,
             )

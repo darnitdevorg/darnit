@@ -1872,16 +1872,16 @@ Cache files are stored in the system temp directory (`$TMPDIR/darnit/<repo-hash>
 
 #### Requirement: The cache envelope records the audit's scope
 - **WHEN** `write_audit_cache()` is called
-- **THEN** the envelope SHALL record `framework`, `level`, `tags` (the tag filter, empty when none) and `filtered` (true when any filter narrowed the control set, including `--include` and `--exclude`)
-- **AND** a filtered audit SHALL be written under a distinct cache key, so it does not replace an unfiltered entry
-- **AND** `run_sieve_audit()` SHALL record an audit as filtered when it has tags, or when its caller passed `controls` without stating `cache_filtered`; a caller that passes the full control set SHALL state `cache_filtered=False`
-- **AND** the cache key SHALL be derived in one place (`audit_cache_key()`), used by the writer and by every reader
+- **THEN** the envelope SHALL record `framework` and `level`
+- **AND** `run_sieve_audit()` SHALL NOT write the cache for a filtered audit, so a subset of the controls is never stored where a full audit is expected
+- **AND** `run_sieve_audit()` SHALL treat an audit as filtered when it has tags, or when its caller passed `controls` without stating `cache_filtered`; a caller that passes the full control set SHALL state `cache_filtered=False`
+- **AND** the cache key SHALL be derived in one place (`audit_cache_key()`), used by the writer, the reader and the invalidation
 
 #### Requirement: A cache read may constrain the scope it accepts
-- **WHEN** `read_audit_cache()` is called with any of `expected_framework`, `expected_level`, `expected_tags` or `expected_filtered`
+- **WHEN** `read_audit_cache()` is called with `expected_framework` or `expected_level`
 - **THEN** a mismatch on any supplied expectation SHALL be treated as a cache miss
 - **AND** a caller supplying none of them SHALL be unaffected
-- **AND** an envelope whose `version` differs from `CACHE_VERSION` SHALL be a miss, since an older envelope cannot express its own scope
+- **AND** an envelope whose `version` differs from `CACHE_VERSION` SHALL be a miss, since an older envelope may hold a filtered audit
 
 #### Requirement: Remediation consumes cached audit results
 - **WHEN** `remediate_audit_findings()` is called
@@ -1896,9 +1896,9 @@ Cache files are stored in the system temp directory (`$TMPDIR/darnit/<repo-hash>
 
 #### Requirement: Post-remediation cache invalidation
 - **WHEN** `remediate_audit_findings()` completes with `dry_run=False` and at least one outcome changed something (section 15.4)
-- **THEN** it SHALL call `invalidate_audit_cache(local_path)`
+- **THEN** it SHALL expire the cached full audit through the same store and key the cache read uses (`invalidate_full_audit_cache(local_path, framework_name)`), so that a configured `[stores.cache]` is invalidated and not only the default store
 - **WHEN** `remediate_audit_findings()` completes with `dry_run=True`
-- **THEN** it SHALL NOT call `invalidate_audit_cache()`
+- **THEN** it SHALL NOT invalidate the cache
 
 ### 10.5 Framework Contains No Implementation-Specific Code
 

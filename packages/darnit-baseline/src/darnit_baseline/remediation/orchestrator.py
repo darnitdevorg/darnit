@@ -1284,9 +1284,9 @@ def run_remediation(
         outcomes = _outcomes(results, lambda ids: _recheck(ids, local_path, owner, repo, target))
         if any(_written(r) or _applied_change_sets(r) for r in results):
             try:
-                from darnit.core import audit_cache
+                from darnit.tools.audit import invalidate_full_audit_cache
 
-                audit_cache.invalidate_audit_cache(local_path)
+                invalidate_full_audit_cache(local_path, "openssf-baseline")
             except Exception as exc:
                 logger.warning(f"Failed to invalidate audit cache: {exc}")
 
