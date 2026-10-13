@@ -561,8 +561,8 @@ def gh_api_handler(config: dict[str, Any], context: HandlerContext) -> HandlerRe
     missing = [var for var, val in (("$OWNER", context.owner), ("$REPO", context.repo)) if var in endpoint and not val]
     if missing:
         message = (
-            f"Platform API call {endpoint} needs {' and '.join(missing)}, and this checkout has no "
-            "repository identity (no git remote was found)"
+            f"Platform API call {endpoint} needs {' and '.join(missing)}, but no "
+            "repository owner or name is known (no git remote, and none was given)"
         )
         _log_environmental_failure(context.control_id, "gh_api", "unavailable", message)
         return HandlerResult(

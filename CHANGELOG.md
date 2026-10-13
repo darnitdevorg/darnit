@@ -578,6 +578,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is `gittuf`, so the MCP entry that `darnit install` writes gave clients
   the gittuf tools. With several frameworks installed and no baseline it
   now asks for `--framework` instead of guessing.
+- The `github_branch_protection` handler reports a missing repository
+  identity as error class `unavailable`, the class the `gh_api` handler
+  uses for the same case (#579). Both messages now say the owner or name
+  is unknown instead of assuming a missing git remote, which is one of
+  two causes. Spec 3.8 records the rule.
 - The `gh_api` step no longer calls the platform when its endpoint needs
   `$OWNER` or `$REPO` and the checkout has no repository identity (no git
   remote). It used to substitute an empty owner, ask for `/repos//name`,

@@ -756,6 +756,11 @@ A `gh_api` step reading a personal record MUST declare `evidence_fields`, listin
 - **WHEN** a `gh_api` step receives 404 without declaring it, or receives 401, 403, 429, or 5xx
 - **THEN** the handler MUST return ERROR with the cause
 
+#### Scenario: No repository identity
+- **WHEN** a `gh_api` step's endpoint uses `$OWNER` or `$REPO` and the context has no value for it (no git remote, and none was given)
+- **THEN** the handler MUST return ERROR, class `unavailable`, without calling the platform, even when the step declares `fail_on_status`
+- **AND** the `github_branch_protection` handler MUST do the same for a missing owner or repo
+
 #### Scenario: A rate limit never proves failure
 - **WHEN** a `gh_api` step declares `fail_on_status = [403]` and receives a rate-limit 403
 - **THEN** the handler MUST return ERROR, class `rate_limit`
