@@ -41,6 +41,66 @@ class TestMergeControl:
         assert result.level == 1
         assert result.domain == "AC"
 
+    def test_level_and_domain_from_tags(self):
+        """Test control built from framework definition declaring level and domain in tags."""
+        framework_control = ControlConfig(
+            name="TagControl",
+            description="Control with level and domain in tags",
+            tags={"level": 2, "domain": "QA", "security_severity": 7.5},
+        )
+
+        assert framework_control.level == 2
+        assert framework_control.domain == "QA"
+        assert framework_control.security_severity == 7.5
+
+        result = merge_control("TEST-TAGS", framework_control)
+
+        assert isinstance(result, EffectiveControl)
+        assert result.level == 2
+        assert result.domain == "QA"
+        assert result.security_severity == 7.5
+        assert result.tags["level"] == 2
+        assert result.tags["domain"] == "QA"
+        assert result.tags["security_severity"] == 7.5
+
+    def test_get_controls_by_level_with_tags_level(self):
+        """get_controls_by_level returns controls whose level was declared in tags."""
+        ctrl1 = ControlConfig(
+            name="C1",
+            description="desc",
+            tags={"level": 1, "domain": "AC"},
+        )
+        ctrl2 = ControlConfig(
+            name="C2",
+            description="desc",
+            level=2,
+            domain="VM",
+        )
+        ctrl3 = ControlConfig(
+            name="C3",
+            description="desc",
+        )
+
+        fc = FrameworkConfig(
+            metadata=FrameworkMetadata(name="test-fw", display_name="Test FW", version="0.1.0", description="desc"),
+            controls={"C1": ctrl1, "C2": ctrl2, "C3": ctrl3},
+        )
+
+        l1_controls = fc.get_controls_by_level(1)
+        assert "C1" in l1_controls
+        assert "C2" not in l1_controls
+        assert "C3" not in l1_controls
+
+        l2_controls = fc.get_controls_by_level(2)
+        assert "C2" in l2_controls
+        assert "C1" not in l2_controls
+
+        effective_cfg = merge_configs(fc)
+        eff_l1 = effective_cfg.get_controls_by_level(1)
+        assert "C1" in eff_l1
+        eff_l2 = effective_cfg.get_controls_by_level(2)
+        assert "C2" in eff_l2
+
 
 class TestRemovedAdapterConfiguration:
     """The adapter keys removed in #487 (framework-design Appendix C)."""

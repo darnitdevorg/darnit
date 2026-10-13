@@ -166,6 +166,12 @@ steps = ["Verify branch protection in repository settings"]
 - **THEN** the framework MUST use `help_md`, `docs_url`, and `security_severity` from TOML
 - **AND** the framework MUST NOT require a separate rules catalog
 
+#### Requirement: Maturity Level and Domain Single Source of Truth
+- **WHEN** a control declares `level`, `domain`, or `security_severity` either as top-level fields or within its `tags` table (e.g. `tags = { level = 1, domain = "AC" }`)
+- **THEN** the schema MUST synchronize them between the control attributes and `tags`
+- **AND** controls without a declared maturity level MUST have `level = None`
+- **AND** commands grouping or sorting by level (`darnit plan`, `darnit validate`) MUST sort controls with `level = None` last without error
+
 ---
 
 ## 3. Built-in Pass Types
