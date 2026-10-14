@@ -40,6 +40,25 @@ def _load_framework_config():
         return None
 
 
+@lru_cache(maxsize=1)
+def _baseline_spec_url(spec_version: str | None = None) -> str:
+    """Derive specification URL from spec_version string."""
+    if not spec_version:
+        try:
+            from darnit.tools.audit import framework_metadata
+
+            meta = framework_metadata("openssf-baseline")
+            spec_version = meta.get("spec_version")
+        except Exception:
+            spec_version = None
+    if spec_version:
+        v = spec_version.replace("OSPS", "").replace("v", "").strip()
+        slug = v.replace(".", "-")
+        if slug:
+            return f"https://baseline.openssf.org/versions/{slug}"
+    return "https://baseline.openssf.org/versions/2026-02-19"
+
+
 def _get_control_from_toml(control_id: str) -> dict[str, Any] | None:
     """Get control metadata from TOML framework config.
 
@@ -93,6 +112,7 @@ def _get_control_from_toml(control_id: str) -> dict[str, Any] | None:
     else:
         default_level = "warning"
 
+    spec_url = _baseline_spec_url()
     return {
         "name": control.name,
         "domain": domain or "",
@@ -104,7 +124,7 @@ def _get_control_from_toml(control_id: str) -> dict[str, Any] | None:
         "tags": tag_list,
         "location_hint": getattr(control, 'location_hint', '') or "",
         "default_level": default_level,
-        "docs_url": control.docs_url or f"https://baseline.openssf.org/versions/2025-10-10#{control_id}",
+        "docs_url": control.docs_url or f"{spec_url}#{control_id}",
     }
 
 
@@ -137,9 +157,18 @@ DOMAIN_INFO = {
 SARIF_SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json"
 SARIF_VERSION = "2.1.0"
 
+def _tool_version() -> str:
+    try:
+        from importlib.metadata import version as _pkg_version
+
+        return _pkg_version("darnit-baseline")
+    except Exception:
+        return "0.1.1"
+
+
 # Tool information
 TOOL_NAME = "openssf-baseline-audit"
-TOOL_VERSION = "0.1.0"
+TOOL_VERSION = _tool_version()
 TOOL_INFO_URI = "https://baseline.openssf.org/"
 
 # Status to SARIF level mapping
@@ -311,7 +340,7 @@ def build_sarif_rules(
             "fullDescription": {
                 "text": rule_meta.get("full", "")[:1024]
             },
-            "helpUri": f"https://baseline.openssf.org/versions/2025-10-10#{control_id}",
+            "helpUri": f"{_baseline_spec_url()}#{control_id}",
             "help": {
                 "text": _strip_markdown(rule_meta.get("help_md", "")),
                 "markdown": rule_meta.get("help_md", ""),

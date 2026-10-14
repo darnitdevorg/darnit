@@ -1271,14 +1271,14 @@ Use the provided verification script instead.
 │                                                                              │
 │  {                                                                           │
 │    "assessor": {                                                             │
-│      "name": "openssf-baseline-mcp",                                        │
-│      "version": "0.1.0",                                                    │
-│      "uri": "https://github.com/ossf/baseline-mcp"                          │
+│      "name": "openssf-baseline",                                            │
+│      "version": "0.1.1",                                                    │
+│      "uri": "https://github.com/darnitdevorg/darnit"                        │
 │    },                                                                        │
 │    "timestamp": "2024-11-30T12:00:00Z",                                     │
 │    "baseline": {                                                             │
-│      "version": "2025.10.10",                                               │
-│      "specification": "https://baseline.openssf.org/versions/2025-10-10"    │
+│      "version": "2026.02.19",                                               │
+│      "specification": "https://baseline.openssf.org/versions/2026-02-19"    │
 │    },                                                                        │
 │    "repository": {                                                           │
 │      "url": "https://github.com/owner/repo",                                │
