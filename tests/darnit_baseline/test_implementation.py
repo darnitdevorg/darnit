@@ -29,7 +29,7 @@ class TestOSPSBaselineImplementation:
         """Test implementation properties."""
         assert impl.name == "openssf-baseline"
         assert impl.display_name == "OpenSSF Baseline"
-        assert impl.version == "0.1.0"
+        assert impl.version == "0.1.1"
         assert impl.spec_version == "OSPS v2026.02.19"
 
     @pytest.mark.unit

@@ -66,14 +66,14 @@ The subject identifies the repository state being attested:
   "predicateType": "https://openssf.org/baseline/assessment/v1",
   "predicate": {
     "assessor": {
-      "name": "openssf-baseline-mcp",
+      "name": "openssf-baseline",
       "version": "<semver>",
-      "uri": "https://github.com/ossf/baseline-mcp"
+      "uri": "https://github.com/darnitdevorg/darnit"
     },
     "timestamp": "<RFC3339>",
     "baseline": {
-      "version": "2025.10.10",
-      "specification": "https://baseline.openssf.org/versions/2025-10-10"
+      "version": "2026.02.19",
+      "specification": "https://baseline.openssf.org/versions/2026-02-19"
     },
     "repository": {
       "url": "https://github.com/<owner>/<repo>",
@@ -139,7 +139,7 @@ The subject identifies the repository state being attested:
 | `assessor.version` | string | Yes | Semantic version of the tool |
 | `assessor.uri` | string | No | URL to tool documentation |
 | `timestamp` | string | Yes | RFC3339 timestamp of assessment |
-| `baseline.version` | string | Yes | OSPS baseline version (e.g., "2025.10.10") |
+| `baseline.version` | string | Yes | OSPS baseline version (e.g., "2026.02.19") |
 | `repository.url` | string | Yes | Repository URL |
 | `repository.commit` | string | Yes | Full commit SHA |
 | `configuration.project_type` | string | Yes | Project type from project.toml |
@@ -154,11 +154,11 @@ The subject identifies the repository state being attested:
   "predicateType": "https://openssf.org/baseline/remediation/v1",
   "predicate": {
     "remediator": {
-      "name": "openssf-baseline-mcp",
+      "name": "openssf-baseline",
       "version": "<semver>"
     },
     "timestamp": "<RFC3339>",
-    "baseline_version": "2025.10.10",
+    "baseline_version": "2026.02.19",
     "repository": {
       "url": "https://github.com/<owner>/<repo>",
       "before_commit": "<sha-before>",
