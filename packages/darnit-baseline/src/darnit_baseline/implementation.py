@@ -1,14 +1,14 @@
 """OpenSSF Baseline implementation for darnit.
 
 This module provides the OSPSBaselineImplementation class that implements
-the darnit ComplianceImplementation protocol for OpenSSF Baseline (OSPS v2025.10.10).
+the darnit ComplianceImplementation protocol for OpenSSF Baseline (OSPS v2026.02.19).
 """
 
 from pathlib import Path
 
 
 class OSPSBaselineImplementation:
-    """OpenSSF Baseline (OSPS v2025.10.10) implementation for darnit.
+    """OpenSSF Baseline (OSPS v2026.02.19) implementation for darnit.
 
     This implementation provides 62 controls across 3 maturity levels:
     - Level 1: 24 controls (basic security hygiene)
@@ -26,10 +26,23 @@ class OSPSBaselineImplementation:
 
     @property
     def version(self) -> str:
-        return "0.1.0"
+        try:
+            from importlib.metadata import version as _pkg_version
+
+            return _pkg_version("darnit-baseline")
+        except Exception:
+            return "0.1.1"
 
     @property
     def spec_version(self) -> str:
+        try:
+            from darnit.config.merger import load_framework_config
+
+            path = self.get_framework_config_path()
+            if path:
+                return load_framework_config(path).metadata.spec_version
+        except Exception:
+            pass
         return "OSPS v2026.02.19"
 
     def get_framework_config_path(self) -> Path | None:

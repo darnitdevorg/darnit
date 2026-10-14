@@ -1,7 +1,7 @@
 [project]
 name = "darnit-baseline"
 version = "0.1.1"
-description = "OpenSSF Baseline (OSPS v2025.10.10) compliance checks for darnit"
+description = "OpenSSF Baseline (OSPS v2026.02.19) compliance checks for darnit"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
