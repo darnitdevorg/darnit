@@ -113,21 +113,21 @@ def test_load_controls_from_effective_validates(tmp_path: Path) -> None:
     assert "widening-fw" in str(excinfo.value)
 
 
-def test_shared_handler_declarations_survive_resolution() -> None:
+def test_use_locator_declarations_survive_resolution() -> None:
     config = FrameworkConfig(
-        metadata=FrameworkMetadata(name="shared-fw", display_name="S", version="0", spec_version="t"),
-        shared_handlers={"readme_check": {"handler": "file_exists", "files": ["README.md"]}},
+        metadata=FrameworkMetadata(name="locator-fw", display_name="L", version="0", spec_version="t"),
         controls={
-            "SH-01": ControlConfig(
-                name="Shared",
-                description="Existence via a shared handler",
+            "LOC-01": ControlConfig(
+                name="Locator",
+                description="Existence via use_locator",
                 level=1,
-                domain="SH",
-                passes=[HandlerInvocation(handler="readme_check", shared="readme_check", existence=True)],
+                domain="LO",
+                locator={"discover": ["README.md"]},
+                passes=[HandlerInvocation(handler="file_exists", use_locator=True, existence=True)],
             )
         },
     )
     [spec] = load_controls_from_framework(config)
     [step] = spec.metadata["handler_invocations"]
-    assert step.handler == "file_exists"
+    assert step.model_extra["files"] == ["README.md"]
     assert step.existence is True
