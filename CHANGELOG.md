@@ -697,6 +697,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   caught `celpy.CELSyntaxError`, which cel-python does not define, so the
   failure surfaced as an `AttributeError` and `validate_cel` raised instead
   of returning the error.
+- Generating an OpenSSF Baseline attestation with a project configuration no
+  longer fails with `AttributeError`: the predicate read
+  `project_config.project_type`, but the field is `type`. The predicate's
+  `configuration.project_type` now records the configuration's type (#521).
 
 ## [0.1.1] - 2026-10-03
 
