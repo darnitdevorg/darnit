@@ -56,7 +56,10 @@ import logging
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from darnit.stores.protocols import ProjectStateStore
 
 logger = logging.getLogger(__name__)
 
@@ -369,7 +372,7 @@ class DotProjectReader:
     to break the recursion.
     """
 
-    def __init__(self, repo_path: str | Path, store: object | None = None):
+    def __init__(self, repo_path: str | Path, store: ProjectStateStore | None = None):
         """Initialize reader with repository path.
 
         Args:
