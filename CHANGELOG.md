@@ -621,6 +621,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The OpenSSF Baseline OSPS-LE-02.01 regex step runs: it set `patterns`
   where the handler read `pattern`, so it recorded "Missing pattern" instead
   of the SPDX evidence. The control's outcome is unchanged.
+- A CEL expression that fails to compile for a reason other than a parse
+  error now raises `CELCompilationError` with that reason. The compiler
+  caught `celpy.CELSyntaxError`, which cel-python does not define, so the
+  failure surfaced as an `AttributeError` and `validate_cel` raised instead
+  of returning the error.
 
 ## [0.1.1] - 2026-10-03
 
