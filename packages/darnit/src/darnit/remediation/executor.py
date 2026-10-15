@@ -1015,7 +1015,7 @@ class RemediationExecutor:
             handler_config["handler"] = invocation.handler
 
             # Evaluate when clause — skip handler if condition not met
-            if invocation.when and not evaluate_when(invocation.when, when_context):
+            if invocation.when and not evaluate_when(invocation.when, when_context, missing_excludes=True):
                 logger.debug(
                     "Control %s: remediation handler '%s' skipped (when clause not met: %s)",
                     control_id,

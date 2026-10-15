@@ -178,7 +178,8 @@ class HandlerInvocation(BaseModel):
     use_locator: bool = False
 
     # Conditional dispatch — handler is skipped when condition evaluates to false
-    # Keys are context keys, values are expected values (same semantics as control-level when)
+    # Keys are context keys, values are expected values, evaluated like control-level when
+    # (framework-design 5.1.1); in a remediation handler a missing key skips the handler
     # Consumed by orchestrator/executor before dispatch; NOT passed to the handler
     when: dict[str, Any] | None = None
 

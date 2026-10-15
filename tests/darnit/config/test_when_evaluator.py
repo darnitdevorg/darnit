@@ -1,6 +1,9 @@
 """Tests for darnit.config.when_evaluator module."""
 
+import pytest
+
 from darnit.config.when_evaluator import evaluate_when
+from darnit.remediation.executor import ConfirmationRequired, GuardedContext
 
 
 class TestEvaluateWhenBasic:
@@ -36,19 +39,37 @@ class TestEvaluateWhenBasic:
             {"is_library": False},
         ) is False
 
-    def test_missing_key_returns_false(self):
-        """Handler-level: missing context key → skip handler (conservative)."""
-        assert evaluate_when(
-            {"primary_language": "go"},
-            {},
-        ) is False
+    def test_missing_key_does_not_exclude(self):
+        """Controls and verification steps: a missing key runs them (framework-design 5.1.1)."""
+        assert evaluate_when({"primary_language": "go"}, {}) is True
+        assert evaluate_when({"primary_language": "go"}, {"primary_language": None}) is True
 
-    def test_missing_key_among_others(self):
-        """If any key is missing, the whole clause fails."""
+    def test_missing_key_among_others_does_not_exclude(self):
         assert evaluate_when(
             {"primary_language": "go", "platform": "github"},
             {"platform": "github"},
+        ) is True
+
+    def test_missing_key_does_not_hide_a_mismatch(self):
+        assert evaluate_when(
+            {"primary_language": "go", "platform": "github"},
+            {"platform": "gitlab"},
         ) is False
+
+    def test_missing_key_excludes_a_remediation_handler(self):
+        """Remediation handlers: a missing key skips the handler."""
+        assert evaluate_when({"primary_language": "go"}, {}, missing_excludes=True) is False
+        assert evaluate_when({"primary_language": "go"}, {"primary_language": None}, missing_excludes=True) is False
+        assert evaluate_when(
+            {"primary_language": "go", "platform": "github"},
+            {"platform": "github"},
+            missing_excludes=True,
+        ) is False
+
+    def test_guarded_context_refuses_a_key_with_no_usable_value(self):
+        """The membership test reaches a guarded mapping, so it can stop the remediation."""
+        with pytest.raises(ConfirmationRequired):
+            evaluate_when({"license_type": "mit"}, GuardedContext({}, {"license_type"}), missing_excludes=True)
 
 
 class TestEvaluateWhenListContext:

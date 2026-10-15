@@ -568,6 +568,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Control `when` and step `when` now use one evaluator
+  (framework-design 5.1.1). A list-valued control `when` such as
+  `{ ci_provider = ["github", "gitlab"] }` made the control N/A even when
+  the value was in the list, which could make a level compliant; a list now
+  means membership. A verification step whose `when` names a key the
+  context does not hold now runs instead of being skipped, and a value read
+  from the audited repository that no honored claim backs (for example an
+  unconfirmed `.project/project.yaml` value) no longer skips a step.
+  Remediation handlers are unchanged: a missing key still skips them.
 - When `cel-python` or `tree-sitter-language-pack` fails to import, the
   error now gives the real cause. Both guards said "not installed" for any
   import error, which was wrong for an installed package with a missing

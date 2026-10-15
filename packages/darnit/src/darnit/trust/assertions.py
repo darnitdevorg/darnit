@@ -162,18 +162,18 @@ def context_value_assertions(
     fails against ``context`` but holds once repository-supplied values are
     replaced by detected ones (or dropped).
     """
-    from darnit.sieve.orchestrator import evaluate_when_clause
+    from darnit.config.when_evaluator import evaluate_when
 
     claims = []
     for control_id, when in controls_when.items():
-        if not when or evaluate_when_clause(dict(when), dict(context)):
+        if not when or evaluate_when(when, context):
             continue
-        if not evaluate_when_clause(dict(when), neutral_context(when, context, detected, repository_values)):
+        if not evaluate_when(when, neutral_context(when, context, detected, repository_values)):
             continue
         key = next(
             k
             for k, expected in when.items()
-            if k in repository_values and context.get(k) is not None and context[k] != expected
+            if k in repository_values and not evaluate_when({k: expected}, {k: context.get(k)})
         )
         claims.append(
             ProjectAssertion(
