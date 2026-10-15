@@ -599,6 +599,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   custom control that sets it on `repro_hermetic_build` now fails loading
   under strict step settings; set it on the `repro_witness_attestation` step
   instead (#553).
+- CI's Type Check job now fails. It runs mypy over every package
+  (`scripts/mypy_gate.py`) and compares the errors to
+  `.github/mypy-baseline.txt`: a new error fails, and an `attr-defined`,
+  `call-arg`, or `name-defined` error fails even if baselined, unless it is
+  in `.github/mypy-hard-allowlist.txt`, which must shrink to zero. Before,
+  mypy checked two files and could not fail the build.
 
 ### Fixed
 
