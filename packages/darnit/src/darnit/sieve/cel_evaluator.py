@@ -292,8 +292,6 @@ class CELEvaluator:
             )
         except celpy.CELParseError as e:
             raise CELCompilationError(f"CEL syntax error: {e}") from e
-        except celpy.CELSyntaxError as e:
-            raise CELCompilationError(f"CEL syntax error: {e}") from e
         except Exception as e:
             raise CELCompilationError(f"CEL compilation failed: {e}") from e
 
