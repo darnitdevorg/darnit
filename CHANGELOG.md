@@ -692,6 +692,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   installed, an attestation test started Sigstore's interactive OIDC login
   and hung waiting for a browser; the signer is now stubbed, and any test
   that opens a browser or signs with Sigstore fails at once (#604).
+- A CEL expression that fails to compile for a reason other than a parse
+  error now raises `CELCompilationError` with that reason. The compiler
+  caught `celpy.CELSyntaxError`, which cel-python does not define, so the
+  failure surfaced as an `AttributeError` and `validate_cel` raised instead
+  of returning the error.
 
 ## [0.1.1] - 2026-10-03
 
