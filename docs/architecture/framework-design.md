@@ -2026,6 +2026,11 @@ Design principle: **the audited repository is untrusted input in its entirety, i
 
 - The operator lists trusted repositories by canonical identity (`host/namespace/name`). The identity used for a trust decision comes from the operator's audit target or CI metadata, never solely from the checkout's own version-control configuration.
 - CI trust is opt-in per rule; the initial rule trusts pushes to the default branch of a listed repository. Pull requests from forks and unrecognized events are never trusted.
+- Remediation follows the same rule. `remediate_audit_findings` takes its trust identity from the repository the caller names (`owner`, `repo`, and `host` when not github.com) or from CI metadata, and uses it for the run, its context reads, the pending-context guard (15.4), and the re-check (15.5). Owner and repository detected from the checkout's remote may still address platform calls and label the report; they never decide trust.
+
+#### Scenario: Remediation of a checkout whose remote names a trusted repository
+- **WHEN** the operator trusts a repository, a checkout's origin remote names it, and remediation is called without naming a repository
+- **THEN** the run MUST NOT be trusted: a not-applicable claim in the checkout MUST NOT be honored, and its control is remediated like any other failing control
 
 ### 14.3 Project assertions
 
@@ -2185,6 +2190,7 @@ plan -> [confirmation missing]            -> needs_confirmation
 - Only a definite success with a non-empty change counts as changed. INCONCLUSIVE, ERROR, a step that did not run, and `action = "none"` never count as success.
 - The run summary (counts per `kind`) is derived from the outcomes. The Markdown and JSON reports, and every downstream decision (whether to commit or open a pull request), are derived from the outcomes, never from matching symbols or words in output text.
 - If the check for unconfirmed project context cannot complete, remediation does not run and the call returns the error.
+- The check for unconfirmed project context reads confirmations for the repository the caller named (14.2), including operator-side ones, so an untrusted repository whose context the operator confirmed can be remediated. With no repository named, operator-side confirmations are not read.
 
 **`RemediationRun`** (one per preview or apply):
 
@@ -2213,6 +2219,10 @@ plan -> [confirmation missing]            -> needs_confirmation
 #### Scenario: Context guard cannot complete
 - **WHEN** the check for unconfirmed project context raises or cannot complete
 - **THEN** remediation MUST NOT run and the error MUST be returned
+
+#### Scenario: Context confirmed operator-side for an untrusted repository
+- **WHEN** the caller names an untrusted repository and the operator confirmed every pending context key operator-side for it
+- **THEN** the context guard MUST NOT stop remediation
 
 ### 15.5 Re-check
 
