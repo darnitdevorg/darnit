@@ -845,11 +845,11 @@ Every remediation runs in one of two modes. The executor passes the mode to each
 - a path with uncommitted user changes is not written; its `FileChange` becomes `action = "none"`, `reason = "user_changes_present"`, and the outcome reports the conflict;
 - a path matched by the repository's ignore rules is written with `ignored = true` and is never staged.
 
-A preview runs the same two checks, read-only, on every planned `FileChange` of a `file_create`, `yaml_inject`, or `project_update` step, of a declared `project_reference`, and of the remediation's `project_update`, so it reports these paths exactly as the apply will. Outside a git work tree neither check applies. A file written earlier in the same apply is not a user change.
+A preview runs the same two checks, read-only, on every planned `FileChange` of a step whose handler supports plan mode (other than `exec`, 4.4), of a declared `project_reference`, and of the remediation's `project_update`, so it reports these paths exactly as the apply will. Outside a git work tree neither check applies. A file written earlier in the same apply is not a user change.
 
 Platform settings are written only by the platform engine (4.5). An `exec` step writes through its command in apply mode (4.4); the executor records what it changed when the step succeeded cleanly.
 
-**Plan support.** Handler registration takes a flag `supports_plan` (default `False`): `registry.register(..., supports_plan=True)`. The built-in `file_create`, `project_update`, `yaml_inject`, `manual`, and `platform_setting` handlers register with `supports_plan=True`; `exec` is previewable only as section 4.4 describes. A step whose handler did not register `supports_plan=True` is not run in plan mode; it is reported as "cannot be previewed exactly" (`previewable = False`) and requires individual approval (15.3). A plugin handler without plan support that writes files itself is outside the run manifest, so the git tools never commit those files (15.7).
+**Plan support.** Handler registration takes a flag `supports_plan` (default `False`): `registry.register(..., supports_plan=True)`. The built-in `file_create`, `project_update`, `yaml_inject`, `manual`, and `platform_setting` handlers register with `supports_plan=True`; `exec` is previewable only as section 4.4 describes. A step whose handler did not register `supports_plan=True` is not run in plan mode; it is reported as "cannot be previewed exactly" (`previewable = False`) and requires individual approval (15.3). A plugin handler without plan support that writes files itself is outside the run manifest, so the git tools never commit those files (15.7). A plugin handler that generates files registers `supports_plan=True` and returns them as `FileChange`s, like `file_create`; `generate_threat_model` (`darnit-baseline`, `OSPS-SA-03.02`) returns every file it generates: the summary, `data-flow.md`, `raw-findings.json`, `findings/*.md`, and the mitigation sidecar when its stale flags change.
 
 **Preview contents.** A preview is a list of `PlanItem`s, one per remediation step:
 
@@ -888,6 +888,12 @@ Templates and `when` clauses are evaluated in plan mode exactly as in apply mode
 - **WHEN** a planned `FileChange` targets a path with uncommitted user changes
 - **THEN** the executor MUST NOT write the path
 - **AND** the `FileChange` MUST be reported with `action = "none"` and `reason = "user_changes_present"`, in the preview and in the apply
+
+#### Scenario: Plugin handler that generates several files
+- **WHEN** the `generate_threat_model` step of `OSPS-SA-03.02` runs in plan or apply mode
+- **THEN** it MUST return each file it generates as a `FileChange` and MUST NOT write any file
+- **AND** a generated file with uncommitted user changes MUST be kept and reported `user_changes_present`
+- **AND** every file the apply writes MUST be recorded in the run manifest, so the commit step commits it (15.7)
 
 ### 4.3 file_create
 
@@ -1974,7 +1980,7 @@ Implementation-registered sieve handlers (non-exhaustive):
 | Step type | Registered by | Ceiling |
 |-----------|---------------|---------|
 | `github_branch_protection` | `darnit-baseline`: the classic-branch-protection + repository-rulesets two-surface check for `OSPS-AC-03.01`, `OSPS-AC-03.02`, `OSPS-QA-03.01`, `OSPS-QA-07.01`; see `specs/032-ruleset-branch-protection/contracts/github-branch-protection-handler.md` | `{pass, fail}` (reads platform settings) |
-| `generate_threat_model` | `darnit-baseline` (remediation) | `{pass, fail}` |
+| `generate_threat_model` | `darnit-baseline` (remediation, `supports_plan=True`, section 4.2) | `{pass, fail}` |
 | `gittuf_verify_policy`, `gittuf_commits_signed` | `darnit-gittuf` | `{pass, fail}` (cryptographic verification) |
 | `repro_deps_pinned`, `repro_build_env_declared`, `repro_hermetic_build`, `repro_provenance_exists`, `repro_bit_for_bit` | `darnit-reproducibility` | `{fail}`: they decide from text and file-presence signals, so PASS needs a corpus-backed promotion (section 3.0.1) |
 | `repro_witness_attestation` | `darnit-reproducibility` | `{fail}`: a verified runtime-trace attestation can show network access but, until monitor types are allowlisted, cannot show its absence (section 3.0.1, #553) |
@@ -2157,6 +2163,7 @@ plan -> [confirmation missing]            -> needs_confirmation
 ```
 
 - Only a definite success with a non-empty change counts as changed. INCONCLUSIVE, ERROR, a step that did not run, and `action = "none"` never count as success.
+- A `fixed`, `changed_not_passing`, or `changed_not_verified` outcome lists the files it wrote and each file it kept because of uncommitted user changes (`action = "none"`, `reason = "user_changes_present"`), so a partial apply reports the conflict (4.2).
 - The run summary (counts per `kind`) is derived from the outcomes. The Markdown and JSON reports, and every downstream decision (whether to commit or open a pull request), are derived from the outcomes, never from matching symbols or words in output text.
 - If the check for unconfirmed project context cannot complete, remediation does not run and the call returns the error.
 
