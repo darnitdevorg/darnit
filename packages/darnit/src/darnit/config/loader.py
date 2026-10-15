@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 import yaml
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from darnit.config.schema import (
     BaselineExtension,
@@ -193,7 +193,7 @@ def _validation_errors(exc: ValidationError) -> tuple[str, ...]:
     return tuple(f"{'.'.join(str(p) for p in err['loc']) or '(file)'}: {err['msg']}" for err in exc.errors())
 
 
-def _check_file(path: str, model: type, *, empty_is_valid: bool) -> ProjectFile:
+def _check_file(path: str, model: type[BaseModel], *, empty_is_valid: bool) -> ProjectFile:
     if not os.path.exists(path):
         return ProjectFile(path, "absent")
     try:
