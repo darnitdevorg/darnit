@@ -34,7 +34,6 @@ from .framework_schema import (
     FrameworkConfig,
     HandlerInvocation,
     OnPassConfig,
-    SharedHandlerConfig,
 )
 from .merger import EffectiveConfig, EffectiveControl
 
@@ -51,50 +50,8 @@ def _step_declarations(invocation: HandlerInvocation) -> dict[str, Any]:
     return {
         name: getattr(invocation, name)
         for name in HandlerInvocation.model_fields
-        if name not in ("handler", "shared", "use_locator") and name in invocation.model_fields_set
+        if name not in ("handler", "use_locator") and name in invocation.model_fields_set
     }
-
-
-def _resolve_shared_handler(
-    invocation: HandlerInvocation,
-    shared_handlers: dict[str, SharedHandlerConfig],
-) -> HandlerInvocation:
-    """Resolve a shared handler reference by merging configs.
-
-    The shared handler provides base config. Per-control overrides take precedence.
-
-    Args:
-        invocation: Handler invocation that may reference a shared handler
-        shared_handlers: Top-level shared handler definitions
-
-    Returns:
-        Resolved HandlerInvocation with merged config
-    """
-    if not invocation.shared:
-        return invocation
-
-    shared = shared_handlers.get(invocation.shared)
-    if not shared:
-        logger.warning(
-            "Shared handler '%s' not found in [shared_handlers]",
-            invocation.shared,
-        )
-        return invocation
-
-    # Start with shared handler's extra fields
-    merged = dict(shared.model_extra or {})
-    # Per-control fields override shared ones
-    merged.update(invocation.model_extra or {})
-
-    # Handler name: invocation overrides if set, else use shared's
-    handler = invocation.handler if invocation.handler != invocation.shared else shared.handler
-
-    return HandlerInvocation(
-        handler=handler,
-        shared=invocation.shared,
-        use_locator=invocation.use_locator,
-        **{**merged, **_step_declarations(invocation)},
-    )
 
 
 def _resolve_use_locator(
@@ -129,7 +86,6 @@ def _resolve_use_locator(
 
     return HandlerInvocation(
         handler=invocation.handler,
-        shared=invocation.shared,
         use_locator=True,
         **extra,
         **_step_declarations(invocation),
@@ -138,20 +94,11 @@ def _resolve_use_locator(
 
 def _resolve_handler_invocations(
     invocations: list[HandlerInvocation],
-    shared_handlers: dict[str, SharedHandlerConfig],
     locator_discover: list[str] | None,
     control_id: str,
 ) -> list[HandlerInvocation]:
-    """Resolve all handler invocations at load time.
-
-    Applies shared handler merging and use_locator resolution.
-    """
-    resolved = []
-    for inv in invocations:
-        inv = _resolve_shared_handler(inv, shared_handlers)
-        inv = _resolve_use_locator(inv, locator_discover, control_id)
-        resolved.append(inv)
-    return resolved
+    """Resolve use_locator on all handler invocations at load time."""
+    return [_resolve_use_locator(inv, locator_discover, control_id) for inv in invocations]
 
 
 def _auto_derive_on_pass(control_config: ControlConfig) -> OnPassConfig | None:
@@ -301,7 +248,6 @@ def control_from_effective(
 def control_from_framework(
     control_id: str,
     control_config: Any,  # ControlConfig from framework_schema
-    shared_handlers: dict[str, SharedHandlerConfig] | None = None,
     framework: str | None = None,
     source: str | None = None,
     registration_attempts: set[str] | None = None,
@@ -309,14 +255,12 @@ def control_from_framework(
     """Convert ControlConfig from framework to ControlSpec.
 
     Performs load-time resolution of:
-    - Shared handler references (merged with per-control overrides)
     - use_locator=true (copies locator.discover into handler files)
     - Auto-derived on_pass (from locator.project_path + file_exists handler)
 
     Args:
         control_id: Control identifier
         control_config: Framework control configuration
-        shared_handlers: Top-level shared handler definitions for resolution
         framework: Framework name, for load-time validation errors
         source: Framework file, for load-time validation errors
         registration_attempts: Frameworks whose plugin step types this
@@ -325,7 +269,6 @@ def control_from_framework(
     Returns:
         Executable ControlSpec
     """
-    shared_handlers = shared_handlers or {}
     registration_attempts = set() if registration_attempts is None else registration_attempts
 
     # Resolve handler invocations at load time
@@ -333,10 +276,11 @@ def control_from_framework(
     if hasattr(control_config, "locator") and control_config.locator:
         locator_discover = control_config.locator.discover or None
 
-    if control_config.passes:
-        control_config.passes = _resolve_handler_invocations(
-            control_config.passes, shared_handlers, locator_discover, control_id
-        )
+    passes = (
+        _resolve_handler_invocations(control_config.passes, locator_discover, control_id)
+        if control_config.passes
+        else None
+    )
 
     # Build tags dict from config - tags is now Dict[str, Any]
     tags = dict(control_config.tags) if control_config.tags else {}
@@ -377,16 +321,16 @@ def control_from_framework(
         metadata["inferred_from"] = control_config.inferred_from
 
     # Carry handler invocations through metadata for orchestrator dispatch
-    if control_config.passes:
+    if passes:
         validate_step_authority(
             framework,
             control_id,
-            control_config.passes,
+            passes,
             source=source,
             composed_from=tags.get(_TAG_COMPOSED_FROM),
             registration_attempts=registration_attempts,
         )
-        metadata["handler_invocations"] = control_config.passes
+        metadata["handler_invocations"] = passes
 
     # Carry remediation handler invocations if present
     if hasattr(control_config, "remediation") and control_config.remediation:
@@ -470,8 +414,8 @@ def load_controls_from_framework(config: FrameworkConfig) -> list[ControlSpec]:
     """Load ControlSpec objects directly from framework configuration.
 
     Use this when you want framework controls without operator overrides.
-    Performs load-time validation and resolution of shared handlers,
-    use_locator, on_pass auto-derivation, and reference validation.
+    Performs load-time validation and resolution of use_locator,
+    on_pass auto-derivation, and reference validation.
 
     Args:
         config: Framework configuration
@@ -482,7 +426,6 @@ def load_controls_from_framework(config: FrameworkConfig) -> list[ControlSpec]:
     # Validate depends_on and inferred_from references
     _validate_control_references(config.controls)
 
-    shared_handlers = config.shared_handlers or {}
     controls = []
     registration_attempts: set[str] = set()
 
@@ -491,7 +434,6 @@ def load_controls_from_framework(config: FrameworkConfig) -> list[ControlSpec]:
             control = control_from_framework(
                 control_id,
                 control_config,
-                shared_handlers=shared_handlers,
                 framework=config.metadata.name,
                 source=config._source_path,
                 registration_attempts=registration_attempts,
