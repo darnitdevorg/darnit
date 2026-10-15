@@ -148,6 +148,19 @@ class TestGenerateAttestationFromResults:
         assert "controls" in predicate
 
     @pytest.mark.unit
+    def test_predicate_records_project_config_type(self, sample_audit_result, temp_dir: Path):
+        """The project configuration's type reaches the predicate (#521)."""
+        from darnit.config.schema import ProjectConfig
+
+        sample_audit_result.project_config = ProjectConfig(name="testrepo", type="specification")
+        out = temp_dir / "test.intoto.json"
+
+        generate_attestation_from_results(audit_result=sample_audit_result, sign=False, output_path=str(out))
+
+        attestation = json.loads(out.read_text())
+        assert attestation["predicate"]["configuration"]["project_type"] == "specification"
+
+    @pytest.mark.unit
     def test_default_output_path(self, sample_audit_result, temp_dir: Path):
         """Test default output path is used."""
         generate_attestation_from_results(
