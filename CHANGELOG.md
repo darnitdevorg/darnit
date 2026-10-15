@@ -211,6 +211,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     (`remediation.context_validator`);
   - `darnit.sieve`: `SieveOrchestrator.verify_batch` and
     `SieveHandlerRegistry.validate_phase`.
+- The sigstore 1.x and 2.x signing branches in
+  `darnit_baseline.attestation.signing`. They were unreachable with the
+  sigstore the `attestation` extra requires (`>=3.0.0`, which provides
+  `sigstore.sign.ClientTrustConfig`). A sigstore without it now leaves
+  attestation signing unavailable instead of running an untested branch.
 
 ### Added
 
