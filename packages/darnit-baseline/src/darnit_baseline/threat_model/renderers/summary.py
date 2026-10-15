@@ -7,7 +7,7 @@ files under ``findings/`` and to the companion ``data-flow.md`` and
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from ..discovery_models import (
@@ -66,7 +66,8 @@ def _render_executive_summary(
     md: list[str] = ["## Executive Summary", ""]
 
     display = repo_display_name(repo_path)
-    scan_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # The date, not the time: a preview and its apply plan the same content (framework-design 4.2).
+    scan_date = datetime.now(tz=UTC).date().isoformat()
 
     stats = result.file_scan_stats
     languages = ", ".join(sorted((stats.by_language or {}).keys())) if stats else "unknown"

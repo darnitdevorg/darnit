@@ -93,11 +93,15 @@ def _fake_zizmor(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.M
     stand_in_tool(monkeypatch, tmp_path_factory.mktemp("bin"), "zizmor", script=FAKE_ZIZMOR_FIX)
 
 
-@pytest.fixture(autouse=True, scope="module")
-def _plugin_handlers() -> None:
+def _register_plugin_handlers() -> None:
     from darnit_baseline.implementation import OSPSBaselineImplementation
 
     OSPSBaselineImplementation().register_handlers()
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _plugin_handlers() -> None:
+    _register_plugin_handlers()
 
 
 def _previewable(step: HandlerInvocation) -> bool:
@@ -108,6 +112,9 @@ def _previewable(step: HandlerInvocation) -> bool:
     return info is not None and info.supports_plan
 
 
+# Registered before collection, so a plugin step type's plan support decides
+# whether it is previewable, not whether it happened to be registered yet.
+_register_plugin_handlers()
 NOT_PREVIEWABLE = [s for s in _steps() if not _previewable(s[3])]
 
 
@@ -317,14 +324,14 @@ def test_zizmor_fix_is_previewed(repo: Path, control_id: str) -> None:
 def test_shipped_steps_that_cannot_be_previewed_are_found() -> None:
     handlers = {step.handler for _, _, _, step in NOT_PREVIEWABLE}
 
-    assert "generate_threat_model" in handlers
+    assert "generate_threat_model" not in handlers
     assert ("reproducibility", "RE-01.01") in {(p.stem, c) for p, c, _, s in NOT_PREVIEWABLE if s.handler == "exec"}
     assert not any(c.startswith("OSPS-BR-01.0") for _, c, _, s in NOT_PREVIEWABLE if s.handler == "exec")
 
 
 @pytest.mark.unit
-def test_threat_model_handler_declares_no_plan_support() -> None:
+def test_threat_model_handler_declares_plan_support() -> None:
     info = get_sieve_handler_registry().get("generate_threat_model")
 
     assert info is not None
-    assert info.supports_plan is False
+    assert info.supports_plan is True

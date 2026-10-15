@@ -127,10 +127,9 @@ class OSPSBaselineImplementation:
             # RFC-0001 Stage 1: threat-model generation observes ground
             # truth (file produced or not).
             ceiling={"pass", "fail"},
-            # Feature 043 (framework-design 4.2): it writes its files itself,
-            # so it is reported as not previewable and runs in a batch apply
-            # only when its plan item digest is approved.
-            supports_plan=False,
+            # Feature 043 (framework-design 4.2): it returns its files as
+            # FileChanges in both modes; the executor writes them.
+            supports_plan=True,
             # template is resolved to content by the remediation executor.
             settings={"path", "overwrite", "content", "template", "shallow_threshold", "max_findings"},
         )

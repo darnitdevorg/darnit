@@ -17,11 +17,12 @@ from darnit_baseline.threat_model.discovery_models import (
 )
 from darnit_baseline.threat_model.models import StrideCategory
 from darnit_baseline.threat_model.sidecar import (
+    SIDECAR_REL_PATH,
     compute_fingerprint,
     detect_stale,
     load_sidecar,
     match_findings,
-    save_sidecar,
+    render_sidecar,
 )
 
 
@@ -137,7 +138,13 @@ class TestLoadSidecar:
             load_sidecar(tmp_path)
 
 
-class TestSaveSidecar:
+def _save(repo_root: Path, sidecar: MitigationSidecar) -> None:
+    path = repo_root / SIDECAR_REL_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(render_sidecar(sidecar), encoding="utf-8")
+
+
+class TestRenderSidecar:
     def test_round_trip(self, tmp_path: Path) -> None:
         sidecar = MitigationSidecar(
             entries=[
@@ -152,7 +159,7 @@ class TestSaveSidecar:
                 ),
             ]
         )
-        save_sidecar(tmp_path, sidecar)
+        _save(tmp_path, sidecar)
         loaded = load_sidecar(tmp_path)
         assert loaded is not None
         assert len(loaded.entries) == 1
@@ -168,14 +175,14 @@ class TestSaveSidecar:
                 MitigationEntry(fingerprint="sha256:bbbb", status=MitigationStatus.FALSE_POSITIVE),
             ]
         )
-        save_sidecar(tmp_path, sidecar)
+        _save(tmp_path, sidecar)
         loaded = load_sidecar(tmp_path)
         assert loaded is not None
         fps = [e.fingerprint for e in loaded.entries]
         assert fps == ["sha256:cccc", "sha256:aaaa", "sha256:bbbb"]
 
     def test_includes_header_comment(self, tmp_path: Path) -> None:
-        save_sidecar(tmp_path, MitigationSidecar(entries=[]))
+        _save(tmp_path, MitigationSidecar(entries=[]))
         path = tmp_path / ".project" / "threatmodel" / "mitigations.yaml"
         content = path.read_text()
         assert content.startswith("#")
