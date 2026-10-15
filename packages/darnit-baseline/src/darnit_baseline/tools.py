@@ -1255,6 +1255,7 @@ def remediate_audit_findings(
     create_pr: bool = False,
     enhance_with_llm: bool = False,
     approve: list | None = None,
+    host: str | None = None,
 ) -> str:
     """
     Apply automated remediations for failed audit controls.
@@ -1273,8 +1274,10 @@ def remediate_audit_findings(
 
     Args:
         local_path: ABSOLUTE path to repo
-        owner: GitHub org/user (auto-detected if not provided)
-        repo: Repository name (auto-detected if not provided)
+        owner: GitHub org/user. With ``repo``, names the repository whose
+            trust and confirmations apply; detected from the checkout for
+            platform calls only when not provided
+        repo: Repository name (see ``owner``)
         categories: Optional filter — list of category names, or ["all"]
         dry_run: If True (default), show what would be changed without applying
         profile: Optional audit profile name to filter remediation to profile controls only
@@ -1290,6 +1293,7 @@ def remediate_audit_findings(
             changes are written only for approved change-set digests under the
             default remediation policy; ``dry_run=False`` alone approves
             nothing. Pass only digests the person approved.
+        host: Host of the repository ``owner`` and ``repo`` name, when not github.com
 
     Returns:
         Summary of applied or planned remediations (with git workflow status if applicable)
@@ -1305,7 +1309,12 @@ def remediate_audit_findings(
         return "Error: create_pr requires auto_commit=True"
 
     from darnit.core.utils import detect_owner_repo
+    from darnit.trust.decision import target_from_owner_repo
 
+    # Trust comes from the repository the caller names, never from the
+    # checkout's remote (framework-design 14.2); detection only addresses
+    # platform calls.
+    target = target_from_owner_repo(owner, repo, host)
     detected_owner, detected_repo = detect_owner_repo(str(repo_path))
     owner = owner or detected_owner
     repo = repo or detected_repo
@@ -1316,7 +1325,7 @@ def remediate_audit_findings(
         from darnit.config.context_storage import get_pending_context as _get_pending
 
         pending = _get_pending(
-            local_path=str(repo_path), owner=owner, repo=repo,
+            local_path=str(repo_path), owner=owner, repo=repo, target=target,
         )
     except Exception as e:
         return (
@@ -1361,6 +1370,7 @@ def remediate_audit_findings(
             local_path=str(repo_path),
             owner=owner,
             repo=repo,
+            target=target,
             categories=categories or ["all"],
             dry_run=dry_run,
             profile=profile,

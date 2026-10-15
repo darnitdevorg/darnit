@@ -592,6 +592,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   declared contradicting evidence was present, and `confirm_project_data`
   would confirm it. The audit and the confirmation tool now read the
   framework's controls plus the operator's custom controls.
+- `remediate_audit_findings` no longer trusts a repository because the
+  checkout's origin remote names it. Called without `owner` and `repo`, it
+  filled them from the remote and then decided trust from them, so a clone
+  of a trusted repository was remediated as trusted (for example, its
+  not-applicable claims were honored) although the operator named nothing.
+  Trust now comes only from the `owner`, `repo`, and new `host` arguments
+  or CI metadata (framework-design 14.2); the remote still addresses
+  platform calls. The pending-context guard now reads confirmations for
+  that repository too: it used to ignore operator-side confirmations, so
+  an untrusted repository could never be remediated.
 - When `cel-python` or `tree-sitter-language-pack` fails to import, the
   error now gives the real cause. Both guards said "not installed" for any
   import error, which was wrong for an installed package with a missing

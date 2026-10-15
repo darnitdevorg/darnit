@@ -1037,6 +1037,8 @@ def remediate_audit_findings(
     Returns:
         Markdown-formatted summary of applied or planned remediations
     """
+    from darnit.trust.decision import target_from_owner_repo
+
     return run_remediation(
         local_path=local_path,
         owner=owner,
@@ -1047,6 +1049,7 @@ def remediate_audit_findings(
         enhance_with_llm=enhance_with_llm,
         approve=approve,
         run_id=run_id,
+        target=target_from_owner_repo(owner, repo),
     ).markdown
 
 
@@ -1060,11 +1063,16 @@ def run_remediation(
     enhance_with_llm: bool = False,
     approve: list[str] | None = None,
     run_id: str | None = None,
+    target: str | None = None,
 ) -> RemediationReport:
     """:func:`remediate_audit_findings`, returning the run record with the report.
 
-    ``run`` is None when remediation did not run (an error, nothing to
-    remediate, or context that needs confirmation).
+    ``target`` is the repository identity the operator named; it alone
+    decides trust for the run, its context reads, and its re-check
+    (framework-design 14.2). ``owner`` and ``repo`` only address platform
+    calls and label the report, and are detected from the checkout when
+    not given. ``run`` is None when remediation did not run (an error,
+    nothing to remediate, or context that needs confirmation).
     """
     # Validate path
     resolved_path, path_error = validate_local_path(local_path)
@@ -1073,9 +1081,6 @@ def run_remediation(
     local_path = resolved_path
 
     from darnit.core.utils import detect_owner_repo
-    from darnit.trust.decision import target_from_owner_repo
-
-    target = target_from_owner_repo(owner, repo)
 
     # Auto-detect owner/repo (origin first)
     if not owner or not repo:
