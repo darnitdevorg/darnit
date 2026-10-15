@@ -1978,9 +1978,14 @@ Design principle: **the audited repository is untrusted input in its entirety, i
 ### 14.3 Project assertions
 
 - Project assertions (for example "this control is not applicable, reason X") live in `.project/` (darnit's extension file for anything upstream `.project/` cannot express). Project data that changes a control's applicability is treated as an assertion. For a context value that is only a value confirmed in the repository (7.5): an unconfirmed stored value is a candidate and has no effect (7.4), and a value the operator confirmed operator-side is the operator's decision, not a repository assertion.
-- An assertion-backed not-applicable result is **honored** only for a trusted repository with a reason and no contradicting evidence; otherwise it is **pending** (non-compliant until the operator confirms it) or **contradicted** (ignored, with the evidence reported). Controls MAY declare `contradicted_by` evidence in framework TOML.
+- An assertion-backed not-applicable result is **honored** only for a trusted repository with a reason and no contradicting evidence; otherwise it is **pending** (non-compliant until the operator confirms it) or **contradicted** (ignored, with the evidence reported). Controls MAY declare `contradicted_by` evidence in framework TOML or, for an operator custom control, in operator configuration (14.1). Claims are assessed against the audit's effective controls: the framework's plus the operator's custom controls, a custom control replacing a framework control with the same id. The audit and the claim-confirmation tool read the same declaration.
 - Confirmations are stored on the operator side, keyed by repository identity, claim, and evidence digest, and lapse on expiry or when the evidence changes. Confirmations of project context values follow Section 7.5 instead.
 - Reports and attestations label every assertion-backed N/A as asserted, with the asserter and any confirmer.
+
+#### Scenario: Contradicted claim on an operator custom control
+- **WHEN** an operator custom control declares `contradicted_by`, a trusted repository claims it not applicable with a reason, and detection yields the declared value
+- **THEN** the claim MUST be `contradicted`, with the evidence reported, and the control evaluated normally
+- **AND** the claim-confirmation tool MUST NOT confirm it
 
 ### 14.4 Repository-level .baseline.toml
 
