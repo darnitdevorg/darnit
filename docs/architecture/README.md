@@ -10,7 +10,6 @@ These are static reference docs, not in-flight feature specs (those live under `
 - [Plugin registry](./plugin-registry.md) -- how plugins register controls, handlers, and tools
 - [Handler pipeline](./handler-pipeline.md) -- four-phase sieve handler dispatch
 - [Sieve handler authoring](./sieve-handler-authoring.md) -- contract for writing new sieve handlers
-- [Shared handlers](./shared-handlers.md) -- built-in handlers usable across implementations
 - [Implementation-provided tools](./implementation-provided-tools.md) -- MCP tool exposure model
 
 ## Audit lifecycle
