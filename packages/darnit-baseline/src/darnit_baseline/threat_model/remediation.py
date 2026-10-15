@@ -397,11 +397,11 @@ def generate_threat_model_handler(
 
     # Compute fingerprints for all findings.
     repo_root = Path(local_path)
-    for f in ranked:
-        if not f.fingerprint:
-            fp = compute_fingerprint(f, repo_root)
+    for finding in ranked:
+        if not finding.fingerprint:
+            fp = compute_fingerprint(finding, repo_root)
             # CandidateFinding is frozen, so we need object.__setattr__
-            object.__setattr__(f, "fingerprint", fp)
+            object.__setattr__(finding, "fingerprint", fp)
 
     # Sidecar support: load, match, detect stale.
     sidecar_matches: dict[str, Any] = {}

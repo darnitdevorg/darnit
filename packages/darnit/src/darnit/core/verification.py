@@ -562,10 +562,9 @@ class PluginVerifier:
             from importlib.metadata import metadata
 
             pkg_metadata = metadata(package_name)
-            author = pkg_metadata.get("Author-email", "")
-            maintainer = pkg_metadata.get("Maintainer-email", "")
+            emails = [pkg_metadata[key] for key in ("Author-email", "Maintainer-email") if key in pkg_metadata]
 
-            for email in [author, maintainer]:
+            for email in emails:
                 if email:
                     if "<" in email:
                         return email.split("<")[0].strip()
