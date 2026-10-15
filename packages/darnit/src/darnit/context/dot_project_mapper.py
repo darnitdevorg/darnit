@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from darnit.context.dot_project import (
     DotProjectReader,
@@ -36,6 +36,9 @@ from darnit.context.dot_project import (
 )
 from darnit.context.dot_project_merger import merge_configs
 from darnit.context.dot_project_org import OrgProjectResolver
+
+if TYPE_CHECKING:
+    from darnit.stores.protocols import ProjectStateStore
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +58,7 @@ class DotProjectMapper:
         repo_path: str | Path,
         *,
         owner: str = "",
-        project_store: object | None = None,
+        project_store: ProjectStateStore | None = None,
     ):
         """Initialize mapper with repository path.
 
