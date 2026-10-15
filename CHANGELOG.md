@@ -568,6 +568,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A not-applicable claim on an operator custom control now checks the
+  control's `contradicted_by`. Claim assessment read it only from the
+  framework TOML, so a trusted repository's claim was honored even when the
+  declared contradicting evidence was present, and `confirm_project_data`
+  would confirm it. The audit and the confirmation tool now read the
+  framework's controls plus the operator's custom controls.
 - When `cel-python` or `tree-sitter-language-pack` fails to import, the
   error now gives the real cause. Both guards said "not installed" for any
   import error, which was wrong for an installed package with a missing
