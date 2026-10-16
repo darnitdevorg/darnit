@@ -93,7 +93,15 @@ def _split(data: dict[str, Any]) -> tuple[dict[str, dict[str, Any]], dict[str, A
     for key, value in data.items():
         if key == "version":
             continue
-        if key in _OPERATOR_TABLES:
+        if key == "plugins" and isinstance(value, dict):
+            # Only plugins.allowed exists in operator configuration; darnit
+            # does not verify plugin signatures (framework-design 6.6).
+            if "allowed" in value:
+                operator[key] = {"allowed": value["allowed"]}
+            rest = {k: v for k, v in value.items() if k != "allowed"}
+            if rest:
+                unsupported[key] = rest
+        elif key in _OPERATOR_TABLES:
             operator[key] = value
         elif key != "controls" or not isinstance(value, dict):
             unsupported[key] = value
@@ -133,6 +141,8 @@ def _fragment(operator: dict[str, Any], unsupported: dict[str, Any]) -> str:
         lines.append("# Operator configuration has no equivalent for these settings; they are not migrated.")
         if "extends" in unsupported:
             lines.append("# Select the framework with the --framework option instead of extends.")
+        if "plugins" in unsupported:
+            lines.append("# darnit does not verify plugin signatures; restrict plugins with [plugins] allowed.")
         lines.extend(f"# {line}" if line else "#" for line in _toml(unsupported))
     while lines[-1] in ("", "#"):
         lines.pop()
@@ -140,7 +150,8 @@ def _fragment(operator: dict[str, Any], unsupported: dict[str, Any]) -> str:
 
 
 def _unsupported_names(unsupported: dict[str, Any]) -> list[str]:
-    names = [k for k in unsupported if k != "controls"]
+    names = [k for k in unsupported if k not in ("controls", "plugins")]
+    names.extend(f"plugins.{k}" for k in unsupported.get("plugins") or {})
     for control_id, entry in (unsupported.get("controls") or {}).items():
         if isinstance(entry, dict):
             names.extend(f"controls.{control_id}.{k}" for k in entry)

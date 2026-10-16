@@ -118,9 +118,10 @@ class PluginRegistry:
     # =========================================================================
 
     def discover_frameworks(self) -> dict[str, FrameworkInfo]:
-        """Discover all installed frameworks from entry points.
+        """Discover installed frameworks from entry points the operator allows.
 
-        Scans the ``darnit.frameworks`` entry point group.
+        Scans the ``darnit.frameworks`` entry point group. An entry point
+        ``[plugins] allowed`` leaves out is not loaded (framework-design 6.6).
 
         Returns:
             Dict mapping framework names to FrameworkInfo objects.
@@ -133,7 +134,12 @@ class PluginRegistry:
         if ENTRY_POINT_FRAMEWORKS in self._discovered:
             return self._frameworks
 
+        from .discovery import plugin_allowed
+
         for ep in self._iter_entry_points(ENTRY_POINT_FRAMEWORKS):
+            if not plugin_allowed(ep.name):
+                logger.debug(f"Not loading framework {ep.name}: not in plugins.allowed")
+                continue
             try:
                 path_func = ep.load()
                 name = ep.name

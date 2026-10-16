@@ -21,6 +21,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from darnit.config.operator.schema import OperatorConfig
+from darnit.core.discovery import set_allowed_plugins
 from darnit.core.logging import get_logger
 from darnit.stores.defaults.platform_paths import user_config_dir
 from darnit.trust.ci import is_recognized_ci
@@ -124,7 +125,11 @@ def load_operator_config(
     audit_target: str | Path | None = None,
     strict: bool = False,
 ) -> LoadedOperatorConfig:
-    """Load operator configuration for an audit of ``audit_target``."""
+    """Load operator configuration for an audit of ``audit_target``.
+
+    Its ``[plugins] allowed`` list is applied to plugin discovery, so a plugin
+    it leaves out is not loaded afterwards (framework-design 6.6).
+    """
     default_path = user_config_dir() / CONFIG_FILENAME
     searched = [str(default_path)]
     strict = strict or is_recognized_ci()
@@ -136,6 +141,7 @@ def load_operator_config(
     elif default_path.is_file():
         path = default_path
     else:
+        set_allowed_plugins(None)
         return LoadedOperatorConfig(
             config=OperatorConfig(schema_version=1),
             source=BUILTIN_DEFAULTS,
@@ -183,6 +189,7 @@ def load_operator_config(
             problem,
         )
 
+    set_allowed_plugins(config.plugins.allowed)
     return LoadedOperatorConfig(
         config=config,
         source=str(resolved),

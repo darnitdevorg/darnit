@@ -18,7 +18,6 @@ def _cfg(**overrides):
 def test_minimal_config_uses_documented_defaults() -> None:
     cfg = _cfg()
     assert cfg.plugins.allowed == []
-    assert cfg.plugins.allow_unsigned is False
     assert cfg.trust.repos == []
     assert cfg.trust.ci == []
     assert cfg.policy.confirmation_expiry_days == 180
@@ -61,8 +60,6 @@ def test_unknown_keys_are_rejected_with_their_path(data, loc) -> None:
 def test_trust_booleans_are_strict() -> None:
     """A string like "false" must not be coerced on a trust-relevant field."""
     with pytest.raises(ValidationError):
-        _cfg(plugins={"allow_unsigned": "false"})
-    with pytest.raises(ValidationError):
         _cfg(policy={"strict_permissions": "yes"})
 
 
@@ -77,7 +74,7 @@ def test_ci_rule_event_is_restricted_to_known_rules() -> None:
 def test_full_example_parses() -> None:
     cfg = _cfg(
         operator={"identity": "alice@example.com"},
-        plugins={"allowed": ["openssf-baseline"], "trusted_publishers": ["https://github.com/darnitdevorg"]},
+        plugins={"allowed": ["openssf-baseline"]},
         mcp_servers={"scanner": {"command": ["scanner-mcp", "--stdio"], "env": {"TOKEN": "$SCANNER_TOKEN"}}},
         controls={"OSPS-DO-01.01": {"passes": [{"handler": "file_exists", "files": ["README.md"]}]}},
         stores={"report": {"backend": "filesystem"}},
