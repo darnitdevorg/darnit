@@ -50,12 +50,12 @@ class TestGittufVerifyPolicyHandler:
         assert result.status == HandlerResultStatus.FAIL
         assert "policy violation" in result.message
 
-    def test_inconclusive_when_gittuf_not_installed(self, tmp_path: Path) -> None:
+    def test_error_when_gittuf_not_installed(self, tmp_path: Path) -> None:
         ctx = make_ctx(tmp_path)
         with patch("subprocess.run", side_effect=FileNotFoundError):
             result = gittuf_verify_policy_handler({}, ctx)
-        assert result.status == HandlerResultStatus.INCONCLUSIVE
-        assert result.confidence == 0.0
+        assert result.status == HandlerResultStatus.ERROR
+        assert result.error_class == "missing_tool"
 
     def test_inconclusive_on_timeout(self, tmp_path: Path) -> None:
         import subprocess
@@ -111,8 +111,9 @@ class TestGittufCommitsSignedHandler:
             result = gittuf_commits_signed_handler({}, ctx)
         assert result.status == HandlerResultStatus.INCONCLUSIVE
 
-    def test_inconclusive_when_git_not_found(self, tmp_path: Path) -> None:
+    def test_error_when_git_not_found(self, tmp_path: Path) -> None:
         ctx = make_ctx(tmp_path)
         with patch("subprocess.run", side_effect=FileNotFoundError):
             result = gittuf_commits_signed_handler({}, ctx)
-        assert result.status == HandlerResultStatus.INCONCLUSIVE
+        assert result.status == HandlerResultStatus.ERROR
+        assert result.error_class == "missing_tool"
