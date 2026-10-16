@@ -1134,7 +1134,16 @@ def generate_threat_model(
                     {"path": output_path, "overwrite": True},
                     context,
                 )
-                files = handler_result.evidence.get("files_written", [output_path])
+                # The handler returns its files and never writes (framework-design
+                # 4.2); this tool still writes them itself, outside the run manifest.
+                from darnit.remediation.plan import FileChange
+
+                files = [FileChange.model_validate(c) for c in handler_result.evidence.get("file_changes", [])]
+                for change in files:
+                    if change.changes and change.content is not None:
+                        target = repo_path / change.path
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_text(change.content, encoding="utf-8")
                 return (
                     f"Multi-file threat model written to {output_path} "
                     f"({len(ranked)} findings, {len(files)} files)"

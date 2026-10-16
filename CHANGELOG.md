@@ -568,6 +568,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The OSPS-SA-03.02 threat model remediation no longer writes its own
+  files. It wrote `SUMMARY.md`, `data-flow.md`, `raw-findings.json` and
+  `findings/*.md` directly, overwriting uncommitted edits, outside the run
+  manifest, so the commit step committed only the `.project/project.yaml`
+  pointer. `generate_threat_model` now returns every file as a planned
+  change in preview and apply, and the executor writes them: a file with
+  uncommitted changes is kept and reported `user_changes_present`, written
+  files are recorded and committed, and the step is previewable, so it no
+  longer needs its own approval. A stale-flag update to the mitigation
+  sidecar goes through the executor too. The summary's and
+  `raw-findings.json`'s scan date is now the UTC date without the time, so
+  a preview and its apply plan the same content. A changed outcome also
+  lists the files kept because of uncommitted changes.
 - When `cel-python` or `tree-sitter-language-pack` fails to import, the
   error now gives the real cause. Both guards said "not installed" for any
   import error, which was wrong for an installed package with a missing

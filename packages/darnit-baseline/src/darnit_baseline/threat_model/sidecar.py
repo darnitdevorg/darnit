@@ -1,4 +1,4 @@
-"""Mitigation sidecar: load, save, fingerprint, match, stale detection.
+"""Mitigation sidecar: load, render, fingerprint, match, stale detection.
 
 The sidecar file at ``.project/threatmodel/mitigations.yaml`` stores
 reviewer decisions about threat model findings.  It is human-edited;
@@ -95,11 +95,8 @@ def load_sidecar(repo_root: Path) -> MitigationSidecar | None:
     return MitigationSidecar(entries=entries)
 
 
-def save_sidecar(repo_root: Path, sidecar: MitigationSidecar) -> None:
-    """Write the sidecar back to disk, preserving entry ordering."""
-    sidecar_path = repo_root / SIDECAR_REL_PATH
-    os.makedirs(sidecar_path.parent, exist_ok=True)
-
+def render_sidecar(sidecar: MitigationSidecar) -> str:
+    """The sidecar file content, preserving entry ordering (the remediation executor writes it)."""
     header = (
         "# .project/threatmodel/mitigations.yaml\n"
         "#\n"
@@ -133,7 +130,7 @@ def save_sidecar(repo_root: Path, sidecar: MitigationSidecar) -> None:
         data["entries"].append(item)
 
     yaml_content = yaml.dump(data, default_flow_style=False, sort_keys=False, allow_unicode=True)
-    sidecar_path.write_text(header + yaml_content, encoding="utf-8")
+    return header + yaml_content
 
 
 def match_findings(

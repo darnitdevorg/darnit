@@ -4,16 +4,21 @@ Uses the tree-sitter discovery pipeline (``ts_discovery.discover_all``)
 with optional Opengrep taint enrichment and the new Markdown generator
 (``ts_generators.generate_markdown_threat_model``). On pipeline failure,
 falls back to the static template content (pre-resolved by the executor).
+The handler returns its files as ``FileChange``s and never writes; the
+remediation executor is the single writer (framework-design 4.2).
 """
 
 from __future__ import annotations
 
 import os
+import posixpath
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from darnit.core.logging import get_logger
+from darnit.remediation.plan import FileChange, content_digest
+from darnit.sieve.builtin_handlers import _file_changes_evidence, _read_text, _repo_path
 from darnit.sieve.handler_registry import (
     HandlerContext,
     HandlerResult,
@@ -28,7 +33,7 @@ from .renderers.data_flow import render_data_flow
 from .renderers.group_file import render_group_file
 from .renderers.raw_json import render_raw_json
 from .renderers.summary import render_summary
-from .sidecar import compute_fingerprint, detect_stale, load_sidecar, match_findings, save_sidecar
+from .sidecar import SIDECAR_REL_PATH, compute_fingerprint, detect_stale, load_sidecar, match_findings, render_sidecar
 from .ts_discovery import DiscoveryConfig, discover_all
 
 # Backward-compat alias
@@ -231,19 +236,39 @@ def _build_llm_consultation(
     }
 
 
+def _planned_change(local_path: str, relative: str, content: str) -> FileChange:
+    """The ``FileChange`` that makes ``relative`` hold ``content``.
+
+    Raises:
+        OSError: the file exists and cannot be read.
+    """
+    full_path = os.path.join(local_path, relative)
+    if not os.path.lexists(full_path):
+        return FileChange(path=relative, action="create", content=content)
+    current = _read_text(full_path)
+    if current is None:
+        raise OSError(f"Cannot read existing file to overwrite: {relative}")
+    if current == content:
+        return FileChange(path=relative, action="none", reason="already_exists")
+    return FileChange(path=relative, action="modify", content=content, before_digest=content_digest(current))
+
+
 def generate_threat_model_handler(
     config: dict[str, Any],
     context: HandlerContext,
 ) -> HandlerResult:
-    """Generate a dynamic STRIDE threat model for remediation.
+    """Plan a dynamic STRIDE threat model (feature 043: never writes).
 
     Runs the full analysis pipeline (framework detection, asset discovery,
-    threat analysis, attack chain detection) and writes a detailed Markdown
-    report. Falls back to static template content on analysis failure.
+    threat analysis, attack chain detection) and returns every file it
+    generates as a :class:`~darnit.remediation.plan.FileChange` in
+    ``evidence["file_changes"]``, in both plan and apply mode; the
+    remediation executor writes them. Falls back to static template content
+    on analysis failure.
 
     Config fields:
         path: str - Output file path relative to repository root
-        overwrite: bool - Whether to overwrite existing file (default: false)
+        overwrite: bool - Whether to regenerate when the file exists (default: false)
         content: str - Pre-resolved template content (fallback, provided by executor)
 
     Context fields:
@@ -258,6 +283,10 @@ def generate_threat_model_handler(
             status=HandlerResultStatus.ERROR,
             message="No path specified for threat model generation",
         )
+    try:
+        path = _repo_path(path, context)
+    except ValueError as e:
+        return HandlerResult(status=HandlerResultStatus.ERROR, message=str(e), evidence={"path": path})
 
     local_path = context.local_path
     full_path = os.path.join(local_path, path)
@@ -266,15 +295,17 @@ def generate_threat_model_handler(
     max_findings = int(config.get("max_findings", 50))
 
     # Respect overwrite flag — skip-if-exists is the conservative default.
-    if os.path.exists(full_path) and not config.get("overwrite", False):
+    if os.path.lexists(full_path) and not config.get("overwrite", False):
+        change = FileChange(path=path, action="none", reason="already_exists")
         return HandlerResult(
             status=HandlerResultStatus.PASS,
             message=f"Threat model already exists: {path}",
-            evidence={
-                "path": path,
-                "action": "skipped",
-                "note": ("Pre-existing threat model preserved. Re-run with overwrite=true to regenerate."),
-            },
+            evidence=_file_changes_evidence(
+                [change],
+                path=path,
+                action="skipped",
+                note="Pre-existing threat model preserved. Re-run with overwrite=true to regenerate.",
+            ),
         )
 
     # Run the tree-sitter pipeline: discover → rank → group.
@@ -299,32 +330,27 @@ def generate_threat_model_handler(
                 },
             )
         try:
-            os.makedirs(os.path.dirname(full_path) or ".", exist_ok=True)
-            with open(full_path, "w", encoding="utf-8") as f:
-                f.write(fallback_content)
-        except OSError as write_err:
+            change = _planned_change(local_path, path, fallback_content)
+        except OSError as read_err:
             return HandlerResult(
                 status=HandlerResultStatus.ERROR,
-                message=f"Failed to write fallback template: {write_err}",
-                evidence={
-                    "path": path,
-                    "error": str(write_err),
-                    **ts_evidence,
-                },
+                message=str(read_err),
+                evidence={"path": path, "error": str(read_err), **ts_evidence},
             )
         return HandlerResult(
             status=HandlerResultStatus.PASS,
-            message=f"Tree-sitter pipeline unavailable — created from template: {path}",
+            message=f"Tree-sitter pipeline unavailable — create from template: {path}",
             confidence=1.0,
-            evidence={
-                "path": path,
-                "action": "created_from_template",
-                "fallback_reason": ts_output.failure_reason,
+            evidence=_file_changes_evidence(
+                [change],
+                path=path,
+                action="created_from_template",
+                fallback_reason=ts_output.failure_reason,
                 **ts_evidence,
-            },
+            ),
         )
 
-    # Pipeline succeeded — write multi-file output.
+    # Pipeline succeeded — plan multi-file output.
     result = ts_output.result
     groups = ts_output.groups
     ranked = ts_output.ranked
@@ -340,6 +366,7 @@ def generate_threat_model_handler(
 
     # Sidecar support: load, match, detect stale.
     sidecar_matches: dict[str, Any] = {}
+    sidecar_content: str | None = None
     try:
         sidecar = load_sidecar(repo_root)
     except ValueError as exc:
@@ -353,10 +380,7 @@ def generate_threat_model_handler(
         sidecar_matches = match_findings(ranked, sidecar)
         active_fps = {f.fingerprint for f in ranked if f.fingerprint}
         if detect_stale(sidecar, active_fps):
-            try:
-                save_sidecar(repo_root, sidecar)
-            except OSError as exc:
-                logger.warning("Failed to save sidecar stale flags: %s", exc)
+            sidecar_content = render_sidecar(sidecar)
 
     # Check for legacy THREAT_MODEL.md at repo root.
     legacy_path = os.path.join(local_path, "THREAT_MODEL.md")
@@ -377,16 +401,13 @@ def generate_threat_model_handler(
     _, overflow_hint = apply_cap(result.findings, options.top_risks_cap)
 
     # Derive output directory from the configured path's parent.
-    output_dir = os.path.dirname(full_path)
-    findings_dir = os.path.join(output_dir, "findings")
+    output_dir = posixpath.dirname(path)
 
     try:
-        os.makedirs(findings_dir, exist_ok=True)
-
-        files_written: list[str] = []
+        outputs: dict[str, str] = {}
 
         # SUMMARY.md
-        summary_content = render_summary(
+        outputs[path] = render_summary(
             groups=groups,
             sidecar_matches=sidecar_matches,
             result=result,
@@ -395,44 +416,34 @@ def generate_threat_model_handler(
             repo_path=local_path,
             cli_families=ts_output.cli_families,
         )
-        with open(full_path, "w", encoding="utf-8") as f:
-            f.write(summary_content)
-        files_written.append(path)
 
         # data-flow.md
-        data_flow_path = os.path.join(output_dir, "data-flow.md")
-        data_flow_content = render_data_flow(result=result, options=options)
-        with open(data_flow_path, "w", encoding="utf-8") as f:
-            f.write(data_flow_content)
-        files_written.append(os.path.relpath(data_flow_path, local_path))
+        outputs[posixpath.join(output_dir, "data-flow.md")] = render_data_flow(result=result, options=options)
 
         # raw-findings.json
-        raw_json_path = os.path.join(output_dir, "raw-findings.json")
-        raw_json_content = render_raw_json(
+        outputs[posixpath.join(output_dir, "raw-findings.json")] = render_raw_json(
             result=result,
             all_findings=ranked,
             sidecar_matches=sidecar_matches,
             repo_path=local_path,
         )
-        with open(raw_json_path, "w", encoding="utf-8") as f:
-            f.write(raw_json_content)
-        files_written.append(os.path.relpath(raw_json_path, local_path))
 
         # Per-class detail files: findings/<slug>.md
         for group in groups:
-            group_path = os.path.join(findings_dir, f"{group.slug}.md")
-            group_content = render_group_file(
+            outputs[posixpath.join(output_dir, "findings", f"{group.slug}.md")] = render_group_file(
                 group=group,
                 sidecar_matches=sidecar_matches,
             )
-            with open(group_path, "w", encoding="utf-8") as f:
-                f.write(group_content)
-            files_written.append(os.path.relpath(group_path, local_path))
+
+        if sidecar_content is not None:
+            outputs[_repo_path(SIDECAR_REL_PATH, context)] = sidecar_content
+
+        changes = [_planned_change(local_path, relative, content) for relative, content in outputs.items()]
 
     except OSError as e:
         return HandlerResult(
             status=HandlerResultStatus.ERROR,
-            message=f"Failed to write threat model: {e}",
+            message=f"Failed to plan threat model: {e}",
             evidence={
                 "path": path,
                 "error": str(e),
@@ -461,29 +472,29 @@ def generate_threat_model_handler(
     return HandlerResult(
         status=HandlerResultStatus.PASS,
         message=(
-            f"Generated multi-file threat model: {path} "
+            f"Generate multi-file threat model: {path} "
             f"({len(groups)} classes, {len(ranked)} findings) "
             "— calling agent should verify findings per the embedded "
             "verification prompt block"
         ),
         confidence=1.0,
-        evidence={
-            "path": path,
-            "action": "created",
-            "files_written": files_written,
-            "group_count": len(groups),
-            "llm_verification_required": True,
-            "llm_consultation": consultation,
-            "note": (
+        evidence=_file_changes_evidence(
+            changes,
+            path=path,
+            action="created",
+            group_count=len(groups),
+            llm_verification_required=True,
+            llm_consultation=consultation,
+            note=(
                 "Multi-file threat model produced by the tree-sitter discovery "
                 "pipeline. Summary at the path above; per-class details in "
                 "findings/ subdirectory. Review each finding against its code "
                 "snippet and remove false positives before committing."
             ),
-            "generator": "multi_file_renderers",
+            generator="multi_file_renderers",
             **({"migration_note": migration_note} if migration_note else {}),
             **ts_evidence,
-        },
+        ),
     )
 
 
