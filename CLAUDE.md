@@ -339,16 +339,15 @@ handler = "my_tool"  # Short name instead of full module path
 
 ### Plugin Security
 
-Plugins support Sigstore verification:
+darnit does not verify plugin signatures; installing a package is the trust decision, and verifying it is the installer's job. Operator configuration restricts which installed plugins load:
 
 ```toml
 # operator configuration (~/.config/darnit/config.toml)
 [plugins]
-allow_unsigned = false
-trusted_publishers = ["https://github.com/kusari-oss"]
+allowed = ["openssf-baseline"]   # entry point names; empty or absent: all installed
 ```
 
-Default trusted publishers: `kusari-oss`, `kusaridev`
+Drivers that read operator configuration (audit, run, harness, serve, MCP tools) never load an entry point left out (no import, no step types), and refuse an audit of its framework. `allow_unsigned` and `trusted_publishers` were removed and fail loading (framework-design.md 6.6, Appendix C).
 
 ## Common Patterns
 

@@ -52,21 +52,16 @@ expr = 'output.json.status == "pass"'
 
 ## Plugin Security Configuration
 
-### New Configuration
-Add to your operator configuration (`~/.config/darnit/config.toml`, or the file named by `--operator-config`):
+darnit does not verify plugin signatures. The operator configuration keys `[plugins] allow_unsigned` and `trusted_publishers` were never applied and are removed; operator configuration that still sets them fails to load. Delete them, and restrict which installed plugins darnit loads with `allowed` (`~/.config/darnit/config.toml`, or the file named by `--operator-config`):
 
 ```toml
 schema_version = 1
 
 [plugins]
-# Require signed plugins in production
-allow_unsigned = false
-
-# Trust additional publishers beyond defaults (kusari-oss, kusaridev)
-trusted_publishers = [
-    "https://github.com/my-org",
-]
+allowed = ["openssf-baseline"]   # empty or absent: every installed plugin
 ```
+
+Verify plugin packages when installing them (framework-design 6.6).
 
 ## Repository `.baseline.toml`
 
