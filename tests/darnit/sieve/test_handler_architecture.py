@@ -32,7 +32,6 @@ from darnit.sieve.models import (
 )
 from darnit.sieve.orchestrator import (
     SieveOrchestrator,
-    _resolve_execution_order,
 )
 
 # =============================================================================
@@ -417,86 +416,6 @@ class TestWhenClauseEvaluation:
         result = orchestrator.verify(control, context)
         assert result.status == "N/A"
         assert "when" in result.evidence
-
-
-# =============================================================================
-# 10.5: Dependency resolution tests
-# =============================================================================
-
-
-class TestDependencyResolution:
-    """Tests for topological sort and cycle detection."""
-
-    @pytest.mark.unit
-    def test_no_dependencies(self):
-        """Controls without dependencies preserve original order."""
-        specs = [
-            _make_control("A"),
-            _make_control("B"),
-            _make_control("C"),
-        ]
-        ordered = _resolve_execution_order(specs)
-        ids = [s.control_id for s in ordered]
-        assert ids == ["A", "B", "C"]
-
-    @pytest.mark.unit
-    def test_simple_dependency(self):
-        """B depends on A → A runs first."""
-        specs = [
-            _make_control("B", depends_on=["A"]),
-            _make_control("A"),
-        ]
-        ordered = _resolve_execution_order(specs)
-        ids = [s.control_id for s in ordered]
-        assert ids.index("A") < ids.index("B")
-
-    @pytest.mark.unit
-    def test_chain_dependency(self):
-        """C depends on B, B depends on A → A, B, C."""
-        specs = [
-            _make_control("C", depends_on=["B"]),
-            _make_control("B", depends_on=["A"]),
-            _make_control("A"),
-        ]
-        ordered = _resolve_execution_order(specs)
-        ids = [s.control_id for s in ordered]
-        assert ids.index("A") < ids.index("B")
-        assert ids.index("B") < ids.index("C")
-
-    @pytest.mark.unit
-    def test_cycle_detection(self):
-        """Cycles are detected and broken (no hang)."""
-        specs = [
-            _make_control("A", depends_on=["B"]),
-            _make_control("B", depends_on=["A"]),
-        ]
-        # Should complete without infinite loop
-        ordered = _resolve_execution_order(specs)
-        ids = [s.control_id for s in ordered]
-        # Both should appear
-        assert set(ids) == {"A", "B"}
-
-    @pytest.mark.unit
-    def test_out_of_scope_ignored(self):
-        """References to controls not in the batch are ignored."""
-        specs = [
-            _make_control("B", depends_on=["X"]),  # X not in batch
-            _make_control("A"),
-        ]
-        ordered = _resolve_execution_order(specs)
-        ids = [s.control_id for s in ordered]
-        assert set(ids) == {"A", "B"}
-
-    @pytest.mark.unit
-    def test_inferred_from_creates_implicit_dependency(self):
-        """inferred_from creates implicit dependency ordering."""
-        specs = [
-            _make_control("B", inferred_from="A"),
-            _make_control("A"),
-        ]
-        ordered = _resolve_execution_order(specs)
-        ids = [s.control_id for s in ordered]
-        assert ids.index("A") < ids.index("B")
 
 
 # =============================================================================
@@ -1052,7 +971,7 @@ class TestEndToEndIntegration:
                 project_context={"has_releases": False},
             )
 
-        results = orchestrator.verify_batch(controls, context_factory)
+        results = [orchestrator.verify(spec, context_factory(spec.control_id)) for spec in controls]
 
         # Check results
         result_map = {r.control_id: r for r in results}
