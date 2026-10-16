@@ -111,10 +111,6 @@ The Pydantic config schema SHALL accept `security.contact` as either a `Security
 - **WHEN** a `.project.yaml` is loaded via Pydantic with `security.contact` as a string
 - **THEN** it SHALL be accepted as an `EmailStr` or plain string
 
-#### Scenario: get_security_contact accessor
-- **WHEN** `get_security_contact()` is called on a `ProjectConfig` with a struct contact
-- **THEN** it SHALL return the `email` field from the `SecurityContactModel`
-
 ### Requirement: Tolerate unknown fields
 The .project/ reader SHALL tolerate unknown fields for forward compatibility with spec evolution.
 

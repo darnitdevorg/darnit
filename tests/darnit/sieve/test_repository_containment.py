@@ -228,11 +228,10 @@ class TestCelFileExists:
 
 class TestFrameworkReaders:
     def test_utils_helpers(self, repo: Path) -> None:
-        from darnit.core.utils import file_contains, file_exists, read_file
+        from darnit.core.utils import file_exists, read_file
 
         assert read_file(str(repo), "SECURITY.md") is None
         assert read_file(str(repo), "README.md").startswith("# Project")
-        assert file_contains(str(repo), ["SECURITY.md"], MARKER) is False
         assert file_exists(str(repo), "SECURITY.md") is False
         assert file_exists(str(repo), "README.md") is True
 

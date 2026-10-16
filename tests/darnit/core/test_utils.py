@@ -7,13 +7,11 @@ from unittest.mock import patch
 import pytest
 
 from darnit.core.utils import (
-    file_contains,
     file_exists,
     get_git_commit,
     get_git_ref,
     gh_api,
     gh_api_safe,
-    make_result,
     read_file,
     set_gh_api_responder,
     validate_local_path,
@@ -99,53 +97,6 @@ class TestFileExists:
         assert file_exists(str(temp_dir), ".github/*.md") is True
 
 
-class TestFileContains:
-    """Tests for file_contains function."""
-
-    @pytest.mark.unit
-    def test_file_contains_match(self, temp_dir: Path):
-        """Test file_contains finds matching content."""
-        (temp_dir / "SECURITY.md").write_text(
-            "# Security\n\nEmail: security@example.com"
-        )
-        assert file_contains(
-            str(temp_dir),
-            ["SECURITY.md"],
-            r"security@\w+\.\w+"
-        ) is True
-
-    @pytest.mark.unit
-    def test_file_contains_no_match(self, temp_dir: Path):
-        """Test file_contains returns False when no match."""
-        (temp_dir / "SECURITY.md").write_text("# Security\n\nNo email here")
-        assert file_contains(
-            str(temp_dir),
-            ["SECURITY.md"],
-            r"security@\w+\.\w+"
-        ) is False
-
-    @pytest.mark.unit
-    def test_file_contains_case_insensitive(self, temp_dir: Path):
-        """Test file_contains is case insensitive."""
-        (temp_dir / "README.md").write_text("This is a SECURITY notice")
-        assert file_contains(
-            str(temp_dir),
-            ["README.md"],
-            r"security"
-        ) is True
-
-    @pytest.mark.unit
-    def test_file_contains_multiple_files(self, temp_dir: Path):
-        """Test file_contains with multiple file patterns."""
-        (temp_dir / "README.md").write_text("# Readme")
-        (temp_dir / "CONTRIBUTING.md").write_text("Email: contrib@example.com")
-        assert file_contains(
-            str(temp_dir),
-            ["README.md", "CONTRIBUTING.md"],
-            r"\w+@example\.com"
-        ) is True
-
-
 class TestReadFile:
     """Tests for read_file function."""
 
@@ -170,32 +121,6 @@ class TestReadFile:
         (temp_dir / "unicode.txt").write_text(content, encoding="utf-8")
         result = read_file(str(temp_dir), "unicode.txt")
         assert result == content
-
-
-class TestMakeResult:
-    """Tests for make_result function."""
-
-    @pytest.mark.unit
-    def test_make_result_basic(self):
-        """Test make_result creates correct structure."""
-        result = make_result("OSPS-AC-01.01", "PASS", "Control satisfied")
-        assert result["id"] == "OSPS-AC-01.01"
-        assert result["status"] == "PASS"
-        assert result["details"] == "Control satisfied"
-        assert result["level"] == 1
-
-    @pytest.mark.unit
-    def test_make_result_custom_level(self):
-        """Test make_result with custom level."""
-        result = make_result("OSPS-AC-03.02", "FAIL", "Missing", level=3)
-        assert result["level"] == 3
-
-    @pytest.mark.unit
-    def test_make_result_all_statuses(self):
-        """Test make_result works with all status values."""
-        for status in ["PASS", "FAIL", "WARN", "N/A", "ERROR"]:
-            result = make_result("TEST-01", status, f"Status: {status}")
-            assert result["status"] == status
 
 
 class TestGitCommit:
