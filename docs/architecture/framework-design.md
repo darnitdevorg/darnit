@@ -2027,6 +2027,21 @@ Implementation-registered sieve handlers (non-exhaustive):
 
 The reproducibility ceilings are part of that framework's own registration, not its package name, so they hold under a rename of the package.
 
+`gittuf_commits_signed` reads git's signature status (`%G?`) for the last five commits. Only `G` (good signature from a valid key) counts as signed; the step passes only when at least one commit was checked and every checked commit is `G`.
+
+- FAIL: `N` (no signature), `B` (bad), `R` (revoked key), `Y` (expired key), `X` (expired signature).
+- ERROR, class `evaluation`: `E` (the signature cannot be checked, for example the key is missing), a commit with a `gpgsig` header that git reports as `N` (git cannot check it here, for example an SSH signature without `gpg.ssh.allowedSignersFile`, or no `gpg`), and a status git does not document. The signatures exist but this machine cannot check them: a broken measurement, not evidence either way.
+- INCONCLUSIVE: `U` (good signature, unknown validity: nothing on this machine says the key is trusted; for SSH, git reports `U` whenever `gpg.ssh.allowedSignersFile` is set, even to a missing file), and no commits to check.
+- A FAIL outweighs an ERROR, and an ERROR outweighs INCONCLUSIVE.
+
+#### Scenario: Unverifiable commit signature
+- **WHEN** a checked commit carries a signature git reports as `E`, for example random bytes in an OpenPGP signature packet
+- **THEN** the `gittuf_commits_signed` step MUST be ERROR, class `evaluation`, and MUST NOT pass
+
+#### Scenario: No commits to check
+- **WHEN** `gittuf_commits_signed` finds no commits
+- **THEN** it MUST be INCONCLUSIVE, never PASS
+
 A handler used in a phase different from its registered affinity SHALL trigger a warning but still execute.
 
 ## 13. Persistence Extension Surface
