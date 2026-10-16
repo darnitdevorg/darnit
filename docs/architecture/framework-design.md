@@ -1,8 +1,8 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.16
+> **Version**: 1.0.0-alpha.17
 > **Status**: Authoritative
-> **Last Updated**: 2026-10-08
+> **Last Updated**: 2026-10-15
 
 This specification defines the authoritative design of the Darnit framework, including the sieve orchestrator, TOML schema, built-in pass types, remediation actions, and plugin protocol.
 
@@ -306,7 +306,7 @@ registry.register(
 | `settings` | `None` | The step keys this step type reads, beyond the common step fields. `None` means not declared, which only a plugin step type may leave: it loads with one warning per step type that its settings are not checked. Every core step type, check and remediation, declares its settings. |
 | `expression_names` | `{}` | The top-level names an `expr` on this step type may reference (section 3.7). Empty means the step type does not accept `expr`. |
 
-**Common step fields**, accepted on every step: `handler`, `when`, `shared`, `use_locator`, `authority`, `existence`, `concludes`, `fail_on_miss`, `fail_on_status`, `promotion` (3.0.1), `description` (documentation only), `expr` (only when the step type declares expression names), and `expr_decides` (only with `expr`, on a step type whose expression the orchestrator evaluates, section 3.7).
+**Common step fields**, accepted on every step: `handler`, `when`, `use_locator`, `authority`, `existence`, `concludes`, `fail_on_miss`, `fail_on_status`, `promotion` (3.0.1), `description` (documentation only), `expr` (only when the step type declares expression names), and `expr_decides` (only with `expr`, on a step type whose expression the orchestrator evaluates, section 3.7).
 
 **Name collisions.** Core step types register before any plugin. A registration is refused, logged at WARNING naming both registrants, and recorded in the registry's `refused_registrations` when the following apply. `darnit list` shows every refusal; an audit's warnings show those attempted by a plugin of the audited framework or of a framework it composes, since only those change what the audit runs:
 
@@ -2253,7 +2253,7 @@ The `confirm_*` tools are unchanged; approvals are not confirmations. Audit resu
 
 ## Appendix C: Removed Requirements
 
-The following requirements have been superseded: by the handler dispatch architecture, by the feature 043 remediation design (the `api_call` and `requires_confirmation` entries), by the operator configuration and trust boundary (the `.baseline.toml` entry, Section 14), and by the removal of unused subsystems (the adapter, `UnifiedLocator`, and plugin protocol method entries, #487).
+The following requirements have been superseded: by the handler dispatch architecture, by the feature 043 remediation design (the `api_call` and `requires_confirmation` entries), by the operator configuration and trust boundary (the `.baseline.toml` entry, Section 14), by the removal of unused subsystems (the adapter, `UnifiedLocator`, and plugin protocol method entries, #487), and by the removal of shared handlers.
 
 ### Removed: VerificationPassProtocol
 **Reason**: Replaced by handler dispatch architecture. Pass classes that implemented this protocol (`DeterministicPass`, `PatternPass`, `LLMPass`, `ManualPass`, `ExecPass`) are superseded by handler functions registered in `SieveHandlerRegistry`.
@@ -2346,12 +2346,25 @@ The following requirements have been superseded: by the handler dispatch archite
 **Reason**: No production path called `get_all_controls()`, `get_controls_by_level()`, `get_rules_catalog()`, or `get_remediation_registry()`, and `register_controls()` was required to be a no-op (#487). Controls, SARIF rule metadata, and remediation configuration all come from the framework TOML (section 6.3). The five methods are no longer members of `ComplianceImplementation`, and the framework no longer calls `register_controls()`.
 **Migration**: Delete the methods. A plugin that keeps them is still discovered; they are not called. Code that read controls from an implementation loads its framework TOML instead (`load_framework_by_name`, `load_controls_from_framework`). `FrameworkConfig.get_controls_by_level()` and `EffectiveConfig.get_controls_by_level()` are unaffected.
 
+### Removed: Shared handlers
+**Reason**: A step referencing a `[shared_handlers]` entry (`shared = "<name>"`) cached its result after its own control's `expr` was applied, so every later control referencing the same entry received that verdict and its own `expr` never ran: a false PASS. The effective configuration, which the CLI and MCP audits load, never resolved the references at all. No shipped framework used them. The `[shared_handlers]` table, the `shared` step key, and `HandlerContext.shared_cache` are removed.
+**Migration**: Declare the step's full configuration on each control that needs it. Each step runs for its own control and evaluates its own `expr`.
+
+#### Scenario: Framework declares shared handlers
+- **WHEN** a framework TOML has a `[shared_handlers]` table
+- **THEN** loading MUST fail with an error saying shared handlers were removed
+
+#### Scenario: Step references a shared handler
+- **WHEN** a verification or remediation step declares `shared`
+- **THEN** loading MUST fail with an error saying the `shared` step key was removed, on every control-loading path
+
 ---
 
 ## Version History
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.17 | 2026-10-15 | Removed shared handlers (`[shared_handlers]`, the `shared` step key): a second control referencing a shared step got the first control's verdict without evaluating its own `expr`, and the effective configuration never resolved them; declaring either now fails loading (Section 3.0.3; Appendix C) |
 | 1.0.0-alpha.16 | 2026-10-08 | `ComplianceImplementation` reduced to its five used members; `get_all_controls`, `get_controls_by_level`, `get_rules_catalog`, `get_remediation_registry`, and `register_controls` removed (Section 6.3; Appendix C; #487). `register_handlers()` is the handler registration hook, `register_sieve_handlers()` accepted only for compatibility, import-time registration not introspectable (Sections 6.4, 12; #451) |
 | 1.0.0-alpha.15 | 2026-10-08 | Removed the never-dispatched adapter system (`[adapters]`, `[defaults]` adapter keys, control-level `check`, `AdapterRegistry`) and `UnifiedLocator` with its `sync_to_project` writer (Sections 2.1, 6.5, 7.9; Appendix C; #487) |
 | 1.0.0-alpha.14 | 2026-10-07 | `repro_witness_attestation`: Witness/in-toto runtime-trace verification moves out of `repro_hermetic_build` into its own step type with ceiling `{fail}`, bound to the audited commit and reading only the runtime-trace predicate; a verified clean trace is evidence, not PASS (Sections 3.0.1, 12; #553) |

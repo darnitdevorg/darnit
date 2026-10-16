@@ -298,9 +298,6 @@ class SieveOrchestrator:
                          continuing to Manual pass when LLM pass is inconclusive.
         """
         self.stop_on_llm = stop_on_llm
-        # Shared handler cache: keyed by shared handler name, populated on first
-        # execution, reused for subsequent references within the same audit run
-        self._shared_cache: dict[str, HandlerResult] = {}
         # Dependency results: keyed by control ID, populated as controls are verified
         self._dependency_results: dict[str, SieveResult] = {}
         # MCP client-session pool. Constructed lazily on the first dispatch
@@ -309,11 +306,10 @@ class SieveOrchestrator:
         self._mcp_pool: Any | None = None
 
     def reset_caches(self) -> None:
-        """Reset shared handler cache and dependency results.
+        """Reset dependency results and the MCP client-session pool.
 
         Call this at the start of each audit run.
         """
-        self._shared_cache.clear()
         self._dependency_results.clear()
         if self._mcp_pool is not None:
             try:
@@ -415,7 +411,6 @@ class SieveOrchestrator:
             project_context=dict(context.project_context),
             usable_project=dict(context.usable_project),
             gathered_evidence=dict(context.gathered_evidence),
-            shared_cache=self._shared_cache,
             dependency_results={cid: r.status for cid, r in self._dependency_results.items()},
             execution_context=context.execution_context,
         )
@@ -478,106 +473,98 @@ class SieveOrchestrator:
             else:
                 phase = VerificationPhase.DETERMINISTIC
 
-            # Check shared cache
-            if invocation.shared and invocation.shared in self._shared_cache:
-                handler_result = self._shared_cache[invocation.shared]
-            else:
-                # Build handler config from invocation's extra fields
-                handler_config = dict(invocation.model_extra or {})
-                handler_config["handler"] = invocation.handler
-                # Feature 041: the two step declarations a handler reads.
-                if getattr(invocation, "fail_on_miss", False):
-                    handler_config["fail_on_miss"] = True
-                if getattr(invocation, "fail_on_status", None) is not None:
-                    handler_config["fail_on_status"] = list(invocation.fail_on_status)
+            # Build handler config from invocation's extra fields
+            handler_config = dict(invocation.model_extra or {})
+            handler_config["handler"] = invocation.handler
+            # Feature 041: the two step declarations a handler reads.
+            if getattr(invocation, "fail_on_miss", False):
+                handler_config["fail_on_miss"] = True
+            if getattr(invocation, "fail_on_status", None) is not None:
+                handler_config["fail_on_status"] = list(invocation.fail_on_status)
 
-                # Feature 031: for the built-in mcp handler, lazily
-                # construct the pool, assign it to the HandlerContext, and
-                # emit the [N/M] dispatching_mcp progress line on the
-                # darnit.harness logger BEFORE the handler runs. Emission
-                # here (not inside the handler) mirrors feature 026's
-                # dispatching_llm pattern and gives us the (idx, total)
-                # counter from the enumerate loop directly.
-                if invocation.handler == "mcp":
-                    if self._mcp_pool is None:
-                        self._mcp_pool = _build_mcp_pool(handler_ctx)
-                    handler_ctx.mcp_pool = self._mcp_pool
-                    server = handler_config.get("server", "?")
-                    tool_name = handler_config.get("tool", "?")
-                    total = len(handler_invocations)
-                    _harness_logger.info(
-                        "[%d/%d] %s dispatching_mcp %s.%s",
-                        pass_index + 1,
-                        total,
-                        control_spec.control_id,
-                        server,
-                        tool_name,
-                    )
-
-                start_time = time.time()
-                try:
-                    handler_result = handler_info.fn(handler_config, handler_ctx)
-                except Exception as e:
-                    # Feature 036: a handler that raised did not complete, so
-                    # this is an environmental failure, not a verdict. WARN
-                    # rather than DEBUG -- a crashed handler and a genuine
-                    # ERROR verdict were previously indistinguishable to
-                    # anyone reading default-level logs.
-                    logger.warning(
-                        "%s: %s handler could not complete (error_class=crashed): %s: %s",
-                        control_spec.control_id,
-                        invocation.handler,
-                        type(e).__name__,
-                        e,
-                    )
-                    handler_result = HandlerResult(
-                        status=HandlerResultStatus.ERROR,
-                        message=f"Handler error: {e}",
-                        error_class="crashed",
-                    )
-
-                handler_result = _apply_cel_expr(
-                    handler_config,
-                    handler_result,
-                    project=handler_ctx.usable_project,
-                    repo_path=context.local_path,
-                    decides=getattr(invocation, "expr_decides", False),
+            # Feature 031: for the built-in mcp handler, lazily
+            # construct the pool, assign it to the HandlerContext, and
+            # emit the [N/M] dispatching_mcp progress line on the
+            # darnit.harness logger BEFORE the handler runs. Emission
+            # here (not inside the handler) mirrors feature 026's
+            # dispatching_llm pattern and gives us the (idx, total)
+            # counter from the enumerate loop directly.
+            if invocation.handler == "mcp":
+                if self._mcp_pool is None:
+                    self._mcp_pool = _build_mcp_pool(handler_ctx)
+                handler_ctx.mcp_pool = self._mcp_pool
+                server = handler_config.get("server", "?")
+                tool_name = handler_config.get("tool", "?")
+                total = len(handler_invocations)
+                _harness_logger.info(
+                    "[%d/%d] %s dispatching_mcp %s.%s",
+                    pass_index + 1,
+                    total,
+                    control_spec.control_id,
+                    server,
+                    tool_name,
                 )
 
-                # Feature 036: remember the most recent environmental
-                # classification for the all-inconclusive WARN fallthrough
-                # below. Last non-None rather than simply last, because most
-                # controls end with a `manual` pass -- a "ask a human"
-                # placeholder that always returns INCONCLUSIVE and can never
-                # conclude anything. Treating that as "the final attempt ran
-                # cleanly" would wipe the real exec failure that preceded it,
-                # which is the common shape for a degraded audit.
-                if handler_result.error_class is not None:
-                    last_error_class = handler_result.error_class
+            start_time = time.time()
+            try:
+                handler_result = handler_info.fn(handler_config, handler_ctx)
+            except Exception as e:
+                # Feature 036: a handler that raised did not complete, so
+                # this is an environmental failure, not a verdict. WARN
+                # rather than DEBUG -- a crashed handler and a genuine
+                # ERROR verdict were previously indistinguishable to
+                # anyone reading default-level logs.
+                logger.warning(
+                    "%s: %s handler could not complete (error_class=crashed): %s: %s",
+                    control_spec.control_id,
+                    invocation.handler,
+                    type(e).__name__,
+                    e,
+                )
+                handler_result = HandlerResult(
+                    status=HandlerResultStatus.ERROR,
+                    message=f"Handler error: {e}",
+                    error_class="crashed",
+                )
 
-                duration_ms = int((time.time() - start_time) * 1000)
+            handler_result = _apply_cel_expr(
+                handler_config,
+                handler_result,
+                project=handler_ctx.usable_project,
+                repo_path=context.local_path,
+                decides=getattr(invocation, "expr_decides", False),
+            )
 
-                # Cache shared handler result
-                if invocation.shared:
-                    self._shared_cache[invocation.shared] = handler_result
+            # Feature 036: remember the most recent environmental
+            # classification for the all-inconclusive WARN fallthrough
+            # below. Last non-None rather than simply last, because most
+            # controls end with a `manual` pass -- a "ask a human"
+            # placeholder that always returns INCONCLUSIVE and can never
+            # conclude anything. Treating that as "the final attempt ran
+            # cleanly" would wipe the real exec failure that preceded it,
+            # which is the common shape for a degraded audit.
+            if handler_result.error_class is not None:
+                last_error_class = handler_result.error_class
 
-                # Record attempt
-                pass_result = PassResult(
+            duration_ms = int((time.time() - start_time) * 1000)
+
+            # Record attempt
+            pass_result = PassResult(
+                phase=phase,
+                outcome=_handler_status_to_outcome(handler_result.status),
+                message=handler_result.message,
+                evidence=handler_result.evidence,
+                confidence=handler_result.confidence,
+                details=handler_result.details,
+            )
+            pass_history.append(
+                PassAttempt(
                     phase=phase,
-                    outcome=_handler_status_to_outcome(handler_result.status),
-                    message=handler_result.message,
-                    evidence=handler_result.evidence,
-                    confidence=handler_result.confidence,
-                    details=handler_result.details,
+                    checks_performed=[f"handler:{invocation.handler}"],
+                    result=pass_result,
+                    duration_ms=duration_ms,
                 )
-                pass_history.append(
-                    PassAttempt(
-                        phase=phase,
-                        checks_performed=[f"handler:{invocation.handler}"],
-                        result=pass_result,
-                        duration_ms=duration_ms,
-                    )
-                )
+            )
 
             # Accumulate evidence
             if handler_result.evidence:

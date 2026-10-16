@@ -97,6 +97,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING:** a control-level `check` key in a framework TOML or an
   operator custom control now fails loading, like any unknown control key
   (#487).
+- **BREAKING:** shared handlers. A step referencing a `[shared_handlers]`
+  entry (`shared = "<name>"`) cached its result after its own control's
+  `expr` ran, so every later control referencing the same entry got that
+  verdict and never evaluated its own `expr`: a second control could PASS on
+  an expression that was false. The effective configuration, which the CLI
+  and MCP audits load, never resolved the references. A framework TOML with
+  a `[shared_handlers]` table, or a verification or remediation step with
+  `shared`, now fails loading with an error saying shared handlers were
+  removed; declare the step's full configuration on each control. Removed
+  with it: `SharedHandlerConfig`, `FrameworkConfig.shared_handlers`,
+  `HandlerInvocation.shared`, `HandlerContext.shared_cache` (construct a
+  `HandlerContext` without it), the `shared_handlers` parameter of
+  `control_from_framework`, and the three unreferenced `[shared_handlers]`
+  entries in `openssf-baseline.toml`.
 - **BREAKING:** framework TOML `[adapters]` tables and `[defaults]`
   `check_adapter` / `remediation_adapter` are no longer read. A framework
   that still has them loads (unknown top-level tables are accepted), and
