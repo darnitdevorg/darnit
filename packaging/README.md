@@ -6,7 +6,7 @@ Maintainer-facing documentation for the darnit release pipeline. End-user instal
 >
 > The repository moved from `kusari-oss/darnit` to `darnitdevorg/darnit`. GitHub redirects the old path, so stale URLs appear to work -- but Sigstore certificate identities do not redirect. Workflow identities and signing certificates for releases cut after the move resolve against `darnitdevorg/darnit`; artifacts published before it remain signed under `kusari-oss/darnit` and must be verified against that identity.
 >
-> Two things deliberately stay under the old org: the Homebrew tap (`kusari-oss/homebrew-tap`) and, for backward compatibility, the `kusari-oss` entry in `DEFAULT_TRUSTED_PUBLISHERS`.
+> The Homebrew tap (`kusari-oss/homebrew-tap`) deliberately stays under the old org.
 >
 > Earlier metadata referenced `kusaridev/darnit-mcp` and `kusaridev/baseline-mcp`. Those names are deprecated.
 
