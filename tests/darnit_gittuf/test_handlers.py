@@ -72,8 +72,8 @@ class TestGittufCommitsSignedHandler:
         ctx = make_ctx(tmp_path)
         mock_result = MagicMock()
         mock_result.returncode = 0
-        # Format is %G?%n%GK — status line then key line alternating
-        mock_result.stdout = "G\nabc123\nG\nabc124\nG\nabc125\n"
+        # Format is %H%x1f%G?%x1f%GK, one commit per line
+        mock_result.stdout = "c1\x1fG\x1fabc123\nc2\x1fG\x1fabc124\nc3\x1fG\x1fabc125\n"
         with patch("subprocess.run", return_value=mock_result):
             result = gittuf_commits_signed_handler({}, ctx)
         assert result.status == HandlerResultStatus.PASS
@@ -85,7 +85,7 @@ class TestGittufCommitsSignedHandler:
         mock_result = MagicMock()
         mock_result.returncode = 0
         # G = signed, N = unsigned, empty key for unsigned commits
-        mock_result.stdout = "G\nabc123\nN\n\nG\nabc125\n"
+        mock_result.stdout = "c1\x1fG\x1fabc123\nc2\x1fN\x1f\nc3\x1fG\x1fabc125\n"
         with patch("subprocess.run", return_value=mock_result):
             result = gittuf_commits_signed_handler({}, ctx)
         assert result.status == HandlerResultStatus.FAIL
@@ -96,7 +96,7 @@ class TestGittufCommitsSignedHandler:
         mock_result = MagicMock()
         mock_result.returncode = 0
         # B = bad signature
-        mock_result.stdout = "G\nabc123\nB\nabc124\nG\nabc125\n"
+        mock_result.stdout = "c1\x1fG\x1fabc123\nc2\x1fB\x1fabc124\nc3\x1fG\x1fabc125\n"
         with patch("subprocess.run", return_value=mock_result):
             result = gittuf_commits_signed_handler({}, ctx)
         assert result.status == HandlerResultStatus.FAIL
