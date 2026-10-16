@@ -36,9 +36,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `HandlerImportRefused` naming the path and the allowed packages; at server
   start the tool is not registered and the refusal is logged at ERROR.
   `HandlerRegistry.get_handler` raises it instead of returning `None` (#490).
+- Operator configuration `[plugins] allowed` is applied before a plugin is
+  loaded. Before, discovery imported every installed plugin and ran its
+  `register()` before the list was checked, and only an audit of a framework
+  left out was refused. Now `darnit audit`, `run`, `harness`, `serve`, and
+  the MCP tools do not load a `darnit.implementations` or `darnit.frameworks`
+  entry point the list leaves out, so its step types and handlers are not
+  registered, its framework does not resolve (also as a composition source),
+  and `darnit serve --framework` refuses it with the `plugins.allowed`
+  message (framework-design 6.6).
 
 ### Removed
 
+- **BREAKING:** plugin signature verification, which never verified
+  anything. Discovery always ran with `allow_unsigned = true`, looked
+  plugins up by entry point name instead of distribution name (so every
+  lookup failed and logged a "failed verification but will be loaded
+  anyway" WARNING on each run), and wrote `~/.darnit/verification_cache`
+  under the real home directory. The verifier made no cryptographic check:
+  it trusted a package whose self-declared author or maintainer email
+  contained a trusted publisher name. Removed: `darnit.core.verification`
+  (`PluginVerifier`, `VerificationConfig`, `VerificationResult`,
+  `VerificationCache`, `AttestationInfo`, `verify_plugin`,
+  `DEFAULT_TRUSTED_PUBLISHERS`) and its `darnit.core` re-exports; the
+  operator configuration keys `[plugins] allow_unsigned` and
+  `trusted_publishers`, which were never read and now fail loading with a
+  message saying they were removed; and the unread framework TOML
+  `[plugins]` models (`PluginsConfig`, `PluginConfig`,
+  `FrameworkConfig.plugins`). A framework TOML `[plugins]` table still loads
+  and has no effect. `darnit config migrate` no longer copies the two keys
+  into its operator configuration fragment. darnit does not verify plugin
+  signatures; verify packages when installing them and restrict which
+  installed plugins load with `[plugins] allowed` (framework-design 6.6).
 - `.baseline.toml` reading and the code that existed only for it:
   `load_user_config` (including its `trusted` path),
   `load_user_config_with_report`, `validate_user_config`, `deep_merge`, and

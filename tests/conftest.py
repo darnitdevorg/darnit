@@ -76,6 +76,7 @@ def _isolate_operator_config(
 ) -> Generator[None, None, None]:
     """Keep the developer's own operator configuration, confirmations, and remediation runs out of every test (040, 043)."""
     from darnit.config.operator import loader
+    from darnit.core.discovery import set_allowed_plugins
     from darnit.remediation import manifest
     from darnit.trust import confirmations
 
@@ -85,8 +86,12 @@ def _isolate_operator_config(
     monkeypatch.setattr(confirmations, "user_data_root", lambda: data_root)
     monkeypatch.setattr(manifest, "user_data_root", lambda: data_root)
     loader.set_launch_options(None, strict=False)
+    # Loading operator configuration applies its plugins.allowed to discovery
+    # for the process (framework-design 6.6); start and end every test allowing all.
+    set_allowed_plugins(None)
     yield
     loader.set_launch_options(None, strict=False)
+    set_allowed_plugins(None)
 
 
 TRUSTED_OWNER, TRUSTED_REPO = "test-owner", "test-repo"

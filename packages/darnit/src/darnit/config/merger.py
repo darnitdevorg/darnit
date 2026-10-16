@@ -653,8 +653,12 @@ def load_effective_config_by_name(
         Merged EffectiveConfig
 
     Raises:
-        ValueError: If framework not found
+        ValueError: If framework not found, or the operator's
+            ``plugins.allowed`` list leaves it out.
     """
+    # Before loading: a framework left out of plugins.allowed is not
+    # loaded, so it would otherwise read as not installed (framework-design 6.6).
+    ensure_framework_allowed(framework_name, operator)
     return merge_configs(load_framework_by_name(framework_name), operator)
 
 
@@ -685,6 +689,7 @@ def load_effective_config_auto(
     if framework_path:
         framework = load_framework_config(framework_path)
     elif framework_name:
+        ensure_framework_allowed(framework_name, operator)
         framework = load_framework_by_name(framework_name)
     else:
         try:

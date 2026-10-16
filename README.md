@@ -452,22 +452,18 @@ Darnit is designed with security in mind. Key security features include:
 - **Module Path Policy**: A configured `module:attribute` handler reference resolves only to `darnit` or a package registered under the `darnit.implementations` entry points
 - **Dry-Run Mode**: All remediation actions support dry-run to preview changes before applying
 - **Sigstore Attestations**: Cryptographically signed compliance attestations with transparency logging
-- **Plugin Verification**: Sigstore-based verification of plugin packages
+- **Plugin Allow-List**: Operator configuration chooses which installed plugins darnit loads
 
 ### Plugin Security
 
-Configure trusted publishers in operator configuration (`~/.config/darnit/config.toml`, or the file named by `--operator-config`):
+darnit does not verify plugin signatures. Installing a plugin package is the decision to trust its code, so verify packages when you install them (for example with pip or uv and PEP 740 attestations). To restrict which installed plugins darnit loads, list them in operator configuration (`~/.config/darnit/config.toml`, or the file named by `--operator-config`):
 
 ```toml
 [plugins]
-allow_unsigned = false
-trusted_publishers = [
-    "https://github.com/kusari-oss",
-    "https://github.com/my-org",
-]
+allowed = ["openssf-baseline"]
 ```
 
-Default trusted publishers: `kusari-oss`, `kusaridev`
+A plugin left out of `allowed` is not loaded by `darnit audit`, `run`, `harness`, or `serve`.
 
 ### Quick Security Checklist
 
@@ -475,7 +471,7 @@ Default trusted publishers: `kusari-oss`, `kusaridev`
 - [ ] Always use `dry_run=True` first when remediating
 - [ ] Review `.project/` changes (not-applicable claims) in pull requests
 - [ ] Ship custom handler modules in a package registered under `darnit.implementations`
-- [ ] Enable plugin verification in production (`allow_unsigned = false`)
+- [ ] Install plugins only from sources you trust, and list the ones darnit should load in `[plugins] allowed`
 
 For comprehensive security guidance, see [docs/SECURITY_GUIDE.md](docs/SECURITY_GUIDE.md).
 

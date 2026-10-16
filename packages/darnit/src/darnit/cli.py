@@ -1160,11 +1160,17 @@ def cmd_serve(args: argparse.Namespace) -> int:
         from darnit.config import list_available_frameworks, resolve_framework_path
 
         framework_name = getattr(args, "framework", None)
-        if not framework_name:
+        if framework_name:
+            from darnit.config.merger import ensure_framework_allowed
+
+            try:
+                ensure_framework_allowed(framework_name, operator_config.config)
+            except ValueError as e:
+                logger.error(str(e))
+                return 1
+        else:
+            # Lists only frameworks plugins.allowed permits (framework-design 6.6).
             frameworks = list_available_frameworks()
-            allowed = operator_config.config.plugins.allowed
-            if allowed:
-                frameworks = [f for f in frameworks if f in allowed]
             if not frameworks:
                 logger.error(
                     "No framework specified and none found. "
