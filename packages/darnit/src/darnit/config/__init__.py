@@ -34,11 +34,9 @@ from .context_storage import (
 from .control_loader import (
     control_from_effective,
     control_from_framework,
-    load_controls_by_name,
     load_controls_from_effective,
     load_controls_from_framework,
     load_controls_from_toml,
-    register_controls_from_config,
 )
 from .discovery import (
     discover_ci_config,
@@ -78,7 +76,6 @@ from .loader import (
     get_extension_by_key,
     get_extension_path,
     get_project_config,
-    init_project_config,
     list_extension_files,
     # Core functions
     load_project_config,
@@ -97,11 +94,6 @@ from .merger import (
     merge_control,
     resolve_framework_path,
     validate_framework_config,
-)
-from .resolver import (
-    resolve_file_for_control,
-    sync_discovered_file_to_config,
-    update_config_after_file_create,
 )
 from .schema import (
     ArtifactConfig,
@@ -140,11 +132,8 @@ from .schema import (
     SecurityConfig,
     SigningMethod,
     UrlRef,
-    create_full_config,
     # Factory functions
     create_minimal_config,
-    get_path_from_ref,
-    parse_resource_ref,
 )
 
 __all__ = [
@@ -162,8 +151,6 @@ __all__ = [
     "SectionRef",
     "NARef",
     "ResourceRef",
-    "parse_resource_ref",
-    "get_path_from_ref",
     # CNCF standard
     "MaturityEntry",
     "Audit",
@@ -188,12 +175,10 @@ __all__ = [
     "ProjectConfig",
     # Factory functions
     "create_minimal_config",
-    "create_full_config",
     # Loader - core
     "load_project_config",
     "save_project_config",
     "get_project_config",
-    "init_project_config",
     "config_exists",
     "get_config_path",
     "get_extension_path",
@@ -214,10 +199,6 @@ __all__ = [
     "discover_ci_config",
     "discover_project_name",
     "sync_discovered_to_config",
-    # Config-aware resolver
-    "resolve_file_for_control",
-    "update_config_after_file_create",
-    "sync_discovered_file_to_config",
     # Framework configuration schema
     "FrameworkConfig",
     "FrameworkMetadata",
@@ -248,8 +229,6 @@ __all__ = [
     "load_controls_from_effective",
     "load_controls_from_framework",
     "load_controls_from_toml",
-    "load_controls_by_name",
-    "register_controls_from_config",
     "control_from_effective",
     "control_from_framework",
     # Context schema (interactive context collection)

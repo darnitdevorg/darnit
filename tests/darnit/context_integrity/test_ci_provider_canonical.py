@@ -14,7 +14,6 @@ import yaml
 from darnit.config.context_resolve import resolve_context
 from darnit.config.context_schema import OriginKind, Standing
 from darnit.config.discovery import discover_ci_config
-from darnit.config.loader import load_project_config
 from darnit.context import detectors
 from darnit.context.auto_detect import collect_auto_context, detect_ci_provider
 from darnit.server.tools.project_data import confirm_project_data_impl
@@ -85,7 +84,6 @@ def test_legacy_spelling_reads_as_canonical(scratch_repo: Callable[[str], Path])
     assert resolved.value == "github"
     assert resolved.standing is Standing.CANDIDATE
     assert resolved.origin.kind is OriginKind.STORED_UNCONFIRMED
-    assert load_project_config(str(repo)).get_ci_provider() == "github"
 
 
 @pytest.mark.unit
@@ -99,13 +97,15 @@ def test_legacy_spelling_reads_as_canonical(scratch_repo: Callable[[str], Path])
         ({"context": {"ci_provider": "gitlab"}, "ci": {"provider": "github_actions"}}, "gitlab"),
     ],
 )
-def test_get_ci_provider_reads_the_canonical_vocabulary(tmp_path: Path, stored: dict, expected: str | None) -> None:
+def test_stored_ci_provider_reads_as_the_canonical_vocabulary(tmp_path: Path, stored: dict, expected: str | None) -> None:
     project = tmp_path / ".project"
     project.mkdir()
     (project / "project.yaml").write_text("name: legacy\n", encoding="utf-8")
     (project / "darnit.yaml").write_text(yaml.safe_dump(stored), encoding="utf-8")
 
-    assert load_project_config(str(tmp_path)).get_ci_provider() == expected
+    resolved = resolve_context(str(tmp_path), detect=False).get("ci_provider")
+
+    assert (resolved.value if resolved is not None else None) == expected
 
 
 CI_LAYOUTS = {
