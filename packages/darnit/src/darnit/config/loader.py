@@ -323,7 +323,7 @@ def save_project_config(config: ProjectConfig, local_path: str) -> str:
         mode='json',
         by_alias=True,
         exclude_none=True,
-        exclude={'config_path', 'local_path', '_type_exclusions'}
+        exclude={'config_path', 'local_path'}
     )
 
     # Split data into project.yaml and extension files
