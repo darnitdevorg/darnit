@@ -122,7 +122,7 @@ handler = "exec"
 command = ["gh", "api", "/repos/$OWNER/$REPO/branches/$BRANCH/protection"]
 pass_exit_codes = [0]
 output_format = "json"
-expr = 'output.json.required_pull_request_reviews != null'
+expr = 'has(output.json.required_pull_request_reviews)'
 
 [[controls."OSPS-AC-03.01".passes]]
 handler = "manual"
@@ -644,6 +644,8 @@ expr = 'output.json.status == "pass" && size(output.json.issues) == 0'
 |----------|-------------|
 | `file_exists(path)` | Whether `path`, relative to the audited repository, exists |
 | `json_path(obj, path)` | Value at a JMESPath expression in `obj` |
+
+**Field presence.** Whether a field exists is tested with the CEL `has()` macro, for example `has(output.json.required_pull_request_reviews)`. cel-python has no overload that compares a map to `null`, so an existence check written as `output.json.required_pull_request_reviews != null` raises an evaluation error.
 
 **Outcome rules** for an expression evaluated by the orchestrator. It runs only when the handler returns PASS or FAIL; a WARN, INCONCLUSIVE, or ERROR result is unchanged.
 
@@ -1774,7 +1776,7 @@ handler = "exec"
 command = ["gh", "api", "/repos/$OWNER/$REPO/branches/$BRANCH/protection"]
 pass_exit_codes = [0]
 output_format = "json"
-expr = 'output.json.required_pull_request_reviews != null'
+expr = 'has(output.json.required_pull_request_reviews)'
 
 [[controls."OSPS-AC-03.01".passes]]
 handler = "manual"
