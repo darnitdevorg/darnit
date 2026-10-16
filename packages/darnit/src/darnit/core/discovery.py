@@ -2,10 +2,12 @@
 
 This module discovers installed compliance implementations via Python entry points.
 Implementations register under the 'darnit.implementations' group.
+
+darnit does not verify plugin signatures (framework-design 6.6). The operator's
+``[plugins] allowed`` list decides which entry points are loaded at all.
 """
 
-
-from darnit.core.verification import PluginVerifier, VerificationConfig
+from collections.abc import Iterable
 
 from .logging import get_logger
 from .plugin import ComplianceImplementation
@@ -16,9 +18,36 @@ logger = get_logger("core.discovery")
 _implementations: dict[str, ComplianceImplementation] | None = None
 _implementation_packages: frozenset[str] = frozenset()
 
+# Entry point names the operator allows; None allows every installed plugin.
+_allowed: frozenset[str] | None = None
+
+
+def set_allowed_plugins(names: Iterable[str] | None) -> None:
+    """Load only these ``darnit.implementations`` and ``darnit.frameworks`` entry points.
+
+    Applied from operator configuration ``[plugins] allowed`` (framework-design
+    6.6). An empty or ``None`` list allows every installed plugin. Changing the
+    list clears the implementation and framework caches so the next lookup
+    loads only allowed entry points.
+    """
+    global _allowed
+    allowed = frozenset(names) if names else None
+    if allowed == _allowed:
+        return
+    _allowed = allowed
+    clear_cache()
+    from .registry import get_plugin_registry
+
+    get_plugin_registry().clear_cache()
+
+
+def plugin_allowed(entry_point_name: str) -> bool:
+    """Whether the operator allows the plugin entry point with this name to load."""
+    return _allowed is None or entry_point_name in _allowed
+
 
 def discover_implementations() -> dict[str, ComplianceImplementation]:
-    """Discover compliance implementations from entry points."""
+    """Discover compliance implementations from entry points the operator allows."""
     global _implementations, _implementation_packages
 
     if _implementations is not None:
@@ -27,41 +56,13 @@ def discover_implementations() -> dict[str, ComplianceImplementation]:
     _implementations = {}
     packages: set[str] = set()
 
-    # Use importlib.metadata for Python 3.9+
     from importlib.metadata import entry_points
 
-    eps = entry_points(group="darnit.implementations")
-
-    # Create plugin verifier (default: allow unsigned plugins for backward compatibility)
-    verification_config = VerificationConfig(allow_unsigned=True)
-    verifier = PluginVerifier(verification_config)
-
-    for ep in eps:
+    for ep in entry_points(group="darnit.implementations"):
+        if not plugin_allowed(ep.name):
+            logger.debug(f"Not loading implementation {ep.name}: not in plugins.allowed")
+            continue
         try:
-            try:
-                verification_result = verifier.verify_plugin(ep.name)
-            except Exception as e:
-                    logger.warning(
-                        f"Plugin verification errored for '{ep.name}', loading anyway because "
-                        f"allow_unsigned=True: {e}"
-                    )
-                    verification_result = None
-
-            if verification_result is not None and not verification_result.verified:
-                message = verification_result.error or verification_result.warning or "unknown verification failure"
-
-                if verification_config.allow_unsigned:
-                    logger.warning(
-                        f"Plugin '{ep.name}' failed verification but will be loaded anyway: "
-                        f"{message}"
-                    )
-                else:
-                    logger.warning(
-                        f"Skipping plugin '{ep.name}' because verification failed: "
-                        f"{message}"
-                    )
-                    continue
-
             # Load the entry point (calls the register() function)
             register_func = ep.load()
             impl = register_func()
@@ -80,7 +81,7 @@ def discover_implementations() -> dict[str, ComplianceImplementation]:
             logger.error(f"Failed to load implementation {ep.name}: {e}")
             continue
         except Exception as e:
-            logger.error(f"Error occurred while verifying or loading plugin '{ep.name}': {e}")
+            logger.error(f"Error occurred while loading plugin '{ep.name}': {e}")
             continue
 
     _implementation_packages = frozenset(packages)
@@ -187,5 +188,7 @@ __all__ = [
     "discover_implementations",
     "get_implementation",
     "implementation_packages",
+    "plugin_allowed",
     "register_implementation_handlers",
+    "set_allowed_plugins",
 ]

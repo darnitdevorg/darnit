@@ -59,15 +59,6 @@ from .utils import (
     gh_api_safe,
     validate_local_path,
 )
-from .verification import (
-    DEFAULT_TRUSTED_PUBLISHERS,
-    AttestationInfo,
-    PluginVerifier,
-    VerificationCache,
-    VerificationConfig,
-    VerificationResult,
-    verify_plugin,
-)
 
 __all__ = [
     # Logging
@@ -104,12 +95,4 @@ __all__ = [
     "get_template",
     "register_handler",
     "register_pass",
-    # Verification (Sigstore)
-    "PluginVerifier",
-    "VerificationConfig",
-    "VerificationResult",
-    "VerificationCache",
-    "AttestationInfo",
-    "verify_plugin",
-    "DEFAULT_TRUSTED_PUBLISHERS",
 ]
