@@ -1,5 +1,6 @@
 """Scientific reproducibility plugin implementation for darnit."""
 
+import importlib.metadata
 from pathlib import Path
 
 from darnit_reproducibility import handlers
@@ -23,7 +24,10 @@ class ReproducibilityImplementation:
 
     @property
     def version(self) -> str:
-        return "0.1.0"
+        try:
+            return importlib.metadata.version("darnit-reproducibility")
+        except importlib.metadata.PackageNotFoundError:
+            return "dev"
 
     @property
     def spec_version(self) -> str:

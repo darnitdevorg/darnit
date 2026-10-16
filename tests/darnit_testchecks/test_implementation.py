@@ -1,5 +1,7 @@
 """Tests for the testchecks-steps implementation."""
 
+import importlib.metadata
+
 import pytest
 from darnit_testchecks import get_framework_path, get_steps_framework_path, register
 from darnit_testchecks.implementation import CustomStepsImplementation
@@ -26,7 +28,7 @@ class TestCustomStepsImplementation:
     def test_properties(self, impl):
         assert impl.name == "testchecks-steps"
         assert impl.display_name == "Test Checks: Plugin Step Types"
-        assert impl.version == "0.1.0"
+        assert impl.version == importlib.metadata.version("darnit-testchecks")
         assert impl.spec_version == "test-steps-v1"
 
     @pytest.mark.unit
