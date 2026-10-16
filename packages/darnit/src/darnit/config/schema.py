@@ -479,9 +479,6 @@ class ProjectConfig(BaseModel):
     config_path: str | None = Field(default=None, exclude=True)
     local_path: str | None = Field(default=None, exclude=True)
 
-    # Project type exclusions (set by implementation)
-    _type_exclusions: dict[str, set[str]] = {}
-
     model_config = ConfigDict(
         populate_by_name=True,  # Allow both alias and field name
         extra="allow",  # Allow unknown fields for forward compatibility
@@ -542,28 +539,6 @@ class ProjectConfig(BaseModel):
 
         return None
 
-    def is_control_applicable(self, control_id: str) -> tuple[bool, str | None]:
-        """Check if control is applicable (not overridden as N/A).
-
-        Args:
-            control_id: OSPS control ID (e.g., "OSPS-BR-02.01")
-
-        Returns:
-            Tuple of (is_applicable, reason_if_not)
-        """
-        # Check explicit override first
-        if self.x_openssf_baseline:
-            override = self.x_openssf_baseline.controls.get(control_id)
-            if override and override.status == ControlStatusValue.NA:
-                return False, override.reason
-
-        # Check project type exclusions
-        exclusions = self._type_exclusions.get(self.type, set())
-        for excl in exclusions:
-            if control_id.startswith(excl):
-                return False, f"Not applicable for {self.type} projects"
-
-        return True, None
 
 # =============================================================================
 # Factory Functions

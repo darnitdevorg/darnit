@@ -9,9 +9,8 @@ This document maps out the decision-making processes in the OpenSSF Baseline MCP
 3. [Project Context Flow](#project-context-flow) *(NEW)*
 4. [Context Sieve Flow](#context-sieve-flow) *(NEW - Remediation)*
 5. [Project Configuration Lifecycle](#project-configuration-lifecycle)
-6. [Control Applicability](#control-applicability)
-7. [CI Discovery](#ci-discovery)
-8. [Attestation Generation](#attestation-generation)
+6. [CI Discovery](#ci-discovery)
+7. [Attestation Generation](#attestation-generation)
 
 ---
 
@@ -732,84 +731,9 @@ Only after the person accepts does the agent fill in the digest; the confirmatio
 
 ---
 
-## Control Applicability
-
-```text
-┌──────────────────────────────────────────────────────────────────┐
-│             is_control_applicable(control_id)                     │
-│                  (from ProjectConfig)                             │
-└──────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-              ┌───────────────────────────────────┐
-              │  Step 1: Check explicit overrides │
-              │  (from [project.controls])        │
-              └───────────────────────────────────┘
-                              │
-              ┌───────────────┴───────────────┐
-              │                               │
-              ▼                               ▼
-    [Override exists]               [No override]
-              │                               │
-              ▼                               │
-    ┌─────────────────────┐                   │
-    │ status == "n/a"?    │                   │
-    └─────────────────────┘                   │
-              │                               │
-        ┌─────┴─────┐                         │
-        │           │                         │
-        ▼           ▼                         │
-     [Yes]        [No]                        │
-        │           │                         │
-        ▼           │                         │
-  Return (False,    │                         │
-   override.reason) │                         │
-                    │                         │
-                    └────────────┬────────────┘
-                                 │
-                                 ▼
-              ┌───────────────────────────────────┐
-              │  Step 2: Check project type       │
-              │  exclusions                       │
-              └───────────────────────────────────┘
-                                 │
-                                 ▼
-              ┌───────────────────────────────────┐
-              │  PROJECT_TYPE_EXCLUSIONS lookup   │
-              │                                   │
-              │  software → (none)                │
-              │  specification → BR-02, BR-03,    │
-              │                   VM-05, QA-02    │
-              │  documentation → BR-02, BR-03,    │
-              │                   VM-05, QA-02,   │
-              │                   SA-02, SA-03    │
-              │  infrastructure → BR-02           │
-              │  data → BR-01, BR-02, BR-03,      │
-              │         QA-02, QA-03              │
-              └───────────────────────────────────┘
-                                 │
-                                 ▼
-              ┌───────────────────────────────────┐
-              │  Does control_id start with       │
-              │  any exclusion prefix?            │
-              └───────────────────────────────────┘
-                                 │
-                    ┌────────────┴────────────┐
-                    │                         │
-                    ▼                         ▼
-                 [Yes]                      [No]
-                    │                         │
-                    ▼                         ▼
-          Return (False,              Return (True, None)
-          "Not applicable for         [Control IS applicable]
-          {type} projects")
-```
-
----
-
 ## CI Discovery
 
-### 7.1 Provider Detection
+### 6.1 Provider Detection
 
 ```text
 ┌──────────────────────────────────────────────────────────────────┐
@@ -838,7 +762,7 @@ workflows/   ci.yml       config.yml                    │
               └───────────────────────────────────┘
 ```
 
-### 7.2 GitHub Capability Detection
+### 6.2 GitHub Capability Detection
 
 ```text
 ┌──────────────────────────────────────────────────────────────────┐
@@ -896,7 +820,7 @@ ci_config["testing"]  ci_config                ci_config
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 7.3 Capability → OSPS Control Mapping
+### 6.3 Capability → OSPS Control Mapping
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -915,7 +839,7 @@ ci_config["testing"]  ci_config                ci_config
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 7.4 Non-GitHub CI Provider Handling
+### 6.4 Non-GitHub CI Provider Handling
 
 For projects not using GitHub Actions, CI-related controls use project context and manual verification.
 
@@ -985,7 +909,7 @@ file      project.toml"                                       │         │
                                  required"
 ```
 
-### 7.5 CI Provider Configuration Reference
+### 6.5 CI Provider Configuration Reference
 
 ```toml
 # project.toml example for non-GitHub CI
@@ -1010,7 +934,7 @@ code_quality = [".gitlab-ci.yml"]       # Jobs that run linting
 
 ## Attestation Generation
 
-### 8.1 Main Attestation Flow
+### 7.1 Main Attestation Flow
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -1094,7 +1018,7 @@ code_quality = [".gitlab-ci.yml"]       # Jobs that run linting
           └────────────────────────────────────────────┘
 ```
 
-### 8.2 Sigstore Signing Flow
+### 7.2 Sigstore Signing Flow
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -1166,7 +1090,7 @@ code_quality = [".gitlab-ci.yml"]       # Jobs that run linting
                     └─────────────────────────────────┘
 ```
 
-### 8.3 Subject Format Differences
+### 7.3 Subject Format Differences
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -1204,7 +1128,7 @@ code_quality = [".gitlab-ci.yml"]       # Jobs that run linting
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 8.4 Attestation Verification
+### 7.4 Attestation Verification
 
 **Note:** `cosign verify-blob-attestation` does not work for these attestations because
 there is no external blob being attested - the DSSE envelope contains the statement itself.
@@ -1262,7 +1186,7 @@ Use the provided verification script instead.
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 8.5 Attestation Predicate Structure
+### 7.5 Attestation Predicate Structure
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -1362,7 +1286,6 @@ Use the provided verification script instead.
 | `load_project_config()` | main.py | Load project.toml |
 | `sync_discovered_to_config()` | main.py | Sync discovered items to config |
 | `discover_ci_config()` | main.py | Discover CI capabilities |
-| `is_control_applicable()` | main.py | Check if control applies |
 
 ### Sieve System Functions
 
