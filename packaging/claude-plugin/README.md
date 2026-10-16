@@ -27,7 +27,7 @@ The plugin and the MCP server it invokes are pinned to **darnit `__VERSION__`** 
 
 ### Prerequisite
 
-The plugin invokes `darnit-mcp` via either:
+The plugin runs `darnit serve` from the `darnit-mcp` package via either:
 - **`uvx`** (preferred — install [uv](https://docs.astral.sh/uv/getting-started/installation/) and you have `uvx`), or
 - **`pipx`** (fallback — install [pipx](https://pipx.pypa.io/stable/installation/)).
 
@@ -82,7 +82,7 @@ Skills are auto-discovered by Claude Code from the `skills/` directory — the m
 
 The skills bundled here follow the open [Agent Skills standard](https://agentskills.io/specification). They are portable to any Agent Skills-compatible client — Cursor, GitHub Copilot, Codex, OpenHands, Gemini CLI, opencode, Goose, and ~30 other tools.
 
-The plugin wrapper (`.claude-plugin/plugin.json`, the MCP-server runner, the version pin) is Claude-Code-specific. The SKILL.md files themselves are not — unzip this bundle and copy the four `skills/darnit-*/` directories into your agent's skill directory. You'll need to wire up the `darnit-mcp` server yourself in your agent's MCP config (e.g., point it at `uvx darnit-mcp==__VERSION__`).
+The plugin wrapper (`.claude-plugin/plugin.json`, the MCP-server runner, the version pin) is Claude-Code-specific. The SKILL.md files themselves are not — unzip this bundle and copy the four `skills/darnit-*/` directories into your agent's skill directory. You'll need to wire up the `darnit-mcp` server yourself in your agent's MCP config (e.g., point it at `uvx --from darnit-mcp==__VERSION__ darnit serve`).
 
 ## Schema version
 

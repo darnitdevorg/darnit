@@ -1,21 +1,28 @@
 # Install darnit from PyPI
 
-This is the recommended install path for users who have **Python 3.11 or 3.12** already installed. Examples assume version `0.1.0` — substitute the version you want.
+This is the recommended install path for users who have **Python 3.11 or 3.12** already installed. Substitute the version you want for `<version>`; the verification examples use `0.1.0`.
 
 ## Pick an install command
 
-```bash
-# pipx — isolated install, recommended for end users
-pipx install darnit-mcp==0.1.0
+The package is `darnit-mcp`; the command it installs is `darnit`. There is no `darnit-mcp` command, so `uvx darnit-mcp` does not work.
 
-# uv — fastest, modern
-uv tool install darnit-mcp==0.1.0
+```bash
+# uv — isolated install of the darnit command, with every plugin
+uv tool install darnit-mcp==<version>
+
+# uvx — run without installing
+uvx --from darnit-mcp==<version> darnit --version
+
+# pipx — isolated install
+pipx install darnit-mcp==<version>
 
 # pip — works in any virtualenv
-pip install darnit-mcp==0.1.0
+pip install darnit-mcp==<version>
 ```
 
-After install, `darnit --version` should print `0.1.0`.
+After install, `darnit --version` should print `<version>`.
+
+`darnit-mcp` 0.1.1 and earlier declare no command of their own, so `uv tool install darnit-mcp` and `pipx install darnit-mcp` fail for them ("No executables are provided by package `darnit-mcp`"; [#621](https://github.com/darnitdevorg/darnit/issues/621)). For those versions use `uvx --from darnit-mcp==<version> darnit` or `pip install`, or install from the git URL ([from-source.md](from-source.md)).
 
 ## Pre-releases (TestPyPI)
 
@@ -97,7 +104,7 @@ Each release publishes four packages in lockstep:
 | `darnit-gittuf` | Gittuf policy plugin |
 | `darnit-mcp` | The MCP server entry point — installs the `darnit` CLI |
 
-For most users, `pip install darnit-mcp` is the right command. The other packages exist for users who want only the framework, only a specific implementation, or who are writing their own implementation plugin (see [`docs/packaging-plugins.md`](../packaging-plugins.md)).
+For most users, `uv tool install darnit-mcp` (or `pip install darnit-mcp` in a virtualenv) is the right command. The other packages exist for users who want only the framework, only a specific implementation, or who are writing their own implementation plugin (see [`docs/packaging-plugins.md`](../packaging-plugins.md)).
 
 ## Prerequisites
 
