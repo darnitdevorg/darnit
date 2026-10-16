@@ -413,9 +413,7 @@ def _validate_project_reference(reference: Any) -> None:
     from darnit.config.resolver import reference_key
 
     if not isinstance(reference, str) or reference_key(reference) is None:
-        raise ValueError(
-            f"file_create project_reference {reference!r} is not a project path field (<section>.<field>)"
-        )
+        raise ValueError(f"file_create project_reference {reference!r} is not a project path field (<section>.<field>)")
 
 
 class ProjectUpdateRemediationConfig(BaseModel):
@@ -704,31 +702,44 @@ class ControlConfig(BaseModel):
 
         Framework controls may declare maturity level, domain, and severity either
         as top-level attributes or inside the flexible tags dictionary (e.g. tags = { level = 1 }).
-        This validator establishes a single canonical source of truth by populating
-        the attribute from tags if omitted, and vice-versa.
+        Top-level attributes are canonical. If present in only one location, values are synchronized.
+        Conflicting declarations or invalid tags.level types reject loading.
         """
-        if self.level is None and "level" in self.tags:
+        if "level" in self.tags:
             tag_level = self.tags["level"]
-            if isinstance(tag_level, int):
-                self.level = tag_level
-            elif isinstance(tag_level, str) and tag_level.isdigit():
-                self.level = int(tag_level)
-        elif self.level is not None and "level" not in self.tags:
+            if isinstance(tag_level, bool) or not isinstance(tag_level, int):
+                raise ValueError(f"tags.level must be an integer, got {tag_level!r} ({type(tag_level).__name__})")
+            if self.level is not None and self.level != tag_level:
+                raise ValueError(
+                    f"Conflicting level declarations: attribute level={self.level} != tags.level={tag_level}"
+                )
+            self.level = tag_level
+        elif self.level is not None:
             self.tags["level"] = self.level
 
-        if self.domain is None and "domain" in self.tags:
+        if "domain" in self.tags:
             tag_domain = self.tags["domain"]
-            if isinstance(tag_domain, str):
-                self.domain = tag_domain
-        elif self.domain is not None and "domain" not in self.tags:
+            if not isinstance(tag_domain, str):
+                raise ValueError(f"tags.domain must be a string, got {tag_domain!r} ({type(tag_domain).__name__})")
+            if self.domain is not None and self.domain != tag_domain:
+                raise ValueError(
+                    f"Conflicting domain declarations: attribute domain={self.domain!r} != tags.domain={tag_domain!r}"
+                )
+            self.domain = tag_domain
+        elif self.domain is not None:
             self.tags["domain"] = self.domain
 
-        if self.security_severity is None and "security_severity" in self.tags:
-            try:
-                self.security_severity = float(self.tags["security_severity"])
-            except (ValueError, TypeError):
-                pass
-        elif self.security_severity is not None and "security_severity" not in self.tags:
+        if "security_severity" in self.tags:
+            tag_sev = self.tags["security_severity"]
+            if isinstance(tag_sev, bool) or not isinstance(tag_sev, (int, float)):
+                raise ValueError(f"tags.security_severity must be a number, got {tag_sev!r} ({type(tag_sev).__name__})")
+            tag_sev_float = float(tag_sev)
+            if self.security_severity is not None and self.security_severity != tag_sev_float:
+                raise ValueError(
+                    f"Conflicting security_severity declarations: attribute security_severity={self.security_severity} != tags.security_severity={tag_sev_float}"
+                )
+            self.security_severity = tag_sev_float
+        elif self.security_severity is not None:
             self.tags["security_severity"] = self.security_severity
 
         return self
