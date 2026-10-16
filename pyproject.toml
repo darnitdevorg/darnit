@@ -24,6 +24,11 @@ dependencies = [
     "darnit-reproducibility>=0.1.1",
 ]
 
+[project.scripts]
+# Same entry point as darnit-core, so `uv tool install darnit-mcp` and
+# `uvx --from darnit-mcp darnit` put `darnit` on PATH with every plugin (#621).
+darnit = "darnit.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/kusari-oss/darnit"
 Repository = "https://github.com/kusari-oss/darnit"
