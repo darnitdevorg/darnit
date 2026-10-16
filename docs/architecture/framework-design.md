@@ -1,8 +1,8 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.16
+> **Version**: 1.0.0-alpha.17
 > **Status**: Authoritative
-> **Last Updated**: 2026-10-08
+> **Last Updated**: 2026-10-15
 
 This specification defines the authoritative design of the Darnit framework, including the sieve orchestrator, TOML schema, built-in pass types, remediation actions, and plugin protocol.
 
@@ -1476,7 +1476,7 @@ Every place that turns such a string into an import SHALL resolve it through one
 
 **Resolution policy**:
 - The path SHALL have the form `a.b.c:attr`: exactly one `:`, every dotted module part and the attribute a Python identifier. A relative path (leading `.`), an empty part, a dotted attribute, or any other form is refused.
-- The module's top-level package SHALL be `darnit`, or the top-level package of an implementation that discovery loaded from the `darnit.implementations` entry point group (Section 6.2). The set is read from the entry points' module names (`darnit_csl:register` gives `darnit_csl`), not from a list in code, so an installed third-party implementation is covered and an uninstalled one is not. It is computed once per process with the implementation cache and recomputed when that cache is cleared.
+- The module's top-level package SHALL be `darnit`, or the top-level package of an implementation that discovery loaded from the `darnit.implementations` entry point group (Section 6.2). An implementation `[plugins] allowed` leaves out is not loaded (Section 6.6). The set is read from the entry points' module names (`darnit_csl:register` gives `darnit_csl`), not from a list in code, so an installed third-party implementation is covered and an uninstalled one is not. It is computed once per process with the implementation cache and recomputed when that cache is cleared.
 - The policy is checked before any import. A refused module is never imported.
 
 **Failure behavior**:
@@ -1494,40 +1494,36 @@ This policy limits which installed code a configured string can reach. It is not
 - **WHEN** an `[mcp.tools]` entry names `os:system`, or a module of a package that is not an installed implementation
 - **THEN** the module SHALL NOT be imported, the tool SHALL NOT be registered, and server start SHALL report the refusal at ERROR
 
-### 6.6 Plugin Verification with Sigstore
+### 6.6 Plugin Trust
 
-Plugins can be verified using Sigstore-based attestations. Plugin trust is operator configuration (Section 14); it is never read from the audited repository:
+darnit does not verify plugin signatures or provenance. Installing a package into the environment darnit runs from is the decision to trust its code. Verifying a package before it is installed is the installer's job, for example pip or uv checking PEP 740 attestations, or Sigstore verification of the distribution file.
+
+Operator configuration (Section 14.1) restricts which installed plugins darnit uses with `[plugins] allowed`. It is never read from the audited repository:
 
 ```toml
 # operator configuration (e.g. ~/.config/darnit/config.toml)
 [plugins]
-allow_unsigned = false
-trusted_publishers = [
-    "https://github.com/kusari-oss",
-    "https://github.com/openssf",
-]
-
-[plugins."darnit-baseline"]
-version = ">=1.0.0"
+allowed = ["openssf-baseline", "reproducibility"]
 ```
 
-**Configuration Fields**:
+- Names are entry point names in the `darnit.implementations` and `darnit.frameworks` groups (Section 6.2), which are the implementation and framework names. An empty or absent list allows every installed plugin. The list does not apply to other entry point groups.
+- An entry point whose name is not listed SHALL NOT be loaded, so nothing is imported for it. No implementation is registered from it, so its handlers and step types are not registered. Its framework does not resolve by name, including as a composition source, and its package is not an allowed module package (Section 6.5). A package is still imported when one of its other entry points is listed.
+- An audit of a framework that is not listed SHALL be refused before the framework's implementation is loaded.
+- The list is applied when operator configuration is loaded and again at the start of each audit, so `darnit audit`, `darnit run`, `darnit harness`, `darnit serve`, and the MCP tools honor it. `darnit plan`, `darnit list`, `darnit profiles`, `darnit init`, and `darnit validate` do not read operator configuration and load every installed plugin.
+- `allowed` selects plugins by name. It does not authenticate them: any installed package can declare any entry point name.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `allow_unsigned` | `bool` | Allow plugins without Sigstore signatures (default: false in production) |
-| `trusted_publishers` | `list[str]` | OIDC identities to trust (GitHub org URLs, email addresses) |
+#### Scenario: Plugin left out of the allow-list
+- **WHEN** operator configuration sets `[plugins] allowed = ["hello"]` and another plugin is installed
+- **THEN** an audit of `hello` MUST NOT load the other plugin's entry points or register its step types
+- **AND** an audit of the other plugin's framework MUST be refused
 
-**Default Trusted Publishers**:
-- `https://github.com/kusari-oss`
-- `https://github.com/kusaridev`
+#### Scenario: Composition source left out of the allow-list
+- **WHEN** a framework composes a framework that `[plugins] allowed` leaves out
+- **THEN** loading it MUST fail as for a source that is not installed
 
-**Verification Flow**:
-1. Plugin loaded via entry point
-2. Check for Sigstore attestation on PyPI
-3. Verify signature against trusted publishers
-4. Cache verification result (24h TTL)
-5. If unsigned and `allow_unsigned = false`, reject plugin
+#### Scenario: Signature settings in operator configuration
+- **WHEN** operator configuration sets `[plugins] allow_unsigned` or `[plugins] trusted_publishers`
+- **THEN** loading it MUST fail with a message that the key was removed and plugin signatures are not verified (Appendix C)
 
 ---
 
@@ -1969,6 +1965,7 @@ Design principle: **the audited repository is untrusted input in its entirety, i
 - There is no environment variable that grants trust to repository content.
 - Every report records the operator configuration source and a digest of its content.
 - The `[remediation]` section sets the remediation policy for platform changes (section 15.1).
+- The `[plugins]` section restricts which installed plugins darnit loads (section 6.6).
 
 ### 14.2 Trusted repositories and CI
 
@@ -2253,7 +2250,7 @@ The `confirm_*` tools are unchanged; approvals are not confirmations. Audit resu
 
 ## Appendix C: Removed Requirements
 
-The following requirements have been superseded: by the handler dispatch architecture, by the feature 043 remediation design (the `api_call` and `requires_confirmation` entries), by the operator configuration and trust boundary (the `.baseline.toml` entry, Section 14), and by the removal of unused subsystems (the adapter, `UnifiedLocator`, and plugin protocol method entries, #487).
+The following requirements have been superseded: by the handler dispatch architecture, by the feature 043 remediation design (the `api_call` and `requires_confirmation` entries), by the operator configuration and trust boundary (the `.baseline.toml` entry, Section 14), by the removal of unused subsystems (the adapter, `UnifiedLocator`, and plugin protocol method entries, #487), and by the removal of plugin signature verification, which never verified anything (Section 6.6).
 
 ### Removed: VerificationPassProtocol
 **Reason**: Replaced by handler dispatch architecture. Pass classes that implemented this protocol (`DeterministicPass`, `PatternPass`, `LLMPass`, `ManualPass`, `ExecPass`) are superseded by handler functions registered in `SieveHandlerRegistry`.
@@ -2346,12 +2343,22 @@ The following requirements have been superseded: by the handler dispatch archite
 **Reason**: No production path called `get_all_controls()`, `get_controls_by_level()`, `get_rules_catalog()`, or `get_remediation_registry()`, and `register_controls()` was required to be a no-op (#487). Controls, SARIF rule metadata, and remediation configuration all come from the framework TOML (section 6.3). The five methods are no longer members of `ComplianceImplementation`, and the framework no longer calls `register_controls()`.
 **Migration**: Delete the methods. A plugin that keeps them is still discovered; they are not called. Code that read controls from an implementation loads its framework TOML instead (`load_framework_by_name`, `load_controls_from_framework`). `FrameworkConfig.get_controls_by_level()` and `EffectiveConfig.get_controls_by_level()` are unaffected.
 
+### Removed: Plugin signature verification
+**Reason**: darnit never verified a plugin. Discovery always ran with `allow_unsigned = true`, so every plugin loaded. It looked each plugin up by entry point name rather than distribution name, so the lookup failed and logged a warning on every run. The verifier made no cryptographic check: it trusted a package whose self-declared author or maintainer email contained a trusted publisher name, and cached that decision for 24 hours under `~/.darnit/verification_cache`. The operator configuration keys `plugins.allow_unsigned` and `plugins.trusted_publishers`, and the framework TOML `[plugins]` table, had no reader. Removed: `darnit.core.verification` (`PluginVerifier`, `VerificationConfig`, `VerificationResult`, `VerificationCache`, `AttestationInfo`, `verify_plugin`, `DEFAULT_TRUSTED_PUBLISHERS`) and its `darnit.core` re-exports, the verification cache, the two operator configuration keys, and the framework TOML `[plugins]` models (`PluginsConfig`, `PluginConfig`, `FrameworkConfig.plugins`).
+**Migration**: Delete `allow_unsigned` and `trusted_publishers` from operator configuration; operator configuration that sets them fails to load. Restrict plugins with `[plugins] allowed` (Section 6.6), and verify packages when installing them. A framework TOML `[plugins]` table can be deleted. `~/.darnit/verification_cache` can be deleted.
+
+#### Scenario: Framework declares a plugins table
+- **WHEN** a framework TOML has a `[plugins]` table
+- **THEN** the framework MUST load
+- **AND** no key in it MUST affect which plugins load or an audit
+
 ---
 
 ## Version History
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.17 | 2026-10-15 | Plugin signature verification removed: it made no cryptographic check and never refused a plugin; `[plugins] allowed` is applied before a plugin left out is loaded; operator `plugins.allow_unsigned` and `plugins.trusted_publishers` fail loading; the framework TOML `[plugins]` table is not read (Sections 6.5, 6.6, 14.1; Appendix C) |
 | 1.0.0-alpha.16 | 2026-10-08 | `ComplianceImplementation` reduced to its five used members; `get_all_controls`, `get_controls_by_level`, `get_rules_catalog`, `get_remediation_registry`, and `register_controls` removed (Section 6.3; Appendix C; #487). `register_handlers()` is the handler registration hook, `register_sieve_handlers()` accepted only for compatibility, import-time registration not introspectable (Sections 6.4, 12; #451) |
 | 1.0.0-alpha.15 | 2026-10-08 | Removed the never-dispatched adapter system (`[adapters]`, `[defaults]` adapter keys, control-level `check`, `AdapterRegistry`) and `UnifiedLocator` with its `sync_to_project` writer (Sections 2.1, 6.5, 7.9; Appendix C; #487) |
 | 1.0.0-alpha.14 | 2026-10-07 | `repro_witness_attestation`: Witness/in-toto runtime-trace verification moves out of `repro_hermetic_build` into its own step type with ceiling `{fail}`, bound to the audited commit and reading only the runtime-trace predicate; a verified clean trace is evidence, not PASS (Sections 3.0.1, 12; #553) |
