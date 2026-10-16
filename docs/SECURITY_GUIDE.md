@@ -167,15 +167,13 @@ Operator configuration is a TOML file found the same way by every driver (CLI, M
 2. Otherwise the per-user location: `$XDG_CONFIG_HOME/darnit/config.toml` when `XDG_CONFIG_HOME` is set and absolute, else `~/.config/darnit/config.toml` (Linux and macOS), or `%APPDATA%\darnit\config.toml` (Windows).
 3. Otherwise built-in defaults.
 
-It holds allowed plugins and trusted publishers, MCP servers, per-control pass overrides and custom controls, storage backends, LLM settings, trusted repositories, CI trust rules, policy defaults, and the remediation policy for platform changes ([Remediation Safety](#remediation-safety)):
+It holds the plugin allow-list, MCP servers, per-control pass overrides and custom controls, storage backends, LLM settings, trusted repositories, CI trust rules, policy defaults, and the remediation policy for platform changes ([Remediation Safety](#remediation-safety)):
 
 ```toml
 schema_version = 1
 
 [plugins]
-allowed = ["openssf-baseline"]
-trusted_publishers = ["https://github.com/darnitdevorg"]
-allow_unsigned = false
+allowed = ["openssf-baseline"]   # empty or absent: every installed plugin
 
 [mcp_servers.scanner]
 command = ["scanner-mcp", "--stdio"]
@@ -301,96 +299,27 @@ Pass `--operator-config PATH` and `--strict-operator-config` in `args` if you ke
 
 Darnit's plugin system allows extending functionality through third-party packages. This section describes the security model for plugins.
 
-### Current Status
+### No Signature Verification
 
-> **Note:** The Sigstore verification module (`darnit.core.verification`) is fully
-> implemented and tested, but it is **not yet integrated into plugin discovery**.
-> Currently, `discover_implementations()` loads all entry-point plugins
-> unconditionally. The verification infrastructure is ready to be wired in — see
-> the TODO in `packages/darnit/src/darnit/core/discovery.py`.
->
-> In practice this means:
-> - **Local development**: All plugins load without verification (expected behavior).
-> - **Published releases**: The GitHub Actions publish workflow supports Sigstore
->   attestations (`attestations: true`), but the release trigger is not yet active.
-> - **Production hardening**: Once verification is integrated into discovery and
->   packages are published with attestations, set `allow_unsigned = false` to
->   enforce signed-only plugins.
+darnit does not verify plugin signatures or provenance, and never did: the earlier `darnit.core.verification` module made no cryptographic check and was never allowed to refuse a plugin. It was removed, with the operator configuration keys `allow_unsigned` and `trusted_publishers`. Operator configuration that still sets either key fails to load with a message saying so.
 
-### Plugin Verification with Sigstore
+Installing a package into the environment darnit runs from is the decision to trust its code. Verify a package before installing it, for example by checking its PEP 740 attestations or Sigstore signature ([Verification by Users](#verification-by-users)), and install plugins only from publishers you trust.
 
-Darnit supports [Sigstore](https://www.sigstore.dev/)-based plugin verification to ensure plugins come from trusted sources.
+### Plugin Allow-List
 
-#### Configuration
+Operator configuration chooses which installed plugins darnit loads:
 
 ```toml
 # Operator configuration (for example ~/.config/darnit/config.toml)
 [plugins]
-allow_unsigned = false          # Reject unsigned plugins (use true for local dev)
-trusted_publishers = [          # Trust plugins signed by these OIDC identities
-    "https://github.com/kusari-oss",
-    "https://github.com/openssf",
-]
+allowed = ["openssf-baseline", "reproducibility"]
 ```
 
-#### Trusted Publisher Formats
-
-The `trusted_publishers` list supports multiple identity formats:
-
-| Format | Example | Matches |
-|--------|---------|---------|
-| Full GitHub URL | `https://github.com/kusari-oss` | Any repo in that org |
-| GitHub org name | `kusari-oss` | Substring match in identity |
-| Specific repo | `https://github.com/kusari-oss/darnit` | Exact repo match |
-| Email identity | `security@example.com` | Email-based OIDC |
-
-**Example with multiple formats:**
-
-```toml
-[plugins]
-allow_unsigned = false
-trusted_publishers = [
-    "https://github.com/kusari-oss",     # Trust all repos in org
-    "https://github.com/openssf",         # Trust OpenSSF org
-    "mycompany",                          # Trust by org name substring
-]
-```
-
-#### Verification Modes
-
-| Mode | `allow_unsigned` | Behavior |
-|------|------------------|----------|
-| Strict | `false` | Only signed plugins from trusted publishers load |
-| Permissive | `true` | All plugins load, warnings for unsigned |
-
-#### Using the Verifier
-
-```python
-from darnit.core.verification import PluginVerifier, VerificationConfig
-
-# Production mode: require signed plugins from trusted publishers
-config = VerificationConfig(
-    allow_unsigned=False,
-    trusted_publishers=[
-        "https://github.com/kusari-oss",
-        "https://github.com/openssf",
-    ],
-)
-verifier = PluginVerifier(config)
-
-result = verifier.verify_plugin("darnit-baseline")
-if result.verified:
-    if result.signed:
-        print(f"Plugin verified (signed by {result.publisher})")
-    else:
-        print(f"Plugin allowed (unsigned): {result.warning}")
-elif result.error:
-    print(f"Verification failed: {result.error}")
-
-# Development mode: allow all plugins with warnings
-dev_config = VerificationConfig(allow_unsigned=True)
-dev_verifier = PluginVerifier(dev_config)
-```
+- Names are entry point names in `darnit.implementations` and `darnit.frameworks`: the implementation and framework names. An empty or absent list allows every installed plugin.
+- A plugin left out is not loaded: its entry points are not imported, it registers no step types or handlers, its framework does not resolve (also not as a composition source), and its package is not an allowed module package for `module:attribute` references.
+- An audit of a framework left out is refused.
+- `darnit audit`, `darnit run`, `darnit harness`, `darnit serve`, and the MCP tools apply the list. `darnit plan`, `list`, `profiles`, `init`, and `validate` do not read operator configuration and load every installed plugin.
+- The list selects plugins by name; it does not authenticate them. Any installed package can declare any entry point name, and installed code can run whenever something imports it.
 
 ### Handler Registration Security
 
@@ -417,39 +346,14 @@ handler = "my_custom_check"  # Short name from registry
 
 ### Security Recommendations
 
-1. **Enable strict verification** in production (`allow_unsigned = false`)
-2. **Verify trusted publishers** match expected identities
-3. **Review plugin code** before adding to trusted list
+1. **Install plugins only from publishers you trust**, and verify packages before installing them
+2. **List the plugins darnit should load** in `[plugins] allowed`
+3. **Review plugin code** before installing it
 4. **Use short names** when possible for better auditability
-5. **Monitor verification cache** at `~/.darnit/verification_cache/`
-
-### Verification Cache
-
-Verification results are cached to handle Sigstore service unavailability:
-
-- **Cache location**: `~/.darnit/verification_cache/`
-- **TTL**: 24 hours by default
-- **Format**: JSON files keyed by package name and version
-
-To clear the cache:
-
-```bash
-rm -rf ~/.darnit/verification_cache/
-```
-
-### Graceful Degradation
-
-When Sigstore services are unavailable:
-
-1. **Cached results** are used if available
-2. **Warning logged** if no cached result exists
-3. **Behavior depends on `allow_unsigned`**:
-   - `true`: Plugin loads with warning
-   - `false`: Plugin rejected
 
 ### Signing Plugins with Sigstore
 
-Plugin authors can sign their packages using Sigstore for trusted distribution.
+Plugin authors can sign their packages using Sigstore so users can verify them before installing. darnit itself does not check these signatures.
 
 #### GitHub Actions Workflow (Recommended)
 
@@ -531,8 +435,8 @@ Darnit plugins have full Python execution capabilities and can:
 **Before installing any plugin:**
 
 1. **Review the source code** or trust the publisher
-2. **Check the publisher identity** via Sigstore signature
-3. **Use `allow_unsigned = false`** to require signed plugins
+2. **Check the publisher identity** via its Sigstore signature or PEP 740 attestations
+3. **List only the plugins darnit should load** in `[plugins] allowed`
 4. **Run in isolated environments** (containers, VMs) for untrusted plugins
 
 **For plugin authors:**
