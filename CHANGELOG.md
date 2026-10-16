@@ -140,6 +140,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `scripts/create-example-test-repo.py`. Plugin authors start from
   `darnit-hello`; the custom step types the tests used moved to the test-only
   `darnit-testchecks` package (#487).
+- The sigstore 1.x and 2.x signing branches in
+  `darnit_baseline.attestation.signing`. They were unreachable with the
+  sigstore the `attestation` extra requires (`>=3.0.0`, which provides
+  `sigstore.sign.ClientTrustConfig`). A sigstore without it now leaves
+  attestation signing unavailable instead of running an untested branch.
 
 ### Added
 
@@ -565,6 +570,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   custom control that sets it on `repro_hermetic_build` now fails loading
   under strict step settings; set it on the `repro_witness_attestation` step
   instead (#553).
+- CI's Type Check job now fails. It runs mypy over every package
+  (`scripts/mypy_gate.py`) and compares the errors to
+  `.github/mypy-baseline.txt`: a new error fails, and an `attr-defined`,
+  `call-arg`, or `name-defined` error fails even if baselined, unless it is
+  in `.github/mypy-hard-allowlist.txt`, which must shrink to zero. Before,
+  mypy checked two files and could not fail the build.
 
 ### Fixed
 
@@ -603,6 +614,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The OpenSSF Baseline OSPS-LE-02.01 regex step runs: it set `patterns`
   where the handler read `pattern`, so it recorded "Missing pattern" instead
   of the SPDX evidence. The control's outcome is unchanged.
+- A CEL expression that fails to compile for a reason other than a parse
+  error now raises `CELCompilationError` with that reason. The compiler
+  caught `celpy.CELSyntaxError`, which cel-python does not define, so the
+  failure surfaced as an `AttributeError` and `validate_cel` raised instead
+  of returning the error.
+- Generating an OpenSSF Baseline attestation with a project configuration no
+  longer fails with `AttributeError`: the predicate read
+  `project_config.project_type`, but the field is `type`. The predicate's
+  `configuration.project_type` now records the configuration's type (#521).
 
 ## [0.1.1] - 2026-10-03
 

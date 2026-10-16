@@ -186,6 +186,10 @@ class CheckResult(TypedDict):
     candidate: NotRequired[dict[str, Any]]
     confirmation: NotRequired[dict[str, Any]]
 
+    # Feature 040. The control's not-applicable claim and its outcome,
+    # attached by run_sieve_audit (ClaimAssessment.report()).
+    assertion: NotRequired[dict[str, Any]]
+
     # Attached post-hoc at tools/audit.py:530.
     when: NotRequired[str]
 
