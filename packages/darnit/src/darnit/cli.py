@@ -31,6 +31,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 from darnit.core.logging import configure_logging, get_logger
 from darnit.sieve.models import CheckResult
@@ -247,6 +248,43 @@ def _operator_target(args: argparse.Namespace, operator) -> tuple[bool, str | No
     return True, canonical
 
 
+def _framework_profiles(config: Any) -> dict:
+    """The audit profiles the loaded framework config defines, by framework name."""
+    fw = getattr(config, "_framework_config", None)
+    profiles = getattr(fw, "audit_profiles", None)
+    return {config.framework_name: dict(profiles)} if profiles else {}
+
+
+def _resolve_profile_ids(profile_name: str, config: Any, controls: list) -> set[str] | None:
+    """Return the control IDs an audit profile selects for the loaded framework.
+
+    Profiles come from the loaded framework config, so `-f community-spec`
+    and `-f path/to/framework.toml` work, not only frameworks that ship an
+    implementation plugin. Logs the reason and returns None when the profile
+    cannot be used: the framework defines no such profile, the name is
+    ambiguous, or the profile selects no controls.
+    """
+    from darnit.config.profile_resolver import (
+        ProfileAmbiguousError,
+        ProfileNotFoundError,
+        resolve_profile,
+        resolve_profile_control_ids,
+    )
+
+    framework_name = config.framework_name
+    try:
+        _, profile_config = resolve_profile(profile_name, _framework_profiles(config))
+    except (ProfileNotFoundError, ProfileAmbiguousError) as e:
+        logger.error(f"Cannot use profile '{profile_name}': {e}")
+        return None
+
+    profile_ids = set(resolve_profile_control_ids(profile_config, controls))
+    if not profile_ids:
+        logger.error(f"Profile '{profile_name}' selects no controls in {framework_name}")
+        return None
+    return profile_ids
+
+
 def cmd_audit(args: argparse.Namespace) -> int:
     """Run compliance audit against a repository.
 
@@ -312,8 +350,21 @@ def cmd_audit(args: argparse.Namespace) -> int:
     include_ids = set(args.include.split(",")) if args.include else None
     exclude_ids = set(args.exclude.split(",")) if args.exclude else set()
 
+    # --profile narrows the run to the controls the named audit profile selects
+    if getattr(args, "profile", None):
+        profile_ids = _resolve_profile_ids(args.profile, config, controls)
+        if profile_ids is None:
+            return 1
+        include_ids = profile_ids if include_ids is None else include_ids & profile_ids
+        if not include_ids:
+            logger.error(f"Profile '{args.profile}' and --include have no controls in common")
+            return 1
+
     # Apply filters
     controls = filter_controls(controls, filters, include_ids, exclude_ids)
+    if not controls and getattr(args, "profile", None):
+        logger.error(f"Profile '{args.profile}' and the other filters leave no controls to audit")
+        return 1
 
     logger.info(f"Auditing {repo_path} with {len(controls)} controls")
 
@@ -377,6 +428,13 @@ def cmd_plan(args: argparse.Namespace) -> int:
         load_effective_config_by_name,
     )
     from darnit.filtering import matches_filters, parse_tags_arg
+
+    if getattr(args, "profile", None):
+        # `plan` crashes on frameworks whose controls carry no level (#568), so
+        # the flag cannot be wired in a way that can be tested on the Baseline.
+        # Refusing is better than accepting it and printing the full plan.
+        logger.error("darnit plan does not support --profile yet (#568); use darnit audit --profile")
+        return 1
 
     repo_path = Path(args.repo_path).resolve()
 
@@ -575,13 +633,18 @@ def cmd_profiles(args: argparse.Namespace) -> int:
     filter_impl = getattr(args, "impl", None)
     found_any = False
 
-    for name, impl in impls.items():
+    from darnit.config import load_effective_config_by_name
+
+    for name in impls:
         if filter_impl and name != filter_impl:
             continue
-        get_profiles = getattr(impl, "get_audit_profiles", None)
-        if not callable(get_profiles):
+        # Read the profiles from the framework config, as `audit --profile`
+        # does, so the two commands agree on what exists.
+        try:
+            profiles = _framework_profiles(load_effective_config_by_name(name)).get(name)
+        except Exception as exc:  # noqa: BLE001 - one unloadable framework should not hide the others
+            logger.debug(f"Could not load {name}: {exc}")
             continue
-        profiles = get_profiles()
         if not profiles:
             continue
         found_any = True

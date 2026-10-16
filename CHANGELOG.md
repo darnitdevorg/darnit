@@ -584,6 +584,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and report the 404 that came back; a step declaring 404 in
   `fail_on_status` would have turned that into FAIL. It is now `ERROR`,
   class `unavailable`, with a message that says why.
+
+
+- `darnit audit --profile NAME` now narrows the audit to the controls the
+  profile selects. The flag was accepted and then ignored, so every
+  control ran. Profiles are read from the loaded framework config, so
+  `-f community-spec` and `-f path/to/framework.toml` work too, and
+  `darnit profiles` lists the same set. An unknown profile name is an
+  error, as is a profile that, with the other filters, leaves nothing to
+  audit. `darnit plan --profile` is refused until #568 is fixed; it used to print the full plan.
 - Installs without the development dependencies work again (`uv tool install`
   from a checkout, and any install from a built wheel). Two things broke
   them: `tree-sitter-language-pack` 1.6.3, the newest release the old
