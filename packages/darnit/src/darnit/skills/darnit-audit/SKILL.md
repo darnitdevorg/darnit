@@ -20,7 +20,7 @@ Register darnit's MCP server at user scope (`darnit install` does this by defaul
 Darnit's MCP server registers audit tools per implementation module. Look for available tools matching the pattern `audit_*` (e.g., `audit_openssf_baseline`, `audit_gittuf`). If the user specifies a framework by name, use that tool. If only one audit tool is available, use it. If multiple exist and the user didn't specify, list them and ask.
 
 Common audit tools:
-- `audit_openssf_baseline` — OpenSSF Baseline (OSPS v2025.10.10)
+- `audit_openssf_baseline` — OpenSSF Baseline (OSPS v2026.02.19)
 
 ## Workflow
 
