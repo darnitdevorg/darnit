@@ -568,6 +568,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `darnit plan` and `darnit validate` sort controls without a declared maturity
+  level (`level = None`) last instead of crashing with a `TypeError` when
+  encountering mixed leveled and unleveled controls. Top-level control
+  attributes (`level`, `domain`, `security_severity`) and `tags` are synchronized
+  as a single canonical source of truth at schema load time; conflicting
+  declarations and non-integer `tags.level` values (including booleans) reject
+  loading with validation errors (#568, #589).
 - When `cel-python` or `tree-sitter-language-pack` fails to import, the
   error now gives the real cause. Both guards said "not installed" for any
   import error, which was wrong for an installed package with a missing
