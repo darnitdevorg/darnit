@@ -20,7 +20,7 @@ If you're not sure: **`pipx install darnit-mcp`** works for most users and is th
 
 - **One `darnit` command** on PATH after install. Use `darnit audit`, `darnit remediate`, `darnit list-controls`, etc.
 - **Same version, same artifact identity.** A release tag (`v0.1.0`) produces a Sigstore-signed PyPI wheel, a cosign-signed container image, four cosign-signed binaries, a Homebrew formula bump, and a Claude Code plugin zip — all derived from the same tagged commit. `darnit --version` reports the same string regardless of which channel installed it.
-- **Verifiable signing identity.** Every channel ships with a signature you can verify back to `kusari-oss/darnit`'s `release.yml` workflow. The exact verification command differs per channel; each page has it.
+- **Verifiable signing identity.** Every channel ships with a signature you can verify back to `darnitdevorg/darnit`'s `release.yml` workflow. The exact verification command differs per channel; each page has it.
 
 ## What differs
 
@@ -44,13 +44,13 @@ Every install page has a "Verify" section with the exact command. The common sha
 # PyPI (Sigstore)
 python -m sigstore verify identity \
   --bundle <bundle> \
-  --cert-identity-regexp '^https://github\.com/kusari-oss/darnit/' \
+  --cert-identity-regexp '^https://github\.com/darnitdevorg/darnit/' \
   --cert-oidc-issuer https://token.actions.githubusercontent.com \
   <artifact>
 
 # Container / binary (cosign)
 cosign verify[-blob] \
-  --certificate-identity-regexp '^https://github\.com/kusari-oss/darnit/' \
+  --certificate-identity-regexp '^https://github\.com/darnitdevorg/darnit/' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   <artifact>
 ```
@@ -62,7 +62,7 @@ If any of these fail with "identity mismatch", **do not trust the artifact** —
 Occasionally a release will succeed on some channels and fail on others (PyPI succeeded, container build failed, etc.). When that happens:
 
 - The successful channels stay published — they were signed correctly.
-- A `release-failure` issue appears on the [upstream repo](https://github.com/kusari-oss/darnit/labels/release-failure) naming the failed channel.
+- A `release-failure` issue appears on the [upstream repo](https://github.com/darnitdevorg/darnit/labels/release-failure) naming the failed channel.
 - The release notes include a per-channel timing table; channels that failed or exceeded the SC-007 budget are flagged.
 
 If you're trying to use a channel that's behind, check the latest release notes and the `release-failure` label.

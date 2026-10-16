@@ -15,6 +15,8 @@ on:
       - 'packaging/container/**'
       - 'pyproject.toml'
       - 'uv.lock'
+      - 'packaging/pypi/public-packages.txt'
+      - '.dockerignore'
       - '.github/workflows/container-edge.yml'
 
 permissions:
@@ -56,34 +58,40 @@ jobs:
           image="ghcr.io/$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')/darnit"
           echo "image=$image" >> "$GITHUB_OUTPUT"
 
-      # The release Dockerfile expects VERSION to be a real PyPI release.
-      # For edge builds we use a sentinel version that triggers the
-      # Dockerfile's source-install branch (see Dockerfile for handling).
-      # For now, edge uses the most recent published version on TestPyPI
-      # as a stand-in. If no published version exists yet, the build is
-      # skipped with a clear log line.
-      - name: Pick edge install version
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v4
+        with:
+          version: "0.5.0"
+          enable-cache: false
+
+      # The Dockerfile installs the darnit wheels from dist/ in the build
+      # context, in the layout release.yml produces. Build them here from the
+      # working tree, so :edge ships the code on main and does not depend on
+      # a published release.
+      - name: Build wheels from the working tree
         id: edge_version
         run: |
           set -euo pipefail
-          # Try TestPyPI first (pre-releases land here); fall back to PyPI.
-          # If neither has a darnit-mcp version yet, this workflow is a no-op
-          # — :edge can't exist until at least one release happened.
-          for url in https://test.pypi.org/pypi/darnit-mcp/json https://pypi.org/pypi/darnit-mcp/json; do
-            if response=$(curl -fsSL "$url" 2>/dev/null); then
-              version=$(echo "$response" | jq -r '.info.version // empty')
-              if [ -n "$version" ]; then
-                echo "Using darnit-mcp ${version} from ${url}"
-                echo "version=$version" >> "$GITHUB_OUTPUT"
-                exit 0
-              fi
-            fi
-          done
-          echo "::warning::No darnit-mcp version found on PyPI or TestPyPI yet — :edge build skipped"
-          echo "version=" >> "$GITHUB_OUTPUT"
+          while IFS= read -r pkg; do
+            [ -z "$pkg" ] && continue
+            echo "::group::Building $pkg"
+            uv build --package "$pkg" --out-dir "dist/$pkg"
+            echo "::endgroup::"
+          done < packaging/pypi/public-packages.txt
+          version=$(awk -F'"' '/^version[[:space:]]*=/{print $2; exit}' pyproject.toml)
+          if [ -z "$version" ]; then
+            echo "::error::Could not read the version from pyproject.toml"
+            exit 1
+          fi
+          echo "Building :edge from the working tree at version ${version}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Build and push :edge
-        if: steps.edge_version.outputs.version != ''
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v6
         with:
           context: .
