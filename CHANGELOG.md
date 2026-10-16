@@ -611,6 +611,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are FAIL; `E`, and a signature git is not set up to check (such as SSH
   without `gpg.ssh.allowedSignersFile`), are `ERROR`, class `evaluation`;
   `U` and an empty history are inconclusive.
+- gittuf GT-01.02 and GT-02.01 are `ERROR`, class `missing_tool`, when
+  `gittuf` or `git` is not installed. They were WARN, as if a person needed
+  to check the repository.
 - When `cel-python` or `tree-sitter-language-pack` fails to import, the
   error now gives the real cause. Both guards said "not installed" for any
   import error, which was wrong for an installed package with a missing

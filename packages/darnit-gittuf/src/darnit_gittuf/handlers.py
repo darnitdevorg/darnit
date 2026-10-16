@@ -23,7 +23,7 @@ def gittuf_verify_policy_handler(
 
     Runs: gittuf verify-ref HEAD
     PASS if exit code is 0, FAIL otherwise.
-    INCONCLUSIVE if gittuf is not installed.
+    ERROR (``missing_tool``) if gittuf is not installed.
     """
     try:
         result = subprocess.run(
@@ -53,11 +53,10 @@ def gittuf_verify_policy_handler(
             )
 
     except FileNotFoundError:
-        # gittuf is not installed on this machine
         return HandlerResult(
-            status=HandlerResultStatus.INCONCLUSIVE,
+            status=HandlerResultStatus.ERROR,
             message="gittuf binary not found — cannot verify policy",
-            confidence=0.0,
+            error_class="missing_tool",
         )
     except subprocess.TimeoutExpired:
         return HandlerResult(
@@ -207,9 +206,9 @@ def gittuf_commits_signed_handler(
 
     except FileNotFoundError:
         return HandlerResult(
-            status=HandlerResultStatus.INCONCLUSIVE,
+            status=HandlerResultStatus.ERROR,
             message="git binary not found",
-            confidence=0.0,
+            error_class="missing_tool",
         )
     except Exception as e:
         return HandlerResult(
