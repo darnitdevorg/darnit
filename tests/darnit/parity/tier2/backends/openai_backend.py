@@ -80,8 +80,8 @@ def _dispatch_tool_call(call: Any, fixture_dir: Path) -> str:
         args["local_path"] = str(fixture_dir)
         args["output_format"] = "json"
         args["level"] = 3
-        # Force safe defaults.
-        args["auto_init_config"] = False
+        # Force safe defaults. Drop the removed no-op if a model still sends it.
+        args.pop("auto_init_config", None)
         args["attest"] = False
         args["prefer_upstream"] = False
 

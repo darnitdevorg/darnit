@@ -138,7 +138,6 @@ def mcp_tool_result(prepared_fixture: Path) -> AuditResult:
         local_path=str(prepared_fixture),
         level=3,
         output_format="json",
-        auto_init_config=False,
         attest=False,
         prefer_upstream=False,
     )
