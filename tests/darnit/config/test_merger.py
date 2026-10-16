@@ -4,6 +4,7 @@ This module tests merging a framework with operator configuration.
 """
 
 import pytest
+from pydantic import ValidationError
 
 from darnit.config.control_loader import control_from_effective
 from darnit.config.framework_schema import (
@@ -63,6 +64,65 @@ class TestMergeControl:
         assert result.tags["domain"] == "QA"
         assert result.tags["security_severity"] == 7.5
 
+    def test_level_conflict_with_tags_raises_error(self):
+        """Declaring conflicting level between attribute and tags rejects loading."""
+        with pytest.raises(ValidationError, match="Conflicting level declarations"):
+            ControlConfig(
+                name="ConflictLevel",
+                description="desc",
+                level=1,
+                tags={"level": 2},
+            )
+
+    def test_domain_conflict_with_tags_raises_error(self):
+        """Declaring conflicting domain between attribute and tags rejects loading."""
+        with pytest.raises(ValidationError, match="Conflicting domain declarations"):
+            ControlConfig(
+                name="ConflictDomain",
+                description="desc",
+                domain="AC",
+                tags={"domain": "QA"},
+            )
+
+    def test_security_severity_conflict_with_tags_raises_error(self):
+        """Declaring conflicting security_severity rejects loading."""
+        with pytest.raises(ValidationError, match="Conflicting security_severity declarations"):
+            ControlConfig(
+                name="ConflictSev",
+                description="desc",
+                security_severity=5.0,
+                tags={"security_severity": 8.0},
+            )
+
+    def test_invalid_tags_level_type_raises_error(self):
+        """Non-integer tags.level values (strings, floats, booleans) reject loading."""
+        for invalid_level in ["L1", 1.5, True, False]:
+            with pytest.raises(ValidationError, match="tags.level must be an integer"):
+                ControlConfig(
+                    name="InvalidLevel",
+                    description="desc",
+                    tags={"level": invalid_level},
+                )
+
+    def test_invalid_tags_domain_type_raises_error(self):
+        """Non-string tags.domain values reject loading."""
+        with pytest.raises(ValidationError, match="tags.domain must be a string"):
+            ControlConfig(
+                name="InvalidDomain",
+                description="desc",
+                tags={"domain": 123},
+            )
+
+    def test_invalid_tags_security_severity_type_raises_error(self):
+        """Non-numeric or boolean tags.security_severity values reject loading."""
+        for invalid_sev in ["high", True, False]:
+            with pytest.raises(ValidationError, match="tags.security_severity must be a number"):
+                ControlConfig(
+                    name="InvalidSev",
+                    description="desc",
+                    tags={"security_severity": invalid_sev},
+                )
+
     def test_get_controls_by_level_with_tags_level(self):
         """get_controls_by_level returns controls whose level was declared in tags."""
         ctrl1 = ControlConfig(
@@ -105,22 +165,22 @@ class TestMergeControl:
 class TestRemovedAdapterConfiguration:
     """The adapter keys removed in #487 (framework-design Appendix C)."""
 
-    METADATA = '''[metadata]
+    METADATA = """[metadata]
 name = "removed-adapters"
 display_name = "Removed Adapters"
 version = "0.1.0"
-'''
+"""
 
     def test_control_check_key_fails_loading(self, tmp_path):
         path = tmp_path / "framework.toml"
         path.write_text(
             self.METADATA
-            + '''
+            + """
 [controls."TEST-01"]
 name = "TestControl"
 description = "Test description"
 check = { adapter = "kusari" }
-'''
+"""
         )
 
         with pytest.raises(ValueError, match="control 'TEST-01' has unknown key 'check'"):
@@ -130,7 +190,7 @@ check = { adapter = "kusari" }
         path = tmp_path / "framework.toml"
         path.write_text(
             self.METADATA
-            + '''
+            + """
 [defaults]
 check_adapter = "kusari"
 remediation_adapter = "builtin"
@@ -142,7 +202,7 @@ command = "kusari"
 [controls."TEST-01"]
 name = "TestControl"
 description = "Test description"
-'''
+"""
         )
 
         effective = merge_configs(load_framework_config(path))
@@ -275,14 +335,10 @@ class TestSieveGatingMetadataPreservation:
         effective = merge_control("OSPS-QA-02.01", framework_control)
         spec = control_from_effective("OSPS-QA-02.01", effective)
 
-        assert "when" in spec.metadata, (
-            "control_from_effective dropped 'when' from ControlSpec.metadata"
-        )
+        assert "when" in spec.metadata, "control_from_effective dropped 'when' from ControlSpec.metadata"
         assert spec.metadata["when"] == {"has_releases": True}
 
-        assert "depends_on" in spec.metadata, (
-            "control_from_effective dropped 'depends_on' from ControlSpec.metadata"
-        )
+        assert "depends_on" in spec.metadata, "control_from_effective dropped 'depends_on' from ControlSpec.metadata"
         assert spec.metadata["depends_on"] == ["OSPS-AC-01.01"]
 
         assert "inferred_from" in spec.metadata, (
@@ -290,10 +346,10 @@ class TestSieveGatingMetadataPreservation:
         )
         assert spec.metadata["inferred_from"] == "OSPS-AC-02.01"
 
-        assert "on_pass" in spec.metadata, (
-            "control_from_effective dropped 'on_pass' from ControlSpec.metadata"
+        assert "on_pass" in spec.metadata, "control_from_effective dropped 'on_pass' from ControlSpec.metadata"
+        assert (
+            spec.metadata["on_pass"].get("project_update", {}).get("security.policy.path") == "$EVIDENCE.relative_path"
         )
-        assert spec.metadata["on_pass"].get("project_update", {}).get("security.policy.path") == "$EVIDENCE.relative_path"
 
     def test_control_without_gating_metadata_is_unaffected(self):
         """Controls without optional gating fields must continue to work normally."""

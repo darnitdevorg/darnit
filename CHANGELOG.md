@@ -723,6 +723,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `darnit-mcp` executable that no package provides; both now run
   `darnit serve`. The command is `darnit`, so `uvx darnit-mcp` still does
   not work: use `uvx --from darnit-mcp darnit` (#621).
+- `darnit plan` and `darnit validate` sort controls without a declared maturity
+  level (`level = None`) last instead of crashing with a `TypeError` when
+  encountering mixed leveled and unleveled controls. Top-level control
+  attributes (`level`, `domain`, `security_severity`) and `tags` are synchronized
+  as a single canonical source of truth at schema load time; conflicting
+  declarations and non-integer `tags.level` values (including booleans) reject
+  loading with validation errors. Composition `include_levels` and `get_controls_by_level`
+  now select tag-leveled controls, and `include_tags = { level = N }` selects controls
+  that set a top-level level (#568, #589).
 - When `cel-python` or `tree-sitter-language-pack` fails to import, the
   error now gives the real cause. Both guards said "not installed" for any
   import error, which was wrong for an installed package with a missing
