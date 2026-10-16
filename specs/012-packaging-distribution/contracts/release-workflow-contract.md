@@ -54,7 +54,7 @@ preflight
    │       (depends on binary_matrix: formula points at binaries)
    │
    ├─► [stable] plugin_package ─► plugin_smoke
-   │       (depends on pypi_publish: plugin invokes uvx darnit-mcp@<version>)
+   │       (depends on pypi_publish: plugin invokes uvx --from darnit-mcp==<version> darnit serve; #621)
    │
    └─► finalize (always; aggregates state, posts summary, creates issue on partial failure)
 ```
