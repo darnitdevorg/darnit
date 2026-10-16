@@ -191,12 +191,13 @@ def test_sarif_structure_and_location():
 
     # Check Tool
     tool = run["tool"]["driver"]
-    assert tool["name"] in ("openssf-baseline-audit", "OpenSSF Baseline Threat Model", "OpenSSF Baseline")
+    assert tool["name"] in ("openssf-baseline", "openssf-baseline-audit", "OpenSSF Baseline Threat Model", "OpenSSF Baseline")
     assert len(tool["rules"]) > 0
     rule = tool["rules"][0]
     assert "id" in rule
     assert "shortDescription" in rule
     assert "helpUri" in rule
+    assert rule["helpUri"] == "https://baseline.openssf.org/versions/2026-02-19#osps-ac-0101"
 
     # Check Result
     res = run["results"][0]

@@ -36,8 +36,10 @@ class TestBuildAssessmentPredicate:
             adapters_used=["builtin"]
         )
 
+        from importlib.metadata import version as get_package_version
+
         assert predicate["assessor"]["name"] == "openssf-baseline"
-        assert predicate["assessor"]["version"] == "0.1.1"
+        assert predicate["assessor"]["version"] == get_package_version("darnit-baseline")
         assert predicate["assessor"]["uri"] == "https://github.com/darnitdevorg/darnit"
 
     @pytest.mark.unit
