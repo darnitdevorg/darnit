@@ -1958,6 +1958,8 @@ The reproducibility ceilings are part of that framework's own registration, not 
 - INCONCLUSIVE: `U` (good signature, unknown validity: nothing on this machine says the key is trusted; for SSH, git reports `U` whenever `gpg.ssh.allowedSignersFile` is set, even to a missing file), and no commits to check.
 - A FAIL outweighs an ERROR, and an ERROR outweighs INCONCLUSIVE.
 
+When `git` (for `gittuf_commits_signed`) or `gittuf` (for `gittuf_verify_policy`) is not installed, the step is ERROR, class `missing_tool`.
+
 #### Scenario: Unverifiable commit signature
 - **WHEN** a checked commit carries a signature git reports as `E`, for example random bytes in an OpenPGP signature packet
 - **THEN** the `gittuf_commits_signed` step MUST be ERROR, class `evaluation`, and MUST NOT pass
