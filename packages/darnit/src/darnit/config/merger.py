@@ -58,6 +58,7 @@ class EffectiveControl:
     maturity levels or domain categorization. Use the tags dict for
     flexible key-value metadata that can be filtered uniformly.
     """
+
     control_id: str
     name: str
     description: str
@@ -98,6 +99,7 @@ class EffectiveConfig:
 
     This is the runtime configuration used by the audit engine.
     """
+
     # Framework metadata
     framework_name: str
     framework_version: str
@@ -165,14 +167,12 @@ def merge_control(
     effective = EffectiveControl(
         control_id=control_id,
         name=framework_control.name,
-        level=framework_control.level if framework_control.level is not None else tags.get("level"),
-        domain=framework_control.domain if framework_control.domain is not None else tags.get("domain"),
+        level=framework_control.level,
+        domain=framework_control.domain,
         description=framework_control.description,
         from_framework=True,
         tags=tags,
-        security_severity=framework_control.security_severity
-        if framework_control.security_severity is not None
-        else tags.get("security_severity"),
+        security_severity=framework_control.security_severity,
         docs_url=framework_control.docs_url,
         when=framework_control.when,
         depends_on=framework_control.depends_on,
@@ -293,7 +293,9 @@ def _unknown_keys(error: ValidationError, loc_prefix: tuple[Any, ...], depth: in
     return [
         tuple(err["loc"][width:])
         for err in error.errors()
-        if err["type"] == "extra_forbidden" and len(err["loc"]) == width + depth and tuple(err["loc"][:width]) == loc_prefix
+        if err["type"] == "extra_forbidden"
+        and len(err["loc"]) == width + depth
+        and tuple(err["loc"][:width]) == loc_prefix
     ]
 
 
@@ -512,9 +514,7 @@ def _project_extension_settings(repo_path: Path) -> list[IgnoredSetting]:
     if isinstance(controls, dict):
         for control_id, override in controls.items():
             if isinstance(override, dict):
-                keys.extend(
-                    f"controls.{control_id}.{field}" for field in override if field not in _CLAIM_KEYS
-                )
+                keys.extend(f"controls.{control_id}.{field}" for field in override if field not in _CLAIM_KEYS)
     return [IgnoredSetting(_PROJECT_EXTENSION_FILE, key, OPERATOR_CONFIGURATION_HOME) for key in keys]
 
 
@@ -613,9 +613,7 @@ def load_framework_by_name(name: str) -> FrameworkConfig:
         )
 
     if not path.exists():
-        raise FileNotFoundError(
-            f"Framework '{name}' resolved to {path}, but file not found"
-        )
+        raise FileNotFoundError(f"Framework '{name}' resolved to {path}, but file not found")
 
     return load_framework_config(path)
 
