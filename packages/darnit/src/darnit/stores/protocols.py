@@ -53,14 +53,12 @@ class Store(Protocol):
 
 @runtime_checkable
 class ProjectStateStore(Store, Protocol):
-    """Read + write for ``.project/project.yaml`` and ``.project/maintainers.yaml``.
+    """Read for ``.project/project.yaml`` and ``.project/maintainers.yaml``.
 
     Failure semantics (FR-011):
 
     * ``read_project`` / ``read_maintainers`` failure -> caller resolves
       affected controls WARN (never silent PASS, never silent FAIL).
-    * ``write_project`` / ``write_maintainers`` failure -> caller
-      surfaces the error to the operator; the audit-run fails.
 
     Concurrency: sync in v0. Single-caller assumed within an audit run.
     """
@@ -73,30 +71,11 @@ class ProjectStateStore(Store, Protocol):
         """
         ...
 
-    def write_project(self, config: ProjectConfig) -> None:
-        """Persist the project configuration.
-
-        Preconditions:
-            ``config`` is a valid :class:`~darnit.context.dot_project.ProjectConfig`.
-
-        Raises:
-            StoreOperationError: on backend failure.
-        """
-        ...
-
     def read_maintainers(self) -> list[MaintainerEntry]:
         """Load the maintainer entries. Empty list if none present.
 
         Raises:
             StoreOperationError: on backend failure that is not "not found".
-        """
-        ...
-
-    def write_maintainers(self, entries: list[MaintainerEntry]) -> None:
-        """Persist the maintainer entries.
-
-        Raises:
-            StoreOperationError: on backend failure.
         """
         ...
 

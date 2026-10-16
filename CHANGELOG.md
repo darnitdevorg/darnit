@@ -39,6 +39,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- **BREAKING:** `write_project` and `write_maintainers` are removed from the
+  plugin-facing `ProjectStateStore` protocol (`darnit.stores.protocols`) and
+  its filesystem default (`darnit.stores.defaults.project`). Writes to
+  `.project/` are managed exclusively by `darnit.config.context_writes`
+  under feature 042 single-writer rules (#588, fixes #574).
 - `.baseline.toml` reading and the code that existed only for it:
   `load_user_config` (including its `trusted` path),
   `load_user_config_with_report`, `validate_user_config`, `deep_merge`, and

@@ -37,16 +37,14 @@ def _seed_on_disk(repo_root: Path) -> None:
 
 
 def _seed_in_memory() -> InMemoryProjectStateStore:
-    store = InMemoryProjectStateStore()
-    store.write_project(
-        ProjectConfig(
+    return InMemoryProjectStateStore(
+        project=ProjectConfig(
             name="eq-fixture",
             description="Feature 033 US1 equivalence fixture",
             repositories=["https://github.com/example/eq-fixture"],
             schema_version="1.0.0",
         )
     )
-    return store
 
 
 class TestUS1MapperEquivalence:
