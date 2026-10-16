@@ -653,6 +653,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `git show-ref --verify` exits 128 for a missing ref, not the declared
   fail code 1, so the control was WARN; the step now passes `--quiet`, which
   exits 1.
+- The `darnit-mcp` package now provides the `darnit` command, so
+  `uv tool install darnit-mcp` and
+  `uv tool install git+https://github.com/darnitdevorg/darnit` work; they
+  failed with "No executables are provided by package `darnit-mcp`". The
+  Claude Code plugin runner and the container's `mcp` command ran a
+  `darnit-mcp` executable that no package provides; both now run
+  `darnit serve`. The command is `darnit`, so `uvx darnit-mcp` still does
+  not work: use `uvx --from darnit-mcp darnit` (#621).
 - When `cel-python` or `tree-sitter-language-pack` fails to import, the
   error now gives the real cause. Both guards said "not installed" for any
   import error, which was wrong for an installed package with a missing
