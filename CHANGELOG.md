@@ -584,6 +584,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and report the 404 that came back; a step declaring 404 in
   `fail_on_status` would have turned that into FAIL. It is now `ERROR`,
   class `unavailable`, with a message that says why.
+- The non-dev install smoke check reads the audit's JSON output instead of
+  grepping the text report, so a reworded message cannot hide a broken
+  dependency, and it refuses a `dist/` holding more than one wheel of a
+  package (#575).
 - Installs without the development dependencies work again (`uv tool install`
   from a checkout, and any install from a built wheel). Two things broke
   them: `tree-sitter-language-pack` 1.6.3, the newest release the old
