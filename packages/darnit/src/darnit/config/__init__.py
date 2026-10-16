@@ -4,16 +4,8 @@ This module provides configuration loading and management for .project.yaml
 files following the CNCF .project specification with OpenSSF Baseline extension.
 """
 
-from .context_schema import (
-    BaselineExtension as CNCFBaselineExtension,
-)
-
 # Context schema (interactive context collection)
 from .context_schema import (
-    BaselineExtensionConfig,
-    CNCFProjectConfig,
-    ContextByCategory,
-    ContextCategory,
     ContextDefinition,
     ContextPromptRequest,
     # Enums
@@ -21,9 +13,6 @@ from .context_schema import (
     ContextType,
     # Core models
     ContextValue,
-    # CNCF extension models
-    ExtensionMetadata,
-    ProjectExtensions,
 )
 
 # Context storage abstraction layer
@@ -237,13 +226,6 @@ __all__ = [
     "ContextValue",
     "ContextDefinition",
     "ContextPromptRequest",
-    "ContextByCategory",
-    "ContextCategory",
-    "ExtensionMetadata",
-    "BaselineExtensionConfig",
-    "CNCFBaselineExtension",
-    "ProjectExtensions",
-    "CNCFProjectConfig",
     # Context storage abstraction layer
     "get_context_definitions",
     "get_pending_context",
