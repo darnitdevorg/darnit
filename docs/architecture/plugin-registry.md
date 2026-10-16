@@ -2,25 +2,21 @@
 
 ## ADDED Requirements
 
-### Requirement: Plugins section in TOML
-The framework SHALL support a `[plugins]` section for declaring plugin dependencies.
+### Requirement: Operator allow-list
+Operator configuration SHALL restrict which installed plugins load with `[plugins] allowed` (framework-design 6.6). A framework TOML `[plugins]` section is not read.
 
-#### Scenario: Declare plugin dependency
-- **WHEN** TOML contains:
+#### Scenario: Plugin left out
+- **WHEN** operator configuration contains:
   ```toml
-  [plugins.darnit-baseline]
-  version = ">=1.0.0"
+  [plugins]
+  allowed = ["openssf-baseline"]
   ```
-- **THEN** the framework SHALL require that plugin to be installed
-- **AND** SHALL verify the version constraint
+- **THEN** the framework SHALL NOT load the `darnit.implementations` or `darnit.frameworks` entry points of any other plugin
+- **AND** SHALL refuse an audit of a framework not in the list
 
-#### Scenario: Plugin not installed
-- **WHEN** a declared plugin is not installed
-- **THEN** the framework SHALL report an error with installation instructions
-
-#### Scenario: Version mismatch
-- **WHEN** installed plugin version does not satisfy the constraint
-- **THEN** the framework SHALL report an error with required vs installed versions
+#### Scenario: No allow-list
+- **WHEN** `allowed` is empty or absent
+- **THEN** every installed plugin MAY load
 
 ### Requirement: Plugin auto-registration
 Plugins SHALL auto-register their capabilities when loaded.
@@ -57,36 +53,12 @@ Plugins SHALL declare their capabilities in package metadata.
   - `provides` (list of capabilities: handlers, passes, templates)
   - `requires` (minimum darnit framework version)
 
-### Requirement: Plugin signing with Sigstore
-The framework SHALL support Sigstore-based plugin verification.
+### Requirement: No plugin signature verification
+The framework SHALL NOT claim to verify plugin signatures. Installing a package is the decision to trust its code; verifying a package before installing it is the installer's job (framework-design 6.6, Appendix C).
 
-#### Scenario: Signed plugin verification
-- **WHEN** a plugin has a Sigstore signature
-- **AND** `allow_unsigned = false` in config
-- **THEN** the framework SHALL verify the signature via Sigstore
-- **AND** SHALL load the plugin only if verification succeeds
-
-#### Scenario: Unsigned plugin with opt-in
-- **WHEN** a plugin does not have a signature
-- **AND** `allow_unsigned = true` in config
-- **THEN** the framework SHALL load the plugin
-- **AND** SHALL log a warning about unsigned plugin
-
-#### Scenario: Unsigned plugin blocked
-- **WHEN** a plugin does not have a signature
-- **AND** `allow_unsigned = false` in config
-- **THEN** the framework SHALL refuse to load the plugin
-- **AND** SHALL report an error
-
-#### Scenario: Trusted publishers
-- **WHEN** config contains `trusted_publishers = ["openssf", "kusari-oss"]`
-- **AND** plugin is signed by a key from those publishers
-- **THEN** the framework SHALL trust the plugin
-
-#### Scenario: Sigstore unavailable
-- **WHEN** Sigstore services are unreachable
-- **THEN** the framework SHALL use cached verification results if available
-- **AND** SHALL warn if no cached result exists
+#### Scenario: Removed signature settings
+- **WHEN** operator configuration sets `[plugins] allow_unsigned` or `trusted_publishers`
+- **THEN** loading it SHALL fail with a message that the key was removed
 
 ### Requirement: Plugin isolation
 The framework SHALL isolate plugins to limit security impact.
@@ -120,6 +92,6 @@ The framework SHALL provide clear documentation about plugin security.
 - **THEN** it SHALL clearly state that plugins execute arbitrary code
 - **AND** SHALL advise users to only install trusted plugins
 
-#### Scenario: Signing guide
+#### Scenario: Publishing guide
 - **WHEN** plugin developer reads documentation
-- **THEN** they SHALL find instructions for signing plugins with Sigstore
+- **THEN** they SHALL find instructions for publishing plugins with attestations that installers can verify
