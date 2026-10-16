@@ -929,8 +929,15 @@ def run_sieve_audit(
         )
 
     from darnit.sieve.models import SieveResult
-    from darnit.sieve.orchestrator import evaluate_when_clause
     from darnit.trust.assertions import neutral_context
+
+    # Feature 040: a value read from the repository excludes a control or a
+    # step only when an honored claim backs it (framework-design 5.1.1).
+    unhonored_neutral = (
+        neutral_context(repository_values, project_context, detected_context, repository_values)
+        if repository_values
+        else None
+    )
 
     # Run sieve verification for each control
     for spec in all_controls:
@@ -954,12 +961,6 @@ def run_sieve_audit(
             all_results.append(result_dict)
             continue
 
-        control_context = project_context
-        if when_clause and not honored:
-            neutral = neutral_context(when_clause, project_context, detected_context, repository_values)
-            if not evaluate_when_clause(when_clause, project_context) and evaluate_when_clause(when_clause, neutral):
-                control_context = neutral
-
         # Create check context
         context = CheckContext(
             owner=owner,
@@ -973,8 +974,9 @@ def run_sieve_audit(
                 "full": spec.metadata.get("full", ""),
             },
             locator_config=spec.locator_config,
-            project_context=dict(control_context),
+            project_context=dict(project_context),
             usable_project=dict(usable_project),
+            neutral_context=None if honored or unhonored_neutral is None else dict(unhonored_neutral),
             execution_context=execution_context,
         )
 

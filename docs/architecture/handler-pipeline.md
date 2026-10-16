@@ -163,8 +163,14 @@ A handler invocation MAY declare a `when` clause that specifies project context 
 - **THEN** the handler SHALL be dispatched unconditionally
 - **AND** behavior SHALL be identical to the pre-change behavior
 
-#### Scenario: Handler skipped when context key is missing
-- **WHEN** a handler invocation declares `when = { primary_language = "go" }`
+#### Scenario: Verification step runs when context key is missing
+- **WHEN** a sieve pass handler invocation declares `when = { primary_language = "go" }`
+- **AND** the project context does NOT contain `primary_language`
+- **THEN** the handler SHALL be dispatched (a missing key never excludes, framework-design 5.1.1)
+- **AND** a debug-level log message SHALL note the missing context key
+
+#### Scenario: Remediation handler skipped when context key is missing
+- **WHEN** a remediation handler invocation declares `when = { primary_language = "go" }`
 - **AND** the project context does NOT contain `primary_language`
 - **THEN** the handler SHALL be skipped
 - **AND** a debug-level log message SHALL note the missing context key
@@ -221,4 +227,5 @@ The framework SHALL provide a single `evaluate_when(when_clause, context)` funct
 - **WHEN** a sieve pass handler declares `when = { platform = "github" }`
 - **AND** a remediation handler declares `when = { platform = "github" }`
 - **THEN** both SHALL be evaluated by the same `evaluate_when` function
-- **AND** SHALL produce identical results for the same context
+- **AND** SHALL produce identical results for the same context, except that a missing key runs the sieve pass and skips the remediation handler
+- **AND** control-level `when` clauses SHALL be evaluated by the same function (framework-design 5.1.1)

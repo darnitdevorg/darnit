@@ -55,6 +55,12 @@ class CheckContext:
     # detections and unconfirmed .project/ mapper values.
     usable_project: dict[str, Any] = field(default_factory=dict)
 
+    # ``project_context`` without the audited repository's values that no
+    # honored claim backs (feature 040): a control or step ``when`` that fails
+    # against ``project_context`` still holds if it holds against this
+    # (framework-design 5.1.1). None when there is nothing to neutralize.
+    neutral_context: dict[str, Any] | None = None
+
     # Shared execution state across all controls
     execution_context: Optional["ExecutionContext"] = None
 

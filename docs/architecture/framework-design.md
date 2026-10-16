@@ -1236,6 +1236,35 @@ return SieveResult(status="WARN", authority="suggestive", concluded_by="none")
 - **THEN** it MUST read `verification_steps` from the `manual` handler invocation config
 - **AND** it MUST NOT use the judgment's confidence to decide the result (section 3.5)
 
+### 5.1.1 `when` Conditions
+
+A control's `when` decides whether the control applies (false: `N/A`). A step's `when`, on a verification step or a remediation handler (4.1), decides whether that step runs. One function, `darnit.config.when_evaluator.evaluate_when`, evaluates all of them:
+
+- Keys are AND-ed.
+- A scalar value must equal the context value. A list value is membership: the context value must be one of the listed values. When the context value is itself a list, a scalar must be in it and every value of a list must be in it.
+- A key the context does not hold (absent or null) does not exclude: the control applies and the verification step runs. A remediation handler is the exception: it runs only when every key is present and matches, since acting on an unknown value is the damaging direction; a context key with no usable value stops the control with `confirmation required: <key>` (7.11).
+- In an audit, a value read from the audited repository (7.11, audit applicability) excludes a control only when an honored not-applicable claim backs it (14.3), and never excludes a verification step. Each condition is evaluated against the context and against the context with those values replaced by this run's detections (or dropped); the control applies, or the step runs, when either holds.
+
+#### Scenario: List membership runs the control
+- **WHEN** a control declares `when = { ci_provider = ["github", "gitlab"] }`
+- **AND** the context has `ci_provider = "gitlab"`
+- **THEN** the control MUST run its steps and MUST NOT be `N/A`
+
+#### Scenario: A missing key does not skip a verification step
+- **WHEN** a verification step declares `when = { has_widgets = true }`
+- **AND** the context does not hold `has_widgets`
+- **THEN** the step MUST run
+
+#### Scenario: An unconfirmed repository value does not skip a verification step
+- **WHEN** a verification step declares `when = { "project.type" = "application" }`
+- **AND** the only value for `project.type` is `library`, read from the repository's `.project/project.yaml`
+- **THEN** the step MUST run
+
+#### Scenario: A missing key skips a remediation handler
+- **WHEN** a remediation handler declares `when = { "scan.app_kusari_inspector" = "true" }`
+- **AND** the context does not hold `scan.app_kusari_inspector`
+- **THEN** the handler MUST NOT run, and its file is reported `when_not_met`
+
 ### 5.2 Result Statuses
 
 | Status | Description | Compliant |
