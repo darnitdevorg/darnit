@@ -188,8 +188,8 @@ flowchart LR
     Pending["get_pending_data<br/>(candidates and unknowns;<br/>writes nothing)"]
 
     Person -->|"context_writes (trusted repo)"| Ext
-    Remediation -->|"update_project_config"| Project
-    Remediation -->|"update_project_config"| Ext
+    Remediation -->|"render_project_config_update"| Project
+    Remediation -->|"render_project_config_update"| Ext
 
     Project --> Resolver
     Ext --> Resolver

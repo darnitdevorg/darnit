@@ -125,13 +125,6 @@ class EffectiveConfig:
         """
         return {cid: ctrl for cid, ctrl in self.controls.items() if ctrl.level == level}
 
-    def get_controls_by_domain(self, domain: str) -> dict[str, EffectiveControl]:
-        """Get all controls in a specific domain.
-
-        Note: Controls without a domain (domain=None) are not included.
-        """
-        return {cid: ctrl for cid, ctrl in self.controls.items() if ctrl.domain == domain}
-
 
 # =============================================================================
 # Merge Functions
