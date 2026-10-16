@@ -900,6 +900,12 @@ def run_sieve_audit(
         operator_config = resolve_operator_config(local_path)
     operator = operator_config.config
 
+    # A plugin the operator's plugins.allowed leaves out is not loaded
+    # (framework-design 6.6), including for a configuration passed in.
+    from darnit.core.discovery import set_allowed_plugins
+
+    set_allowed_plugins(operator.plugins.allowed)
+
     resolved_fw = framework_name
 
     if resolved_fw:
