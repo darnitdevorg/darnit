@@ -22,6 +22,7 @@ extends = "openssf-baseline"
 timeout = 60
 
 [plugins]
+allowed = ["openssf-baseline"]
 allow_unsigned = false
 trusted_publishers = ["https://github.com/example"]
 
@@ -168,7 +169,7 @@ class TestOperatorFragment:
     def test_fragment_holds_the_tool_settings(self, repo: Path) -> None:
         fragment = tomllib.loads(migrate_baseline_toml(repo).operator_fragment)
 
-        assert fragment["plugins"] == {"allow_unsigned": False, "trusted_publishers": ["https://github.com/example"]}
+        assert fragment["plugins"] == {"allowed": ["openssf-baseline"]}
         assert fragment["mcp_servers"]["scanner"]["command"] == ["scanner-mcp", "--stdio"]
         assert fragment["mcp_servers"]["scanner"]["env"] == {"SCANNER_TOKEN": "$SCANNER_TOKEN"}
         assert fragment["stores"] == {"report": {"backend": "filesystem"}}
@@ -190,6 +191,15 @@ class TestOperatorFragment:
 
         assert {"adapters", "extends", "settings"} <= set(result.not_migrated)
         assert "# [adapters.scanner]" in result.operator_fragment
+
+    def test_plugin_signature_settings_are_not_migrated(self, repo: Path) -> None:
+        """Operator configuration refuses them: darnit does not verify plugin signatures (framework-design 6.6)."""
+        result = migrate_baseline_toml(repo)
+
+        assert {"plugins.allow_unsigned", "plugins.trusted_publishers"} <= set(result.not_migrated)
+        assert "plugins" not in result.not_migrated
+        assert "# allow_unsigned = false" in result.operator_fragment
+        assert "does not verify plugin signatures" in result.operator_fragment
 
     def test_claims_only_file_has_no_fragment(self, tmp_path: Path) -> None:
         (tmp_path / ".baseline.toml").write_text(
