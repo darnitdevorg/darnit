@@ -602,6 +602,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   platform calls. The pending-context guard now reads confirmations for
   that repository too: it used to ignore operator-side confirmations, so
   an untrusted repository could never be remediated.
+- gittuf GT-02.01 (`gittuf_commits_signed`) passes only when every checked
+  commit has a good signature (`%G?` = `G`). It counted `E` (cannot be
+  checked, so any random bytes in a signature packet), `U` (unknown
+  validity; for SSH, any key once `gpg.ssh.allowedSignersFile` is set) and
+  `X` as signed, and passed a history signed only by revoked or expired
+  keys as "All 0 recent commits are signed". Now `N`, `B`, `R`, `Y` and `X`
+  are FAIL; `E`, and a signature git is not set up to check (such as SSH
+  without `gpg.ssh.allowedSignersFile`), are `ERROR`, class `evaluation`;
+  `U` and an empty history are inconclusive.
 - When `cel-python` or `tree-sitter-language-pack` fails to import, the
   error now gives the real cause. Both guards said "not installed" for any
   import error, which was wrong for an installed package with a missing

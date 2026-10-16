@@ -6,6 +6,7 @@ and returns a HandlerResult saying PASS, FAIL, or INCONCLUSIVE.
 """
 
 import subprocess
+from collections import Counter
 from typing import Any
 
 from darnit.core.logging import get_logger
@@ -72,35 +73,50 @@ def gittuf_verify_policy_handler(
         )
 
 
+# git's %G? letters (git-log(1)): G good signature, B bad, U good with unknown
+# validity, X good but expired, Y good by an expired key, R good by a revoked
+# key, E cannot be checked, N no signature.
+_NOT_GOOD = {
+    "N": "unsigned",
+    "B": "BAD signature",
+    "R": "signed by a revoked key",
+    "Y": "signed by an expired key",
+    "X": "expired signature",
+}
+_SIGNATURE_HEADERS = ("gpgsig ", "gpgsig-sha256 ")
+
+
+def _has_signature_header(local_path: str, sha: str) -> bool:
+    """Whether commit ``sha`` carries a signature, whatever git could make of it."""
+    result = subprocess.run(
+        ["git", "cat-file", "commit", sha],
+        cwd=local_path,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    headers = result.stdout.split("\n\n", 1)[0]
+    return any(line.startswith(_SIGNATURE_HEADERS) for line in headers.splitlines())
+
+
 def gittuf_commits_signed_handler(
     config: dict[str, Any],
     ctx: HandlerContext,
 ) -> HandlerResult:
-    """Check that recent commits are cryptographically signed.
+    """Check that the last 5 commits carry good signatures (framework-design section 12).
 
-    Looks at the last 5 commits. PASS if all are signed, FAIL if any
-    are unsigned, INCONCLUSIVE if git is not available.
-
-    Note: SSH-signed commits require gpg.ssh.allowedSignersFile to be
-    configured for git to verify them. Without it, SSH-signed commits
-    report as unsigned. This handler warns when this condition is detected.
+    Only ``G`` counts as signed. FAIL when a commit is unsigned or its
+    signature is bad, revoked or expired. ERROR (``evaluation``) when a
+    commit carries a signature this machine cannot check: ``E``, or a
+    signature git reports as ``N`` because it is not set up to check it
+    (an SSH signature without ``gpg.ssh.allowedSignersFile``, or no
+    ``gpg``). INCONCLUSIVE for ``U`` (nothing here says the key is
+    trusted) and for no commits. A FAIL outweighs an ERROR, which
+    outweighs INCONCLUSIVE.
     """
-    # Check if allowedSignersFile is configured for SSH signing verification
-    try:
-        signers_check = subprocess.run(
-            ["git", "config", "gpg.ssh.allowedSignersFile"],
-            cwd=ctx.local_path,
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        ssh_signers_configured = signers_check.returncode == 0
-    except Exception:
-        ssh_signers_configured = False
-
     try:
         result = subprocess.run(
-            ["git", "log", "--format=%G?%n%GK", "-5"],
+            ["git", "log", "--format=%H%x1f%G?%x1f%GK", "-5"],
             cwd=ctx.local_path,
             capture_output=True,
             text=True,
@@ -114,68 +130,77 @@ def gittuf_commits_signed_handler(
                 confidence=0.0,
             )
 
-        lines = result.stdout.strip().splitlines()
-
-        # %G? and %GK alternate — collect signature status lines
-        sig_statuses = [line.strip() for i, line in enumerate(lines) if i % 2 == 0 and line.strip()]
-        sig_keys = [line.strip() for i, line in enumerate(lines) if i % 2 == 1]
-
-        if not sig_statuses:
+        commits = [line.split("\x1f") for line in result.stdout.splitlines() if line.strip()]
+        if not commits:
             return HandlerResult(
                 status=HandlerResultStatus.INCONCLUSIVE,
                 message="No commits found to check",
                 confidence=0.0,
             )
 
-        unsigned = [s for s in sig_statuses if s == "N"]
-        bad = [s for s in sig_statuses if s == "B"]
-        signed = [s for s in sig_statuses if s in ("G", "U", "E", "X")]
+        not_good: Counter[str] = Counter()
+        unverifiable: list[str] = []
+        unknown_validity: list[str] = []
+        for sha, status, _key in commits:
+            if status == "G":
+                continue
+            if status == "U":
+                unknown_validity.append(sha)
+            elif status == "N" and _has_signature_header(ctx.local_path, sha):
+                unverifiable.append(sha)
+            elif status in _NOT_GOOD:
+                not_good[status] += 1
+            else:
+                unverifiable.append(sha)
 
-        # Detect if SSH keys are in use without allowedSignersFile
-        has_ssh_keys = any(k.startswith("ssh-") for k in sig_keys if k)
-        if unsigned and has_ssh_keys and not ssh_signers_configured:
-            return HandlerResult(
-                status=HandlerResultStatus.INCONCLUSIVE,
-                message=(
-                    "SSH-signed commits detected but gpg.ssh.allowedSignersFile "
-                    "is not configured — git cannot verify SSH signatures. "
-                    "Set gpg.ssh.allowedSignersFile to enable verification."
-                ),
-                confidence=0.0,
-                evidence={
-                    "total_checked": len(sig_statuses),
-                    "ssh_signers_configured": False,
-                    "hint": "Run: git config gpg.ssh.allowedSignersFile ~/.ssh/allowed_signers",
-                },
-            )
-
+        statuses = Counter(status for _sha, status, _key in commits)
+        total = len(commits)
         evidence = {
-            "total_checked": len(sig_statuses),
-            "signed": len(signed),
-            "unsigned": len(unsigned),
-            "bad_signature": len(bad),
-            "ssh_signers_configured": ssh_signers_configured,
+            "total_checked": total,
+            "signed": statuses["G"],
+            "unsigned": not_good["N"],
+            "bad_signature": not_good["B"],
+            "statuses": dict(statuses),
+            "unverifiable_commits": unverifiable,
+            "unknown_validity_commits": unknown_validity,
         }
 
-        if bad:
+        if not_good:
+            details = ", ".join(f"{count} {_NOT_GOOD[status]}" for status, count in not_good.items())
             return HandlerResult(
                 status=HandlerResultStatus.FAIL,
-                message=f"{len(bad)} commits have BAD signatures",
+                message=f"{sum(not_good.values())} of last {total} commits lack a good signature: {details}",
                 confidence=1.0,
                 evidence=evidence,
             )
 
-        if unsigned:
+        if unverifiable:
+            git_said = "; ".join(dict.fromkeys(line.strip() for line in result.stderr.splitlines() if line.strip()))
+            cause = git_said or "for example, the signing key is not available"
             return HandlerResult(
-                status=HandlerResultStatus.FAIL,
-                message=f"{len(unsigned)} of last {len(sig_statuses)} commits are unsigned",
-                confidence=1.0,
+                status=HandlerResultStatus.ERROR,
+                message=(
+                    f"{len(unverifiable)} of last {total} commits carry signatures this machine cannot check ({cause})"
+                ),
+                evidence=evidence,
+                error_class="evaluation",
+            )
+
+        if unknown_validity:
+            return HandlerResult(
+                status=HandlerResultStatus.INCONCLUSIVE,
+                message=(
+                    f"{len(unknown_validity)} of last {total} commits have good signatures of unknown "
+                    "validity: nothing on this machine says the signing keys are trusted "
+                    "(for SSH signatures, gpg.ssh.allowedSignersFile must list them)"
+                ),
+                confidence=0.0,
                 evidence=evidence,
             )
 
         return HandlerResult(
             status=HandlerResultStatus.PASS,
-            message=f"All {len(signed)} recent commits are signed",
+            message=f"All {total} recent commits have good signatures",
             confidence=1.0,
             evidence=evidence,
         )
