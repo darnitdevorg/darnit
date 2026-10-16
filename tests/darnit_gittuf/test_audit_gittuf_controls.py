@@ -58,6 +58,32 @@ def _audit(path: Path, control_id: str) -> dict:
     return result
 
 
+class TestGittufInitialized:
+    """GT-01.01: is refs/gittuf/policy present?"""
+
+    def test_missing_policy_ref_fails(self, tmp_path: Path) -> None:
+        result = _audit(_repo(tmp_path), "GT-01.01")
+
+        assert result["status"] == "FAIL"
+
+    def test_policy_ref_passes(self, tmp_path: Path) -> None:
+        repo = _repo(tmp_path)
+        _git(repo, "update-ref", "refs/gittuf/policy", "HEAD")
+
+        result = _audit(repo, "GT-01.01")
+
+        assert result["status"] == "PASS"
+
+    def test_not_a_repository_is_not_a_fail(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
+        plain = tmp_path / "plain"
+        plain.mkdir()
+
+        result = _audit(plain, "GT-01.01")
+
+        assert result["status"] not in ("PASS", "FAIL")
+
+
 class TestGittufPolicyValid:
     """GT-01.02: gittuf verify-ref HEAD."""
 

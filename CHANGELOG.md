@@ -614,6 +614,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - gittuf GT-01.02 and GT-02.01 are `ERROR`, class `missing_tool`, when
   `gittuf` or `git` is not installed. They were WARN, as if a person needed
   to check the repository.
+- gittuf GT-01.01 fails when `refs/gittuf/policy` is missing. Its
+  `git show-ref --verify` exits 128 for a missing ref, not the declared
+  fail code 1, so the control was WARN; the step now passes `--quiet`, which
+  exits 1.
 - When `cel-python` or `tree-sitter-language-pack` fails to import, the
   error now gives the real cause. Both guards said "not installed" for any
   import error, which was wrong for an installed package with a missing
