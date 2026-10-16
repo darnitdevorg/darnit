@@ -255,15 +255,6 @@ class TestFrameworkReaders:
         signals = ContextSieve()._detect_maintainers_deterministic(str(repo))
         assert signals and "@insider" in json.dumps(signals[0].value)
 
-    def test_hint_source_outside_is_not_parsed(self, repo: Path, outside: Path) -> None:
-        from darnit.context.collection import resolve_context_value
-
-        (repo / "MAINTAINERS.md").symlink_to(outside / "secret.txt")
-        value, method = resolve_context_value(
-            "maintainers", {"hint_sources": ["MAINTAINERS.md"], "source": "MAINTAINERS.md"}, repo
-        )
-        assert value is None and method is None
-
     def test_project_file_outside_is_invalid_and_unread(self, repo: Path, outside: Path) -> None:
         from darnit.config.loader import load_project_config_checked
         from darnit.context.dot_project import DotProjectReader

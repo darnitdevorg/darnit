@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import tomllib
 from collections.abc import Callable
@@ -14,7 +15,6 @@ import yaml
 from darnit.config.context_resolve import resolve_context
 from darnit.config.context_schema import OriginKind, Standing
 from darnit.config.discovery import discover_ci_config
-from darnit.context import detectors
 from darnit.context.auto_detect import collect_auto_context, detect_ci_provider
 from darnit.server.tools.project_data import confirm_project_data_impl
 from darnit_baseline.tools import audit_openssf_baseline
@@ -133,4 +133,4 @@ def test_every_detection_route_uses_the_canonical_vocabulary(tmp_path: Path, pat
 
 @pytest.mark.unit
 def test_one_ci_detector() -> None:
-    assert not hasattr(detectors, "detect_ci")
+    assert importlib.util.find_spec("darnit.context.detectors") is None
