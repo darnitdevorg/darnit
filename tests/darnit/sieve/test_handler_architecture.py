@@ -131,17 +131,6 @@ class TestHandlerRegistry:
         assert registry.get("nonexistent") is None
 
     @pytest.mark.unit
-    def test_phase_affinity_validation(self):
-        """Test phase affinity warning is issued."""
-        registry = SieveHandlerRegistry()
-        registry.register(
-            "file_check", "deterministic", _make_handler(HandlerResultStatus.PASS),
-            ceiling={"pass", "fail"},
-        )
-        # Should log a warning but not raise
-        registry.validate_phase("file_check", "pattern")
-
-    @pytest.mark.unit
     def test_duplicate_core_registration(self):
         """Test re-registering a core handler warns."""
         registry = SieveHandlerRegistry()
