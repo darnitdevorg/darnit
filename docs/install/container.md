@@ -37,7 +37,7 @@ The entrypoint dispatches the first argument:
 |---|---|
 | `audit` / `remediate` / `list-controls` / `plan` / `profiles` / `validate` | Forwarded to `darnit` CLI |
 | `--version` / `--help` | Forwarded to `darnit` CLI |
-| `mcp` | Forwarded to `darnit-mcp` (stdio MCP server) |
+| `mcp` | Forwarded to `darnit serve` (stdio MCP server) |
 | Anything else | Executed directly (escape hatch for `sh`, `gh`, `git`, etc.) |
 
 ## Verify the image signature
