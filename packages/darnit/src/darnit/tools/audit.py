@@ -221,6 +221,17 @@ def _load_framework(framework_name: str | None) -> Any | None:
     return load_framework_config(framework_path)
 
 
+def _claim_controls(framework: Any | None, operator: "OperatorConfig") -> dict[str, Any]:
+    """Control definitions claims are assessed against: the framework's plus the operator's custom controls.
+
+    A custom control replaces a framework control with the same id, as in
+    :func:`merge_configs` (framework-design 14.3).
+    """
+    controls = dict(framework.controls) if framework is not None else {}
+    controls.update(operator.custom_controls)
+    return controls
+
+
 def _known_control_ids(controls: list[Any], framework: Any | None, operator: "OperatorConfig") -> set[str]:
     """Control ids the framework (and operator configuration) define, for validating claims."""
     known = {c.control_id for c in controls} | set(operator.custom_controls)
@@ -437,15 +448,16 @@ def prepare_claim_confirmations(
     context, detected, repository_values = _applicability_context(
         local_path, owner, target=target, operator=operator, definitions=framework_definitions(framework)
     )
+    claim_controls = _claim_controls(framework, operator)
     controls_when = {
-        cid: framework.controls[cid].when for cid in wanted if cid in framework.controls and framework.controls[cid].when
+        cid: claim_controls[cid].when for cid in wanted if cid in claim_controls and claim_controls[cid].when
     }
     for claim in context_value_assertions(controls_when, context, detected, repository_values):
         claims.setdefault(claim.control_id, claim)
 
     prepared = {}
     for control_id, claim in claims.items():
-        control = framework.controls.get(control_id)
+        control = claim_controls.get(control_id)
         contradicted_by = getattr(control, "contradicted_by", None)
         evidence = None
         contradiction = None
@@ -469,6 +481,7 @@ def _assess_assertions(
     context: dict[str, Any],
     detected: dict[str, Any],
     repository_values: dict[str, str],
+    operator: "OperatorConfig",
 ) -> dict[str, Any]:
     """Outcome of every not-applicable claim about the audited controls (feature 040, FR-013a to FR-019)."""
     from darnit.trust.assertions import (
@@ -504,9 +517,10 @@ def _assess_assertions(
 
         return observe
 
+    claim_controls = _claim_controls(framework, operator)
     assessments = {}
     for control_id, claim in claims.items():
-        control = framework.controls.get(control_id) if framework is not None else None
+        control = claim_controls.get(control_id)
         contradicted_by = getattr(control, "contradicted_by", None)
         assessments[control_id] = assess_assertion(
             claim,
@@ -926,6 +940,7 @@ def run_sieve_audit(
             project_context,
             detected_context,
             repository_values,
+            operator,
         )
 
     from darnit.sieve.models import SieveResult
