@@ -635,3 +635,6 @@ class TestConfigValidation:
         )
         assert result.status == HandlerResultStatus.ERROR
         assert "owner/repo" in result.message
+        # Same class as the gh_api handler for the same case (#579).
+        assert result.error_class == "unavailable"
+        assert "no git remote" in result.message

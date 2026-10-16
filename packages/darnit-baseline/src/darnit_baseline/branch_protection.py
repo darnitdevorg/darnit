@@ -446,9 +446,14 @@ def github_branch_protection_handler(
     repo = str(config.get("repo") or context.repo or "").strip()
     branch = str(config.get("branch") or context.default_branch or "main").strip()
     if not owner or not repo:
+        # Same case and class as the gh_api handler (#579): the platform was
+        # never asked, so the measurement is unavailable, not an evaluation
+        # failure.
         return HandlerResult(
             status=HandlerResultStatus.ERROR,
-            message="handler github_branch_protection needs owner/repo (from context or config)",
+            message="handler github_branch_protection needs owner/repo, but no "
+            "repository owner or name is known (no git remote, and none was given)",
+            error_class="unavailable",
         )
 
     # Default-branch value used for ~DEFAULT_BRANCH matching is consumed
