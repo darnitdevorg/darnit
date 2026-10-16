@@ -153,15 +153,14 @@ def build_assessment_predicate(
         config_section["excluded_controls"] = excluded
 
     meta = framework_metadata("openssf-baseline")
-    try:
-        from importlib.metadata import version as _pkg_version
+    from importlib.metadata import version as _pkg_version
 
-        tool_version = _pkg_version("darnit-baseline")
-    except Exception:
-        tool_version = meta.get("version") or "0.1.1"
+    tool_version = _pkg_version("darnit-baseline")
 
-    spec_raw = meta.get("spec_version") or "OSPS v2026.02.19"
-    baseline_version = spec_raw.replace("OSPS", "").replace("v", "").strip() or "2026.02.19"
+    spec_raw = meta.get("spec_version")
+    if not spec_raw:
+        raise ValueError("Framework 'openssf-baseline' metadata missing spec_version")
+    baseline_version = spec_raw.replace("OSPS", "").replace("v", "").strip()
     baseline_slug = baseline_version.replace(".", "-")
     spec_url = f"https://baseline.openssf.org/versions/{baseline_slug}"
 

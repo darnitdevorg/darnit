@@ -1,6 +1,6 @@
 # Compliance Audit Report
 
-**Framework:** OpenSSF Baseline v0.1.1
+**Framework:** OpenSSF Baseline v<SCRUBBED-VERSION>
 **Spec Version:** OSPS v2026.02.19
 **Generated At:** <SCRUBBED-TIMESTAMP>
 **Repository:** baseline-owner/baseline-repo

@@ -26,24 +26,22 @@ class OSPSBaselineImplementation:
 
     @property
     def version(self) -> str:
-        try:
-            from importlib.metadata import version as _pkg_version
+        from importlib.metadata import version as _pkg_version
 
-            return _pkg_version("darnit-baseline")
-        except Exception:
-            return "0.1.1"
+        return _pkg_version("darnit-baseline")
 
     @property
     def spec_version(self) -> str:
-        try:
-            from darnit.config.merger import load_framework_config
+        from darnit.config.merger import load_framework_config
 
-            path = self.get_framework_config_path()
-            if path:
-                return load_framework_config(path).metadata.spec_version
-        except Exception:
-            pass
-        return "OSPS v2026.02.19"
+        path = self.get_framework_config_path()
+        if not path or not path.is_file():
+            raise FileNotFoundError("Framework config path for openssf-baseline not found")
+        cfg = load_framework_config(path)
+        spec_version = cfg.metadata.spec_version
+        if not spec_version:
+            raise ValueError("openssf-baseline framework TOML missing spec_version in metadata")
+        return str(spec_version)
 
     def get_framework_config_path(self) -> Path | None:
         """Get path to the OpenSSF Baseline framework TOML file.
