@@ -3,6 +3,7 @@
 # non-dev-install-smoke.sh - Install built wheels the way a user does, then run one audit
 #
 # Usage: scripts/non-dev-install-smoke.sh [dist-dir [package ...]]
+#        scripts/non-dev-install-smoke.sh --uv-tool [checkout-dir]
 #
 # Installs the darnit wheels from dist-dir (default: dist) into a new virtual
 # environment with pip: a fresh dependency resolve, no lockfile, no development
@@ -17,9 +18,38 @@
 # smaller set (darnit-core darnit-baseline) as well: a sibling package can
 # declare a dependency that core forgot, which hides the gap in a full install.
 #
-# Requirements: python3 (with venv and pip), git, network access to PyPI.
+# With --uv-tool it installs the checkout (default: .) as a uv tool instead,
+# as `uv tool install git+https://github.com/darnitdevorg/darnit` does, into
+# a throwaway tool directory. It fails unless `darnit` lands on the tool PATH
+# and `darnit list` loads openssf-baseline, gittuf and reproducibility, which
+# needs the root package to declare the `darnit` script. See #621.
+#
+# Requirements: python3 (with venv and pip), git, network access to PyPI;
+# uv for --uv-tool.
 
 set -euo pipefail
+
+fail() { echo "FAIL: $*" >&2; exit 1; }
+
+if [ "${1:-}" = "--uv-tool" ]; then
+  checkout="${2:-.}"
+  work="$(mktemp -d)"
+  trap 'rm -rf "$work"' EXIT
+  export UV_TOOL_DIR="$work/tools" UV_TOOL_BIN_DIR="$work/bin"
+
+  uv tool install "$checkout" || fail "uv tool install $checkout failed"
+  [ -x "$UV_TOOL_BIN_DIR/darnit" ] || fail "uv tool install did not put darnit on the tool PATH"
+
+  out="$work/list.txt"
+  "$UV_TOOL_BIN_DIR/darnit" list >"$out" 2>&1 || fail "darnit list exited with status $?"
+  cat "$out"
+  for framework in openssf-baseline gittuf reproducibility; do
+    grep -q -x -E "(INFO: )?  • $framework" "$out" || fail "darnit list did not load $framework"
+  done
+
+  echo "OK: uv tool install puts darnit on PATH with every framework"
+  exit 0
+fi
 
 dist="${1:-dist}"
 if [ $# -gt 1 ]; then
@@ -28,8 +58,6 @@ if [ $# -gt 1 ]; then
 else
   packages=(darnit-mcp darnit-core darnit-baseline darnit-gittuf darnit-reproducibility)
 fi
-
-fail() { echo "FAIL: $*" >&2; exit 1; }
 
 wheels=()
 for name in "${packages[@]}"; do
