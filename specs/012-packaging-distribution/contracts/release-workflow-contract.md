@@ -46,7 +46,7 @@ preflight
    ├─► pypi_publish ─► pypi_smoke
    │
    ├─► container_build_push ─► container_smoke
-   │       (depends on pypi_publish: image installs from PyPI)
+   │       (builds from the tagged commit; does not depend on pypi_publish; #585, #586)
    │
    ├─► binary_matrix (×4) ─► binary_smoke
    │

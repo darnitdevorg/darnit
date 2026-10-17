@@ -24,18 +24,23 @@ The release workflow uses `docker/setup-buildx-action` + `docker/build-push-acti
 
 ## Image contents
 
-Base: `python:3.12-slim`.
+Base: `python:3.12-slim-bookworm`.
+
+The image is built from source: the tagged commit for a release, `main` for `:edge`. One Dockerfile serves both. Nothing about darnit is installed from PyPI, so the image can carry packages that PyPI does not have, and a release image does not wait for PyPI. (Amended for #585 and #586: the PyPI install had no darnit-csl, no zizmor or gittuf, and lost the repository identity.)
 
 The image MUST contain:
-- The exact PyPI-published version of `darnit-mcp` (installed via `pip install darnit-mcp==<version>` in the builder stage; runtime stage copies the virtualenv).
-- `git` (apt).
-- `gh` (GitHub CLI, installed from the official apt repo).
+- The workspace packages at the source's versions, installed non-editable from `uv.lock` (`--frozen`) with no development dependencies: `darnit-mcp` (the root package) and what it depends on (`darnit-core`, `darnit-baseline`, `darnit-gittuf`, `darnit-reproducibility`), plus `darnit-csl`. Not `darnit-hello` or `darnit-testchecks`.
+- The external tools the controls run, each pinned to a version: `zizmor`, `gittuf`, `gpg` (gnupg), `ssh-keygen` (openssh-client), `git` and `gh`. A tool downloaded at build time is checked against a sha256 pinned per architecture.
+- `safe.directory=/repo` in the system git configuration. The mounted repository belongs to the host user, not uid 10001, and without the setting git refuses it and the audit loses the repository identity (#586). A hostile `.git/config` in the mount can do no more here than in a native run; #617 tracks hardening darnit's own git calls.
 - A non-root user `darnit` (uid 10001) as the runtime user.
+- An `org.opencontainers.image.version` label: the release version or the commit sha, passed by the workflow as a build arg.
+
+The platform checks need a GitHub token in the container: `docker run -e GH_TOKEN ...`.
 
 The image MUST NOT contain:
 - A shell history.
 - Apt caches (`/var/lib/apt/lists`, `/var/cache/apt`).
-- Pip caches (`~/.cache/pip`).
+- Pip or uv caches, or uv itself.
 - Build-time tools (gcc, make, etc.) — these live in the builder stage only.
 
 ## Entrypoint & default command
@@ -101,3 +106,5 @@ cosign verify ghcr.io/kusari-oss/darnit:<tag> \
 ```
 
 Both must succeed.
+
+On pull requests that change the image's inputs, CI builds the `linux/amd64` image without pushing it and runs `scripts/container-image-smoke.sh`: `--version`, every framework loads, the bundled tools run, an audit of the mounted checkout finds the repository identity, and an MCP stdio handshake lists tools.
