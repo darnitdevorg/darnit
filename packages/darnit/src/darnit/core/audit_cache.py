@@ -269,8 +269,8 @@ def read_audit_cache(
     # Version check
     version = data.get("version")
     # Issue #542 review: an exact match, not an upper bound. A v1 envelope
-    # has no `tags`/`filtered` keys, so reading it would present a possibly
-    # filtered audit as unfiltered. Older caches miss and are re-audited.
+    # may hold a filtered audit under the full-audit key, so reading it would
+    # present a subset as the full audit. Older caches miss and are re-audited.
     if not isinstance(version, int) or version != CACHE_VERSION:
         logger.debug("Unknown audit cache version: %s", version)
         return None
