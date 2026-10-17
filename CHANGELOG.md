@@ -585,6 +585,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `darnit-mcp` executable that no package provides; both now run
   `darnit serve`. The command is `darnit`, so `uvx darnit-mcp` still does
   not work: use `uvx --from darnit-mcp darnit` (#621).
+- The container image is built from source with the frozen `uv.lock`: the
+  tagged commit for a release, `main` for `:edge`, which had installed the
+  newest darnit-mcp from PyPI instead. It now includes darnit-csl and
+  pinned zizmor, gittuf, gpg and ssh-keygen besides git and gh, so
+  OSPS-AC-04.02, OSPS-BR-01.01 and the gittuf controls no longer fail for a
+  missing command (#585). It sets `safe.directory=/repo`, so an audit of a
+  mounted repository keeps its repository identity (#586); pass
+  `-e GH_TOKEN` for the platform checks. Pull requests that touch the
+  image now build and smoke-test it.
 - When `cel-python` or `tree-sitter-language-pack` fails to import, the
   error now gives the real cause. Both guards said "not installed" for any
   import error, which was wrong for an installed package with a missing
