@@ -25,6 +25,10 @@ Example:
 
 Reconciliation history
 ----------------------
+- 1.0.0 (issue #502, 2026-09):
+    * Pinned `DOT_PROJECT_SPEC_VERSION` to upstream CNCF dot-project schema version
+      `1.0.0`. Earlier values (1.1.0 -> 1.4.0) were darnit-internal reconcile
+      counters rather than upstream versions.
 - 1.1.0 -> 1.2.0 (feature 030-dot-project-spec-sync, 2026-08-15):
     * `project_lead`: accepts scalar or list per upstream `StringOrSlice`;
       collapses to the first non-empty string element for the existing
@@ -60,12 +64,16 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Targeted .project/ spec version. Bumped 1:1 with the tracked-hash file
-# in `.github/dot-project-spec-hash.txt` per feature 030 Q3.
-DOT_PROJECT_SPEC_VERSION = "1.4.0"
+# Targeted .project/ spec version. Pinned to upstream CNCF dot-project specification
+# version 1.0.0 (issue #502). Earlier values were darnit-internal counters.
+DOT_PROJECT_SPEC_VERSION = "1.0.0"
 DOT_PROJECT_SPEC_URL = "https://github.com/cncf/automation/tree/main/utilities/dot-project"
 
 # Reconciliation history
+#  - 1.0.0 (issue #502, 2026-09):
+#      * Pinned to upstream CNCF dot-project specification version 1.0.0;
+#        earlier values (1.1.0 -> 1.4.0) were darnit-internal reconcile counters,
+#        not upstream versions.
 #  - 1.1.0 -> 1.2.0 (feature 030-dot-project-spec-sync, 2026-08-14):
 #      * project_lead: accepts scalar or list; collapses to first.
 #      * package_managers[*]: accepts scalar or list; collapses to first.
