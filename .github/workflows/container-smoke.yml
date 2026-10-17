@@ -2,8 +2,9 @@ name: Container Smoke
 
 # Builds the container image from the pull request's checkout (linux/amd64,
 # not pushed) and runs scripts/container-image-smoke.sh against it: every
-# framework loads, the bundled tools run, an audit of the mounted checkout
-# keeps the repository identity (#586), and the MCP server answers.
+# framework loads, the bundled tools run, the default harness command stops
+# with its setup error without a key, an audit of the mounted checkout keeps
+# the repository identity (#586), and `serve` answers MCP.
 #
 # No token is passed to the container, so the audit's platform checks are not
 # measured here; the script asserts the identity only.
