@@ -58,7 +58,7 @@ If you need to verify outside an install context (security scanning, attestation
 
 ```bash
 # Install the verifier
-pip install 'sigstore>=3.0.0'
+pip install 'pypi-attestations>=0.0.27'
 
 # Download the wheel
 pip download --no-deps darnit-mcp==0.1.0
@@ -68,27 +68,17 @@ curl -fsSL \
   "https://pypi.org/integrity/darnit-mcp/0.1.0/darnit_mcp-0.1.0-py3-none-any.whl/provenance" \
   -o provenance.json
 
-# Extract the first attestation as a sigstore-readable bundle
-python -c "
-import json
-with open('provenance.json') as f:
-    data = json.load(f)
-with open('attestation.sigstore.json', 'w') as out:
-    json.dump(data['attestation_bundles'][0]['attestations'][0], out)
-"
-
-# Verify against the canonical kusari-oss/darnit identity
-python -m sigstore verify identity \
-  --bundle attestation.sigstore.json \
-  --cert-identity-regexp '^https://github\.com/kusari-oss/darnit/\.github/workflows/release\.yml@' \
-  --cert-oidc-issuer https://token.actions.githubusercontent.com \
+# Verify the attestations against the wheel and the publishing repository
+pypi-attestations verify pypi \
+  --repository https://github.com/darnitdevorg/darnit \
+  --provenance-file provenance.json \
   darnit_mcp-0.1.0-py3-none-any.whl
 ```
 
 A passing verification proves:
 
 - The wheel bytes match exactly what was signed.
-- The signer was the `release.yml` workflow in `kusari-oss/darnit`.
+- The attestation was produced by the `release.yml` workflow of `darnitdevorg/darnit`, from its `release` environment (the tool reads both from the provenance file's `publisher` block; check them, as the release smoke does, before trusting the verification).
 - The OIDC issuer was GitHub Actions (not some other identity provider).
 
 For TestPyPI pre-releases, substitute `test.pypi.org` for `pypi.org` in the provenance URL.
@@ -119,4 +109,4 @@ For most users, `uv tool install darnit-mcp` (or `pip install darnit-mcp` in a v
 | `ERROR: Package requires a different Python` | Host Python is older than 3.11. Install Python 3.11+ or use [pipx](https://pipx.pypa.io/) with an explicit `--python` flag. |
 | `Could not find a version that satisfies the requirement` (for a pre-release) | Missing `--pre` flag or wrong `--index-url`. |
 | Sigstore verification fails with "no attestation bundles" | The release was published before PEP 740 attestations existed, or the attestation hasn't propagated yet (rare; retry in a few minutes). |
-| Sigstore verification fails with "identity mismatch" | The wheel was not signed by `kusari-oss/darnit`'s release workflow. **Do not trust this artifact.** Report it via the project's security policy. |
+| `pypi-attestations verify` reports a repository or workflow mismatch | The wheel was not signed by `darnitdevorg/darnit`'s `release.yml` workflow. **Do not trust this artifact.** Report it via the project's security policy. |

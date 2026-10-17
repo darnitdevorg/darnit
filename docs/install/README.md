@@ -41,12 +41,11 @@ If you're not sure: **`uv tool install git+https://github.com/darnitdevorg/darni
 Every install page has a "Verify" section with the exact command. The common shape:
 
 ```bash
-# PyPI (Sigstore)
-python -m sigstore verify identity \
-  --bundle <bundle> \
-  --cert-identity-regexp '^https://github\.com/darnitdevorg/darnit/' \
-  --cert-oidc-issuer https://token.actions.githubusercontent.com \
-  <artifact>
+# PyPI (PEP 740 attestations)
+pypi-attestations verify pypi \
+  --repository https://github.com/darnitdevorg/darnit \
+  --provenance-file <provenance.json> \
+  <wheel>
 
 # Container / binary (cosign)
 cosign verify[-blob] \
