@@ -39,6 +39,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- **BREAKING:** `audit_openssf_baseline` no longer accepts `auto_init_config`,
+  and `get_pending_data` no longer accepts `level` (#528). Both were ignored:
+  the audit never created a project file, and pending questions were never
+  filtered by maturity level. Create an empty `.project/darnit.yaml` with
+  `init_project_config`. `get_pending_context` no longer accepts `level`;
+  that ignored parameter was removed in #552.
 - `.baseline.toml` reading and the code that existed only for it:
   `load_user_config` (including its `trusted` path),
   `load_user_config_with_report`, `validate_user_config`, `deep_merge`, and

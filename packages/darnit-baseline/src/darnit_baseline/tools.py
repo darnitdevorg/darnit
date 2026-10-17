@@ -93,7 +93,6 @@ def audit_openssf_baseline(
     level: int = 3,
     tags: str | list[str] | None = None,
     output_format: str = "markdown",
-    auto_init_config: bool = True,
     attest: bool = False,
     sign_attestation: bool = True,
     staging: bool = False,
@@ -121,7 +120,6 @@ def audit_openssf_baseline(
               Default: "markdown".
               Use "summary" for compact JSON (id/status/level/details only, no evidence).
               Use "badge" to generate an OpenSSF Best Practices Badge automation-proposal URL.
-        auto_init_config: Create .project.yaml if missing. Default: True
         attest: Generate in-toto attestation after audit. Default: False
         sign_attestation: Sign attestation with Sigstore. Default: True
         staging: Use Sigstore staging environment. Default: False
@@ -764,7 +762,6 @@ next batch (if any remain).
 def get_pending_data(
     local_path: str = ".",
     control_ids: list[str] | None = None,
-    level: int = 3,
     owner: str | None = None,
     repo: str | None = None,
     limit: int = 4,
@@ -787,7 +784,6 @@ def get_pending_data(
     Parameters:
     - `local_path`: Path to repository (default: ".")
     - `control_ids`: Optional list of control IDs to check
-    - `level`: Maximum maturity level (1, 2, or 3)
     - `owner`: GitHub owner (auto-detected if not provided)
     - `repo`: GitHub repo name (auto-detected if not provided)
     - `limit`: Max questions to return per batch (default: 4). Use 0 for all.

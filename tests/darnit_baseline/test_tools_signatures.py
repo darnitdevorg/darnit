@@ -93,3 +93,39 @@ class TestToolsSmoke:
 
         result = audit_openssf_baseline(local_path="/nonexistent/path/12345")
         assert "Error" in result or "not found" in result.lower()
+
+
+class TestRemovedMcpParameters:
+    """Issue #528: ignored MCP parameters stay off the signatures and schemas."""
+
+    def test_signatures_omit_ignored_parameters(self) -> None:
+        import inspect
+
+        from darnit_baseline.tools import audit_openssf_baseline, get_pending_data
+
+        audit_params = inspect.signature(audit_openssf_baseline).parameters
+        pending_params = inspect.signature(get_pending_data).parameters
+
+        assert "auto_init_config" not in audit_params
+        assert "level" in audit_params
+        assert "level" not in pending_params
+        assert "profile" in pending_params
+
+    def test_mcp_schemas_omit_ignored_parameters(self) -> None:
+        import asyncio
+        from importlib.resources import files
+        from pathlib import Path
+
+        from darnit.server.factory import create_server
+
+        toml = Path(str(files("darnit_baseline") / "openssf-baseline.toml"))
+        server = create_server(toml)
+        tools = {tool.name: tool for tool in asyncio.run(server.list_tools())}
+
+        audit_props = tools["audit_openssf_baseline"].inputSchema["properties"]
+        pending_props = tools["get_pending_data"].inputSchema["properties"]
+
+        assert "auto_init_config" not in audit_props
+        assert "level" in audit_props
+        assert "level" not in pending_props
+        assert "profile" in pending_props
