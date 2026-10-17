@@ -673,8 +673,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   -v "$PWD:/repo" IMAGE` runs `darnit harness /repo`, `serve` is the MCP
   server (the old `mcp` word is gone), and `audit /repo` is the testing
   path. Without a shell, git hooks and git credential helpers with
-  arguments cannot run, and OSPS-BR-01.01's `sh -c` evidence step reports
-  `missing_tool`. Pull requests that touch the image now build and
+  arguments cannot run. OSPS-BR-01.01's workflow scan now runs `grep`
+  directly instead of through `sh -c`. Pull requests that touch the image now build and
   smoke-test it.
 - When `cel-python` or `tree-sitter-language-pack` fails to import, the
   error now gives the real cause. Both guards said "not installed" for any
