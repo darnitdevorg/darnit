@@ -143,6 +143,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `darnit install` names the framework in the MCP entry it writes
+  (`darnit serve --framework openssf-baseline`), for both the `uvx` entry
+  and `--from-source`. The `uvx` entry runs the darnit-mcp release on
+  PyPI, and releases before 0.2.0 serve the first installed framework by
+  name, which on a full install is gittuf.
+- `darnit install --from-source` registers the darnit executable of the
+  running installation as the MCP server command, with
+  `--framework openssf-baseline`. Without it,
+  `darnit install` writes `uvx --from darnit-mcp darnit serve`, which runs
+  the PyPI package even when darnit was installed from a source checkout.
 - Operator configuration: a user-level TOML file found the same way by the
   CLI, MCP server, and harness (`--operator-config PATH`, else
   `$XDG_CONFIG_HOME/darnit/config.toml` or `~/.config/darnit/config.toml`,

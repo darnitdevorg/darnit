@@ -19,6 +19,9 @@ darnit install --mcp-only
 
 # Claude Desktop (GUI app) — different config file than Claude Code
 darnit install --client claude-desktop
+
+# From a source checkout: register this installation, not the PyPI package
+darnit install --from-source
 ```
 
 After installation, restart Claude Code. The skills appear as slash commands.
