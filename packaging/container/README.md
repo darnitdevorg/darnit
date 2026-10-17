@@ -23,34 +23,41 @@ docker pull ghcr.io/darnitdevorg/darnit:edge
 ## Run
 
 ```bash
-# Audit the current directory (GH_TOKEN lets the platform checks run)
-docker run --rm -v "$PWD:/repo" -e GH_TOKEN ghcr.io/darnitdevorg/darnit:latest audit
+# Run darnit on the current directory: `darnit harness /repo`, the end-to-end
+# audit with model calls (ANTHROPIC_API_KEY) and platform checks (GH_TOKEN)
+docker run --rm -e ANTHROPIC_API_KEY -e GH_TOKEN -v "$PWD:/repo" ghcr.io/darnitdevorg/darnit:latest
 
-# Run as the MCP server (stdio)
-docker run --rm -i ghcr.io/darnitdevorg/darnit:latest mcp
+# MCP server on stdio, for agent clients
+docker run --rm -i -e GH_TOKEN -v "$PWD:/repo" ghcr.io/darnitdevorg/darnit:latest serve
+
+# Deterministic audit without model calls, for testing
+docker run --rm -v "$PWD:/repo" ghcr.io/darnitdevorg/darnit:latest audit /repo
 
 # Print the bundled version
 docker run --rm ghcr.io/darnitdevorg/darnit:latest --version
 ```
 
-The image's `WORKDIR` is `/repo`. The entrypoint dispatches the first arg to `darnit` (for `audit`/`remediate`/`list-controls`/`plan`/`profiles`/`validate`/`--version`/`--help`), to `darnit serve` for `mcp`, or executes the user's command directly otherwise.
+The entrypoint is the `darnit` CLI and the default command is `harness /repo`; the image's `WORKDIR` is `/repo`. Without `ANTHROPIC_API_KEY` the harness stops with a setup error, exit 2.
+
+There is no shell. Run another program in the image with `--entrypoint` (for example `--entrypoint git`). For a shell while debugging, build with `--build-arg RUNTIME_BASE=gcr.io/distroless/cc-debian12:debug-nonroot` and run `--entrypoint /busybox/sh`. Git hooks, git credential helpers with arguments, and exec steps that run `sh -c` do not work in the image; see [`docs/install/container.md`](../../docs/install/container.md#no-shell-inside).
 
 ## Image contents
 
 Built from source by this directory's Dockerfile: a release image from its tagged commit, `:edge` from `main`. The packages come from `uv.lock` (frozen); nothing about darnit is installed from PyPI.
 
-- **Base**: `python:3.12-slim-bookworm`
+- **Base**: `gcr.io/distroless/cc-debian12:nonroot`, pinned by digest (glibc, CA certificates; no shell or package manager)
+- **Python**: 3.12 from uv's python-build-standalone builds (`uv python install`), without the parts darnit never loads (Tcl/Tk, IDLE, the embedding library, headers)
 - **darnit**: `darnit-mcp`, `darnit-core`, `darnit-baseline`, `darnit-gittuf`, `darnit-reproducibility` and `darnit-csl`, non-editable, without development dependencies. The build fails if `darnit-hello`, `darnit-testchecks`, `pytest` or `ruff` reaches the venv.
-- **Tools**, each pinned (downloads also by sha256 per architecture; the Dockerfile notes where each pin came from): `zizmor`, `gittuf`, `gpg` (gnupg), `ssh-keygen` (openssh-client), `git`, `gh`
-- **Git**: `safe.directory=/repo` in the system configuration. The mounted repository belongs to the host user, not uid 10001; without the setting git refuses it and the audit loses the repository identity (#586). It turns off git's ownership check for `/repo`, so mount only repositories you would run git in natively; #617 tracks hardening darnit's own git calls.
-- **Runtime user**: `darnit` (uid 10001), non-root
+- **Downloaded tools**, pinned by version and sha256 per architecture (the Dockerfile notes where each pin came from): `zizmor`, `gittuf`, `gh`; and `uv`, by image digest
+- **Debian 12 tools**: `git` (with `git-remote-http` for https), `grep`, `gpg`, `ssh-keygen`. Not pinned to versions, so a rebuild picks up security updates. The build runs `ldd` on every ELF file the image runs and copies each shared library the base lacks from the same Debian release (36 libraries, about 16 MB, 28 of them for git's https transport); an unresolved library fails the build. The dpkg status of each package a file came from is copied to `/var/lib/dpkg/status.d/`, so image scanners see them.
+- **Git**: `safe.directory=/repo` in `/etc/gitconfig`. The mounted repository belongs to the host user, not the container user; without the setting git refuses it and the audit loses the repository identity (#586). It turns off git's ownership check for `/repo`, so mount only repositories you would run git in natively; #617 tracks hardening darnit's own git calls.
+- **Runtime user**: `nonroot` (uid 65532)
 - **Version label**: `org.opencontainers.image.version`, from the `IMAGE_VERSION` build arg (the release version, or the commit sha for `:edge`)
 
 What's deliberately **not** in the image:
-- uv, or a pip in the venv (the runtime stage copies the pre-built venv; no in-place installs)
+- A shell, a package manager, or pip in the venv
 - Build toolchain (gcc, make, etc.)
 - Apt, pip or uv caches
-- Shell history
 
 ## Platforms
 
@@ -91,13 +98,13 @@ From the repository root:
 
 ```bash
 docker build -f packaging/container/Dockerfile -t darnit-local .
-docker run --rm -v "$PWD:/repo" -e GH_TOKEN darnit-local audit
+docker run --rm -e ANTHROPIC_API_KEY -e GH_TOKEN -v "$PWD:/repo" darnit-local
 
 # The checks CI runs on pull requests that touch the image
 scripts/container-image-smoke.sh darnit-local
 ```
 
-The image contains the checkout's packages, local changes included. `--build-arg IMAGE_VERSION=<version>` sets the version label (default `dev`). To bump a pinned tool, change its version and sha256 build args together.
+The image contains the checkout's packages, local changes included. `--build-arg IMAGE_VERSION=<version>` sets the version label (default `dev`). To bump a pinned tool, change its version and sha256 build args together. `--build-arg RUNTIME_BASE=gcr.io/distroless/cc-debian12:debug-nonroot` builds a variant with a busybox shell at `/busybox/sh`, for debugging only.
 
 ## Recovery from a bad image
 
