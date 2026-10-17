@@ -41,12 +41,11 @@ If you're not sure: **`pipx install darnit-mcp`** works for most users and is th
 Every install page has a "Verify" section with the exact command. The common shape:
 
 ```bash
-# PyPI (Sigstore)
-python -m sigstore verify identity \
-  --bundle <bundle> \
-  --cert-identity-regexp '^https://github\.com/darnitdevorg/darnit/' \
-  --cert-oidc-issuer https://token.actions.githubusercontent.com \
-  <artifact>
+# PyPI (PEP 740 attestations)
+pypi-attestations verify pypi \
+  --repository https://github.com/darnitdevorg/darnit \
+  --provenance-file <provenance.json> \
+  <wheel>
 
 # Container / binary (cosign)
 cosign verify[-blob] \

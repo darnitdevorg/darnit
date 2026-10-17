@@ -45,13 +45,13 @@ pip install --verify-attestations darnit-mcp==0.1.0
 
 pip refuses to install if the attestation is missing or fails to verify against PyPI's public certs.
 
-### Manual verification with `sigstore`
+### Manual verification with `pypi-attestations`
 
 If you need to verify outside an install context (security scanning, attestation archives, etc.):
 
 ```bash
 # Install the verifier
-pip install 'sigstore>=3.0.0'
+pip install 'pypi-attestations>=0.0.30'
 
 # Download the wheel
 pip download --no-deps darnit-mcp==X.Y.Z
@@ -61,27 +61,17 @@ curl -fsSL \
   "https://pypi.org/integrity/darnit-mcp/X.Y.Z/darnit_mcp-X.Y.Z-py3-none-any.whl/provenance" \
   -o provenance.json
 
-# Extract the first attestation as a sigstore-readable bundle
-python -c "
-import json
-with open('provenance.json') as f:
-    data = json.load(f)
-with open('attestation.sigstore.json', 'w') as out:
-    json.dump(data['attestation_bundles'][0]['attestations'][0], out)
-"
-
-# Verify against the canonical darnitdevorg/darnit identity
-python -m sigstore verify identity \
-  --bundle attestation.sigstore.json \
-  --cert-identity-regexp '^https://github\.com/darnitdevorg/darnit/\.github/workflows/release\.yml@' \
-  --cert-oidc-issuer https://token.actions.githubusercontent.com \
+# Verify the attestations against the wheel and the publishing repository
+pypi-attestations verify pypi \
+  --repository https://github.com/darnitdevorg/darnit \
+  --provenance-file provenance.json \
   darnit_mcp-X.Y.Z-py3-none-any.whl
 ```
 
 A passing verification proves:
 
 - The wheel bytes match exactly what was signed.
-- The signer was the `release.yml` workflow in `darnitdevorg/darnit`.
+- The attestation was produced by a GitHub Actions workflow of `darnitdevorg/darnit` (the tool checks the repository; the workflow is `release.yml`, the only one that publishes).
 - The OIDC issuer was GitHub Actions (not some other identity provider).
 
 For TestPyPI pre-releases, substitute `test.pypi.org` for `pypi.org` in the provenance URL.
