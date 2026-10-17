@@ -312,6 +312,8 @@ def cmd_audit(args: argparse.Namespace) -> int:
     include_ids = set(args.include.split(",")) if args.include else None
     exclude_ids = set(args.exclude.split(",")) if args.exclude else set()
 
+    loaded_count = len(controls)
+
     # Apply filters
     controls = filter_controls(controls, filters, include_ids, exclude_ids)
 
@@ -334,6 +336,10 @@ def cmd_audit(args: argparse.Namespace) -> int:
         default_branch=default_branch,
         level=3,
         controls=controls,
+        # Issue #542: the CLI narrows `controls` itself, so it says whether
+        # it did. Comparing the counts covers every filter, present and
+        # future, without listing the flags. A filtered audit is not cached.
+        cache_filtered=len(controls) < loaded_count,
         stop_on_llm=True,
         # Issue #427: the framework name has to reach the audit driver, not
         # just the control loader above. Without it the driver cannot

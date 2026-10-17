@@ -475,3 +475,156 @@ class TestConcurrency:
         final_data = read_audit_cache(repo_path_str)
         assert final_data is not None
         assert final_data["version"] == CACHE_VERSION
+
+
+class TestScopeMismatch:
+    """Issue #542: a cache from a narrower audit must not satisfy a wider read."""
+
+    def test_framework_mismatch_is_a_miss(self, temp_git_repo, sample_results, sample_summary):
+        write_audit_cache(str(temp_git_repo), sample_results, sample_summary, 3, "openssf-baseline")
+        assert read_audit_cache(str(temp_git_repo), expected_framework="openssf-baseline") is not None
+        assert read_audit_cache(str(temp_git_repo), expected_framework="amber") is None
+
+    def test_level_mismatch_is_a_miss(self, temp_git_repo, sample_results, sample_summary):
+        write_audit_cache(str(temp_git_repo), sample_results, sample_summary, 1, "openssf-baseline")
+        assert read_audit_cache(str(temp_git_repo), expected_level=1) is not None
+        assert read_audit_cache(str(temp_git_repo), expected_level=3) is None
+
+    def test_unscoped_read_still_hits(self, temp_git_repo, sample_results, sample_summary):
+        """Existing callers that pass no expectations are unaffected."""
+        write_audit_cache(str(temp_git_repo), sample_results, sample_summary, 1, "amber")
+        assert read_audit_cache(str(temp_git_repo)) is not None
+
+
+class TestCacheVersion:
+    """Review on #549: an envelope written before the scope fix must miss.
+
+    Version 1 envelopes could hold a filtered audit under the full-audit key.
+    """
+
+    def test_old_version_envelope_is_a_miss(self, temp_git_repo, sample_results, sample_summary):
+        write_audit_cache(str(temp_git_repo), sample_results, sample_summary, 3, "openssf-baseline")
+        cache_path = _get_cache_dir(str(temp_git_repo)) / CACHE_FILENAME
+        data = json.loads(cache_path.read_text())
+        data["version"] = 1
+        cache_path.write_text(json.dumps(data))
+        assert read_audit_cache(str(temp_git_repo)) is None
+
+
+class TestFilteredDecision:
+    """Whether run_sieve_audit treats an audit as filtered, and so does not cache it (#542)."""
+
+    @pytest.mark.parametrize(
+        ("tags", "controls", "cache_filtered", "expected"),
+        [
+            (None, None, None, False),  # darnit loads the controls: a full audit
+            (["domain=VM"], None, None, True),
+            (None, ["c"], None, True),  # caller's own list, not declared: fail closed
+            (None, ["c"], False, False),  # caller says it is the full set
+            (None, ["c"], True, True),  # caller says it narrowed, e.g. a profile
+            (["level=1"], ["c"], False, True),  # tags win over "not filtered"
+        ],
+    )
+    def test_is_filtered(self, tags, controls, cache_filtered, expected):
+        from darnit.tools.audit import _is_filtered
+
+        assert _is_filtered(tags, controls, cache_filtered) is expected
+
+    def test_one_key_per_repository(self):
+        from darnit.tools.audit import audit_cache_key
+
+        assert audit_cache_key("/repo", None) == "audit-cache"
+
+
+def _write_full_audit(repo, results, summary, *, level=3, framework="openssf-baseline"):
+    """Write the way run_sieve_audit does: through the resolved store, under the shared key."""
+    from darnit.stores.selection import resolve_stores
+    from darnit.tools.audit import audit_cache_key
+
+    bundle = resolve_stores(None, repo_path=Path(repo))
+    try:
+        write_audit_cache(
+            str(repo),
+            results,
+            summary,
+            level,
+            framework,
+            store=bundle.cache,
+            cache_key=audit_cache_key(str(repo), None),
+        )
+    finally:
+        bundle.close_all()
+
+
+def _read_full_audit(repo):
+    from darnit.tools.audit import read_full_audit_cache
+
+    return read_full_audit_cache(str(repo), "openssf-baseline", level=3)
+
+
+class TestFullAuditCacheRead:
+    """read_full_audit_cache is what remediation reads (#542)."""
+
+    def test_full_audit_is_a_hit(self, temp_git_repo, sample_results, sample_summary):
+        _write_full_audit(temp_git_repo, sample_results, sample_summary)
+        assert _read_full_audit(temp_git_repo) is not None
+
+    def test_level_1_audit_is_a_miss(self, temp_git_repo, sample_results, sample_summary):
+        _write_full_audit(temp_git_repo, sample_results, sample_summary, level=1)
+        assert _read_full_audit(temp_git_repo) is None
+
+    def test_other_framework_is_a_miss(self, temp_git_repo, sample_results, sample_summary):
+        _write_full_audit(temp_git_repo, sample_results, sample_summary, framework="gittuf")
+        assert _read_full_audit(temp_git_repo) is None
+
+
+class TestFullAuditCacheInvalidation:
+    """invalidate_full_audit_cache expires what read_full_audit_cache reads (review on #549)."""
+
+    def test_invalidated_cache_is_a_miss(self, temp_git_repo, sample_results, sample_summary):
+        from darnit.tools.audit import invalidate_full_audit_cache
+
+        _write_full_audit(temp_git_repo, sample_results, sample_summary)
+        assert _read_full_audit(temp_git_repo) is not None
+        invalidate_full_audit_cache(str(temp_git_repo), "openssf-baseline")
+        assert _read_full_audit(temp_git_repo) is None
+
+    def test_configured_store_is_invalidated(
+        self, temp_git_repo, tmp_path_factory, monkeypatch, sample_results, sample_summary
+    ):
+        """Review on #549: with ``[stores.cache]`` set, the configured entry must expire.
+
+        The plain ``invalidate_audit_cache(path)`` expires the default store's
+        entry and leaves the configured one, so remediation kept reading the
+        audit from before its own change.
+        """
+        from darnit.config.framework_schema import StoreBlock, StoresConfig
+        from darnit.core.audit_cache import invalidate_audit_cache
+        from darnit.stores.selection import resolve_stores
+        from darnit.tools.audit import audit_cache_key, invalidate_full_audit_cache
+
+        root = tmp_path_factory.mktemp("configured-cache")
+        stores = StoresConfig(cache=StoreBlock(backend="local-fs", root=str(root)))
+        monkeypatch.setattr("darnit.tools.audit._load_merged_stores", lambda *args, **kwargs: stores)
+
+        bundle = resolve_stores(stores, repo_path=Path(temp_git_repo))
+        try:
+            write_audit_cache(
+                str(temp_git_repo),
+                sample_results,
+                sample_summary,
+                3,
+                "openssf-baseline",
+                store=bundle.cache,
+                cache_key=audit_cache_key(str(temp_git_repo), stores),
+            )
+        finally:
+            bundle.close_all()
+        assert list(root.glob("*.json")), "the audit should be cached in the configured store"
+        assert _read_full_audit(temp_git_repo) is not None
+
+        invalidate_audit_cache(str(temp_git_repo))
+        assert _read_full_audit(temp_git_repo) is not None, "the default-store call does not reach it"
+
+        invalidate_full_audit_cache(str(temp_git_repo), "openssf-baseline")
+        assert _read_full_audit(temp_git_repo) is None

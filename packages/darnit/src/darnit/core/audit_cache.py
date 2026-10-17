@@ -55,7 +55,7 @@ if TYPE_CHECKING:
 logger = get_logger("core.audit_cache")
 
 CACHE_FILENAME = "audit-cache.json"
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 
 # Invalidation via write-expired-envelope (feature 035 clarify Q3).
 # The AuditCacheStore Protocol has no delete(key) method; instead,
@@ -232,6 +232,8 @@ def read_audit_cache(
     local_path: str,
     ttl_seconds: int = 3600,
     *,
+    expected_framework: str | None = None,
+    expected_level: int | None = None,
     store: AuditCacheStore | None = None,
     cache_key: str | None = None,
 ) -> dict[str, Any] | None:
@@ -266,8 +268,31 @@ def read_audit_cache(
 
     # Version check
     version = data.get("version")
-    if not isinstance(version, int) or version > CACHE_VERSION:
+    # Issue #542 review: an exact match, not an upper bound. A v1 envelope
+    # has no `tags`/`filtered` keys, so reading it would present a possibly
+    # filtered audit as unfiltered. Older caches miss and are re-audited.
+    if not isinstance(version, int) or version != CACHE_VERSION:
         logger.debug("Unknown audit cache version: %s", version)
+        return None
+
+    # Scope: the cached audit must cover what the caller is about to use it
+    # for (issue #542). A level-1 or other-framework run leaves a cache that
+    # is not the audit the caller asked for; reusing it would make a consumer
+    # act on results that were never produced. Filtered audits are never
+    # written, see run_sieve_audit.
+    if expected_framework is not None and data.get("framework") != expected_framework:
+        logger.debug(
+            "Audit cache scope mismatch: framework %r != expected %r",
+            data.get("framework"),
+            expected_framework,
+        )
+        return None
+    if expected_level is not None and data.get("level") != expected_level:
+        logger.debug(
+            "Audit cache scope mismatch: level %r != expected %r",
+            data.get("level"),
+            expected_level,
+        )
         return None
 
     # Staleness: TTL expiry

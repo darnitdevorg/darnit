@@ -226,6 +226,9 @@ def audit_openssf_baseline(
         level=level,
         controls=controls,
         tags=tags_list,
+        # Issue #542: a profile narrows `controls` above. Tags are
+        # recorded by run_sieve_audit itself.
+        cache_filtered=bool(profile),
         stop_on_llm=True,
         framework_name="openssf-baseline",
         operator_config=operator_config,
@@ -504,9 +507,9 @@ def create_security_policy(
     written = [c.path for c in outcome.file_changes if c.changes]
     if written:
         try:
-            from darnit.core import audit_cache
+            from darnit.tools.audit import invalidate_full_audit_cache
 
-            audit_cache.invalidate_audit_cache(str(repo_path))
+            invalidate_full_audit_cache(str(repo_path), "openssf-baseline")
         except Exception as exc:  # noqa: BLE001
             from darnit.core.logging import get_logger
 

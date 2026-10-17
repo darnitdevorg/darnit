@@ -1117,8 +1117,13 @@ def run_remediation(
     error: str | None = None
 
     try:
-        from darnit.core.audit_cache import read_audit_cache
-        cache = read_audit_cache(local_path)
+        # Issue #542: remediation acts on a full level-3 audit of this
+        # framework, which is what it runs on a miss. A level-1, filtered or
+        # other-framework cache is a subset, so it must miss. The read goes
+        # through the store and key the audit writes to.
+        from darnit.tools.audit import read_full_audit_cache
+
+        cache = read_full_audit_cache(local_path, "openssf-baseline", level=3)
     except Exception as exc:
         logger.warning(f"Audit cache read failed: {exc}")
         cache = None
@@ -1279,9 +1284,9 @@ def run_remediation(
         outcomes = _outcomes(results, lambda ids: _recheck(ids, local_path, owner, repo, target))
         if any(_written(r) or _applied_change_sets(r) for r in results):
             try:
-                from darnit.core import audit_cache
+                from darnit.tools.audit import invalidate_full_audit_cache
 
-                audit_cache.invalidate_audit_cache(local_path)
+                invalidate_full_audit_cache(local_path, "openssf-baseline")
             except Exception as exc:
                 logger.warning(f"Failed to invalidate audit cache: {exc}")
 
