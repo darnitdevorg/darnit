@@ -686,16 +686,18 @@ timeout = 60
 # Keyword scan for common injection expressions, evidence only (feature
 # 041): no match misses other untrusted fields (comment.body, review.body,
 # commits.*.message), and a match includes safe uses such as
-# pull_request.number or an `if:` condition. It also exits 0 when there is
-# no .github/workflows directory.
+# pull_request.number or an `if:` condition. grep runs directly, not through
+# a shell, so it works in the shell-less container image: exit 1 (no match)
+# is pass, 0 (a match) is fail, and 2 (no .github/workflows) is neither.
 [[controls."OSPS-BR-01.01".passes]]
 handler = "exec"
 command = [
-    "sh", "-c",
-    "! grep -rEq --include='*.yml' --include='*.yaml' '\\$\\{\\{\\s*github\\.(event\\.issue|event\\.pull_request|head_ref)' .github/workflows 2>/dev/null",
+    "grep", "-rEq", "--include=*.yml", "--include=*.yaml",
+    '\$\{\{\s*github\.(event\.issue|event\.pull_request|head_ref)',
+    ".github/workflows",
 ]
-pass_exit_codes = [0]
-fail_exit_codes = [1]
+pass_exit_codes = [1]
+fail_exit_codes = [0]
 timeout = 10
 concludes = []
 

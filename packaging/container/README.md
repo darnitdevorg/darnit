@@ -39,7 +39,7 @@ docker run --rm ghcr.io/darnitdevorg/darnit:latest --version
 
 The entrypoint is the `darnit` CLI and the default command is `harness /repo`; the image's `WORKDIR` is `/repo`. Without `ANTHROPIC_API_KEY` the harness stops with a setup error, exit 2.
 
-There is no shell. Run another program in the image with `--entrypoint` (for example `--entrypoint git`). For a shell while debugging, build with `--build-arg RUNTIME_BASE=gcr.io/distroless/cc-debian12:debug-nonroot` and run `--entrypoint /busybox/sh`. Git hooks, git credential helpers with arguments, and exec steps that run `sh -c` do not work in the image; see [`docs/install/container.md`](../../docs/install/container.md#no-shell-inside).
+There is no shell. Run another program in the image with `--entrypoint` (for example `--entrypoint git`). For a shell while debugging, build with `--build-arg RUNTIME_BASE=gcr.io/distroless/cc-debian12:debug-nonroot` and run `--entrypoint /busybox/sh`. Git hooks and git credential helpers with arguments do not work in the image; see [`docs/install/container.md`](../../docs/install/container.md#no-shell-inside).
 
 ## Image contents
 

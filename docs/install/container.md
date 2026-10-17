@@ -63,7 +63,6 @@ What needs a shell does not work in the image:
 
 - Git hooks in the mounted repository (`.git/hooks/*`, including the pre-commit framework's) cannot run, so a `git commit` from the container fails when the repository has one.
 - Git credential helpers that take arguments, such as `gh auth git-credential`, cannot run, so git cannot authenticate over https: pushing a remediation branch and cloning a private repository (`audit_org`) need to run outside the container.
-- OSPS-BR-01.01 has an evidence-only step that runs `sh -c`; it reports `missing_tool`, so the control ends as ERROR rather than WARN. Neither is a PASS.
 
 To debug, build the image on the distroless debug base, which adds a busybox shell:
 

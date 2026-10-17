@@ -39,7 +39,7 @@ The image MUST contain:
 The harness needs `ANTHROPIC_API_KEY`, and the platform checks need a GitHub token: `docker run -e ANTHROPIC_API_KEY -e GH_TOKEN ...`.
 
 The image MUST NOT contain:
-- A shell. What needs one fails: git hooks, git credential helpers that take arguments (such as `gh auth git-credential`), and exec steps that run `sh -c` (OSPS-BR-01.01 has an evidence-only one, which reports `missing_tool`).
+- A shell. What needs one fails: git hooks and git credential helpers that take arguments (such as `gh auth git-credential`). Exec steps run their command directly, never through `sh -c`.
 - A package manager, or apt, pip or uv caches.
 - Build-time tools (gcc, make, etc.) — these live in the builder stages only.
 

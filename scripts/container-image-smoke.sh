@@ -30,10 +30,6 @@
 
 set -euo pipefail
 
-# Commands the image deliberately lacks. OSPS-BR-01.01 has an evidence-only
-# step (concludes = []) that runs `sh -c`; without a shell it reports
-# missing_tool instead of evidence.
-known_missing='sh'
 
 failures=()
 fail() { echo "FAIL: $*" >&2; failures+=("$*"); }
@@ -110,10 +106,7 @@ if grep -q -E 'Traceback' "$work/audit.txt"; then
 fi
 not_found="$(grep -o -E 'Command not found: [^ ]+' "$work/audit.txt" | sed 's/^Command not found: //' | sort -u || true)"
 for command in $not_found; do
-  case " $known_missing " in
-    *" $command "*) echo "note: '$command' is not in the image (known)" ;;
-    *) fail "a control's tool is missing from the image: $command" ;;
-  esac
+  fail "a control's tool is missing from the image: $command"
 done
 if grep -q -E 'no repository identity|/repos//' "$work/audit.txt"; then
   fail "the audit lost the repository identity (#586)"
