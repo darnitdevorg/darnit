@@ -5,7 +5,6 @@
 !uv.lock
 !README.md
 !packages/
-!packaging/container/entrypoint.sh
 
 **/__pycache__
 **/*.py[co]

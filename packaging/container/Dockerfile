@@ -7,28 +7,36 @@
 #
 #   docker build -f packaging/container/Dockerfile .
 #
+# The runtime is distroless (glibc, CA certificates, the nonroot user; no shell,
+# no package manager). Python is uv's python-build-standalone build. git, grep,
+# gpg and ssh-keygen come from Debian 12, the release distroless is built from,
+# with exactly the shared libraries they load that distroless lacks.
+#
 # Build arg IMAGE_VERSION only sets the org.opencontainers.image.version label
 # (the workflows pass the release version or the commit sha). The installed
-# package versions come from the source.
-#
-# The Python base is pinned to its tag, not a digest: a digest pin churns on
-# every Debian point release. Everything else is pinned by version, and each
-# download by sha256 as well.
+# package versions come from the source. Base images are pinned by digest;
+# downloads by version and sha256. Debian packages are not pinned to a version,
+# so a rebuild picks up security updates.
 
-# uv 0.5.0, the version CI and the release workflow use (UV_VERSION).
-FROM ghcr.io/astral-sh/uv:0.5.0@sha256:0e0fb77970aceaa106c1fee7103ec3e4885f6c4289e32a596123af06d2e9db9d AS uv
+FROM ghcr.io/astral-sh/uv:0.13.1@sha256:4a1f3666816dafadd20ceb71eac9a7d56d7ef30279f7d64048519ab901ada336 AS uv
+FROM gcr.io/distroless/cc-debian12:nonroot@sha256:9dac0a79194e45a7da0158a9c6da57b217585af0786db3845d1f0ec1a0dd182f AS distroless
+FROM debian:12-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587 AS debian
 
-# ---- darnit: the workspace packages, installed from uv.lock -----------------
-FROM python:3.12-slim-bookworm AS builder
+# ---- Python and darnit: the workspace packages, installed from uv.lock ------
+FROM debian AS builder
 
 COPY --from=uv /uv /usr/local/bin/uv
 
-ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
-    UV_PYTHON=/usr/local/bin/python3.12 \
-    UV_PYTHON_DOWNLOADS=never \
+# uv checks the python-build-standalone download against the checksum it ships.
+ARG PYTHON_VERSION=3.12.15
+ENV UV_PYTHON_INSTALL_DIR=/opt/python \
+    UV_PYTHON_PREFERENCE=only-managed \
+    UV_PYTHON=${PYTHON_VERSION} \
+    UV_PROJECT_ENVIRONMENT=/opt/venv \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_NO_CACHE=1
+RUN uv python install --no-bin "${PYTHON_VERSION}"
 
 WORKDIR /src
 COPY pyproject.toml uv.lock README.md ./
@@ -52,8 +60,22 @@ if missing or present:
     raise SystemExit(f"venv: missing {sorted(missing)}, unexpected {sorted(present)}")
 EOF
 
-# ---- External tools the controls run ----------------------------------------
-FROM python:3.12-slim-bookworm AS tools
+# Drop what darnit never loads from the interpreter install: the embedding
+# library (bin/python3.12 links libpython statically), the base install's pip,
+# Tcl/Tk with tkinter and IDLE, ensurepip, headers, and the deprecated crypt
+# module (the one thing that needs libcrypt).
+RUN set -eux; \
+    cd /opt/python/cpython-*; \
+    rm -rf include lib/pkgconfig lib/libpython3* lib/libtcl* lib/itcl* lib/tcl9* lib/thread* lib/tk9* \
+        bin/pip* bin/idle* bin/2to3* bin/python3*-config \
+        lib/python3.12/site-packages/pip lib/python3.12/site-packages/pip-*.dist-info \
+        lib/python3.12/tkinter lib/python3.12/idlelib lib/python3.12/turtledemo lib/python3.12/ensurepip \
+        lib/python3.12/lib-dynload/_tkinter.* lib/python3.12/lib-dynload/_crypt.*; \
+    /opt/venv/bin/python -c "import darnit.cli, ssl, sqlite3, ctypes, readline, zlib, lzma, bz2"
+
+# ---- Downloaded tools: copied in as they are ---------------------------------
+# (From the builder for its uv and Python, which install the zizmor wheel.)
+FROM builder AS tools
 
 ARG TARGETARCH
 # zizmor (OSPS-AC-04.02, OSPS-BR-01.01). Hashes: PyPI's JSON API for
@@ -75,7 +97,7 @@ ARG GH_SHA256_ARM64=7862c86c72f43df3a2d93ddde6f473285b4e2af61b494849846827e513ef
 
 RUN set -eux; \
     apt-get update; \
-    apt-get install -y --no-install-recommends curl; \
+    apt-get install -y --no-install-recommends ca-certificates curl; \
     arch="${TARGETARCH:-$(dpkg --print-architecture)}"; \
     case "$arch" in \
       amd64) zizmor_sha="$ZIZMOR_SHA256_AMD64"; gittuf_sha="$GITTUF_SHA256_AMD64"; gh_sha="$GH_SHA256_AMD64" ;; \
@@ -84,8 +106,7 @@ RUN set -eux; \
     esac; \
     mkdir -p /out; \
     echo "zizmor==${ZIZMOR_VERSION} --hash=sha256:${zizmor_sha}" > /tmp/zizmor.txt; \
-    pip install --no-cache-dir --disable-pip-version-check --require-hashes --no-deps \
-        --only-binary=:all: --target /tmp/zizmor -r /tmp/zizmor.txt; \
+    uv pip install --require-hashes --no-deps --only-binary :all: --target /tmp/zizmor -r /tmp/zizmor.txt; \
     install -m 0755 /tmp/zizmor/bin/zizmor /out/zizmor; \
     curl -fsSLo /tmp/gittuf \
         "https://github.com/gittuf/gittuf/releases/download/v${GITTUF_VERSION}/gittuf_${GITTUF_VERSION}_linux_${arch}"; \
@@ -95,17 +116,102 @@ RUN set -eux; \
         "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${arch}.tar.gz"; \
     echo "${gh_sha}  /tmp/gh.tar.gz" | sha256sum -c -; \
     tar -xzf /tmp/gh.tar.gz -C /tmp; \
-    install -m 0755 "/tmp/gh_${GH_VERSION}_linux_${arch}/bin/gh" /out/gh
+    install -m 0755 "/tmp/gh_${GH_VERSION}_linux_${arch}/bin/gh" /out/gh; \
+    install -m 0755 /usr/local/bin/uv /out/uv
+
+# ---- Debian tools and the shared libraries distroless lacks ------------------
+# git (with git-remote-http for https remotes), grep (an exec step), gpg (git
+# runs it for `%G?` on OpenPGP signatures) and ssh-keygen (SSH signatures).
+# Every ELF file the image will run is checked with ldd: a library distroless
+# already has is used from distroless, any other is copied from this stage
+# (same Debian release, so the ABI matches), and a library nothing provides
+# fails the build. The dpkg status of each package a file came from is copied
+# too, so image scanners still see those packages.
+FROM debian AS osdeps
+
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends git gpg openssh-client; \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=distroless / /distroless
+COPY --from=builder /opt/python /opt/python
+COPY --from=builder /opt/venv /opt/venv
+COPY --from=tools /out /opt/tools
+
+RUN <<'EOF'
+set -eu
+triplet="$(uname -m)-linux-gnu"
+root=/rootfs
+libdir="$root/usr/lib/$triplet"
+mkdir -p "$libdir" "$root/var/lib/dpkg/status.d" "$root/usr/bin" "$root/usr/lib/git-core" "$root/usr/share/git-core" "$root/etc"
+
+bins="/usr/bin/git /usr/lib/git-core/git-remote-http /usr/bin/grep /usr/bin/gpg /usr/bin/ssh-keygen"
+for bin in $bins; do
+  cp -a "$bin" "$root$bin"
+done
+ln -s git-remote-http "$root/usr/lib/git-core/git-remote-https"
+cp -a /usr/share/git-core/templates "$root/usr/share/git-core/"
+
+# The mounted repository belongs to the host user, not the container user, and
+# git refuses it ("dubious ownership"), which loses the repository identity
+# (#586). A planted .git/config is no more dangerous here than in a native run
+# (#617).
+printf '[safe]\n\tdirectory = /repo\n' > "$root/etc/gitconfig"
+
+# owner FILE: the Debian package that installed FILE (usrmerge: try both paths).
+owner() {
+  real="$(readlink -f "$1")"
+  for candidate in "$1" "$real" "${real#/usr}" "/usr$real"; do
+    found="$(dpkg -S "$candidate" 2>/dev/null | head -n 1)" || continue
+    [ -n "$found" ] && { printf '%s\n' "${found%%:*}" | cut -d, -f1; return 0; }
+  done
+  echo "no package owns $1" >&2
+  return 1
+}
+
+packages=""
+for bin in $bins; do
+  packages="$packages $(owner "$bin")"
+done
+
+missing=""
+for file in $bins $(find /opt -type f \( -name '*.so' -o -name '*.so.*' -o -perm -u+x \)); do
+  out="$(ldd "$file" 2>/dev/null)" || continue
+  for line in $(printf '%s\n' "$out" | awk '/=> not found/ {print "MISSING:" $1; next} /=> \// {print $1 "=" $3}'); do
+    case "$line" in
+      MISSING:*) missing="$missing $file:${line#MISSING:}"; continue ;;
+    esac
+    soname="${line%%=*}"; path="${line#*=}"
+    case "$path" in /opt/*) continue ;; esac
+    if [ -e "/distroless/lib/$triplet/$soname" ] || [ -e "/distroless/usr/lib/$triplet/$soname" ]; then
+      continue
+    fi
+    if [ ! -e "$libdir/$soname" ]; then
+      cp -L "$path" "$libdir/$soname"
+      packages="$packages $(owner "$path")"
+    fi
+  done
+done
+if [ -n "$missing" ]; then
+  echo "unresolved shared libraries:$missing" >&2
+  exit 1
+fi
+
+for package in $(printf '%s\n' $packages | sort -u); do
+  [ -e "/distroless/var/lib/dpkg/status.d/$package" ] && continue
+  dpkg-query -s "$package" > "$root/var/lib/dpkg/status.d/$package"
+done
+
+echo "copied libraries: $(ls "$libdir" | wc -l) files, $(du -sb "$libdir" | cut -f1) bytes"
+ls -l "$libdir"
+echo "packages: $(ls "$root/var/lib/dpkg/status.d" | tr '\n' ' ')"
+EOF
 
 # ---- Runtime ----------------------------------------------------------------
-FROM python:3.12-slim-bookworm
+FROM distroless
 
 ARG IMAGE_VERSION=dev
-# Debian bookworm packages, pinned. A pin that leaves the archive fails the
-# build; bump it to the current bookworm version.
-ARG GIT_DEB_VERSION=1:2.39.5-0+deb12u3
-ARG GNUPG_DEB_VERSION=2.2.40-1.1+deb12u2
-ARG OPENSSH_DEB_VERSION=1:9.2p1-2+deb12u10
 
 LABEL org.opencontainers.image.title="darnit" \
       org.opencontainers.image.description="AI-powered compliance auditing framework" \
@@ -115,39 +221,20 @@ LABEL org.opencontainers.image.title="darnit" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.version="${IMAGE_VERSION}"
 
-# git for repository inspection, gnupg and openssh-client for signature checks
-# (GT-02.01 reads `git log %G?`).
-RUN set -eux; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends \
-        ca-certificates \
-        "git=${GIT_DEB_VERSION}" \
-        "gnupg=${GNUPG_DEB_VERSION}" \
-        "openssh-client=${OPENSSH_DEB_VERSION}" \
-    ; \
-    apt-get clean; \
-    rm -rf /var/lib/apt/lists/* /var/cache/apt/* /root/.cache
-
-# The mounted repository belongs to the host user, not uid 10001, and git
-# refuses it ("dubious ownership"), which loses the repository identity (#586).
-# A planted .git/config is no more dangerous here than in a native run (#617).
-RUN git config --system --add safe.directory /repo
-
+COPY --from=osdeps /rootfs/ /
 COPY --from=tools /out/ /usr/local/bin/
+COPY --from=builder /opt/python /opt/python
 COPY --from=builder /opt/venv /opt/venv
 
-ENV PATH="/opt/venv/bin:${PATH}" \
+# UV_PYTHON_INSTALL_DIR lets the bundled uv (a remediation runs `uv lock`) find
+# the bundled Python.
+ENV PATH="/opt/venv/bin:/usr/local/bin:/usr/bin:/bin" \
     PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    UV_PYTHON_INSTALL_DIR=/opt/python
 
-RUN groupadd --system --gid 10001 darnit \
-    && useradd --system --uid 10001 --gid darnit --home /home/darnit --create-home darnit
-
-COPY packaging/container/entrypoint.sh /usr/local/bin/darnit-entrypoint
-RUN chmod 0755 /usr/local/bin/darnit-entrypoint
-
-USER darnit
+USER nonroot
 WORKDIR /repo
 
-ENTRYPOINT ["/usr/local/bin/darnit-entrypoint"]
-CMD ["audit", "--help"]
+ENTRYPOINT ["darnit"]
+CMD ["harness", "/repo"]
