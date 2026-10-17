@@ -125,7 +125,7 @@ The `release.yml` workflow triggers automatically. **No `--force` or amend** —
 2. Watch `preflight` first. If it fails:
    - Most common: version mismatch between tag and `pyproject.toml`. Delete the tag (`git push upstream --delete vX.Y.Z`), fix the bump commit, push a new tag.
    - Other gates (lint/tests/sync/doc-gen) should have been caught in pre-flight above. If they fire here, you skipped step 4.
-3. Once preflight is green, channel jobs run in parallel: `pypi_publish` → `container_build_push` + `binary_matrix`; then `release_attach_binaries`, `homebrew_dispatch` (stable only), `plugin_package` (stable only); then `finalize`.
+3. Once preflight is green, channel jobs run in parallel: `pypi_publish`, `container_build_push` (builds from the tag, not from PyPI) and `binary_matrix`; then `release_attach_binaries`, `homebrew_dispatch` (stable only), `plugin_package` (stable only); then `finalize`.
 4. **SC-007 budget**: stable releases are wall-clocked at 30 minutes (workflow-level timeout). Pre-releases are uncapped.
 
 ### After the workflow completes
