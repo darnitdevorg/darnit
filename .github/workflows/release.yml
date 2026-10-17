@@ -336,15 +336,13 @@ jobs:
           password: ${{ secrets.PYPI_API_TOKEN }}
           skip-existing: true
 
-  # Build + push + cosign-sign the multi-arch container image. Depends on
-  # publish-darnit-mcp because the Dockerfile does `pip install
-  # darnit-mcp==<version>` at build time - the package must be live before
-  # the image build can resolve it.
+  # Build + push + cosign-sign the multi-arch container image. The Dockerfile
+  # builds darnit from the tagged checkout with uv.lock, so the image does not
+  # wait for PyPI.
   container_build_push:
     name: Build, push, and sign container image
     needs:
       - preflight
-      - publish-darnit-mcp
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -398,26 +396,6 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "Tagging: $tags"
 
-      - name: Wait for darnit-mcp on PyPI
-        env:
-          VERSION: ${{ needs.preflight.outputs.version }}
-        run: |
-          set -euo pipefail
-          # PyPI's CDN typically caches the index for a few minutes after a
-          # new upload. Poll up to 2 minutes so the image build is not racing
-          # publication.
-          url="https://pypi.org/pypi/darnit-mcp/${VERSION}/json"
-          for attempt in $(seq 1 24); do
-            if curl -fsSL "$url" >/dev/null 2>&1; then
-              echo "darnit-mcp ${VERSION} is visible on PyPI (attempt $attempt)"
-              exit 0
-            fi
-            echo "Waiting for darnit-mcp ${VERSION} on PyPI (attempt $attempt/24)..."
-            sleep 5
-          done
-          echo "::error::darnit-mcp ${VERSION} did not appear on PyPI within 2 minutes"
-          exit 1
-
       - name: Build and push multi-arch image
         id: build_push
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v6
@@ -428,7 +406,7 @@ jobs:
           push: true
           tags: ${{ steps.tags.outputs.tags }}
           build-args: |
-            VERSION=${{ needs.preflight.outputs.version }}
+            IMAGE_VERSION=${{ needs.preflight.outputs.version }}
           provenance: true
           sbom: false
 
