@@ -18,8 +18,12 @@
 # downloads by version and sha256. Debian packages are not pinned to a version,
 # so a rebuild picks up security updates.
 
+# For a debugging build with a busybox shell at /busybox/sh:
+#   --build-arg RUNTIME_BASE=gcr.io/distroless/cc-debian12:debug-nonroot
+ARG RUNTIME_BASE=gcr.io/distroless/cc-debian12:nonroot@sha256:9dac0a79194e45a7da0158a9c6da57b217585af0786db3845d1f0ec1a0dd182f
+
 FROM ghcr.io/astral-sh/uv:0.13.1@sha256:4a1f3666816dafadd20ceb71eac9a7d56d7ef30279f7d64048519ab901ada336 AS uv
-FROM gcr.io/distroless/cc-debian12:nonroot@sha256:9dac0a79194e45a7da0158a9c6da57b217585af0786db3845d1f0ec1a0dd182f AS distroless
+FROM ${RUNTIME_BASE} AS distroless
 FROM debian:12-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587 AS debian
 
 # ---- Python and darnit: the workspace packages, installed from uv.lock ------
