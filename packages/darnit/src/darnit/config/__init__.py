@@ -87,6 +87,7 @@ from .loader import (
 from .merger import (
     EffectiveConfig,
     EffectiveControl,
+    FrameworkSelectionError,
     list_available_frameworks,
     load_effective_config,
     load_effective_config_auto,
@@ -95,6 +96,9 @@ from .merger import (
     load_framework_config,
     merge_configs,
     merge_control,
+    refuse_framework_inside_checkout,
+    require_framework_name,
+    require_registered_framework,
     resolve_framework_path,
     validate_framework_config,
 )
@@ -242,6 +246,10 @@ __all__ = [
     "load_effective_config_auto",
     "load_framework_by_name",
     "resolve_framework_path",
+    "FrameworkSelectionError",
+    "require_framework_name",
+    "require_registered_framework",
+    "refuse_framework_inside_checkout",
     "list_available_frameworks",
     "validate_framework_config",
     # Control loader
