@@ -4,7 +4,3 @@
 # "# reason" line directly above it naming the issue or PR that removes it.
 # The gate fails when an entry goes stale. This list must shrink to zero; do
 # not add to it.
-
-# FilesystemProjectStateStore.write_project calls a method DotProjectWriter does not
-# have (#574). PR #588 removes the write path; delete this entry with it.
-packages/darnit/src/darnit/stores/defaults/project.py: error: "DotProjectWriter" has no attribute "write"  [attr-defined]
