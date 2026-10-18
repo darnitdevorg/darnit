@@ -328,3 +328,4 @@ def test_threat_model_handler_declares_no_plan_support() -> None:
 
     assert info is not None
     assert info.supports_plan is False
+    assert info.ceiling == frozenset(), "a remediation handler concludes nothing (framework-design 3.0.1)"

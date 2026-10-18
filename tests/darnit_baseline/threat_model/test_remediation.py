@@ -1,12 +1,23 @@
-"""Tests for the threat model remediation handler."""
+"""Tests for the threat model remediation handler.
 
+The handler never writes (feature 043, framework-design 4.2): it returns its
+files as ``FileChange`` entries. ``_run`` checks that, then writes the planned
+files as the remediation executor would, so the content tests read them back.
+"""
+
+import os
+import subprocess
+from pathlib import Path
 from unittest.mock import patch
 
+from darnit.remediation.plan import FileChange
 from darnit.sieve.handler_registry import (
     HandlerContext,
+    HandlerResult,
     HandlerResultStatus,
 )
 from darnit_baseline.threat_model.remediation import generate_threat_model_handler
+from tests.conftest_helpers import snapshot
 
 
 def _make_context(tmp_path: str) -> HandlerContext:
@@ -16,6 +27,40 @@ def _make_context(tmp_path: str) -> HandlerContext:
         repo="test-repo",
         control_id="OSPS-SA-03.02",
     )
+
+
+def _planned(result: HandlerResult) -> dict[str, FileChange]:
+    return {c["path"]: FileChange.model_validate(c) for c in result.evidence.get("file_changes", [])}
+
+
+def _run(config: dict, context: HandlerContext) -> HandlerResult:
+    root = Path(context.local_path)
+    before = snapshot(root)
+    result = generate_threat_model_handler(config, context)
+    assert snapshot(root) == before, "the handler must not write"
+    for change in _planned(result).values():
+        if change.changes:
+            target = root / change.path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(change.content or "", encoding="utf-8")
+    return result
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", *args],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        env={**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"},
+    )
+
+
+def _commit_all(repo: Path) -> None:
+    if not (repo / ".git").exists():
+        _git(repo, "init", "-q")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "--no-gpg-sign", "-m", "commit")
 
 
 class TestDynamicGeneration:
@@ -29,7 +74,7 @@ class TestDynamicGeneration:
         (tmp_path / "src").mkdir()
         (tmp_path / "src" / "app.py").write_text("# empty app\n")
 
-        result = generate_threat_model_handler(config, context)
+        result = _run(config, context)
         assert result.status == HandlerResultStatus.PASS
         assert "THREAT_MODEL.md" in result.message
 
@@ -44,7 +89,7 @@ class TestDynamicGeneration:
         context = _make_context(str(tmp_path))
 
         # Empty repo — no discoverable assets
-        result = generate_threat_model_handler(config, context)
+        result = _run(config, context)
         assert result.status == HandlerResultStatus.PASS
 
         report_path = tmp_path / "THREAT_MODEL.md"
@@ -64,7 +109,7 @@ class TestOverwriteBehavior:
         config = {"path": "THREAT_MODEL.md", "overwrite": False}
         context = _make_context(str(tmp_path))
 
-        result = generate_threat_model_handler(config, context)
+        result = _run(config, context)
         assert result.status == HandlerResultStatus.PASS
         assert "already exists" in result.message
         assert result.evidence.get("action") == "skipped"
@@ -74,14 +119,65 @@ class TestOverwriteBehavior:
     def test_regenerates_when_overwrite_true(self, tmp_path):
         report_path = tmp_path / "THREAT_MODEL.md"
         report_path.write_text("old content")
+        _commit_all(tmp_path)
 
         config = {"path": "THREAT_MODEL.md", "overwrite": True}
         context = _make_context(str(tmp_path))
 
-        result = generate_threat_model_handler(config, context)
+        result = _run(config, context)
         assert result.status == HandlerResultStatus.PASS
+        assert _planned(result)["THREAT_MODEL.md"].action == "modify"
         assert report_path.read_text() != "old content"
         assert "Threat Model Report" in report_path.read_text()
+
+    def test_overwrite_leaves_a_file_git_does_not_track(self, tmp_path):
+        (tmp_path / ".gitignore").write_text("THREAT_MODEL.md\n")
+        _commit_all(tmp_path)
+        report_path = tmp_path / "THREAT_MODEL.md"
+        report_path.write_text("ignored, hand-written")
+
+        result = _run({"path": "THREAT_MODEL.md", "overwrite": True}, _make_context(str(tmp_path)))
+
+        assert result.status == HandlerResultStatus.PASS
+        change = _planned(result)["THREAT_MODEL.md"]
+        assert (change.action, change.reason) == ("none", "already_exists")
+        assert report_path.read_text() == "ignored, hand-written"
+
+    def test_overwrite_outside_git_leaves_existing_files(self, tmp_path):
+        report_path = tmp_path / "THREAT_MODEL.md"
+        report_path.write_text("old content")
+
+        result = _run({"path": "THREAT_MODEL.md", "overwrite": True}, _make_context(str(tmp_path)))
+
+        assert _planned(result)["THREAT_MODEL.md"].action == "none"
+        assert report_path.read_text() == "old content"
+
+
+class TestContainment:
+    """Every planned path stays inside the repository (framework-design 4.2)."""
+
+    def test_path_leaving_the_repository_is_refused(self, tmp_path):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+
+        result = _run({"path": "../escaped.md"}, _make_context(str(repo)))
+
+        assert result.status == HandlerResultStatus.ERROR
+        assert not (tmp_path / "escaped.md").exists()
+
+    def test_symlinked_directory_leading_outside_is_refused(self, tmp_path):
+        repo = tmp_path / "repo"
+        outside = tmp_path / "outside"
+        repo.mkdir()
+        outside.mkdir()
+        (repo / "docs").symlink_to(outside)
+
+        result = _run({"path": "docs/threatmodel/SUMMARY.md"}, _make_context(str(repo)))
+
+        assert result.status == HandlerResultStatus.ERROR
+        assert "outside the repository" in result.message
+        assert _planned(result) == {}
+        assert list(outside.iterdir()) == []
 
 
 class TestEdgeCases:
@@ -91,7 +187,7 @@ class TestEdgeCases:
         config = {}
         context = _make_context(str(tmp_path))
 
-        result = generate_threat_model_handler(config, context)
+        result = _run(config, context)
         assert result.status == HandlerResultStatus.ERROR
         assert "No path" in result.message
 
@@ -99,7 +195,7 @@ class TestEdgeCases:
         config = {"path": "docs/security/THREAT_MODEL.md", "overwrite": False}
         context = _make_context(str(tmp_path))
 
-        result = generate_threat_model_handler(config, context)
+        result = _run(config, context)
         assert result.status == HandlerResultStatus.PASS
         assert (tmp_path / "docs" / "security" / "THREAT_MODEL.md").exists()
 
@@ -144,7 +240,7 @@ class TestFallbackBehavior:
         context = _make_context(str(tmp_path))
 
         with self._force_pipeline_failure():
-            result = generate_threat_model_handler(config, context)
+            result = _run(config, context)
 
         assert result.status == HandlerResultStatus.PASS
         assert "template" in result.message.lower()
@@ -161,7 +257,7 @@ class TestFallbackBehavior:
         context = _make_context(str(tmp_path))
 
         with self._force_pipeline_failure():
-            result = generate_threat_model_handler(config, context)
+            result = _run(config, context)
 
         assert "template" in result.message.lower()
         assert result.evidence.get("fallback_reason") is not None
@@ -171,7 +267,7 @@ class TestFallbackBehavior:
         context = _make_context(str(tmp_path))
 
         with self._force_pipeline_failure():
-            result = generate_threat_model_handler(config, context)
+            result = _run(config, context)
 
         assert result.status == HandlerResultStatus.ERROR
         assert "no template content" in result.message.lower() or "pipeline failed" in result.message.lower()
@@ -181,7 +277,7 @@ class TestFallbackBehavior:
         the new generator."""
         config = {"path": "THREAT_MODEL.md", "overwrite": False}
         context = _make_context(str(tmp_path))
-        result = generate_threat_model_handler(config, context)
+        result = _run(config, context)
 
         assert result.status == HandlerResultStatus.PASS
         assert result.evidence.get("generator") == "multi_file_renderers"
@@ -201,7 +297,7 @@ class TestLlmVerificationFlag:
     def test_flag_set_on_created_action(self, tmp_path):
         config = {"path": "THREAT_MODEL.md", "overwrite": False}
         context = _make_context(str(tmp_path))
-        result = generate_threat_model_handler(config, context)
+        result = _run(config, context)
         assert result.evidence.get("action") == "created"
         assert result.evidence.get("llm_verification_required") is True
 
@@ -212,7 +308,7 @@ class TestLlmVerificationFlag:
 
         config = {"path": "THREAT_MODEL.md", "overwrite": False}
         context = _make_context(str(tmp_path))
-        result = generate_threat_model_handler(config, context)
+        result = _run(config, context)
         assert result.evidence.get("action") == "skipped"
         assert "llm_verification_required" not in result.evidence
         # Also confirm the original content was preserved
@@ -246,7 +342,7 @@ class TestLlmVerificationFlag:
                 failure_reason="forced for test",
             ),
         ):
-            result = generate_threat_model_handler(config, context)
+            result = _run(config, context)
 
         assert result.evidence.get("action") == "created_from_template"
         assert "llm_verification_required" not in result.evidence
@@ -254,7 +350,7 @@ class TestLlmVerificationFlag:
     def test_flag_absent_on_error(self, tmp_path):
         config = {"path": ""}  # empty path → ERROR
         context = _make_context(str(tmp_path))
-        result = generate_threat_model_handler(config, context)
+        result = _run(config, context)
         assert result.status == HandlerResultStatus.ERROR
         assert "llm_verification_required" not in result.evidence
 
@@ -295,7 +391,7 @@ class TestComplianceCycleSC004:
         # Step 2 — remediate: handler writes THREAT_MODEL.md.
         config = {"path": "THREAT_MODEL.md", "overwrite": False}
         context = _make_context(str(tmp_path))
-        result = generate_threat_model_handler(config, context)
+        result = _run(config, context)
         assert result.status == Status.PASS
         assert (tmp_path / "THREAT_MODEL.md").exists()
 
@@ -308,7 +404,7 @@ class TestComplianceCycleSC004:
         so the `file_exists` pass can find it on re-audit."""
         config = {"path": "THREAT_MODEL.md", "overwrite": False}
         context = _make_context(str(tmp_path))
-        result = generate_threat_model_handler(config, context)
+        result = _run(config, context)
         assert result.status == HandlerResultStatus.PASS
 
         # The written file must be at one of the accepted locator paths.
@@ -324,12 +420,12 @@ class TestComplianceCycleSC004:
         config = {"path": "THREAT_MODEL.md", "overwrite": False}
         context = _make_context(str(tmp_path))
 
-        first = generate_threat_model_handler(config, context)
+        first = _run(config, context)
         assert first.status == Status.PASS
         assert first.evidence.get("action") == "created"
         draft_first = (tmp_path / "THREAT_MODEL.md").read_text()
 
-        second = generate_threat_model_handler(config, context)
+        second = _run(config, context)
         assert second.status == Status.PASS
         assert second.evidence.get("action") == "skipped"
         draft_second = (tmp_path / "THREAT_MODEL.md").read_text()

@@ -94,8 +94,8 @@ class TestPluginHandlersAreDispositive:
         # feature 044 (FR-010): they decide from text and file-presence
         # signals and register {fail} (tests/darnit_reproducibility/
         # test_no_pass_from_signals.py).
-        # darnit-baseline
-        "generate_threat_model",
+        # darnit-baseline. generate_threat_model is a remediation handler
+        # and concludes nothing (framework-design 3.0.1).
         "github_branch_protection",
     }
 

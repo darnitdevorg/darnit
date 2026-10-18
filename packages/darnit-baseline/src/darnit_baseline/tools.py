@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import functools
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -1056,6 +1057,82 @@ def _build_ask_user_params(key: str, question_dict: dict, definition) -> dict | 
 # =============================================================================
 
 
+def _threat_model_output_path(repo_path: Path, output_path: str) -> str:
+    """``output_path`` as a repository-relative path that stays inside ``repo_path``; ValueError otherwise."""
+    from darnit.remediation.plan import normalize_repo_path
+
+    relative = normalize_repo_path(output_path)
+    root = os.path.realpath(repo_path)
+    if os.path.commonpath([root, os.path.realpath(os.path.join(root, relative))]) != root:
+        raise ValueError(f"{output_path} resolves outside the repository")
+    return relative
+
+
+def _write_threat_model_files(
+    repo_path: Path,
+    owner: str | None,
+    repo: str | None,
+    changes: list[Any],
+    headline: str,
+) -> str:
+    """Write planned threat model files through the remediation executor (framework-design 15.8).
+
+    Each file is a ``file_create`` step, so the executor applies its checks
+    (containment, uncommitted user changes, ignore rules) and records what it
+    writes in the run manifest for the git tools.
+    """
+    from darnit.config.framework_schema import HandlerInvocation, RemediationConfig
+    from darnit.remediation import manifest
+    from darnit.remediation.executor import RemediationExecutor
+
+    left = [c for c in changes if not c.changes]
+    steps = [
+        HandlerInvocation(handler="file_create", path=c.path, content=c.content, overwrite=c.action == "modify")
+        for c in changes
+        if c.changes
+    ]
+    written: list[str] = []
+    errors: list[str] = []
+    run_id: str | None = None
+    if steps:
+        executor = RemediationExecutor(
+            local_path=str(repo_path), owner=owner, repo=repo, run_id=manifest.new_run_id()
+        )
+        result = executor.execute("OSPS-SA-03.02", RemediationConfig(handlers=steps), dry_run=False)
+        written = [c.path for c in result.file_changes if c.changes]
+        left += [c for c in result.file_changes if not c.changes]
+        errors = [
+            str(entry.get("message", ""))
+            for entry in result.details.get("handlers", [])
+            if entry.get("status") == "error"
+        ]
+        run_id = result.run_id or (executor.run_id if written else None)
+    if written:
+        try:
+            from darnit.core import audit_cache
+
+            audit_cache.invalidate_audit_cache(str(repo_path))
+        except Exception as exc:  # noqa: BLE001
+            from darnit.core.logging import get_logger
+
+            get_logger("darnit_baseline.tools").warning(f"Failed to invalidate audit cache: {exc}")
+
+    lines = [headline]
+    if written:
+        lines.append(f"Wrote {len(written)} file(s) in {repo_path}: {', '.join(written)}")
+        lines.append(f"Run id: {run_id} (commit_remediation_changes commits exactly these files)")
+    else:
+        lines.append("Nothing was written.")
+    for change in left:
+        lines.append(
+            f"Not written: {change.path} ({change.reason}; an existing file is replaced only when "
+            "git tracks it and it has no uncommitted changes)"
+        )
+    for error in errors:
+        lines.append(f"Error: {error}")
+    return "\n".join(lines)
+
+
 def generate_threat_model(
     owner: str | None = None,
     repo: str | None = None,
@@ -1076,13 +1153,19 @@ def generate_threat_model(
         local_path: ABSOLUTE path to repo
         output_format: Output format - "markdown", "sarif", or "json"
         output_path: Optional file path (relative to local_path) to write
-            the threat model to disk. If not provided, returns content as string.
+            the threat model to. If not provided, returns content as string
+            and writes nothing. The path must stay inside the repository
+            (no "..", no ".git", no symbolic link leading out of it). The
+            files are written through the remediation executor and recorded
+            in a remediation run, so commit_remediation_changes can commit
+            them. A missing file is created; an existing file is replaced
+            only when git tracks it and it has no uncommitted changes.
         detail_level: Detail level for Markdown output - "summary" or "detailed"
             (default). Only affects Markdown; SARIF/JSON always include full detail.
 
     Returns:
         Threat model report with identified threats and recommendations,
-        or a confirmation message if output_path is provided.
+        or, if output_path is provided, the files written and the run id.
     """
     from darnit_baseline.threat_model.grouping import group_by_cli_family
     from darnit_baseline.threat_model.ranking import (
@@ -1101,6 +1184,13 @@ def generate_threat_model(
     repo_path = Path(local_path).resolve()
     if not repo_path.exists():
         return f"❌ Error: Repository path not found: {repo_path}"
+
+    relative: str | None = None
+    if output_path:
+        try:
+            relative = _threat_model_output_path(repo_path, output_path)
+        except ValueError as e:
+            return f"Error: threat model not written: {e}"
 
     try:
         result = discover_all(repo_path)
@@ -1136,10 +1226,13 @@ def generate_threat_model(
                 cli_families=cli_families,
             )
 
-        if output_path:
+        if relative is not None:
+            from darnit_baseline.threat_model.remediation import planned_file_change
+
             # Use multi-file pipeline for the new canonical location.
-            if output_path.endswith("SUMMARY.md") or "threatmodel" in output_path:
-                from darnit.sieve.handler_registry import HandlerContext
+            if relative.endswith("SUMMARY.md") or "threatmodel" in relative:
+                from darnit.remediation.plan import FileChange
+                from darnit.sieve.handler_registry import HandlerContext, HandlerResultStatus
                 from darnit_baseline.threat_model.remediation import (
                     generate_threat_model_handler,
                 )
@@ -1149,24 +1242,20 @@ def generate_threat_model(
                     owner=owner or "",
                     repo=repo or "",
                     control_id="OSPS-SA-03.02",
+                    mode="plan",
                 )
-                handler_result = generate_threat_model_handler(
-                    {"path": output_path, "overwrite": True},
-                    context,
+                handler_result = generate_threat_model_handler({"path": relative, "overwrite": True}, context)
+                if handler_result.status != HandlerResultStatus.PASS:
+                    return f"Error: threat model not written: {handler_result.message}"
+                changes = [FileChange.model_validate(c) for c in handler_result.evidence.get("file_changes", [])]
+                headline = f"Multi-file threat model for {relative} ({len(ranked)} findings)."
+            else:
+                changes = [planned_file_change(str(repo_path), relative, content, overwrite=True)]
+                headline = (
+                    f"Threat model for {relative} ({len(content)} bytes, "
+                    f"{len(emitted)} findings, {overflow.total} trimmed)."
                 )
-                files = handler_result.evidence.get("files_written", [output_path])
-                return (
-                    f"Multi-file threat model written to {output_path} "
-                    f"({len(ranked)} findings, {len(files)} files)"
-                )
-
-            target = repo_path / output_path
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(content, encoding="utf-8")
-            return (
-                f"Threat model written to {output_path} ({len(content)} bytes, "
-                f"{len(emitted)} findings, {overflow.total} trimmed)"
-            )
+            return _write_threat_model_files(repo_path, owner, repo, changes, headline)
 
         return content
     except Exception as e:

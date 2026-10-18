@@ -100,10 +100,18 @@ def load_sidecar(repo_root: Path) -> MitigationSidecar | None:
 
 
 def save_sidecar(repo_root: Path, sidecar: MitigationSidecar) -> None:
-    """Write the sidecar back to disk, preserving entry ordering."""
+    """Write the sidecar back to disk, preserving entry ordering.
+
+    Remediation never calls this: the threat-model handler returns
+    :func:`render_sidecar` output as a ``FileChange`` for the executor to write.
+    """
     sidecar_path = repo_root / SIDECAR_REL_PATH
     os.makedirs(sidecar_path.parent, exist_ok=True)
+    sidecar_path.write_text(render_sidecar(sidecar), encoding="utf-8")
 
+
+def render_sidecar(sidecar: MitigationSidecar) -> str:
+    """The sidecar file's content, preserving entry ordering."""
     header = (
         "# .project/threatmodel/mitigations.yaml\n"
         "#\n"
@@ -137,7 +145,7 @@ def save_sidecar(repo_root: Path, sidecar: MitigationSidecar) -> None:
         data["entries"].append(item)
 
     yaml_content = yaml.dump(data, default_flow_style=False, sort_keys=False, allow_unicode=True)
-    sidecar_path.write_text(header + yaml_content, encoding="utf-8")
+    return header + yaml_content
 
 
 def match_findings(

@@ -124,12 +124,13 @@ class OSPSBaselineImplementation:
             phase="deterministic",
             handler_fn=generate_threat_model_handler,
             description="Generate dynamic STRIDE threat model",
-            # RFC-0001 Stage 1: threat-model generation observes ground
-            # truth (file produced or not).
-            ceiling={"pass", "fail"},
-            # Feature 043 (framework-design 4.2): it writes its files itself,
-            # so it is reported as not previewable and runs in a batch apply
-            # only when its plan item digest is approved.
+            # A remediation handler concludes nothing (framework-design 3.0.1).
+            ceiling=frozenset(),
+            # Feature 043 (framework-design 4.2): it returns its files as
+            # FileChanges for the executor to write. Its files record when
+            # they were generated, so a preview cannot equal the apply: it is
+            # reported as not previewable and runs in a batch apply only when
+            # its plan item digest is approved.
             supports_plan=False,
             # template is resolved to content by the remediation executor.
             settings={"path", "overwrite", "content", "template", "shallow_threshold", "max_findings"},

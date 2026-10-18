@@ -1,8 +1,8 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.17
+> **Version**: 1.0.0-alpha.18
 > **Status**: Authoritative
-> **Last Updated**: 2026-10-18
+> **Last Updated**: 2026-10-23
 
 This specification defines the authoritative design of the Darnit framework, including the sieve orchestrator, TOML schema, built-in pass types, remediation actions, and plugin protocol.
 
@@ -218,7 +218,7 @@ Every step type registers a **ceiling**: the set of outcomes (`pass`, `fail`) it
 | `mcp` | `{pass, fail}` | -- |
 | `llm_eval`, `llm_extract` | `{}` | -- |
 | `manual`, `manual_steps` | `{}` | -- |
-| remediation handlers (`file_create`, `platform_setting`, `project_update`, `yaml_inject`) | `{}` | -- |
+| remediation handlers (`file_create`, `platform_setting`, `project_update`, `yaml_inject`, and plugin remediation handlers such as `generate_threat_model`) | `{}` | -- |
 
 A plugin handler registers its ceiling with the handler (`registry.register(..., ceiling={"pass", "fail"})`). A plugin handler that registers no ceiling has the ceiling `{}`: its results are evidence only. A step type that decides from text or file-presence signals registers `{fail}`; the reproducibility framework's five such step types (`repro_deps_pinned`, `repro_build_env_declared`, `repro_hermetic_build`, `repro_provenance_exists`, `repro_bit_for_bit`) do, so they conclude PASS only with a promotion, and their signals reach the control's later steps as evidence (feature 044, section 12). Its sixth, `repro_witness_attestation`, registers `{fail}` for a different reason: a Sigstore-verified in-toto runtime-trace attestation for the audited commit can show that the build accessed the network, but cannot yet show that it did not. Under the in-toto parsing rules an absent optional list is equivalent to an empty one, and what `monitorLog.network` records depends on the monitor's type and trace policy, so a monitor that does not trace sockets produces the same empty log as a build with no network access. A verified clean trace is therefore evidence, and PASS waits for an allowlist of monitor types backed by real attestations (#553).
 
@@ -877,6 +877,8 @@ A preview runs the same two checks, read-only, on every planned `FileChange` of 
 Platform settings are written only by the platform engine (4.5). An `exec` step writes through its command in apply mode (4.4); the executor records what it changed when the step succeeded cleanly.
 
 **Plan support.** Handler registration takes a flag `supports_plan` (default `False`): `registry.register(..., supports_plan=True)`. The built-in `file_create`, `project_update`, `yaml_inject`, `manual`, and `platform_setting` handlers register with `supports_plan=True`; `exec` is previewable only as section 4.4 describes. A step whose handler did not register `supports_plan=True` is not run in plan mode; it is reported as "cannot be previewed exactly" (`previewable = False`) and requires individual approval (15.3). A plugin handler without plan support that writes files itself is outside the run manifest, so the git tools never commit those files (15.7).
+
+The Baseline's `generate_threat_model` returns every file it would create or change (the threat model files, and the stale flags of `.project/threatmodel/mitigations.yaml`) as `FileChange`s and never writes. A target that resolves outside the repository makes the step an error with no changes. An existing file is left alone (`none`, `already_exists`) unless `overwrite` is set, and with `overwrite` it is planned as `modify` only when git tracks it; an existing file git does not track (including an ignored file), or any existing file outside a git work tree, stays `none`. It does not register plan support: its files record the time they were generated, so a preview could not equal the apply.
 
 **Preview contents.** A preview is a list of `PlanItem`s, one per remediation step:
 
@@ -2017,7 +2019,7 @@ Implementation-registered sieve handlers (non-exhaustive):
 | Step type | Registered by | Ceiling |
 |-----------|---------------|---------|
 | `github_branch_protection` | `darnit-baseline`: the classic-branch-protection + repository-rulesets two-surface check for `OSPS-AC-03.01`, `OSPS-AC-03.02`, `OSPS-QA-03.01`, `OSPS-QA-07.01`; see `specs/032-ruleset-branch-protection/contracts/github-branch-protection-handler.md` | `{pass, fail}` (reads platform settings) |
-| `generate_threat_model` | `darnit-baseline` (remediation) | `{pass, fail}` |
+| `generate_threat_model` | `darnit-baseline` (remediation; returns its files as `FileChange`s, section 4.2) | `{}` (a remediation handler, section 3.0.1) |
 | `gittuf_verify_policy`, `gittuf_commits_signed` | `darnit-gittuf` | `{pass, fail}` (cryptographic verification) |
 | `repro_deps_pinned`, `repro_build_env_declared`, `repro_hermetic_build`, `repro_provenance_exists`, `repro_bit_for_bit` | `darnit-reproducibility` | `{fail}`: they decide from text and file-presence signals, so PASS needs a corpus-backed promotion (section 3.0.1) |
 | `repro_witness_attestation` | `darnit-reproducibility` | `{fail}`: a verified runtime-trace attestation can show network access but, until monitor types are allowlisted, cannot show its absence (section 3.0.1, #553) |
@@ -2317,10 +2319,19 @@ Every writer goes through the executor, the platform engine, and the run manifes
 | `create_remediation_branch`, `commit_remediation_changes`, `create_remediation_pr` | `run_id`; rules of 15.7 |
 | `remediate_community_spec` (darnit-csl) | `dry_run = True` by default; its README edit is a `FileChange` in the preview and the manifest; `approve` carries the digests of individually approved items (CSL-02.01 and CSL-03.01 are `safe = false` because they replace an existing document) |
 | `create_security_policy` | Writes through the executor and the manifest; keeps its explicit-create semantics |
+| `generate_threat_model` | Without `output_path`, returns the threat model and writes nothing. With `output_path`, the call is the request to write (explicit-create semantics, as for `create_security_policy`): the path must be repository-relative, without `..` or `.git` (normalized like a `FileChange` path) and inside the repository after `realpath`, else nothing is written. The files are written through the executor as `file_create` steps, recorded in the run manifest (so the git tools commit them), and the response names the run id. A missing file is created; an existing file is replaced only when git tracks it and it has no uncommitted changes, and is otherwise left as it is and reported |
 | `darnit run` | Previews by default; creates or changes files, or platform settings, only with `--apply` (FR-027). In an apply, platform changes follow the policy; under `prompt` with a terminal it asks on `/dev/tty`, otherwise the outcome is `needs_approval`. A plan item that requires individual approval (15.3) is shown on `/dev/tty` with its files (the full content of a created file; for a modified file, a unified diff of the current file against the resulting content, or the full resulting content when the current file cannot be read; never truncated, and escaped to printable ASCII, with lines split only at `\n`, every other line ending or separator (`\r`, form feed, `\x1c`, U+2028) shown escaped, and a missing final newline marked `\ No newline at end of file`, so a change only in whitespace or line endings is never an empty diff), commands, change sets, the reason it needs approval, and its `PlanItem.digest`, and runs only on the person's yes; with no terminal it ends as `needs_approval` |
 | Skills (`darnit-remediate`, `darnit-comply`) | Show the preview with before/after fields, impact notes, and digests; pass back only the digests the person approved; never pass `dry_run = false` as a substitute for approval |
 
 The `confirm_*` tools are unchanged; approvals are not confirmations. Audit results and the attestation predicate are unchanged.
+
+#### Scenario: Threat model output path outside the repository
+- **WHEN** `generate_threat_model` is called with an `output_path` that is absolute, leaves the repository through `..`, is inside `.git`, or resolves outside the repository through a symbolic link
+- **THEN** nothing MUST be written and the response MUST say why
+
+#### Scenario: Threat model over a file with uncommitted changes
+- **WHEN** `generate_threat_model` is called with an `output_path` whose file, or one of the files written beside it, has uncommitted changes
+- **THEN** that file MUST NOT be written, and the response MUST name it with `user_changes_present`
 
 #### Scenario: darnit run without --apply
 - **WHEN** `darnit run` remediates failing controls and `--apply` is not given
@@ -2441,6 +2452,7 @@ The following requirements have been superseded: by the handler dispatch archite
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.18 | 2026-10-23 | `generate_threat_model` writes only through the remediation executor and the run manifest: the remediation handler returns `FileChange`s and has ceiling `{}`, and the MCP tool writes only to a validated repository path (Sections 3.0.1, 4.2, 12, 15.8) |
 | 1.0.0-alpha.17 | 2026-10-18 | Reads of the audited repository resolve symbolic links and stay inside it: a path that resolves outside is never read, never counts as present, and is recorded in `skipped_outside_repository`; CEL `file_exists` follows the same rule (Sections 3.0.4, 3.5, 3.7) |
 | 1.0.0-alpha.16 | 2026-10-08 | `ComplianceImplementation` reduced to its five used members; `get_all_controls`, `get_controls_by_level`, `get_rules_catalog`, `get_remediation_registry`, and `register_controls` removed (Section 6.3; Appendix C; #487). `register_handlers()` is the handler registration hook, `register_sieve_handlers()` accepted only for compatibility, import-time registration not introspectable (Sections 6.4, 12; #451) |
 | 1.0.0-alpha.15 | 2026-10-08 | Removed the never-dispatched adapter system (`[adapters]`, `[defaults]` adapter keys, control-level `check`, `AdapterRegistry`) and `UnifiedLocator` with its `sync_to_project` writer (Sections 2.1, 6.5, 7.9; Appendix C; #487) |
