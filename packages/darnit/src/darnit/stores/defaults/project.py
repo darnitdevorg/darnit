@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 from darnit.stores.errors import StoreOperationError
 
 if TYPE_CHECKING:
-    from darnit.context.dot_project import MaintainerEntry, ProjectConfig
+    from darnit.context.dot_project import ProjectConfig
 
 
 class FilesystemProjectStateStore:
@@ -57,12 +57,6 @@ class FilesystemProjectStateStore:
             raise StoreOperationError(
                 f"failed to read {self.project_yaml}: {err}"
             ) from err
-
-    def read_maintainers(self) -> list[MaintainerEntry]:
-        config = self.read_project()
-        if config is None:
-            return []
-        return list(getattr(config, "maintainer_entries", []))
 
     def close(self) -> None:
         return None
