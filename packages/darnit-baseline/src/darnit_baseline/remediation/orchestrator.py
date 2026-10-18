@@ -19,6 +19,7 @@ from darnit.config.framework_schema import FrameworkConfig, TemplateConfig
 from darnit.config.loader import load_project_config
 from darnit.core.logging import get_logger
 from darnit.core.models import AuditResult
+from darnit.core.repo_files import open_in_repository
 from darnit.core.utils import (
     get_git_commit,
     get_git_ref,
@@ -515,7 +516,7 @@ def _apply_declarative_remediation(
             import yaml
             project_yaml = os.path.join(local_path, ".project", "project.yaml")
             if os.path.isfile(project_yaml):
-                with open(project_yaml, encoding="utf-8") as f:
+                with open_in_repository(local_path, project_yaml, encoding="utf-8") as f:
                     raw = yaml.safe_load(f) or {}
                 # Flatten nested keys: {security: {contact: "x"}} -> {"security.contact": "x"}
                 def _flatten(d: dict, prefix: str = "") -> dict[str, str]:

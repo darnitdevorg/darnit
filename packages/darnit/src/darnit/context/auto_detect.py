@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from darnit.core.logging import get_logger
+from darnit.core.repo_files import read_repository_text
 
 if TYPE_CHECKING:
     from darnit.config.context_schema import ContextDefinition, ContextValue
@@ -194,7 +195,7 @@ def detect_license_type(local_path: str) -> str | None:
             return None
 
     try:
-        content = license_path.read_text(encoding="utf-8", errors="replace")[:1000]
+        content = read_repository_text(local_path, license_path, errors="replace")[:1000]
     except OSError:
         return None
 
@@ -262,7 +263,7 @@ def detect_project_type(local_path: str) -> str | None:
         f = p / name
         if f.is_file():
             try:
-                content = f.read_text(encoding="utf-8", errors="replace")[:2000]
+                content = read_repository_text(local_path, f, errors="replace")[:2000]
                 if "[project.scripts]" in content or "[[bin]]" in content:
                     return "cli"
             except OSError:

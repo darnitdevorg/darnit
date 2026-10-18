@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any
 
 from darnit.core.logging import get_logger
+from darnit.core.repo_files import read_repository_text
 
 from .confidence import (
     ContextSignal,
@@ -232,7 +233,7 @@ class ContextSieve:
             filepath = path / filename
             if filepath.exists():
                 try:
-                    content = filepath.read_text(encoding="utf-8")
+                    content = read_repository_text(local_path, filepath)
                     maintainers = self._parse_maintainers_file(content)
                     if maintainers:
                         signals.append(ContextSignal(
@@ -251,7 +252,7 @@ class ContextSieve:
             filepath = path / codeowners_path
             if filepath.exists():
                 try:
-                    content = filepath.read_text(encoding="utf-8")
+                    content = read_repository_text(local_path, filepath)
                     owners = self._parse_codeowners(content)
                     if owners:
                         signals.append(ContextSignal(
@@ -282,7 +283,7 @@ class ContextSieve:
         package_json = path / "package.json"
         if package_json.exists():
             try:
-                data = json.loads(package_json.read_text(encoding="utf-8"))
+                data = json.loads(read_repository_text(local_path, package_json))
                 authors = []
 
                 # Get author
@@ -332,7 +333,7 @@ class ContextSieve:
 
             if tomllib:
                 try:
-                    data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+                    data = tomllib.loads(read_repository_text(local_path, pyproject))
                     authors = []
 
                     # Get authors from [project] section
@@ -437,7 +438,7 @@ class ContextSieve:
             filepath = path / filename
             if filepath.exists():
                 try:
-                    content = filepath.read_text(encoding="utf-8")
+                    content = read_repository_text(local_path, filepath)
                     contact = self._parse_security_contact(content)
                     if contact:
                         signals.append(ContextSignal(
@@ -462,7 +463,7 @@ class ContextSieve:
             filepath = path / filename
             if filepath.exists():
                 try:
-                    content = filepath.read_text(encoding="utf-8")
+                    content = read_repository_text(local_path, filepath)
                     # Look for security section
                     security_section = re.search(
                         r"(?:^|\n)#+\s*Security[^\n]*\n([\s\S]*?)(?=\n#+|\Z)",
@@ -498,7 +499,7 @@ class ContextSieve:
             filepath = path / filename
             if filepath.exists():
                 try:
-                    content = filepath.read_text(encoding="utf-8")
+                    content = read_repository_text(local_path, filepath)
                     model = self._parse_governance_model(content)
                     if model:
                         signals.append(ContextSignal(

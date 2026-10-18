@@ -27,6 +27,7 @@ from darnit.config.schema import (
     create_minimal_config,
 )
 from darnit.core.logging import get_logger
+from darnit.core.repo_files import OutsideRepositoryError, open_in_repository
 
 logger = get_logger("config.loader")
 
@@ -193,12 +194,14 @@ def _validation_errors(exc: ValidationError) -> tuple[str, ...]:
     return tuple(f"{'.'.join(str(p) for p in err['loc']) or '(file)'}: {err['msg']}" for err in exc.errors())
 
 
-def _check_file(path: str, model: type, *, empty_is_valid: bool) -> ProjectFile:
+def _check_file(root: str, path: str, model: type, *, empty_is_valid: bool) -> ProjectFile:
     if not os.path.exists(path):
         return ProjectFile(path, "absent")
     try:
-        with open(path, encoding="utf-8") as f:
+        with open_in_repository(root, path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
+    except OutsideRepositoryError as e:
+        return ProjectFile(path, "invalid", errors=(str(e),))
     except (OSError, UnicodeDecodeError, yaml.YAMLError) as e:
         return ProjectFile(path, "invalid", errors=(f"unreadable: {e}",))
     if data is None:
@@ -224,8 +227,10 @@ def load_project_config_checked(local_path: str) -> ProjectFiles:
     extension = get_default_extension()
     return ProjectFiles(
         local_path=local_path,
-        project=_check_file(os.path.join(project_dir, PROJECT_FILE), ProjectConfig, empty_is_valid=False),
-        extension=_check_file(os.path.join(project_dir, extension.filename), BaselineExtension, empty_is_valid=True),
+        project=_check_file(local_path, os.path.join(project_dir, PROJECT_FILE), ProjectConfig, empty_is_valid=False),
+        extension=_check_file(
+            local_path, os.path.join(project_dir, extension.filename), BaselineExtension, empty_is_valid=True
+        ),
     )
 
 

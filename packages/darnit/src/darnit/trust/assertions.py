@@ -25,6 +25,7 @@ from pydantic import ValidationError
 
 from darnit.config.schema import ControlOverride, ControlStatusValue
 from darnit.core.logging import get_logger
+from darnit.core.repo_files import read_repository_text
 from darnit.trust.confirmations import Confirmation, find_confirmation
 
 if TYPE_CHECKING:
@@ -89,7 +90,7 @@ def _project_claims(repo: Path) -> list[ProjectAssertion]:
     if not path.is_file():
         return []
     try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        data = yaml.safe_load(read_repository_text(repo, path))
     except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
         logger.warning("Could not read %s: %s", PROJECT_ASSERTIONS_FILE, exc)
         return []

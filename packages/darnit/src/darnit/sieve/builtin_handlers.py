@@ -28,6 +28,7 @@ import subprocess
 from typing import Any
 
 from darnit.core.error_class import ErrorClass
+from darnit.core.repo_files import escaping_entry, open_in_repository, within_repository
 
 from .handler_registry import (
     HandlerContext,
@@ -225,6 +226,29 @@ def _walk_depth_limited(root: str, max_depth: int):
             yield os.path.join(dirpath, d), depth + 1
 
 
+def _skip_outside(paths: list[str], context: HandlerContext, skipped: list[str]) -> list[str]:
+    """``paths`` that resolve inside the repository; the others' entries are added to ``skipped``.
+
+    framework-design.md 3.0.4: a path that resolves outside the audited
+    repository is never read and never counts as present.
+    """
+    inside = []
+    for path in paths:
+        if within_repository(context.local_path, path):
+            inside.append(path)
+            continue
+        entry = escaping_entry(context.local_path, path)
+        if entry not in skipped:
+            skipped.append(entry)
+    return inside
+
+
+def _record_skipped(result: HandlerResult, skipped: list[str]) -> HandlerResult:
+    if skipped:
+        result.evidence = {**(result.evidence or {}), "skipped_outside_repository": list(skipped)}
+    return result
+
+
 def file_exists_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResult:
     """Check if any file from a list of paths exists.
 
@@ -247,6 +271,7 @@ def file_exists_handler(config: dict[str, Any], context: HandlerContext) -> Hand
         )
 
     max_depth = int(config.get("max_depth", 0) or 0)
+    skipped: list[str] = []
 
     for pattern in files:
         if "*" in pattern:
@@ -254,15 +279,18 @@ def file_exists_handler(config: dict[str, Any], context: HandlerContext) -> Hand
 
             # sorted() so "first match wins" is stable across filesystems.
             # Determinism Tier 1 (#418).
-            matches = sorted(glob.glob(os.path.join(context.local_path, pattern)))
+            matches = _skip_outside(sorted(glob.glob(os.path.join(context.local_path, pattern))), context, skipped)
             if matches:
                 found = matches[0]
                 rel_path = os.path.relpath(found, context.local_path)
-                return HandlerResult(
-                    status=HandlerResultStatus.PASS,
-                    message=f"Required file found: {rel_path}",
-                    confidence=1.0,
-                    evidence={"found_file": found, "relative_path": rel_path, "files_checked": files},
+                return _record_skipped(
+                    HandlerResult(
+                        status=HandlerResultStatus.PASS,
+                        message=f"Required file found: {rel_path}",
+                        confidence=1.0,
+                        evidence={"found_file": found, "relative_path": rel_path, "files_checked": files},
+                    ),
+                    skipped,
                 )
         elif max_depth > 0:
             # Depth-limited search for nested manifests (issue #221). Walks up
@@ -272,34 +300,43 @@ def file_exists_handler(config: dict[str, Any], context: HandlerContext) -> Hand
             # actually lives.
             for dirpath, _depth in _walk_depth_limited(context.local_path, max_depth):
                 candidate = os.path.join(dirpath, pattern)
-                if os.path.exists(candidate):
+                if os.path.exists(candidate) and _skip_outside([candidate], context, skipped):
                     rel_path = os.path.relpath(candidate, context.local_path)
-                    return HandlerResult(
-                        status=HandlerResultStatus.PASS,
-                        message=f"Required file found: {rel_path}",
-                        confidence=1.0,
-                        evidence={
-                            "found_file": candidate,
-                            "relative_path": rel_path,
-                            "files_checked": files,
-                            "max_depth": max_depth,
-                        },
+                    return _record_skipped(
+                        HandlerResult(
+                            status=HandlerResultStatus.PASS,
+                            message=f"Required file found: {rel_path}",
+                            confidence=1.0,
+                            evidence={
+                                "found_file": candidate,
+                                "relative_path": rel_path,
+                                "files_checked": files,
+                                "max_depth": max_depth,
+                            },
+                        ),
+                        skipped,
                     )
         else:
             path = os.path.join(context.local_path, pattern)
-            if os.path.exists(path):
-                return HandlerResult(
-                    status=HandlerResultStatus.PASS,
-                    message=f"Required file found: {pattern}",
-                    confidence=1.0,
-                    evidence={"found_file": path, "relative_path": pattern, "files_checked": files},
+            if os.path.exists(path) and _skip_outside([path], context, skipped):
+                return _record_skipped(
+                    HandlerResult(
+                        status=HandlerResultStatus.PASS,
+                        message=f"Required file found: {pattern}",
+                        confidence=1.0,
+                        evidence={"found_file": path, "relative_path": pattern, "files_checked": files},
+                    ),
+                    skipped,
                 )
 
-    return HandlerResult(
-        status=HandlerResultStatus.FAIL,
-        message=f"None of the required files found: {files}",
-        confidence=1.0,
-        evidence={"files_checked": files, "max_depth": max_depth},
+    return _record_skipped(
+        HandlerResult(
+            status=HandlerResultStatus.FAIL,
+            message=f"None of the required files found: {files}",
+            confidence=1.0,
+            evidence={"files_checked": files, "max_depth": max_depth},
+        ),
+        skipped,
     )
 
 
@@ -705,10 +742,13 @@ def regex_handler(config: dict[str, Any], context: HandlerContext) -> HandlerRes
         return _regex_exclude_evidence(exclude_files, context, max_depth)
 
     # --- Resolve file list ---
+    skipped: list[str] = []
     file_paths = _resolve_regex_files(config, context, max_depth)
+    if file_paths is not None:
+        file_paths = _skip_outside(file_paths, context, skipped) or None
     if file_paths is None:
         # Error result already determined
-        return _regex_no_files_result(config, context)
+        return _record_skipped(_regex_no_files_result(config, context), skipped)
 
     # --- Resolve patterns ---
     patterns = _resolve_regex_patterns(config)
@@ -722,12 +762,16 @@ def regex_handler(config: dict[str, Any], context: HandlerContext) -> HandlerRes
     min_matches = config.get("min_matches", 1)
     pass_if_any = config.get("pass_if_any", True)
 
-    return _regex_match_files(
-        file_paths,
-        patterns,
-        min_matches,
-        pass_if_any,
-        fail_on_miss=bool(config.get("fail_on_miss", False)),
+    return _record_skipped(
+        _regex_match_files(
+            context.local_path,
+            file_paths,
+            patterns,
+            min_matches,
+            pass_if_any,
+            fail_on_miss=bool(config.get("fail_on_miss", False)),
+        ),
+        skipped,
     )
 
 
@@ -766,12 +810,16 @@ def _regex_exclude_evidence(
             if os.path.exists(candidate):
                 found.append(candidate)
 
+    skipped: list[str] = []
+    found = _skip_outside(found, context, skipped)
     rel_paths = [os.path.relpath(f, context.local_path) for f in found[:10]]
-    evidence = {
+    evidence: dict[str, Any] = {
         "exclude_globs": exclude_globs,
         "files_found": len(found),
         "found_files": rel_paths,
     }
+    if skipped:
+        evidence["skipped_outside_repository"] = skipped
     # Return PASS with evidence — if an expr is present the orchestrator
     # will override based on the CEL result (e.g. 'output.files_found == 0').
     # When no expr is present, finding zero files is the common success case.
@@ -902,6 +950,7 @@ def _resolve_regex_patterns(config: dict[str, Any]) -> dict[str, str]:
 
 
 def _regex_match_files(
+    root: str,
     file_paths: list[str],
     patterns: dict[str, str],
     min_matches: int,
@@ -919,7 +968,7 @@ def _regex_match_files(
 
     for fpath in file_paths:
         try:
-            with open(fpath, encoding="utf-8", errors="ignore") as f:
+            with open_in_repository(root, fpath, encoding="utf-8", errors="ignore") as f:
                 content = f.read()
         except OSError:
             continue
@@ -1032,13 +1081,16 @@ def llm_eval_handler(config: dict[str, Any], context: HandlerContext) -> Handler
     # Literal paths are opened directly; missing files are silently skipped.
     files_to_include = config.get("files_to_include", [])
     file_contents: dict[str, str] = {}
+    skipped: list[str] = []
 
     def _read(resolved: str) -> None:
         if not resolved or len(file_contents) >= 5:
             return
         full = os.path.join(context.local_path, resolved) if not os.path.isabs(resolved) else resolved
+        if not os.path.lexists(full) or not _skip_outside([full], context, skipped):
+            return
         try:
-            with open(full, encoding="utf-8", errors="ignore") as fh:
+            with open_in_repository(context.local_path, full, encoding="utf-8", errors="ignore") as fh:
                 rel = os.path.relpath(full, context.local_path)
                 file_contents[rel] = fh.read()[:10000]
         except OSError:
@@ -1065,6 +1117,7 @@ def llm_eval_handler(config: dict[str, Any], context: HandlerContext) -> Handler
     return HandlerResult(
         status=HandlerResultStatus.INCONCLUSIVE,
         message="LLM consultation requested",
+        evidence={"skipped_outside_repository": skipped} if skipped else {},
         details={
             "consultation_request": {
                 "prompt": prompt,
@@ -1113,14 +1166,15 @@ def llm_extract_handler(config: dict[str, Any], context: HandlerContext) -> Hand
     # Resolve files to include (bounded).
     globs = config.get("files", [])
     file_contents: dict[str, str] = {}
+    skipped: list[str] = []
     for pattern in globs[:5]:  # cap breadth
         matches = globmod.glob(
             os.path.join(context.local_path, pattern),
             recursive=True,
         )
-        for m in matches[:5]:  # cap depth per glob
+        for m in _skip_outside(matches, context, skipped)[:5]:  # cap depth per glob
             try:
-                with open(m, encoding="utf-8", errors="ignore") as fh:
+                with open_in_repository(context.local_path, m, encoding="utf-8", errors="ignore") as fh:
                     rel = os.path.relpath(m, context.local_path)
                     file_contents[rel] = fh.read()[:10000]
             except OSError:
@@ -1144,6 +1198,7 @@ def llm_extract_handler(config: dict[str, Any], context: HandlerContext) -> Hand
         evidence={
             "llm_extract_prompt": prompt,
             "llm_extract_files_gathered": sorted(file_contents.keys()),
+            **({"skipped_outside_repository": skipped} if skipped else {}),
         },
         details={
             "extraction_request": consultation_payload,
@@ -1174,15 +1229,16 @@ def manual_steps_handler(config: dict[str, Any], context: HandlerContext) -> Han
 
 
 def _repo_path(path: str, context: HandlerContext) -> str:
-    """``path`` relative to the repository, or ValueError if it is outside it."""
+    """``path`` relative to the repository, or ValueError if it resolves outside it (3.0.4)."""
+    from darnit.core.repo_files import OutsideRepositoryError, resolve_in_repository
     from darnit.remediation.plan import normalize_repo_path
 
+    try:
+        resolved = resolve_in_repository(context.local_path, path)
+    except OutsideRepositoryError as e:
+        raise ValueError(f"path is outside the repository: {e.entry}") from e
     if os.path.isabs(path):
-        root = os.path.realpath(context.local_path)
-        resolved = os.path.realpath(path)
-        if os.path.commonpath([root, resolved]) != root:
-            raise ValueError(f"path is outside the repository: {path}")
-        path = os.path.relpath(resolved, root)
+        path = os.path.relpath(resolved, os.path.realpath(context.local_path))
     return normalize_repo_path(path.replace(os.sep, "/"))
 
 

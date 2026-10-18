@@ -10,6 +10,7 @@ import os
 from typing import Any
 
 from darnit.core.logging import get_logger
+from darnit.core.repo_files import open_in_repository
 from darnit.core.utils import detect_repo_from_git
 
 logger = get_logger("remediation.github")
@@ -50,7 +51,7 @@ def detect_workflow_checks(local_path: str) -> list[dict[str, Any]]:
 
         filepath = os.path.join(workflow_dir, filename)
         try:
-            with open(filepath, encoding='utf-8') as f:
+            with open_in_repository(local_path, filepath, encoding='utf-8') as f:
                 content = f.read()
 
             workflow = yaml.safe_load(content)

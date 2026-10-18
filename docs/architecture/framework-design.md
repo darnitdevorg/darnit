@@ -1,8 +1,8 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.16
+> **Version**: 1.0.0-alpha.17
 > **Status**: Authoritative
-> **Last Updated**: 2026-10-08
+> **Last Updated**: 2026-10-18
 
 This specification defines the authoritative design of the Darnit framework, including the sieve orchestrator, TOML schema, built-in pass types, remediation actions, and plugin protocol.
 
@@ -349,6 +349,28 @@ Unknown control keys fail loading as well (section 2.3). These checks run where 
 - **WHEN** an operator custom control names the step type of a plugin that is not installed
 - **THEN** the control MUST be reported ERROR, class `missing_tool`, naming the step type
 
+### 3.0.4 Reads Stay Inside the Audited Repository
+
+Every read of a file's content, and every presence check made by a built-in step type or a CEL expression, resolves the path as the operating system does (`realpath`, following every symbolic link in it) and requires the result to lie within the resolved repository root (a common path of the two equal to the root). A path that resolves outside the root is not a file of the repository: its content is never read, it never counts as present, and a step that skips it records the repository entry that leads outside (the shortest prefix of the path that resolves outside, never the target) in its evidence under `skipped_outside_repository`.
+
+The rule applies to every reader of the audited repository during verification, judgment, context detection, and remediation planning: the built-in step types (`file_exists`, `regex`/`pattern`, `llm_eval`, `llm_extract`), the re-gathered content a submitted judgment is checked against (section 3.5), the reading of `.project/` files and of hint files for context candidates (section 7), framework helpers offered to plugins (`darnit.core.utils.read_file`, `file_contains`, `file_exists`), and the in-tree plugins' readers. It is one helper (`darnit.core.repo_files`), the same check the remediation executor applies before it writes (section 15); a plugin that reads repository files uses it too. A symbolic link that resolves inside the repository is followed as usual. Commands run by `exec` steps are external programs; this rule does not govern what they read.
+
+The CEL function `file_exists(path)` (section 3.7) follows the same rule: a path that resolves outside the repository, including a symbolic link inside it whose target is outside, is not an existing file and the function returns false.
+
+#### Scenario: A document linked to a file outside the repository
+- **WHEN** a repository's `SECURITY.md` is a symbolic link to a file outside the repository
+- **THEN** a step MUST NOT read that file, and its content MUST NOT appear in any result, evidence, consultation, or model request
+- **AND** a `file_exists` step for `SECURITY.md` MUST NOT count it as found
+- **AND** a step that would have read it MUST record `SECURITY.md` in `skipped_outside_repository`
+
+#### Scenario: A directory linked outside the repository
+- **WHEN** `docs` is a symbolic link to a directory outside the repository and a step's glob is `docs/*.md`
+- **THEN** a file under it MUST NOT be read, and the step MUST record `docs`, not the names of the files it leads to
+
+#### Scenario: A link that stays inside the repository
+- **WHEN** `README.md` is a symbolic link to `docs/README.md` in the same repository
+- **THEN** it MUST be read and counted as present like any other file
+
 ### 3.1 Pass Execution Order
 
 ```
@@ -553,7 +575,7 @@ confidence_threshold = 0.8
 | `analysis_hints` | `list[str]` | Hints to guide analysis |
 | `confidence_threshold` | `float` | Passed to the model with the consultation. Since feature 041 a judgment's confidence is recorded with it but is never a decision input: a judgment never concludes a control. |
 
-**`files_to_include` resolution**: The handler MUST resolve `$FOUND_FILE` entries by looking up `found_file` in `context.gathered_evidence`. Each resolved file path MUST be read (up to 10KB per file, max 5 files) and included as `file_contents` in the `consultation_request`. File paths that are not absolute MUST be resolved relative to `context.local_path`. Files that cannot be read MUST be silently skipped.
+**`files_to_include` resolution**: The handler MUST resolve `$FOUND_FILE` entries by looking up `found_file` in `context.gathered_evidence`. Each resolved file path MUST be read (up to 10KB per file, max 5 files) and included as `file_contents` in the `consultation_request`. File paths that are not absolute MUST be resolved relative to `context.local_path`. Files that cannot be read MUST be silently skipped. A file that resolves outside the repository MUST NOT be read and is recorded in the result's `skipped_outside_repository` (section 3.0.4).
 
 **Ceiling**: `{}`. The handler returns INCONCLUSIVE with a `consultation_request`; with `stop_on_llm` the control becomes `PENDING` with `pending.kind = "llm_judgment"` (section 5.4). A model judgment never concludes PASS. No promotion to conclude PASS exists for a model judgment.
 
@@ -642,7 +664,7 @@ expr = 'output.json.status == "pass" && size(output.json.issues) == 0'
 
 | Function | Description |
 |----------|-------------|
-| `file_exists(path)` | Whether `path`, relative to the audited repository, exists |
+| `file_exists(path)` | Whether `path`, relative to the audited repository, exists inside it; a path that resolves outside the repository does not exist (section 3.0.4) |
 | `json_path(obj, path)` | Value at a JMESPath expression in `obj` |
 
 **Field presence.** Whether a field exists is tested with the CEL `has()` macro, for example `has(output.json.required_pull_request_reviews)`. cel-python has no overload that compares a map to `null`, so an existence check written as `output.json.required_pull_request_reviews != null` raises an evaluation error.
@@ -2383,6 +2405,7 @@ The following requirements have been superseded: by the handler dispatch archite
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.17 | 2026-10-18 | Reads of the audited repository resolve symbolic links and stay inside it: a path that resolves outside is never read, never counts as present, and is recorded in `skipped_outside_repository`; CEL `file_exists` follows the same rule (Sections 3.0.4, 3.5, 3.7) |
 | 1.0.0-alpha.16 | 2026-10-08 | `ComplianceImplementation` reduced to its five used members; `get_all_controls`, `get_controls_by_level`, `get_rules_catalog`, `get_remediation_registry`, and `register_controls` removed (Section 6.3; Appendix C; #487). `register_handlers()` is the handler registration hook, `register_sieve_handlers()` accepted only for compatibility, import-time registration not introspectable (Sections 6.4, 12; #451) |
 | 1.0.0-alpha.15 | 2026-10-08 | Removed the never-dispatched adapter system (`[adapters]`, `[defaults]` adapter keys, control-level `check`, `AdapterRegistry`) and `UnifiedLocator` with its `sync_to_project` writer (Sections 2.1, 6.5, 7.9; Appendix C; #487) |
 | 1.0.0-alpha.14 | 2026-10-07 | `repro_witness_attestation`: Witness/in-toto runtime-trace verification moves out of `repro_hermetic_build` into its own step type with ceiling `{fail}`, bound to the audited commit and reading only the runtime-trace predicate; a verified clean trace is evidence, not PASS (Sections 3.0.1, 12; #553) |

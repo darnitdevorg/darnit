@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from darnit.core.logging import get_logger
+from darnit.core.repo_files import read_repository_text
 from darnit.sieve.handler_registry import HandlerContext, HandlerResult, HandlerResultStatus
 
 from .witness_attestation import WitnessCheckResult, check_witness_attestation
@@ -21,9 +22,9 @@ logger = get_logger("darnit_reproducibility.handlers")
 _MAX_EVIDENCE_EXAMPLES = 10
 
 
-def _pyproject_declares_dependencies(path: Path) -> bool:
+def _pyproject_declares_dependencies(root: Path, path: Path) -> bool:
     try:
-        data = tomllib.loads(path.read_text(encoding="utf-8"))
+        data = tomllib.loads(read_repository_text(root, path))
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
         return True
 
@@ -35,7 +36,7 @@ def _pyproject_declares_dependencies(path: Path) -> bool:
     )
 
 
-def _inspect_requirements(path: Path) -> tuple[Any, str | None]:
+def _inspect_requirements(root: Path, path: Path) -> tuple[Any, str | None]:
     """Read and classify a requirements.txt.
 
     Returns ``(report, unreadable_reason)``. Exactly one is meaningful. The
@@ -46,7 +47,7 @@ def _inspect_requirements(path: Path) -> tuple[Any, str | None]:
     from .requirements_pins import classify
 
     try:
-        text = path.read_text(encoding="utf-8")
+        text = read_repository_text(root, path)
     except UnicodeDecodeError as exc:
         return None, f"not valid UTF-8 ({exc.reason})"
     except OSError as exc:
@@ -120,7 +121,7 @@ def repro_deps_pinned_handler(
         candidate = path / filename
         if not candidate.exists():
             continue
-        if filename == "pyproject.toml" and not _pyproject_declares_dependencies(candidate):
+        if filename == "pyproject.toml" and not _pyproject_declares_dependencies(path, candidate):
             continue
         found_loose.append(f"{filename} ({label})")
 
@@ -145,7 +146,7 @@ def repro_deps_pinned_handler(
     if requirements.exists():
         from .requirements_pins import FileClassification
 
-        report, unreadable = _inspect_requirements(requirements)
+        report, unreadable = _inspect_requirements(path, requirements)
         evidence["inspected_file"] = "requirements.txt"
 
         if unreadable is not None:
@@ -309,7 +310,7 @@ def repro_build_env_declared_handler(
             if not target.exists():
                 continue
             try:
-                report = classify(target.read_text(encoding="utf-8"))
+                report = classify(read_repository_text(path, target))
             except (OSError, UnicodeDecodeError) as exc:
                 logger.debug("could not read %s: %s", target, exc)
                 continue
@@ -625,7 +626,7 @@ def _nix_signal_withheld(path: Path, ci_files: list[Path], dependency_results: d
         return False
     for f in ci_files:
         try:
-            content = f.read_text(encoding="utf-8")
+            content = read_repository_text(path, f)
         except (OSError, UnicodeDecodeError):
             continue
         if any(cmd in content for cmd in _NIX_CI_COMMANDS):
@@ -664,7 +665,7 @@ def _detect_strong_hermeticity_signal(
     ci_content: dict[str, str] = {}
     for f in ci_files:
         try:
-            raw = f.read_text(encoding="utf-8")
+            raw = read_repository_text(path, f)
         except Exception:
             continue
         ci_content[f.name] = "\n".join(_strip_comment(line) for line in raw.splitlines())
@@ -687,7 +688,7 @@ def _detect_strong_hermeticity_signal(
         bazelrc = path / ".bazelrc"
         if bazelrc.exists():
             try:
-                raw = bazelrc.read_text(encoding="utf-8")
+                raw = read_repository_text(path, bazelrc)
             except Exception:
                 raw = ""
             bazelrc_content = "\n".join(_strip_comment(line) for line in raw.splitlines())
@@ -774,7 +775,7 @@ def repro_hermetic_build_handler(
     for f in all_files:
         is_dockerfile = f in container_file_set
         try:
-            lines = f.read_text(encoding="utf-8").splitlines()
+            lines = read_repository_text(path, f).splitlines()
             rel = str(f.relative_to(path))
         except Exception as exc:
             logger.debug("skipped %s: %s", f, exc)
@@ -977,7 +978,7 @@ def repro_provenance_exists_handler(
         for wf_file in list(workflows_dir.glob("*.yml")) + list(workflows_dir.glob("*.yaml")):
             files_checked.append(wf_file.name)
             try:
-                content = wf_file.read_text(encoding="utf-8")
+                content = read_repository_text(path, wf_file)
                 for signal in provenance_signals:
                     if signal in content:
                         found_signals.append(f"{wf_file.name}: {signal}")
@@ -1048,7 +1049,7 @@ def repro_bit_for_bit_handler(
         for wf_file in list(workflows_dir.glob("*.yml")) + list(workflows_dir.glob("*.yaml")):
             files_checked.append(wf_file.name)
             try:
-                content = wf_file.read_text(encoding="utf-8")
+                content = read_repository_text(path, wf_file)
                 for signal in good_signals:
                     if signal in content:
                         found_good.append(f"{wf_file.name}: {signal}")

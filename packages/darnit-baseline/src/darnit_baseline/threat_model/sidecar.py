@@ -14,6 +14,8 @@ from typing import Any
 
 import yaml
 
+from darnit.core.repo_files import OutsideRepositoryError, read_repository_text
+
 from .discovery_models import (
     CandidateFinding,
     MitigationEntry,
@@ -53,7 +55,9 @@ def load_sidecar(repo_root: Path) -> MitigationSidecar | None:
         return None
 
     try:
-        raw = yaml.safe_load(sidecar_path.read_text(encoding="utf-8"))
+        raw = yaml.safe_load(read_repository_text(repo_root, sidecar_path))
+    except OutsideRepositoryError as exc:
+        raise ValueError(f"Sidecar file {exc.entry} resolves outside the repository") from exc
     except yaml.YAMLError as exc:
         raise ValueError(f"Malformed sidecar file at {sidecar_path}: {exc}") from exc
 

@@ -13,10 +13,10 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 from darnit.core.logging import get_logger
+from darnit.core.repo_files import read_repository_text
 
 logger = get_logger("remediation.scanner")
 
@@ -428,7 +428,7 @@ def _scan_ci_workflows(local_path: str) -> dict[str, list[str]]:
                 continue
             filepath = os.path.join(workflows_dir, filename)
             try:
-                content = Path(filepath).read_text(encoding="utf-8", errors="replace")
+                content = read_repository_text(local_path, filepath, errors="replace")
             except OSError:
                 continue
 
@@ -547,7 +547,7 @@ def _scan_existing_docs(local_path: str) -> dict[str, DocInfo]:
 
         info.exists = True
         try:
-            content = Path(doc_path).read_text(encoding="utf-8", errors="replace")[
+            content = read_repository_text(local_path, doc_path, errors="replace")[
                 :10000
             ]  # Cap at 10KB to avoid huge files
         except OSError:
@@ -621,7 +621,7 @@ def _scan_inconsistencies(local_path: str) -> list[str]:
     pyproject_path = os.path.join(local_path, "pyproject.toml")
     if os.path.isfile(pyproject_path):
         try:
-            content = Path(pyproject_path).read_text(encoding="utf-8", errors="replace")
+            content = read_repository_text(local_path, pyproject_path, errors="replace")
             # Simple pattern match for license field
             license_match = re.search(r'license\s*=\s*[{"]([^"}\n]+)', content, re.IGNORECASE)
             if license_match:

@@ -58,6 +58,7 @@ from darnit.config.framework_schema import (
 )
 from darnit.config.when_evaluator import evaluate_when
 from darnit.core.logging import get_logger
+from darnit.core.repo_files import within_repository
 from darnit.remediation import git_state, manifest
 from darnit.remediation.helpers import (
     detect_repo_from_git,
@@ -713,7 +714,7 @@ class RemediationExecutor:
         assert change.content is not None
         root = os.path.realpath(self.local_path)
         full_path = os.path.join(root, change.path)
-        if os.path.commonpath([root, os.path.realpath(full_path)]) != root:
+        if not within_repository(root, full_path):
             raise WriteRefused(f"{change.path} resolves outside the repository")
         user_changes, ignored = self._vcs_state(change.path)
         if user_changes:

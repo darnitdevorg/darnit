@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import os
 import re
-from pathlib import Path
 
 from darnit.core.logging import get_logger
+from darnit.core.repo_files import read_repository_text
 
 logger = get_logger("remediation.enhancer")
 
@@ -79,7 +79,7 @@ def enhance_generated_file(
         could not be performed (original file is left unchanged).
     """
     try:
-        content = Path(file_path).read_text(encoding="utf-8")
+        content = read_repository_text(local_path, file_path)
     except OSError:
         logger.warning("Cannot read file for enhancement: %s", file_path)
         return None
@@ -171,7 +171,7 @@ def _collect_source_docstrings(local_path: str, max_files: int = 20) -> str:
                 fpath = os.path.join(root, fname)
                 rel_path = os.path.relpath(fpath, local_path)
                 try:
-                    first_lines = Path(fpath).read_text(encoding="utf-8", errors="replace")[:500]
+                    first_lines = read_repository_text(local_path, fpath, errors="replace")[:500]
                 except OSError:
                     continue
 

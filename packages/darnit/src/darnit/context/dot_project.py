@@ -58,6 +58,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from darnit.core.repo_files import open_in_repository
+
 if TYPE_CHECKING:
     from darnit.stores.protocols import ProjectStateStore
 
@@ -416,7 +418,7 @@ class DotProjectReader:
             yaml = YAML()
             yaml.preserve_quotes = True
 
-            with open(self.project_yaml, encoding="utf-8") as f:
+            with open_in_repository(self.repo_path, self.project_yaml, encoding="utf-8") as f:
                 data = yaml.load(f)
 
             if data is None:
@@ -457,7 +459,7 @@ class DotProjectReader:
             from ruamel.yaml import YAML
 
             yaml = YAML()
-            with open(self.maintainers_yaml, encoding="utf-8") as f:
+            with open_in_repository(self.repo_path, self.maintainers_yaml, encoding="utf-8") as f:
                 data = yaml.load(f)
 
             if data is None:

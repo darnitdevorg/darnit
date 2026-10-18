@@ -21,6 +21,7 @@ from typing import Any
 import yaml
 
 from darnit.core.logging import get_logger
+from darnit.core.repo_files import within_repository
 
 logger = get_logger("context.collection")
 
@@ -256,7 +257,7 @@ def resolve_context_value(
     parser = definition.get("parser", "auto")
     if source:
         source_path = repo_path / source
-        if source_path.exists():
+        if source_path.exists() and within_repository(repo_path, source_path):
             value = _parse_file_source(source_path, parser, definition)
             if value is not None:
                 return value, "file"
@@ -265,7 +266,7 @@ def resolve_context_value(
     hint_sources = definition.get("hint_sources", [])
     for hint_source in hint_sources:
         hint_path = repo_path / hint_source
-        if hint_path.exists():
+        if hint_path.exists() and within_repository(repo_path, hint_path):
             # Infer parser from filename
             parser = _infer_parser(hint_path)
             value = _parse_file_source(hint_path, parser, definition)
