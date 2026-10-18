@@ -666,7 +666,7 @@ expr = 'output.json.status == "pass" && size(output.json.issues) == 0'
 | does not compile, cannot be evaluated, or is not boolean | PASS | ERROR, class `evaluation` |
 | (not evaluated) | FAIL, WARN, INCONCLUSIVE, or ERROR | unchanged |
 
-The step's effective set (section 3.0.1) still applies: a PASS or FAIL concludes only when the step may conclude it. `expr_decides` requires `expr`, and is accepted only on step types whose expression the orchestrator evaluates (`exec`, `regex`, `pattern`); `gh_api` and `mcp` evaluate their own expression, which already decides. OSPS-BR-01.01 and OSPS-AC-04.02 set it on their zizmor steps, so a matching finding is FAIL (feature 044, FR-015).
+The step's effective set (section 3.0.1) still applies: a PASS or FAIL concludes only when the step may conclude it. `expr_decides` requires `expr`, and is accepted only on step types whose expression the orchestrator evaluates (`exec`, `regex`, `pattern`); `gh_api` and `mcp` evaluate their own expression, which already decides. OSPS-BR-01.01 and OSPS-AC-04.02 set it on their zizmor steps, so a matching finding is FAIL (feature 044, FR-015). Those steps run zizmor with `--no-config --no-ignores --collect=all --persona=pedantic` (section 14.6); each expression reads only its own rule (`template-injection`, `excessive-permissions`), so the other findings the pedantic persona adds do not affect the result.
 
 On ERROR the step's evidence keeps the handler's evidence and adds `expr` and `expr_error`. A broken expression is a broken measurement: it is neither PASS nor FAIL (section 3.0), whatever the handler returned.
 
@@ -1363,7 +1363,7 @@ An operator confirms candidates through `confirm_pass_candidate`, registered on 
 
 ### 5.5 Adversarial Fixture Corpus
 
-A corpus of small fixture repositories with human-labelled expected outcomes per control (`tests/darnit_baseline/corpus/<fixture>/labels.toml`: `PASS`, `FAIL`, `NOT_PASS`, or `N/A`) measures every step. A corpus run reports, per step and outcome, the correct and incorrect conclusions against the labels, and fails if any step allowed to conclude PASS produces a false PASS, naming the step and fixture. A step not allowed to conclude PASS is eligible for a `promotion` (section 3.0.1) only with zero false PASS results; the promotion's `corpus` field records the corpus version that justified it. Adding a fixture requires only its files and labels.
+A corpus of small fixture repositories with human-labelled expected outcomes per control (`tests/darnit_baseline/corpus/<fixture>/labels.toml`: `PASS`, `FAIL`, `NOT_PASS`, or `N/A`) measures every step. A corpus run reports, per step and outcome, the correct and incorrect conclusions against the labels, and fails if any step allowed to conclude PASS produces a false PASS, naming the step and fixture. A step not allowed to conclude PASS is eligible for a `promotion` (section 3.0.1) only with zero false PASS results; the promotion's `corpus` field records the corpus version that justified it. Adding a fixture requires only its files and labels. A fixture may replay calls recorded from a third-party tool (`recorded/<tool>.json`) so the corpus runs offline and deterministically; a call whose arguments were not recorded is reported and fails the corpus tests.
 
 ---
 
@@ -2028,6 +2028,19 @@ darnit does not read a repository's `.baseline.toml` for anything: no per-contro
 #### Scenario: extends in .baseline.toml
 - **WHEN** `.baseline.toml` sets `extends` to a registered framework and the run names no framework
 - **THEN** the audit MUST NOT use the framework the file names
+
+### 14.6 Third-party tools run by steps
+
+A verification step that runs a third-party tool against the audited repository (for example an `exec` step running a scanner) SHALL run it so that it reads no configuration, suppression, or exclusion from the audited repository: no configuration file, no inline ignore or suppression comment, and no ignore file such as `.gitignore` that removes files the platform still uses. When the tool cannot be told to ignore such input, the step MUST NOT be allowed to conclude PASS. A step SHALL also choose the tool's options (for example a severity or persona setting) so that the tool reports every finding the control is about; the step's expression then reads only those findings. Tool configuration, if any, comes from the framework definition or operator configuration (14.1). The step's evidence records the tool's command and, where the tool reports it, its version.
+
+OSPS-BR-01.01 and OSPS-AC-04.02 run `zizmor --format json --offline --no-config --no-ignores --collect=all --persona=pedantic`: `--no-config` ignores `zizmor.yml`, `--no-ignores` ignores `# zizmor: ignore[...]` comments, `--collect=all` scans workflows that `.gitignore` lists, and the pedantic persona reports a workflow-level `permissions: write-all` that the regular persona does not. zizmor's stderr, kept in the step's evidence, begins with its version. The corpus (5.5) has a fixture for each of these and replays calls recorded from zizmor.
+
+Remediation steps that run a tool to fix files (`zizmor --fix=all`) may honor the repository's configuration: a suppressed finding is then left unfixed, and the re-check (15.5), which ignores that configuration, reports it as not fixed.
+
+#### Scenario: Suppression in the audited repository
+- **WHEN** the audited repository disables a tool's rule in the tool's configuration file, suppresses a finding with an inline comment, or lists the affected file in an ignore file
+- **THEN** the step MUST report the finding as if the suppression were absent
+- **AND** the control MUST NOT conclude PASS because of the suppression
 
 ## 15. Remediation Safety
 
