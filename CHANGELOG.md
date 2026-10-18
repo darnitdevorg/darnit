@@ -59,6 +59,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - the `security_policy_minimal` template, which no remediation used (an
     operator custom control naming it now fails to find it);
   - `scripts/extract_templates.py` and `scripts/audit_hermetic_real_repos.py`.
+- **BREAKING:** `read_maintainers` is removed from the plugin-facing
+  `ProjectStateStore` protocol (`darnit.stores.protocols`) and its
+  implementations (`FilesystemProjectStateStore`, `InMemoryProjectStateStore`).
+  Maintainers are populated onto `ProjectConfig.maintainer_entries` and
+  `ProjectConfig.maintainers` via `read_project()`; the separate method
+  had no callers and `InMemoryProjectStateStore` returned an empty list
+  (#608).
 - **BREAKING:** `write_project` and `write_maintainers` are removed from the
   plugin-facing `ProjectStateStore` protocol (`darnit.stores.protocols`) and
   its filesystem default (`darnit.stores.defaults.project`). Writes to
