@@ -514,7 +514,9 @@ Create a remediation branch first:
             return _error(f"a pull request cannot be opened from '{branch}' into itself. Nothing was pushed.")
         foreign = describe_foreign_commits(resolved_path, since, branch, f"beyond '{base}'")
         if foreign:
-            return _error(f"branch '{branch}' has {foreign}; it holds work remediation did not make. Nothing was pushed.")
+            return _error(
+                f"branch '{branch}' has {foreign}; it holds work remediation did not make. Nothing was pushed."
+            )
 
         ref = f"refs/heads/{branch}"
         result = run_git(
@@ -595,44 +597,29 @@ def get_remediation_status_impl(local_path: str = ".") -> str:
 
     try:
         # Get current branch
-        result = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=resolved_path,
-            capture_output=True,
-            text=True
-        )
+        result = run_git(resolved_path, "rev-parse", "--abbrev-ref", "HEAD")
         if result.returncode != 0:
             return "Error: Not a git repository"
         current_branch = result.stdout.strip()
 
         # Get status
-        result = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=resolved_path,
-            capture_output=True,
-            text=True
-        )
+        result = run_git(resolved_path, "status", "--porcelain")
         changes = result.stdout.strip()
-        changed_files = [line.split(None, 1)[1] if len(line.split(None, 1)) > 1 else line
-                        for line in changes.split('\n') if line.strip()]
+        changed_files = [
+            line.split(None, 1)[1] if len(line.split(None, 1)) > 1 else line
+            for line in changes.split("\n")
+            if line.strip()
+        ]
 
         # Check for unpushed commits
-        result = subprocess.run(
-            ["git", "log", "@{u}..HEAD", "--oneline"],
-            cwd=resolved_path,
-            capture_output=True,
-            text=True
-        )
-        unpushed = result.stdout.strip().split('\n') if result.returncode == 0 and result.stdout.strip() else []
+        result = run_git(resolved_path, "log", "@{u}..HEAD", "--oneline")
+        unpushed = result.stdout.strip().split("\n") if result.returncode == 0 and result.stdout.strip() else []
         unpushed = [c for c in unpushed if c.strip()]
 
         # Check for existing PR
         pr_url = None
         result = subprocess.run(
-            ["gh", "pr", "view", "--json", "url", "-q", ".url"],
-            cwd=resolved_path,
-            capture_output=True,
-            text=True
+            ["gh", "pr", "view", "--json", "url", "-q", ".url"], cwd=resolved_path, capture_output=True, text=True
         )
         if result.returncode == 0:
             pr_url = result.stdout.strip()

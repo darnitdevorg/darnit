@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Read-side git commands (`git status`, `git log`, `git rev-parse`) are routed
+  through a safe runner (`darnit.remediation.git_state.run_git`) that passes
+  `-c core.fsmonitor=false` and pins `gpg.program` and `gpg.ssh.program` to the
+  auditor's configuration or defaults, preventing malicious configuration in an
+  audited repository's `.git/config` from executing programs during audits or
+  remediation status checks (#617).
 - Platform remediation reads the current settings first, changes only what a
   control requires, and never weakens a setting already in place (fewer
   required approvals, removed status checks or push restrictions, code-owner

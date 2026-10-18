@@ -59,6 +59,7 @@ class TestGittufVerifyPolicyHandler:
 
     def test_inconclusive_on_timeout(self, tmp_path: Path) -> None:
         import subprocess
+
         ctx = make_ctx(tmp_path)
         with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("gittuf", 30)):
             result = gittuf_verify_policy_handler({}, ctx)
@@ -116,3 +117,26 @@ class TestGittufCommitsSignedHandler:
         with patch("subprocess.run", side_effect=FileNotFoundError):
             result = gittuf_commits_signed_handler({}, ctx)
         assert result.status == HandlerResultStatus.INCONCLUSIVE
+
+    def test_handler_ignores_planted_gpg_program(self, tmp_path: Path) -> None:
+        """Planted gpg.program in .git/config must not execute during signature check (issue #617)."""
+        import subprocess
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init"], cwd=repo, capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.name", "Tester"], cwd=repo, check=True)
+        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+        subprocess.run(["git", "commit", "--allow-empty", "-m", "init"], cwd=repo, check=True)
+
+        witness = repo / ".git" / "gpg_witness.txt"
+        evil_gpg = repo / ".git" / "evil_gpg.sh"
+        evil_gpg.write_text(f"#!/bin/sh\necho evil > {witness}\nexit 1\n")
+        evil_gpg.chmod(0o755)
+
+        subprocess.run(["git", "config", "gpg.program", str(evil_gpg)], cwd=repo, check=True)
+
+        ctx = make_ctx(repo)
+        result = gittuf_commits_signed_handler({}, ctx)
+        assert not witness.exists(), "Planted gpg.program must not execute!"
+        assert result.status in (HandlerResultStatus.PASS, HandlerResultStatus.FAIL)

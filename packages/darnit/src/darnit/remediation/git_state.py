@@ -12,6 +12,7 @@ Every function here only reads the repository.
 
 from __future__ import annotations
 
+import functools
 import os
 import posixpath
 import subprocess
@@ -36,13 +37,70 @@ class GitStateError(RuntimeError):
     """A git command needed to establish the repository's state failed."""
 
 
-def run_git(repo: str | Path, *args: str, stdin: str | None = None) -> subprocess.CompletedProcess[str]:
+@functools.lru_cache(maxsize=1)
+def _auditor_gpg_program() -> str:
+    """Return the auditor's configured gpg.program, falling back to 'gpg'."""
+    for scope in ("--global", "--system"):
+        try:
+            res = subprocess.run(
+                ["git", "config", scope, "--get", "gpg.program"],
+                capture_output=True,
+                text=True,
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                return res.stdout.strip()
+        except (FileNotFoundError, OSError):
+            break
+    return "gpg"
+
+
+@functools.lru_cache(maxsize=1)
+def _auditor_gpg_ssh_program() -> str:
+    """Return the auditor's configured gpg.ssh.program, falling back to 'ssh-keygen'."""
+    for scope in ("--global", "--system"):
+        try:
+            res = subprocess.run(
+                ["git", "config", scope, "--get", "gpg.ssh.program"],
+                capture_output=True,
+                text=True,
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                return res.stdout.strip()
+        except (FileNotFoundError, OSError):
+            break
+    return "ssh-keygen"
+
+
+def run_git(
+    repo: str | Path,
+    *args: str,
+    stdin: str | None = None,
+    timeout: float | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """Run a read-side git command on ``repo`` safely.
+
+    To protect the auditor from untrusted repository configuration (issue #617),
+    this helper disables ``core.fsmonitor`` and pins ``gpg.program`` and
+    ``gpg.ssh.program`` to the auditor's configuration (or defaults).
+    """
+    cmd = [
+        "git",
+        "--no-optional-locks",
+        "-c",
+        "core.fsmonitor=false",
+        "-c",
+        f"gpg.program={_auditor_gpg_program()}",
+        "-c",
+        f"gpg.ssh.program={_auditor_gpg_ssh_program()}",
+        *args,
+    ]
     return subprocess.run(
-        ["git", "--no-optional-locks", *args],
+        cmd,
         cwd=repo,
         capture_output=True,
         text=True,
         input=stdin,
+        timeout=timeout,
     )
 
 

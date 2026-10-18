@@ -9,6 +9,7 @@ import subprocess
 from typing import Any
 
 from darnit.core.logging import get_logger
+from darnit.remediation.git_state import run_git
 from darnit.sieve.handler_registry import HandlerContext, HandlerResult, HandlerResultStatus
 
 logger = get_logger("darnit_gittuf.handlers")
@@ -87,11 +88,10 @@ def gittuf_commits_signed_handler(
     """
     # Check if allowedSignersFile is configured for SSH signing verification
     try:
-        signers_check = subprocess.run(
-            ["git", "config", "gpg.ssh.allowedSignersFile"],
-            cwd=ctx.local_path,
-            capture_output=True,
-            text=True,
+        signers_check = run_git(
+            ctx.local_path,
+            "config",
+            "gpg.ssh.allowedSignersFile",
             timeout=5,
         )
         ssh_signers_configured = signers_check.returncode == 0
@@ -99,11 +99,11 @@ def gittuf_commits_signed_handler(
         ssh_signers_configured = False
 
     try:
-        result = subprocess.run(
-            ["git", "log", "--format=%G?%n%GK", "-5"],
-            cwd=ctx.local_path,
-            capture_output=True,
-            text=True,
+        result = run_git(
+            ctx.local_path,
+            "log",
+            "--format=%G?%n%GK",
+            "-5",
             timeout=15,
         )
 
