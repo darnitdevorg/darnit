@@ -49,7 +49,6 @@ packages/darnit-gittuf/src/darnit_gittuf/__init__.py: error: Incompatible return
 packages/darnit-reproducibility/src/darnit_reproducibility/__init__.py: error: Incompatible return value type (got "Path | None", expected "Path")  [return-value]
 packages/darnit-reproducibility/src/darnit_reproducibility/handlers.py: error: Incompatible types in assignment (expression has type "str", target has type "list[str] | None")  [assignment]
 packages/darnit-testchecks/src/darnit_testchecks/__init__.py: error: Incompatible return value type (got "Path | None", expected "Path")  [return-value]
-packages/darnit-testchecks/src/darnit_testchecks/stores/in_memory_project.py: error: No overload variant of "list" matches argument type "object"  [call-overload]
 packages/darnit/src/darnit/agent/graph.py: error: Argument "owner" to "run_checks" has incompatible type "str | None"; expected "str"  [arg-type]
 packages/darnit/src/darnit/agent/graph.py: error: Argument "repo" to "run_checks" has incompatible type "str | None"; expected "str"  [arg-type]
 packages/darnit/src/darnit/cli.py: error: Argument 2 to "create_server" has incompatible type "**dict[str, Any | bool | None]"; expected "bool"  [arg-type]
