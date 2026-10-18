@@ -71,6 +71,37 @@ def _offline_platform(
 
 
 @pytest.fixture(autouse=True)
+def _no_interactive_login(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fail fast where a test would open a browser, sign with Sigstore, or start its OIDC login (#604).
+
+    A ``SigningContext`` signs against the public Sigstore instance. Sigstore's
+    ``Issuer`` fetches the issuer's configuration on construction, and
+    ``identity_token()`` opens a browser and waits on a localhost listener for
+    a person. ``pytest.fail`` is not an ``Exception``, so code under test
+    that turns signing errors into an unsigned result cannot hide the call.
+    Tests marked ``live`` are not guarded.
+    """
+    if request.node.get_closest_marker("live"):
+        return
+
+    def refuse(what: str):
+        def _refuse(*_args: object, **_kwargs: object) -> None:
+            pytest.fail(f"{what} in a test (#604): stub the signer or mark the test live", pytrace=False)
+
+        return _refuse
+
+    monkeypatch.setattr("webbrowser.open", refuse("webbrowser.open"))
+    try:
+        from sigstore.oidc import Issuer
+        from sigstore.sign import SigningContext
+    except ImportError:
+        return
+    monkeypatch.setattr(Issuer, "__init__", refuse("sigstore.oidc.Issuer"))
+    monkeypatch.setattr(Issuer, "identity_token", refuse("sigstore.oidc.Issuer.identity_token"))
+    monkeypatch.setattr(SigningContext, "from_trust_config", refuse("sigstore.sign.SigningContext"))
+
+
+@pytest.fixture(autouse=True)
 def _isolate_operator_config(
     tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
 ) -> Generator[None, None, None]:

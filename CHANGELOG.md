@@ -621,6 +621,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The OpenSSF Baseline OSPS-LE-02.01 regex step runs: it set `patterns`
   where the handler read `pattern`, so it recorded "Missing pattern" instead
   of the SPDX evidence. The control's outcome is unchanged.
+- Tests: no test reaches real Sigstore signing. With the `attestation` extra
+  installed, an attestation test started Sigstore's interactive OIDC login
+  and hung waiting for a browser; the signer is now stubbed, and any test
+  that opens a browser or signs with Sigstore fails at once (#604).
 
 ## [0.1.1] - 2026-10-03
 
