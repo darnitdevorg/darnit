@@ -41,10 +41,8 @@ class TestToolsSignatures:
 
         wrapper_params = self._get_param_names(create_security_policy)
 
-        # Check expected parameters exist on the wrapper
-        expected = {'owner', 'repo', 'local_path', 'template'}
-        for param in expected:
-            assert param in wrapper_params, f"Parameter '{param}' not in wrapper"
+        # The tool always uses the OSPS-VM-02.01 remediation's template; it takes no template choice
+        assert wrapper_params == {'owner', 'repo', 'local_path'}
 
     def test_enable_branch_protection_signature(self) -> None:
         """enable_branch_protection wrapper should pass valid parameters."""

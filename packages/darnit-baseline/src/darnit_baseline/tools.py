@@ -442,7 +442,6 @@ def create_security_policy(
     owner: str | None = None,
     repo: str | None = None,
     local_path: str = ".",
-    template: str = "standard",
 ) -> str:
     """
     Create a SECURITY.md file for vulnerability reporting.
@@ -459,7 +458,6 @@ def create_security_policy(
         owner: GitHub Org/User (auto-detected if not provided)
         repo: Repository Name (auto-detected if not provided)
         local_path: Path to repository
-        template: Template to use (standard, minimal, enterprise)
 
     Returns:
         What was done, followed by a fenced JSON block with the run record
