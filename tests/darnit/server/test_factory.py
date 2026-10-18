@@ -7,54 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from darnit.server.factory import create_server, create_server_from_dict
-
-
-class TestCreateServerFromDict:
-    """Tests for create_server_from_dict function."""
-
-    def test_creates_server_with_name(self):
-        """Test server is created with correct name."""
-        config = {
-            "mcp": {
-                "name": "test-server",
-                "tools": {},
-            }
-        }
-        server = create_server_from_dict(config)
-        assert server.name == "test-server"
-
-    def test_creates_server_default_name(self):
-        """Test server uses default name if not specified."""
-        config = {"mcp": {"tools": {}}}
-        server = create_server_from_dict(config)
-        assert server.name == "darnit"
-
-    def test_creates_server_empty_config(self):
-        """Test server is created with empty config."""
-        config = {}
-        server = create_server_from_dict(config)
-        assert server is not None
-        assert server.name == "darnit"
-
-    def test_registers_tools(self):
-        """Test that tools are registered with the server."""
-        config = {
-            "mcp": {
-                "name": "test-server",
-                "tools": {
-                    "my_tool": {
-                        "handler": "darnit.core.logging:get_logger",
-                        "description": "Serialize to JSON",
-                    }
-                },
-            }
-        }
-        server = create_server_from_dict(config)
-        # The server should have registered the tool
-        # We can verify by checking the server's internal state
-        # FastMCP stores tools in _tool_manager
-        assert server is not None
+from darnit.server.factory import create_server
 
 
 class TestCreateServer:
@@ -88,6 +41,21 @@ name = "path-server"
 ''')
         server = create_server(config_path)  # Pass Path directly
         assert server.name == "path-server"
+
+    def test_creates_server_default_name(self, tmp_path):
+        """Test server uses default name if not specified."""
+        config_path = tmp_path / "test.toml"
+        config_path.write_text("[mcp]\n")
+        server = create_server(config_path)
+        assert server.name == "darnit"
+
+    def test_creates_server_empty_config(self, tmp_path):
+        """Test server is created with empty config."""
+        config_path = tmp_path / "test.toml"
+        config_path.write_text("")
+        server = create_server(config_path)
+        assert server is not None
+        assert server.name == "darnit"
 
     def test_handles_invalid_handler(self, tmp_path, caplog):
         """A missing handler is skipped with a warning; the other tools still load."""
@@ -134,13 +102,6 @@ description = "Refused tool"
         assert "refused_tool" not in tools
         refusals = [r for r in caplog.records if r.levelno == logging.ERROR and "refused_tool" in r.getMessage()]
         assert refusals and handler in refusals[0].getMessage()
-
-    def test_refused_handler_is_reported_from_dict(self, caplog):
-        config = {"mcp": {"tools": {"refused_tool": {"handler": "os:system", "description": "x"}}}}
-        with caplog.at_level(logging.WARNING):
-            server = create_server_from_dict(config)
-        assert "refused_tool" not in {tool.name for tool in asyncio.run(server.list_tools())}
-        assert any(r.levelno == logging.ERROR and "refused_tool" in r.getMessage() for r in caplog.records)
 
     def test_openssf_baseline_toml(self):
         """Test loading the actual openssf-baseline.toml file."""

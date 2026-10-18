@@ -54,6 +54,15 @@ def _tools(toml: Path) -> dict:
     return {tool.name: tool for tool in asyncio.run(server.list_tools())}
 
 
+def _framework_server(tmp_path: Path, framework: str):
+    """A server for ``framework`` whose own TOML declares no MCP tools."""
+    from darnit.server.factory import create_server
+
+    config = tmp_path / "framework.toml"
+    config.write_text(f'[metadata]\nname = "{framework}"\n\n[mcp]\nname = "t"\n', encoding="utf-8")
+    return create_server(config)
+
+
 def _csl_toml() -> Path:
     return Path(str(files("darnit_csl") / "community-spec.toml"))
 
@@ -88,18 +97,14 @@ class TestExposedParameters:
         assert not parameters & CSL_KEYS
         assert "project_name" not in parameters
 
-    def test_every_framework_server_without_its_own_tool_gets_the_neutral_one(self) -> None:
-        from darnit.server.factory import create_server_from_dict
-
-        server = create_server_from_dict({"metadata": {"name": "community-spec"}, "mcp": {"name": "t"}})
+    def test_every_framework_server_without_its_own_tool_gets_the_neutral_one(self, tmp_path: Path) -> None:
+        server = _framework_server(tmp_path, "community-spec")
         tools = {tool.name: tool for tool in asyncio.run(server.list_tools())}
 
         assert set(tools["confirm_project_data"].inputSchema["properties"]) == CSL_KEYS | NEUTRAL_PARAMETERS
 
-    def test_framework_without_context_keys_gets_no_confirm_tool(self) -> None:
-        from darnit.server.factory import create_server_from_dict
-
-        server = create_server_from_dict({"metadata": {"name": "hello"}, "mcp": {"name": "t"}})
+    def test_framework_without_context_keys_gets_no_confirm_tool(self, tmp_path: Path) -> None:
+        server = _framework_server(tmp_path, "hello")
         tools = {tool.name for tool in asyncio.run(server.list_tools())}
 
         assert "confirm_project_data" not in tools
@@ -108,12 +113,12 @@ class TestExposedParameters:
 @pytest.mark.integration
 class TestRecording:
     def test_neutral_tool_records_a_csl_value(self, temp_git_repo: Path, trusted_target: tuple[str, str]) -> None:
-        import tomllib
-
-        from darnit.server.factory import create_server_from_dict
+        from darnit.config.operator.loader import get_launch_options
+        from darnit.server.factory import create_server
 
         owner, repo = trusted_target
-        server = create_server_from_dict(tomllib.loads(_csl_toml().read_text()))
+        # As `darnit serve --operator-config` does: the server keeps the trusting configuration.
+        server = create_server(_csl_toml(), operator_config_path=get_launch_options().path)
 
         asyncio.run(
             server.call_tool(
