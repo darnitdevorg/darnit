@@ -19,6 +19,7 @@ See Also:
     - :mod:`darnit.config.operator.schema` for operator configuration
 """
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -548,37 +549,90 @@ def load_effective_config(
 # =============================================================================
 
 
-def resolve_framework_path(name_or_path: str) -> Path | None:
-    """Resolve a framework name or path to an actual path.
+class FrameworkSelectionError(ValueError):
+    """A framework was selected by something other than a registered name, or from inside the audited repository."""
 
-    Resolution order:
-    1. If contains "/" or ends with ".toml", treat as path
-    2. Otherwise, look up via PluginRegistry entry points
+
+def is_framework_path_like(value: str) -> bool:
+    """True when ``value`` reads as a filesystem path rather than a framework name."""
+    return (
+        "/" in value
+        or "\\" in value
+        or value.endswith(".toml")
+        or value.startswith((".", "~"))
+        or Path(value).is_absolute()
+    )
+
+
+def require_framework_name(value: str) -> str:
+    """Return ``value`` if it is a framework name; raise ``FrameworkSelectionError`` if it is a path.
+
+    Frameworks named by an MCP client, agent state, or tool argument are
+    selected only by registered name (framework-design 14.4).
+    """
+    if not isinstance(value, str) or not value or is_framework_path_like(value):
+        raise FrameworkSelectionError(
+            f"Framework {value!r} is not a framework name. Select a framework by the name it is registered "
+            "under (a 'darnit.frameworks' entry point, see 'darnit list'); a path to a framework file is "
+            "not accepted here."
+        )
+    return value
+
+
+def require_registered_framework(value: str) -> str:
+    """Return ``value`` if it names a registered framework; raise ``FrameworkSelectionError`` otherwise."""
+    require_framework_name(value)
+    registered = list_available_frameworks()
+    if value not in registered:
+        raise FrameworkSelectionError(
+            f"Framework {value!r} is not registered. Registered frameworks: {', '.join(registered) or 'none'}."
+        )
+    return value
+
+
+def refuse_framework_inside_checkout(framework_path: str | Path, audited_repo: str | Path) -> None:
+    """Refuse a framework file given by path that lies inside the audited repository.
+
+    Mirrors the refusal of operator configuration inside the audited
+    repository (framework-design 14.1, 14.4): both paths are resolved
+    (symbolic links followed) before they are compared.
+    """
+    resolved = Path(os.path.realpath(framework_path))
+    repo = Path(os.path.realpath(audited_repo))
+    if os.path.commonpath([str(resolved), str(repo)]) == str(repo):
+        raise FrameworkSelectionError(
+            f"Refusing framework file {resolved}: it is inside the audited repository {repo}. "
+            "A framework file must live outside any repository being audited."
+        )
+
+
+def resolve_framework_path(name: str) -> Path | None:
+    """Resolve a registered framework name to the path of its TOML file.
+
+    Only names registered through ``darnit.frameworks`` entry points
+    resolve; a value that reads as a path raises
+    ``FrameworkSelectionError`` (framework-design 14.4). A caller that
+    accepts an operator-supplied file loads it with
+    ``load_framework_config`` after ``refuse_framework_inside_checkout``.
 
     Args:
-        name_or_path: Framework name (e.g., "openssf-baseline") or path
+        name: Framework name (e.g., "openssf-baseline")
 
     Returns:
-        Resolved Path or None if not found
+        Resolved Path or None if no framework is registered under ``name``
 
     Example:
         >>> path = resolve_framework_path("openssf-baseline")
         >>> if path:
         ...     config = load_framework_config(path)
-
-        >>> path = resolve_framework_path("./custom.toml")
-        >>> # Returns Path("./custom.toml")
     """
-    # Check if it looks like a path
-    if "/" in name_or_path or name_or_path.endswith(".toml"):
-        return Path(name_or_path)
+    require_framework_name(name)
 
-    # Try to resolve via PluginRegistry
     try:
         from darnit.core.registry import get_plugin_registry
 
         registry = get_plugin_registry()
-        return registry.get_framework_path(name_or_path)
+        return registry.get_framework_path(name)
     except ImportError:
         return None
 
