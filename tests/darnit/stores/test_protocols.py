@@ -137,7 +137,7 @@ class TestAuditCacheStore:
 
 class TestCrossIsolation:
     def test_project_store_is_not_attestation_store(self):
-        # ProjectStateStore has read_project + read_maintainers;
+        # ProjectStateStore has read_project;
         # AttestationStore has write(bundle_id, bytes, content_type). No
         # method overlap, so no accidental cross-satisfaction.
         instance = _MinimalProjectStateStore()

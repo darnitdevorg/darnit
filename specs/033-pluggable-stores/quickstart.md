@@ -145,7 +145,7 @@ Remove the `[stores.project]` block from `.baseline.toml`. Do NOT need to uninst
 | Symptom | What it means | Fix |
 |---------|---------------|-----|
 | `StoreNotInstalled: no store registered under 'darnit.stores.project' with name 'postgres'` | Selected a backend whose plugin isn't installed. | `pip install darnit-store-postgres`, or remove/change the `[stores.project]` selection. |
-| `StoreProtocolMismatch: 'postgres' does not satisfy ProjectStateStore (missing method 'read_maintainers')` | Plugin's registered class is out of date with the current Protocol. | Update the plugin package (`pip install -U darnit-store-postgres`), or file an issue against the plugin's maintainer. |
+| `StoreProtocolMismatch: 'postgres' does not satisfy ProjectStateStore (missing method 'read_project')` | Plugin's registered class is out of date with the current Protocol. | Update the plugin package (`pip install -U darnit-store-postgres`), or file an issue against the plugin's maintainer. |
 | `StoreNameCollision: two entry points register 's3' under 'darnit.stores.attestation': darnit-store-s3-attestation, my-other-plugin` | Two installed plugins claim the same short name. | Uninstall one, or rename the entry point in one plugin's `pyproject.toml`. |
 | Log line "AttestationStore.write failed" but audit reports success | This should never happen -- see FR-012 (no silent fallback). If seen, file a bug against darnit. |
 | Cache read log line "cache read failed, treating as miss" | Best-effort cache path per FR-011. Not a compliance error; audit continues. If frequent, investigate the cache backend. |
