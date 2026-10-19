@@ -2,50 +2,92 @@
 
 For users who want to **try an unreleased feature**, contribute to darnit, or run a specific commit/branch before it ships through one of the published channels ([PyPI](pypi.md), [container](container.md), [Homebrew](homebrew.md), [binary](binary.md), [Claude Code plugin](claude-code-plugin.md)).
 
-This path is necessary today because darnit's packages aren't yet on PyPI. After the first stable release (`v0.1.0`), the published channels become the easier path; from-source becomes a contributor-or-feature-preview workflow.
+There are two routes: install straight from the git URL with `uv tool install` (no clone), or clone the repository and work in the checkout.
 
-## Quick install
+## Install from the git URL
+
+```bash
+uv tool install --python 3.12 git+https://github.com/darnitdevorg/darnit
+
+darnit --version
+darnit list        # openssf-baseline (66 controls), gittuf, reproducibility
+```
+
+This installs the workspace root, the `darnit-mcp` package. It provides the `darnit` command and pulls in every workspace plugin. The package is `darnit-mcp`, but the command is `darnit`; there is no `darnit-mcp` command.
+
+Pin a tag, branch or commit with `@`:
+
+```bash
+uv tool install --python 3.12 "git+https://github.com/darnitdevorg/darnit@<tag>"
+```
+
+Tags up to and including `v0.1.1` predate the root package's `darnit` command ([#621](https://github.com/darnitdevorg/darnit/issues/621)), so `uv tool install` fails on them with "No executables are provided by package `darnit-mcp`". To run any tag without installing it, use `uvx --from`:
+
+```bash
+uvx --python 3.12 --from "git+https://github.com/darnitdevorg/darnit@<tag>" darnit audit /path/to/repo
+uvx --python 3.12 --from "git+https://github.com/darnitdevorg/darnit@<tag>" darnit serve --framework openssf-baseline   # MCP server
+```
+
+## Work in a clone
 
 ```bash
 # 1. Clone the canonical repository
-git clone https://github.com/kusari-oss/darnit ~/Projects/darnit
+git clone https://github.com/darnitdevorg/darnit ~/Projects/darnit
 cd ~/Projects/darnit
 
 # 2. Optionally switch to a specific feature branch
 git checkout <branch-name>
 
-# 3. Install as an editable `uv tool` with all three workspace packages
+# 3. Install the workspace and its development dependencies
+uv sync
+
+# 4. Run darnit from the checkout
+uv run darnit list
+uv run darnit serve      # MCP server; OpenSSF Baseline by default
+```
+
+This is the contributor setup; see [CONTRIBUTING.md](../../CONTRIBUTING.md).
+
+### Put a clone-backed `darnit` on PATH
+
+To run `darnit` from anywhere while it runs your clone's code, install it as an editable `uv tool`:
+
+```bash
 uv tool install --python 3.12 \
   --editable packages/darnit \
   --with-editable packages/darnit-baseline \
-  --with-editable packages/darnit-gittuf
+  --with-editable packages/darnit-gittuf \
+  --with-editable packages/darnit-reproducibility
 
-# 4. Verify
-darnit --version
-darnit list        # should show openssf-baseline, 62 controls
+darnit list        # openssf-baseline (66 controls), gittuf, reproducibility
 ```
 
-That's it — `darnit` is on `PATH`, editable-backed by your clone, ready to run.
-
-## Why three `--with-editable` flags?
-
-darnit is a uv workspace. The user-facing CLI lives in `packages/darnit/` (the `darnit-core` package), but it discovers compliance implementations via Python entry points exposed by sibling packages:
+The user-facing CLI lives in `packages/darnit/` (the `darnit-core` package), but it discovers compliance implementations via Python entry points exposed by sibling packages:
 
 - `packages/darnit/` → the `darnit-core` framework (CLI, sieve, MCP server)
-- `packages/darnit-baseline/` → the OpenSSF Baseline implementation (62 controls)
+- `packages/darnit-baseline/` → the OpenSSF Baseline implementation
 - `packages/darnit-gittuf/` → the gittuf plugin
+- `packages/darnit-reproducibility/` → the reproducibility plugin
 
-If you install only `packages/darnit/` editable, uv tries to resolve `darnit-baseline` and `darnit-gittuf` from PyPI — and they don't exist on PyPI yet (pre-v0.1.0). The `--with-editable` flags tell uv to add the sibling packages as additional editable members in the same tool venv.
+`darnit-core` does not depend on the plugins, so each `--with-editable` adds one to the same tool environment. Leave one out and `darnit list` does not show it.
 
-After v0.1.0 ships, this constraint disappears: `uv tool install darnit-mcp` (the workspace root) will resolve everything from PyPI.
+Because the install is editable, switching branches in `~/Projects/darnit` immediately changes what `darnit` runs — no reinstall needed:
+
+```bash
+cd ~/Projects/darnit
+git checkout feature-branch
+darnit --version   # now runs the feature branch's code
+```
+
+The only time you need to reinstall is when the workspace dependency set itself changes (e.g., a new sibling package gets added to `packages/`, or pinned versions in any `pyproject.toml` change).
 
 ## Why `--python 3.12`?
 
-darnit's workspace targets **Python 3.11 and 3.12** (see `requires-python` in each `pyproject.toml`). Newer Python versions (3.13, 3.14) may work but are not yet covered by darnit's CI matrix, and `tree-sitter-language-pack` doesn't ship wheels for them at the time of writing (see [#268](https://github.com/kusari-oss/darnit/issues/268)). Pinning the tool venv to 3.12 avoids surprise build-from-source failures and matches what darnit's own CI runs against.
+darnit's workspace targets **Python 3.11 and 3.12** (see `requires-python` in each `pyproject.toml`). Newer Python versions (3.13, 3.14) may work but are not yet covered by darnit's CI matrix, and `tree-sitter-language-pack` doesn't ship wheels for them at the time of writing (see [#268](https://github.com/darnitdevorg/darnit/issues/268)). Pinning the tool venv to 3.12 avoids surprise build-from-source failures and matches what darnit's own CI runs against.
 
 If your system default is 3.11 or 3.12 already, you can omit the flag.
 
-## Running the MCP server from source
+## Running the MCP server
 
 ```bash
 darnit serve --framework openssf-baseline
@@ -63,37 +105,17 @@ claude mcp add --scope user darnit -- "$(which darnit)" serve --framework openss
 
 For a project-local MCP config, run `darnit install --project` from the repo root (writes `.mcp.json`).
 
-## Switching branches
-
-Because the install is editable, switching branches in `~/Projects/darnit` immediately changes what `darnit` runs — no reinstall needed:
-
-```bash
-cd ~/Projects/darnit
-git checkout feature-branch
-darnit --version   # now runs the feature branch's code
-```
-
-The only time you need to reinstall is when the workspace dependency set itself changes (e.g., a new sibling package gets added to `packages/`, or pinned versions in any `pyproject.toml` change).
-
 ## Uninstall
 
 ```bash
-uv tool uninstall darnit-core
+uv tool uninstall darnit-mcp     # installed from the git URL (or from PyPI)
+uv tool uninstall darnit-core    # editable install from a clone
 ```
 
 The clone in `~/Projects/darnit` stays on disk — remove it manually if you no longer want the source tree.
 
-## Why not `uv tool install git+https://…`?
-
-Two reasons this doesn't work today:
-
-1. The **workspace root** (`darnit-mcp`) is a virtual package — it has `[tool.uv.workspace]` but no source of its own. `setuptools` errors out trying to build it directly.
-2. Installing a **single package by `subdirectory=`** works structurally, but its workspace-sibling dependencies (`darnit-baseline`, `darnit-gittuf`) aren't on PyPI yet. uv tries to resolve them from PyPI, gets 404, fails.
-
-After v0.1.0 puts all four packages on PyPI, `uv tool install darnit-mcp` works in one shot — no clone needed.
-
 ## See also
 
 - [Installation overview](README.md) — decision tree for the published channels.
-- [PyPI install](pypi.md) — the path after v0.1.0 ships.
+- [PyPI install](pypi.md) — `uv tool install darnit-mcp` and `uvx --from darnit-mcp darnit`.
 - The [maintainer release runbook](../../packaging/README.md) — how releases get produced.

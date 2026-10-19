@@ -396,12 +396,12 @@ Recovery is generally simpler than for the other channels because the zip is ful
 **Symptom**: `plugin_behavioral_smoke` installs uv, extracts the plugin, then `darnit-mcp-runner --help` exits non-zero — but structural smoke passed.
 
 **Common causes**:
-- `uvx --from darnit-mcp==<version> darnit-mcp --help` failed because PyPI/TestPyPI hasn't propagated the new version yet (rare; the `container_build_push` job's PyPI-propagation wait usually fixes this for downstream jobs).
-- A change to darnit-mcp's CLI broke `--help` (very unlikely — `--help` is one of the most stable surfaces).
+- `uvx --from darnit-mcp==<version> darnit serve --help` failed because PyPI/TestPyPI hasn't propagated the new version yet (rare; re-run the smoke job after a few minutes).
+- A change to the `darnit` CLI broke `darnit serve --help` (very unlikely — `--help` is one of the most stable surfaces).
 
 **Procedure**:
 
-1. From a local machine: `uvx --from darnit-mcp==<X.Y.Z> darnit-mcp --help`. Does it work? If yes, the CI failure was transient — re-run.
+1. From a local machine: `uvx --from darnit-mcp==<X.Y.Z> darnit serve --help`. Does it work? If yes, the CI failure was transient — re-run.
 2. If `uvx` can't fetch the package, see [PyPI section](#pypi) recovery.
 
 ### Verification after recovery
@@ -429,7 +429,7 @@ test -x /tmp/plugin-verify/darnit/bin/darnit-mcp-runner
 DARNIT_MCP_VERSION=<X.Y.Z> \
 CLAUDE_PLUGIN_ROOT=/tmp/plugin-verify/darnit \
   /tmp/plugin-verify/darnit/bin/darnit-mcp-runner --help | head -5
-# Should print darnit-mcp's help text.
+# Should print the help text of `darnit serve`.
 ```
 
 ---

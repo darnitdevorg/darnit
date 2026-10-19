@@ -46,7 +46,7 @@ preflight
    ├─► pypi_publish ─► pypi_smoke
    │
    ├─► container_build_push ─► container_smoke
-   │       (depends on pypi_publish: image installs from PyPI)
+   │       (builds from the tagged commit; does not depend on pypi_publish; #585, #586)
    │
    ├─► binary_matrix (×4) ─► binary_smoke
    │
@@ -54,7 +54,7 @@ preflight
    │       (depends on binary_matrix: formula points at binaries)
    │
    ├─► [stable] plugin_package ─► plugin_smoke
-   │       (depends on pypi_publish: plugin invokes uvx darnit-mcp@<version>)
+   │       (depends on pypi_publish: plugin invokes uvx --from darnit-mcp==<version> darnit serve; #621)
    │
    └─► finalize (always; aggregates state, posts summary, creates issue on partial failure)
 ```

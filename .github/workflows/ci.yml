@@ -300,3 +300,8 @@ jobs:
 
       - name: Full install (everything darnit-mcp pulls in) and one audit
         run: scripts/non-dev-install-smoke.sh dist
+
+      # `uv tool install git+https://...` installs the root package, which
+      # has to provide the `darnit` executable itself. See #621.
+      - name: uv tool install of the checkout and darnit list
+        run: scripts/non-dev-install-smoke.sh --uv-tool .
