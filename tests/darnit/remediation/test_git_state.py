@@ -10,6 +10,7 @@ import pytest
 from darnit.remediation.git_state import (
     _auditor_gpg_program,
     _auditor_gpg_ssh_program,
+    _auditor_gpg_x509_program,
     run_git,
 )
 
@@ -76,6 +77,56 @@ class TestRunGitSecurity:
         expected = _auditor_gpg_ssh_program()
         assert res.stdout.strip() == expected
         assert res.stdout.strip() != "/untrusted/malicious/ssh-keygen"
+
+    @pytest.mark.unit
+    def test_run_git_pins_gpg_x509_program(self, clean_git_repo: Path):
+        """gpg.x509.program in repository config must be overridden by auditor defaults."""
+        subprocess.run(
+            ["git", "config", "gpg.x509.program", "/untrusted/malicious/gpgsm"],
+            cwd=clean_git_repo,
+            check=True,
+        )
+
+        res = run_git(clean_git_repo, "config", "gpg.x509.program")
+        assert res.returncode == 0
+        expected = _auditor_gpg_x509_program()
+        assert res.stdout.strip() == expected
+        assert res.stdout.strip() != "/untrusted/malicious/gpgsm"
+
+    @pytest.mark.unit
+    def test_run_git_neutralizes_clean_and_process_filters(self, clean_git_repo: Path):
+        """Clean and process filters in repository config must not execute (issue #617)."""
+        witness = clean_git_repo / ".git" / "filter_witness.txt"
+        evil_filter = clean_git_repo / ".git" / "evil_filter.sh"
+        evil_filter.write_text(f"#!/bin/sh\necho evil >> {witness}\ncat\n")
+        evil_filter.chmod(0o755)
+
+        subprocess.run(
+            ["git", "config", "filter.evil.clean", str(evil_filter)],
+            cwd=clean_git_repo,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "config", "filter.evil.process", str(evil_filter)],
+            cwd=clean_git_repo,
+            check=True,
+        )
+
+        (clean_git_repo / ".gitattributes").write_text("* filter=evil\n")
+        tracked = clean_git_repo / "tracked.txt"
+        tracked.write_text("hello\n")
+        subprocess.run(["git", "add", "."], cwd=clean_git_repo, check=True)
+        subprocess.run(["git", "commit", "-m", "add tracked"], cwd=clean_git_repo, check=True)
+
+        if witness.exists():
+            witness.unlink()
+
+        # Touch tracked file to alter mtime so git status would normally invoke clean filter
+        tracked.write_text("hello\n")
+
+        res = run_git(clean_git_repo, "status", "--porcelain")
+        assert res.returncode == 0
+        assert not witness.exists(), "Planted filter.<name>.clean must not execute!"
 
     @pytest.mark.unit
     def test_run_git_timeout_handling(self, clean_git_repo: Path):

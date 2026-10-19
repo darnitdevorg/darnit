@@ -127,7 +127,37 @@ class TestGittufCommitsSignedHandler:
         subprocess.run(["git", "init"], cwd=repo, capture_output=True, check=True)
         subprocess.run(["git", "config", "user.name", "Tester"], cwd=repo, check=True)
         subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
-        subprocess.run(["git", "commit", "--allow-empty", "-m", "init"], cwd=repo, check=True)
+
+        # Create a signed commit object so git log --format=%G? triggers signature verification
+        tree = subprocess.run(
+            ["git", "write-tree"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        commit_content = (
+            f"tree {tree}\n"
+            "author Tester <test@example.com> 1700000000 +0000\n"
+            "committer Tester <test@example.com> 1700000000 +0000\n"
+            "gpgsig -----BEGIN PGP SIGNATURE-----\n"
+            " Version: GnuPG v2\n"
+            " \n"
+            " iQEcBAABCAAGBQJk...\n"
+            " =fake\n"
+            " -----END PGP SIGNATURE-----\n"
+            "\n"
+            "signed init\n"
+        )
+        commit_sha = subprocess.run(
+            ["git", "hash-object", "-t", "commit", "-w", "--stdin"],
+            input=commit_content,
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        subprocess.run(["git", "update-ref", "refs/heads/main", commit_sha], cwd=repo, check=True)
 
         witness = repo / ".git" / "gpg_witness.txt"
         evil_gpg = repo / ".git" / "evil_gpg.sh"
