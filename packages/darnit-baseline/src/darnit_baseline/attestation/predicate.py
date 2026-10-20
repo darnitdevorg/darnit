@@ -166,7 +166,7 @@ def build_assessment_predicate(
 
     predicate = {
         "assessor": {
-            "name": meta.get("name") or "openssf-baseline",
+            "name": meta["name"],
             "version": tool_version,
             "uri": "https://github.com/darnitdevorg/darnit",
         },
