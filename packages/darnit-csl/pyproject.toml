@@ -1,6 +1,6 @@
 [project]
 name = "darnit-csl"
-version = "0.1.0"
+version = "0.1.1"
 description = "Community Specification License (CSL 1.0) compliance implementation for darnit"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -24,9 +24,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/kusari-oss/darnit"
-Repository = "https://github.com/kusari-oss/darnit"
-Issues = "https://github.com/kusari-oss/darnit/issues"
+Homepage = "https://github.com/darnitdevorg/darnit"
+Repository = "https://github.com/darnitdevorg/darnit"
+Issues = "https://github.com/darnitdevorg/darnit/issues"
 
 # Discoverability: the implementation entry point.
 [project.entry-points."darnit.implementations"]

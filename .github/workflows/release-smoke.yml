@@ -76,7 +76,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [darnit, darnit-baseline, darnit-gittuf, darnit-mcp]
+        package: [darnit-core, darnit-baseline, darnit-csl, darnit-gittuf, darnit-reproducibility, darnit-mcp]
     steps:
       - name: Checkout (for public-packages.txt sanity check)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
@@ -98,11 +98,11 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install sigstore CLI (T016)
+      - name: Install pypi-attestations (T016)
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
-          pip install 'sigstore>=3.0.0,<4'
+          pip install 'pypi-attestations>=0.0.30,<1'
 
       - name: Install ${{ matrix.package }} from ${{ needs.parse-trigger.outputs.is_prerelease == 'true' && 'TestPyPI' || 'PyPI' }}
         env:
@@ -145,8 +145,14 @@ jobs:
             "darnit-baseline")
               "$venv/bin/python" -c "import darnit_baseline; print('darnit_baseline imports OK')"
               ;;
+            "darnit-csl")
+              "$venv/bin/python" -c "import darnit_csl; print('darnit_csl imports OK')"
+              ;;
             "darnit-gittuf")
               "$venv/bin/python" -c "import darnit_gittuf; print('darnit_gittuf imports OK')"
+              ;;
+            "darnit-reproducibility")
+              "$venv/bin/python" -c "import darnit_reproducibility; print('darnit_reproducibility imports OK')"
               ;;
             *)
               echo "::error::No smoke recipe defined for package '$PKG'"
@@ -197,31 +203,15 @@ jobs:
             exit 1
           fi
 
-          # The provenance response contains attestation_bundles[].attestations[].
-          # Extract the first attestation as a sigstore-readable bundle file.
-          python <<'PY'
-          import json, sys
-          with open('/tmp/provenance.json') as f:
-              data = json.load(f)
-          bundles = data.get('attestation_bundles') or []
-          if not bundles:
-              print('::error::No attestation bundles in provenance response')
-              sys.exit(1)
-          attestations = bundles[0].get('attestations') or []
-          if not attestations:
-              print('::error::Attestation bundle is empty')
-              sys.exit(1)
-          with open('/tmp/attestation.sigstore.json', 'w') as out:
-              json.dump(attestations[0], out)
-          print('Extracted attestation to /tmp/attestation.sigstore.json')
-          PY
-
-          python -m sigstore verify identity \
-            --bundle /tmp/attestation.sigstore.json \
-            --cert-identity-regexp "^https://github\.com/${{ github.repository }}/\.github/workflows/release\.yml@" \
-            --cert-oidc-issuer https://token.actions.githubusercontent.com \
+          # Verify the PEP 740 attestations in the provenance object against the
+          # wheel and the publishing repository. sigstore 3.x has no
+          # `verify identity --cert-identity-regexp`, and the provenance object is
+          # not a Sigstore bundle; pypi-attestations reads it as published.
+          pypi-attestations verify pypi \
+            --repository "https://github.com/${{ github.repository }}" \
+            --provenance-file /tmp/provenance.json \
             "$wheel"
-          echo "✓ Sigstore identity verified for $PKG $VERSION"
+          echo "✓ PEP 740 attestation verified for $PKG $VERSION"
 
   # T028: pull the published image, run --version, then cosign-verify the
   # image's signing identity against the canonical release.yml workflow URI.
