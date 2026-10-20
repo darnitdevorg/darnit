@@ -12,7 +12,7 @@ import hashlib
 import os
 from datetime import UTC, datetime
 from functools import lru_cache
-from typing import Any, cast
+from typing import Any
 
 from darnit.core.logging import get_logger
 from darnit.core.models import AuditResult
@@ -169,17 +169,11 @@ def _tool_version() -> str:
     return _pkg_version("darnit-baseline")
 
 
-def _framework_meta() -> dict[str, Any]:
-    from darnit.tools.audit import framework_metadata
-
-    return cast(dict[str, Any], framework_metadata("openssf-baseline"))
-
-
 # Tool information
-_META = _framework_meta()
-TOOL_NAME = _META.get("name") or "openssf-baseline"
+TOOL_INFO_URI = "https://baseline.openssf.org/"
+TOOL_NAME = "openssf-baseline"
 TOOL_VERSION = _tool_version()
-TOOL_INFO_URI = _META.get("url") or "https://baseline.openssf.org/"
+
 
 # Status to SARIF level mapping
 STATUS_TO_LEVEL = {
@@ -242,8 +236,8 @@ def generate_sarif_audit(
 
     meta = framework_metadata("openssf-baseline")
     driver: dict[str, Any] = {
-        "name": TOOL_NAME,
-        "version": TOOL_VERSION,
+        "name": meta["name"],
+        "version": _tool_version(),
         "informationUri": TOOL_INFO_URI,
         "rules": rules,
     }
