@@ -157,7 +157,8 @@ class TestGittufCommitsSignedHandler:
             text=True,
             check=True,
         ).stdout.strip()
-        subprocess.run(["git", "update-ref", "refs/heads/main", commit_sha], cwd=repo, check=True)
+        subprocess.run(["git", "update-ref", "HEAD", commit_sha], cwd=repo, check=True)
+        subprocess.run(["git", "branch", "-M", "main"], cwd=repo, check=True)
 
         witness = repo / ".git" / "gpg_witness.txt"
         evil_gpg = repo / ".git" / "evil_gpg.sh"
