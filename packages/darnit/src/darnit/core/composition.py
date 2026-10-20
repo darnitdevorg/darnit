@@ -450,6 +450,8 @@ def _apply_override(
     :func:`_validate_override_fields`, so this function trusts that
     every name it iterates is a real ``ControlConfig`` field.
     """
+    from darnit.config.framework_schema import ControlConfig
+
     update: dict[str, Any] = {}
 
     # Declared, set fields.
@@ -476,6 +478,7 @@ def _apply_override(
     if override.model_extra and "tags" in override.model_extra:
         override_tags.update(override.model_extra["tags"] or {})
 
+    merged_tags = dict(ctrl.tags)
     if override_tags:
         # Provenance keys are reserved; drop any author attempts to redefine
         # them and warn. Composite authors who want their own custom tags
@@ -489,15 +492,29 @@ def _apply_override(
                 )
                 del override_tags[reserved]
 
-        merged_tags = {**ctrl.tags, **override_tags}
+        merged_tags.update(override_tags)
         # Re-stamp provenance so the override's tag merge can never erase
         # them even if the user attempted to (already filtered above, but
         # belt-and-suspenders).
         merged_tags[_TAG_COMPOSED_FROM] = ctrl.tags.get(_TAG_COMPOSED_FROM)
         merged_tags[_TAG_ORIGINAL_CONTROL_ID] = ctrl.tags.get(_TAG_ORIGINAL_CONTROL_ID)
-        update["tags"] = merged_tags
 
-    return ctrl.model_copy(update=update)
+        # Synchronize tag-level attributes into update if not explicitly overridden
+        if "level" in override_tags and "level" not in update:
+            update["level"] = override_tags["level"]
+        if "domain" in override_tags and "domain" not in update:
+            update["domain"] = override_tags["domain"]
+        if "security_severity" in override_tags and "security_severity" not in update:
+            update["security_severity"] = override_tags["security_severity"]
+
+    # If top-level attributes were overridden without explicit tags, sync back into tags
+    for attr in ("level", "domain", "security_severity"):
+        if attr in update and attr not in override_tags:
+            merged_tags[attr] = update[attr]
+
+    update["tags"] = merged_tags
+
+    return ControlConfig.model_validate(ctrl.model_copy(update=update))
 
 
 # =============================================================================
