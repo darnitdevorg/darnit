@@ -239,10 +239,14 @@ class TestAskUserParams:
 
         assert "ask_user" in question
         ask = question["ask_user"]
-        assert ask["question"] == "Does this project make official releases?"
+        assert ask["question"] == (
+            "Does this project make official releases? "
+            "(Set to true if you publish versioned releases)"
+        )
         assert ask["header"] == "Releases"
         assert len(ask["options"]) == 2
         assert ask["options"][0]["label"] == "Yes"
+        assert ask["options"][0]["description"] == "This applies"
         assert ask["options"][1]["label"] == "No"
         assert ask["multiSelect"] is False
 
@@ -328,8 +332,8 @@ class TestAskUserParams:
 
         assert "ask_user" not in question
 
-    def test_header_truncated_to_12_chars(self) -> None:
-        """Header is truncated to 12 characters max."""
+    def test_header_truncated_at_word_boundary(self) -> None:
+        """Header keeps complete words when the humanized key is too long."""
         defn = ContextDefinition(
             type=ContextType.BOOLEAN,
             prompt="Has compiled assets?",
@@ -344,7 +348,28 @@ class TestAskUserParams:
         question = _build_context_question(req)
 
         assert "ask_user" in question
-        assert len(question["ask_user"]["header"]) <= 12
+        assert question["ask_user"]["header"] == "Compiled"
+
+    def test_boolean_hint_does_not_make_yes_description_opposite(self) -> None:
+        """A false-oriented hint belongs in the question, not beside the Yes option."""
+        defn = ContextDefinition(
+            type=ContextType.BOOLEAN,
+            prompt="Does this project have subprojects?",
+            hint="Set to false if this is a standalone project",
+            affects=["CTRL-01"],
+        )
+        req = ContextPromptRequest(
+            key="has_subprojects",
+            definition=defn,
+            control_ids=["CTRL-01"],
+            priority=1,
+        )
+
+        ask = _build_context_question(req)["ask_user"]
+
+        assert "Set to false" in ask["question"]
+        assert ask["options"][0]["description"] == "This applies"
+        assert "false" not in ask["options"][0]["description"]
 
 
 class TestAskUserBatch:

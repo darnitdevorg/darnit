@@ -996,7 +996,12 @@ def _build_ask_user_params(key: str, question_dict: dict, definition) -> dict | 
     input_type = question_dict.get("input_type")
     question_text = question_dict["prompt"]
 
-    header = key.removeprefix("has_").removeprefix("is_").replace("_", " ").title()[:12]
+    header_words = key.removeprefix("has_").removeprefix("is_").replace("_", " ").title().split()
+    header = " ".join(
+        word for index, word in enumerate(header_words) if len(" ".join(header_words[: index + 1])) <= 12
+    )
+    if not header:
+        header = header_words[0][:12]
 
     if input_type == "confirm":
         return {
@@ -1016,9 +1021,12 @@ def _build_ask_user_params(key: str, question_dict: dict, definition) -> dict | 
         return None
 
     if definition.type == "boolean":
+        boolean_question = question_text
+        if definition.hint:
+            boolean_question = f"{boolean_question} ({definition.hint})"
         options = [
-            {"label": "Yes", "description": definition.hint or "Yes, this applies"},
-            {"label": "No", "description": "No, this does not apply"},
+            {"label": "Yes", "description": "This applies"},
+            {"label": "No", "description": "This does not apply"},
         ]
     else:
         values = question_dict["options"]
@@ -1027,7 +1035,7 @@ def _build_ask_user_params(key: str, question_dict: dict, definition) -> dict | 
         options = [{"label": str(v), "description": f"Select '{v}'"} for v in values]
 
     return {
-        "question": question_text,
+        "question": boolean_question if definition.type == "boolean" else question_text,
         "header": header,
         "options": options,
         "multiSelect": False,
