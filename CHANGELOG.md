@@ -612,6 +612,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   declared contradicting evidence was present, and `confirm_project_data`
   would confirm it. The audit and the confirmation tool now read the
   framework's controls plus the operator's custom controls.
+- `submit_judgment` and `confirm_pass_candidate` audit only the controls
+  they check instead of the whole framework (#653). Each call used to run a
+  full audit (about 9 seconds on a small repository) and the server handles
+  calls one at a time, so the 30 judgments of an OpenSSF Baseline run spent
+  over 5 minutes queued. They now take about 0.4 seconds each. The judged
+  content and evidence digest are unchanged, and these subset audits no
+  longer overwrite the audit cache.
 - `remediate_audit_findings` no longer trusts a repository because the
   checkout's origin remote names it. Called without `owner` and `repo`, it
   filled them from the remote and then decided trust from them, so a clone

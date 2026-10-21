@@ -9,6 +9,7 @@ and can be used for programmatic access.
 """
 
 import hashlib
+from collections.abc import Collection
 from dataclasses import asdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -644,8 +645,10 @@ def judgment_consultations(
     """The model step's consultation for each control, as an audit of ``local_path`` produces it now.
 
     Used to check a submitted judgment's citations and to confirm a PASS
-    candidate against the current evidence (feature 041). A control whose
-    audit does not reach its model step maps to None.
+    candidate against the current evidence (feature 041). Only the requested
+    controls are evaluated (#653); a control's judged content does not depend
+    on any other control. A control whose audit does not reach its model step
+    maps to None.
 
     Raises:
         ValueError: the repository cannot be audited.
@@ -658,9 +661,11 @@ def judgment_consultations(
         repo or "",
         resolved_path,
         default_branch,
+        control_ids=control_ids,
         framework_name=framework_name,
         operator_config=operator_config,
         target=target,
+        write_cache=False,
     )
     by_id = {r["id"]: r for r in results}
     return {
@@ -833,6 +838,7 @@ def run_sieve_audit(
     *,
     controls: list | None = None,
     tags: list[str] | None = None,
+    control_ids: Collection[str] | None = None,
     cache_filtered: bool | None = None,
     evaluate_claims: bool = True,
     stop_on_llm: bool = True,
@@ -861,6 +867,10 @@ def run_sieve_audit(
         controls: Pre-loaded ControlSpec objects. If None, loads from
             TOML/registry automatically.
         tags: Tag filters to apply to controls (e.g., ["domain=AC"]).
+        control_ids: Evaluate only these controls. They are selected after the
+            framework's and the operator's controls are loaded and the level and
+            tag filters applied, so each is evaluated exactly as in a full audit.
+            Such a run is filtered and never cached.
         evaluate_claims: Evaluate the repository's not-applicable claims
             (``.project/darnit.yaml`` and applicability-changing
             ``.project/`` context values) and report each with the
@@ -957,6 +967,11 @@ def run_sieve_audit(
             all_controls = filter_controls(all_controls, tag_filters)
         except ImportError:
             logger.debug("Filtering module not available, skipping tag filter")
+
+    if control_ids is not None:
+        wanted = set(control_ids)
+        all_controls = [c for c in all_controls if c.control_id in wanted]
+        cache_filtered = True
 
     orchestrator = SieveOrchestrator(stop_on_llm=stop_on_llm)
     from darnit.core.models import ExecutionContext
