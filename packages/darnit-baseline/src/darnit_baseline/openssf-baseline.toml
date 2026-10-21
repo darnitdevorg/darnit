@@ -767,6 +767,7 @@ run: |
 handler = "exec"
 command = ["grep", "-rln", "github.head_ref", ".github/workflows/"]
 pass_exit_codes = [1]
+inconclusive_exit_codes = [0]
 timeout = 10
 concludes = []
 

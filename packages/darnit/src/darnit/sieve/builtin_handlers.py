@@ -310,6 +310,7 @@ def exec_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResu
         command: list[str] - Command to execute (supports $OWNER, $REPO, $BRANCH, $PATH)
         pass_exit_codes: list[int] - Exit codes that indicate pass (default: [0])
         fail_exit_codes: list[int] | None - Exit codes that indicate fail
+        inconclusive_exit_codes: list[int] | None - Exit codes that indicate inconclusive evidence
         output_format: str - How to parse output ("text", "json")
         timeout: int - Timeout in seconds (default: 300)
         env: dict[str, str] - Extra environment variables
@@ -338,6 +339,7 @@ def exec_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResu
 
     pass_exit_codes = config.get("pass_exit_codes", [0])
     fail_exit_codes = config.get("fail_exit_codes")
+    inconclusive_exit_codes = config.get("inconclusive_exit_codes")
     timeout = config.get("timeout", 300)
     env_extra = config.get("env", {})
     cwd = config.get("cwd", context.local_path)
@@ -418,6 +420,16 @@ def exec_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResu
         return HandlerResult(
             status=HandlerResultStatus.FAIL,
             message=f"Command failed (exit code {proc.returncode})",
+            confidence=1.0,
+            evidence=evidence,
+        )
+    elif inconclusive_exit_codes and proc.returncode in inconclusive_exit_codes:
+        # Declared inconclusive/evidence code (fixes #647): the check RAN and
+        # produced evidence (such as grep finding matches).
+        # No error_class -- this is valid evidence, not an environment error.
+        return HandlerResult(
+            status=HandlerResultStatus.INCONCLUSIVE,
+            message=f"Command produced evidence (exit code {proc.returncode})",
             confidence=1.0,
             evidence=evidence,
         )
@@ -1806,6 +1818,7 @@ def register_builtin_handlers() -> None:
             "command",
             "pass_exit_codes",
             "fail_exit_codes",
+            "inconclusive_exit_codes",
             "output_format",
             "timeout",
             "env",
