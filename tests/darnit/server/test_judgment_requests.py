@@ -80,6 +80,7 @@ class TestGetJudgmentRequests:
 
         assert response["status"] == "ok"
         assert response["remaining"] == []
+        assert response["skipped"] == []
         [request] = response["requests"]
         assert request["control_id"] == CONTROL
         assert request["kind"] == "llm_judgment"
@@ -138,6 +139,8 @@ class TestGetJudgmentRequests:
         )
 
         assert _requests(repo)["requests"] == []
+        assert _requests(repo)["skipped"] == [CONTROL]
+        assert _requests(repo, include_judged=True)["skipped"] == []
         [request] = _requests(repo, include_judged=True)["requests"]
         assert request["control_id"] == CONTROL
         assert request["kind"] == "confirmation"

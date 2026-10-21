@@ -202,6 +202,18 @@ def get_judgment_requests_impl(
         ),
         key=lambda r: r["id"],
     )
+    skipped = (
+        []
+        if include_judged
+        else sorted(
+            r["id"]
+            for r in results
+            if r.get("status") == "PENDING"
+            and (r.get("pending") or {}).get("kind") == "confirmation"
+            and (r.get("evidence") or {}).get("llm_consultation")
+            and (wanted is None or r["id"] in wanted)
+        )
+    )
 
     page: dict[str, Any] = {
         "status": "ok",
@@ -209,6 +221,7 @@ def get_judgment_requests_impl(
         "files": {},
         "requests": [],
         "remaining": [],
+        "skipped": skipped,
     }
     oversized = False
     for index, result in enumerate(pending):
@@ -262,7 +275,8 @@ async def get_judgment_requests(
     ``analysis_hints``, ``evidence_digest``, and ``files``, keys into the
     shared ``files`` map), ``files`` (``path``, ``digest``, and ``content``,
     exactly the content ``submit_judgment`` checks citations against), and
-    ``remaining`` (controls not on this page). Pages stay under 40,000
+    ``remaining`` (controls not on this page), and ``skipped`` (controls
+    left out because they have a stored PASS candidate). Pages stay under 40,000
     bytes; call again with ``control_ids`` set to ``remaining`` until it
     is empty. Read only: records nothing.
 
