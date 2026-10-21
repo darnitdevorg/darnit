@@ -4,7 +4,7 @@ description: Run a compliance audit on the current repository using darnit. Use 
 compatibility: Requires darnit MCP server running (darnit serve)
 metadata:
   author: kusari-oss
-  version: "2.0"
+  version: "2.1"
 ---
 
 # Compliance Audit
@@ -29,7 +29,7 @@ Common audit tools:
    - If the user mentions a profile (e.g., "just level 1", "access control only", "onboard"), pass it as the `profile` parameter.
    - If the user mentions a level, pass it as the `level` parameter.
 
-2. Inspect the results for `PENDING` controls with `pending.kind = "llm_judgment"`. These are controls whose deterministic steps could not decide and that need a judgment of their content. Call `get_judgment_requests` with `owner`, `repo`, and `local_path` naming the audited repository. It returns `requests` (one per control: `control_id`, `prompt`, `analysis_hints`, and `files`, keys into the shared `files` map) and `remaining`; while `remaining` is not empty, call it again with `control_ids` set to `remaining`. For each request, read the prompt and the `content` of each of its files, then call `submit_judgment` with `control_id`, `verdict` (`"pass"` or `"fail"`), your `reasoning`, `cited_evidence` (the passages you relied on, copied verbatim from those files' `content`; a `"pass"` needs at least one), `model` and `model_version` (the model you are), and `owner`, `repo`, `local_path` naming the audited repository. Your judgment is not the audit result:
+2. If any control is `PENDING` with `pending.kind = "llm_judgment"`, call `get_judgment_requests` with `owner`, `repo`, and `local_path` naming the audited repository, and follow the `procedure` in its result: it says how to judge each request, how to call `submit_judgment`, and how to fetch the next page. Your judgment is not the audit result:
    - A `"pass"` with verified citations becomes a PASS candidate (`PENDING`, `pending.kind = "confirmation"`), still non-compliant until the operator confirms it.
    - A `"fail"` is reported as a model finding (suggestive FAIL).
    - A rejection means a cited passage was not found verbatim; the control stays unverified. Do not rephrase the passage to get it accepted unless it is genuinely in the file.
