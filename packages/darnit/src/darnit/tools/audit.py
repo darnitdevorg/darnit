@@ -653,6 +653,33 @@ def judgment_consultations(
     Raises:
         ValueError: the repository cannot be audited.
     """
+    by_id = {
+        r["id"]: r
+        for r in judgment_audit(local_path, framework_name, operator_config, owner, repo, target, control_ids=control_ids)
+    }
+    return {
+        control_id: ((by_id.get(control_id) or {}).get("evidence") or {}).get("llm_consultation") or None
+        for control_id in control_ids
+    }
+
+
+def judgment_audit(
+    local_path: str,
+    framework_name: str,
+    operator_config: "LoadedOperatorConfig",
+    owner: str | None,
+    repo: str | None,
+    target: str | None,
+    *,
+    control_ids: Collection[str] | None = None,
+) -> list[CheckResult]:
+    """The audit of ``local_path`` that judgment requests and judgment checks are built from.
+
+    With ``control_ids``, only those controls are evaluated (#653).
+
+    Raises:
+        ValueError: the repository cannot be audited.
+    """
     owner, repo, resolved_path, default_branch, error = prepare_audit(owner, repo, local_path)
     if error:
         raise ValueError(error)
@@ -667,11 +694,7 @@ def judgment_consultations(
         target=target,
         write_cache=False,
     )
-    by_id = {r["id"]: r for r in results}
-    return {
-        control_id: ((by_id.get(control_id) or {}).get("evidence") or {}).get("llm_consultation") or None
-        for control_id in control_ids
-    }
+    return results
 
 
 def framework_metadata(framework_name: str | None) -> dict[str, str]:
