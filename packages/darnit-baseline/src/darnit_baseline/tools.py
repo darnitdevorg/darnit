@@ -856,10 +856,7 @@ def get_pending_data(
         batch_questions = []
         answer_mapping = []
         for q in questions:
-            ask_user = q.get("ask_user")
-            if ask_user is None:
-                continue
-            batch_questions.append(ask_user)
+            batch_questions.append(q["ask_user"])
             mapping: dict = {
                 "question_index": len(batch_questions) - 1,
                 "context_key": q["key"],
@@ -871,6 +868,8 @@ def get_pending_data(
                 }
             elif q["input_type"] == "select" and q.get("options") == ["true", "false"]:
                 mapping["value_map"] = {"Yes": True, "No": False}
+            elif q["input_type"] == "free_text":
+                mapping["value_map"] = {SKIP_OPTION: "SKIP", CHAT_OPTION: "ASK_USER_FOR_VALUE"}
             answer_mapping.append(mapping)
 
         # Determine answered count from total minus pending
@@ -993,23 +992,26 @@ def _build_context_question(req) -> dict:
             "repository owner, git config, or any other source. The format hint is not an answer."
         )
 
-    ask_user = _build_ask_user_params(req.key, question, definition)
-    if ask_user is not None:
-        question["ask_user"] = ask_user
+    question["ask_user"] = _build_ask_user_params(req.key, question, definition)
 
     return question
 
 
-def _build_ask_user_params(key: str, question_dict: dict, definition) -> dict | None:
-    """AskUserQuestion parameters (question/header/options/multiSelect), or None.
+SKIP_OPTION = "Skip for now"
+CHAT_OPTION = "Answer in chat"
 
-    None for free text and for an enum with more values than the selector
-    holds, so no allowed value is dropped (FR-015). A candidate's value is
-    not repeated here; the person sees it from the question's ``candidate``.
+
+def _build_ask_user_params(key: str, question_dict: dict, definition) -> dict:
+    """AskUserQuestion parameters (question/header/options/multiSelect) for every question.
+
+    The question tool shows at most 4 options and always adds a free-text
+    "Other". A choice key with more values names them all in the question, so
+    each stays reachable under Other (FR-015). A free-text key offers skip and
+    chat options, never a value. A candidate's value is not repeated here; the
+    person sees it from the question's ``candidate``.
     """
     input_type = question_dict.get("input_type")
     question_text = question_dict["prompt"]
-
     header = _ask_user_header(key)
 
     if input_type == "confirm":
@@ -1026,26 +1028,39 @@ def _build_ask_user_params(key: str, question_dict: dict, definition) -> dict | 
             "multiSelect": False,
         }
 
-    if input_type != "select":
-        return None
-
-    if definition.type == "boolean":
+    if input_type == "select" and definition.type == "boolean":
         if hint := question_dict.get("hint"):
             question_text = f"{question_text} {hint}"
-        options = [
-            {"label": "Yes", "description": "Yes, this applies"},
-            {"label": "No", "description": "No, this does not apply"},
-        ]
-    else:
+        return {
+            "question": question_text,
+            "header": header,
+            "options": [
+                {"label": "Yes", "description": "Yes, this applies"},
+                {"label": "No", "description": "No, this does not apply"},
+            ],
+            "multiSelect": False,
+        }
+
+    if input_type == "select":
         values = question_dict["options"]
         if len(values) > _SELECTOR_OPTION_LIMIT:
-            return None
-        options = [{"label": str(v), "description": f"Select '{v}'"} for v in values]
+            question_text = f"{question_text} Choose Other to type a value not listed below."
+        return {
+            "question": question_text,
+            "header": header,
+            "options": [{"label": str(v), "description": f"Select '{v}'"} for v in values[:_SELECTOR_OPTION_LIMIT]],
+            "multiSelect": False,
+        }
 
+    hint = question_dict.get("hint")
+    details = f" {hint}." if hint and not hint.endswith(".") else (f" {hint}" if hint else "")
     return {
-        "question": question_text,
+        "question": f"{question_text}{details} Type your answer under Other.",
         "header": header,
-        "options": options,
+        "options": [
+            {"label": SKIP_OPTION, "description": "Leave it unanswered; the controls it affects stay non-compliant"},
+            {"label": CHAT_OPTION, "description": "Type a longer answer in the conversation instead"},
+        ],
         "multiSelect": False,
     }
 
