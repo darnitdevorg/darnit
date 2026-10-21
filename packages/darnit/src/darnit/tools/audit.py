@@ -914,8 +914,9 @@ def run_sieve_audit(
     resolved_fw = framework_name
 
     if resolved_fw:
-        from darnit.config.merger import ensure_framework_allowed
+        from darnit.config.merger import ensure_framework_allowed, require_framework_name
 
+        require_framework_name(resolved_fw)
         ensure_framework_allowed(resolved_fw, operator)
 
     # Register the framework's custom sieve handlers (issue #427). This runs

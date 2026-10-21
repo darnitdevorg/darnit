@@ -259,6 +259,7 @@ def cmd_audit(args: argparse.Namespace) -> int:
         load_effective_config,
         load_effective_config_auto,
         load_effective_config_by_name,
+        refuse_framework_inside_checkout,
     )
     from darnit.filtering import filter_controls, parse_tags_arg
 
@@ -286,6 +287,7 @@ def cmd_audit(args: argparse.Namespace) -> int:
         if args.framework:
             framework_path = Path(args.framework)
             if framework_path.exists():
+                refuse_framework_inside_checkout(framework_path, repo_path)
                 config = load_effective_config(framework_path, operator=operator)
             else:
                 # Try as framework name
@@ -381,6 +383,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
         load_effective_config,
         load_effective_config_auto,
         load_effective_config_by_name,
+        refuse_framework_inside_checkout,
     )
     from darnit.filtering import matches_filters, parse_tags_arg
 
@@ -391,6 +394,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
         if args.framework:
             framework_path = Path(args.framework)
             if framework_path.exists():
+                refuse_framework_inside_checkout(framework_path, repo_path)
                 config = load_effective_config(framework_path)
             else:
                 config = load_effective_config_by_name(args.framework)

@@ -1,8 +1,8 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.16
+> **Version**: 1.0.0-alpha.17
 > **Status**: Authoritative
-> **Last Updated**: 2026-10-08
+> **Last Updated**: 2026-10-18
 
 This specification defines the authoritative design of the Darnit framework, including the sieve orchestrator, TOML schema, built-in pass types, remediation actions, and plugin protocol.
 
@@ -1954,6 +1954,7 @@ The darnit framework package SHALL NOT contain code, modules, or string literals
 - **THEN** they SHALL use `get_implementation(name)` with an explicit name
 - **AND** the name SHALL come from an explicit parameter (the `--framework` option or a tool's framework argument), or `discover_implementations()` to list available options
 - **AND** nothing in the audited repository selects the framework (Section 14.4)
+- **AND** a framework named by an MCP client, agent or harness state, or tool argument SHALL be a registered name, never a path (Section 14.5)
 
 ---
 
@@ -2041,7 +2042,7 @@ Design principle: **the audited repository is untrusted input in its entirety, i
 
 ### 14.4 Repository-level .baseline.toml
 
-darnit does not read a repository's `.baseline.toml` for anything: no per-control status or reason, no `extends`, no settings, no custom controls, and no other key. Not-applicable claims come only from `.project/` (14.3), the framework is selected only by the `--framework` option or a tool's framework argument, and tool settings come only from operator configuration (14.1).
+darnit does not read a repository's `.baseline.toml` for anything: no per-control status or reason, no `extends`, no settings, no custom controls, and no other key. Not-applicable claims come only from `.project/` (14.3), the framework is selected only by the `--framework` option or a tool's framework argument (14.5), and tool settings come only from operator configuration (14.1).
 
 - When the file exists in an audited repository, the audit SHALL record exactly one notice, logged at WARNING and listed in the report's `warnings`: the file is ignored, and `darnit config migrate` moves its claims to `.project/darnit.yaml` and prints an operator configuration fragment for its tool settings. Its keys are not listed in `ignored_repository_settings`.
 - `darnit config migrate [REPO]` reads the file itself. It writes the per-control status and reason to `.project/darnit.yaml` (keeping an existing claim for the same control unless `--force` is given), prints a proposed operator configuration fragment for the other settings, never writes operator configuration, and never deletes the file.
@@ -2054,6 +2055,28 @@ darnit does not read a repository's `.baseline.toml` for anything: no per-contro
 #### Scenario: extends in .baseline.toml
 - **WHEN** `.baseline.toml` sets `extends` to a registered framework and the run names no framework
 - **THEN** the audit MUST NOT use the framework the file names
+
+### 14.5 Framework Selection
+
+A framework is a set of steps darnit runs, so only the operator chooses where one comes from.
+
+- A framework named by an MCP client, agent or harness state (`HarnessState.framework_name`), or a tool argument SHALL be the name of a registered framework (a `darnit.frameworks` entry point, as listed by `darnit list`). A value that reads as a path (it contains `/` or `\`, ends in `.toml`, starts with `.` or `~`, or is absolute) or a name that is not registered SHALL be refused with an error naming the value, before any framework is loaded or any step runs. `run_next_action` and `submit_action_result` refuse such a state as invalid (`Invalid HarnessState: framework_name: ...`), and the audit pipeline refuses a framework name that reads as a path.
+- A framework file given by path is accepted only from the operator at launch: `darnit audit --framework PATH`, `darnit plan --framework PATH`, `darnit serve PATH`, and `darnit validate PATH`.
+- `darnit audit` and `darnit plan` SHALL refuse a framework file given by path whose resolved location (symbolic links followed) lies inside the repository they audit, as operator configuration there is refused (14.1). `refuse_framework_inside_checkout` is the check; any other caller that loads a framework file by path for an audit applies it first.
+- A registered framework is loaded from where its package is installed. Registering one is an installation the operator performs; nothing in the audited repository registers a framework.
+
+#### Scenario: Client names a framework file by path
+- **WHEN** `run_next_action` or `submit_action_result` receives a state whose `framework_name` is a path, including one inside the audited repository
+- **THEN** the call MUST fail with an error naming `framework_name`
+- **AND** no framework file is read and no step runs
+
+#### Scenario: Client names an unregistered framework
+- **WHEN** a state's `framework_name` is a name no installed package registers
+- **THEN** the call MUST fail with an error listing the registered frameworks
+
+#### Scenario: Operator names a framework file inside the audited repository
+- **WHEN** `darnit audit --framework PATH REPO` names a file inside `REPO`
+- **THEN** the audit MUST refuse to load it and exit with an error
 
 ## 15. Remediation Safety
 
@@ -2409,6 +2432,7 @@ The following requirements have been superseded: by the handler dispatch archite
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.17 | 2026-10-18 | Framework selection: MCP, agent and harness state, and tool arguments name a registered framework only, never a path; a framework file given by path is refused inside the audited repository (Sections 10.5, 14.5) |
 | 1.0.0-alpha.16 | 2026-10-08 | `ComplianceImplementation` reduced to its five used members; `get_all_controls`, `get_controls_by_level`, `get_rules_catalog`, `get_remediation_registry`, and `register_controls` removed (Section 6.3; Appendix C; #487). `register_handlers()` is the handler registration hook, `register_sieve_handlers()` accepted only for compatibility, import-time registration not introspectable (Sections 6.4, 12; #451) |
 | 1.0.0-alpha.15 | 2026-10-08 | Removed the never-dispatched adapter system (`[adapters]`, `[defaults]` adapter keys, control-level `check`, `AdapterRegistry`) and `UnifiedLocator` with its `sync_to_project` writer (Sections 2.1, 6.5, 7.9; Appendix C; #487) |
 | 1.0.0-alpha.14 | 2026-10-07 | `repro_witness_attestation`: Witness/in-toto runtime-trace verification moves out of `repro_hermetic_build` into its own step type with ceiling `{fail}`, bound to the audited commit and reading only the runtime-trace predicate; a verified clean trace is evidence, not PASS (Sections 3.0.1, 12; #553) |
