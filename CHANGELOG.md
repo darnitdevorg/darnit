@@ -431,6 +431,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hard-coded `0.1.0`, and `baseline.version` / `baseline.specification` derive
   from the framework TOML metadata (`OSPS v2026.02.19`) instead of `2025.10.10`
   (Refs #494).
+- `get_pending_data` and `get_judgment_requests` return a `procedure`: the
+  steps a coding agent follows with the result (how to show candidates and
+  ask the questions, the exact `confirm_project_data` or `submit_judgment`
+  call, and the next call), naming only the repository the caller named.
+  A `confirm_project_data` result on the OpenSSF Baseline server ends with
+  the next `get_pending_data` call. The `darnit-data`, `darnit-audit`,
+  `darnit-comply`, and `darnit-remediate` skills defer to these procedures
+  instead of restating them or telling the agent to follow another skill,
+  which a client may not load, so `darnit-comply` collected data
+  differently from `darnit-data`. The comply and remediate skills now pass
+  `owner` and `repo` to `remediate_audit_findings`.
 - **BREAKING:** `register_handlers()` is the one handler registration hook
   for plugins (#451). `darnit-gittuf` and `darnit-reproducibility` rename
   `register_sieve_handlers()` to `register_handlers()`, and their `register()`
