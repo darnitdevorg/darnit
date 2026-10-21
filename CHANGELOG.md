@@ -358,6 +358,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `get_pending_data` gives every question a selector, so a batch of up to 4
+  questions is asked in one round of the client's question tool (#650, #655).
+  After 0.1.1, free-text questions and choice questions with more than 4
+  values had none, so Claude Code switched between the question tool and
+  plain text within a batch. (In 0.1.1 a free-text question with two or more
+  examples offered the examples as answers, and a choice question showed
+  only its first 4 values.) A choice question now offers its first 4 values
+  and names every allowed value in the question, any of which can be typed
+  under "Other"; a free-text question offers "Skip for now" and "Answer in
+  chat" and never a value. Selector headers are cut at a word boundary
+  ("Compiled", not "Compiled Ass"), and a yes/no question's hint is in the
+  question instead of next to "Yes".
+- The skills ask the person to confirm which repository is being audited
+  and name it on every darnit call, the audit included. An audit called
+  without `owner` and `repo` does not apply the person's confirmed answers or
+  stored PASS candidates, so after answering the data questions a re-audit
+  showed the same results. `darnit-comply` re-runs the audit after data is
+  confirmed and shows what changed.
+
 - `get_pending_data` and `get_judgment_requests` return a `procedure`: the
   steps a coding agent follows with the result (how to show candidates and
   ask the questions, the exact `confirm_project_data` or `submit_judgment`

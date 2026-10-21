@@ -55,3 +55,15 @@ def test_no_skill_tells_the_agent_to_follow_another_skill() -> None:
     ]
 
     assert offenders == []
+
+
+@pytest.mark.parametrize("path", sorted(SKILLS.glob("*/SKILL.md")), ids=lambda p: p.parent.name)
+def test_every_skill_names_the_repository_on_every_call(path: Path) -> None:
+    """Confirmed answers, PASS candidates, and trust apply only to a named repository (#655)."""
+    text = path.read_text(encoding="utf-8")
+
+    assert "## The repository" in text
+    assert "never takes the name from the checkout's remotes" in text
+    for line in text.splitlines():
+        if re.search(r"Call (it|the appropriate `audit_\*` tool) with", line):
+            assert "`owner` and `repo`" in line, line

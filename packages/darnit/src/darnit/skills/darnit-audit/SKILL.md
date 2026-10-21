@@ -4,7 +4,7 @@ description: Run a compliance audit on the current repository using darnit. Use 
 compatibility: Requires darnit MCP server running (darnit serve)
 metadata:
   author: kusari-oss
-  version: "2.1"
+  version: "2.2"
 ---
 
 # Compliance Audit
@@ -22,9 +22,13 @@ Darnit's MCP server registers audit tools per implementation module. Look for av
 Common audit tools:
 - `audit_openssf_baseline` — OpenSSF Baseline (OSPS v2025.10.10)
 
+## The repository
+
+Name the audited repository on every darnit call, the audit included: `owner` and `repo`, plus `host` when it is not github.com. darnit applies the person's confirmed answers, stored PASS candidates, and trust only to a named repository, and never takes the name from the checkout's remotes. Before the first call, ask the person to confirm which repository this is, offering the checkout's `origin` remote as the suggestion, and use their answer for every call.
+
 ## Workflow
 
-1. Identify the audit tool to use (see above). Call it with `local_path` set to the repository root and `output_format` set to `"markdown"`.
+1. Identify the audit tool to use (see above). Call it with `owner` and `repo` naming the repository, `local_path` set to the repository root, and `output_format` set to `"markdown"`.
    - Use `output_format: "summary"` if you only need pass/fail counts (compact JSON; PENDING rows carry `pending.kind`). Do not use `output_format: "json"` to read judgment requests: it holds every control's full evidence and is too large for a tool result. Use `get_judgment_requests` (step 2).
    - If the user mentions a profile (e.g., "just level 1", "access control only", "onboard"), pass it as the `profile` parameter.
    - If the user mentions a level, pass it as the `level` parameter.
