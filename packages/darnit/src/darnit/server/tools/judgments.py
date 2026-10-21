@@ -150,6 +150,7 @@ def get_judgment_requests_impl(
 
     from darnit.config.operator.loader import OperatorConfigError, resolve_operator_config
     from darnit.core.utils import validate_local_path
+    from darnit.server.procedures import judgment_procedure
     from darnit.tools.audit import judgment_audit
     from darnit.trust.decision import decide_trust, target_from_owner_repo
     from darnit.trust.judgments import judged_content
@@ -202,7 +203,13 @@ def get_judgment_requests_impl(
         key=lambda r: r["id"],
     )
 
-    page: dict[str, Any] = {"status": "ok", "files": {}, "requests": [], "remaining": []}
+    page: dict[str, Any] = {
+        "status": "ok",
+        "procedure": judgment_procedure(owner, repo, host, str(resolved_path)),
+        "files": {},
+        "requests": [],
+        "remaining": [],
+    }
     oversized = False
     for index, result in enumerate(pending):
         files = dict(page["files"])
@@ -250,7 +257,8 @@ async def get_judgment_requests(
 ) -> str:
     """Get the judgment requests for controls awaiting a judgment (PENDING, pending.kind = "llm_judgment").
 
-    Returns JSON: ``requests`` (one per control: ``control_id``, ``prompt``,
+    Returns JSON: ``procedure`` (the steps to follow with this page),
+    ``requests`` (one per control: ``control_id``, ``prompt``,
     ``analysis_hints``, ``evidence_digest``, and ``files``, keys into the
     shared ``files`` map), ``files`` (``path``, ``digest``, and ``content``,
     exactly the content ``submit_judgment`` checks citations against), and
