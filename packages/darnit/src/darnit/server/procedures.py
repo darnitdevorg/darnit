@@ -75,5 +75,6 @@ def judgment_procedure(owner: str, repo: str, host: str, local_path: str) -> lis
         "result.",
         f"4. If remaining is not empty, call get_judgment_requests({args}, control_ids=<remaining>) "
         "and repeat; stop when remaining is empty.",
+        "5. Controls in skipped already have a stored PASS candidate: do not request or judge them again.",
         "Confirm a PASS candidate only when the operator explicitly names it.",
     ]
