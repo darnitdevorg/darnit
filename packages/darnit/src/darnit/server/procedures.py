@@ -41,10 +41,12 @@ def data_collection_procedure(owner: str | None, repo: str | None, local_path: s
     return [
         "1. For each question with a candidate, show the person candidate.value and candidate.origin, "
         "labelled UNCONFIRMED. A candidate is never a fact or a default answer.",
-        "2. Ask every question. Pass ask_user_batch verbatim to your question tool (AskUserQuestion in "
-        "Claude Code); ask a question with no ask_user entry in plain text, listing every allowed_values "
-        "entry. format_hint is a format, never an answer. Do not pre-fill or suggest answers.",
-        "3. If the person says skip or does not know, leave that key out and move on.",
+        "2. Ask every question at once: pass ask_user_batch verbatim to your question tool (AskUserQuestion "
+        "in Claude Code). A typed answer under Other is the person's answer. If a client has no question "
+        "tool, ask in plain text, listing every allowed_values entry. format_hint is a format, never an "
+        "answer. Do not pre-fill or suggest answers.",
+        '3. "Skip for now", or a person who says skip or does not know, leaves that key out. For '
+        '"Answer in chat", ask that one question in plain text.',
         f"4. Record the answers in one call: confirm_project_data({args}, <key>=<the person's answer>). "
         "Yes/No questions take true/false. For a Yes on a candidate pass "
         'accept_candidates={"<key>": "<that question\'s candidate.digest>"}, filled in only after the '
