@@ -139,6 +139,11 @@ class TestAgentFlowOnAnUntrustedRepository:
         assert rounds[-1]["status"] == "complete", rounds[-1]
         assert len(rounds) <= MAX_ROUNDS
 
+    def test_every_question_goes_through_the_question_tool(self, flow: dict) -> None:
+        for pending in flow["rounds"][:-1]:
+            assert len(pending["ask_user_batch"]) == len(pending["questions"])
+            assert len(pending["ask_user_batch"]) <= 4
+
     def test_answers_for_an_untrusted_repository_stay_out_of_the_checkout(self, flow: dict, tmp_path: Path) -> None:
         assert not (tmp_path / "repo" / ".project").exists()
 
