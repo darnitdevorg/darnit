@@ -4,12 +4,16 @@ description: Collect missing project data to improve audit accuracy. Use when th
 compatibility: Requires darnit MCP server running (darnit serve)
 metadata:
   author: kusari-oss
-  version: "2.0"
+  version: "2.1"
 ---
 
 # Project Data Collection
 
 Guide the user through providing missing project data that darnit needs for accurate audits. A value darnit detected is only a candidate: it is shown to the user as unconfirmed data with where it came from, and it counts only after the user confirms it.
+
+## The repository
+
+Name the audited repository on every darnit call, the audit included: `owner` and `repo`, plus `host` when it is not github.com. darnit applies the person's confirmed answers, stored PASS candidates, and trust only to a named repository, and never takes the name from the checkout's remotes. Before the first call, ask the person to confirm which repository this is, offering the checkout's `origin` remote as the suggestion, and use their answer for every call.
 
 ## Workflow
 
