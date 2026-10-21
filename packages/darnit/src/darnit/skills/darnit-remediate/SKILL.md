@@ -4,7 +4,7 @@ description: Apply automated fixes for failing compliance controls. Shows a plan
 compatibility: Requires darnit MCP server running (darnit serve)
 metadata:
   author: kusari-oss
-  version: "2.1"
+  version: "2.2"
 ---
 
 # Compliance Remediation
@@ -15,7 +15,7 @@ Show a dry-run plan of fixes for failing controls, get confirmation, then apply 
 
 ### 1. Show dry-run plan
 
-Call `remediate_audit_findings` with `dry_run: true` and any profile mentioned.
+Call `remediate_audit_findings` with `dry_run: true`, `owner` and `repo` naming the audited repository, and any profile mentioned.
 The tool internally runs an audit (or uses cached results) — do NOT run a separate audit call.
 
 The response is a Markdown report followed by a fenced JSON block (the run record). Read the `plan` in the JSON block: each item has `file_changes`, `change_sets` (platform settings), `commands`, `previewable`, `requires_individual_approval`, and a `digest`; each change set has its own `digest`.
@@ -32,6 +32,7 @@ Ask the person which changes to apply. Ask about each platform change set and ea
 ### 2. Apply fixes (if confirmed)
 
 Call `remediate_audit_findings` with:
+- `owner` and `repo` naming the audited repository
 - `dry_run: false`
 - `approve: [...]`: only the digests (change-set digests and plan-item digests) the person approved, copied from the preview's JSON block
 - `branch_name: "fix/compliance"` (or `"fix/compliance-{profile}"` if a profile was specified)
@@ -97,10 +98,10 @@ Show: branch name, controls fixed, files changed, PR URL (if created), and remai
 - `enable_branch_protection` follows the same rules: it previews by default, never lowers existing settings, and applies only with `dry_run: false` and `approve` set to the change-set digest the person approved.
 - Register darnit's MCP server at user scope (`darnit install` does this by default); a repository-scoped `uv run darnit serve` runs the repository's own copy of darnit.
 - Only controls whose not-applicable claim is `honored` are skipped. Controls with a `pending` or `contradicted` claim are remediated like any other failing control. Do not confirm a pending claim to avoid a remediation; confirm one only when the operator explicitly tells you to.
-- If there are unresolved data questions, the remediation tool will block and tell you. Suggest running `/darnit-data` first.
+- If there are unresolved data questions, the remediation tool will block and tell you. Call `get_pending_data` with `owner`, `repo`, and `local_path` and follow the `procedure` in its result, then preview again.
 - The §3a verification-prompt-block files (today: `THREAT_MODEL.md` / `docs/threatmodel/SUMMARY.md`) are the ONE exception to §3b's "trust the template" stance. Always ask the user before doing a large triage pass on these — don't silently rewrite dozens of findings, and don't silently skip them either. The default "skip enhancement" rule from §3b is wrong for these files.
 
 ## Error handling
 
-If the tool returns a data warning, suggest running `/darnit-data` first.
+If the tool returns a data warning, call `get_pending_data` and follow the `procedure` in its result, then preview again.
 If branch creation fails, report the error — the tool aborts before applying any changes.
