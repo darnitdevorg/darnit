@@ -4547,8 +4547,8 @@ Supports filtering by:
 
 Output formats:
 - "markdown" (default): Human-readable report with remediation guidance
-- "json": Full JSON with all evidence and pass history (~164K for 62 controls)
-- "summary": Compact JSON with id/status/level/details only (~5-8K for 62 controls)
+- "json": Full JSON with all evidence and pass history (large; use get_judgment_requests for what a judgment needs)
+- "summary": Compact JSON with id/status/level/details, plus pending.kind on PENDING rows
 - "sarif": SARIF format for tool integration
 
 Examples:
