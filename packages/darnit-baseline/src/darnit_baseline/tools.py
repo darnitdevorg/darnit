@@ -914,6 +914,21 @@ def _origin_text(origin: dict | None) -> str:
     return f"{origin['kind']} ({origin['method']})" if origin.get("method") else origin["kind"]
 
 
+def _ask_user_header(key: str) -> str:
+    """Return a readable AskUserQuestion header no longer than 12 characters."""
+    label = key.removeprefix("has_").removeprefix("is_").replace("_", " ").title().strip()
+    if len(label) <= 12:
+        return label or "Question"
+
+    words: list[str] = []
+    for word in label.split():
+        candidate = " ".join([*words, word])
+        if len(candidate) > 12:
+            break
+        words.append(word)
+    return " ".join(words) or label[:12]
+
+
 def _build_context_question(req) -> dict:
     """A structured question for one pending context key (contract: context-confirmation-tools.md).
 
@@ -996,7 +1011,7 @@ def _build_ask_user_params(key: str, question_dict: dict, definition) -> dict | 
     input_type = question_dict.get("input_type")
     question_text = question_dict["prompt"]
 
-    header = key.removeprefix("has_").removeprefix("is_").replace("_", " ").title()[:12]
+    header = _ask_user_header(key)
 
     if input_type == "confirm":
         return {
@@ -1016,8 +1031,10 @@ def _build_ask_user_params(key: str, question_dict: dict, definition) -> dict | 
         return None
 
     if definition.type == "boolean":
+        if hint := question_dict.get("hint"):
+            question_text = f"{question_text} {hint}"
         options = [
-            {"label": "Yes", "description": definition.hint or "Yes, this applies"},
+            {"label": "Yes", "description": "Yes, this applies"},
             {"label": "No", "description": "No, this does not apply"},
         ]
     else:
