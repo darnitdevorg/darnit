@@ -22,10 +22,7 @@ from darnit.core.logging import get_logger
 logger = get_logger("config.discovery")
 
 
-def discover_files(
-    local_path: str,
-    file_locations: dict[str, list[str]] | None = None
-) -> dict[str, str]:
+def discover_files(local_path: str, file_locations: dict[str, list[str]] | None = None) -> dict[str, str]:
     """Discover existing files that map to .project.yaml references.
 
     Args:
@@ -39,17 +36,27 @@ def discover_files(
     if file_locations is None:
         return {}
 
+    from darnit.core.utils import resolve_case_exact_path
+
     discovered = {}
 
     for ref_path, patterns in file_locations.items():
         for pattern in patterns:
-            full_pattern = os.path.join(local_path, pattern)
-            matches = glob_module.glob(full_pattern)
-            if matches:
-                # Use first match, relative path
-                rel_path = os.path.relpath(matches[0], local_path)
-                discovered[ref_path] = rel_path
-                break
+            if "*" in pattern or "?" in pattern:
+                full_pattern = os.path.join(local_path, pattern)
+                matches = glob_module.glob(full_pattern)
+                exact_matches = [m for m in matches if resolve_case_exact_path(m, local_path)]
+                if exact_matches:
+                    # Use first match, relative path
+                    rel_path = os.path.relpath(exact_matches[0], local_path)
+                    discovered[ref_path] = rel_path
+                    break
+            else:
+                exact = resolve_case_exact_path(pattern, local_path)
+                if exact and os.path.exists(exact):
+                    rel_path = os.path.relpath(exact, local_path)
+                    discovered[ref_path] = rel_path
+                    break
 
     return discovered
 
@@ -70,7 +77,7 @@ def discover_ci_config(local_path: str) -> CIConfig | None:
 
         workflows = []
         for f in os.listdir(github_workflows):
-            if f.endswith(('.yml', '.yaml')):
+            if f.endswith((".yml", ".yaml")):
                 workflows.append(f".github/workflows/{f}")
 
         config.workflows = workflows
@@ -79,21 +86,21 @@ def discover_ci_config(local_path: str) -> CIConfig | None:
         for workflow_path in workflows:
             full_path = os.path.join(local_path, workflow_path)
             try:
-                with open(full_path, encoding='utf-8') as f:
+                with open(full_path, encoding="utf-8") as f:
                     content = f.read()
 
                 # Detect testing
-                if re.search(r'(npm test|pytest|cargo test|go test|jest|mocha)', content, re.IGNORECASE):
+                if re.search(r"(npm test|pytest|cargo test|go test|jest|mocha)", content, re.IGNORECASE):
                     if workflow_path not in config.testing:
                         config.testing.append(workflow_path)
 
                 # Detect code quality
-                if re.search(r'(eslint|flake8|pylint|rubocop|clippy|golangci)', content, re.IGNORECASE):
+                if re.search(r"(eslint|flake8|pylint|rubocop|clippy|golangci)", content, re.IGNORECASE):
                     if workflow_path not in config.code_quality:
                         config.code_quality.append(workflow_path)
 
                 # Detect security scanning
-                if re.search(r'(codeql|snyk|trivy|grype|bandit|safety)', content, re.IGNORECASE):
+                if re.search(r"(codeql|snyk|trivy|grype|bandit|safety)", content, re.IGNORECASE):
                     if workflow_path not in config.security_scanning:
                         config.security_scanning.append(workflow_path)
 
@@ -151,9 +158,10 @@ def discover_project_name(local_path: str) -> str | None:
     # Try pyproject.toml
     try:
         import tomllib
+
         pyproj_path = os.path.join(local_path, "pyproject.toml")
         if os.path.exists(pyproj_path):
-            with open(pyproj_path, 'rb') as f:
+            with open(pyproj_path, "rb") as f:
                 data = tomllib.load(f)
                 if "project" in data and "name" in data["project"]:
                     return data["project"]["name"]
@@ -163,9 +171,10 @@ def discover_project_name(local_path: str) -> str | None:
     # Try Cargo.toml
     try:
         import tomllib
+
         cargo_path = os.path.join(local_path, "Cargo.toml")
         if os.path.exists(cargo_path):
-            with open(cargo_path, 'rb') as f:
+            with open(cargo_path, "rb") as f:
                 data = tomllib.load(f)
                 if "package" in data and "name" in data["package"]:
                     return data["package"]["name"]
@@ -230,10 +239,7 @@ def _set_config_path(config: ProjectConfig, section: str, field: str, path: str)
 
 
 def sync_discovered_to_config(
-    config: ProjectConfig,
-    local_path: str,
-    file_locations: dict[str, list[str]] | None = None,
-    fix: bool = False
+    config: ProjectConfig, local_path: str, file_locations: dict[str, list[str]] | None = None, fix: bool = False
 ) -> list[str]:
     """Synchronize discovered files with project configuration.
 
@@ -305,7 +311,7 @@ def discover_and_create_config(
     local_path: str,
     file_locations: dict[str, list[str]] | None = None,
     name: str | None = None,
-    project_type: str = "software"
+    project_type: str = "software",
 ) -> ProjectConfig:
     """Discover files and create a new config with discovered values.
 

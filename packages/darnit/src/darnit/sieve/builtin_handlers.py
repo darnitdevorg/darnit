@@ -28,6 +28,7 @@ import subprocess
 from typing import Any
 
 from darnit.core.error_class import ErrorClass
+from darnit.core.utils import _dir_entries, get_file_identity, resolve_case_exact_path
 
 from .handler_registry import (
     HandlerContext,
@@ -146,9 +147,7 @@ def _excerpt(text: str) -> str:
     return line.encode("ascii", "replace").decode("ascii")
 
 
-def _log_environmental_failure(
-    control_id: str, handler: str, error_class: ErrorClass, message: str
-) -> None:
+def _log_environmental_failure(control_id: str, handler: str, error_class: ErrorClass, message: str) -> None:
     """Emit the contract-section-7 WARN line for an environmental failure.
 
     WARN rather than DEBUG so a degraded audit is visible at the default log
@@ -255,8 +254,9 @@ def file_exists_handler(config: dict[str, Any], context: HandlerContext) -> Hand
             # sorted() so "first match wins" is stable across filesystems.
             # Determinism Tier 1 (#418).
             matches = sorted(glob.glob(os.path.join(context.local_path, pattern)))
-            if matches:
-                found = matches[0]
+            exact_matches = [m for m in matches if resolve_case_exact_path(m, context.local_path)]
+            if exact_matches:
+                found = exact_matches[0]
                 rel_path = os.path.relpath(found, context.local_path)
                 return HandlerResult(
                     status=HandlerResultStatus.PASS,
@@ -271,8 +271,8 @@ def file_exists_handler(config: dict[str, Any], context: HandlerContext) -> Hand
             # downstream consumers (and audit reviewers) can see where it
             # actually lives.
             for dirpath, _depth in _walk_depth_limited(context.local_path, max_depth):
-                candidate = os.path.join(dirpath, pattern)
-                if os.path.exists(candidate):
+                if pattern in _dir_entries(dirpath):
+                    candidate = os.path.join(dirpath, pattern)
                     rel_path = os.path.relpath(candidate, context.local_path)
                     return HandlerResult(
                         status=HandlerResultStatus.PASS,
@@ -286,13 +286,14 @@ def file_exists_handler(config: dict[str, Any], context: HandlerContext) -> Hand
                         },
                     )
         else:
-            path = os.path.join(context.local_path, pattern)
-            if os.path.exists(path):
+            path = resolve_case_exact_path(pattern, context.local_path)
+            if path and os.path.exists(path):
+                rel_path = os.path.relpath(path, context.local_path)
                 return HandlerResult(
                     status=HandlerResultStatus.PASS,
-                    message=f"Required file found: {pattern}",
+                    message=f"Required file found: {rel_path}",
                     confidence=1.0,
-                    evidence={"found_file": path, "relative_path": pattern, "files_checked": files},
+                    evidence={"found_file": path, "relative_path": rel_path, "files_checked": files},
                 )
 
     return HandlerResult(
@@ -464,6 +465,7 @@ def _exec_preview(config: dict[str, Any], context: HandlerContext) -> HandlerRes
             message='Cannot be previewed exactly: exec needs effects = "working_tree" and offline = true',
             evidence={"command": command, "previewable": False},
         )
+
     def leaving(escaping: list[str]) -> HandlerResult:
         return HandlerResult(
             status=HandlerResultStatus.ERROR,
@@ -745,26 +747,35 @@ def _regex_exclude_evidence(
     import glob as globmod
 
     found: list[str] = []
+    seen_ids: set[tuple[int, int] | str] = set()
+
+    def _add_found(p: str) -> None:
+        fid = get_file_identity(p)
+        if fid not in seen_ids:
+            seen_ids.add(fid)
+            found.append(p)
+
     for pattern in exclude_globs:
         if "*" in pattern or "?" in pattern:
             matches = globmod.glob(
                 os.path.join(context.local_path, pattern),
                 recursive=True,
             )
-            found.extend(matches)
+            for m in matches:
+                if resolve_case_exact_path(m, context.local_path):
+                    _add_found(m)
         elif max_depth > 0:
             # Depth-limited walk for plain filenames (no wildcards).
             # dirs.clear() at the boundary depth means directory entries AT
             # that depth are no longer descended into; only files at each
             # visited dir are matched here.
             for dirpath, _d in _walk_depth_limited(context.local_path, max_depth):
-                candidate = os.path.join(dirpath, pattern)
-                if os.path.exists(candidate):
-                    found.append(candidate)
+                if pattern in _dir_entries(dirpath):
+                    _add_found(os.path.join(dirpath, pattern))
         else:
-            candidate = os.path.join(context.local_path, pattern)
-            if os.path.exists(candidate):
-                found.append(candidate)
+            cand = resolve_case_exact_path(pattern, context.local_path)
+            if cand and os.path.exists(cand):
+                _add_found(cand)
 
     rel_paths = [os.path.relpath(f, context.local_path) for f in found[:10]]
     evidence = {
@@ -811,6 +822,17 @@ def _resolve_regex_files(
     files_list = config.get("files", [])
     if files_list:
         resolved: list[str] = []
+        seen_file_ids: set[tuple[int, int] | str] = set()
+
+        def _add_resolved(full_path: str) -> None:
+            if not os.path.isfile(full_path):
+                return
+            file_id = get_file_identity(full_path)
+            if file_id in seen_file_ids:
+                return
+            seen_file_ids.add(file_id)
+            resolved.append(full_path)
+
         for file_pattern in files_list:
             if "*" in file_pattern or "?" in file_pattern:
                 # Glob patterns: always use glob.glob; max_depth does not apply.
@@ -822,19 +844,21 @@ def _resolve_regex_files(
                         recursive=True,
                     )
                 )
-                resolved.extend(m for m in matches if os.path.isfile(m))
+                for m in matches:
+                    if resolve_case_exact_path(m, context.local_path):
+                        _add_resolved(m)
             elif max_depth > 0:
                 # Depth-limited walk for plain filenames (no wildcards).
                 # Only files are collected; dirs.clear() at the depth boundary
                 # prevents descending further without skipping files at that depth.
                 for dirpath, _d in _walk_depth_limited(context.local_path, max_depth):
-                    candidate = os.path.join(dirpath, file_pattern)
-                    if os.path.isfile(candidate):
-                        resolved.append(candidate)
+                    if file_pattern in _dir_entries(dirpath):
+                        candidate = os.path.join(dirpath, file_pattern)
+                        _add_resolved(candidate)
             else:
-                full = os.path.join(context.local_path, file_pattern)
-                if os.path.isfile(full):
-                    resolved.append(full)
+                full = resolve_case_exact_path(file_pattern, context.local_path)
+                if full:
+                    _add_resolved(full)
         return resolved if resolved else None
 
     # Legacy singular format: file = "README.md" or file = "$FOUND_FILE"
@@ -847,11 +871,9 @@ def _resolve_regex_files(
         if not file_path:
             return None
 
-    if not os.path.isabs(file_path):
-        file_path = os.path.join(context.local_path, file_path)
-
-    if os.path.isfile(file_path):
-        return [file_path]
+    full_cand = resolve_case_exact_path(file_path, context.local_path)
+    if full_cand and os.path.isfile(full_cand):
+        return [full_cand]
     return None
 
 
@@ -1032,11 +1054,18 @@ def llm_eval_handler(config: dict[str, Any], context: HandlerContext) -> Handler
     # Literal paths are opened directly; missing files are silently skipped.
     files_to_include = config.get("files_to_include", [])
     file_contents: dict[str, str] = {}
+    seen_file_ids: set[tuple[int, int] | str] = set()
 
     def _read(resolved: str) -> None:
         if not resolved or len(file_contents) >= 5:
             return
-        full = os.path.join(context.local_path, resolved) if not os.path.isabs(resolved) else resolved
+        full = resolve_case_exact_path(resolved, context.local_path)
+        if not full or not os.path.isfile(full):
+            return
+        file_id = get_file_identity(full)
+        if file_id in seen_file_ids:
+            return
+        seen_file_ids.add(file_id)
         try:
             with open(full, encoding="utf-8", errors="ignore") as fh:
                 rel = os.path.relpath(full, context.local_path)
@@ -1113,12 +1142,19 @@ def llm_extract_handler(config: dict[str, Any], context: HandlerContext) -> Hand
     # Resolve files to include (bounded).
     globs = config.get("files", [])
     file_contents: dict[str, str] = {}
+    seen_file_ids: set[tuple[int, int] | str] = set()
     for pattern in globs[:5]:  # cap breadth
         matches = globmod.glob(
             os.path.join(context.local_path, pattern),
             recursive=True,
         )
         for m in matches[:5]:  # cap depth per glob
+            if not resolve_case_exact_path(m, context.local_path):
+                continue
+            file_id = get_file_identity(m)
+            if file_id in seen_file_ids:
+                continue
+            seen_file_ids.add(file_id)
             try:
                 with open(m, encoding="utf-8", errors="ignore") as fh:
                     rel = os.path.relpath(m, context.local_path)
@@ -1632,9 +1668,7 @@ def mcp_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResul
 
     if server_config is not None:
         trust_label = (
-            "sigstore-verified"
-            if getattr(server_config, "trusted_publisher", None)
-            else "operator-trusted-path"
+            "sigstore-verified" if getattr(server_config, "trusted_publisher", None) else "operator-trusted-path"
         )
     else:
         trust_label = "operator-trusted-path"
@@ -1645,9 +1679,7 @@ def mcp_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResul
 
     if error_info is not None:
         status, message, error_class = error_info
-        _log_environmental_failure(
-            context.control_id, f"mcp:{server_name}.{tool_name}", error_class, message
-        )
+        _log_environmental_failure(context.control_id, f"mcp:{server_name}.{tool_name}", error_class, message)
         invocation_record = {
             "server": server_name,
             "tool": tool_name,
@@ -1742,9 +1774,7 @@ def _substitute_mcp_args(args: dict[str, Any], context: HandlerContext) -> dict[
     return out
 
 
-def _eval_cel_over_result(
-    expr: str, raw_response: dict[str, Any]
-) -> tuple[bool, Any, str | None]:
+def _eval_cel_over_result(expr: str, raw_response: dict[str, Any]) -> tuple[bool, Any, str | None]:
     """Evaluate ``expr`` against ``{"result": raw_response}``.
 
     Returns ``(ok, value, error)``. ``ok=False`` means evaluation itself

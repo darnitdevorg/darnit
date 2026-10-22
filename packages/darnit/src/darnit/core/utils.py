@@ -1,5 +1,6 @@
 """Shared utility functions for the baseline MCP server."""
 
+import functools
 import glob as glob_module
 import json
 import os
@@ -15,8 +16,7 @@ from darnit.trust.identity import IdentitySource, RepositoryIdentity, canonical_
 logger = get_logger("utils")
 
 _GH_CLI_MISSING_MESSAGE = (
-    "GitHub CLI (gh) not found. Install it from https://cli.github.com/ "
-    "and run 'gh auth login' to authenticate."
+    "GitHub CLI (gh) not found. Install it from https://cli.github.com/ and run 'gh auth login' to authenticate."
 )
 
 # Feature 032: `go-gh` emits HTTP-error lines on stderr with the prefix
@@ -167,9 +167,7 @@ def gh_api_error_class(status: int, error: str) -> ErrorClass:
     return "unavailable"
 
 
-def gh_api_with_status(
-    endpoint: str, *, paginate: bool = False
-) -> tuple[dict[str, Any] | list[Any] | None, int, str]:
+def gh_api_with_status(endpoint: str, *, paginate: bool = False) -> tuple[dict[str, Any] | list[Any] | None, int, str]:
     """Execute a GitHub API call via ``gh api`` and return ``(body, status, error)``.
 
     Contract (feature 032):
@@ -305,9 +303,7 @@ def gh_api(endpoint: str) -> dict[str, Any]:
     if status == 200 and isinstance(body, dict):
         return body
     if status == 200:
-        raise RuntimeError(
-            f"gh api {endpoint}: expected dict body but got {type(body).__name__}"
-        )
+        raise RuntimeError(f"gh api {endpoint}: expected dict body but got {type(body).__name__}")
     raise RuntimeError(f"gh api failed: {error or 'status ' + str(status)}")
 
 
@@ -324,9 +320,7 @@ def gh_api_safe(endpoint: str) -> dict[str, Any] | None:
 
 
 def validate_local_path(
-    local_path: str,
-    expected_owner: str | None = None,
-    expected_repo: str | None = None
+    local_path: str, expected_owner: str | None = None, expected_repo: str | None = None
 ) -> tuple[str, str | None]:
     """
     Validate and resolve the local_path.
@@ -367,15 +361,17 @@ def validate_local_path(
         if dir_name.lower() != expected_repo.lower():
             try:
                 result = subprocess.run(
-                    ["git", "-C", abs_path, "remote", "get-url", "origin"],
-                    capture_output=True, text=True, timeout=5
+                    ["git", "-C", abs_path, "remote", "get-url", "origin"], capture_output=True, text=True, timeout=5
                 )
                 if result.returncode == 0:
                     remote_url = result.stdout.strip()
-                    match = re.search(r'[:/]([^/:]+)/([^/]+?)(?:\.git)?$', remote_url)
+                    match = re.search(r"[:/]([^/:]+)/([^/]+?)(?:\.git)?$", remote_url)
                     if match:
                         detected_owner, detected_repo = match.groups()
-                        if detected_owner.lower() != expected_owner.lower() or detected_repo.lower() != expected_repo.lower():
+                        if (
+                            detected_owner.lower() != expected_owner.lower()
+                            or detected_repo.lower() != expected_repo.lower()
+                        ):
                             return abs_path, (
                                 f"Path mismatch detected!\n\n"
                                 f"You requested audit for: {expected_owner}/{expected_repo}\n"
@@ -384,7 +380,7 @@ def validate_local_path(
                                 f"When using MCP tools, '.' resolves to the MCP server's directory, "
                                 f"NOT your current working directory.\n\n"
                                 f"Solution: Use an absolute path:\n"
-                                f"  local_path=\"/path/to/{expected_repo}\""
+                                f'  local_path="/path/to/{expected_repo}"'
                             )
                 else:
                     return abs_path, (
@@ -395,7 +391,7 @@ def validate_local_path(
                         f"When using MCP tools, '.' resolves to the MCP server's directory, "
                         f"NOT your current working directory.\n\n"
                         f"Solution: Use an absolute path:\n"
-                        f"  local_path=\"/path/to/{expected_repo}\""
+                        f'  local_path="/path/to/{expected_repo}"'
                     )
             except subprocess.TimeoutExpired:
                 logger.debug(f"Git command timed out checking remote for {abs_path}")
@@ -407,7 +403,7 @@ def validate_local_path(
                     f"When using MCP tools, '.' resolves to the MCP server's directory, "
                     f"NOT your current working directory.\n\n"
                     f"Solution: Use an absolute path:\n"
-                    f"  local_path=\"/path/to/{expected_repo}\""
+                    f'  local_path="/path/to/{expected_repo}"'
                 )
             except (OSError, subprocess.SubprocessError) as e:
                 logger.debug(f"Git command failed for {abs_path}: {type(e).__name__}")
@@ -419,7 +415,7 @@ def validate_local_path(
                     f"When using MCP tools, '.' resolves to the MCP server's directory, "
                     f"NOT your current working directory.\n\n"
                     f"Solution: Use an absolute path:\n"
-                    f"  local_path=\"/path/to/{expected_repo}\""
+                    f'  local_path="/path/to/{expected_repo}"'
                 )
 
     return abs_path, None
@@ -450,9 +446,7 @@ def _parse_github_url(url: str) -> tuple[str, str] | None:
     return None
 
 
-def detect_checkout_identity(
-    local_path: str, case_insensitive_hosts: Iterable[str] = ()
-) -> RepositoryIdentity | None:
+def detect_checkout_identity(local_path: str, case_insensitive_hosts: Iterable[str] = ()) -> RepositoryIdentity | None:
     """Canonical identity of the checkout's ``origin`` remote, as a hint only.
 
     Remotes are part of the audited checkout, so this identity is never
@@ -566,8 +560,12 @@ def _gh_enrich(owner: str, repo: str, cwd: str) -> dict[str, Any]:
     try:
         result = subprocess.run(
             [
-                "gh", "repo", "view", f"{owner}/{repo}",
-                "--json", "url,isPrivate,defaultBranchRef",
+                "gh",
+                "repo",
+                "view",
+                f"{owner}/{repo}",
+                "--json",
+                "url,isPrivate,defaultBranchRef",
             ],
             capture_output=True,
             text=True,
@@ -585,8 +583,7 @@ def _gh_enrich(owner: str, repo: str, cwd: str) -> dict[str, Any]:
     except FileNotFoundError:
         logger.debug(_GH_CLI_MISSING_MESSAGE)
         return {}
-    except (subprocess.TimeoutExpired, json.JSONDecodeError,
-            OSError, subprocess.SubprocessError) as e:
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError, subprocess.SubprocessError) as e:
         logger.debug(f"gh enrichment failed for {owner}/{repo}: {type(e).__name__}: {e}")
         return {}
 
@@ -629,7 +626,7 @@ def file_contains(local_path: str, filename_patterns: list[str], content_pattern
     for pattern in filename_patterns:
         for filepath in glob_module.glob(os.path.join(local_path, pattern), recursive=True):
             try:
-                with open(filepath, encoding='utf-8', errors='ignore') as f:
+                with open(filepath, encoding="utf-8", errors="ignore") as f:
                     if re.search(content_pattern, f.read(), re.IGNORECASE):
                         return True
             except OSError as e:
@@ -643,7 +640,7 @@ def read_file(local_path: str, filename: str) -> str | None:
     filepath = os.path.join(local_path, filename)
     if os.path.exists(filepath):
         try:
-            with open(filepath, encoding='utf-8', errors='ignore') as f:
+            with open(filepath, encoding="utf-8", errors="ignore") as f:
                 return f.read()
         except OSError as e:
             logger.debug(f"Could not read {filepath}: {type(e).__name__}")
@@ -660,10 +657,7 @@ def get_git_commit(local_path: str) -> str | None:
     """Get the current git commit SHA."""
     try:
         result = subprocess.run(
-            ["git", "-C", local_path, "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
-            timeout=10
+            ["git", "-C", local_path, "rev-parse", "HEAD"], capture_output=True, text=True, timeout=10
         )
         if result.returncode == 0:
             return result.stdout.strip()
@@ -678,10 +672,7 @@ def get_git_ref(local_path: str) -> str | None:
     """Get the current git branch/ref."""
     try:
         result = subprocess.run(
-            ["git", "-C", local_path, "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True,
-            text=True,
-            timeout=10
+            ["git", "-C", local_path, "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True, timeout=10
         )
         if result.returncode == 0:
             ref = result.stdout.strip()
@@ -689,10 +680,7 @@ def get_git_ref(local_path: str) -> str | None:
                 return ref
         # Try to get tag
         result = subprocess.run(
-            ["git", "-C", local_path, "describe", "--tags", "--exact-match"],
-            capture_output=True,
-            text=True,
-            timeout=10
+            ["git", "-C", local_path, "describe", "--tags", "--exact-match"], capture_output=True, text=True, timeout=10
         )
         if result.returncode == 0:
             return result.stdout.strip()
@@ -701,3 +689,102 @@ def get_git_ref(local_path: str) -> str | None:
     except (FileNotFoundError, OSError, subprocess.SubprocessError) as e:
         logger.debug(f"git ref command failed: {type(e).__name__}")
     return None
+
+
+@functools.lru_cache(maxsize=2048)
+def _dir_entries_for_mtime(dir_path: str, mtime_ns: int) -> frozenset[str]:
+    try:
+        return frozenset(os.listdir(dir_path))
+    except OSError:
+        return frozenset()
+
+
+def _dir_entries(dir_path: str) -> frozenset[str]:
+    """Return directory entries as a frozenset, or empty frozenset on OSError.
+
+    Keys by directory path and st_mtime_ns so modifications (e.g. remediation file creation)
+    automatically invalidate the cache without requiring manual clearing.
+    """
+    try:
+        mtime_ns = os.stat(dir_path).st_mtime_ns
+    except OSError:
+        return frozenset()
+    return _dir_entries_for_mtime(dir_path, mtime_ns)
+
+
+def clear_dir_entries_cache() -> None:
+    """Clear cached directory listings (primarily for test environments)."""
+    _dir_entries_for_mtime.cache_clear()
+
+
+def resolve_case_exact_path(path: str, root: str | None = None) -> str | None:
+    """Verify that a path exists with case-exact directory entries.
+
+    On case-insensitive filesystems (such as macOS APFS or Windows NTFS),
+    `os.path.exists` or `open()` can succeed when probing a lowercase
+    path (e.g. `readme.md`) even if the repository only contains `README.md`.
+    This function traverses each path component and verifies against the
+    actual directory entries (`os.listdir`), ensuring exact-case matching
+    identical to case-sensitive filesystems (Linux).
+
+    Args:
+        path: File path (relative or absolute).
+        root: Optional repository root to anchor relative paths or bounds.
+
+    Returns:
+        The normalized absolute path if all components exist with exact case,
+        or None if any component is missing or mismatched in case.
+    """
+    if not path:
+        return None
+
+    if root is not None and not os.path.isabs(path):
+        full_path = os.path.normpath(os.path.join(os.path.abspath(root), path))
+        base = os.path.abspath(root)
+    else:
+        full_path = os.path.normpath(os.path.abspath(path))
+        if root is not None:
+            base_cand = os.path.abspath(root)
+            try:
+                if os.path.commonpath([base_cand, full_path]) == base_cand:
+                    base = base_cand
+                else:
+                    base = os.path.abspath(os.sep)
+            except ValueError:
+                base = os.path.abspath(os.sep)
+        else:
+            base = os.path.abspath(os.sep)
+
+    try:
+        rel = os.path.relpath(full_path, base)
+    except ValueError:
+        return None
+
+    if rel == ".":
+        return base
+    if rel.startswith(".."):
+        return None
+
+    curr = base
+    for part in rel.split(os.sep):
+        if not part or part == ".":
+            continue
+        if part not in _dir_entries(curr):
+            return None
+        curr = os.path.join(curr, part)
+
+    return curr
+
+
+def get_file_identity(full_path: str) -> tuple[int, int] | str:
+    """Return a unique file identity (st_dev, st_ino) or realpath fallback.
+
+    Used to deduplicate candidate files (e.g. across case-aliases, symlinks,
+    or multiple probes pointing to the same underlying file) before reading
+    or reporting evidence.
+    """
+    try:
+        st = os.stat(full_path)
+        return (st.st_dev, st.st_ino)
+    except OSError:
+        return os.path.realpath(full_path)

@@ -4215,7 +4215,7 @@ help_md = """Create architecture/design documentation.
 
 [controls."OSPS-SA-01.01".locator]
 project_path = "documentation.design"
-discover = ["ARCHITECTURE.md", "docs/architecture.md", "docs/design.md", "DESIGN.md"]
+discover = ["ARCHITECTURE.md", "docs/ARCHITECTURE.md", "docs/architecture.md", "docs/design.md", "DESIGN.md"]
 kind = "file"
 
 [controls."OSPS-SA-01.01".locator.llm_hints]
@@ -4227,7 +4227,7 @@ look_for_urls = true
 handler = "pattern"
 # rst variants added; ARCHITECTURE/DESIGN commonly live as .rst
 # in Sphinx-based Python projects.
-files = ["ARCHITECTURE.md", "ARCHITECTURE.rst", "docs/architecture.md", "docs/architecture.rst", "docs/design.md", "docs/design.rst", "DESIGN.md", "DESIGN.rst", "README.md", "README.rst"]
+files = ["ARCHITECTURE.md", "ARCHITECTURE.rst", "docs/ARCHITECTURE.md", "docs/ARCHITECTURE.rst", "docs/architecture.md", "docs/architecture.rst", "docs/design.md", "docs/design.rst", "DESIGN.md", "DESIGN.rst", "README.md", "README.rst"]
 pass_if_any = true
 
 [controls."OSPS-SA-01.01".passes.pattern.patterns]
@@ -4244,7 +4244,7 @@ prompt = """Evaluate whether this design/architecture document describes real sy
 3. Does it explain data flows or interactions between components?
 A document with only TBD/TODO placeholders or generic headings without content MUST fail."""
 # Issue #402: mirror the sibling pattern's file list.
-files_to_include = ["ARCHITECTURE.md", "docs/architecture.md", "docs/design.md", "DESIGN.md", "README.md"]
+files_to_include = ["ARCHITECTURE.md", "docs/ARCHITECTURE.md", "docs/architecture.md", "DESIGN.md", "README.md"]
 confidence_threshold = 0.7
 analysis_hints = [
     "Look for named components with descriptions of what they do",
@@ -4290,7 +4290,7 @@ help_md = """Document external APIs and interfaces.
 
 [controls."OSPS-SA-02.01".locator]
 project_path = "documentation.api"
-discover = ["API.md", "docs/api.md", "docs/api/", "openapi.yaml", "openapi.json", "swagger.yaml", "swagger.json"]
+discover = ["API.md", "docs/API.md", "docs/api.md", "docs/api/", "openapi.yaml", "openapi.json", "swagger.yaml", "swagger.json"]
 kind = "file"
 
 [controls."OSPS-SA-02.01".locator.llm_hints]
@@ -4303,7 +4303,7 @@ look_for_urls = true
 handler = "pattern"
 # README.rst added for Sphinx-based projects; API.rst / USAGE.rst
 # variants common in the same ecosystem.
-files = ["API.md", "API.rst", "docs/api.md", "docs/api.rst", "README.md", "README.rst", "docs/README.md", "USAGE.md", "USAGE.rst", "docs/getting-started.md", "openapi.yaml", "openapi.json", "swagger.yaml", "swagger.json"]
+files = ["API.md", "API.rst", "docs/API.md", "docs/API.rst", "docs/api.md", "docs/api.rst", "README.md", "README.rst", "docs/README.md", "USAGE.md", "USAGE.rst", "docs/getting-started.md", "openapi.yaml", "openapi.json", "swagger.yaml", "swagger.json"]
 pass_if_any = true
 
 [controls."OSPS-SA-02.01".passes.pattern.patterns]
@@ -4320,7 +4320,7 @@ prompt = """Evaluate whether this API/interface documentation describes real API
 3. Is this substantive documentation, not just a heading with no content?
 A document with only headings or TODO placeholders MUST fail."""
 # Issue #402: mirror the sibling pattern's file list (pick top 5 of 10).
-files_to_include = ["API.md", "docs/api.md", "README.md", "openapi.yaml", "swagger.json"]
+files_to_include = ["API.md", "docs/API.md", "docs/api.md", "README.md", "openapi.yaml"]
 confidence_threshold = 0.7
 analysis_hints = [
     "Look for documented endpoints, methods, or CLI commands",
