@@ -1273,6 +1273,7 @@ def format_results_markdown(
     remediation_map: dict[str, Any] | None = None,
     framework_name: str | None = None,
     audit_metadata: dict[str, Any] | None = None,
+    target: str | None = None,
 ) -> str:
     """Format audit results as Markdown.
 
@@ -1284,6 +1285,8 @@ def format_results_markdown(
         compliance: Level compliance
         level: Maximum level checked
         local_path: Path to the repository (for pending context)
+        target: Repository identity the caller named, so pending context
+            reads operator-side confirmations for an untrusted repository
         report_title: Title for the report H1 heading.
         framework_name: Framework name used to resolve the framework TOML
             for per-control help text on failures.
@@ -1609,7 +1612,7 @@ def format_results_markdown(
         lines.append("")
 
     # Add "Next Steps" section with ordered agent directives
-    next_steps_lines = _get_next_steps_section(local_path, summary)
+    next_steps_lines = _get_next_steps_section(local_path, summary, target=target)
     if next_steps_lines:
         lines.extend(next_steps_lines)
 
@@ -1735,6 +1738,8 @@ def _format_assertion_markdown(assertion: dict[str, Any]) -> list[str]:
 def _get_next_steps_section(
     local_path: str | None,
     summary: dict[str, int],
+    *,
+    target: str | None = None,
 ) -> list[str]:
     """Get the "Next Steps" section with ordered agent directives.
 
@@ -1748,6 +1753,8 @@ def _get_next_steps_section(
     Args:
         local_path: Path to the repository
         summary: Status summary dict with FAIL, WARN counts etc.
+        target: Repository identity the caller named; without it, answers
+            confirmed operator-side for an untrusted repository are not seen
 
     Returns:
         List of markdown lines, or empty list when no steps apply
@@ -1762,7 +1769,7 @@ def _get_next_steps_section(
         try:
             from darnit.config.context_storage import get_pending_context
 
-            pending_context = get_pending_context(local_path)
+            pending_context = get_pending_context(local_path, target=target)
         except ImportError:
             logger.debug("Context storage not available for next steps section")
         except Exception as e:
