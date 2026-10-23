@@ -4244,7 +4244,7 @@ prompt = """Evaluate whether this design/architecture document describes real sy
 3. Does it explain data flows or interactions between components?
 A document with only TBD/TODO placeholders or generic headings without content MUST fail."""
 # Issue #402: mirror the sibling pattern's file list.
-files_to_include = ["ARCHITECTURE.md", "docs/ARCHITECTURE.md", "docs/architecture.md", "DESIGN.md", "README.md"]
+files_to_include = ["ARCHITECTURE.md", "docs/architecture.md", "docs/design.md", "DESIGN.md", "README.md"]
 confidence_threshold = 0.7
 analysis_hints = [
     "Look for named components with descriptions of what they do",
@@ -4320,7 +4320,7 @@ prompt = """Evaluate whether this API/interface documentation describes real API
 3. Is this substantive documentation, not just a heading with no content?
 A document with only headings or TODO placeholders MUST fail."""
 # Issue #402: mirror the sibling pattern's file list (pick top 5 of 10).
-files_to_include = ["API.md", "docs/API.md", "docs/api.md", "README.md", "openapi.yaml"]
+files_to_include = ["API.md", "docs/api.md", "README.md", "openapi.yaml", "swagger.json"]
 confidence_threshold = 0.7
 analysis_hints = [
     "Look for documented endpoints, methods, or CLI commands",

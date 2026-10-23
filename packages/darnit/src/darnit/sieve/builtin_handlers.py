@@ -147,7 +147,9 @@ def _excerpt(text: str) -> str:
     return line.encode("ascii", "replace").decode("ascii")
 
 
-def _log_environmental_failure(control_id: str, handler: str, error_class: ErrorClass, message: str) -> None:
+def _log_environmental_failure(
+    control_id: str, handler: str, error_class: ErrorClass, message: str
+) -> None:
     """Emit the contract-section-7 WARN line for an environmental failure.
 
     WARN rather than DEBUG so a degraded audit is visible at the default log
@@ -465,7 +467,6 @@ def _exec_preview(config: dict[str, Any], context: HandlerContext) -> HandlerRes
             message='Cannot be previewed exactly: exec needs effects = "working_tree" and offline = true',
             evidence={"command": command, "previewable": False},
         )
-
     def leaving(escaping: list[str]) -> HandlerResult:
         return HandlerResult(
             status=HandlerResultStatus.ERROR,
@@ -1668,7 +1669,9 @@ def mcp_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResul
 
     if server_config is not None:
         trust_label = (
-            "sigstore-verified" if getattr(server_config, "trusted_publisher", None) else "operator-trusted-path"
+            "sigstore-verified"
+            if getattr(server_config, "trusted_publisher", None)
+            else "operator-trusted-path"
         )
     else:
         trust_label = "operator-trusted-path"
@@ -1679,7 +1682,9 @@ def mcp_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResul
 
     if error_info is not None:
         status, message, error_class = error_info
-        _log_environmental_failure(context.control_id, f"mcp:{server_name}.{tool_name}", error_class, message)
+        _log_environmental_failure(
+            context.control_id, f"mcp:{server_name}.{tool_name}", error_class, message
+        )
         invocation_record = {
             "server": server_name,
             "tool": tool_name,
@@ -1774,7 +1779,9 @@ def _substitute_mcp_args(args: dict[str, Any], context: HandlerContext) -> dict[
     return out
 
 
-def _eval_cel_over_result(expr: str, raw_response: dict[str, Any]) -> tuple[bool, Any, str | None]:
+def _eval_cel_over_result(
+    expr: str, raw_response: dict[str, Any]
+) -> tuple[bool, Any, str | None]:
     """Evaluate ``expr`` against ``{"result": raw_response}``.
 
     Returns ``(ok, value, error)``. ``ok=False`` means evaluation itself
