@@ -1,0 +1,6 @@
+# Hard-tier mypy errors (attr-defined, call-arg, name-defined) that
+# scripts/mypy_gate.py tolerates for now. These name a symbol that does not
+# exist and fail at runtime, so they are never baselined. Each entry needs a
+# "# reason" line directly above it naming the issue or PR that removes it.
+# The gate fails when an entry goes stale. This list must shrink to zero; do
+# not add to it.

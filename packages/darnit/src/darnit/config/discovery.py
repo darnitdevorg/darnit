@@ -69,9 +69,9 @@ def discover_ci_config(local_path: str) -> CIConfig | None:
         config = CIConfig(provider="github")
 
         workflows = []
-        for f in os.listdir(github_workflows):
-            if f.endswith(('.yml', '.yaml')):
-                workflows.append(f".github/workflows/{f}")
+        for name in os.listdir(github_workflows):
+            if name.endswith(('.yml', '.yaml')):
+                workflows.append(f".github/workflows/{name}")
 
         config.workflows = workflows
 
