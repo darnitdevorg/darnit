@@ -426,7 +426,6 @@ env = { "TOOL_VERBOSE" = "true" }
 | `command` | `list[str]` | Command and arguments (supports `$PATH`, `$OWNER`, `$REPO`, `$BRANCH`) |
 | `pass_exit_codes` | `list[int]` | Exit codes that indicate PASS (default: `[0]`) |
 | `fail_exit_codes` | `list[int]` | Exit codes that indicate FAIL |
-| `inconclusive_exit_codes` | `list[int]` | Exit codes that indicate inconclusive evidence |
 | `output_format` | `str` | `text` (default) or `json`; with `json`, stdout is parsed into `output.json` |
 | `expr` | `str` | CEL expression over `output` and `project` (section 3.7) |
 | `expr_decides` | `bool` | Common step field: on a handler PASS, `expr` alone decides, true PASS and false FAIL (section 3.7) |
@@ -443,7 +442,7 @@ These are the step type's declared `settings` (section 3.0.3); any other key fai
 
 **Broken measurements**: a command whose binary is not installed is ERROR, class `missing_tool`; a timeout is ERROR, class `timeout`. Neither is FAIL.
 
-**Undeclared exit codes**: an exit code in neither `pass_exit_codes`, `fail_exit_codes`, nor `inconclusive_exit_codes` concludes nothing; the step is evidence only and carries a class taken from the command's exit code and stderr, first match wins (#562):
+**Undeclared exit codes**: an exit code in neither `pass_exit_codes` nor `fail_exit_codes` concludes nothing; the step is evidence only and carries a class taken from the command's exit code and stderr, first match wins (#562):
 
 | Evidence | Class |
 |----------|-------|

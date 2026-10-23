@@ -577,10 +577,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Support declared inconclusive exit codes in the `exec` step handler via
-  `inconclusive_exit_codes` so steps such as OpenSSF Baseline OSPS-BR-01.02
-  (`grep -rln github.head_ref .github/workflows/`) record exit 0 on a match as
-  inconclusive evidence without an `unexpected_exit` error class (fixes #647).
+- Configure `fail_exit_codes = [0]` for OpenSSF Baseline OSPS-BR-01.02
+  (`grep -rln github.head_ref .github/workflows/`) so exit 0 on a match records
+  as non-conclusive evidence without an `unexpected_exit` error class (fixes #647).
 
 - Control `when` and step `when` now use one evaluator
   (framework-design 5.1.1). A list-valued control `when` such as

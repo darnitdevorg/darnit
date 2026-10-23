@@ -237,34 +237,6 @@ class TestExecHandler:
         assert result.status == HandlerResultStatus.FAIL
         assert result.evidence["exit_code"] == 1
 
-    def test_inconclusive_on_explicit_inconclusive_exit_code(self, ctx):
-        result = exec_handler(
-            {
-                "command": ["sh", "-c", "echo 'found match'; exit 0"],
-                "pass_exit_codes": [1],
-                "inconclusive_exit_codes": [0],
-            },
-            ctx,
-        )
-        assert result.status == HandlerResultStatus.INCONCLUSIVE
-        assert result.error_class is None
-        assert result.evidence["exit_code"] == 0
-        assert "found match" in result.evidence["stdout"]
-        assert "Command produced evidence" in result.message
-
-    def test_undeclared_exit_code_still_sets_error_class(self, ctx):
-        result = exec_handler(
-            {
-                "command": ["sh", "-c", "exit 2"],
-                "pass_exit_codes": [1],
-                "inconclusive_exit_codes": [0],
-            },
-            ctx,
-        )
-        assert result.status == HandlerResultStatus.INCONCLUSIVE
-        assert result.error_class == "unexpected_exit"
-        assert result.evidence["exit_code"] == 2
-
     def test_inconclusive_on_unexpected_exit_code(self, ctx):
         result = exec_handler(
             {"command": ["sh", "-c", "exit 42"], "pass_exit_codes": [0], "fail_exit_codes": [1]},

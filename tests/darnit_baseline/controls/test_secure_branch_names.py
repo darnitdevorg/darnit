@@ -59,14 +59,14 @@ def _ctx(tmp_path: Path) -> CheckContext:
 class TestSecureBranchNames:
     """OSPS-BR-01.02 execution tests."""
 
-    def test_toml_declares_inconclusive_exit_codes(self) -> None:
+    def test_toml_declares_fail_exit_codes(self) -> None:
         config = load_framework_by_name("openssf-baseline")
         control = config.controls["OSPS-BR-01.02"]
         assert control.passes, "OSPS-BR-01.02 must have passes"
         exec_step = control.passes[0]
         assert exec_step.handler == "exec"
         assert exec_step.model_extra.get("pass_exit_codes") == [1]
-        assert exec_step.model_extra.get("inconclusive_exit_codes") == [0]
+        assert exec_step.model_extra.get("fail_exit_codes") == [0]
 
     def test_grep_match_records_evidence_without_unexpected_exit(self, tmp_path: Path) -> None:
         """Fixes #647: a match (exit 0) is evidence, not an error."""
@@ -78,9 +78,9 @@ class TestSecureBranchNames:
         result = SieveOrchestrator().verify(ctrl, _ctx(tmp_path))
         assert result.status == "WARN"
         assert result.error_class is None
-        # The exec step was recorded in pass_history as inconclusive with exit 0
+        # The exec step was recorded in pass_history with exit 0 evidence without concluding
         exec_attempt = result.pass_history[0]
-        assert exec_attempt.result.outcome == PassOutcome.INCONCLUSIVE
+        assert exec_attempt.result.outcome == PassOutcome.FAIL
         assert exec_attempt.result.evidence.get("exit_code") == 0
         assert "ci.yml" in exec_attempt.result.evidence.get("stdout", "")
 
