@@ -577,6 +577,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The OpenSSF Baseline threat model remediation (OSPS-SA-03.02) can be
+  previewed, so a batch approval covers it like any other file remediation.
+  Its `SUMMARY.md` and `raw-findings.json` recorded the scan time to the
+  second, so the preview could never equal the apply and the step needed its
+  own approval. They now record the UTC scan date (#673).
+- A `fixed`, `changed_not_passing`, or `changed_not_verified` remediation
+  outcome now also lists the files kept because they had uncommitted user
+  changes (`user_changes_present`). An apply that wrote some files and kept
+  others reported only the written ones (#673).
 - Control `when` and step `when` now use one evaluator
   (framework-design 5.1.1). A list-valued control `when` such as
   `{ ci_provider = ["github", "gitlab"] }` made the control N/A even when

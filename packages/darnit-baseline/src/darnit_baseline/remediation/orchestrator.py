@@ -1368,6 +1368,15 @@ def _written(r: dict[str, Any]) -> list[FileChange]:
     return [FileChange.model_validate(c) for c in r.get("file_changes", []) if c.get("action") != "none"]
 
 
+def _written_or_kept(r: dict[str, Any]) -> list[FileChange]:
+    """The files this control's apply wrote, and those it kept because they have uncommitted user changes."""
+    return [
+        FileChange.model_validate(c)
+        for c in r.get("file_changes", [])
+        if c.get("action") != "none" or c.get("reason") == "user_changes_present"
+    ]
+
+
 def _applied_change_sets(r: dict[str, Any]) -> list[dict[str, Any]]:
     """The change sets this control's apply wrote, each with the settings its read-back shows changed."""
     return [
@@ -1457,7 +1466,7 @@ def _rechecked_outcome(r: dict[str, Any], result: dict[str, Any] | None, failure
     """The outcome of a control whose apply changed something, from its re-check (15.5)."""
     common: dict[str, Any] = {
         "control_id": r.get("control_id", "?"),
-        "file_changes": _written(r),
+        "file_changes": _written_or_kept(r),
         "change_sets": _applied_change_sets(r),
         "reason": "; ".join(r.get("references", []) + _enhancement_notes(r)) or None,
     }

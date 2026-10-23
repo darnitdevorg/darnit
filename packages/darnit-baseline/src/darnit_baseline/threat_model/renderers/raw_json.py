@@ -54,7 +54,7 @@ def render_raw_json(
     languages = sorted((stats.by_language or {}).keys()) if stats else []
     metadata: dict[str, Any] = {
         "repository": repo_display_name(repo_path),
-        "scan_date": datetime.now(tz=UTC).isoformat(),
+        "scan_date": datetime.now(tz=UTC).date().isoformat(),
         "languages": languages,
         "files_scanned": stats.in_scope_files if stats else 0,
         "opengrep_available": result.opengrep_available,
