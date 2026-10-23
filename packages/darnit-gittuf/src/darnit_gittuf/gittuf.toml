@@ -13,6 +13,15 @@ description = "Run Gittuf policy checks on a repository"
 builtin = "audit"
 description = "Run Gittuf policy checks"
 
+[context.gittuf_root_key]
+type = "string"
+prompt = "Which existing SSH key should hold the initial gittuf root authority? Provide its absolute local path, never private key contents."
+affects = ["GT-01.01"]
+store_as = "gittuf_root_key"
+auto_detect = false
+allow_sieve_hints = false
+required = true
+
 # =============================================================================
 # Control: Is Gittuf initialized in this repo?
 # =============================================================================
@@ -24,7 +33,7 @@ tags = { level = 1, domain = "GT" }
 
 [[controls."GT-01.01".passes]]
 handler = "exec"
-command = ["git", "show-ref", "--verify", "refs/gittuf/policy"]
+command = ["git", "show-ref", "--verify", "--quiet", "refs/gittuf/policy"]
 pass_exit_codes = [0]
 fail_exit_codes = [1]
 timeout = 10
@@ -35,22 +44,18 @@ steps = [
     "Run: git show-ref --verify refs/gittuf/policy",
     "Verify the command exits with code 0",
     "If it fails, Gittuf has not been initialized in this repo",
-    "To initialize: run gittuf trust init, then gittuf policy init",
+    "To initialize: use GT-01.01 remediation with a confirmed root signing key",
 ]
 
 [controls."GT-01.01".remediation]
 safe = false
+requires_context = [{key = "gittuf_root_key", required = true}]
 
 [[controls."GT-01.01".remediation.handlers]]
-handler = "manual"
-steps = [
-    "1. gittuf trust init -k <signing-key>",
-    "2. gittuf trust add-policy-key -k <signing-key> --policy-key <pub-key>",
-    "3. gittuf trust apply --local-only -k <signing-key>",
-    "4. gittuf policy init -k <signing-key>",
-    "5. Add rules: gittuf policy add-rule ...",
-    "6. gittuf policy apply --local-only -k <signing-key>",
-]
+handler = "exec"
+command = ["python", "-I", "-m", "darnit_gittuf.setup", "--repo", "$PATH", "--owner", "$OWNER", "--name", "$REPO"]
+timeout = 240
+pass_exit_codes = [0]
 
 # =============================================================================
 # Control: Is the Gittuf policy valid?
