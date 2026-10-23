@@ -21,6 +21,7 @@ import os
 import subprocess
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from datetime import UTC, datetime, tzinfo
 from pathlib import Path
 from typing import Any
 
@@ -93,11 +94,15 @@ def _fake_zizmor(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.M
     stand_in_tool(monkeypatch, tmp_path_factory.mktemp("bin"), "zizmor", script=FAKE_ZIZMOR_FIX)
 
 
-@pytest.fixture(autouse=True, scope="module")
-def _plugin_handlers() -> None:
+def _register_plugin_handlers() -> None:
     from darnit_baseline.implementation import OSPSBaselineImplementation
 
     OSPSBaselineImplementation().register_handlers()
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _plugin_handlers() -> None:
+    _register_plugin_handlers()
 
 
 def _previewable(step: HandlerInvocation) -> bool:
@@ -108,6 +113,8 @@ def _previewable(step: HandlerInvocation) -> bool:
     return info is not None and info.supports_plan
 
 
+# Plugin handlers declare their plan support when registered, so register them before collecting.
+_register_plugin_handlers()
 NOT_PREVIEWABLE = [s for s in _steps() if not _previewable(s[3])]
 
 
@@ -317,15 +324,53 @@ def test_zizmor_fix_is_previewed(repo: Path, control_id: str) -> None:
 def test_shipped_steps_that_cannot_be_previewed_are_found() -> None:
     handlers = {step.handler for _, _, _, step in NOT_PREVIEWABLE}
 
-    assert "generate_threat_model" in handlers
+    assert "generate_threat_model" not in handlers
     assert ("reproducibility", "RE-01.01") in {(p.stem, c) for p, c, _, s in NOT_PREVIEWABLE if s.handler == "exec"}
     assert not any(c.startswith("OSPS-BR-01.0") for _, c, _, s in NOT_PREVIEWABLE if s.handler == "exec")
 
 
 @pytest.mark.unit
-def test_threat_model_handler_declares_no_plan_support() -> None:
+def test_threat_model_handler_declares_plan_support() -> None:
     info = get_sieve_handler_registry().get("generate_threat_model")
 
     assert info is not None
-    assert info.supports_plan is False
+    assert info.supports_plan is True
     assert info.ceiling == frozenset(), "a remediation handler concludes nothing (framework-design 3.0.1)"
+
+
+def _clock(moment: datetime) -> type[datetime]:
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz: tzinfo | None = None) -> datetime:
+            return moment.astimezone(tz) if tz else moment.replace(tzinfo=None)
+
+    return Clock
+
+
+@pytest.mark.unit
+def test_threat_model_apply_later_the_same_day_equals_its_preview(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from darnit_baseline.threat_model.renderers import raw_json, summary
+
+    path = next(p for p, c in REMEDIATIONS if c == "OSPS-SA-03.02")
+
+    def at(moment: datetime) -> None:
+        for module in (raw_json, summary):
+            monkeypatch.setattr(module, "datetime", _clock(moment))
+
+    at(datetime(2026, 10, 23, 0, 0, 1, tzinfo=UTC))
+    with recorded_gh(_platform()):
+        framework, preview = _preview(repo, path, "OSPS-SA-03.02")
+    [item] = [item for item in preview.plan if item.step.startswith("generate_threat_model")]
+    assert item.previewable is True
+    assert item.requires_individual_approval is False
+    planned = _file_changes([c for item in preview.plan for c in item.file_changes])
+    assert any(p.endswith("raw-findings.json") for p in planned)
+
+    at(datetime(2026, 10, 23, 23, 59, 59, tzinfo=UTC))
+    remediation = framework.controls["OSPS-SA-03.02"].remediation
+    assert remediation is not None
+    with _installed(SimulatedGitHub(_platform())):
+        result = _executor(repo, path, framework).execute("OSPS-SA-03.02", remediation, dry_run=False)
+
+    assert result.needs_approval == []
+    assert _file_changes(result.file_changes) == planned

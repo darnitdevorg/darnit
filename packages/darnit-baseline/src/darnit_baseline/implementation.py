@@ -127,11 +127,9 @@ class OSPSBaselineImplementation:
             # A remediation handler concludes nothing (framework-design 3.0.1).
             ceiling=frozenset(),
             # Feature 043 (framework-design 4.2): it returns its files as
-            # FileChanges for the executor to write. Its files record when
-            # they were generated, so a preview cannot equal the apply: it is
-            # reported as not previewable and runs in a batch apply only when
-            # its plan item digest is approved.
-            supports_plan=False,
+            # FileChanges for the executor to write. They record only the UTC
+            # scan date, so its preview equals its apply.
+            supports_plan=True,
             # template is resolved to content by the remediation executor.
             settings={"path", "overwrite", "content", "template", "shallow_threshold", "max_findings"},
         )
