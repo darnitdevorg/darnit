@@ -32,13 +32,6 @@ Load the project configuration.
 - **Raises**: `StoreOperationError` on any backend failure that is not "not found" (e.g., malformed data, transient network failure, permission error).
 - **Concurrency**: Sync in v0. Single-caller assumed within an audit run.
 
-### `read_maintainers(self) -> list[MaintainerEntry]`
-
-Load the maintainer entries.
-
-- **Returns**: List of `MaintainerEntry` instances. Empty list if none present.
-- **Raises**: `StoreOperationError` on backend failure that is not "not found".
-
 ## Failure semantics
 
 Per FR-011:
@@ -46,7 +39,6 @@ Per FR-011:
 | Failure | Consequence |
 |---------|-------------|
 | `read_project` raises | Caller (`darnit.tools.audit.load_project_context`) resolves affected controls WARN with message identifying the store and the failure reason. Never silent PASS. |
-| `read_maintainers` raises | Same as `read_project`. |
 | `close()` raises | Logged; framework does NOT re-raise. |
 
 ## Consumers

@@ -44,13 +44,11 @@ class TestStoreBase:
 class _MinimalProjectStateStore:
     def close(self) -> None: ...
     def read_project(self): return None
-    def read_maintainers(self): return []
 
 
-class _ProjectStoreMissingReadMaintainers:
+class _ProjectStoreMissingReadProject:
     def close(self) -> None: ...
-    def read_project(self): return None
-    # read_maintainers missing
+    # read_project missing
 
 
 class TestProjectStateStore:
@@ -59,7 +57,7 @@ class TestProjectStateStore:
 
     def test_missing_method_fails_isinstance(self):
         assert not isinstance(
-            _ProjectStoreMissingReadMaintainers(), ProjectStateStore
+            _ProjectStoreMissingReadProject(), ProjectStateStore
         )
 
     def test_inherits_store(self):
@@ -139,7 +137,7 @@ class TestAuditCacheStore:
 
 class TestCrossIsolation:
     def test_project_store_is_not_attestation_store(self):
-        # ProjectStateStore has read_project + read_maintainers;
+        # ProjectStateStore has read_project;
         # AttestationStore has write(bundle_id, bytes, content_type). No
         # method overlap, so no accidental cross-satisfaction.
         instance = _MinimalProjectStateStore()

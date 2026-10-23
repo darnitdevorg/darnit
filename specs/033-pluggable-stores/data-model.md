@@ -41,13 +41,10 @@ class ProjectStateStore(Store, Protocol):
     def read_project(self) -> ProjectConfig | None:
         """Load the project configuration. Returns None if not present.
         Raises `StoreOperationError` on backend failure."""
-
-    def read_maintainers(self) -> list[MaintainerEntry]:
-        """Load the maintainer entries. Returns [] if not present."""
 ```
 
 Failure semantics per FR-011:
-- `read_project` / `read_maintainers` failure -> caller resolves affected controls WARN (see `darnit.tools.audit.load_project_context`).
+- `read_project` failure -> caller resolves affected controls WARN (see `darnit.tools.audit.load_project_context`).
 
 ### `AttestationStore` (Protocol, `runtime_checkable`)
 
