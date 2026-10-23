@@ -918,7 +918,7 @@ def _regex_no_files_result(
     files_list = config.get("files", [])
     if files_list:
         return HandlerResult(
-            status=HandlerResultStatus.INCONCLUSIVE,
+            status=HandlerResultStatus.FAIL if config.get("fail_on_miss") else HandlerResultStatus.INCONCLUSIVE,
             message=f"No files found matching: {files_list}",
             evidence={"files_checked": files_list},
         )
