@@ -671,12 +671,26 @@ run: |
 # Exit codes: 0=clean, 10=info, 11=low, 12=medium, 13=high, 14=mixed severity
 # All are valid — CEL expr evaluates JSON findings, not exit code, and
 # decides on its own (expr_decides): a template-injection finding is FAIL
+#
+# zizmor reads configuration and suppressions from the repository it scans;
+# the audited repository is untrusted input (framework-design.md 14.6), so
+# --no-config ignores .github/zizmor.yml, --no-ignores ignores inline
+# `# zizmor: ignore[...]` comments, and --collect=all scans workflows that
+# .gitignore lists (GitHub still runs them). --persona=pedantic reports a
+# workflow-level `permissions: write-all` that the regular persona misses
+# (OSPS-AC-04.02 shares this invocation); the expression reads only its own
+# rule, so the extra pedantic findings do not affect the result. zizmor's
+# stderr, kept in the step's evidence, starts with its version.
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-BR-01.01"
 location_hint = ".github/workflows"
 
 [[controls."OSPS-BR-01.01".passes]]
 handler = "exec"
-command = ["zizmor", "--format", "json", "--offline", "$PATH"]
+command = [
+    "zizmor", "--format", "json", "--offline",
+    "--no-config", "--no-ignores", "--collect=all", "--persona=pedantic",
+    "$PATH",
+]
 pass_exit_codes = [0, 10, 11, 12, 13, 14]
 output_format = "json"
 expr = '!output.json.exists(f, f.ident == "template-injection")'
@@ -2978,13 +2992,22 @@ help_md = """Minimize CI/CD job permissions.
 # Primary: zizmor's `excessive-permissions` deep audit. zizmor models per-step
 # action requirements and flags workflow- or job-level grants broader than the
 # steps actually exercise — the semantic least-privilege check a regex can't do.
-# Matches BR-01.01's zizmor invocation shape: pass_exit_codes covers zizmor's
+# Matches BR-01.01's zizmor invocation, which ignores the audited
+# repository's zizmor configuration, ignore comments, and .gitignore (see
+# there). The regular persona does not flag a workflow-level
+# `permissions: write-all` on a single-job workflow; the pedantic persona
+# does, and also flags `read-all` and workflow-level write grants.
+# pass_exit_codes covers zizmor's
 # severity-banded codes (0=clean, 10-14=findings of varying severity). When
 # zizmor isn't installed the exec exits 127 (not in pass_exit_codes) →
 # INCONCLUSIVE → the pipeline falls through to the structural pattern check.
 [[controls."OSPS-AC-04.02".passes]]
 handler = "exec"
-command = ["zizmor", "--format", "json", "--offline", "$PATH"]
+command = [
+    "zizmor", "--format", "json", "--offline",
+    "--no-config", "--no-ignores", "--collect=all", "--persona=pedantic",
+    "$PATH",
+]
 pass_exit_codes = [0, 10, 11, 12, 13, 14]
 output_format = "json"
 expr = '!output.json.exists(f, f.ident == "excessive-permissions")'
