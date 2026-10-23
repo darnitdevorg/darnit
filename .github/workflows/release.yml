@@ -224,7 +224,7 @@ jobs:
   # produces unresolvable wheels.
 
   publish-darnit-core:
-    name: Publish darnit-core to PyPI
+    name: Publish darnit-core
     needs: [preflight, build]
     runs-on: ubuntu-latest
     environment: release
@@ -248,7 +248,7 @@ jobs:
           attestations: true
 
   publish-darnit-baseline:
-    name: Publish darnit-baseline to PyPI
+    name: Publish darnit-baseline
     needs: [preflight, build, publish-darnit-core]
     runs-on: ubuntu-latest
     environment: release
@@ -272,7 +272,7 @@ jobs:
           attestations: true
 
   publish-darnit-csl:
-    name: Publish darnit-csl to PyPI
+    name: Publish darnit-csl
     needs: [preflight, build, publish-darnit-core]
     runs-on: ubuntu-latest
     environment: release
@@ -296,7 +296,7 @@ jobs:
           attestations: true
 
   publish-darnit-gittuf:
-    name: Publish darnit-gittuf to PyPI
+    name: Publish darnit-gittuf
     needs: [preflight, build, publish-darnit-core]
     runs-on: ubuntu-latest
     environment: release
@@ -320,7 +320,7 @@ jobs:
           attestations: true
 
   publish-darnit-reproducibility:
-    name: Publish darnit-reproducibility to PyPI
+    name: Publish darnit-reproducibility
     needs: [preflight, build, publish-darnit-core]
     runs-on: ubuntu-latest
     environment: release
@@ -344,7 +344,7 @@ jobs:
           attestations: true
 
   publish-darnit-mcp:
-    name: Publish darnit-mcp to PyPI
+    name: Publish darnit-mcp
     needs:
       - preflight
       - build
