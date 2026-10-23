@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 
+import darnit_baseline
 from darnit.config.framework_schema import (
     ControlConfig,
     FrameworkConfig,
@@ -28,9 +29,7 @@ from darnit.config.framework_schema import (
 from darnit.core import audit_cache
 from darnit.core.utils import set_gh_api_responder
 from darnit.remediation import manifest
-from darnit_baseline import config as baseline_config
 from darnit_baseline import get_framework_path
-from darnit_baseline.config.mappings import DEFAULT_FILE_LOCATIONS
 from darnit_baseline.remediation import orchestrator
 from tests.darnit.remediation.platform.conftest import PLATFORM_FIXTURES, SimulatedGitHub
 
@@ -48,6 +47,32 @@ EXPECTED_REFERENCES = {
     "OSPS-GV-01.02": "governance.maintainers",
     "OSPS-LE-02.01": "legal.license",
     "OSPS-LE-03.01": "legal.license",
+}
+# Where each referenced field's file conventionally lives (FR-016): a declared
+# reference must name a file of that kind.
+FIELD_FILE_LOCATIONS = {
+    "security.policy": ["SECURITY.md", "security.md", ".github/SECURITY.md", "docs/SECURITY.md", "docs/security.md"],
+    "governance.contributing": ["CONTRIBUTING.md", "contributing.md", ".github/CONTRIBUTING.md", "docs/CONTRIBUTING.md"],
+    "governance.codeowners": ["CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS"],
+    "governance.governance_doc": ["GOVERNANCE.md", "governance.md", "docs/GOVERNANCE.md", ".github/GOVERNANCE.md"],
+    "governance.maintainers": [
+        "MAINTAINERS.md",
+        "MAINTAINERS",
+        "maintainers.md",
+        "docs/MAINTAINERS.md",
+        ".github/MAINTAINERS.md",
+    ],
+    "legal.license": ["LICENSE", "LICENSE.md", "LICENSE.txt", "license", "COPYING"],
+    "documentation.readme": ["README.md", "README", "readme.md", "README.rst"],
+    "documentation.support": ["SUPPORT.md", "support.md", ".github/SUPPORT.md", "docs/SUPPORT.md"],
+    "documentation.architecture": [
+        "docs/ARCHITECTURE.md",
+        "docs/architecture.md",
+        "ARCHITECTURE.md",
+        "docs/design/ARCHITECTURE.md",
+        "architecture.md",
+    ],
+    "documentation.api": ["docs/API.md", "docs/api.md", "API.md", "docs/api/README.md", "api/README.md"],
 }
 
 
@@ -201,7 +226,7 @@ def test_every_declared_reference_matches_the_fields_file_locations() -> None:
 
     assert declared
     for control_id, path, reference in declared:
-        patterns = DEFAULT_FILE_LOCATIONS.get(reference)
+        patterns = FIELD_FILE_LOCATIONS.get(reference)
         assert patterns, f"{control_id}: {reference} has no known file locations"
         assert any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns), (
             f"{control_id}: {path} is not a {reference} file ({patterns})"
@@ -220,7 +245,8 @@ def test_the_documented_steps_declare_their_reference() -> None:
 
 @pytest.mark.unit
 def test_no_control_to_field_table_remains() -> None:
-    assert not hasattr(baseline_config, "CONTROL_REFERENCE_MAPPING")
+    sources = Path(darnit_baseline.__file__).parent.rglob("*.py")
+    assert not [p for p in sources if "CONTROL_REFERENCE_MAPPING" in p.read_text(encoding="utf-8")]
     assert not hasattr(orchestrator, "CONTROL_REFERENCE_MAPPING")
     for control_id in ("OSPS-DO-01.01", "OSPS-LE-02.01", "OSPS-LE-03.01"):
         assert "project_update" not in BASELINE["controls"][control_id]["remediation"], (

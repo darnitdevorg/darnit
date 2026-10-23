@@ -410,17 +410,6 @@ class TestTemplateFallbackDefaults:
         # GitHub Security Advisories path is still present
         assert "GitHub Security Advisories" in rendered
 
-    def test_security_policy_minimal_omits_email_when_no_contact(self, tmp_path):
-        """Minimal security policy omits the email bullet when no contact set."""
-        rendered = _render_template("security_policy_minimal", tmp_path)
-
-        assert "security@example.com" not in rendered
-        assert "example.com" not in rendered
-        assert "${context.security_contact}" not in rendered
-        assert "<< context.security_contact" not in rendered
-        # GitHub vulnerability reporting path is still present
-        assert "Report a vulnerability" in rendered
-
     def test_security_policy_renders_contact_when_confirmed(self, tmp_path):
         """When context.security_contact is set, the email line is rendered verbatim."""
         scan_ctx = scan_repository(str(tmp_path))

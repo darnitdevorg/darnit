@@ -579,26 +579,6 @@ def _scan_existing_docs(local_path: str) -> dict[str, DocInfo]:
     return results
 
 
-def _extract_governance_mentions(text: str) -> list[str]:
-    """Extract governance-related mentions from text.
-
-    Looks for patterns like "governed by X", "maintained by X", etc.
-    """
-    patterns = [
-        re.compile(r"governed\s+by\s+[\w\s,]+", re.IGNORECASE),
-        re.compile(r"maintained\s+by\s+[\w\s,]+", re.IGNORECASE),
-        re.compile(r"sponsored\s+by\s+[\w\s,]+", re.IGNORECASE),
-        re.compile(r"under\s+the\s+stewardship\s+of\s+[\w\s,]+", re.IGNORECASE),
-    ]
-    mentions: list[str] = []
-    for pat in patterns:
-        for match in pat.finditer(text):
-            mention = match.group(0).strip()
-            if mention and mention not in mentions:
-                mentions.append(mention)
-    return mentions
-
-
 def _scan_inconsistencies(local_path: str) -> list[str]:
     """Detect inconsistencies between project files.
 

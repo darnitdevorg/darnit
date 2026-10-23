@@ -39,6 +39,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- **BREAKING (Python API only):** unused code in darnit-baseline, the core
+  tools and server modules, and two scripts. No behavior change for CLI, MCP,
+  or TOML users. Removed:
+  - the `darnit_baseline.config` package (`darnit_baseline.config.mappings`
+    with `PROJECT_TYPE_EXCLUSIONS`, `DEFAULT_FILE_LOCATIONS`, and its
+    re-exports of `darnit.config` names);
+  - `darnit.tools.audit_org`: `run_org_audit`, `aggregate_org_results`,
+    `format_org_results_markdown`, `format_org_results_json` (the
+    `list_org_repos` and `audit_org` MCP tools are unchanged);
+  - `darnit.tools` / `darnit.tools.audit`: `list_available_checks` and
+    `AuditOptions` (the `list_available_checks` MCP tool is
+    darnit-baseline's own and is unchanged);
+  - `darnit.server` / `darnit.server.factory`: `create_server_from_dict`
+    (use `create_server` with a TOML path);
+  - the `template` parameter of darnit-baseline's `create_security_policy`,
+    which was never read. MCP clients that still send it are unaffected;
+    Python callers passing `template=` get a `TypeError`;
+  - the `security_policy_minimal` template, which no remediation used (an
+    operator custom control naming it now fails to find it);
+  - `scripts/extract_templates.py` and `scripts/audit_hermetic_real_repos.py`.
 - **BREAKING:** `write_project` and `write_maintainers` are removed from the
   plugin-facing `ProjectStateStore` protocol (`darnit.stores.protocols`) and
   its filesystem default (`darnit.stores.defaults.project`). Writes to

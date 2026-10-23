@@ -216,11 +216,17 @@ class TestConfirmPassCandidateTool:
         assert load_confirmations() == []
 
 
-@pytest.mark.unit
-def test_every_framework_server_registers_confirm_pass_candidate() -> None:
-    from darnit.server.factory import create_server_from_dict
+def _framework_server(tmp_path: Path):
+    from darnit.server.factory import create_server
 
-    server = create_server_from_dict({"metadata": {"name": FRAMEWORK}, "mcp": {"name": "t"}})
+    config = tmp_path / "framework.toml"
+    config.write_text(f'[metadata]\nname = "{FRAMEWORK}"\n\n[mcp]\nname = "t"\n', encoding="utf-8")
+    return create_server(config)
+
+
+@pytest.mark.unit
+def test_every_framework_server_registers_confirm_pass_candidate(tmp_path: Path) -> None:
+    server = _framework_server(tmp_path)
     tools = {tool.name: tool for tool in asyncio.new_event_loop().run_until_complete(server.list_tools())}
 
     assert set(tools["confirm_pass_candidate"].inputSchema["properties"]) == {
@@ -233,10 +239,8 @@ def test_every_framework_server_registers_confirm_pass_candidate() -> None:
 
 
 @pytest.mark.unit
-def test_every_framework_server_registers_submit_judgment() -> None:
-    from darnit.server.factory import create_server_from_dict
-
-    server = create_server_from_dict({"metadata": {"name": FRAMEWORK}, "mcp": {"name": "t"}})
+def test_every_framework_server_registers_submit_judgment(tmp_path: Path) -> None:
+    server = _framework_server(tmp_path)
     tools = {tool.name: tool for tool in asyncio.new_event_loop().run_until_complete(server.list_tools())}
 
     assert "submit_judgment" in tools

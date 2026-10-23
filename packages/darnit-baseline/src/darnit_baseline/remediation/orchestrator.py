@@ -68,15 +68,6 @@ _DOMAIN_LABELS: dict[str, str] = {
 }
 
 
-def _get_domain(control_id: str) -> str:
-    """Extract the 2-letter domain code from a control ID.
-
-    Example: "OSPS-VM-01.01" → "VM"
-    """
-    parts = control_id.split("-")
-    return parts[1] if len(parts) >= 2 else "??"
-
-
 def _resolve_categories_to_control_ids(
     categories: list[str],
     framework: FrameworkConfig | None,

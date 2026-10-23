@@ -6,10 +6,8 @@ TOML-driven MCP server (darnit.server.factory.create_server).
 
 # Audit tools
 from .audit import (
-    AuditOptions,
     calculate_compliance,
     format_results_markdown,
-    list_available_checks,
     prepare_audit,
     run_checks,
     run_sieve_audit,
@@ -17,12 +15,10 @@ from .audit import (
 )
 
 __all__ = [
-    "AuditOptions",
     "prepare_audit",
     "run_sieve_audit",
     "run_checks",
     "calculate_compliance",
     "summarize_results",
     "format_results_markdown",
-    "list_available_checks",
 ]

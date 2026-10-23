@@ -9,7 +9,7 @@ and can be used for programmatic access.
 """
 
 import hashlib
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -718,17 +718,6 @@ def framework_metadata(framework_name: str | None) -> dict[str, str]:
         "spec_version": getattr(impl, "spec_version", "") or "",
         "generated_at": generated_at,
     }
-
-
-@dataclass
-class AuditOptions:
-    """Options for running an audit."""
-
-    level: int = 3
-    auto_init_config: bool = True
-    output_format: str = "markdown"  # markdown, json, sarif
-    include_evidence: bool = True
-    stop_on_llm: bool = True  # Return PENDING (llm_judgment) for LLM consultation
 
 
 def prepare_audit(
@@ -1812,45 +1801,13 @@ def _get_next_steps_section(
     return lines
 
 
-def list_available_checks() -> dict[str, list[dict[str, Any]]]:
-    """List all available OSPS baseline checks.
-
-    Returns:
-        Dict with checks organized by level
-    """
-    # This is a summary of available checks
-    # The actual check implementations are in the checks module
-    return {
-        "level_1": {
-            "count": 24,
-            "domains": ["AC", "BR", "DO", "GV", "LE", "QA", "VM"],
-            "description": "Basic security hygiene for all projects",
-        },
-        "level_2": {
-            "count": 18,
-            "domains": ["AC", "BR", "DO", "GV", "LE", "QA", "SA", "VM"],
-            "description": "Enhanced security for projects with moderate risk",
-        },
-        "level_3": {
-            "count": 19,
-            "domains": ["AC", "BR", "DO", "GV", "QA", "SA", "VM"],
-            "description": "Comprehensive security for high-risk projects",
-        },
-        "total": 61,
-        "specification": "OSPS v2025.10.10",
-        "url": "https://baseline.openssf.org/versions/2025-10-10",
-    }
-
-
 __all__ = [
-    "AuditOptions",
     "prepare_audit",
     "run_sieve_audit",
     "run_checks",
     "calculate_compliance",
     "summarize_results",
     "format_results_markdown",
-    "list_available_checks",
     "audit_report_metadata",
     # TOML framework support
     "_register_toml_controls",  # Internal but useful for testing
