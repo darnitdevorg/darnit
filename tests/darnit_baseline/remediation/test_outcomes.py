@@ -307,3 +307,37 @@ def test_individually_approved_item_is_applied_and_recorded(repo: Path, unsafe_f
     assert outcome["kind"] == "fixed"
     assert (repo / "UNSAFE.md").read_text(encoding="utf-8") == "# UNSAFE.md\n"
     assert [a["digest"] for a in run["approvals"]] == [digest]
+
+
+KEPT_FRAMEWORK = FrameworkConfig(
+    metadata=FrameworkMetadata(name="openssf-baseline", display_name="Test", version="1.0"),
+    controls={
+        "T-KEPT": _control(
+            _present("NEW.md"),
+            RemediationConfig(
+                handlers=[
+                    HandlerInvocation(handler="file_create", path="NEW.md", content="# NEW.md\n"),
+                    HandlerInvocation(handler="file_create", path="SECURITY.md", content="# Policy\n", overwrite=True),
+                ]
+            ),
+        ),
+    },
+)
+
+
+@pytest.mark.integration
+def test_changed_outcome_lists_files_kept_for_user_changes(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """framework-design 15.4: a partial apply reports the file it kept, not only the file it wrote."""
+    monkeypatch.setattr(orchestrator, "_get_framework_config", lambda: KEPT_FRAMEWORK)
+    monkeypatch.setattr(
+        audit_cache, "read_audit_cache", lambda *_a, **_k: {"results": [{"id": "T-KEPT", "status": "FAIL"}]}
+    )
+    (repo / "SECURITY.md").write_text("# Policy being edited\n", encoding="utf-8")
+
+    _, run = _apply(repo)
+
+    [outcome] = run["outcomes"]
+    assert outcome["kind"] == "fixed"
+    changes = {c["path"]: (c["action"], c["reason"]) for c in outcome["file_changes"]}
+    assert changes == {"NEW.md": ("create", None), "SECURITY.md": ("none", "user_changes_present")}
+    assert (repo / "SECURITY.md").read_text(encoding="utf-8") == "# Policy being edited\n"
