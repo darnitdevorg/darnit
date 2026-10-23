@@ -64,3 +64,26 @@ why = "There is no CI/CD pipeline, so nothing operates on untrusted metadata."
 [labels."OSPS-AC-04.02"]
 expected = "N/A"
 why = "There is no CI/CD pipeline, so no job is assigned permissions."
+
+# #665: with every listed document missing, these steps conclude FAIL. Each
+# requirement applies "when the project has made a release", which an empty
+# fixture cannot show, so anything but PASS is acceptable.
+[labels."OSPS-SA-01.01"]
+expected = "NOT_PASS"
+why = "No design documentation of actions and actors."
+
+[labels."OSPS-DO-06.01"]
+expected = "NOT_PASS"
+why = "No description of how dependencies are selected, obtained, and tracked."
+
+[labels."OSPS-DO-03.02"]
+expected = "NOT_PASS"
+why = "No instructions to verify the release author's identity."
+
+[labels."OSPS-DO-04.01"]
+expected = "NOT_PASS"
+why = "No statement of the scope and duration of support."
+
+[labels."OSPS-DO-05.01"]
+expected = "NOT_PASS"
+why = "No statement of when releases stop receiving security updates."
