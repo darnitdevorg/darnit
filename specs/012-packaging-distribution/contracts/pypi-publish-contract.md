@@ -60,7 +60,7 @@ pip install --index-url $INDEX --pre $PKG==$VERSION
 darnit --version  # for darnit-mcp; "$PKG --help" or import smoke for others
 ```
 
-`pip install --verify-attestations $PKG==$VERSION` runs additionally for stable releases on `pypi.org`, where the attestation API is available.
+For stable releases on `pypi.org`, additionally download the wheel and run `pypi-attestations verify pypi --repository https://github.com/darnitdevorg/darnit $WHEEL` (pip has no `--verify-attestations` flag).
 
 ## Pre-flight assertions (per package)
 
