@@ -300,3 +300,57 @@ jobs:
 
       - name: Full install (everything darnit-mcp pulls in) and one audit
         run: scripts/non-dev-install-smoke.sh dist
+
+  # Replay audit -> confirm -> remediate -> audit on a reference repository
+  # at a fixed commit, with no model, and compare PASS after and the number
+  # of fixed controls with the recorded expectations. A PR that lowers either
+  # must update tests/replay/<repo>/expected.json, so the drop is visible in
+  # review. See #655 (Phase 0.1, 0.2) and #639.
+  replay_no_model:
+    name: Replay without a model (wtf-frontend)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v4
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Install
+        run: uv sync --frozen
+
+      # The audit's AC-04.02 runs zizmor; without it the control is ERROR.
+      - name: Install zizmor
+        run: uv tool install zizmor==1.30.1
+
+      - name: Replay wtf-frontend at 939e838
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >
+          uv run scripts/replay.py https://github.com/whiskeytastingfoundation/wtf-frontend 939e838
+          tests/replay/wtf-frontend/answers.json --expected tests/replay/wtf-frontend/expected.json
+          --output replay-result.json
+
+      # The record must come from this environment: branch-protection reads
+      # that a personal token can make are ERROR here. To re-record, take this
+      # artifact as tests/replay/<repo>/expected.json.
+      - name: Upload the result
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: replay-wtf-frontend
+          path: replay-result.json
+          if-no-files-found: ignore
