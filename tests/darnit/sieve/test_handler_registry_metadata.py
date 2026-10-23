@@ -164,8 +164,6 @@ def _steps(path: Path) -> list[tuple[str, HandlerInvocation]]:
         if control.remediation is not None:
             for index, step in enumerate(control.remediation.handlers):
                 steps.append((f"{control_id} remediation[{index}]", step))
-    for name, shared in framework.shared_handlers.items():
-        steps.append((f"shared_handlers.{name}", HandlerInvocation(**shared.model_dump())))
     return steps
 
 
