@@ -4,6 +4,7 @@ This module provides the OSPSBaselineImplementation class that implements
 the darnit ComplianceImplementation protocol for OpenSSF Baseline (OSPS v2025.10.10).
 """
 
+import importlib.metadata
 from pathlib import Path
 
 
@@ -26,7 +27,10 @@ class OSPSBaselineImplementation:
 
     @property
     def version(self) -> str:
-        return "0.1.0"
+        try:
+            return importlib.metadata.version("darnit-baseline")
+        except importlib.metadata.PackageNotFoundError:
+            return "dev"
 
     @property
     def spec_version(self) -> str:
