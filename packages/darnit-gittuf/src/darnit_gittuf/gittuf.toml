@@ -24,7 +24,8 @@ tags = { level = 1, domain = "GT" }
 
 [[controls."GT-01.01".passes]]
 handler = "exec"
-command = ["git", "show-ref", "--verify", "refs/gittuf/policy"]
+# With --quiet a missing ref exits 1; without it, 128, the code git also uses for "not a git repository".
+command = ["git", "show-ref", "--verify", "--quiet", "refs/gittuf/policy"]
 pass_exit_codes = [0]
 fail_exit_codes = [1]
 timeout = 10
