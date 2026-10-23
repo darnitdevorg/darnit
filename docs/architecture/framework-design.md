@@ -1,6 +1,6 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.18
+> **Version**: 1.0.0-alpha.19
 > **Status**: Authoritative
 > **Last Updated**: 2026-10-23
 
@@ -878,7 +878,7 @@ Platform settings are written only by the platform engine (4.5). An `exec` step 
 
 **Plan support.** Handler registration takes a flag `supports_plan` (default `False`): `registry.register(..., supports_plan=True)`. The built-in `file_create`, `project_update`, `yaml_inject`, `manual`, and `platform_setting` handlers register with `supports_plan=True`; `exec` is previewable only as section 4.4 describes. A step whose handler did not register `supports_plan=True` is not run in plan mode; it is reported as "cannot be previewed exactly" (`previewable = False`) and requires individual approval (15.3). A plugin handler without plan support that writes files itself is outside the run manifest, so the git tools never commit those files (15.7).
 
-The Baseline's `generate_threat_model` returns every file it would create or change (the threat model files, and the stale flags of `.project/threatmodel/mitigations.yaml`) as `FileChange`s and never writes. A target that resolves outside the repository makes the step an error with no changes. An existing file is left alone (`none`, `already_exists`) unless `overwrite` is set, and with `overwrite` it is planned as `modify` only when git tracks it; an existing file git does not track (including an ignored file), or any existing file outside a git work tree, stays `none`. It does not register plan support: its files record the time they were generated, so a preview could not equal the apply.
+The Baseline's `generate_threat_model` returns every file it would create or change (the threat model files, and the stale flags of `.project/threatmodel/mitigations.yaml`) as `FileChange`s and never writes. A target that resolves outside the repository makes the step an error with no changes. An existing file is left alone (`none`, `already_exists`) unless `overwrite` is set, and with `overwrite` it is planned as `modify` only when git tracks it; an existing file git does not track (including an ignored file), or any existing file outside a git work tree, stays `none`. It registers plan support: its files record only the UTC date of the scan, never a time of day, so its preview equals its apply and it is approved like any other previewable step (15.3).
 
 **Preview contents.** A preview is a list of `PlanItem`s, one per remediation step:
 
@@ -912,6 +912,11 @@ Templates and `when` clauses are evaluated in plan mode exactly as in apply mode
 - **THEN** the step MUST NOT run in plan mode
 - **AND** its `PlanItem` MUST have `previewable = False` and `requires_individual_approval = True`
 - **AND** it MUST NOT run in a batch apply unless its `PlanItem.digest` was approved
+
+#### Scenario: Threat model preview equals its apply
+- **WHEN** the `generate_threat_model` remediation is previewed and then applied on the same UTC date with no intervening change
+- **THEN** its `PlanItem` MUST have `previewable = True`
+- **AND** the files the apply writes MUST equal the files the preview listed
 
 #### Scenario: Target file has uncommitted user changes
 - **WHEN** a planned `FileChange` targets a path with uncommitted user changes
@@ -2019,7 +2024,7 @@ Implementation-registered sieve handlers (non-exhaustive):
 | Step type | Registered by | Ceiling |
 |-----------|---------------|---------|
 | `github_branch_protection` | `darnit-baseline`: the classic-branch-protection + repository-rulesets two-surface check for `OSPS-AC-03.01`, `OSPS-AC-03.02`, `OSPS-QA-03.01`, `OSPS-QA-07.01`; see `specs/032-ruleset-branch-protection/contracts/github-branch-protection-handler.md` | `{pass, fail}` (reads platform settings) |
-| `generate_threat_model` | `darnit-baseline` (remediation; returns its files as `FileChange`s, section 4.2) | `{}` (a remediation handler, section 3.0.1) |
+| `generate_threat_model` | `darnit-baseline` (remediation, `supports_plan=True`; returns its files as `FileChange`s, section 4.2) | `{}` (a remediation handler, section 3.0.1) |
 | `gittuf_verify_policy`, `gittuf_commits_signed` | `darnit-gittuf` | `{pass, fail}` (cryptographic verification) |
 | `repro_deps_pinned`, `repro_build_env_declared`, `repro_hermetic_build`, `repro_provenance_exists`, `repro_bit_for_bit` | `darnit-reproducibility` | `{fail}`: they decide from text and file-presence signals, so PASS needs a corpus-backed promotion (section 3.0.1) |
 | `repro_witness_attestation` | `darnit-reproducibility` | `{fail}`: a verified runtime-trace attestation can show network access but, until monitor types are allowlisted, cannot show its absence (section 3.0.1, #553) |
@@ -2211,6 +2216,7 @@ plan -> [confirmation missing]            -> needs_confirmation
                          -> could not run -> changed_not_verified
 ```
 
+- A `fixed`, `changed_not_passing`, or `changed_not_verified` outcome lists the files it wrote and each file it kept because of uncommitted user changes (`action = "none"`, `reason = "user_changes_present"`), so an apply that wrote some files and kept others reports the conflict (4.2).
 - Only a definite success with a non-empty change counts as changed. INCONCLUSIVE, ERROR, a step that did not run, and `action = "none"` never count as success.
 - The run summary (counts per `kind`) is derived from the outcomes. The Markdown and JSON reports, and every downstream decision (whether to commit or open a pull request), are derived from the outcomes, never from matching symbols or words in output text.
 - If the check for unconfirmed project context cannot complete, remediation does not run and the call returns the error.
@@ -2452,6 +2458,7 @@ The following requirements have been superseded: by the handler dispatch archite
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.19 | 2026-10-23 | `generate_threat_model` registers plan support: its files record the UTC scan date, not a time, so the preview equals the apply. Changed outcomes also list files kept because of uncommitted user changes (Sections 4.2, 12, 15.4; #673) |
 | 1.0.0-alpha.18 | 2026-10-23 | `generate_threat_model` writes only through the remediation executor and the run manifest: the remediation handler returns `FileChange`s and has ceiling `{}`, and the MCP tool writes only to a validated repository path (Sections 3.0.1, 4.2, 12, 15.8) |
 | 1.0.0-alpha.17 | 2026-10-18 | Reads of the audited repository resolve symbolic links and stay inside it: a path that resolves outside is never read, never counts as present, and is recorded in `skipped_outside_repository`; CEL `file_exists` follows the same rule (Sections 3.0.4, 3.5, 3.7) |
 | 1.0.0-alpha.16 | 2026-10-08 | `ComplianceImplementation` reduced to its five used members; `get_all_controls`, `get_controls_by_level`, `get_rules_catalog`, `get_remediation_registry`, and `register_controls` removed (Section 6.3; Appendix C; #487). `register_handlers()` is the handler registration hook, `register_sieve_handlers()` accepted only for compatibility, import-time registration not introspectable (Sections 6.4, 12; #451) |
