@@ -47,7 +47,7 @@ CMD ["audit", "--help"]
 
 `darnit-entrypoint.sh` resolves the first positional arg:
 - `audit`, `remediate`, `list-controls`, `--version`, `--help` → forwarded to `darnit`.
-- `mcp` → forwarded to `darnit-mcp` (stdio MCP server).
+- `mcp` → forwarded to `darnit serve` (stdio MCP server). (Amended for #621: no package provides a `darnit-mcp` executable; `darnit-mcp` is the package that provides `darnit`.)
 - Anything else → executed directly (for advanced users wanting to override).
 
 ## Working directory & volumes

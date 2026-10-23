@@ -23,7 +23,7 @@ The plugin also registers the **`darnit-mcp` MCP server**. Its tools (`audit`, `
 
 ## Prerequisite
 
-The plugin invokes `darnit-mcp` via one of two Python runners. **At least one of these must be on `PATH`** when Claude Code launches the plugin's MCP server:
+The plugin runs `darnit serve` from the `darnit-mcp` package (`uvx --from darnit-mcp==<version> darnit serve`, or `pipx run --spec darnit-mcp==<version> darnit serve`). **At least one of these runners must be on `PATH`** when Claude Code launches the plugin's MCP server:
 
 - **`uvx`** (preferred — install [uv](https://docs.astral.sh/uv/getting-started/installation/) and you get `uvx` for free)
 - **`pipx`** (fallback — install [pipx](https://pipx.pypa.io/stable/installation/))
@@ -94,7 +94,7 @@ The four skills under `packages/darnit/src/darnit/skills/` follow the open [Agen
 
 The **plugin wrapper** (the zip with `.claude-plugin/plugin.json`, the MCP server runner, and the version pin) is **Claude-Code-specific**: it relies on Claude Code's plugin manifest format, its MCP-server discovery, and its `${CLAUDE_PLUGIN_ROOT}` substitution. Other agents don't have those.
 
-But the SKILL.md files themselves are agent-agnostic. To use them on a non-Claude-Code agent today, copy the four `darnit-*/` directories from this repo into your agent's skill directory (typically `~/.your-agent/skills/` or a project-local equivalent — consult your agent's docs). You'll lose the auto-installed MCP server and the auto-pinned version, so you'll need to wire up `darnit-mcp` yourself (e.g., `pip install darnit-mcp==<version>` + register it in your agent's MCP config).
+But the SKILL.md files themselves are agent-agnostic. To use them on a non-Claude-Code agent today, copy the four `darnit-*/` directories from this repo into your agent's skill directory (typically `~/.your-agent/skills/` or a project-local equivalent — consult your agent's docs). You'll lose the auto-installed MCP server and the auto-pinned version, so you'll need to wire up the MCP server yourself (e.g., `pip install darnit-mcp==<version>` and register `darnit serve` in your agent's MCP config).
 
 A future darnit release may ship a `darnit install-skills [--agent <slug>]` CLI subcommand that automates this, modelled after [spec-kit's `specify init`](https://github.com/github/spec-kit) pattern. Tracked as out-of-scope for v1.
 
@@ -110,11 +110,12 @@ A future darnit release may ship a `darnit install-skills [--agent <slug>]` CLI 
 | `/darnit:darnit-audit` doesn't appear in `/help` | Plugin wasn't loaded. Restart Claude Code; for local installs confirm the `--plugin-dir` path is correct. |
 | `darnit plugin: neither 'uvx' nor 'pipx' is available on PATH.` | Install [uv](https://docs.astral.sh/uv/getting-started/installation/) OR [pipx](https://pipx.pypa.io/stable/installation/) and restart Claude Code. |
 | The agent says it can't reach the darnit MCP server | The runner script ran but `uvx`/`pipx` failed to fetch `darnit-mcp==<version>` from PyPI. Check network access. The wrapper logs the failure to stderr; check Claude Code's MCP server logs. |
-| `/darnit:darnit-audit` runs but the agent doesn't see audit tools | The MCP server probably crashed on startup. Re-run from a shell directly: `DARNIT_MCP_VERSION=0.1.0 CLAUDE_PLUGIN_ROOT=$(pwd)/darnit darnit/bin/darnit-mcp-runner --help` should print darnit-mcp's help and exit 0. |
+| `/darnit:darnit-audit` runs but the agent doesn't see audit tools | The MCP server probably crashed on startup. Re-run from a shell directly: `DARNIT_MCP_VERSION=0.1.0 CLAUDE_PLUGIN_ROOT=$(pwd)/darnit darnit/bin/darnit-mcp-runner --help` should print the help of `darnit serve` and exit 0. |
+| The MCP server never starts and the log says ``Package `darnit-mcp` does not provide any executables`` | The plugin's runner calls a `darnit-mcp` command that no package provides. Plugin zips up to and including 0.1.1 have this bug ([#621](https://github.com/darnitdevorg/darnit/issues/621)); install a later plugin. |
 
 ## Why a plugin instead of just the MCP server?
 
-You could register the darnit MCP server in Claude Code manually (set `mcpServers` in your Claude Code config to invoke `uvx darnit-mcp@0.1.0`). The plugin does this plus:
+You could register the darnit MCP server in Claude Code manually (set `mcpServers` in your Claude Code config to run `uvx --from darnit-mcp==0.1.0 darnit serve --framework openssf-baseline`). The plugin does this plus:
 
 - **Bundles four skills** — both as slash-command shortcuts (`/darnit:darnit-audit`, etc.) and as descriptions Claude can match on for autonomous invocation.
 - **Pins the MCP-server version in lockstep** with the plugin — no drift between the plugin's expectations and the server it launches.
