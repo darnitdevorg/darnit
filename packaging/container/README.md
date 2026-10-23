@@ -1,6 +1,6 @@
 # darnit container image
 
-Official darnit container image published to `ghcr.io/kusari-oss/darnit` on every release tag.
+Official darnit container image published to `ghcr.io/darnitdevorg/darnit` on every release tag.
 
 > End-user install documentation: [`docs/install/container.md`](../../docs/install/container.md). This README sits next to the Dockerfile and is the source for the image's overview on GHCR.
 
@@ -8,29 +8,29 @@ Official darnit container image published to `ghcr.io/kusari-oss/darnit` on ever
 
 ```bash
 # Pin to a specific release
-docker pull ghcr.io/kusari-oss/darnit:v0.1.0
+docker pull ghcr.io/darnitdevorg/darnit:v0.1.0
 
 # Latest stable
-docker pull ghcr.io/kusari-oss/darnit:latest
+docker pull ghcr.io/darnitdevorg/darnit:latest
 
 # Pre-release (not promoted to :latest)
-docker pull ghcr.io/kusari-oss/darnit:v0.1.0rc1
+docker pull ghcr.io/darnitdevorg/darnit:v0.1.0rc1
 
 # Rolling build of main (unsigned)
-docker pull ghcr.io/kusari-oss/darnit:edge
+docker pull ghcr.io/darnitdevorg/darnit:edge
 ```
 
 ## Run
 
 ```bash
 # Audit the current directory
-docker run --rm -v "$PWD:/repo" ghcr.io/kusari-oss/darnit:latest audit
+docker run --rm -v "$PWD:/repo" ghcr.io/darnitdevorg/darnit:latest audit
 
 # Run as the MCP server (stdio)
-docker run --rm -i ghcr.io/kusari-oss/darnit:latest mcp
+docker run --rm -i ghcr.io/darnitdevorg/darnit:latest mcp
 
 # Print the bundled version
-docker run --rm ghcr.io/kusari-oss/darnit:latest --version
+docker run --rm ghcr.io/darnitdevorg/darnit:latest --version
 ```
 
 The image's `WORKDIR` is `/repo`. The entrypoint dispatches the first arg to `darnit` (for `audit`/`remediate`/`list-controls`/`plan`/`profiles`/`validate`/`--version`/`--help`), to `darnit-mcp` for `mcp`, or executes the user's command directly otherwise.
@@ -38,7 +38,7 @@ The image's `WORKDIR` is `/repo`. The entrypoint dispatches the first arg to `da
 ## Image contents
 
 - **Base**: `python:3.12-slim-bookworm`
-- **darnit**: installed from PyPI via `pip install darnit-mcp==<version>` (the version is recorded as the `org.opencontainers.image.version` OCI label)
+- **darnit**: installed from the release workflow's built wheels for the pinned `darnit-mcp` version (the version is recorded as the `org.opencontainers.image.version` OCI label)
 - **CLIs**: `git`, `gh` (GitHub CLI from `cli.github.com`)
 - **Runtime user**: `darnit` (uid 10001), non-root
 
@@ -61,8 +61,8 @@ The release image is multi-arch:
 Every release tag (stable and pre-release) is signed with cosign keyless OIDC.
 
 ```bash
-cosign verify ghcr.io/kusari-oss/darnit:v0.1.0 \
-  --certificate-identity-regexp '^https://github\.com/kusari-oss/darnit/\.github/workflows/release\.yml@' \
+cosign verify ghcr.io/darnitdevorg/darnit:v0.1.0 \
+  --certificate-identity-regexp '^https://github\.com/darnitdevorg/darnit/\.github/workflows/release\.yml@' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
@@ -73,7 +73,7 @@ The `:edge` rolling build is **not** signed — it's for development only.
 Each signed image has an SPDX-JSON SBOM attached via cosign attestation:
 
 ```bash
-cosign download attestation ghcr.io/kusari-oss/darnit:v0.1.0 \
+cosign download attestation ghcr.io/darnitdevorg/darnit:v0.1.0 \
   | jq -r '.payload' | base64 -d | jq '.predicate' > darnit-sbom.spdx.json
 ```
 
@@ -83,13 +83,20 @@ Compressed-size target: 300 MB (soft). The release workflow records the size in 
 
 ## Building locally
 
-The image is normally built by the release pipeline, but you can build it locally for testing:
+The image is normally built by the release pipeline, but you can build it locally for testing. The Dockerfile installs the darnit wheels from `dist/` in the build context, so build them first:
 
 ```bash
-# Build for the current platform only. VERSION must be a real darnit-mcp
-# release on PyPI (or TestPyPI if you adjust the install command).
+# 1. Build the wheels into dist/<package>/, the layout the Dockerfile expects.
+while IFS= read -r pkg; do
+  [ -z "$pkg" ] && continue
+  uv build --package "$pkg" --out-dir "dist/$pkg"
+done < packaging/pypi/public-packages.txt
+
+# 2. Build the image for the current platform. VERSION must be the version
+#    of the wheels you just built.
+VERSION=$(awk -F'"' '/^version[[:space:]]*=/{print $2; exit}' pyproject.toml)
 docker build \
-  --build-arg VERSION=0.1.0 \
+  --build-arg VERSION="$VERSION" \
   -t darnit-local \
   -f packaging/container/Dockerfile \
   .
@@ -97,7 +104,7 @@ docker build \
 docker run --rm -v "$PWD:/repo" darnit-local audit
 ```
 
-The `--build-arg VERSION` is required — the Dockerfile refuses to build without an explicit pinned version.
+The `--build-arg VERSION` is required. The Dockerfile refuses to build without it, and fails if `dist/` has no wheel of that version for one of the darnit packages. Only the dependencies are downloaded, from PyPI.
 
 ## Recovery from a bad image
 
