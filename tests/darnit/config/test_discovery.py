@@ -90,6 +90,25 @@ class TestDiscoverFiles:
 
         assert "security.policy" in result
 
+    def test_case_mismatch_not_discovered(self, temp_dir):
+        from darnit.core.utils import clear_dir_entries_cache
+
+        clear_dir_entries_cache()
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "docs" / "ARCHITECTURE.md").write_text("# Arch")
+
+        result = discover_files(
+            str(temp_dir),
+            {"doc": ["docs/architecture.md"]},
+        )
+        assert "doc" not in result
+
+        result_correct = discover_files(
+            str(temp_dir),
+            {"doc": ["docs/ARCHITECTURE.md"]},
+        )
+        assert result_correct == {"doc": "docs/ARCHITECTURE.md"}
+
 
 # ---------------------------------------------------------------------------
 # discover_ci_config
@@ -217,18 +236,14 @@ class TestDiscoverProjectName:
         assert result == os.path.basename(str(temp_dir))
 
     def test_reads_name_from_pyproject_toml(self, temp_dir):
-        (temp_dir / "pyproject.toml").write_text(
-            "[project]\nname = 'my-python-lib'\nversion = '0.1.0'\n"
-        )
+        (temp_dir / "pyproject.toml").write_text("[project]\nname = 'my-python-lib'\nversion = '0.1.0'\n")
 
         result = discover_project_name(str(temp_dir))
 
         assert result == "my-python-lib"
 
     def test_reads_name_from_cargo_toml(self, temp_dir):
-        (temp_dir / "Cargo.toml").write_text(
-            "[package]\nname = 'my-rust-crate'\nversion = '0.1.0'\n"
-        )
+        (temp_dir / "Cargo.toml").write_text("[package]\nname = 'my-rust-crate'\nversion = '0.1.0'\n")
 
         result = discover_project_name(str(temp_dir))
 

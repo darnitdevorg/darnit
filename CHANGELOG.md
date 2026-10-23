@@ -577,6 +577,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Case-exact file resolution and deduplication on case-insensitive filesystems
+  (macOS APFS, Windows NTFS): `file_exists_handler`, `regex_handler`,
+  `llm_eval_handler`, `llm_extract_handler`, and config file discovery verify
+  path components against case-exact directory entries, preventing spurious
+  matches on lowercase aliases, deduplicating file contents read into
+  consultation evidence, and citing exact repository paths (fixes #645).
+
 - Control `when` and step `when` now use one evaluator
   (framework-design 5.1.1). A list-valued control `when` such as
   `{ ci_provider = ["github", "gitlab"] }` made the control N/A even when
