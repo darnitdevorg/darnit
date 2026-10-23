@@ -577,6 +577,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- OpenSSF Baseline: a missing document fails again, so remediation plans it
+  (#665). OSPS-SA-01.01, DO-03.02, DO-04.01, DO-05.01, DO-06.01, and
+  QA-06.02 set `fail_on_miss`, and a pattern step with `fail_on_miss` now
+  concludes FAIL when none of the files it lists exists. Before, the miss went
+  to a model judgment with only the README, the control stayed PENDING, and
+  remediation never created the document. On the wtf-frontend replay
+  (`scripts/comply_replay.py`) remediation now writes ARCHITECTURE.md and
+  the dependency, testing, and release-verification documents; what it
+  writes still needs a judgment and a person's confirmation to pass.
 - Control `when` and step `when` now use one evaluator
   (framework-design 5.1.1). A list-valued control `when` such as
   `{ ci_provider = ["github", "gitlab"] }` made the control N/A even when
