@@ -29,14 +29,6 @@ Plugins SHALL auto-register their capabilities when loaded.
 - **WHEN** a plugin is loaded
 - **THEN** the framework SHALL discover and register all handlers decorated with `@register_handler`
 
-#### Scenario: Plugin registers passes
-- **WHEN** a plugin is loaded
-- **THEN** the framework SHALL discover and register all pass implementations decorated with `@register_pass`
-
-#### Scenario: Plugin registers templates
-- **WHEN** a plugin is loaded
-- **THEN** the framework SHALL discover and register all templates from the plugin's `templates/` directory
-
 #### Scenario: No manual wiring needed
 - **WHEN** a control references a handler by name (e.g., `handler = "create_security_policy"`)
 - **THEN** the framework SHALL resolve it from registered handlers

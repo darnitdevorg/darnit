@@ -15,11 +15,8 @@ Reference:
 
 from datetime import date
 from enum import Enum
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl
-
-from darnit.config.context_keys import canonical_key, normalize_value
 
 # =============================================================================
 # Enums
@@ -124,42 +121,6 @@ class NARef(BaseModel):
 
 # Union type for flexible references
 ResourceRef = PathRef | UrlRef | RepoRef | SectionRef | NARef | str
-
-
-def parse_resource_ref(value: Any) -> ResourceRef | None:
-    """Parse a resource reference from YAML data."""
-    if value is None:
-        return None
-
-    if isinstance(value, str):
-        return value  # Simple path string
-
-    if isinstance(value, dict):
-        if value.get("status") == "n/a":
-            return NARef(**value)
-        if "section" in value:
-            return SectionRef(**value)
-        if "url" in value:
-            return UrlRef(**value)
-        if "repo" in value:
-            return RepoRef(**value)
-        if "path" in value:
-            return PathRef(**value)
-
-    return None
-
-
-def get_path_from_ref(ref: ResourceRef | None) -> str | None:
-    """Extract path from a resource reference."""
-    if ref is None:
-        return None
-    if isinstance(ref, str):
-        return ref
-    if isinstance(ref, PathRef):
-        return ref.path
-    if isinstance(ref, NARef):
-        return None  # N/A has no path
-    return None
 
 
 # =============================================================================
@@ -518,9 +479,6 @@ class ProjectConfig(BaseModel):
     config_path: str | None = Field(default=None, exclude=True)
     local_path: str | None = Field(default=None, exclude=True)
 
-    # Project type exclusions (set by implementation)
-    _type_exclusions: dict[str, set[str]] = {}
-
     model_config = ConfigDict(
         populate_by_name=True,  # Allow both alias and field name
         extra="allow",  # Allow unknown fields for forward compatibility
@@ -581,92 +539,6 @@ class ProjectConfig(BaseModel):
 
         return None
 
-    def is_control_applicable(self, control_id: str) -> tuple[bool, str | None]:
-        """Check if control is applicable (not overridden as N/A).
-
-        Args:
-            control_id: OSPS control ID (e.g., "OSPS-BR-02.01")
-
-        Returns:
-            Tuple of (is_applicable, reason_if_not)
-        """
-        # Check explicit override first
-        if self.x_openssf_baseline:
-            override = self.x_openssf_baseline.controls.get(control_id)
-            if override and override.status == ControlStatusValue.NA:
-                return False, override.reason
-
-        # Check project type exclusions
-        exclusions = self._type_exclusions.get(self.type, set())
-        for excl in exclusions:
-            if control_id.startswith(excl):
-                return False, f"Not applicable for {self.type} projects"
-
-        return True, None
-
-    def set_type_exclusions(self, exclusions: dict[str, set[str]]):
-        """Set project type exclusions from implementation."""
-        self._type_exclusions = exclusions
-
-    def get_excluded_controls(self) -> dict[str, str]:
-        """Get all excluded controls with reasons."""
-        excluded: dict[str, str] = {}
-
-        # Add project type exclusions
-        type_exclusions = self._type_exclusions.get(self.type, set())
-        for excl in type_exclusions:
-            excluded[excl] = f"Default exclusion for {self.type} projects"
-
-        # Add explicit overrides
-        if self.x_openssf_baseline:
-            for control_id, override in self.x_openssf_baseline.controls.items():
-                if override.status == ControlStatusValue.NA:
-                    excluded[control_id] = override.reason or "Marked as N/A"
-
-        return excluded
-
-    def get_security_contact(self) -> str | None:
-        """Get security contact email."""
-        if self.security and self.security.contact:
-            contact = self.security.contact
-            if isinstance(contact, SecurityContactModel):
-                return str(contact.email) if contact.email else None
-            return str(contact)
-        return None
-
-    def get_audits(self) -> list[Audit]:
-        """Get list of audits."""
-        return self.audits
-
-    def get_ci_provider(self) -> str | None:
-        """CI provider in the canonical ``ci_provider`` vocabulary (feature 042, FR-018).
-
-        Read like the context resolver: ``context.ci_provider``, then legacy
-        names under ``context``, then ``ci.provider``.
-        """
-        extension = self.x_openssf_baseline
-        if extension is None:
-            return None
-        stored: list[Any] = []
-        if extension.context:
-            context = extension.context.model_dump(exclude_none=True)
-            names = sorted(context, key=lambda name: name != "ci_provider")
-            stored += [context[name] for name in names if canonical_key(name) == "ci_provider"]
-        if extension.ci:
-            stored.append(extension.ci.provider)
-        for raw in stored:
-            value = normalize_value("ci_provider", raw)
-            if value is not None:
-                return value
-        return None
-
-    def get_contributor_agreement_type(self) -> str | None:
-        """Get contributor agreement type (dco/cla/none)."""
-        if self.x_openssf_baseline and self.x_openssf_baseline.legal:
-            if self.x_openssf_baseline.legal.contributor_agreement:
-                return self.x_openssf_baseline.legal.contributor_agreement.type.value
-        return None
-
 
 # =============================================================================
 # Factory Functions
@@ -686,40 +558,4 @@ def create_minimal_config(name: str, description: str = "", project_type: str = 
     """
     return ProjectConfig(
         name=name, description=description, type=project_type, x_openssf_baseline=BaselineExtension(version="1.0")
-    )
-
-
-def create_full_config(
-    name: str, description: str = "", project_type: str = "software", **kwargs: Any
-) -> ProjectConfig:
-    """Create a full project configuration with all sections.
-
-    Args:
-        name: Project name
-        description: Project description
-        project_type: Type of project
-        **kwargs: Additional fields to set
-
-    Returns:
-        ProjectConfig instance with all sections initialized
-    """
-    return ProjectConfig(
-        name=name,
-        description=description,
-        type=project_type,
-        security=SecurityConfig(),
-        governance=GovernanceConfig(),
-        legal=LegalConfig(),
-        documentation=DocumentationConfig(),
-        x_openssf_baseline=BaselineExtension(
-            version="1.0",
-            governance=ExtendedGovernance(),
-            quality=ExtendedQuality(),
-            security=ExtendedSecurity(),
-            legal=ExtendedLegal(),
-            artifacts=ArtifactsConfig(),
-            dependencies=DependenciesConfig(),
-            ci=CIConfig(),
-        ),
-        **kwargs,
     )

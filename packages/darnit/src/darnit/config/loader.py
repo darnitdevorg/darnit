@@ -24,7 +24,6 @@ from pydantic import ValidationError
 from darnit.config.schema import (
     BaselineExtension,
     ProjectConfig,
-    create_minimal_config,
 )
 from darnit.core.logging import get_logger
 
@@ -324,7 +323,7 @@ def save_project_config(config: ProjectConfig, local_path: str) -> str:
         mode='json',
         by_alias=True,
         exclude_none=True,
-        exclude={'config_path', 'local_path', '_type_exclusions'}
+        exclude={'config_path', 'local_path'}
     )
 
     # Split data into project.yaml and extension files
@@ -457,37 +456,6 @@ def _set_paths(targets: list[tuple[list[str], Any]]) -> Callable[[Any], bool]:
     return mutate
 
 
-def update_project_config(
-    local_path: str,
-    paths: list[str],
-    mutate: Callable[[ProjectConfig], None],
-    *,
-    create: bool = True,
-) -> list[str]:
-    """Write only the dotted ``paths`` that ``mutate`` sets on the project configuration (FR-019, FR-020).
-
-    ``mutate`` receives the current :class:`ProjectConfig` (for coercion to the
-    schema's types, e.g. a path string to ``{path: ...}``). Each path is then
-    written into the file it belongs to -- CNCF fields to ``project.yaml``,
-    everything else to ``darnit.yaml`` -- through :func:`update_yaml_file`, so
-    comments, ordering, and fields darnit does not own are preserved. An
-    absent ``project.yaml`` is created (with ``name`` only) when ``create``.
-
-    Returns:
-        The files written.
-
-    Raises:
-        ProjectFilesInvalid: a ``.project/`` file is present but invalid.
-    """
-    written = []
-    for path, text in render_project_config_update(local_path, paths, mutate, create=create).items():
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(text)
-        written.append(path)
-    return written
-
-
 def render_project_config_update(
     local_path: str,
     paths: list[str],
@@ -495,7 +463,14 @@ def render_project_config_update(
     *,
     create: bool = True,
 ) -> dict[str, str]:
-    """The files :func:`update_project_config` would write, mapped to their new text; writes nothing.
+    """The ``.project/`` files that setting the dotted ``paths`` would write, mapped to their new text; writes nothing.
+
+    ``mutate`` receives the current :class:`ProjectConfig` (for coercion to the
+    schema's types, e.g. a path string to ``{path: ...}``). Only ``paths`` are
+    rendered, each into the file it belongs to -- CNCF fields to
+    ``project.yaml``, everything else to ``darnit.yaml`` -- so comments,
+    ordering, and fields darnit does not own are preserved (FR-019, FR-020).
+    An absent ``project.yaml`` is rendered (with ``name`` only) when ``create``.
 
     Raises:
         ProjectFilesInvalid: a ``.project/`` file is present but invalid.
@@ -569,26 +544,6 @@ def get_project_config(
 def clear_config_cache():
     """Clear the configuration cache."""
     _config_cache.clear()
-
-
-def init_project_config(
-    local_path: str,
-    name: str | None = None,
-    project_type: str = "software",
-    description: str = ""
-) -> ProjectConfig:
-    """Build a minimal project configuration in memory; nothing is detected or written."""
-    from darnit.config.discovery import discover_project_name
-
-    project_name = name or discover_project_name(local_path) or "unnamed"
-
-    config = create_minimal_config(
-        name=project_name,
-        description=description,
-        project_type=project_type,
-    )
-    config.local_path = local_path
-    return config
 
 
 def config_exists(local_path: str) -> bool:

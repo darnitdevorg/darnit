@@ -1,8 +1,7 @@
 """Handler registration system for darnit plugins.
 
-This module provides the `@register_handler` and `@register_pass` decorators
-for auto-registering check handlers and custom pass implementations when
-plugins are loaded.
+This module provides the `@register_handler` decorator and the registry that
+maps a short name to an MCP tool handler function.
 
 Example:
     ```python
@@ -32,7 +31,6 @@ import importlib
 import logging
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, TypeVar
 
 logger = logging.getLogger(__name__)
@@ -60,50 +58,8 @@ class HandlerInfo:
     doc: str | None = None
 
 
-@dataclass
-class PassInfo:
-    """Information about a registered custom pass.
-
-    Attributes:
-        name: Short name used to reference the pass
-        cls: The pass class
-        plugin: Name of the plugin that registered this pass
-        module: Full module path of the pass class
-        doc: Pass class docstring
-    """
-
-    name: str
-    cls: type
-    plugin: str | None = None
-    module: str | None = None
-    doc: str | None = None
-
-
-@dataclass
-class TemplateInfo:
-    """Information about a discovered template.
-
-    Attributes:
-        name: Template name (filename without extension)
-        path: Full path to the template file
-        plugin: Name of the plugin that provides this template
-        content: Cached template content (loaded on demand)
-    """
-
-    name: str
-    path: Path
-    plugin: str | None = None
-    content: str | None = None
-
-    def load_content(self) -> str:
-        """Load template content from file."""
-        if self.content is None:
-            self.content = self.path.read_text(encoding="utf-8")
-        return self.content
-
-
 class HandlerRegistry:
-    """Central registry for handlers, passes, and templates.
+    """Central registry for handlers.
 
     This registry is used to discover and resolve handler references
     in TOML configurations. Handlers are registered via decorators
@@ -118,8 +74,6 @@ class HandlerRegistry:
     def __init__(self) -> None:
         """Initialize empty registry."""
         self._handlers: dict[str, HandlerInfo] = {}
-        self._passes: dict[str, PassInfo] = {}
-        self._templates: dict[str, TemplateInfo] = {}
         self._current_plugin: str | None = None
 
     # =========================================================================
@@ -189,20 +143,6 @@ class HandlerRegistry:
         """Get full handler information."""
         return self._handlers.get(name)
 
-    def list_handlers(self, plugin: str | None = None) -> list[HandlerInfo]:
-        """List all registered handlers.
-
-        Args:
-            plugin: Filter by plugin name (None = all handlers)
-
-        Returns:
-            List of HandlerInfo objects
-        """
-        handlers = list(self._handlers.values())
-        if plugin is not None:
-            handlers = [h for h in handlers if h.plugin == plugin]
-        return handlers
-
     def _load_handler_from_path(self, path: str) -> Callable[..., Any] | None:
         """Load a handler from a module:function path under the resolution policy.
 
@@ -216,132 +156,6 @@ class HandlerRegistry:
         except (ImportError, AttributeError) as e:
             logger.warning(f"Failed to load handler from path '{path}': {e}")
             return None
-
-    # =========================================================================
-    # Pass Registration
-    # =========================================================================
-
-    def register_pass(
-        self,
-        name: str,
-        cls: type,
-        *,
-        plugin: str | None = None,
-    ) -> None:
-        """Register a custom pass class.
-
-        Args:
-            name: Short name to register under
-            cls: The pass class
-            plugin: Plugin name (uses current plugin context if None)
-        """
-        plugin = plugin or self._current_plugin
-
-        if name in self._passes:
-            existing = self._passes[name]
-            logger.warning(
-                f"Pass '{name}' already registered by plugin '{existing.plugin}', "
-                f"overwriting with plugin '{plugin}'"
-            )
-
-        self._passes[name] = PassInfo(
-            name=name,
-            cls=cls,
-            plugin=plugin,
-            module=f"{cls.__module__}.{cls.__qualname__}",
-            doc=cls.__doc__,
-        )
-        logger.debug(f"Registered pass '{name}' from plugin '{plugin}'")
-
-    def get_pass(self, name: str) -> type | None:
-        """Get a pass class by name."""
-        if name in self._passes:
-            return self._passes[name].cls
-        return None
-
-    def list_passes(self, plugin: str | None = None) -> list[PassInfo]:
-        """List all registered passes."""
-        passes = list(self._passes.values())
-        if plugin is not None:
-            passes = [p for p in passes if p.plugin == plugin]
-        return passes
-
-    # =========================================================================
-    # Template Registration
-    # =========================================================================
-
-    def register_template(
-        self,
-        name: str,
-        path: Path,
-        *,
-        plugin: str | None = None,
-    ) -> None:
-        """Register a template file.
-
-        Args:
-            name: Template name (usually filename without extension)
-            path: Full path to template file
-            plugin: Plugin name
-        """
-        plugin = plugin or self._current_plugin
-
-        if name in self._templates:
-            existing = self._templates[name]
-            logger.warning(
-                f"Template '{name}' already registered by plugin '{existing.plugin}', "
-                f"overwriting with plugin '{plugin}'"
-            )
-
-        self._templates[name] = TemplateInfo(
-            name=name,
-            path=path,
-            plugin=plugin,
-        )
-        logger.debug(f"Registered template '{name}' from plugin '{plugin}'")
-
-    def get_template(self, name: str) -> TemplateInfo | None:
-        """Get a template by name."""
-        return self._templates.get(name)
-
-    def list_templates(self, plugin: str | None = None) -> list[TemplateInfo]:
-        """List all registered templates."""
-        templates = list(self._templates.values())
-        if plugin is not None:
-            templates = [t for t in templates if t.plugin == plugin]
-        return templates
-
-    def discover_templates(
-        self,
-        templates_dir: Path,
-        *,
-        plugin: str | None = None,
-        extensions: Iterable[str] = (".md", ".txt", ".j2", ".jinja2"),
-    ) -> int:
-        """Discover and register templates from a directory.
-
-        Args:
-            templates_dir: Directory to search for templates
-            plugin: Plugin name to associate with discovered templates
-            extensions: File extensions to consider as templates
-
-        Returns:
-            Number of templates discovered
-        """
-        if not templates_dir.is_dir():
-            return 0
-
-        count = 0
-        extensions_set = set(extensions)
-
-        for template_path in templates_dir.iterdir():
-            if template_path.is_file() and template_path.suffix in extensions_set:
-                name = template_path.stem  # filename without extension
-                self.register_template(name, template_path, plugin=plugin)
-                count += 1
-
-        logger.debug(f"Discovered {count} templates from {templates_dir}")
-        return count
 
     # =========================================================================
     # Plugin Context
@@ -361,8 +175,6 @@ class HandlerRegistry:
     def clear(self) -> None:
         """Clear all registrations."""
         self._handlers.clear()
-        self._passes.clear()
-        self._templates.clear()
         self._current_plugin = None
 
 
@@ -472,38 +284,6 @@ def register_handler(name: str | None = None) -> Callable[[F], F]:
     return decorator
 
 
-def register_pass(name: str | None = None) -> Callable[[type], type]:
-    """Decorator to register a custom pass class.
-
-    Can be used with or without arguments:
-        @register_pass
-        class MyPass: ...
-
-        @register_pass("custom_name")
-        class MyPass: ...
-
-    Args:
-        name: Pass name (defaults to class name)
-
-    Returns:
-        Decorator function
-    """
-
-    def decorator(cls: type) -> type:
-        pass_name = name if name is not None else cls.__name__
-        _handler_registry.register_pass(pass_name, cls)
-        return cls
-
-    # Handle @register_pass without parentheses
-    if isinstance(name, type):
-        cls = name
-        pass_name = cls.__name__
-        _handler_registry.register_pass(pass_name, cls)
-        return cls  # type: ignore[return-value]
-
-    return decorator
-
-
 # =============================================================================
 # Convenience Functions
 # =============================================================================
@@ -514,31 +294,16 @@ def get_handler(name: str) -> Callable[..., Any] | None:
     return _handler_registry.get_handler(name)
 
 
-def list_handlers(plugin: str | None = None) -> list[HandlerInfo]:
-    """List all registered handlers."""
-    return _handler_registry.list_handlers(plugin)
-
-
-def get_template(name: str) -> TemplateInfo | None:
-    """Get a template by name from the global registry."""
-    return _handler_registry.get_template(name)
-
-
 __all__ = [
     # Classes
     "HandlerImportRefused",
     "HandlerRegistry",
     "HandlerInfo",
-    "PassInfo",
-    "TemplateInfo",
-    # Decorators
+    # Decorator
     "register_handler",
-    "register_pass",
     # Functions
     "get_handler_registry",
     "get_handler",
-    "list_handlers",
-    "get_template",
     "allowed_module_packages",
     "resolve_module_path",
 ]

@@ -9,7 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from darnit.config.framework_schema import HandlerInvocation, RemediationConfig
-from darnit.config.resolver import update_config_after_file_create
+from darnit.config.resolver import render_reference_update
 from darnit.remediation.executor import RemediationExecutor
 from tests.conftest_helpers import snapshot
 
@@ -117,5 +117,8 @@ def test_file_reference_sync_keeps_a_different_existing_reference(tmp_path: Path
     existing = "name: repo\nsecurity:\n  policy:\n    path: docs/SECURITY.md\n"
     (tmp_path / ".project" / "project.yaml").write_text(existing, encoding="utf-8")
 
-    assert update_config_after_file_create(str(tmp_path), "C-1", "SECURITY.md", {"C-1": "security.policy"}) is False
+    rendered, kept = render_reference_update(str(tmp_path), "security.policy", "SECURITY.md")
+
+    assert rendered == {}
+    assert kept == "security.policy already names docs/SECURITY.md"
     assert (tmp_path / ".project" / "project.yaml").read_text(encoding="utf-8") == existing

@@ -145,6 +145,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `scripts/create-example-test-repo.py`. Plugin authors start from
   `darnit-hello`; the custom step types the tests used moved to the test-only
   `darnit-testchecks` package (#487).
+- **BREAKING (Python API only):** unused functions, classes, and modules in
+  the core package that no product code called. No behavior change for CLI,
+  MCP, or TOML users. Removed import paths:
+  - modules `darnit.context.collection`, `darnit.context.inject`,
+    `darnit.context.detectors`, `darnit.remediation.helpers`, and
+    `darnit.sieve.project_context`, with their `darnit.context` and
+    `darnit.remediation` re-exports;
+  - `darnit.config`: `resolve_file_for_control`,
+    `update_config_after_file_create`, `sync_discovered_file_to_config`
+    (`config.resolver`); `discover_and_create_config` (`config.discovery`);
+    `init_project_config` and `update_project_config` (`config.loader`; the
+    `init_project_config` MCP tool is unchanged); `parse_resource_ref`,
+    `get_path_from_ref`, `create_full_config`, and the `ProjectConfig`
+    methods `is_control_applicable`, `set_type_exclusions`,
+    `get_excluded_controls`, `get_security_contact`, `get_audits`,
+    `get_ci_provider`, `get_contributor_agreement_type` (`config.schema`);
+    `create_framework_config` and `FrameworkConfig.get_controls_by_domain`
+    (`config.framework_schema`); `EffectiveConfig.get_controls_by_domain`
+    (`config.merger`); `load_controls_by_name` and
+    `register_controls_from_config` (`config.control_loader`);
+    `ContextByCategory`, `ContextCategory`, `ExtensionMetadata`,
+    `BaselineExtensionConfig`, `CNCFBaselineExtension`, `ProjectExtensions`,
+    and `CNCFProjectConfig` (`config.context_schema`);
+  - `darnit.context.auto_detect`: `collect_auto_context_with_confidence`,
+    `detect_governance_model`, `detect_project_type`,
+    `detect_has_subprojects`;
+  - `darnit.core`: `PassInfo`, `TemplateInfo`, `register_pass`,
+    `get_template`, `list_handlers`, and the `HandlerRegistry` methods
+    `register_pass`, `get_pass`, `list_passes`, `register_template`,
+    `get_template`, `list_templates`, `discover_templates`, `list_handlers`
+    (`core.handlers`); `ExecutionContext.get_or_run_tool`,
+    `get_cached_result`, `cache_result`, and its `tool_outputs`,
+    `api_responses`, and `cached_results` fields (`core.models`);
+    `file_contains` and `make_result` (`core.utils`);
+  - `darnit.remediation`: `detect_workflow_checks` (`remediation.github`)
+    and `get_context_requirements_for_category`
+    (`remediation.context_validator`);
+  - `darnit.sieve`: `SieveOrchestrator.verify_batch` and
+    `SieveHandlerRegistry.validate_phase`.
 
 ### Added
 

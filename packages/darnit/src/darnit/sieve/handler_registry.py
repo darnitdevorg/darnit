@@ -373,23 +373,6 @@ class SieveHandlerRegistry:
         """Look up a handler by name."""
         return self._handlers.get(name)
 
-    def validate_phase(self, name: str, used_in: str | HandlerPhase) -> None:
-        """Warn if a handler is used in a phase different from its affinity.
-
-        This is advisory only — the handler will still execute.
-        """
-        if isinstance(used_in, str):
-            used_in = HandlerPhase(used_in)
-
-        info = self._handlers.get(name)
-        if info and info.phase != used_in:
-            logger.warning(
-                "Sieve handler '%s' registered for '%s' phase but used in '%s'",
-                name,
-                info.phase.value,
-                used_in.value,
-            )
-
     def list_handlers(
         self, plugin: str | None = None, phase: str | HandlerPhase | None = None
     ) -> list[SieveHandlerInfo]:

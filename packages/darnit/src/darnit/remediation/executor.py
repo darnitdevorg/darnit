@@ -58,10 +58,8 @@ from darnit.config.framework_schema import (
 )
 from darnit.config.when_evaluator import evaluate_when
 from darnit.core.logging import get_logger
+from darnit.core.utils import detect_repo_from_git
 from darnit.remediation import git_state, manifest
-from darnit.remediation.helpers import (
-    detect_repo_from_git,
-)
 from darnit.remediation.plan import Approval, FileChange, PlanItem, content_digest, normalize_repo_path
 
 logger = get_logger("remediation.executor")
