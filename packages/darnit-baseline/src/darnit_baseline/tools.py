@@ -1109,9 +1109,9 @@ def _write_threat_model_files(
         run_id = result.run_id or (executor.run_id if written else None)
     if written:
         try:
-            from darnit.core import audit_cache
+            from darnit.tools.audit import invalidate_full_audit_cache
 
-            audit_cache.invalidate_audit_cache(str(repo_path))
+            invalidate_full_audit_cache(str(repo_path), "openssf-baseline")
         except Exception as exc:  # noqa: BLE001
             from darnit.core.logging import get_logger
 
