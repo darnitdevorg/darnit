@@ -52,13 +52,13 @@ pip install --verify-attestations darnit-mcp==0.1.0
 
 pip refuses to install if the attestation is missing or fails to verify against PyPI's public certs.
 
-### Manual verification with `sigstore`
+### Manual verification with `pypi-attestations`
 
 If you need to verify outside an install context (security scanning, attestation archives, etc.):
 
 ```bash
 # Install the verifier
-pip install 'pypi-attestations>=0.0.27'
+pip install 'pypi-attestations>=0.0.30'
 
 # Download the wheel
 pip download --no-deps darnit-mcp==0.1.0
@@ -108,5 +108,5 @@ For most users, `uv tool install darnit-mcp` (or `pip install darnit-mcp` in a v
 |---|---|
 | `ERROR: Package requires a different Python` | Host Python is older than 3.11. Install Python 3.11+ or use [pipx](https://pipx.pypa.io/) with an explicit `--python` flag. |
 | `Could not find a version that satisfies the requirement` (for a pre-release) | Missing `--pre` flag or wrong `--index-url`. |
-| Sigstore verification fails with "no attestation bundles" | The release was published before PEP 740 attestations existed, or the attestation hasn't propagated yet (rare; retry in a few minutes). |
-| `pypi-attestations verify` reports a repository or workflow mismatch | The wheel was not signed by `darnitdevorg/darnit`'s `release.yml` workflow. **Do not trust this artifact.** Report it via the project's security policy. |
+| Attestation verification fails with "no attestation bundles" | The release was published before PEP 740 attestations existed, or the attestation hasn't propagated yet (rare; retry in a few minutes). |
+| Attestation verification fails with "identity mismatch" | The wheel was not signed by `darnitdevorg/darnit`'s release workflow. **Do not trust this artifact.** Report it via the project's security policy. |
