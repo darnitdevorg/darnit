@@ -14,6 +14,9 @@ dependencies = [
     "packaging>=23.0",
 ]
 
+[project.scripts]
+darnit-amber = "darnit_amber.cli:main"
+
 [project.entry-points."darnit.implementations"]
 amber = "darnit_amber:register"
 
