@@ -300,6 +300,7 @@ def audit_openssf_baseline(
             remediation_map=OSPS_REMEDIATION_MAP,
             framework_name="openssf-baseline",
             audit_metadata=metadata,
+            target=target,
         )
 
     if attest:
