@@ -347,6 +347,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- In OpenSSF Baseline assessment attestation predicates, `assessor.name`
+  changes from `openssf-baseline-mcp` to `openssf-baseline`, `assessor.uri`
+  points to `https://github.com/darnitdevorg/darnit`, `assessor.version`
+  derives dynamically from `darnit-baseline` package metadata instead of
+  hard-coded `0.1.0`, and `baseline.version` / `baseline.specification` derive
+  from the framework TOML metadata (`OSPS v2026.02.19`) instead of `2025.10.10`
+  (Refs #494).
 - **BREAKING:** `register_handlers()` is the one handler registration hook
   for plugins (#451). `darnit-gittuf` and `darnit-reproducibility` rename
   `register_sieve_handlers()` to `register_handlers()`, and their `register()`

@@ -102,7 +102,7 @@ def generate_attestation_from_results(
                 subject_name, audit_result.commit, predicate_type, predicate
             )
             return json.dumps({
-                "error": "Signing requires optional dependencies. Install with: pip install baseline-mcp[attestation]",
+                "error": "Signing requires optional dependencies. Install with: pip install darnit-core[attestation]",
                 "unsigned_statement": unsigned
             }, indent=2)
 

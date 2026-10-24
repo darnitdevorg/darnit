@@ -1837,8 +1837,8 @@ def list_available_checks() -> dict[str, list[dict[str, Any]]]:
             "description": "Comprehensive security for high-risk projects",
         },
         "total": 61,
-        "specification": "OSPS v2025.10.10",
-        "url": "https://baseline.openssf.org/versions/2025-10-10",
+        "specification": "OSPS v2026.02.19",
+        "url": "https://baseline.openssf.org/versions/2026-02-19",
     }
 
 
