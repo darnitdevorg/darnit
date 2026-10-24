@@ -12,6 +12,7 @@ Every function here only reads the repository.
 
 from __future__ import annotations
 
+import functools
 import os
 import posixpath
 import subprocess
@@ -36,13 +37,166 @@ class GitStateError(RuntimeError):
     """A git command needed to establish the repository's state failed."""
 
 
-def run_git(repo: str | Path, *args: str, stdin: str | None = None) -> subprocess.CompletedProcess[str]:
+@functools.lru_cache(maxsize=1)
+def _auditor_gpg_program() -> str:
+    """Return the auditor's configured gpg.program, falling back to 'gpg'."""
+    for scope in ("--global", "--system"):
+        try:
+            res = subprocess.run(
+                ["git", "config", "--includes", scope, "--get", "gpg.program"],
+                capture_output=True,
+                text=True,
+                timeout=5.0,
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                return res.stdout.strip()
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            break
+    return "gpg"
+
+
+@functools.lru_cache(maxsize=1)
+def _auditor_gpg_ssh_program() -> str:
+    """Return the auditor's configured gpg.ssh.program, falling back to 'ssh-keygen'."""
+    for scope in ("--global", "--system"):
+        try:
+            res = subprocess.run(
+                ["git", "config", "--includes", scope, "--get", "gpg.ssh.program"],
+                capture_output=True,
+                text=True,
+                timeout=5.0,
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                return res.stdout.strip()
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            break
+    return "ssh-keygen"
+
+
+@functools.lru_cache(maxsize=1)
+def _auditor_gpg_x509_program() -> str:
+    """Return the auditor's configured gpg.x509.program, falling back to 'gpgsm'."""
+    for scope in ("--global", "--system"):
+        try:
+            res = subprocess.run(
+                ["git", "config", "--includes", scope, "--get", "gpg.x509.program"],
+                capture_output=True,
+                text=True,
+                timeout=5.0,
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                return res.stdout.strip()
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            break
+    return "gpgsm"
+
+
+def _repo_filter_overrides(repo: str | Path) -> list[str]:
+    """Find filter names in ``repo``'s git config and submodule configs, returning args to neutralize them."""
+    names: set[str] = set()
+
+    def _extract_filter_names(output: str) -> None:
+        for line in output.splitlines():
+            parts = line.split(None, 1)
+            if parts:
+                key = parts[0]
+                if key.startswith("filter.") and "." in key[7:]:
+                    name = key[7:].rsplit(".", 1)[0]
+                    if name:
+                        names.add(name)
+
+    # 1. Main repository config
+    try:
+        res = subprocess.run(
+            ["git", "config", "--get-regexp", r"^filter\."],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            timeout=5.0,
+        )
+        if res.returncode == 0 and res.stdout:
+            _extract_filter_names(res.stdout)
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        pass
+
+    # 2. Submodule configs located in .git/modules/**/config
+    try:
+        repo_path = Path(repo)
+        git_target = repo_path / ".git"
+        git_dir: Path | None = None
+        if git_target.is_file():
+            try:
+                content = git_target.read_text().strip()
+                if content.startswith("gitdir:"):
+                    git_dir = (repo_path / content.split(":", 1)[1].strip()).resolve()
+            except OSError:
+                git_dir = None
+        elif git_target.is_dir():
+            git_dir = git_target
+
+        if git_dir and git_dir.is_dir():
+            modules_dir = git_dir / "modules"
+            if modules_dir.is_dir():
+                for cfg in modules_dir.rglob("config"):
+                    try:
+                        res = subprocess.run(
+                            ["git", "config", "--file", str(cfg), "--get-regexp", r"^filter\."],
+                            cwd=repo,
+                            capture_output=True,
+                            text=True,
+                            timeout=5.0,
+                        )
+                        if res.returncode == 0 and res.stdout:
+                            _extract_filter_names(res.stdout)
+                    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+                        pass
+    except (FileNotFoundError, OSError):
+        pass
+
+    overrides: list[str] = []
+    for name in sorted(names):
+        overrides.extend([
+            "-c", f"filter.{name}.clean=",
+            "-c", f"filter.{name}.process=",
+            "-c", f"filter.{name}.required=false",
+        ])
+    return overrides
+
+
+def run_git(
+    repo: str | Path,
+    *args: str,
+    stdin: str | None = None,
+    timeout: float | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """Run a read-side git command on ``repo`` safely.
+
+    To protect the auditor from untrusted repository configuration (issue #617),
+    this helper disables ``core.fsmonitor``, neutralizes clean and process filters,
+    and pins ``gpg.program``, ``gpg.ssh.program``, and ``gpg.x509.program`` to the
+    auditor's configuration (or defaults).
+    """
+    cmd = [
+        "git",
+        "--no-optional-locks",
+        "-c",
+        "core.fsmonitor=false",
+        "-c",
+        f"gpg.program={_auditor_gpg_program()}",
+        "-c",
+        f"gpg.ssh.program={_auditor_gpg_ssh_program()}",
+        "-c",
+        f"gpg.x509.program={_auditor_gpg_x509_program()}",
+        *_repo_filter_overrides(repo),
+        *args,
+    ]
     return subprocess.run(
-        ["git", "--no-optional-locks", *args],
+        cmd,
         cwd=repo,
         capture_output=True,
         text=True,
         input=stdin,
+        timeout=timeout,
     )
 
 
