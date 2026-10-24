@@ -633,13 +633,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   grepping the text report, so a reworded message cannot hide a broken
   dependency, and it refuses a `dist/` holding more than one wheel of a
   package (#575).
-- A filtered audit is no longer reused as a full one (#542). The audit
-  cache records the audit's scope: framework, level, tag filter, and
-  whether any filter narrowed the control set. A filtered audit is cached
-  under its own key, and remediation reads only an unfiltered level 3
-  audit of its framework, through the store the audit wrote to. Before,
-  `darnit audit --tags level=1` left a cache that remediation treated as
-  a full audit. Cache files from earlier versions are ignored and rebuilt.
 - A filtered audit is no longer reused as a full one (#542). Only an
   unfiltered audit is cached: a run narrowed by `--tags`, `--include`,
   `--exclude` or a profile does not write the audit cache. Remediation
