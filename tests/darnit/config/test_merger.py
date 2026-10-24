@@ -4,6 +4,7 @@ This module tests merging a framework with operator configuration.
 """
 
 import pytest
+from pydantic import ValidationError
 
 from darnit.config.control_loader import control_from_effective
 from darnit.config.framework_schema import (
@@ -40,6 +41,125 @@ class TestMergeControl:
         assert result.name == "TestControl"
         assert result.level == 1
         assert result.domain == "AC"
+
+    def test_level_and_domain_from_tags(self):
+        """Test control built from framework definition declaring level and domain in tags."""
+        framework_control = ControlConfig(
+            name="TagControl",
+            description="Control with level and domain in tags",
+            tags={"level": 2, "domain": "QA", "security_severity": 7.5},
+        )
+
+        assert framework_control.level == 2
+        assert framework_control.domain == "QA"
+        assert framework_control.security_severity == 7.5
+
+        result = merge_control("TEST-TAGS", framework_control)
+
+        assert isinstance(result, EffectiveControl)
+        assert result.level == 2
+        assert result.domain == "QA"
+        assert result.security_severity == 7.5
+        assert result.tags["level"] == 2
+        assert result.tags["domain"] == "QA"
+        assert result.tags["security_severity"] == 7.5
+
+    def test_level_conflict_with_tags_raises_error(self):
+        """Declaring conflicting level between attribute and tags rejects loading."""
+        with pytest.raises(ValidationError, match="Conflicting level declarations"):
+            ControlConfig(
+                name="ConflictLevel",
+                description="desc",
+                level=1,
+                tags={"level": 2},
+            )
+
+    def test_domain_conflict_with_tags_raises_error(self):
+        """Declaring conflicting domain between attribute and tags rejects loading."""
+        with pytest.raises(ValidationError, match="Conflicting domain declarations"):
+            ControlConfig(
+                name="ConflictDomain",
+                description="desc",
+                domain="AC",
+                tags={"domain": "QA"},
+            )
+
+    def test_security_severity_conflict_with_tags_raises_error(self):
+        """Declaring conflicting security_severity rejects loading."""
+        with pytest.raises(ValidationError, match="Conflicting security_severity declarations"):
+            ControlConfig(
+                name="ConflictSev",
+                description="desc",
+                security_severity=5.0,
+                tags={"security_severity": 8.0},
+            )
+
+    def test_invalid_tags_level_type_raises_error(self):
+        """Non-integer tags.level values (strings, floats, booleans) reject loading."""
+        for invalid_level in ["L1", 1.5, True, False]:
+            with pytest.raises(ValidationError, match="tags.level must be an integer"):
+                ControlConfig(
+                    name="InvalidLevel",
+                    description="desc",
+                    tags={"level": invalid_level},
+                )
+
+    def test_invalid_tags_domain_type_raises_error(self):
+        """Non-string tags.domain values reject loading."""
+        with pytest.raises(ValidationError, match="tags.domain must be a string"):
+            ControlConfig(
+                name="InvalidDomain",
+                description="desc",
+                tags={"domain": 123},
+            )
+
+    def test_invalid_tags_security_severity_type_raises_error(self):
+        """Non-numeric or boolean tags.security_severity values reject loading."""
+        for invalid_sev in ["high", True, False]:
+            with pytest.raises(ValidationError, match="tags.security_severity must be a number"):
+                ControlConfig(
+                    name="InvalidSev",
+                    description="desc",
+                    tags={"security_severity": invalid_sev},
+                )
+
+    def test_get_controls_by_level_with_tags_level(self):
+        """get_controls_by_level returns controls whose level was declared in tags."""
+        ctrl1 = ControlConfig(
+            name="C1",
+            description="desc",
+            tags={"level": 1, "domain": "AC"},
+        )
+        ctrl2 = ControlConfig(
+            name="C2",
+            description="desc",
+            level=2,
+            domain="VM",
+        )
+        ctrl3 = ControlConfig(
+            name="C3",
+            description="desc",
+        )
+
+        fc = FrameworkConfig(
+            metadata=FrameworkMetadata(name="test-fw", display_name="Test FW", version="0.1.0", description="desc"),
+            controls={"C1": ctrl1, "C2": ctrl2, "C3": ctrl3},
+        )
+
+        l1_controls = fc.get_controls_by_level(1)
+        assert "C1" in l1_controls
+        assert "C2" not in l1_controls
+        assert "C3" not in l1_controls
+
+        l2_controls = fc.get_controls_by_level(2)
+        assert "C2" in l2_controls
+        assert "C1" not in l2_controls
+
+        effective_cfg = merge_configs(fc)
+        eff_l1 = effective_cfg.get_controls_by_level(1)
+        assert "C1" in eff_l1
+        eff_l2 = effective_cfg.get_controls_by_level(2)
+        assert "C2" in eff_l2
 
 
 class TestRemovedAdapterConfiguration:

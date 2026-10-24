@@ -428,7 +428,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
     total_shown = 0
     total_filtered = 0
 
-    for level in sorted(by_level.keys()):
+    for level in sorted(by_level.keys(), key=lambda k: (k is None, k if k is not None else 0)):
         controls = by_level[level]
         shown_controls = []
 
@@ -449,7 +449,8 @@ def cmd_plan(args: argparse.Namespace) -> int:
         if not shown_controls:
             continue
 
-        logger.info(f"Level {level} ({len(shown_controls)} controls):")
+        level_str = f"Level {level}" if level is not None else "No level"
+        logger.info(f"{level_str} ({len(shown_controls)} controls):")
         for cid, ctrl in shown_controls:
             logger.info(f"  • {cid}: {ctrl.name}")
         total_shown += len(shown_controls)
@@ -487,12 +488,22 @@ def cmd_validate(args: argparse.Namespace) -> int:
         logger.info(f"  Controls: {len(config.controls)}")
 
         # Show level breakdown
-        by_level = {}
+        by_level: dict[int | None, int] = {}
         for _cid, ctrl in config.controls.items():
             by_level.setdefault(ctrl.level, 0)
             by_level[ctrl.level] += 1
 
-        logger.info(f"  By level: {', '.join(f'L{k}={v}' for k, v in sorted(by_level.items()))}")
+        parts = []
+        for k, v in sorted(
+            by_level.items(),
+            key=lambda item: (item[0] is None, item[0] if item[0] is not None else 0),
+        ):
+            if k is not None:
+                parts.append(f"L{k}={v}")
+            else:
+                parts.append(f"none={v}")
+
+        logger.info(f"  By level: {', '.join(parts)}")
         return 0
 
 
