@@ -96,7 +96,7 @@ def user_changed(root: str | Path) -> set[str]:
     """Paths under ``root``, relative to it, with uncommitted changes (modified, staged, or untracked); empty outside git."""
     if not git_state.is_work_tree(root):
         return set()
-    result = git_state.run_git(root, "status", "--porcelain", "-z", "--untracked-files=all", "--no-renames", "--", ".")
+    result = git_state.run_git(root, "status", "--porcelain", "-z", "--untracked-files=all", "--ignore-submodules=dirty", "--no-renames", "--", ".")
     if result.returncode != 0:
         raise git_state.GitStateError(f"git status failed: {result.stderr.strip() or result.returncode}")
     paths = git_state.from_root(root, [entry[3:] for entry in result.stdout.split("\0") if len(entry) > 3])

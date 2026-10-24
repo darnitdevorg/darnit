@@ -619,17 +619,14 @@ def get_remediation_status_impl(local_path: str = ".") -> str:
         current_branch = result.stdout.strip()
 
         # Get status
-        result = run_git(resolved_path, "status", "--porcelain")
+        result = run_git(resolved_path, "status", "--porcelain", "--ignore-submodules=dirty")
         changes = result.stdout.strip()
-        changed_files = [
-            line.split(None, 1)[1] if len(line.split(None, 1)) > 1 else line
-            for line in changes.split("\n")
-            if line.strip()
-        ]
+        changed_files = [line.split(None, 1)[1] if len(line.split(None, 1)) > 1 else line
+                        for line in changes.split('\n') if line.strip()]
 
         # Check for unpushed commits
         result = run_git(resolved_path, "log", "@{u}..HEAD", "--oneline")
-        unpushed = result.stdout.strip().split("\n") if result.returncode == 0 and result.stdout.strip() else []
+        unpushed = result.stdout.strip().split('\n') if result.returncode == 0 and result.stdout.strip() else []
         unpushed = [c for c in unpushed if c.strip()]
 
         # Check for existing PR

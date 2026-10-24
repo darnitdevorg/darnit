@@ -115,7 +115,7 @@ def _get_head_commit(local_path: str) -> str | None:
 def _is_working_tree_dirty(local_path: str) -> bool:
     """Return True if the working tree has uncommitted changes."""
     try:
-        result = run_git(local_path, "status", "--porcelain", timeout=10)
+        result = run_git(local_path, "status", "--porcelain", "--ignore-submodules=dirty", timeout=10)
         if result.returncode == 0:
             return len(result.stdout.strip()) > 0
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):

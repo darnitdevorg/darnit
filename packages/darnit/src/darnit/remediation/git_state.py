@@ -43,7 +43,7 @@ def _auditor_gpg_program() -> str:
     for scope in ("--global", "--system"):
         try:
             res = subprocess.run(
-                ["git", "config", scope, "--get", "gpg.program"],
+                ["git", "config", "--includes", scope, "--get", "gpg.program"],
                 capture_output=True,
                 text=True,
                 timeout=5.0,
@@ -61,7 +61,7 @@ def _auditor_gpg_ssh_program() -> str:
     for scope in ("--global", "--system"):
         try:
             res = subprocess.run(
-                ["git", "config", scope, "--get", "gpg.ssh.program"],
+                ["git", "config", "--includes", scope, "--get", "gpg.ssh.program"],
                 capture_output=True,
                 text=True,
                 timeout=5.0,
@@ -79,7 +79,7 @@ def _auditor_gpg_x509_program() -> str:
     for scope in ("--global", "--system"):
         try:
             res = subprocess.run(
-                ["git", "config", scope, "--get", "gpg.x509.program"],
+                ["git", "config", "--includes", scope, "--get", "gpg.x509.program"],
                 capture_output=True,
                 text=True,
                 timeout=5.0,
@@ -92,7 +92,20 @@ def _auditor_gpg_x509_program() -> str:
 
 
 def _repo_filter_overrides(repo: str | Path) -> list[str]:
-    """Find filter names in ``repo``'s git config and return args to neutralize clean/process filters."""
+    """Find filter names in ``repo``'s git config and submodule configs, returning args to neutralize them."""
+    names: set[str] = set()
+
+    def _extract_filter_names(output: str) -> None:
+        for line in output.splitlines():
+            parts = line.split(None, 1)
+            if parts:
+                key = parts[0]
+                if key.startswith("filter.") and "." in key[7:]:
+                    name = key[7:].rsplit(".", 1)[0]
+                    if name:
+                        names.add(name)
+
+    # 1. Main repository config
     try:
         res = subprocess.run(
             ["git", "config", "--get-regexp", r"^filter\."],
@@ -101,21 +114,53 @@ def _repo_filter_overrides(repo: str | Path) -> list[str]:
             text=True,
             timeout=5.0,
         )
-        if res.returncode != 0 or not res.stdout:
-            return []
-        names: set[str] = set()
-        for line in res.stdout.splitlines():
-            parts = line.split(None, 1)
-            if parts:
-                key_parts = parts[0].split(".")
-                if len(key_parts) >= 3 and key_parts[0] == "filter":
-                    names.add(key_parts[1])
-        overrides: list[str] = []
-        for name in sorted(names):
-            overrides.extend(["-c", f"filter.{name}.clean=", "-c", f"filter.{name}.process="])
-        return overrides
+        if res.returncode == 0 and res.stdout:
+            _extract_filter_names(res.stdout)
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-        return []
+        pass
+
+    # 2. Submodule configs located in .git/modules/**/config
+    try:
+        repo_path = Path(repo)
+        git_target = repo_path / ".git"
+        git_dir: Path | None = None
+        if git_target.is_file():
+            try:
+                content = git_target.read_text().strip()
+                if content.startswith("gitdir:"):
+                    git_dir = (repo_path / content.split(":", 1)[1].strip()).resolve()
+            except OSError:
+                git_dir = None
+        elif git_target.is_dir():
+            git_dir = git_target
+
+        if git_dir and git_dir.is_dir():
+            modules_dir = git_dir / "modules"
+            if modules_dir.is_dir():
+                for cfg in modules_dir.rglob("config"):
+                    try:
+                        res = subprocess.run(
+                            ["git", "config", "--file", str(cfg), "--get-regexp", r"^filter\."],
+                            cwd=repo,
+                            capture_output=True,
+                            text=True,
+                            timeout=5.0,
+                        )
+                        if res.returncode == 0 and res.stdout:
+                            _extract_filter_names(res.stdout)
+                    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+                        pass
+    except (FileNotFoundError, OSError):
+        pass
+
+    overrides: list[str] = []
+    for name in sorted(names):
+        overrides.extend([
+            "-c", f"filter.{name}.clean=",
+            "-c", f"filter.{name}.process=",
+            "-c", f"filter.{name}.required=false",
+        ])
+    return overrides
 
 
 def run_git(
