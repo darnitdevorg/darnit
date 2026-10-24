@@ -2051,6 +2051,7 @@ Design principle: **the audited repository is untrusted input in its entirety, i
 - The operator lists trusted repositories by canonical identity (`host/namespace/name`). The identity used for a trust decision comes from the operator's audit target or CI metadata, never solely from the checkout's own version-control configuration.
 - CI trust is opt-in per rule; the initial rule trusts pushes to the default branch of a listed repository. Pull requests from forks and unrecognized events are never trusted.
 - Remediation follows the same rule. `remediate_audit_findings` takes its trust identity from the repository the caller names (`owner`, `repo`, and `host` when not github.com) or from CI metadata, and uses it for the run, its context reads, the pending-context guard (15.4), and the re-check (15.5). Owner and repository detected from the checkout's remote may still address platform calls and label the report; they never decide trust.
+- The audit report's pending-context step ("Confirm project context") reads with the identity the audit was given, so answers a person confirmed operator-side for the named repository are not asked for again. An audit that names no repository reads no operator-side answers.
 
 #### Scenario: Remediation of a checkout whose remote names a trusted repository
 - **WHEN** the operator trusts a repository, a checkout's origin remote names it, and remediation is called without naming a repository
