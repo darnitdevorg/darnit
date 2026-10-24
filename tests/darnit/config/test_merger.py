@@ -165,22 +165,22 @@ class TestMergeControl:
 class TestRemovedAdapterConfiguration:
     """The adapter keys removed in #487 (framework-design Appendix C)."""
 
-    METADATA = """[metadata]
+    METADATA = '''[metadata]
 name = "removed-adapters"
 display_name = "Removed Adapters"
 version = "0.1.0"
-"""
+'''
 
     def test_control_check_key_fails_loading(self, tmp_path):
         path = tmp_path / "framework.toml"
         path.write_text(
             self.METADATA
-            + """
+            + '''
 [controls."TEST-01"]
 name = "TestControl"
 description = "Test description"
 check = { adapter = "kusari" }
-"""
+'''
         )
 
         with pytest.raises(ValueError, match="control 'TEST-01' has unknown key 'check'"):
@@ -190,7 +190,7 @@ check = { adapter = "kusari" }
         path = tmp_path / "framework.toml"
         path.write_text(
             self.METADATA
-            + """
+            + '''
 [defaults]
 check_adapter = "kusari"
 remediation_adapter = "builtin"
@@ -202,7 +202,7 @@ command = "kusari"
 [controls."TEST-01"]
 name = "TestControl"
 description = "Test description"
-"""
+'''
         )
 
         effective = merge_configs(load_framework_config(path))
@@ -335,10 +335,14 @@ class TestSieveGatingMetadataPreservation:
         effective = merge_control("OSPS-QA-02.01", framework_control)
         spec = control_from_effective("OSPS-QA-02.01", effective)
 
-        assert "when" in spec.metadata, "control_from_effective dropped 'when' from ControlSpec.metadata"
+        assert "when" in spec.metadata, (
+            "control_from_effective dropped 'when' from ControlSpec.metadata"
+        )
         assert spec.metadata["when"] == {"has_releases": True}
 
-        assert "depends_on" in spec.metadata, "control_from_effective dropped 'depends_on' from ControlSpec.metadata"
+        assert "depends_on" in spec.metadata, (
+            "control_from_effective dropped 'depends_on' from ControlSpec.metadata"
+        )
         assert spec.metadata["depends_on"] == ["OSPS-AC-01.01"]
 
         assert "inferred_from" in spec.metadata, (
@@ -346,10 +350,10 @@ class TestSieveGatingMetadataPreservation:
         )
         assert spec.metadata["inferred_from"] == "OSPS-AC-02.01"
 
-        assert "on_pass" in spec.metadata, "control_from_effective dropped 'on_pass' from ControlSpec.metadata"
-        assert (
-            spec.metadata["on_pass"].get("project_update", {}).get("security.policy.path") == "$EVIDENCE.relative_path"
+        assert "on_pass" in spec.metadata, (
+            "control_from_effective dropped 'on_pass' from ControlSpec.metadata"
         )
+        assert spec.metadata["on_pass"].get("project_update", {}).get("security.policy.path") == "$EVIDENCE.relative_path"
 
     def test_control_without_gating_metadata_is_unaffected(self):
         """Controls without optional gating fields must continue to work normally."""
