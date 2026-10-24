@@ -481,6 +481,15 @@ class TestRegexHandler:
         assert regex_handler(config, ctx).status == HandlerResultStatus.INCONCLUSIVE
         assert regex_handler({**config, "fail_on_miss": True}, ctx).status == HandlerResultStatus.FAIL
 
+    def test_no_listed_file_exists(self, tmp_path, ctx):
+        """#665: none of the listed files exists is a miss; FAIL with fail_on_miss."""
+        config = {
+            "files": ["ARCHITECTURE.md", "docs/architecture.md"],
+            "pattern": {"patterns": {"components": "component"}},
+        }
+        assert regex_handler(config, ctx).status == HandlerResultStatus.INCONCLUSIVE
+        assert regex_handler({**config, "fail_on_miss": True}, ctx).status == HandlerResultStatus.FAIL
+
     # --- pass_if_any ---
 
     def test_pass_if_any_true_default(self, tmp_path, ctx):
