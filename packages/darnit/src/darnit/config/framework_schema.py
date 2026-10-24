@@ -414,7 +414,9 @@ def _validate_project_reference(reference: Any) -> None:
     from darnit.config.resolver import reference_key
 
     if not isinstance(reference, str) or reference_key(reference) is None:
-        raise ValueError(f"file_create project_reference {reference!r} is not a project path field (<section>.<field>)")
+        raise ValueError(
+            f"file_create project_reference {reference!r} is not a project path field (<section>.<field>)"
+        )
 
 
 class ProjectUpdateRemediationConfig(BaseModel):
