@@ -41,10 +41,12 @@ OSPS_REMEDIATION_MAP: dict = {
 def _compact_result(r: dict[str, Any]) -> dict[str, Any]:
     """Reduce one check result to the `summary` output shape.
 
-    Drops evidence and pass_history (~5-8K vs ~164K for 62 controls) but
-    keeps ``error_class`` when present. Feature 036: a summary that hides
-    "we could not verify" is worse than no summary -- a consumer would
-    read an unreachable network as a real compliance failure.
+    Drops evidence and pass_history but keeps ``error_class`` when present.
+    Feature 036: a summary that hides "we could not verify" is worse than no
+    summary -- a consumer would read an unreachable network as a real
+    compliance failure. A PENDING row keeps ``pending`` so a client can tell
+    a control awaiting a judgment from a PASS candidate awaiting
+    confirmation (framework-design 5.4).
     """
     compact: dict[str, Any] = {
         "id": r.get("id"),
@@ -56,6 +58,16 @@ def _compact_result(r: dict[str, Any]) -> dict[str, Any]:
         compact["error_class"] = r["error_class"]
     if r.get("assertion") is not None:
         compact["assertion"] = r["assertion"]
+    if r.get("status") == "PENDING" and r.get("pending") is not None:
+        pending: dict[str, Any] = {"kind": r["pending"].get("kind")}
+        candidate = r.get("candidate")
+        if candidate is not None:
+            pending["candidate"] = {
+                "model": candidate.get("model", ""),
+                "reasoning": candidate.get("reasoning", ""),
+                "cited_excerpts": len(candidate.get("cited_evidence") or []),
+            }
+        compact["pending"] = pending
     return compact
 
 
@@ -120,7 +132,7 @@ def audit_openssf_baseline(
               - Bare values match against control tags dict keys
         output_format: Output format - "markdown", "json", "summary", "sarif", or "badge".
               Default: "markdown".
-              Use "summary" for compact JSON (id/status/level/details only, no evidence).
+              Use "summary" for compact JSON (id/status/level/details, pending on PENDING rows; no evidence).
               Use "badge" to generate an OpenSSF Best Practices Badge automation-proposal URL.
         auto_init_config: Create .project.yaml if missing. Default: True
         attest: Generate in-toto attestation after audit. Default: False
@@ -252,8 +264,8 @@ def audit_openssf_baseline(
 
         return generate_badge_url(results, resolved_project_url)
     elif output_format == "summary":
-        # Compact JSON: only id/status/level/details — no evidence or pass_history.
-        # ~5-8K vs ~164K for full JSON with 62 controls.
+        # Compact JSON: id/status/level/details (plus pending, error_class,
+        # assertion when present) -- no evidence or pass_history.
         from darnit.tools.audit import framework_metadata
 
         compact_results = [_compact_result(r) for r in results]
@@ -701,6 +713,7 @@ def confirm_project_data(
     Returns:
         What was recorded or refused, per key
     """
+    from darnit.server.procedures import data_next_step
     from darnit.server.tools.project_data import confirm_project_data_impl
 
     return confirm_project_data_impl(
@@ -715,6 +728,7 @@ def confirm_project_data(
         host=host,
         framework_name=_FRAMEWORK_NAME,
         confirm_pass_candidate=confirm_pass_candidate,
+        next_step=data_next_step(owner, repo, str(Path(local_path).resolve())),
         **values,
     )
 
@@ -741,25 +755,8 @@ def _context_key_order() -> list[str]:
         return []
 
 
-_LLM_DIRECTIVE_PREFIX = """MANDATORY: Your next action MUST be calling the AskUserQuestion tool.
-
-For every question in "questions" that has a "candidate", first show the person its
-candidate.value and candidate.origin, labelled UNCONFIRMED. Then pass "ask_user_batch"
-below verbatim as the "questions" parameter to AskUserQuestion. Do NOT paraphrase, do NOT
-pre-select answers, and do NOT add options. A question in "questions" with no entry in
-"ask_user_batch" (free text, or more allowed values than the selector holds) is asked
-after that, listing every value in its "allowed_values"; never offer its "format_hint"
-as an answer.
-
-After the person answers, call confirm_project_data() once for the batch, with owner and
-repo (and host when not github.com) naming the repository. Use "answer_mapping":
-- "Yes" / "No" on a yes/no question -> pass true / false (not strings)
-- A selected option label -> pass the label as a string
-- "Yes" on a candidate question -> accept_candidates, mapping the key to that question's
-  candidate.digest; fill in the digest only now, after the person answered Yes
-- "No" on a candidate question, or "Other" -> pass the value the person typed
-Never type a detected value as an answer. Then call get_pending_data() again for the
-next batch (if any remain).
+_LLM_DIRECTIVE_PREFIX = """MANDATORY: Your next action MUST be asking the person the questions below.
+Follow "procedure" in this result, step by step.
 
 ---
 """
@@ -781,12 +778,9 @@ def get_pending_data(
     its candidate, if any, as unconfirmed data (value, origin, digest); command
     templates and answer mappings hold placeholders only.
 
-    Workflow:
-    1. Call this tool. It returns "questions" and "ask_user_batch".
-    2. Show each question's candidate to the person, labelled unconfirmed, then
-       call AskUserQuestion(questions=<ask_user_batch>).
-    3. After the person answers, use "answer_mapping" to call confirm_project_data().
-    4. Call get_pending_data() again for the next batch. Repeat until status is "complete".
+    The result's ``procedure`` lists the steps to follow: how to show
+    candidates and ask the questions, the confirm_project_data call, the next
+    get_pending_data call, the review of stored values, and the summary.
 
     Parameters:
     - `local_path`: Path to repository (default: ".")
@@ -797,17 +791,21 @@ def get_pending_data(
     - `limit`: Max questions to return per batch (default: 4). Use 0 for all.
 
     Returns:
-        JSON with the questions, ask_user_batch (for AskUserQuestion),
+        JSON with the procedure, the questions, ask_user_batch (for AskUserQuestion),
         answer_mapping for confirm_project_data, a progress indicator, and
         stored_unconfirmed: values stored in .project/ without a confirmation,
         with their locations, for review with confirm_stored / reject_stored.
     """
     from darnit.config.context_storage import get_pending_context as _get_pending
+    from darnit.server.procedures import data_collection_procedure
     from darnit.server.tools.project_data import stored_unconfirmed
     from darnit.trust.decision import target_from_owner_repo
 
     repo_path = Path(local_path).resolve()
     target = target_from_owner_repo(owner, repo)
+    # Only the repository the caller named goes into the procedure's calls,
+    # never one detected from the checkout's remote.
+    procedure = data_collection_procedure(owner, repo, str(repo_path))
 
     # Auto-detect owner/repo from git
     if owner is None or repo is None:
@@ -832,6 +830,7 @@ def get_pending_data(
             complete: dict = {
                 "status": "complete",
                 "message": "All context has been confirmed. No additional input needed.",
+                "procedure": procedure,
                 "questions": [],
             }
             if stored:
@@ -859,10 +858,7 @@ def get_pending_data(
         batch_questions = []
         answer_mapping = []
         for q in questions:
-            ask_user = q.get("ask_user")
-            if ask_user is None:
-                continue
-            batch_questions.append(ask_user)
+            batch_questions.append(q["ask_user"])
             mapping: dict = {
                 "question_index": len(batch_questions) - 1,
                 "context_key": q["key"],
@@ -874,6 +870,8 @@ def get_pending_data(
                 }
             elif q["input_type"] == "select" and q.get("options") == ["true", "false"]:
                 mapping["value_map"] = {"Yes": True, "No": False}
+            elif q["input_type"] == "free_text":
+                mapping["value_map"] = {SKIP_OPTION: "SKIP", CHAT_OPTION: "ASK_USER_FOR_VALUE"}
             answer_mapping.append(mapping)
 
         # Determine answered count from total minus pending
@@ -881,6 +879,7 @@ def get_pending_data(
 
         response: dict = {
             "status": "pending",
+            "procedure": procedure,
             "progress": {
                 "answered": answered,
                 "total": total,
@@ -995,23 +994,26 @@ def _build_context_question(req) -> dict:
             "repository owner, git config, or any other source. The format hint is not an answer."
         )
 
-    ask_user = _build_ask_user_params(req.key, question, definition)
-    if ask_user is not None:
-        question["ask_user"] = ask_user
+    question["ask_user"] = _build_ask_user_params(req.key, question, definition)
 
     return question
 
 
-def _build_ask_user_params(key: str, question_dict: dict, definition) -> dict | None:
-    """AskUserQuestion parameters (question/header/options/multiSelect), or None.
+SKIP_OPTION = "Skip for now"
+CHAT_OPTION = "Answer in chat"
 
-    None for free text and for an enum with more values than the selector
-    holds, so no allowed value is dropped (FR-015). A candidate's value is
-    not repeated here; the person sees it from the question's ``candidate``.
+
+def _build_ask_user_params(key: str, question_dict: dict, definition) -> dict:
+    """AskUserQuestion parameters (question/header/options/multiSelect) for every question.
+
+    The question tool shows at most 4 options and always adds a free-text
+    "Other". A choice key with more values names them all in the question, so
+    each stays reachable under Other (FR-015). A free-text key offers skip and
+    chat options, never a value. A candidate's value is not repeated here; the
+    person sees it from the question's ``candidate``.
     """
     input_type = question_dict.get("input_type")
     question_text = question_dict["prompt"]
-
     header = _ask_user_header(key)
 
     if input_type == "confirm":
@@ -1028,26 +1030,39 @@ def _build_ask_user_params(key: str, question_dict: dict, definition) -> dict | 
             "multiSelect": False,
         }
 
-    if input_type != "select":
-        return None
-
-    if definition.type == "boolean":
+    if input_type == "select" and definition.type == "boolean":
         if hint := question_dict.get("hint"):
             question_text = f"{question_text} {hint}"
-        options = [
-            {"label": "Yes", "description": "Yes, this applies"},
-            {"label": "No", "description": "No, this does not apply"},
-        ]
-    else:
+        return {
+            "question": question_text,
+            "header": header,
+            "options": [
+                {"label": "Yes", "description": "Yes, this applies"},
+                {"label": "No", "description": "No, this does not apply"},
+            ],
+            "multiSelect": False,
+        }
+
+    if input_type == "select":
         values = question_dict["options"]
         if len(values) > _SELECTOR_OPTION_LIMIT:
-            return None
-        options = [{"label": str(v), "description": f"Select '{v}'"} for v in values]
+            question_text = f"{question_text} Choose Other to type a value not listed below."
+        return {
+            "question": question_text,
+            "header": header,
+            "options": [{"label": str(v), "description": f"Select '{v}'"} for v in values[:_SELECTOR_OPTION_LIMIT]],
+            "multiSelect": False,
+        }
 
+    hint = question_dict.get("hint")
+    details = f" {hint}." if hint and not hint.endswith(".") else (f" {hint}" if hint else "")
     return {
-        "question": question_text,
+        "question": f"{question_text}{details} Type your answer under Other.",
         "header": header,
-        "options": options,
+        "options": [
+            {"label": SKIP_OPTION, "description": "Leave it unanswered; the controls it affects stay non-compliant"},
+            {"label": CHAT_OPTION, "description": "Type a longer answer in the conversation instead"},
+        ],
         "multiSelect": False,
     }
 

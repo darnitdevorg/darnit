@@ -4,7 +4,7 @@ description: Run a compliance audit on the current repository using darnit. Use 
 compatibility: Requires darnit MCP server running (darnit serve)
 metadata:
   author: kusari-oss
-  version: "2.0"
+  version: "2.2"
 ---
 
 # Compliance Audit
@@ -22,14 +22,18 @@ Darnit's MCP server registers audit tools per implementation module. Look for av
 Common audit tools:
 - `audit_openssf_baseline` — OpenSSF Baseline (OSPS v2025.10.10)
 
+## The repository
+
+Name the audited repository on every darnit call, the audit included: `owner` and `repo`, plus `host` when it is not github.com. darnit applies the person's confirmed answers, stored PASS candidates, and trust only to a named repository, and never takes the name from the checkout's remotes. Before the first call, ask the person to confirm which repository this is, offering the checkout's `origin` remote as the suggestion, and use their answer for every call.
+
 ## Workflow
 
-1. Identify the audit tool to use (see above). Call it with `local_path` set to the repository root and `output_format` set to `"markdown"`.
-   - Use `output_format: "summary"` if you only need pass/fail counts (compact JSON, ~5-8K vs ~164K for full JSON).
+1. Identify the audit tool to use (see above). Call it with `owner` and `repo` naming the repository, `local_path` set to the repository root, and `output_format` set to `"markdown"`.
+   - Use `output_format: "summary"` if you only need pass/fail counts (compact JSON; PENDING rows carry `pending.kind`). Do not use `output_format: "json"` to read judgment requests: it holds every control's full evidence and is too large for a tool result. Use `get_judgment_requests` (step 2).
    - If the user mentions a profile (e.g., "just level 1", "access control only", "onboard"), pass it as the `profile` parameter.
    - If the user mentions a level, pass it as the `level` parameter.
 
-2. Inspect the results for `PENDING` controls with `pending.kind = "llm_judgment"`. These are controls whose deterministic steps could not decide and that need a judgment of the content in `evidence.llm_consultation` (use `output_format: "json"` to see it). For each one, read the prompt and the files in `evidence.llm_consultation.file_contents`, then call `submit_judgment` with `control_id`, `verdict` (`"pass"` or `"fail"`), your `reasoning`, `cited_evidence` (the passages you relied on, copied verbatim from those files; a `"pass"` needs at least one), `model` and `model_version` (the model you are), and `owner`, `repo`, `local_path` naming the audited repository. Your judgment is not the audit result:
+2. If any control is `PENDING` with `pending.kind = "llm_judgment"`, call `get_judgment_requests` with `owner`, `repo`, and `local_path` naming the audited repository, and follow the `procedure` in its result: it says how to judge each request, how to call `submit_judgment`, and how to fetch the next page. Your judgment is not the audit result:
    - A `"pass"` with verified citations becomes a PASS candidate (`PENDING`, `pending.kind = "confirmation"`), still non-compliant until the operator confirms it.
    - A `"fail"` is reported as a model finding (suggestive FAIL).
    - A rejection means a cited passage was not found verbatim; the control stays unverified. Do not rephrase the passage to get it accepted unless it is genuinely in the file.
