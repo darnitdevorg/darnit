@@ -144,6 +144,56 @@ class TestSubmitJudgment:
 
 
 @pytest.mark.integration
+class TestReGatheringOnlyTheJudgedControl:
+    """#653: a judgment re-gathers its control's evidence, not the whole framework's."""
+
+    def test_only_the_judged_control_is_audited_and_nothing_is_cached(
+        self, repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from darnit.tools import audit as audit_module
+
+        calls: list[tuple[dict, list[str]]] = []
+        real = audit_module.run_sieve_audit
+
+        def spy(*args: object, **kwargs: object):
+            results, summary = real(*args, **kwargs)
+            calls.append((kwargs, [r["id"] for r in results]))
+            return results, summary
+
+        monkeypatch.setattr(audit_module, "run_sieve_audit", spy)
+
+        assert _submit(repo)["status"] == "candidate"
+
+        [(kwargs, evaluated)] = calls
+        assert evaluated == [CONTROL]
+        assert kwargs["write_cache"] is False
+
+    def test_the_candidate_matches_the_evidence_a_full_audit_gathers(self, repo: Path) -> None:
+        from darnit.trust.judgments import evidence_digest
+
+        candidate = _submit(repo)["candidate"]
+
+        assert candidate["evidence_digest"] == evidence_digest(audit(repo)["evidence"]["llm_consultation"])
+
+    def test_control_ids_select_after_operator_controls_are_added(self, repo: Path) -> None:
+        from darnit.config.operator.loader import resolve_operator_config
+        from darnit.tools.audit import run_sieve_audit
+
+        results, _ = run_sieve_audit(
+            OWNER,
+            REPO,
+            str(repo),
+            "main",
+            level=1,
+            control_ids=[CONTROL, "NOT-A-CONTROL"],
+            framework_name=FRAMEWORK,
+            operator_config=resolve_operator_config(str(repo)),
+        )
+
+        assert [r["id"] for r in results] == [CONTROL]
+
+
+@pytest.mark.integration
 class TestConfirmingACandidate:
     def _confirm(self, checkout: Path, **names: str) -> str:
         from darnit.server.tools.project_data import confirm_project_data_impl
