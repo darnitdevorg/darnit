@@ -89,6 +89,25 @@ class TestDiscoverFiles:
 
         assert "security.policy" in result
 
+    def test_case_mismatch_not_discovered(self, temp_dir):
+        from darnit.core.utils import clear_dir_entries_cache
+
+        clear_dir_entries_cache()
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "docs" / "ARCHITECTURE.md").write_text("# Arch")
+
+        result = discover_files(
+            str(temp_dir),
+            {"doc": ["docs/architecture.md"]},
+        )
+        assert "doc" not in result
+
+        result_correct = discover_files(
+            str(temp_dir),
+            {"doc": ["docs/ARCHITECTURE.md"]},
+        )
+        assert result_correct == {"doc": "docs/ARCHITECTURE.md"}
+
 
 # ---------------------------------------------------------------------------
 # discover_ci_config

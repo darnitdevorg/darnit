@@ -7,12 +7,15 @@ from unittest.mock import patch
 import pytest
 
 from darnit.core.utils import (
+    clear_dir_entries_cache,
     file_exists,
+    get_file_identity,
     get_git_commit,
     get_git_ref,
     gh_api,
     gh_api_safe,
     read_file,
+    resolve_case_exact_path,
     set_gh_api_responder,
     validate_local_path,
 )
@@ -183,3 +186,72 @@ class TestGithubCliErrors:
         """Safe helper should swallow missing gh CLI errors."""
         with patch("darnit.core.utils.subprocess.run", side_effect=FileNotFoundError):
             assert gh_api_safe("repos/kusari-oss/darnit") is None
+
+
+class TestResolveCaseExactPath:
+    """Tests for resolve_case_exact_path and case-exact resolution."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_cache(self):
+        clear_dir_entries_cache()
+        yield
+        clear_dir_entries_cache()
+
+    @pytest.mark.unit
+    def test_case_exact_file_in_root(self, temp_dir: Path):
+        readme = temp_dir / "README.md"
+        readme.write_text("content")
+
+        assert resolve_case_exact_path("README.md", str(temp_dir)) == str(readme)
+        # Lowercase probe must return None even on case-insensitive filesystems
+        assert resolve_case_exact_path("readme.md", str(temp_dir)) is None
+        assert resolve_case_exact_path("Readme.md", str(temp_dir)) is None
+
+    @pytest.mark.unit
+    def test_case_exact_nested_path(self, temp_dir: Path):
+        docs_dir = temp_dir / "docs"
+        docs_dir.mkdir()
+        arch = docs_dir / "ARCHITECTURE.md"
+        arch.write_text("arch")
+
+        assert resolve_case_exact_path("docs/ARCHITECTURE.md", str(temp_dir)) == str(arch)
+        # Mismatched file case
+        assert resolve_case_exact_path("docs/architecture.md", str(temp_dir)) is None
+        # Mismatched directory case
+        assert resolve_case_exact_path("DOCS/ARCHITECTURE.md", str(temp_dir)) is None
+
+    @pytest.mark.unit
+    def test_nonexistent_file_returns_none(self, temp_dir: Path):
+        assert resolve_case_exact_path("MISSING.md", str(temp_dir)) is None
+        assert resolve_case_exact_path("docs/MISSING.md", str(temp_dir)) is None
+
+    @pytest.mark.unit
+    def test_empty_or_root_path(self, temp_dir: Path):
+        assert resolve_case_exact_path("", str(temp_dir)) is None
+        assert resolve_case_exact_path(".", str(temp_dir)) == str(temp_dir)
+
+    @pytest.mark.unit
+    def test_traversal_outside_root_returns_none(self, temp_dir: Path):
+        assert resolve_case_exact_path("../outside.txt", str(temp_dir)) is None
+
+
+class TestGetFileIdentity:
+    """Tests for get_file_identity deduplication helper."""
+
+    @pytest.mark.unit
+    def test_same_file_returns_same_identity(self, temp_dir: Path):
+        f = temp_dir / "sample.txt"
+        f.write_text("hello")
+
+        id1 = get_file_identity(str(f))
+        id2 = get_file_identity(str(f))
+        assert id1 == id2
+
+    @pytest.mark.unit
+    def test_different_files_return_different_identities(self, temp_dir: Path):
+        f1 = temp_dir / "a.txt"
+        f2 = temp_dir / "b.txt"
+        f1.write_text("a")
+        f2.write_text("b")
+
+        assert get_file_identity(str(f1)) != get_file_identity(str(f2))
