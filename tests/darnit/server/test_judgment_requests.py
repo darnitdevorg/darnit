@@ -198,11 +198,18 @@ class TestGetJudgmentRequests:
         assert response["status"] == "error"
 
 
-@pytest.mark.unit
-def test_every_framework_server_registers_get_judgment_requests() -> None:
-    from darnit.server.factory import create_server_from_dict
+def _framework_server(tmp_path: Path):
+    """A server for ``FRAMEWORK`` whose own TOML declares no MCP tools."""
+    from darnit.server.factory import create_server
 
-    server = create_server_from_dict({"metadata": {"name": FRAMEWORK}, "mcp": {"name": "t"}})
+    config = tmp_path / "framework.toml"
+    config.write_text(f'[metadata]\nname = "{FRAMEWORK}"\n\n[mcp]\nname = "t"\n', encoding="utf-8")
+    return create_server(config)
+
+
+@pytest.mark.unit
+def test_every_framework_server_registers_get_judgment_requests(tmp_path: Path) -> None:
+    server = _framework_server(tmp_path)
     tools = {tool.name: tool for tool in asyncio.new_event_loop().run_until_complete(server.list_tools())}
 
     assert set(tools["get_judgment_requests"].inputSchema["properties"]) == {
@@ -216,10 +223,8 @@ def test_every_framework_server_registers_get_judgment_requests() -> None:
 
 
 @pytest.mark.unit
-def test_get_judgment_requests_returns_its_text_without_a_structured_copy() -> None:
-    from darnit.server.factory import create_server_from_dict
-
-    server = create_server_from_dict({"metadata": {"name": FRAMEWORK}, "mcp": {"name": "t"}})
+def test_get_judgment_requests_returns_its_text_without_a_structured_copy(tmp_path: Path) -> None:
+    server = _framework_server(tmp_path)
     tools = {tool.name: tool for tool in asyncio.new_event_loop().run_until_complete(server.list_tools())}
 
     assert tools["get_judgment_requests"].outputSchema is None
