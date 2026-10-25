@@ -228,6 +228,27 @@ class TestOrchestratorCacheMiss:
             assert "OSPS-AC-01.01" not in remediated_ids
 
 
+class TestOrchestratorCacheTargetScope:
+    """Issue #659: remediation passes its target to read_full_audit_cache."""
+
+    def test_remediation_passes_target_to_cache_read(self, tmp_path):
+        from darnit_baseline.remediation.orchestrator import run_remediation
+
+        mock_read = MagicMock(return_value=None)
+        mock_audit_result = MagicMock()
+        mock_audit_result.all_results = []
+
+        with (
+            patch("darnit.tools.audit.read_full_audit_cache", mock_read),
+            patch("darnit_baseline.remediation.orchestrator.validate_local_path", return_value=(str(tmp_path), None)),
+            patch("darnit.core.utils.detect_owner_repo", return_value=("testorg", "testrepo")),
+            patch("darnit_baseline.remediation.orchestrator._run_baseline_checks", return_value=(mock_audit_result, None)),
+            patch("darnit_baseline.remediation.orchestrator._preflight_context_check", return_value=(True, {})),
+        ):
+            run_remediation(local_path=str(tmp_path), target="github.com/testorg/testrepo")
+            mock_read.assert_called_once_with(str(tmp_path), "openssf-baseline", level=3, target="github.com/testorg/testrepo")
+
+
 class TestOrchestratorCacheInvalidation:
     """Cache invalidation after applying changes."""
 

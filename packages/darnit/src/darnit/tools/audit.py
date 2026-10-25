@@ -224,11 +224,13 @@ def read_full_audit_cache(
     framework_name: str,
     level: int,
     operator_config: "LoadedOperatorConfig | None" = None,
+    target: str | None = None,
 ) -> dict[str, Any] | None:
     """Return the cached full audit of ``framework_name`` at ``level``, or None.
 
-    A cache from another framework or another level is a miss. A filtered
-    audit is never cached, so it cannot be returned here.
+    A cache from another framework, another level or another trust target is
+    a miss (issue #542, issue #659). A filtered audit is never cached, so it
+    cannot be returned here.
     """
     from darnit.core.audit_cache import read_audit_cache
 
@@ -238,6 +240,7 @@ def read_full_audit_cache(
             local_path,
             expected_framework=framework_name,
             expected_level=level,
+            expected_target=target,
             store=stores_bundle.cache,
             cache_key=cache_key,
         )
@@ -1142,6 +1145,7 @@ def run_sieve_audit(
                 summary,
                 level,
                 resolved_fw or "",
+                target=target,
                 store=stores_bundle.cache,
                 cache_key=cache_key,
             )

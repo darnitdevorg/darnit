@@ -135,6 +135,7 @@ class TestWriteReadRoundTrip:
             "commit_dirty",
             "level",
             "framework",
+            "target",
             "results",
             "summary",
         }
@@ -490,6 +491,20 @@ class TestScopeMismatch:
         assert read_audit_cache(str(temp_git_repo), expected_level=1) is not None
         assert read_audit_cache(str(temp_git_repo), expected_level=3) is None
 
+    def test_target_mismatch_is_a_miss(self, temp_git_repo, sample_results, sample_summary):
+        """Issue #659: an audit cached under a trusted target must not satisfy an untrusted read."""
+        write_audit_cache(
+            str(temp_git_repo), sample_results, sample_summary, 3, "openssf-baseline", target="github.com/org/trusted"
+        )
+        assert read_audit_cache(str(temp_git_repo), expected_target="github.com/org/trusted") is not None
+        assert read_audit_cache(str(temp_git_repo), expected_target="github.com/org/other") is None
+        assert read_audit_cache(str(temp_git_repo), expected_target=None) is None
+
+        # Reciprocal: an untrusted run (target=None) must miss when reading with a target.
+        write_audit_cache(str(temp_git_repo), sample_results, sample_summary, 3, "openssf-baseline", target=None)
+        assert read_audit_cache(str(temp_git_repo), expected_target=None) is not None
+        assert read_audit_cache(str(temp_git_repo), expected_target="github.com/org/trusted") is None
+
     def test_unscoped_read_still_hits(self, temp_git_repo, sample_results, sample_summary):
         """Existing callers that pass no expectations are unaffected."""
         write_audit_cache(str(temp_git_repo), sample_results, sample_summary, 1, "amber")
@@ -536,7 +551,7 @@ class TestFilteredDecision:
         assert audit_cache_key("/repo", None) == "audit-cache"
 
 
-def _write_full_audit(repo, results, summary, *, level=3, framework="openssf-baseline"):
+def _write_full_audit(repo, results, summary, *, level=3, framework="openssf-baseline", target=None):
     """Write the way run_sieve_audit does: through the resolved store, under the shared key."""
     from darnit.stores.selection import resolve_stores
     from darnit.tools.audit import audit_cache_key
@@ -549,6 +564,7 @@ def _write_full_audit(repo, results, summary, *, level=3, framework="openssf-bas
             summary,
             level,
             framework,
+            target=target,
             store=bundle.cache,
             cache_key=audit_cache_key(str(repo), None),
         )
@@ -556,14 +572,14 @@ def _write_full_audit(repo, results, summary, *, level=3, framework="openssf-bas
         bundle.close_all()
 
 
-def _read_full_audit(repo):
+def _read_full_audit(repo, *, target=None):
     from darnit.tools.audit import read_full_audit_cache
 
-    return read_full_audit_cache(str(repo), "openssf-baseline", level=3)
+    return read_full_audit_cache(str(repo), "openssf-baseline", level=3, target=target)
 
 
 class TestFullAuditCacheRead:
-    """read_full_audit_cache is what remediation reads (#542)."""
+    """read_full_audit_cache is what remediation reads (#542, #659)."""
 
     def test_full_audit_is_a_hit(self, temp_git_repo, sample_results, sample_summary):
         _write_full_audit(temp_git_repo, sample_results, sample_summary)
@@ -576,6 +592,13 @@ class TestFullAuditCacheRead:
     def test_other_framework_is_a_miss(self, temp_git_repo, sample_results, sample_summary):
         _write_full_audit(temp_git_repo, sample_results, sample_summary, framework="gittuf")
         assert _read_full_audit(temp_git_repo) is None
+
+    def test_target_mismatch_is_a_miss(self, temp_git_repo, sample_results, sample_summary):
+        """Issue #659: full audit cached under a trusted target misses when read under untrusted."""
+        _write_full_audit(temp_git_repo, sample_results, sample_summary, target="github.com/org/trusted")
+        assert _read_full_audit(temp_git_repo, target=None) is None
+        assert _read_full_audit(temp_git_repo, target="github.com/org/other") is None
+        assert _read_full_audit(temp_git_repo, target="github.com/org/trusted") is not None
 
 
 class TestFullAuditCacheInvalidation:

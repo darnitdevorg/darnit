@@ -1118,9 +1118,11 @@ def run_remediation(
         # framework, which is what it runs on a miss. A level-1, filtered or
         # other-framework cache is a subset, so it must miss. The read goes
         # through the store and key the audit writes to.
+        # Issue #659: pass target so an audit cached under a trusted target
+        # is not reused by an untrusted run.
         from darnit.tools.audit import read_full_audit_cache
 
-        cache = read_full_audit_cache(local_path, "openssf-baseline", level=3)
+        cache = read_full_audit_cache(local_path, "openssf-baseline", level=3, target=target)
     except Exception as exc:
         logger.warning(f"Audit cache read failed: {exc}")
         cache = None

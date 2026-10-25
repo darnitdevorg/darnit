@@ -597,6 +597,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Scope the full-audit cache by trust target: `write_audit_cache` records
+  the run's `target` in the cache envelope, and `read_audit_cache` /
+  `read_full_audit_cache` enforce a match against `expected_target` so an
+  audit cached under a trusted target cannot be reused by an untrusted run
+  (fixes #659).
 - Control `when` and step `when` now use one evaluator
   (framework-design 5.1.1). A list-valued control `when` such as
   `{ ci_provider = ["github", "gitlab"] }` made the control N/A even when

@@ -68,9 +68,12 @@ _EXPIRED_ENVELOPE: dict[str, Any] = {
     "commit_dirty": False,
     "level": 0,
     "framework": "",
+    "target": None,
     "results": [],
     "summary": {},
 }
+
+_UNSET = object()
 
 
 # ---------------------------------------------------------------------------
@@ -179,13 +182,14 @@ def write_audit_cache(
     level: int,
     framework: str,
     *,
+    target: str | None = None,
     store: AuditCacheStore | None = None,
     cache_key: str | None = None,
 ) -> None:
     """Write audit results to the cache via the given (or default) store.
 
     Composes the cache envelope (version, timestamp, commit, commit_dirty,
-    level, framework, results, summary) and hands it to
+    level, framework, target, results, summary) and hands it to
     ``store.write(cache_key, envelope)``. Failures are logged at warning
     level and swallowed -- per feature 035 FR-007, cache-write failure
     MUST NOT propagate to the audit's exit code.
@@ -198,6 +202,10 @@ def write_audit_cache(
         summary: Status count summary from ``run_sieve_audit()``.
         level: Maximum audit level that was evaluated.
         framework: Framework name (e.g. ``"openssf-baseline"``).
+        target: Optional repository identity (e.g. ``"owner/repo"``) the
+            operator named (decides trust). Saved in the envelope to
+            prevent a trusted run's results from being reused by an
+            untrusted one (issue #659).
         store: Optional :class:`AuditCacheStore` instance. When None, a
             legacy-path default store is constructed. Must be passed
             together with ``cache_key``.
@@ -214,6 +222,7 @@ def write_audit_cache(
         "commit_dirty": _is_working_tree_dirty(local_path),
         "level": level,
         "framework": framework,
+        "target": target,
         "results": results,
         "summary": summary,
     }
@@ -234,6 +243,7 @@ def read_audit_cache(
     *,
     expected_framework: str | None = None,
     expected_level: int | None = None,
+    expected_target: str | None | object = _UNSET,
     store: AuditCacheStore | None = None,
     cache_key: str | None = None,
 ) -> dict[str, Any] | None:
@@ -241,8 +251,8 @@ def read_audit_cache(
 
     Returns the full cache envelope (including ``results`` and
     ``summary``) when the cache exists, has a supported version, is
-    within the TTL, and its git commit + dirty state match the current
-    repository state.
+    within the TTL, matches expected scope (framework, level, target),
+    and its git commit + dirty state match the current repository state.
 
     Returns ``None`` on any mismatch, missing file, or corruption --
     callers should fall back to running a fresh audit. Never raises.
@@ -276,9 +286,10 @@ def read_audit_cache(
         return None
 
     # Scope: the cached audit must cover what the caller is about to use it
-    # for (issue #542). A level-1 or other-framework run leaves a cache that
-    # is not the audit the caller asked for; reusing it would make a consumer
-    # act on results that were never produced. Filtered audits are never
+    # for (issue #542, issue #659). A level-1, other-framework or different-target
+    # run leaves a cache that is not the audit the caller asked for; reusing
+    # it would make a consumer act on results that were never produced or
+    # reuse trusted claims in an untrusted run. Filtered audits are never
     # written, see run_sieve_audit.
     if expected_framework is not None and data.get("framework") != expected_framework:
         logger.debug(
@@ -292,6 +303,13 @@ def read_audit_cache(
             "Audit cache scope mismatch: level %r != expected %r",
             data.get("level"),
             expected_level,
+        )
+        return None
+    if expected_target is not _UNSET and data.get("target") != expected_target:
+        logger.debug(
+            "Audit cache scope mismatch: target %r != expected %r",
+            data.get("target"),
+            expected_target,
         )
         return None
 
