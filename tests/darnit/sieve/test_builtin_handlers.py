@@ -6,10 +6,15 @@ that implementation authors study as examples — they should have solid
 unit test coverage.
 """
 
+import os
+from pathlib import Path
+
 import pytest
 
+from darnit.core.utils import clear_dir_entries_cache
 from darnit.remediation.plan import FileChange
 from darnit.sieve.builtin_handlers import (
+    _resolve_regex_files,
     exec_handler,
     file_create_handler,
     file_exists_handler,
@@ -95,6 +100,41 @@ class TestFileExistsHandler:
         """file_exists_handler returns FAIL for nonexistent directory."""
         result = file_exists_handler({"files": [".github/workflows"]}, ctx)
         assert result.status == HandlerResultStatus.FAIL
+
+    def test_case_exact_rejection_on_case_insensitive_fs(self, tmp_path, ctx):
+        """Case mismatch must fail even on case-insensitive filesystems (issue #645)."""
+        clear_dir_entries_cache()
+        (tmp_path / "README.md").write_text("# Readme")
+        result_lower = file_exists_handler({"files": ["readme.md"]}, ctx)
+        assert result_lower.status == HandlerResultStatus.FAIL
+
+        result_upper = file_exists_handler({"files": ["README.md"]}, ctx)
+        assert result_upper.status == HandlerResultStatus.PASS
+        assert result_upper.evidence["relative_path"] == "README.md"
+
+    def test_nested_case_exact_rejection(self, tmp_path, ctx):
+        """Nested paths must match exact case component-by-component (issue #645)."""
+        clear_dir_entries_cache()
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (docs / "ARCHITECTURE.md").write_text("# Architecture")
+
+        assert file_exists_handler({"files": ["docs/architecture.md"]}, ctx).status == HandlerResultStatus.FAIL
+        assert file_exists_handler({"files": ["DOCS/ARCHITECTURE.md"]}, ctx).status == HandlerResultStatus.FAIL
+        pass_res = file_exists_handler({"files": ["docs/ARCHITECTURE.md"]}, ctx)
+        assert pass_res.status == HandlerResultStatus.PASS
+        assert Path(pass_res.evidence["relative_path"]) == Path("docs/ARCHITECTURE.md")
+
+    def test_glob_case_exact_match(self, tmp_path, ctx):
+        """Glob patterns verify case against real directory entries (issue #645)."""
+        clear_dir_entries_cache()
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (docs / "ARCHITECTURE.md").write_text("# Architecture")
+
+        res = file_exists_handler({"files": ["docs/*.md"]}, ctx)
+        assert res.status == HandlerResultStatus.PASS
+        assert Path(res.evidence["relative_path"]) == Path("docs/ARCHITECTURE.md")
 
 
 class TestFileExistsHandlerDepthLimited:
@@ -214,6 +254,76 @@ class TestFileExistsHandlerDepthLimited:
 
         # No top-level *.md files → FAIL (glob doesn't recurse without **)
         assert result.status == HandlerResultStatus.FAIL
+
+    def test_max_depth_case_exact_rejection(self, tmp_path, ctx):
+        """Depth-limited walk checks case-exact entry in directory (issue #645)."""
+        clear_dir_entries_cache()
+        nested = tmp_path / "deep" / "dir"
+        nested.mkdir(parents=True)
+        (nested / "MANIFEST.toml").write_text("pkg")
+
+        fail_res = file_exists_handler({"files": ["manifest.toml"], "max_depth": 2}, ctx)
+        assert fail_res.status == HandlerResultStatus.FAIL
+
+        pass_res = file_exists_handler({"files": ["MANIFEST.toml"], "max_depth": 2}, ctx)
+        assert pass_res.status == HandlerResultStatus.PASS
+        assert pass_res.evidence["relative_path"] == os.path.join("deep", "dir", "MANIFEST.toml")
+
+    def test_max_depth_broken_symlink_not_found(self, tmp_path, ctx):
+        """Broken symlinks matching pattern are not counted as found (issue #645)."""
+        clear_dir_entries_cache()
+        nested = tmp_path / "deep" / "dir"
+        nested.mkdir(parents=True)
+        broken = nested / "go.mod"
+        try:
+            broken.symlink_to(tmp_path / "nonexistent")
+        except OSError:
+            pytest.skip("Symlinks not supported on this filesystem")
+
+        result = file_exists_handler(
+            {"files": ["go.mod"], "max_depth": 2}, ctx
+        )
+        assert result.status == HandlerResultStatus.FAIL
+
+    def test_max_depth_slash_containing_entry(self, tmp_path, ctx):
+        """Slash-containing entries in max_depth walks are matched case-exactly (fixes #645)."""
+        clear_dir_entries_cache()
+        dist = tmp_path / "dist"
+        dist.mkdir()
+        (dist / "app.exe").write_text("binary")
+
+        pass_res = file_exists_handler(
+            {"files": ["dist/app.exe"], "max_depth": 1, "existence": True}, ctx
+        )
+        assert pass_res.status == HandlerResultStatus.PASS
+        assert pass_res.evidence["relative_path"] == "dist/app.exe"
+
+        fail_case = file_exists_handler(
+            {"files": ["dist/APP.EXE"], "max_depth": 1, "existence": True}, ctx
+        )
+        assert fail_case.status == HandlerResultStatus.FAIL
+
+    def test_file_exists_double_dot_prefixed_filename(self, tmp_path, ctx):
+        """Files starting with two dots (..b.md) are recognized in the repository."""
+        clear_dir_entries_cache()
+        (tmp_path / "..b.md").write_text("content")
+
+        res = file_exists_handler({"files": ["..b.md"], "existence": True}, ctx)
+        assert res.status == HandlerResultStatus.PASS
+
+    def test_file_exists_records_outside_path(self, tmp_path, ctx):
+        """Paths escaping the repository are recorded in skipped_outside_repository."""
+        clear_dir_entries_cache()
+        outside_file = tmp_path.parent / "outside_probe.md"
+        outside_file.write_text("outside")
+        try:
+            res = file_exists_handler({"files": ["../outside_probe.md"]}, ctx)
+            assert res.status == HandlerResultStatus.FAIL
+            assert "skipped_outside_repository" in res.evidence
+            assert any("outside_probe.md" in p for p in res.evidence["skipped_outside_repository"])
+        finally:
+            if outside_file.exists():
+                outside_file.unlink()
 
 
 # =============================================================================
@@ -595,6 +705,64 @@ class TestRegexHandler:
         assert str(security) in resolved
         assert not any("MISSING.md" in p for p in resolved)
 
+    def test_regex_handler_case_exact_rejection(self, tmp_path, ctx):
+        """Regex handler ignores files with mismatched case (issue #645)."""
+        clear_dir_entries_cache()
+        (tmp_path / "README.md").write_text("target_token")
+
+        res_wrong_case = regex_handler(
+            {"files": ["readme.md"], "pattern": "target_token"},
+            ctx,
+        )
+        assert res_wrong_case.status == HandlerResultStatus.INCONCLUSIVE
+
+        res_correct = regex_handler(
+            {"files": ["README.md"], "pattern": "target_token"},
+            ctx,
+        )
+        assert res_correct.status == HandlerResultStatus.PASS
+
+    def test_resolve_regex_files_deduplicates_same_file(self, tmp_path):
+        """Duplicate paths or aliases resolving to same physical file are deduplicated."""
+        clear_dir_entries_cache()
+        f = tmp_path / "SECURITY.md"
+        f.write_text("security content")
+
+        resolved = _resolve_regex_files(
+            {"files": ["SECURITY.md", "SECURITY.md"]},
+            HandlerContext(local_path=str(tmp_path)),
+        )
+        assert resolved == [str(f)]
+
+    def test_regex_exclude_max_depth_slash_containing_entry(self, tmp_path, ctx):
+        """Exclude mode with slash-containing entry and max_depth finds candidate (fixes #645)."""
+        clear_dir_entries_cache()
+        dist = tmp_path / "dist"
+        dist.mkdir()
+        (dist / "app.exe").write_text("binary")
+
+        res = regex_handler(
+            {"exclude_files": ["dist/app.exe"], "max_depth": 1, "expr": "output.files_found == 0", "existence": True},
+            ctx,
+        )
+        assert res.status == HandlerResultStatus.FAIL
+        assert res.evidence["files_found"] == 1
+        assert "dist/app.exe" in res.evidence["found_files"]
+
+    def test_regex_outside_path_recorded(self, tmp_path, ctx):
+        """Regex handler records files resolving outside the repository."""
+        clear_dir_entries_cache()
+        outside_file = tmp_path.parent / "outside_regex.md"
+        outside_file.write_text("secret")
+        try:
+            res = regex_handler({"files": ["../outside_regex.md"], "pattern": "secret"}, ctx)
+            assert res.status == HandlerResultStatus.INCONCLUSIVE
+            assert "skipped_outside_repository" in res.evidence
+            assert any("outside_regex.md" in p for p in res.evidence["skipped_outside_repository"])
+        finally:
+            if outside_file.exists():
+                outside_file.unlink()
+
 
 # =============================================================================
 # regex_handler — depth-limited file discovery
@@ -950,6 +1118,60 @@ class TestLlmEvalHandler:
             ctx,
         )
         assert result.details["consultation_request"]["file_contents"] == {}
+
+    def test_files_to_include_skips_case_mismatched_paths(self, tmp_path, ctx):
+        """Case mismatched paths in files_to_include are not loaded (issue #645)."""
+        clear_dir_entries_cache()
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (docs / "ARCHITECTURE.md").write_text("# Real Architecture")
+
+        result = llm_eval_handler(
+            {"prompt": "Evaluate", "files_to_include": ["docs/architecture.md"]},
+            ctx,
+        )
+        fc = result.details["consultation_request"]["file_contents"]
+        assert "docs/architecture.md" not in fc
+        assert "docs/ARCHITECTURE.md" not in fc
+        assert fc == {}
+
+    def test_files_to_include_deduplicates_duplicate_or_alias_files(self, tmp_path, ctx):
+        """Duplicate references to same file are only loaded once (issue #645)."""
+        clear_dir_entries_cache()
+        (tmp_path / "README.md").write_text("# Readme Content")
+
+        result = llm_eval_handler(
+            {"prompt": "Evaluate", "files_to_include": ["README.md", "README.md"]},
+            ctx,
+        )
+        fc = result.details["consultation_request"]["file_contents"]
+        assert list(fc.keys()) == ["README.md"]
+        assert fc["README.md"] == "# Readme Content"
+
+    def test_llm_eval_records_outside_and_dangling_symlink(self, tmp_path, ctx):
+        """llm_eval records outside paths and dangling symlinks in skipped_outside_repository."""
+        clear_dir_entries_cache()
+        outside_file = tmp_path.parent / "outside_eval.md"
+        outside_file.write_text("outside doc")
+        dangling = tmp_path / "dangling.md"
+        try:
+            dangling.symlink_to(tmp_path.parent / "nonexistent.md")
+        except OSError:
+            pass
+
+        try:
+            res = llm_eval_handler(
+                {"prompt": "Evaluate", "files_to_include": ["../outside_eval.md", "dangling.md"]},
+                ctx,
+            )
+            assert res.status == HandlerResultStatus.INCONCLUSIVE
+            skipped = res.evidence.get("skipped_outside_repository", [])
+            assert any("outside_eval.md" in p for p in skipped)
+            if dangling.is_symlink():
+                assert "dangling.md" in skipped
+        finally:
+            if outside_file.exists():
+                outside_file.unlink()
 
 
 # =============================================================================

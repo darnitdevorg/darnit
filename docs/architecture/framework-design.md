@@ -417,6 +417,8 @@ files = ["SECURITY.md", ".github/SECURITY.md"]
 1. If any file in `files` matches → PASS
 2. If no file matches → FAIL
 
+File paths in `files` are resolved case-exactly on every filesystem; candidate paths that do not match the on-disk directory entry case verbatim are not matched.
+
 **Ceiling**: `{fail}`; `{pass, fail}` with `existence = true` (section 3.0.1). A file being present says nothing about its content, so a presence step concludes PASS only for a control whose requirement is literally that the file exists.
 
 #### Scenario: File found
@@ -535,6 +537,8 @@ These are the step type's declared `settings` and common step fields (section 3.
 2. No match -> INCONCLUSIVE, unless `fail_on_miss = true` -> FAIL
 3. No files resolved -> INCONCLUSIVE
 
+File resolution in `files` and `exclude_files` is case-exact across all filesystems, and repeated paths resolving to the same underlying physical file are deduplicated.
+
 Exclude mode (`exclude_files`) is unchanged: no files found -> PASS, files found -> FAIL, usually refined by `expr`.
 
 #### Scenario: Pattern match found
@@ -581,7 +585,7 @@ confidence_threshold = 0.8
 | `analysis_hints` | `list[str]` | Hints to guide analysis |
 | `confidence_threshold` | `float` | Passed to the model with the consultation. Since feature 041 a judgment's confidence is recorded with it but is never a decision input: a judgment never concludes a control. |
 
-**`files_to_include` resolution**: The handler MUST resolve `$FOUND_FILE` entries by looking up `found_file` in `context.gathered_evidence`. Each resolved file path MUST be read (up to 10KB per file, max 5 files) and included as `file_contents` in the `consultation_request`. File paths that are not absolute MUST be resolved relative to `context.local_path`. Files that cannot be read MUST be silently skipped. A file that resolves outside the repository MUST NOT be read and is recorded in the result's `skipped_outside_repository` (section 3.0.4).
+**`files_to_include` resolution**: The handler MUST resolve `$FOUND_FILE` entries by looking up `found_file` in `context.gathered_evidence`. Each resolved file path MUST be read (up to 10KB per file, max 5 files) and included as `file_contents` in the `consultation_request`. File paths that are not absolute MUST be resolved relative to `context.local_path`. Files that cannot be read MUST be silently skipped. A file that resolves outside the repository MUST NOT be read and is recorded in the result's `skipped_outside_repository` (section 3.0.4). Files to include are resolved case-exactly on every filesystem, and duplicate paths resolving to the same physical file are deduplicated before reading. Similarly, `llm_extract` resolves candidate files case-exactly on every filesystem and deduplicates physical files before gathering content.
 
 **Ceiling**: `{}`. The handler returns INCONCLUSIVE with a `consultation_request`; with `stop_on_llm` the control becomes `PENDING` with `pending.kind = "llm_judgment"` (section 5.4). A model judgment never concludes PASS. No promotion to conclude PASS exists for a model judgment.
 
@@ -1998,7 +2002,7 @@ The darnit framework package SHALL NOT contain code, modules, or string literals
 
 ### 11.1 use_locator for File Existence Checks
 
-A deterministic handler invocation MAY use `use_locator = true` instead of specifying `files` directly. When `use_locator = true` is set, the framework SHALL use the control's `locator.discover` list as the handler's `files` parameter.
+A deterministic handler invocation MAY use `use_locator = true` instead of specifying `files` directly. When `use_locator = true` is set, the framework SHALL use the control's `locator.discover` list as the handler's `files` parameter. Locator file discovery (`discover_files`) resolves candidate files case-exactly on every filesystem.
 
 - If the control has no `locator` configuration, the framework SHALL log a warning and return INCONCLUSIVE
 - If both `use_locator = true` and explicit `files` are specified, `files` takes precedence
