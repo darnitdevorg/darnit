@@ -1254,6 +1254,7 @@ def format_results_markdown(
     remediation_map: dict[str, Any] | None = None,
     framework_name: str | None = None,
     audit_metadata: dict[str, Any] | None = None,
+    target: str | None = None,
 ) -> str:
     """Format audit results as Markdown.
 
@@ -1589,8 +1590,20 @@ def format_results_markdown(
         lines.append("> and consistent implementation.")
         lines.append("")
 
+    if target is None:
+        if audit_metadata and isinstance(audit_metadata, dict):
+            trust = audit_metadata.get("trust")
+            if isinstance(trust, dict):
+                target = trust.get("repository")
+        if target is None and (owner and repo):
+            from darnit.trust.decision import target_from_owner_repo
+
+            target = target_from_owner_repo(owner, repo)
+
     # Add "Next Steps" section with ordered agent directives
-    next_steps_lines = _get_next_steps_section(local_path, summary)
+    next_steps_lines = _get_next_steps_section(
+        local_path, summary, owner=owner, repo=repo, target=target
+    )
     if next_steps_lines:
         lines.extend(next_steps_lines)
 
@@ -1716,6 +1729,9 @@ def _format_assertion_markdown(assertion: dict[str, Any]) -> list[str]:
 def _get_next_steps_section(
     local_path: str | None,
     summary: dict[str, int],
+    owner: str | None = None,
+    repo: str | None = None,
+    target: str | None = None,
 ) -> list[str]:
     """Get the "Next Steps" section with ordered agent directives.
 
@@ -1729,6 +1745,9 @@ def _get_next_steps_section(
     Args:
         local_path: Path to the repository
         summary: Status summary dict with FAIL, WARN counts etc.
+        owner: Repository owner, for detection
+        repo: Repository name, for detection
+        target: Repository identity the operator named, for operator-side confirmations
 
     Returns:
         List of markdown lines, or empty list when no steps apply
@@ -1737,13 +1756,20 @@ def _get_next_steps_section(
     has_failures = summary.get("FAIL", 0) > 0
     has_warnings = summary.get("WARN", 0) > 0
 
+    if target is None and (owner and repo):
+        from darnit.trust.decision import target_from_owner_repo
+
+        target = target_from_owner_repo(owner, repo)
+
     # Check for pending context
     pending_context = []
     if local_path is not None:
         try:
             from darnit.config.context_storage import get_pending_context
 
-            pending_context = get_pending_context(local_path)
+            pending_context = get_pending_context(
+                local_path, owner=owner, repo=repo, target=target
+            )
         except ImportError:
             logger.debug("Context storage not available for next steps section")
         except Exception as e:

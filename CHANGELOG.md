@@ -597,6 +597,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Audit "Next Steps" reads operator-side confirmed context for the audited
+  target, preventing false directives to confirm already-completed project data
+  (fixes #664).
+
 - Control `when` and step `when` now use one evaluator
   (framework-design 5.1.1). A list-valued control `when` such as
   `{ ci_provider = ["github", "gitlab"] }` made the control N/A even when
