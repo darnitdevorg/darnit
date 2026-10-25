@@ -1509,7 +1509,10 @@ def _recheck(
     from darnit.config.control_loader import load_controls_from_effective
     from darnit.config.merger import merge_configs
     from darnit.config.operator.loader import resolve_operator_config
+    from darnit.core.utils import clear_dir_entries_cache
     from darnit.tools import audit as audit_tools
+
+    clear_dir_entries_cache()
 
     framework = _get_framework_config()
     if framework is None:

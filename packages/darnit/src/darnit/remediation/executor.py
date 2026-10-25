@@ -511,11 +511,18 @@ class RemediationExecutor:
                 confirmation_required=needed.key,
             )
         if not dry_run:
+            from darnit.core.utils import clear_dir_entries_cache
+
+            clear_dir_entries_cache()
             result.plan = planned.plan
             result.approvals = self._used_approvals(planned.plan)
 
         if result.success and config.project_update and config.project_update.set:
             self._project_update(control_id, config.project_update, result)
+            if not dry_run:
+                from darnit.core.utils import clear_dir_entries_cache
+
+                clear_dir_entries_cache()
 
         return result
 
@@ -732,6 +739,9 @@ class RemediationExecutor:
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
         _write_bytes_atomic(full_path, change.content.encode("utf-8"))
         manifest.record_file(repository, run_id, change.path, change.after_digest or "", checkout=self.local_path)
+        from darnit.core.utils import clear_dir_entries_cache
+
+        clear_dir_entries_cache()
         return change.model_copy(update={"ignored": True}) if ignored else change
 
     def amend_created(self, created: FileChange, content: str) -> FileChange:
