@@ -21,7 +21,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from darnit.stores.defaults.local_fs import LocalFsAttestationStore
+from darnit.stores.protocols import AttestationStore
 
 PREDICATE_TYPE = "https://darnit.dev/amber/run/v1"
 STATEMENT_TYPE = "https://in-toto.io/Statement/v1"
@@ -118,7 +118,7 @@ def _canonical(obj: Any) -> bytes:
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
 
 
-def run(artifact: str, ref: str | None, key: Path, claims: Path | None, out: Path) -> dict[str, Any]:
+def run(artifact: str, ref: str | None, key: Path, claims: Path | None, store: AttestationStore) -> dict[str, Any]:
     witness = shutil.which("witness")
     if not witness:
         raise RunError("witness binary not found on PATH (https://github.com/in-toto/witness)")
@@ -184,6 +184,5 @@ def run(artifact: str, ref: str | None, key: Path, claims: Path | None, out: Pat
     bundle_id = hashlib.sha256(_canonical(statement)).hexdigest()
     bundle = {"id": bundle_id, "statement": statement, "witness_envelope": envelope}
 
-    out.mkdir(parents=True, exist_ok=True)
-    LocalFsAttestationStore(root=out).write(bundle_id, _canonical(bundle), "application/vnd.in-toto+json")
+    store.write(bundle_id, _canonical(bundle), "application/vnd.in-toto+json")
     return bundle
