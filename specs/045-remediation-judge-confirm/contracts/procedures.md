@@ -23,3 +23,5 @@ Returned in the apply report when `awaiting` is not empty:
 ## Comply and audit flows (skills)
 
 `/darnit-comply` (after "enhance generated files") and `/darnit-audit` (after judgments) each add one step: call `get_pass_candidates` with the repository and, in comply, the apply's `run_id`, and follow its `procedure`. The skills do not restate the steps.
+
+Each skill keeps the `submit_judgment` results with `status: finding` and reports them in the final report's "judged as not meeting the requirement" group, with the reasoning (FR-006).

@@ -45,7 +45,7 @@ get_pass_candidates(
 - `candidates`: controls left `PENDING` with `pending.kind = "confirmation"` by an audit of `local_path` for the named repository, optionally limited to `control_ids`, sorted by id. Each entry's candidate matches the current evidence digest.
 - `remediation`: present only when `run_id` is given and a judged file is in that run's manifest; `edited_after_write` compares the file's current content digest with the manifest's `after_digest`.
 - `ask_user_batch`: one question per candidate on this page, no default, no option that confirms more than one candidate.
-- `awaiting_judgment`: controls still `PENDING (llm_judgment)` (never judged, or the content changed since); judge them with `get_judgment_requests` first.
+- `awaiting_judgment`: controls still `PENDING (llm_judgment)` (never judged, or the content changed since); judge them with `get_judgment_requests` first. This includes controls judged `fail` earlier, because a finding is not stored. A caller that received a finding for a control in this run reports that finding instead of judging the control again, unless its files changed since.
 - Pages stay under 40,000 bytes; `remaining` lists candidates not on this page.
 
 ## Refusals and errors

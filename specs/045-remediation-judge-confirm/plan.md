@@ -88,7 +88,7 @@ tests/darnit_baseline/test_comply_replay_recorded.py      # after #666, next to 
 3. Replay recorded judgments and confirmations, after #666 merges. User Story 4.
 4. e2e per quickstart: replay, headless comply, interactive Layer 3, recorded in the PR.
 
-Phases 1-2 can merge before #666; phase 3 is a separate PR.
+Delivery steps 1-2 can merge before #666; step 3 is a separate PR.
 
 ## Complexity Tracking
 
