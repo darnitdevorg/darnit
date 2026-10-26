@@ -161,7 +161,12 @@ def _neutralize_warn() -> None:
     orchestrator.SieveOrchestrator.__module__  # touch, keeps linters honest
 
 
-def _capture_one(framework: str, repo_path: str, neutralize: bool = False) -> dict[str, str]:
+def _details(result: Any) -> str:
+    raw = result.get("details") if isinstance(result, dict) else getattr(result, "message", None)
+    return "" if raw is None else str(raw)
+
+
+def _capture_one(framework: str, repo_path: str, neutralize: bool = False) -> dict[str, dict[str, str]]:
     """Audit one (framework, repo) pair in THIS process."""
     if neutralize:
         _neutralize_warn()
@@ -177,11 +182,19 @@ def _capture_one(framework: str, repo_path: str, neutralize: bool = False) -> di
         evaluate_claims=False,
         framework_name=framework,
     )
-    return {_control_id(r): _status(r) for r in results}
+    return {_control_id(r): {"status": _status(r), "details": _details(r)} for r in results}
 
 
 def capture(neutralize: bool = False) -> dict[str, dict[str, str]]:
-    """Per-control status for every (framework, repo) pair.
+    """Per-control status for every (framework, repo) pair."""
+    return {
+        pair: {control_id: result["status"] for control_id, result in controls.items()}
+        for pair, controls in capture_details(neutralize).items()
+    }
+
+
+def capture_details(neutralize: bool = False) -> dict[str, dict[str, dict[str, str]]]:
+    """Per-control ``{"status", "details"}`` for every (framework, repo) pair.
 
     Each pair runs in a FRESH SUBPROCESS. This is not defensive style, it is
     required for the capture to mean anything: control registration is
@@ -195,7 +208,7 @@ def capture(neutralize: bool = False) -> dict[str, dict[str, str]]:
     tracked separately. Subprocess isolation is how this baseline avoids
     measuring it instead of measuring SC-008.
     """
-    out: dict[str, dict[str, str]] = {}
+    out: dict[str, dict[str, dict[str, str]]] = {}
     with tempfile.TemporaryDirectory() as scratch:
         # Copy once, not once per framework: repo_inputs() is not idempotent
         # against the same scratch directory.
@@ -214,7 +227,8 @@ def capture(neutralize: bool = False) -> dict[str, dict[str, str]]:
                     env=_neutral_env(Path(scratch)),
                 )
                 if proc.returncode != 0:
-                    out[key] = {"__capture_error__": proc.stderr.strip()[-400:]}
+                    error = proc.stderr.strip()[-400:]
+                    out[key] = {"__capture_error__": {"status": error, "details": error}}
                     continue
                 out[key] = json.loads(proc.stdout)
     return out

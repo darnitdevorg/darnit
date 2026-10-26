@@ -22,26 +22,89 @@ from __future__ import annotations
 
 import pytest
 
-from .baseline_capture import PARITY_FIXTURES, capture
+from .baseline_capture import PARITY_FIXTURES, capture, capture_details
 
 # #584: `github_workflows_present`, the first step of these controls, returns
-# WARN by design on a repository with no workflow file. Neutralized, the
-# controls run on to zizmor and grep, which end them ERROR where the tool is
-# not installed (else the same WARN, which is no drift). That ERROR -> WARN on
-# a fixture without workflow files is the only drift tolerated.
-WARN_BY_DESIGN = {"OSPS-BR-01.01", "OSPS-BR-01.02", "OSPS-AC-04.02"}
+# WARN by design on a repository with nothing for them to audit. Neutralized,
+# the controls run on to zizmor and grep instead: ERROR where the tool is not
+# installed; PASS for the zizmor controls where the suite's zizmor stand-in
+# (tests/conftest.py), which answers "no findings" whatever it is given, is on
+# PATH; else the same WARN, which is no drift. BR-01.02's grep step concludes
+# nothing, so it never PASSes. Those statuses before the WARN are the only
+# drift tolerated.
+WARN_BY_DESIGN = {
+    "OSPS-BR-01.01": {"ERROR", "PASS"},
+    "OSPS-BR-01.02": {"ERROR"},
+    "OSPS-AC-04.02": {"ERROR", "PASS"},
+}
 
 
-def _warn_by_design(pair: str, control_id: str, before: str | None, after: str | None) -> bool:
+def _nothing_to_audit(repo: str) -> bool:
+    """No workflow file, and no action definition (which BR-01.01's zizmor audit reads)."""
+    root = PARITY_FIXTURES / repo
+    workflows = root / ".github" / "workflows"
+    if any(p.suffix.lower() in (".yml", ".yaml") for p in workflows.glob("*")):
+        return False
+    return not any(p.name.lower() in ("action.yml", "action.yaml") for p in root.rglob("*"))
+
+
+def _warn_by_design(pair: str, control_id: str, before: str | None, after: dict[str, str] | None) -> bool:
     framework, _, repo = pair.partition("::")
-    workflows = PARITY_FIXTURES / repo / ".github" / "workflows"
-    has_workflow_file = any(p.suffix.lower() in (".yml", ".yaml") for p in workflows.glob("*"))
     return (
         framework == "openssf-baseline"
-        and control_id in WARN_BY_DESIGN
-        and (before, after) == ("ERROR", "WARN")
-        and not has_workflow_file
+        and before in WARN_BY_DESIGN.get(control_id, set())
+        and after is not None
+        and after["status"] == "WARN"
+        and after["details"].startswith("No GitHub Actions workflow files")
+        and "nothing to audit" in after["details"]
+        and _nothing_to_audit(repo)
     )
+
+
+NO_WORKFLOWS_WARN = {
+    "status": "WARN",
+    "details": "No GitHub Actions workflow files (.github/workflows/*.yml or *.yaml) were found, "
+    "so there is nothing to audit.",
+}
+
+
+@pytest.mark.parametrize(
+    ("control_id", "before"),
+    [("OSPS-BR-01.01", "ERROR"), ("OSPS-BR-01.01", "PASS"), ("OSPS-AC-04.02", "PASS"), ("OSPS-BR-01.02", "ERROR")],
+)
+def test_tolerated_drift(control_id: str, before: str) -> None:
+    assert _warn_by_design("openssf-baseline::empty_repo", control_id, before, NO_WORKFLOWS_WARN)
+
+
+@pytest.mark.parametrize(
+    ("pair", "control_id", "before", "after"),
+    [
+        ("openssf-baseline::empty_repo", "OSPS-BR-01.02", "PASS", NO_WORKFLOWS_WARN),
+        ("openssf-baseline::empty_repo", "OSPS-BR-01.01", "FAIL", NO_WORKFLOWS_WARN),
+        ("openssf-baseline::empty_repo", "OSPS-BR-01.01", "WARN", NO_WORKFLOWS_WARN),
+        ("openssf-baseline::empty_repo", "OSPS-BR-01.01", None, NO_WORKFLOWS_WARN),
+        ("openssf-baseline::empty_repo", "OSPS-AC-04.01", "PASS", NO_WORKFLOWS_WARN),
+        ("reproducibility::empty_repo", "OSPS-BR-01.01", "PASS", NO_WORKFLOWS_WARN),
+        ("openssf-baseline::empty_repo", "OSPS-BR-01.01", "PASS", {**NO_WORKFLOWS_WARN, "status": "FAIL"}),
+        ("openssf-baseline::empty_repo", "OSPS-BR-01.01", "PASS", {"status": "WARN", "details": "Could not verify"}),
+        ("openssf-baseline::empty_repo", "OSPS-BR-01.01", "PASS", None),
+    ],
+)
+def test_other_drift_is_not_tolerated(pair: str, control_id: str, before: str | None, after) -> None:
+    assert not _warn_by_design(pair, control_id, before, after)
+
+
+@pytest.mark.parametrize(
+    "path", [".github/workflows/ci.yml", ".github/workflows/ci.YAML", "action.yml", "a/action.yaml"]
+)
+def test_no_drift_is_tolerated_on_a_fixture_with_inputs(path: str, tmp_path, monkeypatch) -> None:
+    import sys
+
+    monkeypatch.setattr(sys.modules[__name__], "PARITY_FIXTURES", tmp_path)
+    (tmp_path / "repo" / path).parent.mkdir(parents=True)
+    (tmp_path / "repo" / path).write_text("on: push\n", encoding="utf-8")
+
+    assert not _warn_by_design("openssf-baseline::repo", "OSPS-BR-01.01", "PASS", NO_WORKFLOWS_WARN)
 
 
 @pytest.mark.integration
@@ -53,7 +116,11 @@ def test_warn_outcome_changes_no_existing_control() -> None:
     another handler started returning WARN or the disposition refactor changed
     how PASS/FAIL/INCONCLUSIVE are routed.
     """
-    with_warn = capture()
+    with_details = capture_details()
+    with_warn = {
+        pair: {control_id: result["status"] for control_id, result in controls.items()}
+        for pair, controls in with_details.items()
+    }
     without_warn = capture(neutralize=True)
 
     assert set(with_warn) == set(without_warn), "corpus pairs differ between runs"
@@ -65,7 +132,7 @@ def test_warn_outcome_changes_no_existing_control() -> None:
             for control_id in set(with_warn[pair]) | set(without_warn[pair])
             if with_warn[pair].get(control_id) != without_warn[pair].get(control_id)
             and not _warn_by_design(
-                pair, control_id, without_warn[pair].get(control_id), with_warn[pair].get(control_id)
+                pair, control_id, without_warn[pair].get(control_id), with_details[pair].get(control_id)
             )
         }
         if changed:
