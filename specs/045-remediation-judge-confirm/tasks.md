@@ -76,12 +76,12 @@
 
 ### Tests for User Story 2
 
-- [ ] T017 [P] [US2] In `tests/darnit/server/test_pass_candidates.py`, add: a candidate from a first-audit judgment with no `run_id` is returned without a `remediation` block; after the judged file changes, the control is absent from `candidates` and present in `awaiting_judgment`; after `confirm_pass_candidate` on the returned id, a summary audit reports the control PASS with `concluded_by = "confirmation"`; after a `fail` judgment, the control is absent from `candidates`, present in `awaiting_judgment`, and the confirmation store is unchanged
+- [X] T017 [P] [US2] In `tests/darnit/server/test_pass_candidates.py`, add: a candidate from a first-audit judgment with no `run_id` is returned without a `remediation` block; after the judged file changes, the control is absent from `candidates` and present in `awaiting_judgment`; after `confirm_pass_candidate` on the returned id, a summary audit reports the control PASS with `concluded_by = "confirmation"`; after a `fail` judgment, the control is absent from `candidates`, present in `awaiting_judgment`, and the confirmation store is unchanged
 
 ### Implementation for User Story 2
 
-- [ ] T018 [US2] In `packages/darnit/src/darnit/skills/darnit-audit/SKILL.md`, add a step after judgments: call `get_pass_candidates` with the repository and follow its `procedure`; update the report step to list confirmed, declined, skipped, and awaiting candidates and that confirmations are local; keep the existing gotcha on explicit confirmation; keep and report `finding` results the same way as T015; bump `metadata.version`
-- [ ] T019 [US2] Run `uv run pytest tests/darnit/server/test_pass_candidates.py -q` and fix failures
+- [X] T018 [US2] In `packages/darnit/src/darnit/skills/darnit-audit/SKILL.md`, add a step after judgments: call `get_pass_candidates` with the repository and follow its `procedure`; update the report step to list confirmed, declined, skipped, and awaiting candidates and that confirmations are local; keep the existing gotcha on explicit confirmation; keep and report `finding` results the same way as T015; bump `metadata.version`
+- [X] T019 [US2] Run `uv run pytest tests/darnit/server/test_pass_candidates.py -q` and fix failures
 
 **Checkpoint**: Both skills end with the shared confirmation step.
 
