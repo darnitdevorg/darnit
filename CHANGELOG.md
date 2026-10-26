@@ -597,6 +597,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Configure `fail_exit_codes = [0]` for OpenSSF Baseline OSPS-BR-01.02
+  (`grep -rln github.head_ref .github/workflows/`) so exit 0 on a match records
+  as non-conclusive evidence without an `unexpected_exit` error class (fixes #647).
 - Scope the full-audit cache by trust target: `write_audit_cache` records
   the run's `target` in the cache envelope, and `read_audit_cache` /
   `read_full_audit_cache` enforce a match against `expected_target` so an
