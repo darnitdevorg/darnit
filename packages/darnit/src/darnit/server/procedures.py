@@ -1,8 +1,9 @@
 """The steps a coding agent follows after a data or judgment tool returns.
 
 One source for the procedure text that ``get_pending_data``,
-``confirm_project_data``, and ``get_judgment_requests`` return, so every
-skill and client follows the same steps (framework-design 5.4, 7.10).
+``confirm_project_data``, ``get_judgment_requests``, ``get_pass_candidates``,
+and ``remediate_audit_findings`` return, so every skill and client follows
+the same steps (framework-design 5.4, 7.10, 15.9).
 Calls name only what the caller passed (the repository and checkout);
 an unnamed repository is a placeholder, never a value read from the
 checkout, and no step holds a candidate or detected value.
@@ -79,4 +80,29 @@ def judgment_procedure(owner: str, repo: str, host: str, local_path: str) -> lis
         "and repeat; stop when remaining is empty.",
         "5. Controls in skipped already have a stored PASS candidate: do not request or judge them again.",
         "Confirm a PASS candidate only when the operator explicitly names it.",
+    ]
+
+
+def confirmation_procedure(owner: str, repo: str, host: str, local_path: str) -> list[str]:
+    """Ordered steps for asking the operator about the PASS candidates on a ``get_pass_candidates`` page."""
+    args = _args(owner, repo, host, local_path)
+    return [
+        "1. Show every candidate on the page before asking anything: control_id and title, what it "
+        "requires (description), the files, the reasoning, and each cited_evidence passage verbatim. "
+        'Label each "PASS candidate: not compliant until you confirm it".',
+        "2. For a candidate with a remediation block, say that darnit's remediation wrote the document, "
+        "whether it was edited afterwards (say so if you edited it), and that the judgment to confirm is "
+        "your own. Ask whether the document reflects the project's actual practice, not whether the "
+        "text reads well.",
+        "3. Ask with ask_user_batch verbatim through your question tool (AskUserQuestion in Claude Code); "
+        "without one, ask in plain text, one candidate at a time. Do not pre-fill, recommend, or offer "
+        "to confirm all.",
+        f"4. Call confirm_pass_candidate(control_ids=[<only the controls the person answered "
+        f'"Confirm" for>], {args}) once. Confirm nothing on silence, "Skip for now", "Do not confirm", '
+        "or an instruction that names no candidate the person was shown.",
+        f"5. If remaining is not empty, call get_pass_candidates({args}, control_ids=<remaining>) and "
+        "repeat from step 1.",
+        "6. Tell the person what was confirmed, declined, and skipped, and that confirmations are "
+        "recorded for them on this machine only: CI or another maintainer sees those controls PENDING "
+        "until they confirm there. Controls in awaiting_judgment need a judgment first.",
     ]

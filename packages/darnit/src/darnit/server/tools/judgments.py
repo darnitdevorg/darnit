@@ -259,6 +259,168 @@ def get_judgment_requests_impl(
     return dump(page)
 
 
+CONFIRM_OPTIONS = (
+    ("Confirm", "It reflects the project's actual practice: record my confirmation"),
+    ("Do not confirm", "It does not: the control stays non-compliant"),
+    ("Skip for now", "Decide later: the control stays non-compliant"),
+)
+
+
+def _question_header(control_id: str) -> str:
+    """A header within the question tool's 12 characters: the control id without its framework prefix."""
+    if len(control_id) > 12 and "-" in control_id:
+        control_id = control_id.split("-", 1)[1]
+    return control_id[:12]
+
+
+def _confirmation_question(entry: dict[str, Any]) -> dict[str, Any]:
+    """One question per candidate; the candidate itself is shown before the question, never inside it."""
+    files = ", ".join(entry["files"]) or "no files"
+    return {
+        "question": f"Confirm the PASS candidate for {entry['control_id']} ({files})?",
+        "header": _question_header(entry["control_id"]),
+        "multiSelect": False,
+        "options": [{"label": label, "description": description} for label, description in CONFIRM_OPTIONS],
+    }
+
+
+def get_pass_candidates_impl(
+    owner: str,
+    repo: str,
+    host: str = "github.com",
+    local_path: str = ".",
+    control_ids: list[str] | None = None,
+    run_id: str | None = None,
+    *,
+    framework_name: str,
+) -> str:
+    import json
+    from pathlib import Path
+
+    from darnit.config.operator.loader import OperatorConfigError, resolve_operator_config
+    from darnit.core.utils import validate_local_path
+    from darnit.remediation import manifest
+    from darnit.remediation.plan import content_digest
+    from darnit.server.procedures import confirmation_procedure
+    from darnit.tools.audit import _claim_controls, _load_framework, judgment_audit
+    from darnit.trust.decision import decide_trust, target_from_owner_repo
+    from darnit.trust.judgments import judged_content
+
+    def dump(payload: dict[str, Any]) -> str:
+        return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+    resolved_path, error = validate_local_path(local_path)
+    if error:
+        return dump({"status": "error", "error": error})
+    try:
+        operator_config = resolve_operator_config(resolved_path)
+    except OperatorConfigError as exc:
+        return dump({"status": "error", "error": str(exc)})
+
+    target = target_from_owner_repo(owner, repo, host)
+    identity = decide_trust(target, operator_config.config, resolved_path).repository
+    if identity is None or not identity.trusted_eligible:
+        return dump(
+            {
+                "status": "rejected",
+                "rejection": {
+                    "reason": (
+                        "name the audited repository (owner, repo, and host when not github.com); "
+                        "a checkout's own remotes cannot identify it"
+                    )
+                },
+            }
+        )
+
+    try:
+        results = judgment_audit(
+            resolved_path, framework_name, operator_config, owner, repo, target, control_ids=control_ids or None
+        )
+        controls = _claim_controls(_load_framework(framework_name), operator_config.config)
+    except Exception as exc:  # noqa: BLE001 - surfaced to the client
+        logger.warning("get_pass_candidates: could not audit %s: %s", resolved_path, exc)
+        return dump({"status": "error", "error": f"could not audit {resolved_path}: {exc}"})
+
+    wanted = set(control_ids) if control_ids else None
+
+    def awaits(result: dict[str, Any], kind: str) -> bool:
+        return (
+            result.get("status") == "PENDING"
+            and (result.get("pending") or {}).get("kind") == kind
+            and (wanted is None or result["id"] in wanted)
+        )
+
+    pending = sorted((r for r in results if awaits(r, "confirmation") and r.get("candidate")), key=lambda r: r["id"])
+
+    written: dict[str, str] = {}
+    note = None
+    if run_id:
+        try:
+            run = manifest.load_run(
+                manifest.repository_identity(resolved_path, owner, repo), run_id, checkout=resolved_path
+            )
+        except ValueError:
+            run = None
+        if run is None:
+            note = f"run {run_id} not found for {identity.canonical}"
+        else:
+            written = {f.path: f.after_digest for f in run.files}
+
+    def entry(result: dict[str, Any]) -> dict[str, Any]:
+        candidate = result["candidate"]
+        control = controls.get(result["id"])
+        files = list(judged_content((result.get("evidence") or {}).get("llm_consultation")))
+        item: dict[str, Any] = {
+            "control_id": result["id"],
+            "title": getattr(control, "name", "") or "",
+            "description": getattr(control, "description", "") or "",
+            "files": files,
+            "reasoning": candidate.get("reasoning", ""),
+            "cited_evidence": list(candidate.get("cited_evidence") or []),
+            "model": candidate.get("model"),
+            "model_version": candidate.get("model_version"),
+            "source": candidate.get("source"),
+            "evidence_digest": candidate.get("evidence_digest"),
+        }
+        for path in files:
+            if path in written:
+                current = Path(resolved_path) / path
+                digest = content_digest(current.read_bytes()) if current.is_file() else None
+                item["remediation"] = {
+                    "run_id": run_id,
+                    "path": path,
+                    "written": True,
+                    "edited_after_write": digest != written[path],
+                }
+                break
+        return item
+
+    page: dict[str, Any] = {
+        "status": "ok",
+        "procedure": confirmation_procedure(owner, repo, host, str(resolved_path)),
+        "candidates": [],
+        "ask_user_batch": [],
+        "awaiting_judgment": sorted(r["id"] for r in results if awaits(r, "llm_judgment")),
+        "remaining": [],
+    }
+    if note:
+        page["note"] = note
+    for index, result in enumerate(pending):
+        item = entry(result)
+        trial = {
+            **page,
+            "candidates": [*page["candidates"], item],
+            "ask_user_batch": [*page["ask_user_batch"], _confirmation_question(item)],
+            "remaining": [r["id"] for r in pending[index + 1 :]],
+        }
+        if len(dump(trial).encode("utf-8")) <= JUDGMENT_REQUEST_PAGE_BYTES or not page["candidates"]:
+            page = trial
+            continue
+        page["remaining"] = [r["id"] for r in pending[index:]]
+        break
+    return dump(page)
+
+
 async def get_judgment_requests(
     owner: str,
     repo: str,
@@ -300,6 +462,52 @@ async def get_judgment_requests(
         local_path,
         list(control_ids) if control_ids else None,
         include_judged,
+        framework_name=_framework_name,
+    )
+
+
+async def get_pass_candidates(
+    owner: str,
+    repo: str,
+    host: str = "github.com",
+    local_path: str = ".",
+    control_ids: list[str] | None = None,
+    run_id: str | None = None,
+    _framework_name: str | None = None,
+) -> str:
+    """Get the PASS candidates awaiting the operator's confirmation (PENDING, pending.kind = "confirmation").
+
+    Returns JSON: ``procedure`` (the steps for asking the operator; follow
+    it), ``candidates`` (one per control whose stored candidate matches the
+    current evidence: ``control_id``, ``title``, ``description``, ``files``,
+    ``reasoning``, ``cited_evidence``, ``model``, ``model_version``,
+    ``source``, ``evidence_digest``, and, with ``run_id``, ``remediation``
+    for a document that run wrote), ``ask_user_batch`` (one question per
+    candidate), ``awaiting_judgment`` (controls to judge first), and
+    ``remaining`` (candidates not on this page). Read only: records
+    nothing. Confirm only what the operator names, with
+    confirm_pass_candidate.
+
+    Args:
+        owner: Owner of the audited repository.
+        repo: Name of the audited repository.
+        host: Git host of owner/repo.
+        local_path: Path to the audited checkout.
+        control_ids: Limit to these controls (pass the previous page's ``remaining``).
+        run_id: The remediation run whose written documents to mark.
+    """
+    import json
+
+    if not _framework_name:
+        return json.dumps({"status": "error", "error": "no framework is configured for this server"})
+    return await asyncio.to_thread(
+        get_pass_candidates_impl,
+        owner,
+        repo,
+        host,
+        local_path,
+        list(control_ids) if control_ids else None,
+        run_id,
         framework_name=_framework_name,
     )
 
@@ -409,7 +617,7 @@ def _bind_framework(fn: Any, framework_name: str) -> Any:
 
 
 def register_judgment_tools(server: Any, framework_name: str | None) -> None:
-    """Register ``get_judgment_requests``, ``submit_judgment``, and ``confirm_pass_candidate`` bound to the server's framework."""
+    """Register the judgment and PASS-candidate tools bound to the server's framework."""
     if not framework_name:
         logger.debug("No framework name; judgment tools not registered")
         return
@@ -439,6 +647,18 @@ def register_judgment_tools(server: Any, framework_name: str | None) -> None:
             "non-compliant until the operator confirms it; a 'fail' verdict is a suggestive FAIL "
             "finding; unverifiable citations are rejected. Never state your verdict as the audit result."
         ),
+    )
+    server.add_tool(
+        _bind_framework(get_pass_candidates, framework_name),
+        name="get_pass_candidates",
+        description=(
+            "Get the PASS candidates awaiting the operator's confirmation (PENDING, pending.kind = "
+            "confirmation) that match the current evidence: each control's title, requirement, files, "
+            "the judgment's reasoning, and its cited passages, and, with run_id, whether remediation wrote "
+            "the document. Follow the returned procedure: show every candidate, ask about each, and pass "
+            "to confirm_pass_candidate only the controls the operator confirms. Records nothing."
+        ),
+        structured_output=False,
     )
     server.add_tool(
         _bind_framework(confirm_pass_candidate, framework_name),
