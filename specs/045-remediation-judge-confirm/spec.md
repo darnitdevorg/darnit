@@ -160,7 +160,7 @@ A contributor running the reference-repository replay sees two numbers after rem
 - The judgment tools from #669-#672 land first; this feature builds on `get_judgment_requests`, its subset re-gathering, `pending.kind` on summary rows, and procedures returned by tools.
 - The product surface is the MCP tools and the audit and comply skills. `darnit run` and `darnit harness` are test scaffolding and are out of scope, except that their reports must not misreport the new outcome information.
 - No regex or presence check regains authority to conclude PASS. The only route to PASS for document content remains a judged candidate plus the operator's confirmation.
-- Which replay script lands (#666 or #675) is decided separately; FR-011 to FR-014 apply to whichever does.
+- The replay is #666's `scripts/comply_replay.py` (#675 is closed). FR-011 to FR-014 apply to it and land after it.
 - OSPS-VM-05.03 re-checking as WARN after remediation (#681 item 4) is investigated separately.
 - The size of remediation preview and apply results, which today exceeds what an agent can read in one tool result, is a separate issue. FR-010 must not make it worse.
 - Confirmations stay operator-side (framework-design 5.4). Making them count in CI or for another maintainer changes the feature 040 trust model and is a follow-up issue, not part of this feature.
