@@ -74,7 +74,6 @@ def _run_mcp_tool(fixture_dir: Path) -> tuple[str, AuditResult]:
         local_path=str(fixture_dir),
         level=3,
         output_format="json",
-        auto_init_config=False,
         attest=False,
         prefer_upstream=False,
     )
