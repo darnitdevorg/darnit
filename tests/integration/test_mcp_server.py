@@ -126,12 +126,13 @@ class TestMCPServerIntegration:
                     "get_judgment_requests",
                     "submit_judgment",
                     "confirm_pass_candidate",
+                    "get_pass_candidates",
                 ]
                 for tool in expected_tools:
                     assert tool in tool_names, f"Missing tool: {tool}"
 
-                # Should have exactly 23 tools
-                assert len(tool_names) == 23, f"Expected 23 tools, got {len(tool_names)}: {tool_names}"
+                # Should have exactly 24 tools
+                assert len(tool_names) == 24, f"Expected 24 tools, got {len(tool_names)}: {tool_names}"
 
     @pytest.mark.asyncio
     async def test_list_available_checks(self, mcp_server_params):
