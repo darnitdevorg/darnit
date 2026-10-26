@@ -22,16 +22,36 @@ from __future__ import annotations
 
 import pytest
 
-from .baseline_capture import capture
+from .baseline_capture import PARITY_FIXTURES, capture
+
+# #584: `github_workflows_present`, the first step of these controls, returns
+# WARN by design on a repository with no workflow file. Neutralized, the
+# controls run on to zizmor and grep, which end them ERROR where the tool is
+# not installed (else the same WARN, which is no drift). That ERROR -> WARN on
+# a fixture without workflow files is the only drift tolerated.
+WARN_BY_DESIGN = {"OSPS-BR-01.01", "OSPS-BR-01.02", "OSPS-AC-04.02"}
+
+
+def _warn_by_design(pair: str, control_id: str, before: str | None, after: str | None) -> bool:
+    framework, _, repo = pair.partition("::")
+    workflows = PARITY_FIXTURES / repo / ".github" / "workflows"
+    has_workflow_file = any(p.suffix.lower() in (".yml", ".yaml") for p in workflows.glob("*"))
+    return (
+        framework == "openssf-baseline"
+        and control_id in WARN_BY_DESIGN
+        and (before, after) == ("ERROR", "WARN")
+        and not has_workflow_file
+    )
 
 
 @pytest.mark.integration
 def test_warn_outcome_changes_no_existing_control() -> None:
     """SC-008 / FR-017.
 
-    No existing handler returns WARN, so neutralizing the outcome must be
-    invisible. A difference here means either a handler started returning WARN
-    or the disposition refactor changed how PASS/FAIL/INCONCLUSIVE are routed.
+    Only `github_workflows_present` returns WARN (#584), so neutralizing the
+    outcome must be invisible everywhere else. A difference here means either
+    another handler started returning WARN or the disposition refactor changed
+    how PASS/FAIL/INCONCLUSIVE are routed.
     """
     with_warn = capture()
     without_warn = capture(neutralize=True)
@@ -44,6 +64,9 @@ def test_warn_outcome_changes_no_existing_control() -> None:
             control_id: (without_warn[pair].get(control_id), with_warn[pair].get(control_id))
             for control_id in set(with_warn[pair]) | set(without_warn[pair])
             if with_warn[pair].get(control_id) != without_warn[pair].get(control_id)
+            and not _warn_by_design(
+                pair, control_id, without_warn[pair].get(control_id), with_warn[pair].get(control_id)
+            )
         }
         if changed:
             drift[pair] = changed
