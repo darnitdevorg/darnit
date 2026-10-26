@@ -544,6 +544,8 @@ def create_security_policy(
         )
     elif written:
         recheck = (outcome.recheck or {}).get("status", "not run")
+        if outcome.pending_kind:
+            recheck = f"{recheck}, awaiting {outcome.pending_kind}"
         summary = f"Wrote {', '.join(written)} in {repo_path} ({outcome.kind}; re-check of {control_id}: {recheck})."
     elif outcome.kind == "unchanged":
         summary = f"Nothing was written: {outcome.reason}. An existing SECURITY.md is never overwritten."

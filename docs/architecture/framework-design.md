@@ -2317,7 +2317,7 @@ plan -> [confirmation missing]            -> needs_confirmation
 
 ### 15.5 Re-check
 
-After an apply that changed something, darnit re-checks the affected controls with `run_sieve_audit(controls=<affected>, write_cache=False)`: a subset audit through the canonical pipeline (section 10.1) that does not write the audit cache (section 10.4). The sieve is unchanged. A re-check PASS gives `fixed`; FAIL, WARN, or PENDING (including a PASS candidate) gives `changed_not_passing`, and a PENDING re-check's `pending.kind` is carried on the outcome as `pending_kind` (15.4); ERROR, or a re-check that could not run, gives `changed_not_verified` with the error. A control whose remediation changed nothing is not re-checked and is never `fixed`.
+After an apply that changed something, darnit re-checks the affected controls with `run_sieve_audit(controls=<affected>, write_cache=False)`: a subset audit through the canonical pipeline (section 10.1) that does not write the audit cache (section 10.4). The sieve is unchanged. A re-check PASS gives `fixed`; FAIL, WARN, or PENDING (including a PASS candidate) gives `changed_not_passing`, and a PENDING re-check's `pending.kind` is carried on the outcome as `pending_kind` (15.4) (a PENDING re-check without a `pending.kind` of `llm_judgment` or `confirmation` gives `changed_not_verified` with an `evaluation` error); ERROR, or a re-check that could not run, gives `changed_not_verified` with the error. A control whose remediation changed nothing is not re-checked and is never `fixed`.
 
 #### Scenario: Changed but still failing
 - **WHEN** a remediation changed a file and the re-check of its control is FAIL
