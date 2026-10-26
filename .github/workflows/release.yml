@@ -241,7 +241,7 @@ jobs:
           path: dist/
 
       - name: Publish darnit-core
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # release/v1
         with:
           packages-dir: dist/darnit-core/
           password: ${{ secrets.PYPI_API_TOKEN }}
@@ -262,7 +262,7 @@ jobs:
           path: dist/
 
       - name: Publish darnit-baseline
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # release/v1
         with:
           packages-dir: dist/darnit-baseline/
           password: ${{ secrets.PYPI_API_TOKEN }}
@@ -283,7 +283,7 @@ jobs:
           path: dist/
 
       - name: Publish darnit-gittuf
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # release/v1
         with:
           packages-dir: dist/darnit-gittuf/
           password: ${{ secrets.PYPI_API_TOKEN }}
@@ -304,7 +304,7 @@ jobs:
           path: dist/
 
       - name: Publish darnit-reproducibility
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # release/v1
         with:
           packages-dir: dist/darnit-reproducibility/
           password: ${{ secrets.PYPI_API_TOKEN }}
@@ -330,7 +330,7 @@ jobs:
           path: dist/
 
       - name: Publish darnit-mcp
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # release/v1
         with:
           packages-dir: dist/darnit-mcp/
           password: ${{ secrets.PYPI_API_TOKEN }}
