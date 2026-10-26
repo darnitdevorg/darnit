@@ -106,3 +106,26 @@ def confirmation_procedure(owner: str, repo: str, host: str, local_path: str) ->
         "recorded for them on this machine only: CI or another maintainer sees those controls PENDING "
         "until they confirm there. Controls in awaiting_judgment need a judgment first.",
     ]
+
+
+def remediation_next_steps(
+    owner: str | None, repo: str | None, host: str | None, local_path: str, awaiting: dict[str, list[str]], run_id: str
+) -> list[str]:
+    """What follows an apply whose changed controls await a judgment or a confirmation (15.4, 15.9)."""
+    if not awaiting:
+        return []
+    args = _args(owner, repo, host, local_path)
+    steps = []
+    if awaiting.get("llm_judgment"):
+        steps.append(
+            f"Awaiting a model judgment: {', '.join(awaiting['llm_judgment'])}. Improve the generated files "
+            f"first if you plan to, then call get_judgment_requests({args}) and follow its procedure; the "
+            "PASS candidates it produces are confirmed in the next step."
+        )
+    if awaiting.get("confirmation"):
+        steps.append(f"Awaiting the operator's confirmation: {', '.join(awaiting['confirmation'])}.")
+    steps.append(
+        f'Then call get_pass_candidates({args}, run_id="{run_id}") and follow its procedure. Until the '
+        "operator confirms, these controls are not compliant."
+    )
+    return steps

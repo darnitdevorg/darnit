@@ -75,7 +75,8 @@ scripts/comply_replay.py, scripts/comply_replay.toml, scripts/comply_replay_expe
 tests/darnit/remediation/test_outcomes_pending_kind.py
 tests/darnit/server/test_pass_candidates.py
 tests/darnit/server/test_procedures_confirmation.py
-tests/darnit_baseline/test_remediation_awaiting.py
+tests/darnit_baseline/remediation/test_remediation_awaiting.py
+tests/darnit/server/test_procedures_next_steps.py
 tests/darnit_baseline/test_comply_replay_recorded.py      # after #666, next to whatever tests #666 adds
 ```
 
