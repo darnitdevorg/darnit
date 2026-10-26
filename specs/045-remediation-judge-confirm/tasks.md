@@ -141,9 +141,9 @@
 - [X] T035 [P] Add a 045 line to the Active Technologies list in `CLAUDE.md`, in the style of the 043/044 lines (existing dependencies only; operator-side store unchanged)
 - [X] T036 [P] Check every new or changed file is ASCII-only: `LC_ALL=C grep -rn '[^ -~]' <files>` returns nothing (existing non-ASCII in untouched lines excepted)
 - [X] T037 Run `uv run ruff check .`, `uv run ruff format --check .`, and `uv run python scripts/validate_sync.py --verbose`
-- [ ] T038 End-to-end per quickstart.md sections 2, 4, and 5 on fresh copies of wtf-frontend at 939e838 with an isolated `HOME`, platform remediation `manual`, no writes to real repositories: apply result fields; headless comply (SC-002, SC-003; `confirm_pass_candidate` disallowed); interactive comply and `/darnit-audit` (SC-004), the interactive part run by the maintainer
+- [ ] T038 End-to-end per quickstart.md sections 2, 4, and 5 on fresh copies of wtf-frontend at 939e838 with an isolated `HOME`, platform remediation `manual`, no writes to real repositories: apply result fields; headless comply (SC-002, SC-003; `confirm_pass_candidate` disallowed); interactive comply and `/darnit-audit` (SC-004), the interactive part run by the maintainer. Sections 2 and 4 ran 2026-10-26 (results in the PR Testing section); section 5 is outstanding
 - [X] T039 Draft (do not file) the follow-up issue on confirmation portability (confirmations count only on the confirming operator's machine; CI and other maintainers see PENDING), ending with the attribution line, for the maintainer to approve
-- [ ] T040 Run `uv run pytest tests/ --ignore=tests/integration/ -q`, compare with T001, and write the PR Testing section: base and head SHAs, reference repository and commit, which quickstart sections ran and their results, what was not run and why
+- [X] T040 Run `uv run pytest tests/ --ignore=tests/integration/ -q`, compare with T001, and write the PR Testing section: base and head SHAs, reference repository and commit, which quickstart sections ran and their results, what was not run and why
 
 ---
 
