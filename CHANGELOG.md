@@ -168,6 +168,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `get_pass_candidates`, on every framework server beside
+  `confirm_pass_candidate`, returns the PASS candidates that match the
+  current evidence, with each control's title and requirement, the judged
+  files, the reasoning, and the cited passages, one question per candidate,
+  and the procedure for asking the operator. With a remediation `run_id` it
+  marks documents that run wrote and whether they were edited since. It
+  records nothing. `/darnit-comply` now judges after improving the generated
+  files and asks the operator to confirm candidates before the final audit
+  and the pull request; `/darnit-audit` ends with the same step (#681).
+- A remediation outcome `changed_not_passing` whose re-check is PENDING
+  carries `pending_kind` (`llm_judgment` or `confirmation`), and an apply
+  lists those controls in `awaiting`, with a "Next steps" section in the
+  report. The outcome kinds and the commit and pull request gates are
+  unchanged, and such a control stays non-compliant (#681).
 - `get_judgment_requests`, on every framework server beside
   `submit_judgment`, returns what a coding agent needs to judge the controls
   awaiting a judgment: each control's prompt, analysis hints, and the keys
