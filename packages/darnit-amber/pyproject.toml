@@ -5,6 +5,7 @@ description = "Scientific reproducibility checks plugin for darnit"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "boto3>=1.43.118",
     "darnit-core>=0.1.1",
     # PEP 440 requirement parsing for the requirements.txt pin classifier.
     # darnit-core already imports `packaging` at runtime (core/composition.py,
@@ -20,6 +21,9 @@ darnit-amber = "darnit_amber.cli:main"
 [project.entry-points."darnit.implementations"]
 amber = "darnit_amber:register"
 
+[project.entry-points."darnit.stores.attestation"]
+s3 = "darnit_amber.s3_store:S3AttestationStore"
+
 [project.entry-points."darnit.frameworks"]
 amber = "darnit_amber:get_framework_path"
 
@@ -29,5 +33,10 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/darnit_amber"]
+
+[dependency-groups]
+dev = [
+    "moto[server]>=5.2.4",
+]
 # amber.toml lives at src/darnit_amber/amber.toml
 # (feature 021) and is packaged automatically by the entry above.

@@ -10,6 +10,19 @@ from pathlib import Path
 from .run import RunError, run
 
 
+def _make_store(a: argparse.Namespace):  # noqa: ANN202
+    if a.store == "s3":
+        if not a.bucket:
+            raise RunError("--bucket is required with --store s3")
+        from .s3_store import S3AttestationStore
+
+        return S3AttestationStore(bucket=a.bucket, prefix=a.prefix, endpoint_url=a.endpoint_url)
+    from darnit.stores.defaults.local_fs import LocalFsAttestationStore
+
+    a.out.mkdir(parents=True, exist_ok=True)
+    return LocalFsAttestationStore(root=a.out)
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="darnit-amber", description="Amber reproducibility runs")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -18,11 +31,16 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--ref", help="branch or tag to clone (URL artifacts only)")
     r.add_argument("--key", type=Path, required=True, help="signing key for witness (Sigstore keyless comes later)")
     r.add_argument("--claims", type=Path, help="corpus claims file (yaml or json)")
-    r.add_argument("--out", type=Path, default=Path("amber-runs"), help="local store directory")
+    r.add_argument("--store", choices=["local-fs", "s3"], default="local-fs", help="attestation store backend")
+    r.add_argument("--out", type=Path, default=Path("amber-runs"), help="local-fs: store directory")
+    r.add_argument("--bucket", help="s3: bucket name")
+    r.add_argument("--prefix", default="amber/runs", help="s3: key prefix")
+    r.add_argument("--endpoint-url", help="s3: endpoint for S3-compatible services")
     a = p.parse_args(argv)
 
     try:
-        bundle = run(a.artifact, a.ref, a.key, a.claims, a.out)
+        store = _make_store(a)
+        bundle = run(a.artifact, a.ref, a.key, a.claims, store)
     except RunError as e:
         print(f"darnit-amber: {e}", file=sys.stderr)
         return 1
