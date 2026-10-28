@@ -204,3 +204,42 @@ def test_run_command_after_dashdash_builds_inferred_entry(monkeypatch, tmp_path)
     r.run(".", None, tmp_path / "k", None, None, ["sh", "-c", "echo hi > a.txt"])
     assert seen["run"] == {"command": "sh -c 'echo hi > a.txt'"}
     assert seen["_source"] == "inferred"
+
+
+def test_claim_measures_stored_output_into_derived_bundle(tmp_path):
+    from darnit_amber.claim import claim
+    from darnit_amber.run import _canonical, write_blob
+
+    class Store:  # local-fs shaped: <root>/<id>.intoto.json and <root>/<id>/outputs/<path>
+        _root = tmp_path
+
+        def write(self, bid, data, _ct):
+            (tmp_path / f"{bid}.intoto.json").write_bytes(data)
+
+    first = {
+        "id": "b1",
+        "statement": {
+            "subject": [{"name": "x", "digest": {}}],
+            "predicate": {
+                "experiment": {
+                    "command": "c",
+                    "outputs": [{"path": "out/r.txt", "sha256": "s", "captured": True, "stored": True}],
+                },
+                "claims": [],
+                "verdict": "NOT_COMPARABLE",
+            },
+        },
+    }
+    st = Store()
+    st.write("b1", _canonical(first), "")
+    write_blob(st, "b1", "out/r.txt", b"Queries/sec: 126.81\n")
+    res = claim(
+        st,
+        "b1",
+        {"id": "q", "threshold": ">= 100", "measure": {"file": "out/r.txt", "regex": r"Queries/sec: ([0-9.]+)"}},
+    )
+    assert res["derived_from"] == "b1" and res["verdict"] == "REPRODUCED"
+    assert res["claim"]["measured"] == "126.81"
+    assert (tmp_path / res["id"] / "outputs" / "out" / "r.txt").read_bytes().startswith(b"Queries")
+    with pytest.raises(Exception, match="not an output"):
+        claim(st, "b1", {"id": "q", "measure": {"file": "nope.txt", "regex": "x"}})

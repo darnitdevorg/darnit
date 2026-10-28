@@ -7,6 +7,7 @@ import json
 import sys
 from pathlib import Path
 
+from .claim import claim
 from .rerun import rerun, verify
 from .run import RunError, run
 
@@ -44,6 +45,7 @@ def main(argv: list[str] | None = None) -> int:
     for name, help_ in (
         ("verify", "check a stored bundle: id, outputs vs Witness products, signatures"),
         ("rerun", "re-execute a stored bundle's experiment and compare outputs"),
+        ("claim", "attach a paper claim to a stored run, measured from its stored outputs"),
     ):
         q = sub.add_parser(name, help=help_)
         q.add_argument("bundle_id")
@@ -54,8 +56,19 @@ def main(argv: list[str] | None = None) -> int:
         q.add_argument("--endpoint-url")
         if name == "verify":
             q.add_argument("--pubkey", type=Path, help="PEM public key of the Witness signer")
-        else:
+        elif name == "rerun":
             q.add_argument("--key", type=Path, required=True, help="signing key for this rerun")
+        else:
+            q.add_argument("--id", required=True, help="claim id, e.g. figure6a-queries-per-sec")
+            q.add_argument("--file", required=True, help="output file of the run holding the value")
+            q.add_argument("--regex", required=True, help="regex over that file; group 1 is the value")
+            q.add_argument("--threshold", help="the paper's number, e.g. '>= 70' or '== falsified'")
+            q.add_argument("--tolerance", type=float)
+            q.add_argument("--scale", type=float, help="multiply the value, e.g. 100 for a fraction in percent")
+            q.add_argument("--unit")
+            q.add_argument("--source", help="where the threshold comes from, e.g. 'Table 3, row 2'")
+            q.add_argument("--expected", choices=["REPRODUCED", "NOT_REPRODUCED", "NOT_COMPARABLE"])
+            q.add_argument("--not-comparable", metavar="REASON", help="record the value but do not judge it")
     argv = sys.argv[1:] if argv is None else list(argv)
     command: list[str] = []
     if "--" in argv:
@@ -63,10 +76,30 @@ def main(argv: list[str] | None = None) -> int:
         argv, command = argv[:i], argv[i + 1 :]
     a = p.parse_args(argv)
 
-    if a.cmd in ("verify", "rerun"):
+    if a.cmd in ("verify", "rerun", "claim"):
         try:
             store = _make_store(a)
-            result = verify(store, a.bundle_id, a.pubkey) if a.cmd == "verify" else rerun(store, a.bundle_id, a.key)
+            if a.cmd == "verify":
+                result = verify(store, a.bundle_id, a.pubkey)
+            elif a.cmd == "rerun":
+                result = rerun(store, a.bundle_id, a.key)
+            else:
+                spec = {
+                    "id": a.id,
+                    "threshold": a.threshold,
+                    "tolerance": a.tolerance,
+                    "unit": a.unit,
+                    "source": a.source,
+                    "expected_verdict": a.expected,
+                    "measure": {
+                        "file": a.file,
+                        "regex": a.regex,
+                        "scale": a.scale,
+                        "comparable": False if a.not_comparable else None,
+                        "reason": a.not_comparable,
+                    },
+                }
+                result = claim(store, a.bundle_id, spec)
         except (RunError, FileNotFoundError, KeyError) as e:
             print(f"darnit-amber: {e}", file=sys.stderr)
             return 1

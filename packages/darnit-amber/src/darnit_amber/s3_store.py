@@ -58,6 +58,21 @@ class S3AttestationStore:
         except Exception as e:
             raise StoreOperationError(f"{self._BACKEND_NAME}: read of s3://{self._bucket}/{key} failed: {e}") from e
 
+    def write_blob(self, key: str, data: bytes) -> None:
+        """An object next to the bundles (experiment outputs); key is relative to the prefix."""
+        full = f"{self._prefix}/{key}" if self._prefix else key
+        try:
+            self._client.put_object(Bucket=self._bucket, Key=full, Body=data)
+        except Exception as e:
+            raise StoreOperationError(f"{self._BACKEND_NAME}: write of s3://{self._bucket}/{full} failed: {e}") from e
+
+    def read_blob(self, key: str) -> bytes:
+        full = f"{self._prefix}/{key}" if self._prefix else key
+        try:
+            return self._client.get_object(Bucket=self._bucket, Key=full)["Body"].read()
+        except Exception as e:
+            raise StoreOperationError(f"{self._BACKEND_NAME}: read of s3://{self._bucket}/{full} failed: {e}") from e
+
     def list_bundles(self) -> list[str]:
         """Bundle ids under the prefix (additive extension; not in the v0 Protocol)."""
         ids: list[str] = []
