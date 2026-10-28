@@ -11,7 +11,7 @@ the outcome is ``manual`` and no platform call is made.
 
 from __future__ import annotations
 
-from collections.abc import Collection, Iterable, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
@@ -116,7 +116,63 @@ def platform_repository(local_path: str, owner: str | None, repo: str | None) ->
     return hint.canonical if hint is not None else None
 
 
-def platform_requests(framework: Any, control_ids: Iterable[str]) -> list[PlatformRequirement]:
+def resolve_platform_require(require: Mapping[str, Any], context: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """Resolve context variables in a platform requirement mapping."""
+    if not context:
+        return dict(require)
+    resolved: dict[str, Any] = {}
+    for key, value in require.items():
+        if isinstance(value, list):
+            new_list = []
+            for item in value:
+                if isinstance(item, str) and (item.startswith("${") or item.startswith("$")):
+                    var_name = item.strip("${}").strip("$")
+                    if var_name.startswith("context."):
+                        var_name = var_name[len("context.") :]
+                    val = context.get(var_name)
+                    if val is None:
+                        val = context.get(f"context.{var_name}")
+                    if isinstance(val, list):
+                        new_list.extend(str(v).strip() for v in val if str(v).strip())
+                    elif isinstance(val, str) and val:
+                        if "," in val:
+                            new_list.extend(s.strip() for s in val.split(",") if s.strip())
+                        else:
+                            new_list.append(val.strip())
+                    elif val:
+                        new_list.append(str(val))
+                    else:
+                        new_list.append(item)
+                else:
+                    new_list.append(item)
+            resolved[key] = new_list
+        elif isinstance(value, str) and (value.startswith("${") or value.startswith("$")):
+            var_name = value.strip("${}").strip("$")
+            if var_name.startswith("context."):
+                var_name = var_name[len("context.") :]
+            val = context.get(var_name)
+            if val is None:
+                val = context.get(f"context.{var_name}")
+            if val is not None:
+                if key == "require_status_checks" and isinstance(val, str):
+                    resolved[key] = [s.strip() for s in val.split(",") if s.strip()]
+                elif key == "require_status_checks" and isinstance(val, list):
+                    resolved[key] = [str(v).strip() for v in val if str(v).strip()]
+                else:
+                    resolved[key] = val
+            else:
+                resolved[key] = value
+        else:
+            resolved[key] = value
+    return resolved
+
+
+def platform_requests(
+    framework: Any,
+    control_ids: Iterable[str],
+    *,
+    context: Mapping[str, Any] | None = None,
+) -> list[PlatformRequirement]:
     """Every ``platform_setting`` requirement declared by the remediations of ``control_ids``."""
     requests: list[PlatformRequirement] = []
     for control_id in control_ids:
@@ -125,8 +181,11 @@ def platform_requests(framework: Any, control_ids: Iterable[str]) -> list[Platfo
         for handler in getattr(remediation, "handlers", None) or []:
             if handler.handler == "platform_setting":
                 extra = handler.model_extra or {}
+                require = extra["require"]
+                if context:
+                    require = resolve_platform_require(require, context)
                 requests.append(
-                    PlatformRequirement(target=extra["target"], require=extra["require"], branch=extra.get("branch"))
+                    PlatformRequirement(target=extra["target"], require=require, branch=extra.get("branch"))
                 )
     return requests
 
@@ -428,4 +487,5 @@ __all__ = [
     "plan",
     "platform_repository",
     "platform_requests",
+    "resolve_platform_require",
 ]

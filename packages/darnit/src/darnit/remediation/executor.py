@@ -965,6 +965,7 @@ class RemediationExecutor:
             default_branch=self.default_branch,
             control_id=control_id,
             project_context=dict(self._project_values),
+            usable_project=dict(self._context_values),
             mode=mode,
             platform=self.platform,
         )
@@ -1014,6 +1015,10 @@ class RemediationExecutor:
             step = f"{invocation.handler}[{index}]"
             handler_config = dict(invocation.model_extra or {})
             handler_config["handler"] = invocation.handler
+            if invocation.handler == "platform_setting" and "require" in handler_config:
+                from darnit.remediation.platform import resolve_platform_require
+
+                handler_config["require"] = resolve_platform_require(handler_config["require"], self._context_values)
 
             # Evaluate when clause — skip handler if condition not met
             if invocation.when and not evaluate_when(invocation.when, when_context, missing_excludes=True):

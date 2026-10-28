@@ -562,7 +562,7 @@ def enable_branch_protection(
     """
     Require branch protection settings; previews unless asked to apply.
 
-    Satisfies: OSPS-AC-03.01, OSPS-AC-03.02, OSPS-QA-07.01
+    Satisfies: OSPS-AC-03.01, OSPS-AC-03.02, OSPS-QA-03.01, OSPS-QA-07.01
 
     Reads the current protection and active rulesets and plans only the
     missing settings. It never lowers an existing approval count, never
