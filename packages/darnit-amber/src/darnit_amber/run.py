@@ -146,11 +146,17 @@ def _witness(step: str, key: Path, out: Path, cwd: Path, cmd: list[str]) -> tupl
     return envelope, _witness_sections(stmt)
 
 
-def run(artifact: str, ref: str | None, key: Path, claims: Path | None, store: AttestationStore) -> dict[str, Any]:
+def execute(
+    artifact: str,
+    ref: str | None,
+    key: Path,
+    entry: dict[str, Any],
+    store: AttestationStore,
+    rerun_of: str | None = None,
+) -> dict[str, Any]:
     darnit_bin = Path(sys.executable).parent / "darnit"
     if not darnit_bin.exists():
         raise RunError(f"darnit CLI not found next to {sys.executable}")
-    entry = load_entry(claims)
     exp_cmd = (entry.get("run") or {}).get("command")
     exp_outputs = (entry.get("run") or {}).get("outputs") or []
 
@@ -202,7 +208,7 @@ def run(artifact: str, ref: str | None, key: Path, claims: Path | None, store: A
         },
         "experiment": experiment,
         "claims": _claims(entry),
-        "reruns": None,
+        "reruns": {"of": rerun_of} if rerun_of else None,
         "witness_attestations": sorted(audit_w),
     }
     statement = {
@@ -219,3 +225,7 @@ def run(artifact: str, ref: str | None, key: Path, claims: Path | None, store: A
     }
     store.write(bundle_id, _canonical(bundle), "application/vnd.in-toto+json")
     return bundle
+
+
+def run(artifact: str, ref: str | None, key: Path, claims: Path | None, store: AttestationStore) -> dict[str, Any]:
+    return execute(artifact, ref, key, load_entry(claims), store)

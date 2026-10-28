@@ -7,6 +7,7 @@ import json
 import sys
 from pathlib import Path
 
+from .rerun import rerun, verify
 from .run import RunError, run
 
 
@@ -36,7 +37,32 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--bucket", help="s3: bucket name")
     r.add_argument("--prefix", default="amber/runs", help="s3: key prefix")
     r.add_argument("--endpoint-url", help="s3: endpoint for S3-compatible services")
+    for name, help_ in (
+        ("verify", "check a stored bundle: id, outputs vs Witness products, signatures"),
+        ("rerun", "re-execute a stored bundle's experiment and compare outputs"),
+    ):
+        q = sub.add_parser(name, help=help_)
+        q.add_argument("bundle_id")
+        q.add_argument("--store", choices=["local-fs", "s3"], default="local-fs")
+        q.add_argument("--out", type=Path, default=Path("amber-runs"))
+        q.add_argument("--bucket")
+        q.add_argument("--prefix", default="amber/runs")
+        q.add_argument("--endpoint-url")
+        if name == "verify":
+            q.add_argument("--pubkey", type=Path, help="PEM public key of the Witness signer")
+        else:
+            q.add_argument("--key", type=Path, required=True, help="signing key for this rerun")
     a = p.parse_args(argv)
+
+    if a.cmd in ("verify", "rerun"):
+        try:
+            store = _make_store(a)
+            result = verify(store, a.bundle_id, a.pubkey) if a.cmd == "verify" else rerun(store, a.bundle_id, a.key)
+        except (RunError, FileNotFoundError, KeyError) as e:
+            print(f"darnit-amber: {e}", file=sys.stderr)
+            return 1
+        print(json.dumps(result, indent=2))
+        return 0 if result.get("verified", not result.get("drift")) else 2
 
     try:
         store = _make_store(a)
