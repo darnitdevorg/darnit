@@ -128,3 +128,62 @@ def test_overall_verdict() -> None:
     assert v([{"verdict": "REPRODUCED"}, {"verdict": "NOT_REPRODUCED"}]) == "NOT_REPRODUCED"
     assert v([{"verdict": "NOT_COMPARABLE"}]) == "NOT_COMPARABLE"
     assert v([]) == "NOT_COMPARABLE"
+
+
+def test_rerun_compares_claims_not_just_files(monkeypatch, tmp_path):
+    from darnit_amber import rerun as rr
+
+    first = {
+        "id": "first",
+        "statement": {
+            "subject": [{"name": "https://x/y.git", "digest": {"gitCommit": "abc"}}],
+            "predicate": {
+                "corpus_entry": "e",
+                "experiment": {"command": "true", "outputs": [{"path": "t.txt", "sha256": "aaa"}]},
+                "claims": [
+                    {
+                        "id": "c",
+                        "threshold": ">= 0",
+                        "measure": {"file": "t.txt", "regex": "(\\d+)", "comparable": False},
+                        "measured": "1",
+                        "verdict": "NOT_COMPARABLE",
+                        "reason": "hw",
+                    }
+                ],
+            },
+        },
+    }
+    seen = {}
+
+    def fake_execute(artifact, ref, key, entry, store, rerun_of=None):
+        seen["entry"] = entry
+        return {
+            "statement": {
+                "subject": first["statement"]["subject"],
+                "predicate": {
+                    "experiment": {"command": "true", "exit_code": 0, "outputs": [{"path": "t.txt", "sha256": "bbb"}]},
+                    "claims": [{"id": "c", "measured": "2", "verdict": "NOT_COMPARABLE"}],
+                    "verdict": "NOT_COMPARABLE",
+                },
+            }
+        }
+
+    class Store:
+        def read(self, _id):
+            return json.dumps(first).encode()
+
+        def write(self, *_):
+            pass
+
+    monkeypatch.setattr(rr, "execute", fake_execute)
+    out = rr.rerun(Store(), "first", tmp_path / "k")
+    assert seen["entry"]["claims"][0]["measure"]["file"] == "t.txt"
+    assert "measured" not in seen["entry"]["claims"][0]
+    assert out["outputs"][0]["result"] == "changed"
+    assert out["claims"][0] == {
+        "id": "c",
+        "first": {"measured": "1", "verdict": "NOT_COMPARABLE"},
+        "rerun": {"measured": "2", "verdict": "NOT_COMPARABLE"},
+        "result": "same",
+    }
+    assert out["drift"] is False
