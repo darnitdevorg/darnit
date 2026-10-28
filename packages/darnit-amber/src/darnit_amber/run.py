@@ -1,8 +1,8 @@
-"""``darnit-amber run``: execute the Amber audit under Witness and emit a run bundle.
+"""``darnit-amber run``: execute the Amber audit and the corpus experiment under Witness, emit a run bundle.
 
 One bundle per run: an in-toto v1 statement whose predicate is ``amber/run/v1``,
-stored next to the Witness DSSE envelope that captured the run. The bundle id is
-the sha256 of the canonical statement. See darnit issue #677.
+with the Witness DSSE envelopes that captured the run. The bundle id is the
+sha256 of the canonical statement. See darnit issue #677.
 """
 
 from __future__ import annotations
@@ -38,13 +38,13 @@ def _is_url(s: str) -> bool:
 
 
 def _clone(url: str, ref: str | None, dest: Path) -> Path:
-    cmd = ["git", "clone", "-q", "--depth", "1"]
-    if ref:
-        cmd += ["--branch", ref]
-    cmd += [url, str(dest)]
-    r = subprocess.run(cmd, capture_output=True, text=True)
+    r = subprocess.run(["git", "clone", "-q", url, str(dest)], capture_output=True, text=True)
     if r.returncode != 0:
         raise RunError(f"clone failed: {r.stderr.strip()}")
+    if ref:
+        r = subprocess.run(["git", "-C", str(dest), "checkout", "-q", ref], capture_output=True, text=True)
+        if r.returncode != 0:
+            raise RunError(f"checkout {ref} failed: {r.stderr.strip()}")
     return dest
 
 
@@ -79,27 +79,36 @@ def _environment() -> dict[str, Any]:
 
 def _decode_envelope(path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     env = json.loads(path.read_text())
-    stmt = json.loads(base64.b64decode(env["payload"]))
-    return env, stmt
+    return env, json.loads(base64.b64decode(env["payload"]))
 
 
 def _witness_sections(stmt: dict[str, Any]) -> dict[str, Any]:
     return {a["type"].rsplit("/", 2)[-2]: a["attestation"] for a in stmt["predicate"]["attestations"]}
 
 
-def _claims(path: Path | None) -> list[dict[str, Any]]:
+def load_entry(path: Path | None) -> dict[str, Any]:
+    """A corpus entry (yaml or json), or an empty dict."""
     if path is None:
-        return []
-    raw = json.loads(path.read_text()) if path.suffix == ".json" else _load_yaml(path)
+        return {}
+    if path.suffix == ".json":
+        return json.loads(path.read_text()) or {}
+    import yaml  # type: ignore[import-untyped]  # darnit already depends on it
+
+    return yaml.safe_load(path.read_text()) or {}
+
+
+def _claims(entry: dict[str, Any]) -> list[dict[str, Any]]:
     out = []
-    for c in raw.get("claims", raw) if isinstance(raw, dict) else raw:
+    for c in entry.get("claims") or []:
         out.append(
             {
-                "id": c.get("id"),
+                "id": c.get("id") or c.get("metric"),
                 "statement": c.get("statement"),
                 "metric": c.get("metric"),
                 "threshold": c.get("threshold"),
+                "unit": c.get("unit"),
                 "threshold_source": c.get("source"),
+                "measurement_protocol": c.get("measurement_protocol"),
                 "measured": None,
                 "verdict": "NOT_COMPARABLE",
                 "reason": "claim measurement not implemented in this version",
@@ -108,72 +117,93 @@ def _claims(path: Path | None) -> list[dict[str, Any]]:
     return out
 
 
-def _load_yaml(path: Path) -> Any:
-    import yaml  # type: ignore[import-untyped]  # darnit already depends on it
-
-    return yaml.safe_load(path.read_text())
-
-
 def _canonical(obj: Any) -> bytes:
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
 
 
-def run(artifact: str, ref: str | None, key: Path, claims: Path | None, store: AttestationStore) -> dict[str, Any]:
+def _witness(step: str, key: Path, out: Path, cwd: Path, cmd: list[str]) -> tuple[dict[str, Any], dict[str, Any]]:
     witness = shutil.which("witness")
     if not witness:
         raise RunError("witness binary not found on PATH (https://github.com/in-toto/witness)")
+    full = [
+        witness,
+        "run",
+        "--step",
+        step,
+        "--attestations",
+        WITNESS_ATTESTORS,
+        "-k",
+        str(key),
+        "-o",
+        str(out),
+        "--",
+        *cmd,
+    ]
+    r = subprocess.run(full, cwd=cwd, capture_output=True, text=True)
+    if r.returncode != 0 or not out.exists():
+        raise RunError(f"witness run ({step}) failed:\n{r.stderr[-2000:]}")
+    envelope, stmt = _decode_envelope(out)
+    return envelope, _witness_sections(stmt)
+
+
+def run(artifact: str, ref: str | None, key: Path, claims: Path | None, store: AttestationStore) -> dict[str, Any]:
     darnit_bin = Path(sys.executable).parent / "darnit"
     if not darnit_bin.exists():
         raise RunError(f"darnit CLI not found next to {sys.executable}")
+    entry = load_entry(claims)
+    exp_cmd = (entry.get("run") or {}).get("command")
+    exp_outputs = (entry.get("run") or {}).get("outputs") or []
 
     with tempfile.TemporaryDirectory(prefix="amber-run-") as tmp:
         tmpdir = Path(tmp)
         repo = _clone(artifact, ref, tmpdir / "artifact") if _is_url(artifact) else Path(artifact).resolve()
-        envelope_path = tmpdir / "witness.json"
         started = datetime.now(UTC).isoformat()
-        inner = f"{darnit_bin} audit . -f amber --output json --no-fail > {AUDIT_OUTPUT}"
-        cmd = [
-            witness,
-            "run",
-            "--step",
+
+        audit_env, audit_w = _witness(
             "amber-audit",
-            "--attestations",
-            WITNESS_ATTESTORS,
-            "-k",
-            str(key),
-            "-o",
-            str(envelope_path),
-            "--",
-            "sh",
-            "-c",
-            inner,
-        ]
-        r = subprocess.run(cmd, cwd=repo, capture_output=True, text=True)
-        if r.returncode != 0 or not envelope_path.exists():
-            raise RunError(f"witness run failed:\n{r.stderr[-2000:]}")
+            key,
+            tmpdir / "audit.json",
+            repo,
+            ["sh", "-c", f"{darnit_bin} audit . -f amber --output json --no-fail > {AUDIT_OUTPUT}"],
+        )
         audit = json.loads((repo / AUDIT_OUTPUT).read_text())
-        envelope, wstmt = _decode_envelope(envelope_path)
-        w = _witness_sections(wstmt)
+
+        experiment: dict[str, Any] | None = None
+        exp_env: dict[str, Any] | None = None
+        if exp_cmd:
+            exp_env, exp_w = _witness("experiment", key, tmpdir / "experiment.json", repo, ["sh", "-c", exp_cmd])
+            products = exp_w.get("product") or {}
+            experiment = {
+                "command": exp_cmd,
+                "exit_code": exp_w.get("command-run", {}).get("exitcode"),
+                "outputs": [
+                    {
+                        "path": p,
+                        "sha256": (products.get(p) or {}).get("digest", {}).get("sha256"),
+                        "captured": p in products,
+                    }
+                    for p in exp_outputs
+                ],
+                "products": {p: d.get("digest", {}).get("sha256") for p, d in products.items()},
+            }
         commit = _git_commit(repo)
 
     predicate = {
         "started_at": started,
         "environment": _environment(),
-        "command": {
-            "argv": w.get("command-run", {}).get("cmd"),
-            "exit_code": w.get("command-run", {}).get("exitcode"),
-            "answer_file": None,
-        },
-        "claims": _claims(claims),
+        "corpus_entry": entry.get("id"),
         "audit": {
             "framework": "amber",
+            "command": audit_w.get("command-run", {}).get("cmd"),
+            "exit_code": audit_w.get("command-run", {}).get("exitcode"),
             "results": [
                 {"id": x.get("id") or x.get("control_id"), "status": x.get("status")} for x in audit.get("results", [])
             ],
         },
-        "outputs": [{"path": p, "sha256": d.get("sha256")} for p, d in (w.get("product") or {}).items()],
+        "experiment": experiment,
+        "claims": _claims(entry),
         "reruns": None,
-        "witness_attestations": sorted(w),
+        "witness_attestations": sorted(audit_w),
     }
     statement = {
         "_type": STATEMENT_TYPE,
@@ -182,7 +212,10 @@ def run(artifact: str, ref: str | None, key: Path, claims: Path | None, store: A
         "predicate": predicate,
     }
     bundle_id = hashlib.sha256(_canonical(statement)).hexdigest()
-    bundle = {"id": bundle_id, "statement": statement, "witness_envelope": envelope}
-
+    bundle = {
+        "id": bundle_id,
+        "statement": statement,
+        "witness_envelopes": {"amber-audit": audit_env, **({"experiment": exp_env} if exp_env else {})},
+    }
     store.write(bundle_id, _canonical(bundle), "application/vnd.in-toto+json")
     return bundle
