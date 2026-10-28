@@ -13,6 +13,7 @@ import importlib.metadata as md
 import json
 import os
 import platform
+import shlex
 import shutil
 import subprocess
 import sys
@@ -51,6 +52,16 @@ def _clone(url: str, ref: str | None, dest: Path) -> Path:
 def _git_commit(repo: Path) -> str | None:
     r = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True, text=True)
     return r.stdout.strip() or None
+
+
+def _git_remote(repo: Path) -> str | None:
+    r = subprocess.run(["git", "-C", str(repo), "remote", "get-url", "origin"], capture_output=True, text=True)
+    return r.stdout.strip() or None
+
+
+def _infer_outputs(products: dict[str, Any]) -> list[str]:
+    """Files the command created or changed, as Witness saw them, minus darnit's own."""
+    return sorted(p for p in products if p != AUDIT_OUTPUT and not p.startswith(".git/"))
 
 
 def _version(dist: str) -> str | None:
@@ -229,7 +240,7 @@ def execute(
     if not darnit_bin.exists():
         raise RunError(f"darnit CLI not found next to {sys.executable}")
     exp_cmd = (entry.get("run") or {}).get("command")
-    exp_outputs = (entry.get("run") or {}).get("outputs") or []
+    exp_outputs = (entry.get("run") or {}).get("outputs")  # None: infer from Witness products
     claims = _claims(entry)
 
     with tempfile.TemporaryDirectory(prefix="amber-run-") as tmp:
@@ -251,6 +262,8 @@ def execute(
         if exp_cmd:
             exp_env, exp_w = _witness("experiment", key, tmpdir / "experiment.json", repo, ["sh", "-c", exp_cmd])
             products = exp_w.get("product") or {}
+            if exp_outputs is None:
+                exp_outputs = _infer_outputs(products)
             experiment = {
                 "command": exp_cmd,
                 "exit_code": exp_w.get("command-run", {}).get("exitcode"),
@@ -269,11 +282,18 @@ def execute(
         for c in claims:
             c["matches_expected"] = (c["verdict"] == c["expected_verdict"]) if c.get("expected_verdict") else None
         commit = _git_commit(repo)
+        subject_name = artifact if _is_url(artifact) else (_git_remote(repo) or str(repo))
 
     predicate = {
         "started_at": started,
         "environment": _environment(),
         "corpus_entry": entry.get("id"),
+        "entry": {
+            "source": entry.get("_source", "file"),
+            "artifact": {"clone": subject_name, "ref": commit},
+            "run": {"command": exp_cmd, "outputs": exp_outputs},
+            "environment": entry.get("environment"),
+        },
         "audit": {
             "framework": "amber",
             "command": audit_w.get("command-run", {}).get("cmd"),
@@ -290,7 +310,7 @@ def execute(
     }
     statement = {
         "_type": STATEMENT_TYPE,
-        "subject": [{"name": artifact, "digest": {"gitCommit": commit} if commit else {}}],
+        "subject": [{"name": subject_name, "digest": {"gitCommit": commit} if commit else {}}],
         "predicateType": PREDICATE_TYPE,
         "predicate": predicate,
     }
@@ -304,5 +324,18 @@ def execute(
     return bundle
 
 
-def run(artifact: str, ref: str | None, key: Path, claims: Path | None, store: AttestationStore) -> dict[str, Any]:
-    return execute(artifact, ref, key, load_entry(claims), store)
+def run(
+    artifact: str,
+    ref: str | None,
+    key: Path,
+    claims: Path | None,
+    store: AttestationStore,
+    command: list[str] | None = None,
+) -> dict[str, Any]:
+    """``command`` (argv after ``--``) overrides the entry's run.command; with no entry, everything else is inferred."""
+    entry = load_entry(claims)
+    if command:
+        entry = {**entry, "run": {**(entry.get("run") or {}), "command": shlex.join(command)}}
+        if not claims:
+            entry["_source"] = "inferred"
+    return execute(artifact, ref, key, entry, store)

@@ -27,8 +27,12 @@ def _make_store(a: argparse.Namespace):  # noqa: ANN202
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="darnit-amber", description="Amber reproducibility runs")
     sub = p.add_subparsers(dest="cmd", required=True)
-    r = sub.add_parser("run", help="run the Amber audit and the corpus experiment under Witness; write a run bundle")
-    r.add_argument("artifact", help="local path or git URL of the artifact")
+    r = sub.add_parser(
+        "run",
+        help="run the Amber audit and the experiment under Witness; write a run bundle",
+        epilog="darnit-amber run --key k.pem -- ./run_experiment.sh   (inside the artifact checkout; outputs are inferred)",
+    )
+    r.add_argument("artifact", nargs="?", default=".", help="local path or git URL of the artifact (default: .)")
     r.add_argument("--ref", help="commit, branch or tag to check out (URL artifacts only)")
     r.add_argument("--key", type=Path, required=True, help="signing key for witness (Sigstore keyless comes later)")
     r.add_argument("--claims", type=Path, help="corpus entry (yaml or json): claims and run.command")
@@ -52,6 +56,11 @@ def main(argv: list[str] | None = None) -> int:
             q.add_argument("--pubkey", type=Path, help="PEM public key of the Witness signer")
         else:
             q.add_argument("--key", type=Path, required=True, help="signing key for this rerun")
+    argv = sys.argv[1:] if argv is None else list(argv)
+    command: list[str] = []
+    if "--" in argv:
+        i = argv.index("--")
+        argv, command = argv[:i], argv[i + 1 :]
     a = p.parse_args(argv)
 
     if a.cmd in ("verify", "rerun"):
@@ -66,7 +75,9 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         store = _make_store(a)
-        bundle = run(a.artifact, a.ref, a.key, a.claims, store)
+        if command and a.cmd != "run":
+            raise RunError("a command after -- only makes sense with run")
+        bundle = run(a.artifact, a.ref, a.key, a.claims, store, command or None)
     except RunError as e:
         print(f"darnit-amber: {e}", file=sys.stderr)
         return 1

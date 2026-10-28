@@ -187,3 +187,20 @@ def test_rerun_compares_claims_not_just_files(monkeypatch, tmp_path):
         "result": "same",
     }
     assert out["drift"] is False
+
+
+def test_infer_outputs_drops_darnit_and_git_files():
+    from darnit_amber.run import _infer_outputs
+
+    prods = {"amber-audit.json": {}, ".git/index": {}, "out/b.txt": {}, "out/a.txt": {}}
+    assert _infer_outputs(prods) == ["out/a.txt", "out/b.txt"]
+
+
+def test_run_command_after_dashdash_builds_inferred_entry(monkeypatch, tmp_path):
+    from darnit_amber import run as r
+
+    seen = {}
+    monkeypatch.setattr(r, "execute", lambda artifact, ref, key, entry, store: seen.update(entry) or {})
+    r.run(".", None, tmp_path / "k", None, None, ["sh", "-c", "echo hi > a.txt"])
+    assert seen["run"] == {"command": "sh -c 'echo hi > a.txt'"}
+    assert seen["_source"] == "inferred"
