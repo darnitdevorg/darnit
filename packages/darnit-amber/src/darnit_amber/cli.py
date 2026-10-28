@@ -80,7 +80,14 @@ def main(argv: list[str] | None = None) -> int:
         "subject": bundle["statement"]["subject"][0],
         "corpus_entry": pred.get("corpus_entry"),
         "audit": statuses,
-        "claims": len(pred["claims"]),
+        "verdict": pred.get("verdict"),
+        "claims": [
+            {
+                k: x.get(k)
+                for k in ("id", "measured", "threshold", "verdict", "expected_verdict", "matches_expected", "reason")
+            }
+            for x in pred["claims"]
+        ],
         "experiment": {"exit_code": exp.get("exit_code"), "outputs": exp.get("outputs")} if exp else None,
     }
     print(json.dumps(summary, indent=2))

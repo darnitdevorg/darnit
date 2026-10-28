@@ -59,3 +59,72 @@ def test_entry_run_command_is_read(tmp_path: Path) -> None:
     e = amber_run.load_entry(f)
     assert e["run"]["command"] == "echo hi > out.txt"
     assert e["run"]["outputs"] == ["out.txt"]
+
+
+def _claim(**kw):
+    base = {
+        "id": "c",
+        "threshold": "== 3",
+        "expected_verdict": "REPRODUCED",
+        "measure": {"file": "out.txt", "regex": r"value=(\S+)"},
+    }
+    base.update(kw)
+    return amber_run._claims({"claims": [base]})[0]
+
+
+def test_measure_reproduced(tmp_path: Path) -> None:
+    (tmp_path / "out.txt").write_text("value=3\n")
+    c = _claim()
+    amber_run.measure_claim(c, tmp_path)
+    assert (c["measured"], c["verdict"]) == ("3", "REPRODUCED")
+
+
+def test_measure_not_reproduced_and_tolerance(tmp_path: Path) -> None:
+    (tmp_path / "out.txt").write_text("value=3.2\n")
+    c = _claim()
+    amber_run.measure_claim(c, tmp_path)
+    assert c["verdict"] == "NOT_REPRODUCED"
+    c = _claim(tolerance=0.5)
+    amber_run.measure_claim(c, tmp_path)
+    assert c["verdict"] == "REPRODUCED"
+
+
+def test_measure_string_and_operators(tmp_path: Path) -> None:
+    (tmp_path / "out.txt").write_text("value=falsified\n")
+    c = _claim(threshold="== falsified")
+    amber_run.measure_claim(c, tmp_path)
+    assert c["verdict"] == "REPRODUCED"
+    (tmp_path / "out.txt").write_text("value=0.59\n")
+    c = _claim(threshold="<= 0.6")
+    amber_run.measure_claim(c, tmp_path)
+    assert c["verdict"] == "REPRODUCED"
+
+
+def test_measure_not_comparable_cases(tmp_path: Path) -> None:
+    c = _claim()
+    amber_run.measure_claim(c, tmp_path)
+    assert c["verdict"] == "NOT_COMPARABLE" and "not produced" in c["reason"]
+    (tmp_path / "out.txt").write_text("nothing here\n")
+    c = _claim()
+    amber_run.measure_claim(c, tmp_path)
+    assert "did not match" in c["reason"]
+    (tmp_path / "out.txt").write_text("value=0.71\n")
+    c = _claim(
+        measure={
+            "file": "out.txt",
+            "regex": r"value=(\S+)",
+            "scale": 100,
+            "comparable": False,
+            "reason": "other quantity",
+        }
+    )
+    amber_run.measure_claim(c, tmp_path)
+    assert (c["measured"], c["verdict"], c["reason"]) == ("71.0", "NOT_COMPARABLE", "other quantity")
+
+
+def test_overall_verdict() -> None:
+    v = amber_run.overall_verdict
+    assert v([{"verdict": "REPRODUCED"}, {"verdict": "NOT_COMPARABLE"}]) == "REPRODUCED"
+    assert v([{"verdict": "REPRODUCED"}, {"verdict": "NOT_REPRODUCED"}]) == "NOT_REPRODUCED"
+    assert v([{"verdict": "NOT_COMPARABLE"}]) == "NOT_COMPARABLE"
+    assert v([]) == "NOT_COMPARABLE"

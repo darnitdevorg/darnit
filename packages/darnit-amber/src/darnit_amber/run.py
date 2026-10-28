@@ -106,15 +106,86 @@ def _claims(entry: dict[str, Any]) -> list[dict[str, Any]]:
                 "statement": c.get("statement"),
                 "metric": c.get("metric"),
                 "threshold": c.get("threshold"),
+                "tolerance": c.get("tolerance"),
                 "unit": c.get("unit"),
                 "threshold_source": c.get("source"),
                 "measurement_protocol": c.get("measurement_protocol"),
+                "expected_verdict": c.get("expected_verdict"),
+                "measure": c.get("measure"),
                 "measured": None,
                 "verdict": "NOT_COMPARABLE",
-                "reason": "claim measurement not implemented in this version",
+                "reason": "no measure declared for this claim",
             }
         )
     return out
+
+
+_OPS = {
+    "==": lambda a, b, t: abs(a - b) <= t if isinstance(a, float) else a == b,
+    "!=": lambda a, b, t: not (abs(a - b) <= t) if isinstance(a, float) else a != b,
+    "<=": lambda a, b, t: a <= b + t,
+    ">=": lambda a, b, t: a >= b - t,
+    "<": lambda a, b, t: a < b,
+    ">": lambda a, b, t: a > b,
+}
+
+
+def _parse_threshold(threshold: str) -> tuple[str, str]:
+    t = str(threshold).strip()
+    for op in ("==", "!=", "<=", ">=", "<", ">"):
+        if t.startswith(op):
+            return op, t[len(op) :].strip()
+    return "==", t
+
+
+def _coerce(a: str, b: str) -> tuple[Any, Any]:
+    try:
+        return float(a), float(b)
+    except ValueError:
+        return a.strip(), b.strip()
+
+
+def measure_claim(claim: dict[str, Any], repo: Path) -> None:
+    """Fill ``measured``, ``verdict`` and ``reason`` from the checkout after the experiment ran."""
+    import re
+
+    m = claim.get("measure")
+    if not m:
+        return
+    path = repo / m["file"]
+    if not path.is_file():
+        claim["reason"] = f"output {m['file']} not produced"
+        return
+    text = path.read_text(errors="replace")
+    found = re.search(m["regex"], text, re.M)
+    if not found:
+        claim["reason"] = f"regex did not match in {m['file']}"
+        return
+    value = found.group(1) if found.groups() else found.group(0)
+    if m.get("scale") is not None:
+        value = str(float(value) * float(m["scale"]))
+    claim["measured"] = value
+    if m.get("comparable") is False:
+        claim["reason"] = m.get("reason") or "measured, but not on the paper's terms"
+        return
+    if claim.get("threshold") is None:
+        claim["reason"] = "no threshold"
+        return
+    op, want = _parse_threshold(claim["threshold"])
+    a, b = _coerce(value, want)
+    tol = float(claim.get("tolerance") or 0) if isinstance(a, float) else 0
+    ok = _OPS[op](a, b, tol)
+    claim["verdict"] = "REPRODUCED" if ok else "NOT_REPRODUCED"
+    claim["reason"] = f"measured {value} {op} {want}" + (f" (tolerance {tol})" if tol else "")
+
+
+def overall_verdict(claims: list[dict[str, Any]]) -> str:
+    verdicts = {c["verdict"] for c in claims}
+    if "NOT_REPRODUCED" in verdicts:
+        return "NOT_REPRODUCED"
+    if "REPRODUCED" in verdicts:
+        return "REPRODUCED"
+    return "NOT_COMPARABLE"
 
 
 def _canonical(obj: Any) -> bytes:
@@ -159,6 +230,7 @@ def execute(
         raise RunError(f"darnit CLI not found next to {sys.executable}")
     exp_cmd = (entry.get("run") or {}).get("command")
     exp_outputs = (entry.get("run") or {}).get("outputs") or []
+    claims = _claims(entry)
 
     with tempfile.TemporaryDirectory(prefix="amber-run-") as tmp:
         tmpdir = Path(tmp)
@@ -192,6 +264,10 @@ def execute(
                 ],
                 "products": {p: d.get("digest", {}).get("sha256") for p, d in products.items()},
             }
+        for c in claims:
+            measure_claim(c, repo)
+        for c in claims:
+            c["matches_expected"] = (c["verdict"] == c["expected_verdict"]) if c.get("expected_verdict") else None
         commit = _git_commit(repo)
 
     predicate = {
@@ -207,7 +283,8 @@ def execute(
             ],
         },
         "experiment": experiment,
-        "claims": _claims(entry),
+        "claims": claims,
+        "verdict": overall_verdict(claims),
         "reruns": {"of": rerun_of} if rerun_of else None,
         "witness_attestations": sorted(audit_w),
     }
