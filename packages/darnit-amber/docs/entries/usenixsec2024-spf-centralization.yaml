@@ -1,0 +1,98 @@
+id: usenixsec2024-spf-centralization
+title: "SPF Beyond the Standard: Management and Operational Challenges in Practice and Practical Recommendations"
+venue: {name: USENIX Security, year: 2024}
+paper:
+  url: "https://www.usenix.org/conference/usenixsecurity24/presentation/ashiq"
+
+artifact:
+  url: "https://github.com/spf-measurement/spf-measurement.github.io/tree/fc0c37cfc4b770d1ab557ec1819dcbcaf3e3d358"
+  clone: "https://github.com/spf-measurement/spf-measurement.github.io.git"
+  ref_type: commit
+  ref: "fc0c37cfc4b770d1ab557ec1819dcbcaf3e3d358"
+  license: ""  # README.txt attributes root CC-BY-3.0 text to the website template;
+               # no separate analysis-code or external-data license was established.
+
+# Awarded badges, not merely requested badges: SPF row at
+# https://secartifacts.github.io/usenixsec2024/results
+badges: [available, functional, reproduced]
+
+resources:
+  cpu_only: true
+  ram_gb: 1.1              # conservative budget; command caps address space at 1 GiB
+  disk_gb: 0.1             # budget for this subset; local source/data/results use ~27 MiB
+  runtime_minutes: 5      # bounded command budget including the two input downloads
+  docker: false
+  network_required: true  # public source/data retrieval only; computation is offline
+  notes: >
+    Appendix A.4.2 E3 calls the Figure 4 analysis "negligible":
+    https://secartifacts.github.io/usenixsec2024/appendix-files/sec24winterae-final28.pdf.
+    No numeric minimum RAM or disk requirement is given for E3; values above
+    are conservative tested-subset budgets, not requirements quoted from the
+    paper. The two pinned input files total 24027388 bytes. On 2026-10-25 the
+    unmodified Python 3.12.3 script took 1.49 seconds and 174028 KiB peak RSS
+    on this Linux machine. It uses only the Python standard library.
+    Setup needs Git, curl and sha256sum; the bounded Linux command also uses
+    timeout and prlimit. Each download has a size/time cap, followed by SHA-256
+    verification. There are no AWS credentials, Docker images, GPU workloads,
+    live DNS/SMTP scans, or dependencies to install. This excludes the large
+    snapshot analyses and the memory-intensive Figure 7 experiment. No claim
+    is made about reproducing the complete study.
+
+role: not_comparable
+expected_verdict: NOT_COMPARABLE
+
+claims:
+  - metric: top_two_provider_spf_record_share_pct
+    threshold: "== 83.7"
+    unit: percent
+    source: "Section 3.3.1 and Figure 4, printed p.3086; https://www.usenix.org/system/files/usenixsecurity24-ashiq.pdf"
+    measurement_protocol: >
+      For the paper's March 27, 2023 snapshot, consider SPF records with at
+      least one include mechanism that require more than ten DNS lookups.
+      Measure the percentage of those records referencing websitewelcome.com
+      or bluehost.com, rather than weighting records by their number of
+      provider references. The text reports 2983114 records out of 3564056;
+      round the percentage to one decimal for the printed 83.7 comparison.
+      The supplied run below computes a different quantity and cannot be used
+      as a direct test of this threshold.
+    expected_verdict: NOT_COMPARABLE
+    measure:
+      file: amber-figure4/temp/cdf-vs-include-centralization-over-10.txt
+      regex: '^1 \d+ ([0-9.]+)'
+      scale: 100
+      comparable: false
+      reason: "the script's CDF weights records by provider references; the paper counts records, and the aggregate input cannot reconstruct that fraction"
+    notes: >
+      security2024/codes/generate-fig4-data.py:4-32 loads a count per provider,
+      sorts counts, and divides their cumulative sum by the sum of all counts.
+      Its output uses zero-based ranks: rank 1 is the top TWO providers.
+      With the version-pinned public over-ten-lookups input, those counts are
+      2766591 and 450992, and the denominator is 4512751. The emitted CDF is
+      0.7129981246472495 (71.3% rounded), not the paper's record-level fraction.
+      The aggregate input has no base-record identities or overlap information
+      from which to reconstruct the paper's numerator and denominator. The
+      count totals also differ from the paper; this entry does not establish
+      whether dataset revisions contributed to that difference. The method
+      mismatch, not just the numerical disagreement, is why the expected
+      verdict is NOT_COMPARABLE. Do not label the paper NOT_REPRODUCED from
+      this CDF, or change its threshold to 71.3. This is a limited offline
+      comparison case, not a newly reproduced paper claim. Input integrity
+      hashes below identify data versions, not expected scientific outputs.
+
+# Run from the pinned artifact checkout. The author script is not modified.
+# The versioned input URLs come from measurement/index.html; S3 version IDs
+# were resolved during retrieval. The original dataset URLs remain public.
+# Do not replace them with a fresh DNS measurement.
+run:
+  command: |
+    set -eu
+    test "$(git rev-parse HEAD)" = fc0c37cfc4b770d1ab557ec1819dcbcaf3e3d358
+    mkdir -p amber-figure4/temp
+    cd amber-figure4
+    curl --fail --silent --show-error --location --connect-timeout 10 --max-time 90 --max-filesize 24000000 'https://dmarcstudy-dataset.s3.us-east-2.amazonaws.com/spf-include-centralization.txt?versionId=Xjk4e4slPHi7nvVst.Ra9_4TdXDJHB93' --output temp/spf-include-centralization.txt
+    curl --fail --silent --show-error --location --connect-timeout 10 --max-time 45 --max-filesize 1000000 'https://dmarcstudy-dataset.s3.us-east-2.amazonaws.com/spf-include-centralization-over-10.txt?versionId=y_ZFcw3Fs3Fy6i66DurdLVQEAK33cF85' --output temp/spf-include-centralization-over-10.txt
+    printf '%s\n' '59a7c05272d9f98ad04827be3209f3b482bfb03e63450fb7630fa7d4febf2571  temp/spf-include-centralization.txt' '33aa0b716e0015369fae9f44e6b7f2c9a9a2a24439eab55d9ed041afe8013172  temp/spf-include-centralization-over-10.txt' | sha256sum --check -
+    timeout --signal=TERM --kill-after=5s 120s prlimit --as=1073741824 --cpu=60 --fsize=67108864 -- python3 -I ../security2024/codes/generate-fig4-data.py
+  outputs:
+    - amber-figure4/temp/cdf-vs-include-centralization.txt
+    - amber-figure4/temp/cdf-vs-include-centralization-over-10.txt
