@@ -101,6 +101,7 @@ class TestAllContextRequiringControls:
     CONTEXT_REQUIRING_CONTROLS = [
         "OSPS-GV-01.01",  # governance (requires maintainers)
         "OSPS-GV-04.01",  # codeowners (requires maintainers)
+        "OSPS-QA-03.01",  # required status checks (requires required_status_checks)
     ]
 
     @pytest.mark.unit

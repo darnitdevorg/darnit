@@ -15,6 +15,7 @@ from darnit.remediation.platform.engine import (
     plan,
     platform_repository,
     platform_requests,
+    resolve_platform_require,
 )
 from darnit.remediation.platform.model import (
     ChangeOperation,
@@ -46,6 +47,7 @@ __all__ = [
     "plan",
     "platform_repository",
     "platform_requests",
+    "resolve_platform_require",
     "resolve_policy",
     "terminal_approver",
 ]

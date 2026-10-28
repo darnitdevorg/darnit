@@ -31,7 +31,7 @@ LEGACY_VALUES: dict[str, dict[str, Any]] = {
     },
 }
 
-ORDER_INSENSITIVE_KEYS = frozenset({"maintainers"})
+ORDER_INSENSITIVE_KEYS = frozenset({"maintainers", "required_status_checks"})
 
 _TRUE_ANSWERS = frozenset({"true", "yes", "y"})
 _FALSE_ANSWERS = frozenset({"false", "no", "n"})
