@@ -11,7 +11,7 @@ from darnit_amber.cli import main
 def test_claims_from_yaml_are_not_comparable(tmp_path: Path) -> None:
     f = tmp_path / "claims.yaml"
     f.write_text("claims:\n  - id: C1\n    metric: m\n    threshold: '<= 1'\n    source: paper\n")
-    claims = amber_run._claims(f)
+    claims = amber_run._claims(amber_run.load_entry(f))
     assert len(claims) == 1
     assert claims[0]["id"] == "C1"
     assert claims[0]["threshold_source"] == "paper"
@@ -20,7 +20,7 @@ def test_claims_from_yaml_are_not_comparable(tmp_path: Path) -> None:
 
 
 def test_claims_absent_is_empty() -> None:
-    assert amber_run._claims(None) == []
+    assert amber_run._claims(amber_run.load_entry(None)) == []
 
 
 def test_canonical_is_key_order_independent() -> None:
@@ -51,3 +51,11 @@ def test_run_requires_witness(
     rc = main(["run", str(tmp_path), "--key", str(tmp_path / "k"), "--out", str(tmp_path / "out")])
     assert rc == 1
     assert "witness binary not found" in capsys.readouterr().err
+
+
+def test_entry_run_command_is_read(tmp_path: Path) -> None:
+    f = tmp_path / "entry.yaml"
+    f.write_text("id: x\nrun:\n  command: 'echo hi > out.txt'\n  outputs: [out.txt]\n")
+    e = amber_run.load_entry(f)
+    assert e["run"]["command"] == "echo hi > out.txt"
+    assert e["run"]["outputs"] == ["out.txt"]

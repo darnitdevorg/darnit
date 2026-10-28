@@ -26,11 +26,11 @@ def _make_store(a: argparse.Namespace):  # noqa: ANN202
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="darnit-amber", description="Amber reproducibility runs")
     sub = p.add_subparsers(dest="cmd", required=True)
-    r = sub.add_parser("run", help="run the Amber audit on an artifact under Witness and write a run bundle")
+    r = sub.add_parser("run", help="run the Amber audit and the corpus experiment under Witness; write a run bundle")
     r.add_argument("artifact", help="local path or git URL of the artifact")
-    r.add_argument("--ref", help="branch or tag to clone (URL artifacts only)")
+    r.add_argument("--ref", help="commit, branch or tag to check out (URL artifacts only)")
     r.add_argument("--key", type=Path, required=True, help="signing key for witness (Sigstore keyless comes later)")
-    r.add_argument("--claims", type=Path, help="corpus claims file (yaml or json)")
+    r.add_argument("--claims", type=Path, help="corpus entry (yaml or json): claims and run.command")
     r.add_argument("--store", choices=["local-fs", "s3"], default="local-fs", help="attestation store backend")
     r.add_argument("--out", type=Path, default=Path("amber-runs"), help="local-fs: store directory")
     r.add_argument("--bucket", help="s3: bucket name")
@@ -48,18 +48,16 @@ def main(argv: list[str] | None = None) -> int:
     statuses: dict[str, int] = {}
     for x in pred["audit"]["results"]:
         statuses[x["status"]] = statuses.get(x["status"], 0) + 1
-    print(
-        json.dumps(
-            {
-                "id": bundle["id"],
-                "subject": bundle["statement"]["subject"][0],
-                "audit": statuses,
-                "claims": len(pred["claims"]),
-                "outputs": len(pred["outputs"]),
-            },
-            indent=2,
-        )
-    )
+    exp = pred.get("experiment") or {}
+    summary = {
+        "id": bundle["id"],
+        "subject": bundle["statement"]["subject"][0],
+        "corpus_entry": pred.get("corpus_entry"),
+        "audit": statuses,
+        "claims": len(pred["claims"]),
+        "experiment": {"exit_code": exp.get("exit_code"), "outputs": exp.get("outputs")} if exp else None,
+    }
+    print(json.dumps(summary, indent=2))
     return 0
 
 
