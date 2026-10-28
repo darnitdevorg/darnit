@@ -28,6 +28,23 @@ PREDICATE_TYPE = "https://darnit.dev/amber/run/v1"
 STATEMENT_TYPE = "https://in-toto.io/Statement/v1"
 WITNESS_ATTESTORS = "environment,git,command-run,product"
 AUDIT_OUTPUT = "amber-audit.json"
+MAX_STORED_OUTPUT = 10 * 1024 * 1024  # outputs up to this size are kept next to the bundle
+
+
+def write_blob(store: Any, bundle_id: str, path: str, data: bytes) -> None:
+    """Keep an experiment output next to its bundle: s3 key or local file <id>/outputs/<path>."""
+    if hasattr(store, "_client"):
+        store.write_blob(f"{bundle_id}/outputs/{path}", data)
+        return
+    dest = Path(store._root) / bundle_id / "outputs" / path
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(data)
+
+
+def read_blob(store: Any, bundle_id: str, path: str) -> bytes:
+    if hasattr(store, "_client"):
+        return store.read_blob(f"{bundle_id}/outputs/{path}")
+    return (Path(store._root) / bundle_id / "outputs" / path).read_bytes()
 
 
 class RunError(RuntimeError):
@@ -277,6 +294,12 @@ def execute(
                 ],
                 "products": {p: d.get("digest", {}).get("sha256") for p, d in products.items()},
             }
+        blobs: dict[str, bytes] = {}
+        for o in (experiment or {}).get("outputs") or []:
+            f = repo / o["path"]
+            o["stored"] = bool(o["captured"] and f.is_file() and f.stat().st_size <= MAX_STORED_OUTPUT)
+            if o["stored"]:
+                blobs[o["path"]] = f.read_bytes()
         for c in claims:
             measure_claim(c, repo)
         for c in claims:
@@ -321,6 +344,8 @@ def execute(
         "witness_envelopes": {"amber-audit": audit_env, **({"experiment": exp_env} if exp_env else {})},
     }
     store.write(bundle_id, _canonical(bundle), "application/vnd.in-toto+json")
+    for path, data in blobs.items():
+        write_blob(store, bundle_id, path, data)
     return bundle
 
 
