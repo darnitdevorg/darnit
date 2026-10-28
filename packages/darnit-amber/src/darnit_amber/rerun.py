@@ -71,13 +71,16 @@ def rerun(store: Any, bundle_id: str, key: Path) -> dict[str, Any]:
         raise RunError("bundle has no experiment to rerun")
     artifact = stmt["subject"][0]["name"]
     commit = stmt["subject"][0]["digest"].get("gitCommit")
+    first_claims = pred.get("claims") or []
     entry = {
         "id": pred.get("corpus_entry"),
         "run": {"command": exp["command"], "outputs": [o["path"] for o in exp["outputs"]]},
+        "claims": [{k: v for k, v in c.items() if k not in ("measured", "verdict", "reason")} for c in first_claims],
     }
     new = execute(artifact, commit, key, entry, store, rerun_of=bundle_id)
-    mine = {o["path"]: o["sha256"] for o in new["statement"]["predicate"]["experiment"]["outputs"]}
-    comparison = [
+    new_pred = new["statement"]["predicate"]
+    mine = {o["path"]: o["sha256"] for o in new_pred["experiment"]["outputs"]}
+    outputs = [
         {
             "path": o["path"],
             "first": o["sha256"],
@@ -86,14 +89,33 @@ def rerun(store: Any, bundle_id: str, key: Path) -> dict[str, Any]:
         }
         for o in exp["outputs"]
     ]
-    new["statement"]["predicate"]["reruns"] = {"of": bundle_id, "outputs": comparison}
+    again = {c["id"]: c for c in new_pred.get("claims") or []}
+    claims = [
+        {
+            "id": c["id"],
+            "first": {"measured": c.get("measured"), "verdict": c.get("verdict")},
+            "rerun": {
+                "measured": again.get(c["id"], {}).get("measured"),
+                "verdict": again.get(c["id"], {}).get("verdict"),
+            },
+            "result": "same" if again.get(c["id"], {}).get("verdict") == c.get("verdict") else "changed",
+        }
+        for c in first_claims
+    ]
+    measured = [c for c in claims if c["first"]["measured"] is not None]
+    drift = any(c["result"] == "changed" for c in claims) or (
+        not measured and any(o["result"] == "changed" for o in outputs)
+    )
+    new_pred["reruns"] = {"of": bundle_id, "outputs": outputs, "claims": claims, "drift": drift}
     # the id covers the comparison too: recompute and store
     new["id"] = hashlib.sha256(_canonical(new["statement"])).hexdigest()
     store.write(new["id"], _canonical(new), "application/vnd.in-toto+json")
     return {
         "id": new["id"],
         "rerun_of": bundle_id,
-        "exit_code": new["statement"]["predicate"]["experiment"]["exit_code"],
-        "outputs": comparison,
-        "drift": any(c["result"] == "changed" for c in comparison),
+        "exit_code": new_pred["experiment"]["exit_code"],
+        "verdict": new_pred.get("verdict"),
+        "outputs": outputs,
+        "claims": claims,
+        "drift": drift,
     }
