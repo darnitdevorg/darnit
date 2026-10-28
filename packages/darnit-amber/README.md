@@ -28,15 +28,50 @@ So every check here registers the ceiling `{fail}` (feature 044, FR-010):
   None ships today.
 
 
-An entry is a YAML (or JSON) file that tells `darnit-amber run` what an
-experiment is, how to run it, and how to read its result. The researcher
-writes one per experiment; the files in `examples/` are the three used to
-test the loop end to end (SPF, AEADProtocols, GigaDORAM).
+## Amber runs: record an experiment, verify it, rerun it
 
-darnit-amber run <git url> --ref <commit> --claims entry.yaml --key key.pem --store s3 --bucket …
-darnit-amber verify <bundle id> [--pubkey key.pub]
-darnit-amber rerun <bundle id> --key key.pem
+A researcher runs their experiment once through darnit, inside the
+artifact's checkout:
 
+darnit-amber run --key key.pem --store s3 --bucket amber-runs -- ./run_experiment.sh
+
+
+darnit runs the Amber audit and the command under CNCF Witness and stores
+a signed **run bundle**: which repository and commit (from git), the exact
+command, the environment, every input file, every file the command created
+or changed (with its contents, up to 10 MB each), and the Witness
+attestations. Nothing is written by hand.
+
+Then, pointing at a number in one of those outputs, the researcher states
+the paper's claim:
+
+darnit-amber claim <bundle id> --id figure6a --file results/report.txt --regex ‘Queries/sec: ([0-9.]+)’ --threshold ‘>= 120’ --source ‘Figure 6a’
+
+
+darnit measures it from the stored output and writes a new bundle
+(`derived_from` the first) with the verdict: `REPRODUCED`,
+`NOT_REPRODUCED`, or `NOT_COMPARABLE` with `--not-comparable "reason"`
+for numbers that depend on hardware the reviewer does not have.
+
+Anyone with the bundle id can later check and repeat it:
+
+darnit-amber verify <bundle id> --pubkey key.pub # id, outputs vs Witness, signatures
+darnit-amber rerun <bundle id> --key key.pem # same commit, same command, fresh clone
+
+
+`rerun` reports, per claim, the first value and the new one with both
+verdicts, and per output whether the file is identical. `drift` is true
+only when a verdict changed (or an output changed and nothing was
+measured): a timing report that differs byte for byte but gives the same
+verdict is not drift.
+
+## Entry files
+
+The same information can be given up front as a YAML (or JSON) entry with
+`--claims entry.yaml`, which is how the test entries in `examples/` work
+(SPF, AEADProtocols, GigaDORAM). `run -- <cmd>` overrides the entry's
+`run.command`. An entry adds what cannot be inferred: the claims, and
+`environment` when the experiment needs a specific image.
 
 ## Fields
 
@@ -109,7 +144,7 @@ runs the entry. A later step can build and push it to a registry (GHCR)
 and pin the digest automatically. `environment` is recorded verbatim in
 the bundle, next to Witness's own environment attestation of the host.
 
-## What goes into the bundle
+## Bundle contents
 
 `run` produces an in-toto statement with predicate
 `https://darnit.dev/amber/run/v1`: the entry (`corpus_entry`, `claims`
