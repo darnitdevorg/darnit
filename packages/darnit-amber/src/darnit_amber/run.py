@@ -232,7 +232,7 @@ def _witness(step: str, key: Path, out: Path, cwd: Path, cmd: list[str]) -> tupl
         "--attestations",
         WITNESS_ATTESTORS,
         "-k",
-        str(key),
+        str(key.resolve()),  # witness runs inside the checkout
         "-o",
         str(out),
         "--",
