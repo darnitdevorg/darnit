@@ -33,8 +33,9 @@ So every check here registers the ceiling `{fail}` (feature 044, FR-010):
 A researcher runs their experiment once through darnit, inside the
 artifact's checkout:
 
+```
 darnit-amber run --key key.pem --store s3 --bucket amber-runs -- ./run_experiment.sh
-
+```
 
 darnit runs the Amber audit and the command under CNCF Witness and stores
 a signed **run bundle**: which repository and commit (from git), the exact
@@ -45,8 +46,10 @@ attestations. Nothing is written by hand.
 Then, pointing at a number in one of those outputs, the researcher states
 the paper's claim:
 
-darnit-amber claim <bundle id> --id figure6a --file results/report.txt --regex ‘Queries/sec: ([0-9.]+)’ --threshold ‘>= 120’ --source ‘Figure 6a’
-
+```
+darnit-amber claim <bundle id> --id figure6a --file results/report.txt \
+    --regex 'Queries/sec: ([0-9.]+)' --threshold '>= 120' --source 'Figure 6a'
+```
 
 darnit measures it from the stored output and writes a new bundle
 (`derived_from` the first) with the verdict: `REPRODUCED`,
@@ -55,9 +58,10 @@ for numbers that depend on hardware the reviewer does not have.
 
 Anyone with the bundle id can later check and repeat it:
 
-darnit-amber verify <bundle id> --pubkey key.pub # id, outputs vs Witness, signatures
-darnit-amber rerun <bundle id> --key key.pem # same commit, same command, fresh clone
-
+```
+darnit-amber verify <bundle id> --pubkey key.pub      # id, outputs vs Witness, signatures
+darnit-amber rerun  <bundle id> --key key.pem         # same commit, same command, fresh clone
+```
 
 `rerun` reports, per claim, the first value and the new one with both
 verdicts, and per output whether the file is identical. `drift` is true
