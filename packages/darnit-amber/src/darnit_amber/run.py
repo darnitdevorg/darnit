@@ -28,6 +28,8 @@ PREDICATE_TYPE = "https://darnit.dev/amber/run/v1"
 STATEMENT_TYPE = "https://in-toto.io/Statement/v1"
 WITNESS_ATTESTORS = "environment,git,command-run,product"
 AUDIT_OUTPUT = "amber-audit.json"
+# Sigstore's public RFC 3161 timestamp authority: it sees a hash of the signature and nothing else.
+TSA_URL = "https://timestamp.sigstore.dev/api/v1/timestamp"
 MAX_STORED_OUTPUT = 10 * 1024 * 1024  # outputs up to this size are kept next to the bundle
 
 
@@ -49,6 +51,39 @@ def read_blob(store: Any, bundle_id: str, path: str) -> bytes:
 
 class RunError(RuntimeError):
     pass
+
+
+def default_key() -> Path:
+    """The researcher's signing key, generated once under darnit's data root (ed25519, 0600)."""
+    from darnit.stores.defaults.platform_paths import user_data_root
+
+    key = user_data_root() / "amber" / "signing.key"
+    if key.is_file():
+        return key
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+
+    private = ed25519.Ed25519PrivateKey.generate()
+    key.parent.mkdir(parents=True, exist_ok=True)
+    key.touch(mode=0o600)
+    key.write_bytes(
+        private.private_bytes(
+            serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
+        )
+    )
+    key.with_suffix(".pub").write_bytes(
+        private.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+    )
+    return key
+
+
+def key_fingerprint(key: Path) -> str:
+    """sha256 of the key's public half (SubjectPublicKeyInfo DER); goes in the bundle instead of a path."""
+    from cryptography.hazmat.primitives import serialization
+
+    private = serialization.load_pem_private_key(key.read_bytes(), password=None)
+    der = private.public_key().public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+    return "sha256:" + hashlib.sha256(der).hexdigest()
 
 
 def _is_url(s: str) -> bool:
@@ -220,7 +255,9 @@ def _canonical(obj: Any) -> bytes:
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
 
 
-def _witness(step: str, key: Path, out: Path, cwd: Path, cmd: list[str]) -> tuple[dict[str, Any], dict[str, Any]]:
+def _witness(
+    step: str, key: Path, out: Path, cwd: Path, cmd: list[str], tsa: str | None = TSA_URL
+) -> tuple[dict[str, Any], dict[str, Any]]:
     witness = shutil.which("witness")
     if not witness:
         raise RunError("witness binary not found on PATH (https://github.com/in-toto/witness)")
@@ -233,6 +270,7 @@ def _witness(step: str, key: Path, out: Path, cwd: Path, cmd: list[str]) -> tupl
         WITNESS_ATTESTORS,
         "-k",
         str(key.resolve()),  # witness runs inside the checkout
+        *(["-t", tsa] if tsa else []),  # RFC 3161 countersignature: proves when the signature existed
         "-o",
         str(out),
         "--",
@@ -248,14 +286,16 @@ def _witness(step: str, key: Path, out: Path, cwd: Path, cmd: list[str]) -> tupl
 def execute(
     artifact: str,
     ref: str | None,
-    key: Path,
+    key: Path | None,
     entry: dict[str, Any],
     store: AttestationStore,
     rerun_of: str | None = None,
+    tsa: str | None = TSA_URL,
 ) -> dict[str, Any]:
     darnit_bin = Path(sys.executable).parent / "darnit"
     if not darnit_bin.exists():
         raise RunError(f"darnit CLI not found next to {sys.executable}")
+    key = key or default_key()
     exp_cmd = (entry.get("run") or {}).get("command")
     exp_outputs = (entry.get("run") or {}).get("outputs")  # None: infer from Witness products
     claims = _claims(entry)
@@ -271,13 +311,14 @@ def execute(
             tmpdir / "audit.json",
             repo,
             ["sh", "-c", f"{darnit_bin} audit . -f amber --output json --no-fail > {AUDIT_OUTPUT}"],
+            tsa,
         )
         audit = json.loads((repo / AUDIT_OUTPUT).read_text())
 
         experiment: dict[str, Any] | None = None
         exp_env: dict[str, Any] | None = None
         if exp_cmd:
-            exp_env, exp_w = _witness("experiment", key, tmpdir / "experiment.json", repo, ["sh", "-c", exp_cmd])
+            exp_env, exp_w = _witness("experiment", key, tmpdir / "experiment.json", repo, ["sh", "-c", exp_cmd], tsa)
             products = exp_w.get("product") or {}
             if exp_outputs is None:
                 exp_outputs = _infer_outputs(products)
@@ -310,6 +351,7 @@ def execute(
     predicate = {
         "started_at": started,
         "environment": _environment(),
+        "signing": {"method": "key", "key_fingerprint": key_fingerprint(key), "timestamp_authority": tsa},
         "corpus_entry": entry.get("id"),
         "entry": {
             "source": entry.get("_source", "file"),
@@ -352,10 +394,11 @@ def execute(
 def run(
     artifact: str,
     ref: str | None,
-    key: Path,
+    key: Path | None,
     claims: Path | None,
     store: AttestationStore,
     command: list[str] | None = None,
+    tsa: str | None = TSA_URL,
 ) -> dict[str, Any]:
     """``command`` (argv after ``--``) overrides the entry's run.command; with no entry, everything else is inferred."""
     entry = load_entry(claims)
@@ -363,4 +406,4 @@ def run(
         entry = {**entry, "run": {**(entry.get("run") or {}), "command": shlex.join(command)}}
         if not claims:
             entry["_source"] = "inferred"
-    return execute(artifact, ref, key, entry, store)
+    return execute(artifact, ref, key, entry, store, tsa=tsa)

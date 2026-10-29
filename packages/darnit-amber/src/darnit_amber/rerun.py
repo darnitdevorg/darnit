@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .run import RunError, _canonical, execute
+from .run import TSA_URL, RunError, _canonical, execute
 
 
 def read_bundle(store: Any, bundle_id: str) -> dict[str, Any]:
@@ -22,6 +22,58 @@ def read_bundle(store: Any, bundle_id: str) -> dict[str, Any]:
 
 def _pae(payload_type: str, payload: bytes) -> bytes:
     return b"DSSEv1 %d %s %d " % (len(payload_type), payload_type.encode(), len(payload)) + payload
+
+
+def _der_len(n: int) -> bytes:
+    if n < 0x80:
+        return bytes([n])
+    b = n.to_bytes((n.bit_length() + 7) // 8, "big")
+    return bytes([0x80 | len(b)]) + b
+
+
+def _wrap_token(token: bytes) -> bytes:
+    """A bare TimeStampToken as a TimeStampResp (status granted), which rfc3161-client can decode."""
+    body = b"\x30\x03\x02\x01\x00" + token
+    return b"\x30" + _der_len(len(body)) + body
+
+
+_DIGEST_OIDS = {
+    "2.16.840.1.101.3.4.2.1": "sha256",
+    "2.16.840.1.101.3.4.2.2": "sha384",
+    "2.16.840.1.101.3.4.2.3": "sha512",
+}
+
+
+def _timestamps(env: dict[str, Any]) -> list[dict[str, Any]]:
+    """Witness's RFC 3161 countersignatures on the envelope: when the signature existed.
+
+    Each token's message imprint must be the hash of the signature it covers;
+    the token's own signer chain is not checked here yet.
+    """
+    import rfc3161_client
+
+    out: list[dict[str, Any]] = []
+    for sig in env.get("signatures", []):
+        signature = base64.b64decode(sig["sig"])
+        for t in sig.get("timestamps") or []:
+            item: dict[str, Any] = {"type": t.get("type")}
+            try:
+                info = rfc3161_client.decode_timestamp_response(_wrap_token(base64.b64decode(t["data"]))).tst_info
+                imprint = info.message_imprint
+                algo = _DIGEST_OIDS.get(imprint.hash_algorithm.dotted_string)
+                covers = algo is not None and imprint.message == hashlib.new(algo, signature).digest()
+                item.update(
+                    {
+                        "time": info.gen_time.isoformat(),
+                        "serial": str(info.serial_number),
+                        "covers_signature": covers,
+                        "tsa_chain": "not verified",
+                    }
+                )
+            except Exception as e:  # noqa: BLE001 - reported, never fatal
+                item["error"] = f"{type(e).__name__}: {e}"
+            out.append(item)
+    return out
 
 
 def _verify_envelope(env: dict[str, Any], pubkey: Path | None) -> str:
@@ -58,11 +110,15 @@ def verify(store: Any, bundle_id: str, pubkey: Path | None) -> dict[str, Any]:
             (prod.get(o["path"]) or {}).get("digest", {}).get("sha256") == o["sha256"] for o in exp["outputs"]
         )
     checks["signatures"] = {name: _verify_envelope(env, pubkey) for name, env in envs.items()}
+    checks["timestamps"] = {name: _timestamps(env) for name, env in envs.items()}
+    stamped = [t for ts in checks["timestamps"].values() for t in ts]
+    checks["timestamp_covers_signature"] = bool(stamped) and all(t.get("covers_signature") for t in stamped)
+    checks["signing"] = stmt["predicate"].get("signing")
     checks["verified"] = all(v is True for k, v in checks.items() if isinstance(v, bool))
     return {"id": bundle_id, "subject": stmt["subject"][0], **checks}
 
 
-def rerun(store: Any, bundle_id: str, key: Path) -> dict[str, Any]:
+def rerun(store: Any, bundle_id: str, key: Path | None, tsa: str | None = TSA_URL) -> dict[str, Any]:
     first = read_bundle(store, bundle_id)
     stmt = first["statement"]
     pred = stmt["predicate"]
@@ -77,7 +133,7 @@ def rerun(store: Any, bundle_id: str, key: Path) -> dict[str, Any]:
         "run": {"command": exp["command"], "outputs": [o["path"] for o in exp["outputs"]]},
         "claims": [{k: v for k, v in c.items() if k not in ("measured", "verdict", "reason")} for c in first_claims],
     }
-    new = execute(artifact, commit, key, entry, store, rerun_of=bundle_id)
+    new = execute(artifact, commit, key, entry, store, rerun_of=bundle_id, tsa=tsa)
     new_pred = new["statement"]["predicate"]
     mine = {o["path"]: o["sha256"] for o in new_pred["experiment"]["outputs"]}
     outputs = [

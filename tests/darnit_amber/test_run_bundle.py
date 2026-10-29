@@ -1,5 +1,6 @@
 """Tests for ``darnit-amber run`` (issue #677, PR A). No witness binary needed."""
 
+import base64
 import json
 from pathlib import Path
 
@@ -155,7 +156,7 @@ def test_rerun_compares_claims_not_just_files(monkeypatch, tmp_path):
     }
     seen = {}
 
-    def fake_execute(artifact, ref, key, entry, store, rerun_of=None):
+    def fake_execute(artifact, ref, key, entry, store, rerun_of=None, tsa=None):
         seen["entry"] = entry
         return {
             "statement": {
@@ -200,7 +201,7 @@ def test_run_command_after_dashdash_builds_inferred_entry(monkeypatch, tmp_path)
     from darnit_amber import run as r
 
     seen = {}
-    monkeypatch.setattr(r, "execute", lambda artifact, ref, key, entry, store: seen.update(entry) or {})
+    monkeypatch.setattr(r, "execute", lambda artifact, ref, key, entry, store, tsa=None: seen.update(entry) or {})
     r.run(".", None, tmp_path / "k", None, None, ["sh", "-c", "echo hi > a.txt"])
     assert seen["run"] == {"command": "sh -c 'echo hi > a.txt'"}
     assert seen["_source"] == "inferred"
@@ -243,3 +244,61 @@ def test_claim_measures_stored_output_into_derived_bundle(tmp_path):
     assert (tmp_path / res["id"] / "outputs" / "out" / "r.txt").read_bytes().startswith(b"Queries")
     with pytest.raises(Exception, match="not an output"):
         claim(st, "b1", {"id": "q", "measure": {"file": "nope.txt", "regex": "x"}})
+
+
+def test_default_key_is_generated_once_with_tight_permissions(tmp_path, monkeypatch):
+    import os
+
+    from darnit_amber.run import default_key, key_fingerprint
+
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    k = default_key()
+    assert k == tmp_path / "darnit" / "amber" / "signing.key"
+    assert k.is_file() and k.with_suffix(".pub").is_file()
+    assert oct(os.stat(k).st_mode & 0o777) == "0o600"
+    fp = key_fingerprint(k)
+    assert fp.startswith("sha256:") and len(fp) == 71
+    assert default_key() == k and key_fingerprint(k) == fp  # reused, not regenerated
+
+
+def test_witness_adds_timestamp_flag_by_default(monkeypatch, tmp_path):
+    from darnit_amber import run as r
+
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen["cmd"] = cmd
+        raise FileNotFoundError  # stop before decoding
+
+    monkeypatch.setattr(r.shutil, "which", lambda _: "/bin/witness")
+    monkeypatch.setattr(r.subprocess, "run", fake_run)
+    with pytest.raises(FileNotFoundError):
+        r._witness("s", tmp_path / "k", tmp_path / "o", tmp_path, ["true"])
+    assert seen["cmd"][seen["cmd"].index("-t") + 1] == r.TSA_URL
+    with pytest.raises(FileNotFoundError):
+        r._witness("s", tmp_path / "k", tmp_path / "o", tmp_path, ["true"], tsa=None)
+    assert "-t" not in seen["cmd"]
+
+
+def test_wrap_token_builds_a_granted_timestamp_response():
+    from darnit_amber.rerun import _der_len, _wrap_token
+
+    assert _der_len(5) == b"\x05" and _der_len(300) == b"\x82\x01\x2c"
+    token = b"\x30\x02\x05\x00"
+    out = _wrap_token(token)
+    assert out == b"\x30\x09\x30\x03\x02\x01\x00" + token
+
+
+def test_timestamps_reports_parse_errors_without_failing():
+    from darnit_amber.rerun import _timestamps
+
+    env = {
+        "signatures": [
+            {
+                "sig": base64.b64encode(b"x").decode(),
+                "timestamps": [{"type": "tsp", "data": base64.b64encode(b"junk").decode()}],
+            }
+        ]
+    }
+    [t] = _timestamps(env)
+    assert t["type"] == "tsp" and "error" in t and "time" not in t
