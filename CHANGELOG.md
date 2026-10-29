@@ -597,6 +597,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The `attestation` extra requires `sigstore>=4.0.0`. Signing calls
+  `SigningContext.from_trust_config`, which sigstore 4.0.0 introduced, so
+  a 3.x release no longer satisfies the extra (fixes #606).
 - Scope the full-audit cache by trust target: `write_audit_cache` records
   the run's `target` in the cache envelope, and `read_audit_cache` /
   `read_full_audit_cache` enforce a match against `expected_target` so an

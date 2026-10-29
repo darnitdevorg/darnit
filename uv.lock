@@ -516,7 +516,7 @@ requires-dist = [
     { name = "pydantic-ai-slim", extras = ["anthropic"], specifier = ">=2.24,<3" },
     { name = "pyyaml", specifier = ">=6.0.0" },
     { name = "ruamel-yaml", specifier = ">=0.18.0" },
-    { name = "sigstore", marker = "extra == 'attestation'", specifier = ">=3.0.0" },
+    { name = "sigstore", marker = "extra == 'attestation'", specifier = ">=4.0.0" },
     { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2.0.0" },
     { name = "tomllib-stubs", marker = "python_full_version < '3.11'", specifier = ">=0.1.0" },
     { name = "urllib3", marker = "extra == 'attestation'", specifier = ">=2.6.3,<3" },
