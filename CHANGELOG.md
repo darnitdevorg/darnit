@@ -597,6 +597,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- On a repository with no GitHub Actions workflow file, OpenSSF Baseline
+  OSPS-BR-01.01, OSPS-BR-01.02, and OSPS-AC-04.02 report WARN saying no
+  workflow files were found and there is nothing to audit, instead of
+  `WARN [unexpected_exit]` from zizmor exiting 3 or `grep` exiting 2, and
+  zizmor and `grep` are not run, so their `unexpected_exit` log lines are
+  gone. A new `darnit-baseline` step type, `github_workflows_present`
+  (ceiling `{fail}`), is the first step of the three controls and concludes
+  that WARN; it never reports PASS or FAIL, and with workflow files present
+  it is evidence only (later steps' indexes move up by one). The WARN is now
+  concluded by that step (`concluded_by = "github_workflows_present"`,
+  authority `dispositive`) rather than left undetermined, and it replaces an
+  ERROR when zizmor or `grep` is not installed. For OSPS-BR-01.01 an
+  `action.yml` or `action.yaml` anywhere in the repository also counts as
+  something to audit, since zizmor's `template-injection` audit reads action
+  definitions too, so zizmor still runs and reports findings in a standalone
+  action. A confirmed non-GitHub `ci_provider` still makes the controls N/A
+  (#584).
 - Scope the full-audit cache by trust target: `write_audit_cache` records
   the run's `target` in the cache envelope, and `read_audit_cache` /
   `read_full_audit_cache` enforce a match against `expected_target` so an
