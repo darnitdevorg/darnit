@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .claim import claim
 from .rerun import rerun, verify
-from .run import RunError, run
+from .run import TSA_URL, RunError, run
 
 
 def _make_store(a: argparse.Namespace):  # noqa: ANN202
@@ -35,7 +35,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     r.add_argument("artifact", nargs="?", default=".", help="local path or git URL of the artifact (default: .)")
     r.add_argument("--ref", help="commit, branch or tag to check out (URL artifacts only)")
-    r.add_argument("--key", type=Path, required=True, help="signing key for witness (Sigstore keyless comes later)")
+    r.add_argument("--key", type=Path, help="signing key (PEM); default: a key generated once under darnit's data dir")
+    r.add_argument("--tsa", default=TSA_URL, help="RFC 3161 timestamp authority (default: Sigstore's)")
+    r.add_argument("--no-timestamp", action="store_true", help="do not countersign with a timestamp authority")
     r.add_argument("--claims", type=Path, help="corpus entry (yaml or json): claims and run.command")
     r.add_argument("--store", choices=["local-fs", "s3"], default="local-fs", help="attestation store backend")
     r.add_argument("--out", type=Path, default=Path("amber-runs"), help="local-fs: store directory")
@@ -57,7 +59,9 @@ def main(argv: list[str] | None = None) -> int:
         if name == "verify":
             q.add_argument("--pubkey", type=Path, help="PEM public key of the Witness signer")
         elif name == "rerun":
-            q.add_argument("--key", type=Path, required=True, help="signing key for this rerun")
+            q.add_argument("--key", type=Path, help="signing key for this rerun (default: the generated one)")
+            q.add_argument("--tsa", default=TSA_URL)
+            q.add_argument("--no-timestamp", action="store_true")
         else:
             q.add_argument("--id", required=True, help="claim id, e.g. figure6a-queries-per-sec")
             q.add_argument("--file", required=True, help="output file of the run holding the value")
@@ -82,7 +86,7 @@ def main(argv: list[str] | None = None) -> int:
             if a.cmd == "verify":
                 result = verify(store, a.bundle_id, a.pubkey)
             elif a.cmd == "rerun":
-                result = rerun(store, a.bundle_id, a.key)
+                result = rerun(store, a.bundle_id, a.key, None if a.no_timestamp else a.tsa)
             else:
                 spec = {
                     "id": a.id,
@@ -110,7 +114,7 @@ def main(argv: list[str] | None = None) -> int:
         store = _make_store(a)
         if command and a.cmd != "run":
             raise RunError("a command after -- only makes sense with run")
-        bundle = run(a.artifact, a.ref, a.key, a.claims, store, command or None)
+        bundle = run(a.artifact, a.ref, a.key, a.claims, store, command or None, None if a.no_timestamp else a.tsa)
     except RunError as e:
         print(f"darnit-amber: {e}", file=sys.stderr)
         return 1
@@ -125,6 +129,7 @@ def main(argv: list[str] | None = None) -> int:
         "corpus_entry": pred.get("corpus_entry"),
         "audit": statuses,
         "verdict": pred.get("verdict"),
+        "signing": pred.get("signing"),
         "claims": [
             {
                 k: x.get(k)

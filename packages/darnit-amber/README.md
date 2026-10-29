@@ -34,7 +34,7 @@ A researcher runs their experiment once through darnit, inside the
 artifact's checkout:
 
 ```
-darnit-amber run --key key.pem --store s3 --bucket amber-runs -- ./run_experiment.sh
+darnit-amber run --store s3 --bucket amber-runs -- ./run_experiment.sh
 ```
 
 darnit runs the Amber audit and the command under CNCF Witness and stores
@@ -60,7 +60,7 @@ Anyone with the bundle id can later check and repeat it:
 
 ```
 darnit-amber verify <bundle id> --pubkey key.pub      # id, outputs vs Witness, signatures
-darnit-amber rerun  <bundle id> --key key.pem         # same commit, same command, fresh clone
+darnit-amber rerun  <bundle id>                       # same commit, same command, fresh clone
 ```
 
 `rerun` reports, per claim, the first value and the new one with both
@@ -68,6 +68,28 @@ verdicts, and per output whether the file is identical. `drift` is true
 only when a verdict changed (or an output changed and nothing was
 measured): a timing report that differs byte for byte but gives the same
 verdict is not drift.
+
+## Signing, time, and what is public
+
+Nothing leaves the researcher's machine by default except a hash.
+
+| | what it proves | who learns what |
+|---|---|---|
+| default | the bundle was signed with the researcher's key and existed at the time in the RFC 3161 countersignature (Sigstore's timestamp authority) | the timestamp authority sees a hash of the signature, nothing else |
+| `--identity` (planned) | who signed: a short-lived Sigstore certificate from a GitHub/Google/institutional login | the identity (email or login) is recorded in Sigstore's public certificate log |
+| `--publish` (planned) | anyone can look the bundle up by hash in Rekor and see it has not been altered or backdated | the envelope and signer identity become public |
+
+The default key is generated once, ed25519, under darnit's data directory
+(`~/.local/share/darnit/amber/signing.key` on Linux, mode 0600, with the
+public half next to it); `--key` uses another PEM key instead, and
+`--no-timestamp` skips the countersignature for offline runs. The bundle
+records the key's fingerprint and the timestamp authority under `signing`,
+never a path.
+
+`verify` reports, per envelope, the signature check (with `--pubkey`), and
+each timestamp's time and whether it covers that signature. Checking the
+timestamp authority's own certificate chain, identities, and Rekor inclusion
+come with `--identity` and `--publish`.
 
 ## Entry files
 
@@ -155,7 +177,7 @@ the bundle, next to Witness's own environment attestation of the host.
 with `measured`, `verdict`, `reason`), the Amber audit result, the
 experiment (`command`, `exit_code`, `outputs` with sha256), the overall
 `verdict`, and the Witness envelopes for both steps (environment, git,
-command-run, product attestations, signed with `--key`). The bundle id is
+command-run, product attestations, signed and timestamped as below). The bundle id is
 the sha256 of the canonical statement.
 
 `rerun` executes the same command at the same commit, re-measures the

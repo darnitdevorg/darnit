@@ -547,8 +547,10 @@ version = "0.1.1"
 source = { editable = "packages/darnit-amber" }
 dependencies = [
     { name = "boto3" },
+    { name = "cryptography" },
     { name = "darnit-core" },
     { name = "packaging" },
+    { name = "rfc3161-client" },
 ]
 
 [package.dev-dependencies]
@@ -559,8 +561,10 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "boto3", specifier = ">=1.43.118" },
+    { name = "cryptography", specifier = ">=42" },
     { name = "darnit-core", editable = "packages/darnit" },
     { name = "packaging", specifier = ">=23.0" },
+    { name = "rfc3161-client", specifier = ">=1.0" },
 ]
 
 [package.metadata.requires-dev]
