@@ -87,9 +87,11 @@ records the key's fingerprint and the timestamp authority under `signing`,
 never a path.
 
 `verify` reports, per envelope, the signature check (with `--pubkey`), and
-each timestamp's time and whether it covers that signature. Checking the
-timestamp authority's own certificate chain, identities, and Rekor inclusion
-come with `--identity` and `--publish`.
+each timestamp's time, whether it covers that signature, and whether its
+signer chains to a timestamp authority in Sigstore's trusted root (fetched
+through TUF; the copy sigstore-python ships is used offline). A bundle is
+`verified` only when every timestamp passes both. Identities and Rekor
+inclusion come with `--identity` and `--publish`.
 
 ## Entry files
 

@@ -44,11 +44,52 @@ _DIGEST_OIDS = {
 }
 
 
+_TRUST_ROOT: Any = None
+
+
+def _trusted_root() -> Any:
+    """Sigstore's trusted root: refreshed through TUF when the network allows, else the copy sigstore ships."""
+    global _TRUST_ROOT
+    if _TRUST_ROOT is None:
+        from sigstore.models import ClientTrustConfig
+
+        try:
+            _TRUST_ROOT = ClientTrustConfig.production().trusted_root
+        except Exception:  # noqa: BLE001 - offline: the bundled root is still authentic, only possibly stale
+            _TRUST_ROOT = ClientTrustConfig.production(offline=True).trusted_root
+    return _TRUST_ROOT
+
+
+def _tsa_chain(response: Any, signature: bytes) -> str:
+    """Check the token's signer against Sigstore's timestamp authorities, as sigstore-python does."""
+    from rfc3161_client import VerifierBuilder
+    from rfc3161_client.errors import VerificationError as Rfc3161VerificationError
+
+    for authority in _trusted_root().get_timestamp_authorities():
+        certificates = authority.certificates(allow_expired=True)
+        if len(certificates) < 2:
+            continue
+        builder = VerifierBuilder().tsa_certificate(certificates[0]).add_root_certificate(certificates[-1])
+        for certificate in certificates[1:-1]:
+            builder = builder.add_intermediate_certificate(certificate)
+        try:
+            builder.build().verify_message(response, signature)
+        except Rfc3161VerificationError:
+            continue
+        when = response.tst_info.gen_time
+        if authority.validity_period_start <= when and (
+            not authority.validity_period_end or when < authority.validity_period_end
+        ):
+            return "ok"
+        return "signer matched but outside the authority's validity period"
+    return "no trusted timestamp authority signed this token"
+
+
 def _timestamps(env: dict[str, Any]) -> list[dict[str, Any]]:
     """Witness's RFC 3161 countersignatures on the envelope: when the signature existed.
 
-    Each token's message imprint must be the hash of the signature it covers;
-    the token's own signer chain is not checked here yet.
+    Each token's message imprint must be the hash of the signature it covers,
+    and its signer must chain to a timestamp authority in Sigstore's trusted root.
     """
     import rfc3161_client
 
@@ -58,7 +99,8 @@ def _timestamps(env: dict[str, Any]) -> list[dict[str, Any]]:
         for t in sig.get("timestamps") or []:
             item: dict[str, Any] = {"type": t.get("type")}
             try:
-                info = rfc3161_client.decode_timestamp_response(_wrap_token(base64.b64decode(t["data"]))).tst_info
+                response = rfc3161_client.decode_timestamp_response(_wrap_token(base64.b64decode(t["data"])))
+                info = response.tst_info
                 imprint = info.message_imprint
                 algo = _DIGEST_OIDS.get(imprint.hash_algorithm.dotted_string)
                 covers = algo is not None and imprint.message == hashlib.new(algo, signature).digest()
@@ -67,7 +109,7 @@ def _timestamps(env: dict[str, Any]) -> list[dict[str, Any]]:
                         "time": info.gen_time.isoformat(),
                         "serial": str(info.serial_number),
                         "covers_signature": covers,
-                        "tsa_chain": "not verified",
+                        "tsa_chain": _tsa_chain(response, signature) if covers else "skipped (imprint mismatch)",
                     }
                 )
             except Exception as e:  # noqa: BLE001 - reported, never fatal
@@ -113,6 +155,7 @@ def verify(store: Any, bundle_id: str, pubkey: Path | None) -> dict[str, Any]:
     checks["timestamps"] = {name: _timestamps(env) for name, env in envs.items()}
     stamped = [t for ts in checks["timestamps"].values() for t in ts]
     checks["timestamp_covers_signature"] = bool(stamped) and all(t.get("covers_signature") for t in stamped)
+    checks["timestamp_authority_trusted"] = bool(stamped) and all(t.get("tsa_chain") == "ok" for t in stamped)
     checks["signing"] = stmt["predicate"].get("signing")
     checks["verified"] = all(v is True for k, v in checks.items() if isinstance(v, bool))
     return {"id": bundle_id, "subject": stmt["subject"][0], **checks}

@@ -302,3 +302,32 @@ def test_timestamps_reports_parse_errors_without_failing():
     }
     [t] = _timestamps(env)
     assert t["type"] == "tsp" and "error" in t and "time" not in t
+
+
+def test_tsa_chain_rejects_a_token_no_trusted_authority_signed(monkeypatch):
+    """A self-made token parses but does not chain to Sigstore's timestamp authorities."""
+    from darnit_amber import rerun as rr
+
+    class Authority:
+        validity_period_start = None
+        validity_period_end = None
+
+        def certificates(self, allow_expired=True):
+            return []  # incomplete chain: skipped
+
+    class Root:
+        def get_timestamp_authorities(self):
+            return [Authority()]
+
+    monkeypatch.setattr(rr, "_TRUST_ROOT", Root())
+    assert rr._tsa_chain(object(), b"sig") == "no trusted timestamp authority signed this token"
+
+
+def test_trusted_root_falls_back_to_the_bundled_copy_offline(monkeypatch):
+    from darnit_amber import rerun as rr
+
+    monkeypatch.setattr(rr, "_TRUST_ROOT", None)
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9")  # no network: TUF refresh fails
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:9")
+    root = rr._trusted_root()
+    assert root.get_timestamp_authorities(), "sigstore's bundled trusted root has a timestamp authority"
