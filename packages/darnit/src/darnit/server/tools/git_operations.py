@@ -14,6 +14,7 @@ precondition is :func:`darnit.remediation.git_state.check_repository_state`.
 
 import os
 import subprocess
+from pathlib import Path
 
 from darnit.core.utils import detect_repo_from_git, validate_local_path
 from darnit.remediation import manifest
@@ -44,6 +45,23 @@ _REMOTE = "origin"
 
 def _gh(repo: str, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["gh", *args], cwd=repo, capture_output=True, text=True)
+
+
+def _run_git_write(
+    repo: str | Path,
+    *args: str,
+    stdin: str | None = None,
+    timeout: float | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """Run a write-side git command (commit, push, add) using the user's own configuration."""
+    return subprocess.run(
+        ["git", "--no-optional-locks", *args],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        input=stdin,
+        timeout=timeout,
+    )
 
 
 def _error(message: str) -> str:
@@ -285,14 +303,14 @@ Review these files, then re-run remediation or commit them yourself.
             return f"No remediation changes to commit for run {run.run_id}.{ignored_note}"
 
         prefix = show_prefix(resolved_path)
-        result = run_git(resolved_path, "--literal-pathspecs", "add", "--", *to_commit)
+        result = _run_git_write(resolved_path, "--literal-pathspecs", "add", "--", *to_commit)
         if result.returncode != 0:
             return _error(f"staging remediation files: {result.stderr.strip()}")
 
         message = message or _describe(to_commit)
         full_message = f"{message}\n\nApplied via darnit compliance server.\n\n{TRAILER_KEY}: {run.run_id}\n"
         commit_args = ("--literal-pathspecs", "commit", "-q", "--only", "-F", "-", "--", *to_commit)
-        result = run_git(resolved_path, *commit_args, stdin=full_message)
+        result = _run_git_write(resolved_path, *commit_args, stdin=full_message)
         if result.returncode != 0:
             return _error(
                 f"committing: {result.stderr.strip() or result.stdout.strip()}. Nothing was committed; "
@@ -517,7 +535,7 @@ Create a remediation branch first:
             return _error(f"branch '{branch}' has {foreign}; it holds work remediation did not make. Nothing was pushed.")
 
         ref = f"refs/heads/{branch}"
-        result = run_git(
+        result = _run_git_write(
             resolved_path,
             "push",
             "--no-follow-tags",
@@ -595,34 +613,19 @@ def get_remediation_status_impl(local_path: str = ".") -> str:
 
     try:
         # Get current branch
-        result = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=resolved_path,
-            capture_output=True,
-            text=True
-        )
+        result = run_git(resolved_path, "rev-parse", "--abbrev-ref", "HEAD")
         if result.returncode != 0:
             return "Error: Not a git repository"
         current_branch = result.stdout.strip()
 
         # Get status
-        result = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=resolved_path,
-            capture_output=True,
-            text=True
-        )
+        result = run_git(resolved_path, "status", "--porcelain", "--ignore-submodules=dirty")
         changes = result.stdout.strip()
         changed_files = [line.split(None, 1)[1] if len(line.split(None, 1)) > 1 else line
                         for line in changes.split('\n') if line.strip()]
 
         # Check for unpushed commits
-        result = subprocess.run(
-            ["git", "log", "@{u}..HEAD", "--oneline"],
-            cwd=resolved_path,
-            capture_output=True,
-            text=True
-        )
+        result = run_git(resolved_path, "log", "@{u}..HEAD", "--oneline")
         unpushed = result.stdout.strip().split('\n') if result.returncode == 0 and result.stdout.strip() else []
         unpushed = [c for c in unpushed if c.strip()]
 

@@ -59,6 +59,7 @@ class TestGittufVerifyPolicyHandler:
 
     def test_inconclusive_on_timeout(self, tmp_path: Path) -> None:
         import subprocess
+
         ctx = make_ctx(tmp_path)
         with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("gittuf", 30)):
             result = gittuf_verify_policy_handler({}, ctx)
@@ -116,3 +117,57 @@ class TestGittufCommitsSignedHandler:
         with patch("subprocess.run", side_effect=FileNotFoundError):
             result = gittuf_commits_signed_handler({}, ctx)
         assert result.status == HandlerResultStatus.INCONCLUSIVE
+
+    def test_handler_ignores_planted_gpg_program(self, tmp_path: Path) -> None:
+        """Planted gpg.program in .git/config must not execute during signature check (issue #617)."""
+        import subprocess
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init"], cwd=repo, capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.name", "Tester"], cwd=repo, check=True)
+        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+
+        # Create a signed commit object so git log --format=%G? triggers signature verification
+        tree = subprocess.run(
+            ["git", "write-tree"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        commit_content = (
+            f"tree {tree}\n"
+            "author Tester <test@example.com> 1700000000 +0000\n"
+            "committer Tester <test@example.com> 1700000000 +0000\n"
+            "gpgsig -----BEGIN PGP SIGNATURE-----\n"
+            " Version: GnuPG v2\n"
+            " \n"
+            " iQEcBAABCAAGBQJk...\n"
+            " =fake\n"
+            " -----END PGP SIGNATURE-----\n"
+            "\n"
+            "signed init\n"
+        )
+        commit_sha = subprocess.run(
+            ["git", "hash-object", "-t", "commit", "-w", "--stdin"],
+            input=commit_content,
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        subprocess.run(["git", "update-ref", "HEAD", commit_sha], cwd=repo, check=True)
+        subprocess.run(["git", "branch", "-M", "main"], cwd=repo, check=True)
+
+        witness = repo / ".git" / "gpg_witness.txt"
+        evil_gpg = repo / ".git" / "evil_gpg.sh"
+        evil_gpg.write_text(f"#!/bin/sh\necho evil > {witness}\nexit 1\n")
+        evil_gpg.chmod(0o755)
+
+        subprocess.run(["git", "config", "gpg.program", str(evil_gpg)], cwd=repo, check=True)
+
+        ctx = make_ctx(repo)
+        result = gittuf_commits_signed_handler({}, ctx)
+        assert not witness.exists(), "Planted gpg.program must not execute!"
+        assert result.status in (HandlerResultStatus.PASS, HandlerResultStatus.FAIL)
