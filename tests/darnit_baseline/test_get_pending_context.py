@@ -6,7 +6,10 @@ features for batched AskUserQuestion-based data gathering.
 """
 
 import json
+import subprocess
 from unittest.mock import patch
+
+import pytest
 
 from darnit.config.context_schema import (
     ContextDefinition,
@@ -251,8 +254,8 @@ class TestAskUserParams:
         assert ask["options"][1]["description"] == "No, this does not apply"
         assert ask["multiSelect"] is False
 
-    def test_enum_question_with_more_than_four_values_has_no_selector(self) -> None:
-        """Replaces "max 4 options shown": every allowed value must be reachable (feature 042, FR-015)."""
+    def test_enum_question_with_more_than_four_values_names_every_value(self) -> None:
+        """The selector shows 4 values and its question names them all, each typeable under Other (FR-015)."""
         values = ["github", "gitlab", "jenkins", "circleci", "azure", "travis"]
         defn = ContextDefinition(
             type=ContextType.ENUM,
@@ -268,10 +271,12 @@ class TestAskUserParams:
         )
         question = _build_context_question(req)
 
-        assert "ask_user" not in question
+        ask = question["ask_user"]
+        assert [o["label"] for o in ask["options"]] == values[:4]
+        assert "Other" in ask["question"]
         assert question["allowed_values"] == values
         for value in values:
-            assert value in question["prompt"]
+            assert value in ask["question"]
 
     def test_confirm_question_has_ask_user_accept_reject(self) -> None:
         """A detected candidate is asked as Yes/No; the options name its origin, not its value (feature 042, FR-013)."""
@@ -313,11 +318,14 @@ class TestAskUserParams:
         )
         question = _build_context_question(req)
 
-        assert "ask_user" not in question
+        ask = question["ask_user"]
+        assert [o["label"] for o in ask["options"]] == ["Skip for now", "Answer in chat"]
+        assert "security@example.com" not in json.dumps(ask)
+        assert "See SECURITY.md" not in json.dumps(ask)
         assert question["format_hint"] == "security@example.com or See SECURITY.md"
 
-    def test_free_text_without_examples_has_no_ask_user(self) -> None:
-        """Free text question without examples has no ask_user field."""
+    def test_free_text_offers_skip_and_chat_and_is_typed_under_other(self) -> None:
+        """A free-text question is in the batch; its answer is typed under Other, never chosen."""
         defn = ContextDefinition(
             type=ContextType.STRING,
             prompt="What is the project name?",
@@ -331,7 +339,9 @@ class TestAskUserParams:
         )
         question = _build_context_question(req)
 
-        assert "ask_user" not in question
+        ask = question["ask_user"]
+        assert ask["question"] == "What is the project name? Type your answer under Other."
+        assert [o["label"] for o in ask["options"]] == ["Skip for now", "Answer in chat"]
 
     def test_header_truncated_at_word_boundary(self) -> None:
         """Header keeps complete words instead of cutting through one."""
@@ -512,10 +522,9 @@ class TestAskUserBatch:
 
     @patch("darnit_baseline.tools.Path")
     @patch("darnit.config.context_storage.get_pending_context")
-    def test_no_batch_when_no_ask_user(self, mock_get, mock_path) -> None:
-        """No ask_user_batch field when questions lack ask_user params."""
+    def test_free_text_question_is_in_the_batch(self, mock_get, mock_path) -> None:
+        """A free-text question is asked in the same round as the others."""
         mock_path.return_value.resolve.return_value = "/tmp/repo"
-        # Free text without examples → no ask_user
         defn = ContextDefinition(
             type=ContextType.STRING,
             prompt="Project name?",
@@ -531,8 +540,14 @@ class TestAskUserBatch:
         result = get_pending_data(local_path="/tmp/repo")
         data = _parse_json_from_result(result)
 
-        assert "ask_user_batch" not in data
-        assert "answer_mapping" not in data
+        assert len(data["ask_user_batch"]) == 1
+        assert data["answer_mapping"] == [
+            {
+                "question_index": 0,
+                "context_key": "project_name",
+                "value_map": {"Skip for now": "SKIP", "Answer in chat": "ASK_USER_FOR_VALUE"},
+            }
+        ]
 
 
 class TestTomlDefinitionOrder:
@@ -602,3 +617,99 @@ class TestTomlDefinitionOrder:
         assert "platform" in order
         assert "license_type" in order, "feature 043 T055c: a LICENSE is created only for a confirmed license"
         assert len(order) == len(set(order)) == 10
+
+
+class TestGetPendingDataProcedure:
+    """The result carries the steps to follow (framework-design 7.10)."""
+
+    def _candidate_request(self) -> ContextPromptRequest:
+        return ContextPromptRequest(
+            key="ci_provider",
+            definition=ContextDefinition(
+                type=ContextType.STRING, prompt="What CI provider?", auto_detect=True, affects=["CTRL-01"]
+            ),
+            control_ids=["CTRL-01"],
+            priority=1,
+            candidate=_detected("ci_provider", "detected-ci-value"),
+        )
+
+    @patch("darnit_baseline.tools.Path")
+    @patch("darnit.config.context_storage.get_pending_context")
+    def test_procedure_names_the_repository_the_caller_named(self, mock_get, mock_path) -> None:
+        mock_path.return_value.resolve.return_value = "/tmp/repo"
+        mock_get.return_value = _make_pending(2)
+
+        data = _parse_json_from_result(get_pending_data(local_path="/tmp/repo", owner="acme", repo="widget"))
+
+        text = "\n".join(data["procedure"])
+        assert 'confirm_project_data(owner="acme", repo="widget", local_path="/tmp/repo"' in text
+        assert 'get_pending_data(owner="acme", repo="widget", local_path="/tmp/repo")' in text
+
+    @patch("darnit.core.utils.detect_owner_repo", return_value=("remote-owner", "remote-repo"))
+    @patch("darnit_baseline.tools.Path")
+    @patch("darnit.config.context_storage.get_pending_context")
+    def test_procedure_never_names_a_repository_read_from_the_remote(self, mock_get, mock_path, _detect) -> None:
+        mock_path.return_value.resolve.return_value = "/tmp/repo"
+        mock_get.return_value = _make_pending(2)
+
+        data = _parse_json_from_result(get_pending_data(local_path="/tmp/repo"))
+
+        text = "\n".join(data["procedure"])
+        assert "remote-owner" not in text
+        assert "remote-repo" not in text
+        assert "owner=<owner of the audited repository>" in text
+
+    @patch("darnit_baseline.tools.Path")
+    @patch("darnit.config.context_storage.get_pending_context")
+    def test_procedure_holds_no_candidate_value(self, mock_get, mock_path) -> None:
+        mock_path.return_value.resolve.return_value = "/tmp/repo"
+        mock_get.return_value = [self._candidate_request()]
+
+        data = _parse_json_from_result(get_pending_data(local_path="/tmp/repo", owner="acme", repo="widget"))
+
+        assert "detected-ci-value" not in json.dumps(data["procedure"])
+        assert "accept_candidates" in "\n".join(data["procedure"])
+
+    @patch("darnit_baseline.tools.Path")
+    @patch("darnit.config.context_storage.get_pending_context")
+    def test_complete_result_carries_the_procedure(self, mock_get, mock_path) -> None:
+        mock_path.return_value.resolve.return_value = "/tmp/repo"
+        mock_get.return_value = []
+
+        data = json.loads(get_pending_data(local_path="/tmp/repo", owner="acme", repo="widget"))
+
+        assert data["status"] == "complete"
+        assert any("stored_unconfirmed" in step for step in data["procedure"])
+
+    @patch("darnit_baseline.tools.Path")
+    @patch("darnit.config.context_storage.get_pending_context")
+    def test_directive_defers_to_the_procedure(self, mock_get, mock_path) -> None:
+        mock_path.return_value.resolve.return_value = "/tmp/repo"
+        mock_get.return_value = _make_pending(1)
+
+        result = get_pending_data(local_path="/tmp/repo")
+
+        assert result.startswith(_LLM_DIRECTIVE_PREFIX)
+        assert '"procedure"' in _LLM_DIRECTIVE_PREFIX
+
+
+class TestConfirmProjectDataNextStep:
+    @pytest.fixture(autouse=True)
+    def _git_repo(self, tmp_path) -> None:
+        subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+
+    def test_result_names_the_next_get_pending_data_call(self, tmp_path) -> None:
+        from darnit_baseline.tools import confirm_project_data
+
+        result = confirm_project_data(local_path=str(tmp_path), maintainers="@someone")
+
+        assert "refused" in result
+        assert "Next: call get_pending_data(owner=<owner of the audited repository>" in result
+        assert f'local_path="{tmp_path.resolve()}"' in result
+
+    def test_neutral_tool_names_no_get_pending_data_call(self, tmp_path) -> None:
+        from darnit.server.tools.project_data import confirm_project_data_impl
+
+        result = confirm_project_data_impl(str(tmp_path), maintainers="@someone", framework_name="openssf-baseline")
+
+        assert "get_pending_data" not in result

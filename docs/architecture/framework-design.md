@@ -1377,7 +1377,20 @@ submit_judgment(
 ) -> {status: "candidate" | "finding" | "rejected" | "error", candidate | finding | rejection | error}
 ```
 
-It re-runs the audit for `local_path` to re-gather the control's judged content (the client's copy is never trusted), applies section 3.5, and for a valid positive judgment records the candidate (`source = "mcp_agent"`). A negative judgment returns a suggestive FAIL finding and stores nothing; an invalid one returns a rejection naming the excerpts not found and stores nothing. A control that does not reach its model step is rejected.
+It re-runs the audit of `local_path` for that control only to re-gather the control's judged content (the client's copy is never trusted), applies section 3.5, and for a valid positive judgment records the candidate (`source = "mcp_agent"`). A negative judgment returns a suggestive FAIL finding and stores nothing; an invalid one returns a rejection naming the excerpts not found and stores nothing. A control that does not reach its model step is rejected.
+
+```
+get_judgment_requests(
+  owner: str, repo: str, host: str = "github.com", local_path: str = ".",
+  control_ids: list[str] | None = None, include_judged: bool = False
+) -> {status: "ok", files, requests, remaining, oversized?} | {status: "rejected" | "error", rejection | error}
+```
+
+A coding agent obtains what it judges through `get_judgment_requests`, registered beside `submit_judgment` and requiring the same named repository identity. It audits `local_path` the same way and returns one request per control left `PENDING` (`llm_judgment`), optionally limited to `control_ids`: the control's `prompt`, `analysis_hints`, `target_key` when set, `evidence_digest`, and the keys of its files in a shared `files` map. Each `files` entry holds `path`, `digest`, and `content`, where `content` is exactly the content `submit_judgment` checks the control's citations against (including its caps); a file read by several controls appears once, under a distinct key only if its content differs. `gathered_evidence` and the rest of the control's evidence are not returned. A control with a stored candidate for its current digest (`PENDING`, `confirmation`) is left out unless `include_judged` is true, and is listed in `skipped` so the agent does not request it again. Requests are ordered by control id and paged: a page holds whole requests and its serialized result stays under 40,000 bytes (UTF-8), below the size at which a coding agent's client writes a tool result to a file instead of showing it, and `remaining` lists the controls not yet returned, to be passed as `control_ids` on the next call. A single request larger than the page limit is returned alone, with `oversized = true`. The tool records nothing, and `submit_judgment` never trusts its output.
+
+Each `get_judgment_requests` page also carries `procedure`: the ordered steps for judging the page (judge each request from its prompt, hints, and listed files only; call `submit_judgment` once per request with passages copied verbatim; a pass is a PASS candidate and a fail a suggestive finding, never the audit result; fetch the next page with `remaining`). The steps name the repository and checkout the caller passed and hold placeholders for everything else. The procedure text lives in one place in the framework (`darnit.server.procedures`), so a skill or client defers to it instead of restating it.
+
+The compact `summary` output of an audit carries, on each `PENDING` row, `pending.kind` and, for a candidate, `pending.candidate` (its model, reasoning, and number of cited excerpts, never the excerpts), so a client can tell a control awaiting a judgment from one awaiting confirmation without the full evidence.
 
 ```
 confirm_pass_candidate(
@@ -1386,9 +1399,29 @@ confirm_pass_candidate(
 ) -> str
 ```
 
-An operator confirms candidates through `confirm_pass_candidate`, registered on every framework server beside `submit_judgment` (OpenSSF Baseline also accepts `confirm_project_data(confirm_pass_candidate=[...])`, which runs the same confirmation). It re-gathers the evidence and confirms only a stored candidate whose digest matches the current evidence, recording `confirmed_by`, `confirmed_at`, and `expires_at` (operator policy `confirmation_expiry_days`). An agent calls it only on the operator's explicit instruction.
+An operator confirms candidates through `confirm_pass_candidate`, registered on every framework server beside `submit_judgment` (OpenSSF Baseline also accepts `confirm_project_data(confirm_pass_candidate=[...])`, which runs the same confirmation). It re-gathers the evidence by auditing only the named controls and confirms only a stored candidate whose digest matches the current evidence, recording `confirmed_by`, `confirmed_at`, and `expires_at` (operator policy `confirmation_expiry_days`). An agent calls it only on the operator's explicit instruction.
+
+```
+get_pass_candidates(
+  owner: str, repo: str, host: str = "github.com", local_path: str = ".",
+  control_ids: list[str] | None = None, run_id: str | None = None
+) -> {status: "ok", procedure, candidates, ask_user_batch, awaiting_judgment, remaining, note?} | {status: "rejected" | "error", rejection | error}
+```
+
+An agent obtains what it shows the operator before a confirmation through `get_pass_candidates`, registered beside `confirm_pass_candidate` and requiring the same named repository identity. It audits `local_path` the same way and returns one entry per control left `PENDING` (`confirmation`), optionally limited to `control_ids`, ordered by control id: the control's title and description (from the framework configuration), the judged file paths, and the stored candidate's reasoning, cited passages (verbatim), model, model version, source, and evidence digest. By the store table above, a candidate whose digest no longer matches the current evidence leaves its control `PENDING` (`llm_judgment`), so a stale candidate is never returned; such controls are listed in `awaiting_judgment`, which also holds controls judged `fail` (a finding is not stored). With `run_id`, an entry whose judged file is in that run's manifest (15.6) carries `remediation: {run_id, path, written: true, edited_after_write}`, where `edited_after_write` compares the file's current content digest with the manifest's `after_digest`; an unknown run adds a `note` and no `remediation` blocks. `ask_user_batch` holds one question per candidate on the page with the options "Confirm", "Do not confirm", and "Skip for now", no default, and no option that confirms more than one candidate. Pages stay under 40,000 bytes, with `remaining` as for `get_judgment_requests`. The tool records nothing, and `procedure` (the confirmation procedure, from `darnit.server.procedures`) holds the caller's repository and checkout and placeholders only, never a candidate value or passage.
+
+A control's judged content (section 3.5) does not depend on any other control, so these subset audits gather exactly what a full audit gathers for that control: operator custom controls and pass overrides are applied first, the level and tag filters next, and then the named controls are selected. A subset audit is never written to the audit cache. The other controls' statuses that a full audit lists in `gathered_evidence` are not part of the judged content or the evidence digest, and a subset audit leaves them out.
 
 **ActionPlan.** For the `audit` step, `submit_action_result` accepts no client payload: the server runs the audit itself and records only the results the engine produced. In-process drivers submit the engine's result object (`run_audit_step`); a plain mapping carrying audit results is rejected with `ResultSchemaMismatch`.
+
+#### Scenario: Stale candidate is not offered
+- **WHEN** a control has a stored candidate and its judged file changed after the judgment
+- **THEN** `get_pass_candidates` MUST NOT return the candidate
+- **AND** the control MUST be listed in `awaiting_judgment`
+
+#### Scenario: Candidate for a document remediation wrote
+- **WHEN** `get_pass_candidates` is called with the `run_id` of an apply that wrote the judged file, and the file was edited afterwards
+- **THEN** the entry MUST carry `remediation` with `written: true` and `edited_after_write: true`
 
 ### 5.5 Adversarial Fixture Corpus
 
@@ -1725,7 +1758,7 @@ Each context key has one canonical name and one vocabulary, taken from the frame
 
 The observable payloads of `get_pending_data` and `confirm_project_data` are defined in `specs/042-candidate-integrity/contracts/context-confirmation-tools.md`:
 
-- `get_pending_data` is read-only. Each question carries its candidate as data (`candidate: {value, origin, digest, label}`, where `digest` is the value digest (7.5) and `label` marks it unconfirmed); the candidate's value appears nowhere else in the response. `command_template` holds placeholders only (`<the person's answer>`, `<candidate digest if the person accepts it>`, `owner=..., repo=...`), never a candidate value or a configuration example. `answer_mapping.value_map["Yes"]` for a candidate is `{"accept_candidates": {"<key>": "<candidate.digest>"}}`, a placeholder the agent fills from the question's `candidate.digest` only after the person answered yes. Enum questions list every allowed value in `allowed_values`; when there are more than 4, the selector (`ask_user`) is omitted and the prompt lists them all. `examples` appear only as `format_hint`. Every question in the batch is returned under `questions`, with or without a selector. The response lists `stored_unconfirmed` values with their locations.
+- `get_pending_data` is read-only. Each question carries its candidate as data (`candidate: {value, origin, digest, label}`, where `digest` is the value digest (7.5) and `label` marks it unconfirmed); the candidate's value appears nowhere else in the response. `command_template` holds placeholders only (`<the person's answer>`, `<candidate digest if the person accepts it>`, `owner=..., repo=...`), never a candidate value or a configuration example. `answer_mapping.value_map["Yes"]` for a candidate is `{"accept_candidates": {"<key>": "<candidate.digest>"}}`, a placeholder the agent fills from the question's `candidate.digest` only after the person answered yes. Every question carries a selector (`ask_user`), so one batch is asked in one round of the client's question tool, which offers at most 4 options and adds a free-text "Other". Enum questions list every allowed value in `allowed_values`; when there are more than 4, the selector offers the first 4 and its question names them all, and any of them can be typed under Other (every allowed value stays reachable). A free-text question's selector offers "Skip for now" and "Answer in chat" and never a value; the answer is typed under Other. A yes/no question's options carry neutral descriptions, and its hint is part of the question. A selector header is at most 12 characters, cut at a word boundary. `examples` appear only as `format_hint`, never as an option. Every question in the batch is returned under `questions`. The response lists `stored_unconfirmed` values with their locations. The response also carries `procedure`: the ordered steps for collecting the data (show each candidate with its origin, labelled unconfirmed; ask every question, passing `ask_user_batch` verbatim in one round; per-question skip; one `confirm_project_data` call per batch, with `accept_candidates` filled only after a yes; call `get_pending_data` again until `complete`; review `stored_unconfirmed`; summarize). Its calls name only the `owner` and `repo` the caller passed, never ones detected from the checkout's remote (placeholders otherwise), and hold no candidate or detected value. A `confirm_project_data` result that handled context values on a server with `get_pending_data` ends with the next `get_pending_data` call, named the same way.
 - `confirm_project_data` takes a parameter for every context key that the server's bound framework defines, and no other framework's keys (generated from the definitions; an enum parameter accepts only its `values`), plus `accept_candidates` (`{key: candidate digest}`: detection runs again and the current candidate, or a value concluded in this run, is confirmed only if its digest still matches, recording its value and origin as the basis; a mismatch, a key with no candidate, or a key given both an answer and a digest is refused and nothing is written for it), `confirm_stored` and `reject_stored` (review of stored values: a rejected `.project/darnit.yaml` value is deleted; a rejected `.project/project.yaml` value is reported with its file and field and the file is left unchanged), `expires_at` (`{key: date}`), and `owner`, `repo`, `host`, which are required and decide the record location (7.5). `confirm_stored` records a confirmation of the value currently stored for each key (basis: that value, origin `stored_unconfirmed` or `expired_confirmation`). Like a confirmation, a rejection writes to `.project/darnit.yaml` only when the operator trusts the named repository; otherwise it is refused and names the file and field for the person to edit. The result names, per key, `confirmed (in-repository)` with the file written or `confirmed (operator-side)`, `rejected`, `edit required: <file>:<field>`, or `refused: <reason>`.
 - **Which server exposes it**: each server's `confirm_project_data` covers only the keys of the framework the server is bound to. The OpenSSF Baseline server defines its own (which also carries `confirm_not_applicable` and `confirm_pass_candidate`). Every other framework server that defines context keys and whose TOML does not define a tool named `confirm_project_data` gets a framework-neutral builtin `confirm_project_data` (a framework with no context keys gets none), registered by the factory the same way as `submit_judgment` and `confirm_pass_candidate` (5.4) and bound to that framework's context definitions. It records context values only: the per-key parameters, `accept_candidates`, `confirm_stored`, `reject_stored`, `expires_at`, `owner`, `repo`, `host`, and `local_path`. Claim confirmations and PASS candidates stay on their existing tools.
 - Remediation prompts (the preflight and `format_context_prompt`) show a candidate as labelled, unconfirmed data with its origin and digest, name the key's hint source files that exist without parsing values out of them, and hold placeholders only in their commands.
@@ -2213,6 +2246,7 @@ plan -> [confirmation missing]            -> needs_confirmation
 
 - Only a definite success with a non-empty change counts as changed. INCONCLUSIVE, ERROR, a step that did not run, and `action = "none"` never count as success.
 - The run summary (counts per `kind`) is derived from the outcomes. The Markdown and JSON reports, and every downstream decision (whether to commit or open a pull request), are derived from the outcomes, never from matching symbols or words in output text.
+- A `changed_not_passing` outcome whose re-check is `PENDING` carries `pending_kind`, equal to the re-check's `pending.kind`: `llm_judgment` (the changed content awaits a model judgment) or `confirmation` (it is a PASS candidate awaiting the operator's confirmation). No other outcome carries it, and a re-check FAIL or WARN carries none. `pending_kind` is information about what the control awaits: the outcome stays non-compliant, counts as changed for the gates (15.7), and the set of kinds is unchanged.
 - If the check for unconfirmed project context cannot complete, remediation does not run and the call returns the error.
 - The check for unconfirmed project context reads confirmations for the repository the caller named (14.2), including operator-side ones, so an untrusted repository whose context the operator confirmed can be remediated. With no repository named, operator-side confirmations are not read.
 
@@ -2229,8 +2263,9 @@ plan -> [confirmation missing]            -> needs_confirmation
 | `plan` | `PlanItem`s |
 | `outcomes` | `RemediationOutcome`s (apply only) |
 | `summary` | Counts per outcome kind, derived from `outcomes` |
+| `awaiting` | `{"llm_judgment": [...], "confirmation": [...]}`: control ids of outcomes by `pending_kind`, sorted, derived from `outcomes`; a key with no ids is omitted, and a preview has `{}` |
 
-**Reports** (Markdown and JSON) show, per control: the outcome `kind`, the files changed, platform fields `before -> after`, the re-check status, and the reason and error; per run: the policy, the operator configuration digest, the approvals (digest, by, at), the run id, and the summary counts. A preview of a high-impact change lists its impact notes. `remediate_audit_findings` returns the Markdown report followed by a fenced JSON block holding the `RemediationRun` (a preview carries `plan` with every digest, `previewable`, and `requires_individual_approval`; an apply carries `outcomes` and `summary`).
+**Reports** (Markdown and JSON) show, per control: the outcome `kind`, the files changed, platform fields `before -> after`, the re-check status, and the reason and error; per run: the policy, the operator configuration digest, the approvals (digest, by, at), the run id, and the summary counts. A preview of a high-impact change lists its impact notes. `remediate_audit_findings` returns the Markdown report followed by a fenced JSON block holding the `RemediationRun` (a preview carries `plan` with every digest, `previewable`, and `requires_individual_approval`; an apply carries `outcomes`, `summary`, and `awaiting`). An outcome with `pending_kind` adds an "Awaiting" line (a model judgment, or the operator's confirmation of a PASS candidate). When `awaiting` is not empty, the Markdown report ends with a "Next steps" section that names those control ids and the tools to call (section 15.9); its text comes from `darnit.server.procedures` and holds no evidence.
 
 #### Scenario: File already exists
 - **WHEN** the only step of a control's remediation is a `file_create` whose file already exists
@@ -2239,6 +2274,15 @@ plan -> [confirmation missing]            -> needs_confirmation
 #### Scenario: Handler result is not a definite success
 - **WHEN** a remediation step returns INCONCLUSIVE or ERROR, or does not run
 - **THEN** the step MUST NOT count as a change or as a success
+
+#### Scenario: Changed document awaits a judgment
+- **WHEN** remediation writes a document and the re-check of its control is `PENDING` with `pending.kind = "llm_judgment"`
+- **THEN** the outcome MUST be `changed_not_passing` with `pending_kind = "llm_judgment"`, and the run's `awaiting.llm_judgment` MUST list the control
+- **AND** the control MUST count as non-compliant and as changed for the commit and pull request gates
+
+#### Scenario: Re-check WARN carries no pending kind
+- **WHEN** a remediation changed a file and the re-check of its control is WARN
+- **THEN** the outcome MUST be `changed_not_passing` without `pending_kind`
 
 #### Scenario: Context guard cannot complete
 - **WHEN** the check for unconfirmed project context raises or cannot complete
@@ -2250,7 +2294,7 @@ plan -> [confirmation missing]            -> needs_confirmation
 
 ### 15.5 Re-check
 
-After an apply that changed something, darnit re-checks the affected controls with `run_sieve_audit(controls=<affected>, write_cache=False)`: a subset audit through the canonical pipeline (section 10.1) that does not write the audit cache (section 10.4). The sieve is unchanged. A re-check PASS gives `fixed`; FAIL, WARN, or PENDING (including a PASS candidate) gives `changed_not_passing`; ERROR, or a re-check that could not run, gives `changed_not_verified` with the error. A control whose remediation changed nothing is not re-checked and is never `fixed`.
+After an apply that changed something, darnit re-checks the affected controls with `run_sieve_audit(controls=<affected>, write_cache=False)`: a subset audit through the canonical pipeline (section 10.1) that does not write the audit cache (section 10.4). The sieve is unchanged. A re-check PASS gives `fixed`; FAIL, WARN, or PENDING (including a PASS candidate) gives `changed_not_passing`, and a PENDING re-check's `pending.kind` is carried on the outcome as `pending_kind` (15.4) (a PENDING re-check without a `pending.kind` of `llm_judgment` or `confirmation` gives `changed_not_verified` with an `evaluation` error); ERROR, or a re-check that could not run, gives `changed_not_verified` with the error. A control whose remediation changed nothing is not re-checked and is never `fixed`.
 
 #### Scenario: Changed but still failing
 - **WHEN** a remediation changed a file and the re-check of its control is FAIL
@@ -2321,7 +2365,7 @@ Every writer goes through the executor, the platform engine, and the run manifes
 | `create_security_policy` | Writes through the executor and the manifest; keeps its explicit-create semantics |
 | `generate_threat_model` | Without `output_path`, returns the threat model and writes nothing. With `output_path`, the call is the request to write (explicit-create semantics, as for `create_security_policy`): the path must be repository-relative, without `..` or `.git` (normalized like a `FileChange` path) and inside the repository after `realpath`, else nothing is written. The files are written through the executor as `file_create` steps, recorded in the run manifest (so the git tools commit them), and the response names the run id. A missing file is created; an existing file is replaced only when git tracks it and it has no uncommitted changes, and is otherwise left as it is and reported |
 | `darnit run` | Previews by default; creates or changes files, or platform settings, only with `--apply` (FR-027). In an apply, platform changes follow the policy; under `prompt` with a terminal it asks on `/dev/tty`, otherwise the outcome is `needs_approval`. A plan item that requires individual approval (15.3) is shown on `/dev/tty` with its files (the full content of a created file; for a modified file, a unified diff of the current file against the resulting content, or the full resulting content when the current file cannot be read; never truncated, and escaped to printable ASCII, with lines split only at `\n`, every other line ending or separator (`\r`, form feed, `\x1c`, U+2028) shown escaped, and a missing final newline marked `\ No newline at end of file`, so a change only in whitespace or line endings is never an empty diff), commands, change sets, the reason it needs approval, and its `PlanItem.digest`, and runs only on the person's yes; with no terminal it ends as `needs_approval` |
-| Skills (`darnit-remediate`, `darnit-comply`) | Show the preview with before/after fields, impact notes, and digests; pass back only the digests the person approved; never pass `dry_run = false` as a substitute for approval |
+| Skills (`darnit-remediate`, `darnit-comply`) | Show the preview with before/after fields, impact notes, and digests; pass back only the digests the person approved; never pass `dry_run = false` as a substitute for approval. After an apply, `darnit-comply` follows 15.9; `darnit-audit` ends with the confirmation step of 15.9 |
 
 The `confirm_*` tools are unchanged; approvals are not confirmations. Audit results and the attestation predicate are unchanged.
 
@@ -2350,6 +2394,47 @@ The `confirm_*` tools are unchanged; approvals are not confirmations. Audit resu
 #### Scenario: A change deep in a modified file is shown
 - **WHEN** a plan item that requires individual approval modifies a long file (for example one line deep in an 80-line workflow)
 - **THEN** the text shown on `/dev/tty` MUST include that changed line
+
+### 15.9 After Remediation: Judge and Confirm
+
+A document remediation writes is judged and confirmed like any other document (section 5.4): its re-check is at most `PENDING`, and it passes only when a model judgment makes it a PASS candidate and the operator confirms that candidate. No check regains authority to conclude PASS for document content, and darnit having written a document is never a reason to confirm it.
+
+The comply flow runs, in order:
+
+1. Apply the approved remediation (15.2, 15.4).
+2. Improve the generated files, if the agent does.
+3. Judge: `get_judgment_requests` without `control_ids`, following its procedure. Judging comes after step 2 because an edit changes the evidence digest and makes an earlier candidate stale; unfiltered, it also re-judges candidates the edits made stale, not only the controls in `awaiting.llm_judgment`. A control the agent received a finding for in this run is not judged again unless its files changed after the finding; the finding is kept for the report, because a finding is not stored (5.4).
+4. Confirm: `get_pass_candidates` with the repository and the apply's `run_id`, following its procedure.
+5. Final audit.
+6. Commit and pull request (15.7), so the pull request's before and after reflect the confirmed state.
+
+The audit flow (`darnit-audit`) ends with step 4 after its judgments.
+
+The confirmation step (`confirmation_procedure` in `darnit.server.procedures`, returned by `get_pass_candidates`):
+
+- Show every candidate before asking: control and title, what it requires, the files, the reasoning, and each cited passage verbatim, labelled as a PASS candidate that is not compliant until confirmed.
+- For an entry with a `remediation` block, say that darnit's remediation wrote the document, whether it was edited afterwards (and by the agent, if the agent edited it), and that the judgment being confirmed is the agent's own; ask whether the document reflects the project's actual practice, not whether the text reads well.
+- Ask one question per candidate (`ask_user_batch`); never pre-fill, recommend, or offer to confirm all.
+- Call `confirm_pass_candidate` once, with only the controls the person answered "Confirm" for. Silence, "Skip for now", "Do not confirm", a run with no person to ask, or an instruction that names no candidate the person was shown confirms nothing. A single answer naming several candidates the person was shown counts for each one named.
+- Tell the person what was confirmed, declined, and skipped, and that confirmations are recorded for them on this machine only: an audit elsewhere (CI, another maintainer) shows those controls `PENDING` until confirmed there.
+
+The final report lists separately: controls that pass; controls awaiting the person's confirmation; controls awaiting a judgment, with why; controls the model judged in this run as not meeting the requirement, with the finding; and the rest.
+
+#### Scenario: Remediated document confirmed by the operator
+- **WHEN** remediation writes a document, the agent judges it as meeting its control with verified citations, and the operator answers "Confirm" for that candidate
+- **THEN** the final audit MUST report the control PASS with authority `asserted` and `concluded_by = "confirmation"`
+
+#### Scenario: No person to ask
+- **WHEN** the comply flow reaches the confirmation step and no person can answer
+- **THEN** no candidate MUST be confirmed, and the report MUST list each candidate as awaiting confirmation
+
+#### Scenario: Blanket instruction
+- **WHEN** the person tells the agent to confirm everything without being shown the candidates
+- **THEN** the agent MUST show each candidate and ask about each, and MUST NOT confirm a candidate the person did not name
+
+#### Scenario: Generated document judged as not meeting its control
+- **WHEN** the agent judges a generated document as not meeting its control (for example because it still holds template placeholders)
+- **THEN** no candidate MUST be offered for it, and the final report MUST list the control with the finding
 
 ## Appendix C: Removed Requirements
 

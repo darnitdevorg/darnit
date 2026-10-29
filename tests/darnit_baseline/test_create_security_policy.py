@@ -90,6 +90,18 @@ def test_creates_security_md_through_the_manifest(repo: Path) -> None:
 
 
 @pytest.mark.integration
+def test_a_written_policy_awaiting_a_judgment_says_so(repo: Path) -> None:
+    """VM-02.01 checks the policy's content, so its re-check awaits a model judgment (#681)."""
+    _confirm_security_contact(repo)
+
+    output = create_security_policy(owner=OWNER, repo=REPO, local_path=str(repo))
+
+    [outcome] = _run_block(output)["outcomes"]
+    assert (outcome["kind"], outcome["pending_kind"]) == ("changed_not_passing", "llm_judgment")
+    assert "re-check of OSPS-VM-02.01: PENDING, awaiting llm_judgment" in output.split("```json")[0]
+
+
+@pytest.mark.integration
 def test_never_overwrites_an_existing_security_md(repo: Path) -> None:
     _confirm_security_contact(repo)
     existing = "# Our own policy\n"

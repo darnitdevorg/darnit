@@ -191,6 +191,8 @@ class RemediationOutcome(BaseModel):
     file_changes: list[FileChange] = Field(default_factory=list)
     change_sets: list[dict[str, Any]] = Field(default_factory=list)
     recheck: dict[str, Any] | None = None
+    # What a PENDING re-check awaits (15.4); informational, never compliant.
+    pending_kind: Literal["llm_judgment", "confirmation"] | None = None
     reason: str | None = None
     error: ErrorInfo | None = None
 
@@ -209,6 +211,13 @@ class RemediationOutcome(BaseModel):
             raise ValueError("outcome 'changed_not_passing' needs a re-check that did not pass")
         if self.kind == "error" and self.error is None:
             raise ValueError("outcome 'error' needs an error class and cause")
+        awaits = self.kind == "changed_not_passing" and recheck_status == "PENDING"
+        if awaits and (
+            self.pending_kind is None or self.pending_kind != ((self.recheck or {}).get("pending") or {}).get("kind")
+        ):
+            raise ValueError("a PENDING re-check's pending.kind must be carried as pending_kind")
+        if not awaits and self.pending_kind is not None:
+            raise ValueError("only a changed_not_passing outcome with a PENDING re-check carries pending_kind")
         return self
 
 
@@ -217,6 +226,15 @@ def summarize(outcomes: list[RemediationOutcome]) -> dict[str, int]:
     for outcome in outcomes:
         counts[outcome.kind] += 1
     return counts
+
+
+def awaiting(outcomes: list[RemediationOutcome]) -> dict[str, list[str]]:
+    """Control ids by what their changed content awaits; kinds with no ids are left out."""
+    ids: dict[str, list[str]] = {}
+    for outcome in outcomes:
+        if outcome.pending_kind:
+            ids.setdefault(outcome.pending_kind, []).append(outcome.control_id)
+    return {kind: sorted(ids[kind]) for kind in sorted(ids)}
 
 
 class RemediationRun(BaseModel):
@@ -233,15 +251,20 @@ class RemediationRun(BaseModel):
     plan: list[PlanItem] = Field(default_factory=list)
     outcomes: list[RemediationOutcome] = Field(default_factory=list)
     summary: dict[str, int] = Field(default_factory=dict)
+    awaiting: dict[str, list[str]] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def _derived_summary(self) -> RemediationRun:
+    def _derived_from_outcomes(self) -> RemediationRun:
         if self.mode == "preview" and self.outcomes:
             raise ValueError("a preview has no outcomes")
         computed = summarize(self.outcomes)
         if self.summary and self.summary != computed:
             raise ValueError("summary must be derived from outcomes")
         self.summary = computed
+        waiting = awaiting(self.outcomes)
+        if self.awaiting and self.awaiting != waiting:
+            raise ValueError("awaiting must be derived from outcomes")
+        self.awaiting = waiting
         return self
 
 
@@ -257,6 +280,7 @@ __all__ = [
     "PlanItem",
     "RemediationOutcome",
     "RemediationRun",
+    "awaiting",
     "canonical_json",
     "content_digest",
     "digest",
