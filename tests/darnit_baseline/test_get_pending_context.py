@@ -6,7 +6,10 @@ features for batched AskUserQuestion-based data gathering.
 """
 
 import json
+import subprocess
 from unittest.mock import patch
+
+import pytest
 
 from darnit.config.context_schema import (
     ContextDefinition,
@@ -602,3 +605,99 @@ class TestTomlDefinitionOrder:
         assert "platform" in order
         assert "license_type" in order, "feature 043 T055c: a LICENSE is created only for a confirmed license"
         assert len(order) == len(set(order)) == 10
+
+
+class TestGetPendingDataProcedure:
+    """The result carries the steps to follow (framework-design 7.10)."""
+
+    def _candidate_request(self) -> ContextPromptRequest:
+        return ContextPromptRequest(
+            key="ci_provider",
+            definition=ContextDefinition(
+                type=ContextType.STRING, prompt="What CI provider?", auto_detect=True, affects=["CTRL-01"]
+            ),
+            control_ids=["CTRL-01"],
+            priority=1,
+            candidate=_detected("ci_provider", "detected-ci-value"),
+        )
+
+    @patch("darnit_baseline.tools.Path")
+    @patch("darnit.config.context_storage.get_pending_context")
+    def test_procedure_names_the_repository_the_caller_named(self, mock_get, mock_path) -> None:
+        mock_path.return_value.resolve.return_value = "/tmp/repo"
+        mock_get.return_value = _make_pending(2)
+
+        data = _parse_json_from_result(get_pending_data(local_path="/tmp/repo", owner="acme", repo="widget"))
+
+        text = "\n".join(data["procedure"])
+        assert 'confirm_project_data(owner="acme", repo="widget", local_path="/tmp/repo"' in text
+        assert 'get_pending_data(owner="acme", repo="widget", local_path="/tmp/repo")' in text
+
+    @patch("darnit.core.utils.detect_owner_repo", return_value=("remote-owner", "remote-repo"))
+    @patch("darnit_baseline.tools.Path")
+    @patch("darnit.config.context_storage.get_pending_context")
+    def test_procedure_never_names_a_repository_read_from_the_remote(self, mock_get, mock_path, _detect) -> None:
+        mock_path.return_value.resolve.return_value = "/tmp/repo"
+        mock_get.return_value = _make_pending(2)
+
+        data = _parse_json_from_result(get_pending_data(local_path="/tmp/repo"))
+
+        text = "\n".join(data["procedure"])
+        assert "remote-owner" not in text
+        assert "remote-repo" not in text
+        assert "owner=<owner of the audited repository>" in text
+
+    @patch("darnit_baseline.tools.Path")
+    @patch("darnit.config.context_storage.get_pending_context")
+    def test_procedure_holds_no_candidate_value(self, mock_get, mock_path) -> None:
+        mock_path.return_value.resolve.return_value = "/tmp/repo"
+        mock_get.return_value = [self._candidate_request()]
+
+        data = _parse_json_from_result(get_pending_data(local_path="/tmp/repo", owner="acme", repo="widget"))
+
+        assert "detected-ci-value" not in json.dumps(data["procedure"])
+        assert "accept_candidates" in "\n".join(data["procedure"])
+
+    @patch("darnit_baseline.tools.Path")
+    @patch("darnit.config.context_storage.get_pending_context")
+    def test_complete_result_carries_the_procedure(self, mock_get, mock_path) -> None:
+        mock_path.return_value.resolve.return_value = "/tmp/repo"
+        mock_get.return_value = []
+
+        data = json.loads(get_pending_data(local_path="/tmp/repo", owner="acme", repo="widget"))
+
+        assert data["status"] == "complete"
+        assert any("stored_unconfirmed" in step for step in data["procedure"])
+
+    @patch("darnit_baseline.tools.Path")
+    @patch("darnit.config.context_storage.get_pending_context")
+    def test_directive_defers_to_the_procedure(self, mock_get, mock_path) -> None:
+        mock_path.return_value.resolve.return_value = "/tmp/repo"
+        mock_get.return_value = _make_pending(1)
+
+        result = get_pending_data(local_path="/tmp/repo")
+
+        assert result.startswith(_LLM_DIRECTIVE_PREFIX)
+        assert '"procedure"' in _LLM_DIRECTIVE_PREFIX
+
+
+class TestConfirmProjectDataNextStep:
+    @pytest.fixture(autouse=True)
+    def _git_repo(self, tmp_path) -> None:
+        subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+
+    def test_result_names_the_next_get_pending_data_call(self, tmp_path) -> None:
+        from darnit_baseline.tools import confirm_project_data
+
+        result = confirm_project_data(local_path=str(tmp_path), maintainers="@someone")
+
+        assert "refused" in result
+        assert "Next: call get_pending_data(owner=<owner of the audited repository>" in result
+        assert f'local_path="{tmp_path.resolve()}"' in result
+
+    def test_neutral_tool_names_no_get_pending_data_call(self, tmp_path) -> None:
+        from darnit.server.tools.project_data import confirm_project_data_impl
+
+        result = confirm_project_data_impl(str(tmp_path), maintainers="@someone", framework_name="openssf-baseline")
+
+        assert "get_pending_data" not in result
