@@ -551,6 +551,7 @@ dependencies = [
     { name = "darnit-core" },
     { name = "packaging" },
     { name = "rfc3161-client" },
+    { name = "sigstore" },
 ]
 
 [package.dev-dependencies]
@@ -565,6 +566,7 @@ requires-dist = [
     { name = "darnit-core", editable = "packages/darnit" },
     { name = "packaging", specifier = ">=23.0" },
     { name = "rfc3161-client", specifier = ">=1.0" },
+    { name = "sigstore", specifier = ">=4.0" },
 ]
 
 [package.metadata.requires-dev]
