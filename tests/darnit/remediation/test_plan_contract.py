@@ -191,7 +191,7 @@ def _preview(repo: Path, path: Path, control_id: str) -> tuple[FrameworkConfig, 
 def test_every_shipped_framework_is_covered() -> None:
     frameworks = {path.stem for path, _ in REMEDIATIONS}
 
-    assert {"openssf-baseline", "community-spec", "reproducibility", "gittuf", "hello"} <= frameworks
+    assert {"openssf-baseline", "community-spec", "amber", "gittuf", "hello"} <= frameworks
     assert len(REMEDIATIONS) >= 60
 
 
@@ -318,7 +318,7 @@ def test_shipped_steps_that_cannot_be_previewed_are_found() -> None:
     handlers = {step.handler for _, _, _, step in NOT_PREVIEWABLE}
 
     assert "generate_threat_model" in handlers
-    assert ("reproducibility", "RE-01.01") in {(p.stem, c) for p, c, _, s in NOT_PREVIEWABLE if s.handler == "exec"}
+    assert ("amber", "RE-01.01") in {(p.stem, c) for p, c, _, s in NOT_PREVIEWABLE if s.handler == "exec"}
     assert not any(c.startswith("OSPS-BR-01.0") for _, c, _, s in NOT_PREVIEWABLE if s.handler == "exec")
 
 

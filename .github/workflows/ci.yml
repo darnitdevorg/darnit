@@ -288,7 +288,7 @@ jobs:
 
       - name: Build wheels
         run: |
-          for package in darnit-mcp darnit-core darnit-baseline darnit-gittuf darnit-reproducibility; do
+          for package in darnit-mcp darnit-core darnit-baseline darnit-gittuf darnit-amber; do
             uv build --wheel --package "$package"
           done
 

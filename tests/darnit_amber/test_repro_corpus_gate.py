@@ -20,7 +20,7 @@ CORPUS_ROOT = Path(__file__).resolve().parent / "corpus"
 
 @pytest.fixture(scope="module")
 def report() -> CorpusReport:
-    return run_corpus(load_framework("reproducibility"), CORPUS_ROOT)
+    return run_corpus(load_framework("amber"), CORPUS_ROOT)
 
 
 def test_no_false_pass(report: CorpusReport) -> None:

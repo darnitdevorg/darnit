@@ -65,7 +65,7 @@ uv run pytest tests/darnit/sieve/test_registration_collisions.py -v
 ## V4. Reproducibility text signals (US3, SC-004)
 
 ```bash
-uv run pytest tests/darnit_reproducibility/test_no_pass_from_signals.py -v
+uv run pytest tests/darnit_amber/test_no_pass_from_signals.py -v
 ```
 
 | Repository | Expected |
@@ -89,7 +89,7 @@ The recorded `/user` response includes email, location, company, and bio.
 ## V6. Corpus and regression
 
 ```bash
-uv run pytest tests/darnit_baseline/corpus/ tests/darnit_reproducibility/test_repro_corpus_gate.py -v
+uv run pytest tests/darnit_baseline/corpus/ tests/darnit_amber/test_repro_corpus_gate.py -v
 uv run ruff check .
 uv run pytest tests/ -q
 ```
@@ -97,7 +97,7 @@ uv run pytest tests/ -q
 The corpus has cases for each path closed here, with 0 false PASSes:
 - `zizmor-no-findings-document` (Baseline corpus): an exec step whose expression cannot evaluate;
 - `plugin-redefines-manual` (Baseline corpus): a plugin redefining `manual`;
-- `text-signals-only` (`tests/darnit_reproducibility/corpus/`): reproducibility text signals.
+- `text-signals-only` (`tests/darnit_amber/corpus/`): reproducibility text signals.
 
 ## Validation log
 
@@ -109,9 +109,9 @@ Run on 2026-10-04 on branch `044-false-pass-paths` after T024a-T027 and T030, of
 | V2 | `pytest tests/darnit/config/test_strict_framework_loading.py` | 19 passed. |
 | V2 | `python scripts/validate_sync.py --verbose` | PASSED: TOML schema (66 controls), pass types (8 handlers), SARIF source, context keys (17 fields), remediation properties (78 remediations). |
 | V3 | `pytest tests/darnit/sieve/test_registration_collisions.py` | 9 passed. |
-| V4 | `pytest tests/darnit_reproducibility/test_no_pass_from_signals.py` | 17 passed. |
+| V4 | `pytest tests/darnit_amber/test_no_pass_from_signals.py` | 17 passed. |
 | V5 | `pytest tests/darnit_baseline/test_user_evidence_redaction.py` | 17 passed. |
-| V6 | `pytest tests/darnit_baseline/corpus/ tests/darnit_reproducibility/test_repro_corpus_gate.py` | 23 passed. Baseline corpus: 13 fixtures, 94 labelled control results, 0 false PASS, 0 gate violations. With the registry's refusal bypassed, `plugin-redefines-manual` produces 3 false PASSes, so the case detects the regression. |
+| V6 | `pytest tests/darnit_baseline/corpus/ tests/darnit_amber/test_repro_corpus_gate.py` | 23 passed. Baseline corpus: 13 fixtures, 94 labelled control results, 0 false PASS, 0 gate violations. With the registry's refusal bypassed, `plugin-redefines-manual` produces 3 false PASSes, so the case detects the regression. |
 | V6 | `ruff check .` | All checks passed. |
 | V6 | `pytest tests/ -q` | 5083 passed, 26 skipped. |
 | CI identity | `pytest tests/ -m integration -q` with `CI=true GITHUB_ACTIONS=true GITHUB_EVENT_NAME=pull_request GITHUB_REPOSITORY=darnitdevorg/darnit GITHUB_SERVER_URL=https://github.com GITHUB_REF=refs/pull/1/merge GITHUB_SHA=0000000000000000000000000000000000000000` | 340 passed, 2 skipped. |

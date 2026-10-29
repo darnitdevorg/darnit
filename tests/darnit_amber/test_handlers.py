@@ -8,7 +8,7 @@ so a PASS is evidence for the control's later steps (test_no_pass_from_signals.p
 from pathlib import Path
 
 import pytest
-from darnit_reproducibility.handlers import (
+from darnit_amber.handlers import (
     _detect_strong_hermeticity_signal,
     _iter_build_files,
     _iter_composite_action_files,
@@ -24,7 +24,7 @@ from darnit_reproducibility.handlers import (
     repro_provenance_exists_handler,
     repro_witness_attestation_handler,
 )
-from darnit_reproducibility.witness_attestation import WitnessCheckResult
+from darnit_amber.witness_attestation import WitnessCheckResult
 
 from darnit.sieve.handler_registry import HandlerContext, HandlerResultStatus
 
@@ -37,7 +37,7 @@ NO_WITNESS_EVIDENCE = WitnessCheckResult(attempted=False)
 @pytest.fixture(autouse=True)
 def _stub_witness_attestation(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "darnit_reproducibility.handlers.check_witness_attestation",
+        "darnit_amber.handlers.check_witness_attestation",
         lambda ctx: NO_WITNESS_EVIDENCE,
     )
 
@@ -340,7 +340,7 @@ class TestReproWitnessAttestationHandler:
 
     def test_recorded_network_events_fail(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         dirty = self._verified(True, "runtime-trace predicate recorded 3 network event(s) (monitor: x)")
-        monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", lambda ctx: dirty)
+        monkeypatch.setattr("darnit_amber.handlers.check_witness_attestation", lambda ctx: dirty)
         result = repro_witness_attestation_handler({}, make_ctx(tmp_path))
         assert result.status == HandlerResultStatus.FAIL
         assert "build.att.json" in result.message
@@ -350,7 +350,7 @@ class TestReproWitnessAttestationHandler:
 
     def test_suspicious_command_line_fails(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         dirty = self._verified(True, "command-run process matched 'curl': /usr/bin/curl curl https://x")
-        monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", lambda ctx: dirty)
+        monkeypatch.setattr("darnit_amber.handlers.check_witness_attestation", lambda ctx: dirty)
         result = repro_witness_attestation_handler({}, make_ctx(tmp_path))
         assert result.status == HandlerResultStatus.FAIL
         assert "command-run process matched 'curl'" in result.message
@@ -360,7 +360,7 @@ class TestReproWitnessAttestationHandler:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, network_recorded: bool | None
     ) -> None:
         clean = self._verified(network_recorded, "runtime-trace predicate recorded no network events")
-        monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", lambda ctx: clean)
+        monkeypatch.setattr("darnit_amber.handlers.check_witness_attestation", lambda ctx: clean)
         result = repro_witness_attestation_handler({}, make_ctx(tmp_path))
         assert result.status == HandlerResultStatus.INCONCLUSIVE
         assert "cannot by itself establish that the build had no network access" in result.message
@@ -373,18 +373,18 @@ class TestReproWitnessAttestationHandler:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         missing = WitnessCheckResult(attempted=True, detail="gh is not authenticated for this repository")
-        monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", lambda ctx: missing)
+        monkeypatch.setattr("darnit_amber.handlers.check_witness_attestation", lambda ctx: missing)
         result = repro_witness_attestation_handler({}, make_ctx(tmp_path))
         assert result.status == HandlerResultStatus.INCONCLUSIVE
         assert "gh is not authenticated" in result.message
 
     def test_disabled_via_config_makes_no_calls(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
-            "darnit_reproducibility.handlers.check_witness_attestation",
+            "darnit_amber.handlers.check_witness_attestation",
             lambda ctx: pytest.fail("verification must not run when disabled"),
         )
         monkeypatch.setattr(
-            "darnit_reproducibility.witness_attestation._run_gh",
+            "darnit_amber.witness_attestation._run_gh",
             lambda args: pytest.fail("gh must not run when disabled"),
         )
         result = repro_witness_attestation_handler({"verify_witness_attestations": False}, make_ctx(tmp_path))
@@ -399,7 +399,7 @@ class TestReproWitnessAttestationHandler:
             called.append(ctx)
             return NO_WITNESS_EVIDENCE
 
-        monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", spy)
+        monkeypatch.setattr("darnit_amber.handlers.check_witness_attestation", spy)
         repro_witness_attestation_handler(config, make_ctx(tmp_path))
         assert len(called) == 1
 
@@ -407,7 +407,7 @@ class TestReproWitnessAttestationHandler:
         def boom(ctx: HandlerContext) -> WitnessCheckResult:
             raise RuntimeError("unexpected")
 
-        monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", boom)
+        monkeypatch.setattr("darnit_amber.handlers.check_witness_attestation", boom)
         result = repro_witness_attestation_handler({}, make_ctx(tmp_path))
         assert result.status == HandlerResultStatus.INCONCLUSIVE
         assert "unexpected" in result.message
@@ -649,7 +649,7 @@ class TestRepoDepsPin:
 
         Feature 044 (FR-010): INCONCLUSIVE, was FAIL. Unreadable is not unpinned.
         """
-        import darnit_reproducibility.requirements_pins as pins
+        import darnit_amber.requirements_pins as pins
 
         calls = []
         monkeypatch.setattr(
@@ -694,7 +694,7 @@ class TestRepoDepsPin:
     ) -> None:
         """FR-001 / US3: the lock file decides and the requirements contents
         are never consulted."""
-        import darnit_reproducibility.requirements_pins as pins
+        import darnit_amber.requirements_pins as pins
 
         calls: list[str] = []
         original = pins.classify
@@ -958,8 +958,8 @@ class TestHermeticBuild:
         def no_calls(*args: object, **kwargs: object) -> None:
             pytest.fail("repro_hermetic_build must not consult attestations or run a subprocess")
 
-        monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", no_calls)
-        monkeypatch.setattr("darnit_reproducibility.witness_attestation._run_gh", no_calls)
+        monkeypatch.setattr("darnit_amber.handlers.check_witness_attestation", no_calls)
+        monkeypatch.setattr("darnit_amber.witness_attestation._run_gh", no_calls)
         monkeypatch.setattr("subprocess.run", no_calls)
         wf_dir = tmp_path / ".github" / "workflows"
         wf_dir.mkdir(parents=True)

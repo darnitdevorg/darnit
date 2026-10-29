@@ -1,4 +1,4 @@
-# darnit-reproducibility
+# darnit-amber
 
 Scientific reproducibility checks plugin for darnit.
 

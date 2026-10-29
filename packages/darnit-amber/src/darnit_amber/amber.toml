@@ -1,13 +1,13 @@
 [metadata]
 schema_version = "0.1.0-alpha"
-name = "reproducibility"
-display_name = "Scientific Reproducibility Checks"
+name = "amber"
+display_name = "Amber — Scientific Reproducibility Checks"
 version = "0.1.0"
 spec_version = "0.1.0"
 description = "Checks that builds are reproducible and verifiable"
 
 [mcp]
-name = "reproducibility"
+name = "amber"
 description = "Run scientific reproducibility checks on a repository"
 
 [mcp.tools.audit_reproducibility]

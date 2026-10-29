@@ -145,7 +145,7 @@ def test_install_preserves_existing_settings(tmp_path, monkeypatch):
 @pytest.mark.parametrize(
     ("frameworks", "expected"),
     [
-        (["gittuf", "openssf-baseline", "reproducibility"], "openssf-baseline"),
+        (["gittuf", "openssf-baseline", "amber"], "openssf-baseline"),
         (["community-spec", "gittuf", "hello", "openssf-baseline"], "openssf-baseline"),
         (["gittuf"], "gittuf"),
         (["community-spec", "gittuf"], None),
@@ -176,7 +176,7 @@ def _serve_with(monkeypatch, frameworks):
 
 
 def test_serve_defaults_to_the_baseline_not_the_first_name(monkeypatch):
-    code, served = _serve_with(monkeypatch, ["gittuf", "openssf-baseline", "reproducibility"])
+    code, served = _serve_with(monkeypatch, ["gittuf", "openssf-baseline", "amber"])
 
     assert code == 0
     assert served == ["openssf-baseline"]

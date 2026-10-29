@@ -28,7 +28,7 @@ if [ $# -gt 1 ]; then
   shift
   packages=("$@")
 else
-  packages=(darnit-mcp darnit-core darnit-baseline darnit-gittuf darnit-reproducibility)
+  packages=(darnit-mcp darnit-core darnit-baseline darnit-gittuf darnit-amber)
 fi
 
 fail() { echo "FAIL: $*" >&2; exit 1; }

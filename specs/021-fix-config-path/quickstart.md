@@ -48,10 +48,10 @@ uv build --package darnit-gittuf
 pip install packages/darnit-gittuf/dist/darnit_gittuf-*.whl
 python -c "from darnit_gittuf import get_framework_path; p = get_framework_path(); print(p, p.exists())"
 
-# darnit-reproducibility
-uv build --package darnit-reproducibility
-pip install packages/darnit-reproducibility/dist/darnit_reproducibility-*.whl
-python -c "from darnit_reproducibility import get_framework_path; p = get_framework_path(); print(p, p.exists())"
+# darnit-amber
+uv build --package darnit-amber
+pip install packages/darnit-amber/dist/darnit_amber-*.whl
+python -c "from darnit_amber import get_framework_path; p = get_framework_path(); print(p, p.exists())"
 ```
 
 All three MUST report an existing path.
