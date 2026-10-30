@@ -191,7 +191,7 @@ Single workspace repo. New product code under `packages/darnit/src/darnit/stores
 
 - [X] T046 Run the full workspace test sweep from repo root: `uv run pytest tests/ -q --deselect tests/darnit/context/test_dot_project_upstream.py::TestUpstreamSpecSync::test_upstream_spec_unchanged`. Confirm exit code 0 (SC-001).
 
-- [X] T047 [P] Two sub-steps, both MUST pass. **(a) Structure Decision**: verify no file outside `packages/darnit/`, `packages/darnit-baseline/`, and `packages/darnit-testchecks/` under `packages/*/src/` was modified: `git diff --name-only main..HEAD | grep -E 'packages/(darnit-gittuf|darnit-reproducibility|darnit-hello)/src/'` MUST produce zero lines. **(b) FR-014 no-new-runtime-dep guard**: `git diff main..HEAD -- pyproject.toml packages/*/pyproject.toml` MUST NOT add any entry to `[project.dependencies]` for a published product package (except the `darnit-testchecks` update to add the fixture plugin's entry-point registration for the in-memory backends, which lives under its own `[project.entry-points.*]` table and NOT under dependencies).
+- [X] T047 [P] Two sub-steps, both MUST pass. **(a) Structure Decision**: verify no file outside `packages/darnit/`, `packages/darnit-baseline/`, and `packages/darnit-testchecks/` under `packages/*/src/` was modified: `git diff --name-only main..HEAD | grep -E 'packages/(darnit-gittuf|darnit-amber|darnit-hello)/src/'` MUST produce zero lines. **(b) FR-014 no-new-runtime-dep guard**: `git diff main..HEAD -- pyproject.toml packages/*/pyproject.toml` MUST NOT add any entry to `[project.dependencies]` for a published product package (except the `darnit-testchecks` update to add the fixture plugin's entry-point registration for the in-memory backends, which lives under its own `[project.entry-points.*]` table and NOT under dependencies).
 
 - [X] T048 [P] Run `uv run ruff check .` on repo root; MUST exit 0. Fix any lint issues in the files this feature touched; do NOT auto-format unrelated files.
 
@@ -199,7 +199,7 @@ Single workspace repo. New product code under `packages/darnit/src/darnit/stores
 
 - [X] T050 [P] Add the static-import guard test `tests/darnit/stores/test_import_isolation.py` covering SC-008 AND FR-017 via two AST-walking assertions in the same test file.
 
-  **(a) Cross-package guard (SC-008)**: walk `packages/darnit/src/darnit/`, parse each `.py` file's imports via `ast`, assert no import references any `darnit_baseline`, `darnit_gittuf`, `darnit_hello`, `darnit_reproducibility`, or `darnit_testchecks` package. Catches accidental cross-package imports.
+  **(a) Cross-package guard (SC-008)**: walk `packages/darnit/src/darnit/`, parse each `.py` file's imports via `ast`, assert no import references any `darnit_baseline`, `darnit_gittuf`, `darnit_hello`, `darnit_amber`, or `darnit_testchecks` package. Catches accidental cross-package imports.
 
   **(b) Intra-package handler-layer guard (FR-017)**: walk `packages/darnit/src/darnit/sieve/` AND `packages/darnit-baseline/src/darnit_baseline/tools.py` (plus any sibling modules that register MCP handlers per baseline's `register_handlers()`). Assert no import references `darnit.stores` or any submodule thereof. FR-017's constraint is negative -- handlers MUST NOT consume the store abstraction directly. Catches the class of well-intentioned refactor that adds `from darnit.stores import AttestationStore` to a sieve handler for symmetry with the audit driver.
 

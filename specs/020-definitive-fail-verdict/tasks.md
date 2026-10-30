@@ -79,7 +79,7 @@ description: "Task list for feature 020: preserve handler-conclusive FAIL throug
 
 ### Verification (nondeterministic layer — mandatory)
 
-- [X] T014 [US1] Re-install darnit as editable so the audit skill uses the branch's code: `uv tool install --reinstall --editable ./packages/darnit --with-editable ./packages/darnit-baseline --with-editable ./packages/darnit-gittuf --with-editable ./packages/darnit-reproducibility`. Confirm `darnit list` reports the framework loaded successfully. (Non-editable install is broken today per the note in feature 019 verification; issue #350-adjacent packaging bug.)
+- [X] T014 [US1] Re-install darnit as editable so the audit skill uses the branch's code: `uv tool install --reinstall --editable ./packages/darnit --with-editable ./packages/darnit-baseline --with-editable ./packages/darnit-gittuf --with-editable ./packages/darnit-amber`. Confirm `darnit list` reports the framework loaded successfully. (Non-editable install is broken today per the note in feature 019 verification; issue #350-adjacent packaging bug.)
 
 - [X] T015 [US1] Invoke `/darnit-audit` from within Claude Code targeted at `/tmp/darnit-test-repo` (created during feature 019 verification; recreate per `quickstart.md` if missing) at Level 1. Capture the output; confirm the four named branch-protection controls resolve to FAIL with a message referencing "Branch not protected". If the test repo is not authenticated to GitHub, the response may be a 401/403 rather than 404 "Branch not protected"; in that case, either (a) authenticate with `gh auth login` and re-run, or (b) confirm the audit still returns WARN (not FAIL) for the ambiguous non-404 case, which validates FR-008 (WARN preserved for ambiguous responses).
 

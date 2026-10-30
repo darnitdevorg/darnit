@@ -11,7 +11,7 @@
 return Path(__file__).parent.parent.parent / "openssf-baseline.toml"
 ```
 
-(`packages/darnit-baseline/src/darnit_baseline/implementation.py:130`; identical pattern at `packages/darnit-gittuf/src/darnit_gittuf/implementation.py:76` and `packages/darnit-reproducibility/src/darnit_reproducibility/implementation.py:94`).
+(`packages/darnit-baseline/src/darnit_baseline/implementation.py:130`; identical pattern at `packages/darnit-gittuf/src/darnit_gittuf/implementation.py:76` and `packages/darnit-amber/src/darnit_amber/implementation.py:94`).
 
 **Editable install path resolution:**
 
@@ -92,7 +92,7 @@ The corrected fix requires TWO changes together: (1) TOML on disk inside `src/<m
 
 ## R4: Test coverage
 
-**Decision:** Add one integration test that builds the wheel for `darnit-baseline`, installs it into an isolated environment, and asserts `get_framework_config_path()` returns a readable Path. Repeat (or parameterize) for `darnit-gittuf` and `darnit-reproducibility`.
+**Decision:** Add one integration test that builds the wheel for `darnit-baseline`, installs it into an isolated environment, and asserts `get_framework_config_path()` returns a readable Path. Repeat (or parameterize) for `darnit-gittuf` and `darnit-amber`.
 
 **Rationale:**
 

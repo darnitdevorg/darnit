@@ -149,7 +149,7 @@
 - [x] T034 [P] Register skills in project configuration — ensure `/audit`, `/context`, `/comply`, `/remediate` are discoverable as slash commands in Claude Code
 - [x] T035 [P] Update CLAUDE.md with skills documentation — add skill descriptions to Active Technologies section
 - [x] T036 Run `uv run ruff check .` and fix any linting issues in new/modified files
-- [x] T037 Run `uv run pytest tests/ --ignore=tests/integration/ --ignore=tests/darnit_reproducibility/ -q` — verify all tests pass
+- [x] T037 Run `uv run pytest tests/ --ignore=tests/integration/ --ignore=tests/darnit_amber/ -q` — verify all tests pass
 - [x] T038 Run `uv run python scripts/validate_sync.py --verbose` — verify spec-implementation sync
 - [x] T039 Validate quickstart.md scenarios work end-to-end in Claude Code
 

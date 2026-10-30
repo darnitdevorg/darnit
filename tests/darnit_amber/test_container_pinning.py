@@ -8,7 +8,7 @@ no sieve scaffolding.
 from __future__ import annotations
 
 import pytest
-from darnit_reproducibility.container_pinning import (
+from darnit_amber.container_pinning import (
     ContainerClassification,
     PinKind,
     classify,

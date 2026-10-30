@@ -2,7 +2,7 @@
 
 The `handler_registry.register()` API used to have a
 `default_authority = "suggestive"` fallback. Every plugin handler in
-darnit-gittuf, darnit-reproducibility, and darnit-baseline was registered
+darnit-gittuf, darnit-amber, and darnit-baseline was registered
 without the argument -- so every observation-based control from every
 plugin silently regressed PASS -> WARN because a suggestive result
 never terminates the Check phase.
@@ -90,9 +90,9 @@ class TestPluginHandlersAreDispositive:
         # darnit-gittuf
         "gittuf_verify_policy",
         "gittuf_commits_signed",
-        # darnit-reproducibility's repro_* step types left this list in
+        # darnit-amber's repro_* step types left this list in
         # feature 044 (FR-010): they decide from text and file-presence
-        # signals and register {fail} (tests/darnit_reproducibility/
+        # signals and register {fail} (tests/darnit_amber/
         # test_no_pass_from_signals.py).
         # darnit-baseline. generate_threat_model is a remediation handler
         # and concludes nothing (framework-design 3.0.1).
@@ -139,13 +139,13 @@ class TestPluginHandlersAreDispositive:
         except Exception:
             pass
 
-        # darnit-reproducibility
+        # darnit-amber
         try:
-            from darnit_reproducibility.implementation import (
-                ReproducibilityImplementation,
+            from darnit_amber.implementation import (
+                AmberImplementation,
             )
 
-            ReproducibilityImplementation().register_handlers()
+            AmberImplementation().register_handlers()
         except Exception:
             pass
 

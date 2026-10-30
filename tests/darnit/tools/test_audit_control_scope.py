@@ -47,9 +47,9 @@ def _ids(repo: Path, framework: str) -> list[str]:
 
 
 def test_each_audit_sees_only_its_framework(repo: Path) -> None:
-    reproducibility_cold = _ids(repo, "reproducibility")
+    reproducibility_cold = _ids(repo, "amber")
     baseline = _ids(repo, "openssf-baseline")
-    reproducibility_warm = _ids(repo, "reproducibility")
+    reproducibility_warm = _ids(repo, "amber")
 
     assert reproducibility_cold and all(i.startswith("RE-") for i in reproducibility_cold)
     assert reproducibility_warm == reproducibility_cold
