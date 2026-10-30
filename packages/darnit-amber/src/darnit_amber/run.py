@@ -340,7 +340,9 @@ def execute(
     rerun_of: str | None = None,
     tsa: str | None = TSA_URL,
     identity: bool = False,
+    publish: str | None = None,
 ) -> dict[str, Any]:
+    """``publish`` is a Rekor URL: each envelope is recorded there and the proof kept under ``publication``."""
     darnit_bin = Path(sys.executable).parent / "darnit"
     if not darnit_bin.exists():
         raise RunError(f"darnit CLI not found next to {sys.executable}")
@@ -411,10 +413,20 @@ def execute(
         commit = _git_commit(repo)
         subject_name = artifact if _is_url(artifact) else (_git_remote(repo) or str(repo))
 
+    envelopes = {"amber-audit": audit_env, **({"experiment": exp_env} if exp_env else {})}
+    publication = None
+    if publish:
+        from .publish import publish_envelope
+
+        try:
+            publication = {name: publish_envelope(env, key, publish) for name, env in envelopes.items()}
+        except Exception as e:  # noqa: BLE001 - the run is signed and stored anyway; say what did not get published
+            raise RunError(f"publishing to {publish} failed: {type(e).__name__}: {e}") from e
     predicate = {
         "started_at": started,
         "environment": _environment(),
-        "signing": _signing(key, {"amber-audit": audit_env, **({"experiment": exp_env} if exp_env else {})}, tsa),
+        "signing": _signing(key, envelopes, tsa),
+        "publication": publication,
         "corpus_entry": entry.get("id"),
         "entry": {
             "source": entry.get("_source", "file"),
@@ -446,7 +458,7 @@ def execute(
     bundle = {
         "id": bundle_id,
         "statement": statement,
-        "witness_envelopes": {"amber-audit": audit_env, **({"experiment": exp_env} if exp_env else {})},
+        "witness_envelopes": envelopes,
     }
     store.write(bundle_id, _canonical(bundle), "application/vnd.in-toto+json")
     for path, data in blobs.items():
@@ -463,6 +475,7 @@ def run(
     command: list[str] | None = None,
     tsa: str | None = TSA_URL,
     identity: bool = False,
+    publish: str | None = None,
 ) -> dict[str, Any]:
     """``command`` (argv after ``--``) overrides the entry's run.command; with no entry, everything else is inferred."""
     entry = load_entry(claims)
@@ -470,4 +483,4 @@ def run(
         entry = {**entry, "run": {**(entry.get("run") or {}), "command": shlex.join(command)}}
         if not claims:
             entry["_source"] = "inferred"
-    return execute(artifact, ref, key, entry, store, tsa=tsa, identity=identity)
+    return execute(artifact, ref, key, entry, store, tsa=tsa, identity=identity, publish=publish)

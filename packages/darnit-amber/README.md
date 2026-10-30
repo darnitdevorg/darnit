@@ -77,7 +77,7 @@ Nothing leaves the researcher's machine by default except a hash.
 |---|---|---|
 | default | the bundle was signed with the researcher's key and existed at the time in the RFC 3161 countersignature (Sigstore's timestamp authority) | the timestamp authority sees a hash of the signature, nothing else |
 | `--identity` | who signed: a short-lived Sigstore certificate from a GitHub/Google/institutional login | the identity (email or login) is recorded in Sigstore's public certificate log |
-| `--publish` (planned) | anyone can look the bundle up by hash in Rekor and see it has not been altered or backdated | the envelope and signer identity become public |
+| `--publish` | anyone can look the envelope up in Rekor, Sigstore's public log, and see it has not been altered or backdated | the envelope (hashes, command, environment, signature) and the signer become public; outputs do not |
 
 The default key is generated once, ed25519, under darnit's data directory
 (`~/.local/share/darnit/amber/signing.key` on Linux, mode 0600, with the
@@ -103,7 +103,25 @@ copy sigstore-python ships is used offline). For an `--identity` bundle it
 adds, per signature, the identity and issuer, whether the certificate
 chains to Fulcio in the same trusted root, and whether the timestamp falls
 in the certificate's window. A bundle is `verified` only when every check
-passes. Rekor inclusion comes with `--publish`.
+passes.
+
+`run --publish` records each Witness envelope in Rekor as a `dsse` entry
+(with the certificate, or the key's public half, as verifier) and keeps
+the log index, integrated time and inclusion proof under `publication`.
+Only the envelope is published: the experiment's outputs stay in the
+researcher's store. `verify` checks, per envelope, that the log entry is
+this envelope (payload hash and signatures), that the inclusion proof and
+its signed checkpoint verify against Rekor's key in the trusted root, and,
+unless `--offline`, that the log still holds the same entry at that index.
+`published` is true when every envelope passes.
+
+What `verified` means, by mode:
+
+| mode | `verify` establishes |
+|---|---|
+| default | this exact bundle, signed with a key the researcher holds, existed at the timestamp's time |
+| `--identity` | and who signed it: the login in the certificate |
+| `--publish` | and anyone can confirm it from the public log, without the researcher's cooperation |
 
 ## Entry files
 
