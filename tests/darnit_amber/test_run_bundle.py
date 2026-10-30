@@ -499,3 +499,26 @@ def test_identity_without_timestamp_is_refused(tmp_path, capsys):
     rc = main(["run", str(tmp_path), "--identity", "--no-timestamp", "--out", str(tmp_path / "out")])
     assert rc == 1
     assert "needs a timestamp" in capsys.readouterr().err
+
+
+def test_real_identity_bundle_verifies_offline():
+    """A bundle signed with a real Fulcio certificate on 2026-10-30 (md6796@nyu.edu via GitHub).
+
+    It stays verifiable after the certificate's ten minutes because verify uses the
+    timestamp's time; the Fulcio and TSA roots come from the trusted root sigstore ships.
+    """
+    from darnit_amber import rerun as rr
+
+    class Store:
+        _root = Path(__file__).parent / "fixtures"
+
+    out = rr.verify(Store(), "6de52228dbe31ec857742ac54a1b4cb2d93b83aa772cc2c71bb0bde473769ca2", None)
+    assert out["signatures"] == {"amber-audit": "see identity", "experiment": "see identity"}
+    for name in ("amber-audit", "experiment"):
+        (who,) = out["identity"][name]
+        assert who["subject"] == "md6796@nyu.edu"
+        assert who["issuer"] == "https://github.com/login/oauth"
+        assert who["signature"] == "ok" and who["chain"] == "ok"
+    assert out["timestamp_authority_trusted"] is True
+    assert out["identity_verified"] is True
+    assert out["verified"] is True
