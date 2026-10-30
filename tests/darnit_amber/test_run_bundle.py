@@ -546,9 +546,9 @@ def test_identity_without_timestamp_is_refused(tmp_path, capsys):
 
 # Real bundles made on the darnit VM (see the fixtures' README): verifiable forever because verify
 # uses the timestamp's time, and offline because the trusted root is the copy sigstore-python ships.
-FIXTURE_IDENTITY = "6de52228dbe31ec857742ac54a1b4cb2d93b83aa772cc2c71bb0bde473769ca2"
-FIXTURE_PUBLISHED = "047999f75203abd626ea5190ad82b530827450cb0ffd085ddea995dbe9917384"
-FIXTURE_PUBLISHED_LOG_INDEXES = {"amber-audit": 3596892495, "experiment": 3596895974}
+FIXTURE_IDENTITY = "97e67cac94a6de720146c3a6e4002c14bc37caf4aacc074447ff5424c1c7cbf5"
+FIXTURE_PUBLISHED = "7b3039f7e11b5dad4adad29901861c137c81e2003125cf820b6f31566c8ca844"
+FIXTURE_PUBLISHED_LOG_INDEXES = {"amber-audit": 3599179102, "experiment": 3599180143}
 
 
 @pytest.fixture

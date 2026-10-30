@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version == '3.13.*'",
@@ -551,6 +551,7 @@ dependencies = [
     { name = "cryptography" },
     { name = "darnit-core" },
     { name = "packaging" },
+    { name = "pyopenssl" },
     { name = "rfc3161-client" },
     { name = "sigstore" },
 ]
@@ -563,11 +564,12 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "boto3", specifier = ">=1.43.118" },
-    { name = "cryptography", specifier = ">=42" },
+    { name = "cryptography", specifier = ">=46" },
     { name = "darnit-core", editable = "packages/darnit" },
     { name = "packaging", specifier = ">=23.0" },
+    { name = "pyopenssl", specifier = ">=24" },
     { name = "rfc3161-client", specifier = ">=1.0" },
-    { name = "sigstore", specifier = ">=4.0" },
+    { name = "sigstore", specifier = ">=4.0,<5" },
 ]
 
 [package.metadata.requires-dev]
