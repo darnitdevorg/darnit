@@ -667,3 +667,30 @@ def test_run_publishes_every_envelope_and_records_it(monkeypatch, tmp_path):
     pub = bundle["statement"]["predicate"]["publication"]
     assert set(pub) == {"amber-audit", "experiment"}
     assert pub["experiment"]["log_index"] == 2
+
+
+def test_real_published_bundle_verifies_offline():
+    """A key-signed bundle published to Rekor on 2026-10-30 (log indexes 3596892495 and 3596895974).
+
+    Offline: the signature with the fixture's public key, the timestamp, and the inclusion
+    proof and checkpoint from the stored Rekor response against Rekor's key in the trusted root.
+    """
+    from darnit_amber import rerun as rr
+
+    class Store:
+        _root = Path(__file__).parent / "fixtures"
+
+    out = rr.verify(
+        Store(),
+        "047999f75203abd626ea5190ad82b530827450cb0ffd085ddea995dbe9917384",
+        Store._root / "047999f7-signing.pub",
+        online=False,
+    )
+    assert out["signatures"] == {"amber-audit": "ok", "experiment": "ok"}
+    assert out["timestamp_authority_trusted"] is True
+    for name, index in (("amber-audit", 3596892495), ("experiment", 3596895974)):
+        p = out["publication"][name]
+        assert p["log_index"] == index
+        assert p["entry_matches_envelope"] is True and p["inclusion"] == "ok" and p["online"] is None
+    assert out["published"] is True
+    assert out["verified"] is True
