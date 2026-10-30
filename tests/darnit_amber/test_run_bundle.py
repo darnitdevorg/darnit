@@ -158,7 +158,7 @@ def test_rerun_compares_claims_not_just_files(monkeypatch, tmp_path):
     }
     seen = {}
 
-    def fake_execute(artifact, ref, key, entry, store, rerun_of=None, tsa=None, identity=False):
+    def fake_execute(artifact, ref, key, entry, store, rerun_of=None, **kw):
         seen["entry"] = entry
         return {
             "statement": {
@@ -522,3 +522,148 @@ def test_real_identity_bundle_verifies_offline():
     assert out["timestamp_authority_trusted"] is True
     assert out["identity_verified"] is True
     assert out["verified"] is True
+
+
+# --- --publish (Rekor) ---
+
+
+def test_dsse_envelope_for_rekor_drops_witness_extras():
+    from darnit_amber.publish import _dsse_envelope, _verifiers
+
+    env = {
+        "payload": "eA==",
+        "payloadType": "t",
+        "signatures": [{"keyid": "k", "sig": "c2ln", "certificate": "Q0VSVA==", "timestamps": [{"x": 1}]}],
+    }
+    assert json.loads(_dsse_envelope(env)) == {
+        "payload": "eA==",
+        "payloadType": "t",
+        "signatures": [{"keyid": "k", "sig": "c2ln"}],
+    }
+    assert _verifiers(env, None) == ["Q0VSVA=="]  # the certificate is the verifier
+
+
+def test_verifiers_for_a_key_signed_envelope_is_the_public_key(tmp_path, monkeypatch):
+    from darnit_amber.publish import _verifiers
+
+    monkeypatch.setattr("darnit.stores.defaults.platform_paths.user_data_root", lambda: tmp_path)
+    key = amber_run.default_key()
+    (verifier,) = _verifiers({"signatures": [{"sig": "c2ln"}]}, key)
+    assert base64.b64decode(verifier).startswith(b"-----BEGIN PUBLIC KEY-----")
+    with pytest.raises(ValueError):
+        _verifiers({"signatures": [{"sig": "c2ln"}]}, None)
+
+
+def _rekor_record(env, payload_hash=None, sigs=None):
+    body = {
+        "apiVersion": "0.0.1",
+        "kind": "dsse",
+        "spec": {
+            "payloadHash": {
+                "algorithm": "sha256",
+                "value": payload_hash or hashlib.sha256(base64.b64decode(env["payload"])).hexdigest(),
+            },
+            "signatures": [{"signature": s, "verifier": "x"} for s in (sigs or [s["sig"] for s in env["signatures"]])],
+        },
+    }
+    entry = {
+        "body": base64.b64encode(json.dumps(body).encode()).decode(),
+        "integratedTime": 1793000000,
+        "logID": "ab",
+        "logIndex": 7,
+        "verification": {},
+    }
+    return {
+        "log": "https://rekor.example",
+        "uuid": "u",
+        "log_index": 7,
+        "integrated_time": 1793000000,
+        "response": {"u": entry},
+    }
+
+
+def test_verify_publication_matches_entry_to_envelope_before_the_proof(monkeypatch):
+    from darnit_amber import publish as pub
+
+    env = {"payload": "eA==", "payloadType": "t", "signatures": [{"keyid": "k", "sig": "c2ln"}]}
+
+    class Entry:
+        @classmethod
+        def _from_v1_response(cls, response):
+            return cls()
+
+        def _verify(self, keyring):
+            return None
+
+    class Root:
+        def rekor_keyring(self, purpose):
+            return object()
+
+    monkeypatch.setattr("sigstore.models.TransparencyLogEntry", Entry)
+    good = pub.verify_publication(env, _rekor_record(env), Root(), online=False)
+    assert good["entry_matches_envelope"] is True and good["inclusion"] == "ok" and good["ok"] is True
+    assert good["integrated_time"].startswith("2026-10-")
+    assert good["online"] is None
+
+    other = pub.verify_publication(env, _rekor_record(env, payload_hash="00" * 32), Root(), online=False)
+    assert other["entry_matches_envelope"] is False and other["ok"] is False and other["inclusion"] is None
+
+    forged = pub.verify_publication(env, _rekor_record(env, sigs=["b3RoZXI="]), Root(), online=False)
+    assert forged["ok"] is False
+
+
+def test_verify_publication_reports_a_bad_proof(monkeypatch):
+    from darnit_amber import publish as pub
+
+    env = {"payload": "eA==", "payloadType": "t", "signatures": [{"keyid": "k", "sig": "c2ln"}]}
+
+    class Entry:
+        @classmethod
+        def _from_v1_response(cls, response):
+            return cls()
+
+        def _verify(self, keyring):
+            raise ValueError("inclusion proof contains invalid root hash")
+
+    class Root:
+        def rekor_keyring(self, purpose):
+            return object()
+
+    monkeypatch.setattr("sigstore.models.TransparencyLogEntry", Entry)
+    out = pub.verify_publication(env, _rekor_record(env), Root(), online=False)
+    assert out["inclusion"].startswith("invalid: ValueError") and out["ok"] is False
+
+
+def test_run_publishes_every_envelope_and_records_it(monkeypatch, tmp_path):
+    """With --publish, each Witness envelope is sent once and the record lands in the predicate."""
+    from darnit_amber import run as r
+
+    env = {
+        "payload": base64.b64encode(json.dumps({"predicate": {"attestations": []}}).encode()).decode(),
+        "payloadType": "t",
+        "signatures": [{"sig": "c2ln"}],
+    }
+    sent = []
+    monkeypatch.setattr(r, "_witness", lambda *a, **k: (env, {"command-run": {"exitcode": 0}, "product": {}}))
+    monkeypatch.setattr(r.Path, "exists", lambda self: True)
+    monkeypatch.setattr(r, "_clone", lambda *a: tmp_path)
+    (tmp_path / r.AUDIT_OUTPUT).write_text('{"results": []}')
+    monkeypatch.setattr("darnit.stores.defaults.platform_paths.user_data_root", lambda: tmp_path)
+    monkeypatch.setattr(
+        "darnit_amber.publish.publish_envelope",
+        lambda e, key, url: (
+            sent.append(url) or {"log": url, "uuid": "u", "log_index": len(sent), "integrated_time": 1, "response": {}}
+        ),
+    )
+
+    class Store:
+        def write(self, *a):
+            pass
+
+    bundle = r.execute(
+        str(tmp_path), None, None, {"run": {"command": "true"}}, Store(), publish="https://rekor.example"
+    )
+    assert sent == ["https://rekor.example", "https://rekor.example"]
+    pub = bundle["statement"]["predicate"]["publication"]
+    assert set(pub) == {"amber-audit", "experiment"}
+    assert pub["experiment"]["log_index"] == 2

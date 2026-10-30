@@ -11,6 +11,7 @@ from typing import Any
 
 from .identity import pae as _pae
 from .identity import verify_identity_signature
+from .publish import verify_publication
 from .run import TSA_URL, RunError, _canonical, execute
 
 
@@ -162,7 +163,7 @@ def _verify_envelope(env: dict[str, Any], pubkey: Path | None) -> str:
     raise RunError("no Witness signature verifies with the given public key")
 
 
-def verify(store: Any, bundle_id: str, pubkey: Path | None) -> dict[str, Any]:
+def verify(store: Any, bundle_id: str, pubkey: Path | None, online: bool = True) -> dict[str, Any]:
     bundle = read_bundle(store, bundle_id)
     stmt = bundle["statement"]
     recomputed = hashlib.sha256(_canonical(stmt)).hexdigest()
@@ -188,13 +189,27 @@ def verify(store: Any, bundle_id: str, pubkey: Path | None) -> dict[str, Any]:
         checks["identity_verified"] = all(i.get("ok") for ids in identities.values() for i in ids) and all(
             identities.values()
         )
+    publication = stmt["predicate"].get("publication")
+    if publication:
+        checks["publication"] = {}
+        for name, record in publication.items():
+            try:
+                checks["publication"][name] = verify_publication(envs[name], record, _trusted_root(), online=online)
+            except Exception as e:  # noqa: BLE001 - reported, never fatal
+                checks["publication"][name] = {"ok": False, "error": f"{type(e).__name__}: {e}"}
+        checks["published"] = all(p.get("ok") for p in checks["publication"].values())
     checks["signing"] = stmt["predicate"].get("signing")
     checks["verified"] = all(v is True for k, v in checks.items() if isinstance(v, bool))
     return {"id": bundle_id, "subject": stmt["subject"][0], **checks}
 
 
 def rerun(
-    store: Any, bundle_id: str, key: Path | None, tsa: str | None = TSA_URL, identity: bool = False
+    store: Any,
+    bundle_id: str,
+    key: Path | None,
+    tsa: str | None = TSA_URL,
+    identity: bool = False,
+    publish: str | None = None,
 ) -> dict[str, Any]:
     first = read_bundle(store, bundle_id)
     stmt = first["statement"]
@@ -210,7 +225,7 @@ def rerun(
         "run": {"command": exp["command"], "outputs": [o["path"] for o in exp["outputs"]]},
         "claims": [{k: v for k, v in c.items() if k not in ("measured", "verdict", "reason")} for c in first_claims],
     }
-    new = execute(artifact, commit, key, entry, store, rerun_of=bundle_id, tsa=tsa, identity=identity)
+    new = execute(artifact, commit, key, entry, store, rerun_of=bundle_id, tsa=tsa, identity=identity, publish=publish)
     new_pred = new["statement"]["predicate"]
     mine = {o["path"]: o["sha256"] for o in new_pred["experiment"]["outputs"]}
     outputs = [
