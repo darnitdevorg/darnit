@@ -18,7 +18,7 @@ TOML. Every table forbids unknown keys. Errors name the file and the dotted key.
 schema_version = 1
 
 [plugins]
-allowed = ["openssf-baseline", "reproducibility"]   # empty or absent: all installed
+allowed = ["openssf-baseline", "amber"]   # empty or absent: all installed
 trusted_publishers = ["https://github.com/darnitdevorg"]
 allow_unsigned = false
 

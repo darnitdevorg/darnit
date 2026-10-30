@@ -116,7 +116,7 @@ packages/darnit-baseline/src/darnit_baseline/
 `-- tools.py                      # remediate_audit_findings(approve), enable_branch_protection(dry_run=True, branch=None, approve)
 
 packages/darnit-csl/src/darnit_csl/mcp_tools.py   # dry_run=True; README edit as FileChange
-packages/darnit-reproducibility/.../reproducibility.toml  # uv lock: effects/offline declaration (not offline -> not previewable)
+packages/darnit-amber/.../amber.toml  # uv lock: effects/offline declaration (not offline -> not previewable)
 
 docs/architecture/framework-design.md   # updated first
 scripts/validate_sync.py                # removed properties; exec platform-command check

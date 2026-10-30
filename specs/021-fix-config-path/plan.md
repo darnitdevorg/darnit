@@ -6,9 +6,9 @@
 
 ## Summary
 
-Fix a packaging bug in all three implementation packages (`darnit-baseline`, `darnit-gittuf`, `darnit-reproducibility`): `get_framework_config_path()` uses `Path(__file__).parent.parent.parent / "<framework>.toml"`, which only resolves correctly in an editable checkout. In a wheel install, the ascend-three-levels walk lands outside the package and, more fundamentally, the TOML file is not included in the wheel at all.
+Fix a packaging bug in all three implementation packages (`darnit-baseline`, `darnit-gittuf`, `darnit-amber`): `get_framework_config_path()` uses `Path(__file__).parent.parent.parent / "<framework>.toml"`, which only resolves correctly in an editable checkout. In a wheel install, the ascend-three-levels walk lands outside the package and, more fundamentally, the TOML file is not included in the wheel at all.
 
-**Fix applied (revised during implementation):** move each framework TOML INTO its `src/<module>/` tree (`packages/darnit-baseline/openssf-baseline.toml` -> `packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml`, and the same for `gittuf.toml` and `reproducibility.toml`). Hatchling's default `packages = ["src/<module>"]` glob then includes the TOML in the wheel automatically. `get_framework_config_path()` uses `importlib.resources.files(__package__) / "<toml>"` to resolve it at runtime. This works for both editable installs (importlib.resources finds the TOML in the source tree) and wheel installs (finds it in `site-packages/<module>/`). Matches the pattern already used by `darnit-hello` (the plugin reference implementation).
+**Fix applied (revised during implementation):** move each framework TOML INTO its `src/<module>/` tree (`packages/darnit-baseline/openssf-baseline.toml` -> `packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml`, and the same for `gittuf.toml` and `amber.toml`). Hatchling's default `packages = ["src/<module>"]` glob then includes the TOML in the wheel automatically. `get_framework_config_path()` uses `importlib.resources.files(__package__) / "<toml>"` to resolve it at runtime. This works for both editable installs (importlib.resources finds the TOML in the source tree) and wheel installs (finds it in `site-packages/<module>/`). Matches the pattern already used by `darnit-hello` (the plugin reference implementation).
 
 **Revision from the original plan:** the plan initially chose Option B (force-include the TOML from the sibling location into the wheel, keeping the on-disk layout unchanged). Implementation revealed that `importlib.resources.files(__package__)` returns the src tree, not the sibling location, so the resolver could not find the TOML under editable installs. See `research.md` R3-revised for details. Option A (move) is what shipped.
 
@@ -26,7 +26,7 @@ A wheel-install integration test (`tests/packaging/test_wheel_install_config.py`
 
 **Target Platform**: Any Python 3.11+ install path (`uv sync` editable checkout, `uv tool install`, `pip install`, container image, `shiv` binary). Zipped-import installs are not a supported channel today; the fix does not preclude them but does not add coverage.
 
-**Project Type**: Library + CLI (Python package workspace). The change touches three implementation packages (`packages/darnit-baseline/`, `packages/darnit-gittuf/`, `packages/darnit-reproducibility/`); no framework core changes.
+**Project Type**: Library + CLI (Python package workspace). The change touches three implementation packages (`packages/darnit-baseline/`, `packages/darnit-gittuf/`, `packages/darnit-amber/`); no framework core changes.
 
 **Performance Goals**: N/A. Config loading is not on a hot path.
 
@@ -76,10 +76,10 @@ packages/darnit-gittuf/
 └── src/darnit_gittuf/
     └── implementation.py            # get_framework_config_path() uses importlib.resources
 
-packages/darnit-reproducibility/
-├── reproducibility.toml             # Unchanged on disk; force-include added
-├── pyproject.toml                   # + force-include entry for reproducibility.toml
-└── src/darnit_reproducibility/
+packages/darnit-amber/
+├── amber.toml             # Unchanged on disk; force-include added
+├── pyproject.toml                   # + force-include entry for amber.toml
+└── src/darnit_amber/
     └── implementation.py            # get_framework_config_path() uses importlib.resources
 
 tests/darnit_baseline/                 (or a shared location — decided in tasks)

@@ -25,7 +25,7 @@ WARN joins that first tuple and maps to `CONCLUDE_WARN` under terminal authority
 
 **Rationale**: the authority gate is the mechanism feature 025 introduced so that a non-authoritative step cannot conclude a control. A WARN that bypassed it would let an LLM step (suggestive) halt verification before a dispositive step ever ran. That is the safe direction for compliance arithmetic, but it would silently reduce how much verification actually happens, and it would make WARN the one outcome exempt from the rule the rest of the pipeline obeys. Symmetry is both safer and easier to reason about.
 
-`repro_deps_pinned` is registered `default_authority="dispositive"` (`darnit-reproducibility/implementation.py:125`), so its WARN concludes.
+`repro_deps_pinned` is registered `default_authority="dispositive"` (`darnit-amber/implementation.py:125`), so its WARN concludes.
 
 **Alternatives considered**:
 - *Handler returns INCONCLUSIVE; rely on the all-inconclusive fallthrough* (`orchestrator.py:585`). Rejected during `/speckit-clarify`: the fallthrough emits a fixed string and drops the handler's message, so the operator reads "Could not automatically verify" about a file the tool read successfully.
@@ -58,7 +58,7 @@ WARN joins that first tuple and maps to `CONCLUDE_WARN` under terminal authority
 
 ## R4: Parsing PEP 440 requirements
 
-**Decision**: use `packaging` (`packaging.requirements.Requirement`, `packaging.specifiers.SpecifierSet`), and declare it explicitly in `packages/darnit-reproducibility/pyproject.toml`.
+**Decision**: use `packaging` (`packaging.requirements.Requirement`, `packaging.specifiers.SpecifierSet`), and declare it explicitly in `packages/darnit-amber/pyproject.toml`.
 
 **Verified facts**:
 - `packaging` 26.0 resolves in the workspace venv today, but `uv pip show packaging` reports `Required-by: pytest` -- that is, it is present as a *test* dependency.
