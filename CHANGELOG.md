@@ -482,6 +482,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   automated workflow edits with manual guidance.
   ([#512](https://github.com/darnitdevorg/darnit/issues/512),
   [#513](https://github.com/darnitdevorg/darnit/issues/513))
+- **BREAKING:** the `darnit-reproducibility` plugin is renamed `darnit-amber`:
+  package `darnit_amber`, framework and MCP server name `amber`,
+  `AmberImplementation`, `amber.toml`. Control ids (`RE-*`), handler names
+  (`repro_*`) and the `audit_reproducibility` MCP tool are unchanged (#532).
+  Migration:
+  - `darnit-mcp` depends on a transitional `darnit-reproducibility` for this
+    one release: it has no entry points and only pulls in `darnit-amber`, so
+    upgrading `darnit-mcp` replaces the old plugin instead of leaving it
+    installed beside the new one. After upgrading, `pip uninstall
+    darnit-reproducibility`; the next release drops it.
+  - Rename `reproducibility` to `amber` in `darnit audit -f`, `darnit serve
+    --framework`, MCP client configurations (server name and framework
+    argument), and operator configuration: `[plugins].allowed` and
+    `[[compose]] source`.
+  - Python code: `import darnit_amber`; `darnit_reproducibility` re-exports it
+    with a `DeprecationWarning` for this release.
 - In OpenSSF Baseline assessment attestation predicates, `assessor.name`
   changes from `openssf-baseline-mcp` to `openssf-baseline`, `assessor.uri`
   points to `https://github.com/darnitdevorg/darnit`, `assessor.version`

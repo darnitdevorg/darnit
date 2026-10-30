@@ -42,7 +42,7 @@ darnit audit --implementation hello
 
 ## Where to go next
 
-`darnit-hello` is the plugin template: deliberately the smallest plugin that the framework will discover, audit, and report against. Read this one first. Once you understand the entry-point + ComplianceImplementation surface, look at `darnit-reproducibility` and `darnit-gittuf` for custom step types registered in `register_handlers()`, and `darnit-baseline` for a full framework. (`darnit-testchecks` is a test-only plugin, not a template.)
+`darnit-hello` is the plugin template: deliberately the smallest plugin that the framework will discover, audit, and report against. Read this one first. Once you understand the entry-point + ComplianceImplementation surface, look at `darnit-amber` and `darnit-gittuf` for custom step types registered in `register_handlers()`, and `darnit-baseline` for a full framework. (`darnit-testchecks` is a test-only plugin, not a template.)
 
 ## License
 

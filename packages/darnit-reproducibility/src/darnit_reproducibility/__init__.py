@@ -1,22 +1,15 @@
-"""Scientific reproducibility plugin for darnit."""
+"""Transitional: ``darnit_reproducibility`` is now ``darnit_amber`` (#532). Removed after one release."""
 
-from pathlib import Path
+import warnings
 
-from .implementation import ReproducibilityImplementation
+from darnit_amber import AmberImplementation, get_framework_path, register
 
+warnings.warn(
+    "darnit_reproducibility is now darnit_amber; uninstall darnit-reproducibility and import darnit_amber",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
-def register() -> ReproducibilityImplementation:
-    """Entry point called by darnit plugin discovery."""
-    return ReproducibilityImplementation()
+ReproducibilityImplementation = AmberImplementation
 
-
-def get_framework_path() -> Path:
-    # Required by the 'darnit.frameworks' entry point: the framework registry
-    # (config/merger.py) resolves framework TOMLs via this path for `darnit list`
-    # and name lookup. The 'darnit.implementations' get_framework_config_path()
-    # feeds the audit path instead; both entry points are required. Delegating
-    # here ensures both paths use the same importlib.resources resolver.
-    return ReproducibilityImplementation().get_framework_config_path()
-
-
-__all__ = ["ReproducibilityImplementation", "register", "get_framework_path"]
+__all__ = ["AmberImplementation", "ReproducibilityImplementation", "register", "get_framework_path"]

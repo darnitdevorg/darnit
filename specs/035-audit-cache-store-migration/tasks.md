@@ -133,7 +133,7 @@ description: "Task breakdown for feature 035 (audit-cache store migration)"
 
 - [X] T015 Walk through [quickstart.md](quickstart.md) Example 1 (CI operator) manually against `/tmp/test-repo`: initialize a git repo, add `.baseline.toml` with `[stores.cache] backend = "local-fs" root = "/tmp/qs-cache"`, run `darnit audit /tmp/test-repo --level 1`, confirm `/tmp/qs-cache/<hash>.json` exists, run again, confirm the log line "Audit cache hit ..." fires (from `read_audit_cache`'s existing debug log; may need to bump log level to see it). Verifies end-to-end wiring outside of pytest fixtures.
 
-- [X] T016 Confirm no product-package or plugin-package import surfaces changed. Grep for `write_audit_cache\|read_audit_cache\|invalidate_audit_cache` under `packages/` and `packages/darnit-baseline/`, `packages/darnit-gittuf/`, `packages/darnit-reproducibility/`, `packages/darnit-hello/`: any hits outside `packages/darnit/src/darnit/{core,tools}/` and `tests/` are unexpected and should be inspected. Locks SC-009 (file-scope boundary).
+- [X] T016 Confirm no product-package or plugin-package import surfaces changed. Grep for `write_audit_cache\|read_audit_cache\|invalidate_audit_cache` under `packages/` and `packages/darnit-baseline/`, `packages/darnit-gittuf/`, `packages/darnit-amber/`, `packages/darnit-hello/`: any hits outside `packages/darnit/src/darnit/{core,tools}/` and `tests/` are unexpected and should be inspected. Locks SC-009 (file-scope boundary).
 
 ---
 
