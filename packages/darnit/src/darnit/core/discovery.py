@@ -126,7 +126,7 @@ def register_implementation_handlers(framework_name: str | None) -> bool:
     implementations are cached, so repeat calls are cheap and safe.
 
     Args:
-        framework_name: Implementation name (e.g. ``"reproducibility"``).
+        framework_name: Implementation name (e.g. ``"amber"``).
             ``None`` is accepted and is a no-op, so callers that may not
             have resolved a framework do not need to guard.
 

@@ -9,7 +9,7 @@ defined here explicitly rather than borrowed.
 Two things this module exists to work around, both pre-existing:
 
 1. Control registration is process-global and leaks across frameworks. A
-   `reproducibility` audit returns 5 controls in a clean process and 71 (65 of
+   `amber` audit returns 5 controls in a clean process and 71 (65 of
    them OSPS baseline) if an `openssf-baseline` audit ran earlier in the same
    process. Each pair therefore runs in a fresh subprocess. Filed as #442.
 
@@ -20,7 +20,7 @@ Two things this module exists to work around, both pre-existing:
 The corpus is deliberately narrower than "every framework x every fixture". The
 full cross product did not finish in 12 minutes, because every exec handler
 that shells out to `gh` pays a network timeout per control. What is kept is
-what SC-008 needs: `reproducibility` is the framework this feature changes, and
+what SC-008 needs: `amber` is the framework this feature changes, and
 `openssf-baseline` is the largest control set and exercises the most handler
 dispatch paths.
 
@@ -49,12 +49,12 @@ PARITY_FIXTURES = REPO_ROOT / "tests" / "darnit" / "parity" / "fixtures"
 # shells out to `gh` pays a network timeout per control. A baseline nobody will
 # re-run is not a baseline.
 #
-# What is kept is what SC-008 actually needs. `reproducibility` is the framework
+# What is kept is what SC-008 actually needs. `amber` is the framework
 # this feature changes; `openssf-baseline` is the largest control set and the
 # one exercising the most handler dispatch paths. The network-dependent controls
 # that were dropped are precisely the ones the two-run diff would have excluded
 # as nondeterministic anyway, so their coverage was illusory.
-FRAMEWORK_NAMES = ("reproducibility", "openssf-baseline")
+FRAMEWORK_NAMES = ("amber", "openssf-baseline")
 FIXTURE_NAMES = ("all_pass_repo", "mixed_repo")
 
 
@@ -186,8 +186,8 @@ def capture(neutralize: bool = False) -> dict[str, dict[str, str]]:
     Each pair runs in a FRESH SUBPROCESS. This is not defensive style, it is
     required for the capture to mean anything: control registration is
     process-global and leaks across frameworks. Auditing `openssf-baseline`
-    and then `reproducibility` in one process yields 71 controls for
-    reproducibility instead of 5, 65 of them OSPS baseline controls. In-process
+    and then `amber` in one process yields 71 controls for
+    amber instead of 5, 65 of them OSPS baseline controls. In-process
     capture therefore produced a 46% "nondeterministic" exclusion rate that was
     entirely this leak rather than any real nondeterminism.
 

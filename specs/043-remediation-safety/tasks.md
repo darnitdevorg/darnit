@@ -18,7 +18,7 @@
 - Core: `packages/darnit/src/darnit/`
 - Baseline implementation: `packages/darnit-baseline/src/darnit_baseline/`
 - CSL implementation: `packages/darnit-csl/src/darnit_csl/`
-- Reproducibility implementation: `packages/darnit-reproducibility/src/darnit_reproducibility/`
+- Reproducibility implementation: `packages/darnit-amber/src/darnit_amber/`
 - Tests: `tests/darnit/`, `tests/darnit_baseline/`, `tests/darnit_csl/`
 
 ---
@@ -307,7 +307,7 @@
 - [X] T051 [US5] Enforce individual approval in batch apply for `safe = false`, `previewable = False` and high-impact items in `packages/darnit/src/darnit/remediation/executor.py`. Remove `requires_confirmation`, `dry_run_supported` and `dry_run_command` from `packages/darnit/src/darnit/config/framework_schema.py`. Add checks to `scripts/validate_sync.py`: the removed properties, `api_call`, and exec remediations calling platform commands.
 - [X] T052 [US5] Update shipped TOML:
   - Baseline: `safe` re-evaluated per remediation; zizmor `effects = "working_tree"`, `offline = true`; the removed properties deleted (`packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml`);
-  - reproducibility: `uv lock` with `effects = "working_tree"`, not offline, so it is not previewable; drop `dry_run_command` (`packages/darnit-reproducibility/src/darnit_reproducibility/reproducibility.toml`);
+  - reproducibility: `uv lock` with `effects = "working_tree"`, not offline, so it is not previewable; drop `dry_run_command` (`packages/darnit-amber/src/darnit_amber/amber.toml`);
   - any CSL, gittuf, testchecks, hello or example TOML using the removed properties.
 - [X] T053 [US5] Give the plugin remediation handler `generate_threat_model` a plan mode, or register it `supports_plan=False` so it is reported as not previewable, in `packages/darnit-baseline/src/darnit_baseline/implementation.py`.
 - [X] T054 [US5] Add `dry_run: bool = True` to `remediate_community_spec`. Route its README edit through the executor as a `FileChange` so it appears in the preview and the manifest. File: `packages/darnit-csl/src/darnit_csl/mcp_tools.py`.

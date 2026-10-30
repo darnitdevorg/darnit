@@ -6,7 +6,7 @@ Two models, in two packages. The plugin model describes what a requirements file
 
 ---
 
-## Plugin model (`darnit_reproducibility.requirements_pins`)
+## Plugin model (`darnit_amber.requirements_pins`)
 
 ### `RequirementLine`
 

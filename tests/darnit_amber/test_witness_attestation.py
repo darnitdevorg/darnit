@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from darnit_reproducibility import witness_attestation as wa
+from darnit_amber import witness_attestation as wa
 
 from darnit.sieve.handler_registry import HandlerContext
 

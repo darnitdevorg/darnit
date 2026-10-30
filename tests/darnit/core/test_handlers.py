@@ -309,7 +309,7 @@ class TestDarnitBaselineIntegration:
 
         for path in (
             "darnit_gittuf.implementation:GittufImplementation",
-            "darnit_reproducibility.implementation:ReproducibilityImplementation",
+            "darnit_amber.implementation:AmberImplementation",
             "darnit_hello.implementation:HelloImplementation",
             "darnit_csl.mcp_tools:remediate_community_spec",
         ):

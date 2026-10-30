@@ -3,10 +3,10 @@
 import importlib.metadata
 from pathlib import Path
 
-from darnit_reproducibility import handlers
+from darnit_amber import handlers
 
 
-class ReproducibilityImplementation:
+class AmberImplementation:
     """Scientific reproducibility checks plugin.
 
     Provides checks for dependency pinning, build environment
@@ -16,7 +16,7 @@ class ReproducibilityImplementation:
 
     @property
     def name(self) -> str:
-        return "reproducibility"
+        return "amber"
 
     @property
     def display_name(self) -> str:
@@ -25,7 +25,7 @@ class ReproducibilityImplementation:
     @property
     def version(self) -> str:
         try:
-            return importlib.metadata.version("darnit-reproducibility")
+            return importlib.metadata.version("darnit-amber")
         except importlib.metadata.PackageNotFoundError:
             return "dev"
 
@@ -36,11 +36,11 @@ class ReproducibilityImplementation:
     def get_framework_config_path(self) -> Path | None:
         from importlib.resources import files
 
-        resource = files(__package__) / "reproducibility.toml"
+        resource = files(__package__) / "amber.toml"
         path = Path(str(resource))
         if not path.is_file():
             raise FileNotFoundError(
-                f"reproducibility.toml not found in installed darnit_reproducibility "
+                f"amber.toml not found in installed darnit_amber "
                 f"package at {path}. This indicates a broken build; check the "
                 f"wheel's force-include configuration."
             )

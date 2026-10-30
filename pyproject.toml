@@ -21,6 +21,9 @@ dependencies = [
     "darnit-core>=0.1.1",
     "darnit-baseline>=0.1.1",
     "darnit-gittuf>=0.1.1",
+    "darnit-amber>=0.1.1",
+    # Transitional for one release (#532): replaces the old darnit-reproducibility
+    # plugin on upgrade with a shell that only depends on darnit-amber.
     "darnit-reproducibility>=0.1.1",
 ]
 
@@ -31,7 +34,7 @@ Issues = "https://github.com/kusari-oss/darnit/issues"
 
 # darnit-mcp is a metadata-only meta-package: no source, only dependencies
 # that pull in darnit-core, darnit-baseline, darnit-gittuf, and
-# darnit-reproducibility. hatchling matches the backend the sibling packages
+# darnit-amber. hatchling matches the backend the sibling packages
 # use; bypass-selection tells it to produce a wheel with no code payload.
 [build-system]
 requires = ["hatchling"]
@@ -71,6 +74,7 @@ members = ["packages/*"]
 darnit-core = { workspace = true }
 darnit-baseline = { workspace = true }
 darnit-gittuf = { workspace = true }
+darnit-amber = { workspace = true }
 darnit-reproducibility = { workspace = true }
 darnit-hello = { workspace = true }
 darnit-testchecks = { workspace = true }

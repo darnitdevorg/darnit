@@ -2,11 +2,11 @@
 
 **Feature**: 038 | **Date**: 2026-09-20
 
-Two new models and one changed verdict table. All within `darnit-reproducibility`.
+Two new models and one changed verdict table. All within `darnit-amber`.
 
 ---
 
-## Container pinning (`darnit_reproducibility.container_pinning`)
+## Container pinning (`darnit_amber.container_pinning`)
 
 A pure text-to-classification module, matching the boundary feature 037 drew for `requirements_pins`: it takes the contents of a container build file and returns a classification. It performs no file discovery and constructs no `HandlerResult`.
 
