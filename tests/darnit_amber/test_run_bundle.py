@@ -1,7 +1,9 @@
 """Tests for ``darnit-amber run`` (issue #677, PR A). No witness binary needed."""
 
 import base64
+import hashlib
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -156,7 +158,7 @@ def test_rerun_compares_claims_not_just_files(monkeypatch, tmp_path):
     }
     seen = {}
 
-    def fake_execute(artifact, ref, key, entry, store, rerun_of=None, tsa=None):
+    def fake_execute(artifact, ref, key, entry, store, rerun_of=None, tsa=None, identity=False):
         seen["entry"] = entry
         return {
             "statement": {
@@ -201,7 +203,7 @@ def test_run_command_after_dashdash_builds_inferred_entry(monkeypatch, tmp_path)
     from darnit_amber import run as r
 
     seen = {}
-    monkeypatch.setattr(r, "execute", lambda artifact, ref, key, entry, store, tsa=None: seen.update(entry) or {})
+    monkeypatch.setattr(r, "execute", lambda artifact, ref, key, entry, store, **kw: seen.update(entry) or {})
     r.run(".", None, tmp_path / "k", None, None, ["sh", "-c", "echo hi > a.txt"])
     assert seen["run"] == {"command": "sh -c 'echo hi > a.txt'"}
     assert seen["_source"] == "inferred"
@@ -331,3 +333,169 @@ def test_trusted_root_falls_back_to_the_bundled_copy_offline(monkeypatch):
     monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:9")
     root = rr._trusted_root()
     assert root.get_timestamp_authorities(), "sigstore's bundled trusted root has a timestamp authority"
+
+
+# --- --identity (Fulcio): the verification path, with a chain made here instead of a login ---
+
+
+def _make_chain(email="marc@example.edu", issuer="https://github.com/login/oauth"):
+    """A root CA and a ten-minute leaf shaped like Fulcio's, valid around NOW."""
+    from datetime import timedelta
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID, ObjectIdentifier
+
+    now = datetime.now(UTC).replace(microsecond=0)
+    root_key = ec.generate_private_key(ec.SECP256R1())
+    root_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "test root")])
+    root = (
+        x509.CertificateBuilder()
+        .subject_name(root_name)
+        .issuer_name(root_name)
+        .public_key(root_key.public_key())
+        .serial_number(1)
+        .not_valid_before(now - timedelta(days=1))
+        .not_valid_after(now + timedelta(days=1))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+        .sign(root_key, hashes.SHA256())
+    )
+    leaf_key = ec.generate_private_key(ec.SECP256R1())
+    der_utf8 = bytes([0x0C, len(issuer)]) + issuer.encode()
+    leaf = (
+        x509.CertificateBuilder()
+        .subject_name(x509.Name([]))
+        .issuer_name(root_name)
+        .public_key(leaf_key.public_key())
+        .serial_number(2)
+        .not_valid_before(now - timedelta(minutes=1))
+        .not_valid_after(now + timedelta(minutes=9))
+        .add_extension(x509.SubjectAlternativeName([x509.RFC822Name(email)]), critical=True)
+        .add_extension(x509.UnrecognizedExtension(ObjectIdentifier("1.3.6.1.4.1.57264.1.8"), der_utf8), critical=False)
+        .sign(root_key, hashes.SHA256())
+    )
+    return root, leaf, leaf_key, now
+
+
+def _identity_envelope(leaf, leaf_key):
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from darnit_amber.identity import pae
+
+    payload = b'{"hello":"world"}'
+    sig = leaf_key.sign(pae("application/vnd.in-toto+json", payload), ec.ECDSA(hashes.SHA256()))
+    pem = leaf.public_bytes(serialization.Encoding.PEM)
+    return {
+        "payloadType": "application/vnd.in-toto+json",
+        "payload": base64.b64encode(payload).decode(),
+        "signatures": [
+            {"keyid": "", "sig": base64.b64encode(sig).decode(), "certificate": base64.b64encode(pem).decode()}
+        ],
+    }
+
+
+def test_certificate_identity_reads_san_and_fulcio_issuer():
+    from darnit_amber.identity import certificate_identity
+
+    _root, leaf, _key, _now = _make_chain()
+    who = certificate_identity(leaf)
+    assert who["subject"] == "marc@example.edu"
+    assert who["issuer"] == "https://github.com/login/oauth"
+    assert len(who["certificate_sha256"]) == 64
+
+
+def test_identity_signature_verifies_inside_the_window_against_the_trusted_root():
+    from datetime import timedelta
+
+    from darnit_amber.identity import verify_identity_signature
+
+    root, leaf, key, now = _make_chain()
+    env = _identity_envelope(leaf, key)
+    sig = env["signatures"][0]
+    good = verify_identity_signature(env, sig, now, [root])
+    assert good["signature"] == "ok" and good["chain"] == "ok" and good["ok"] is True
+    assert good["subject"] == "marc@example.edu"
+
+    late = verify_identity_signature(env, sig, now + timedelta(hours=1), [root])
+    assert late["signature"] == "ok" and late["ok"] is False and "not valid at" in late["chain"]
+
+    other_root, _l, _k, _n = _make_chain()
+    stranger = verify_identity_signature(env, sig, now, [other_root])
+    assert stranger["ok"] is False and "no path" in stranger["chain"]
+
+    untimed = verify_identity_signature(env, sig, None, [root])
+    assert untimed["ok"] is False and untimed["chain"].startswith("skipped")
+
+
+def test_identity_signature_rejects_a_tampered_payload():
+    from darnit_amber.identity import verify_identity_signature
+
+    root, leaf, key, now = _make_chain()
+    env = _identity_envelope(leaf, key)
+    env["payload"] = base64.b64encode(b'{"hello":"mars"}').decode()
+    assert verify_identity_signature(env, env["signatures"][0], now, [root])["signature"].startswith("invalid")
+
+
+def test_verify_reports_identity_from_the_envelope(monkeypatch, tmp_path):
+    """An identity-signed bundle verifies with no --pubkey; the trusted time comes from its timestamp."""
+    from darnit_amber import rerun as rr
+
+    root, leaf, key, now = _make_chain()
+    env = _identity_envelope(leaf, key)
+    stmt = {"subject": [{"name": "x", "digest": {}}], "predicate": {"signing": {"method": "identity"}}}
+    bundle_id = hashlib.sha256(amber_run._canonical(stmt)).hexdigest()
+    bundle = {"id": bundle_id, "statement": stmt, "witness_envelopes": {"amber-audit": env}}
+    (tmp_path / f"{bundle_id}.intoto.json").write_bytes(amber_run._canonical(bundle))
+
+    class Root:
+        def get_fulcio_certs(self):
+            return [root]
+
+    class Store:
+        _root = tmp_path
+
+    monkeypatch.setattr(rr, "_TRUST_ROOT", Root())
+    monkeypatch.setattr(
+        rr,
+        "_timestamps",
+        lambda env: [{"signature": 0, "time": now.isoformat(), "covers_signature": True, "tsa_chain": "ok"}],
+    )
+    out = rr.verify(Store(), bundle_id, None)
+    assert out["signatures"] == {"amber-audit": "see identity"}
+    assert out["identity"]["amber-audit"][0]["subject"] == "marc@example.edu"
+    assert out["identity_verified"] is True
+    assert out["verified"] is True
+
+
+def test_witness_signs_with_fulcio_when_given_a_token_file(monkeypatch, tmp_path):
+    from darnit_amber import run as r
+
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen["cmd"] = cmd
+        raise FileNotFoundError
+
+    monkeypatch.setattr(r.shutil, "which", lambda _: "/bin/witness")
+    monkeypatch.setattr(r.subprocess, "run", fake_run)
+    with pytest.raises(FileNotFoundError):
+        r._witness("s", None, tmp_path / "o", tmp_path, ["true"], token_path=tmp_path / "tok")
+    cmd = seen["cmd"]
+    assert "-k" not in cmd
+    assert cmd[cmd.index("--signer-fulcio-url") + 1] == "https://fulcio.sigstore.dev"
+    assert cmd[cmd.index("--signer-fulcio-token-path") + 1] == str((tmp_path / "tok").resolve())
+    assert "--signer-fulcio-token" not in cmd  # the token itself never goes on the command line
+
+
+def test_identity_token_prefers_the_environment(monkeypatch):
+    from darnit_amber.identity import TOKEN_ENV, identity_token
+
+    monkeypatch.setenv(TOKEN_ENV, " eyJ.token ")
+    assert identity_token() == "eyJ.token"
+
+
+def test_identity_without_timestamp_is_refused(tmp_path, capsys):
+    rc = main(["run", str(tmp_path), "--identity", "--no-timestamp", "--out", str(tmp_path / "out")])
+    assert rc == 1
+    assert "needs a timestamp" in capsys.readouterr().err

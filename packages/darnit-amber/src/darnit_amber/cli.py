@@ -36,6 +36,11 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("artifact", nargs="?", default=".", help="local path or git URL of the artifact (default: .)")
     r.add_argument("--ref", help="commit, branch or tag to check out (URL artifacts only)")
     r.add_argument("--key", type=Path, help="signing key (PEM); default: a key generated once under darnit's data dir")
+    r.add_argument(
+        "--identity",
+        action="store_true",
+        help="sign with a Sigstore certificate from a login instead of a key (the identity becomes public)",
+    )
     r.add_argument("--tsa", default=TSA_URL, help="RFC 3161 timestamp authority (default: Sigstore's)")
     r.add_argument("--no-timestamp", action="store_true", help="do not countersign with a timestamp authority")
     r.add_argument("--claims", type=Path, help="corpus entry (yaml or json): claims and run.command")
@@ -45,7 +50,7 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--prefix", default="amber/runs", help="s3: key prefix")
     r.add_argument("--endpoint-url", help="s3: endpoint for S3-compatible services")
     for name, help_ in (
-        ("verify", "check a stored bundle: id, outputs vs Witness products, signatures"),
+        ("verify", "check a stored bundle: id, outputs vs Witness products, signatures, timestamps, identity"),
         ("rerun", "re-execute a stored bundle's experiment and compare outputs"),
         ("claim", "attach a paper claim to a stored run, measured from its stored outputs"),
     ):
@@ -60,6 +65,7 @@ def main(argv: list[str] | None = None) -> int:
             q.add_argument("--pubkey", type=Path, help="PEM public key of the Witness signer")
         elif name == "rerun":
             q.add_argument("--key", type=Path, help="signing key for this rerun (default: the generated one)")
+            q.add_argument("--identity", action="store_true")
             q.add_argument("--tsa", default=TSA_URL)
             q.add_argument("--no-timestamp", action="store_true")
         else:
@@ -86,7 +92,7 @@ def main(argv: list[str] | None = None) -> int:
             if a.cmd == "verify":
                 result = verify(store, a.bundle_id, a.pubkey)
             elif a.cmd == "rerun":
-                result = rerun(store, a.bundle_id, a.key, None if a.no_timestamp else a.tsa)
+                result = rerun(store, a.bundle_id, a.key, None if a.no_timestamp else a.tsa, a.identity)
             else:
                 spec = {
                     "id": a.id,
@@ -114,7 +120,11 @@ def main(argv: list[str] | None = None) -> int:
         store = _make_store(a)
         if command and a.cmd != "run":
             raise RunError("a command after -- only makes sense with run")
-        bundle = run(a.artifact, a.ref, a.key, a.claims, store, command or None, None if a.no_timestamp else a.tsa)
+        if a.identity and a.key:
+            raise RunError("--identity and --key are alternatives")
+        bundle = run(
+            a.artifact, a.ref, a.key, a.claims, store, command or None, None if a.no_timestamp else a.tsa, a.identity
+        )
     except RunError as e:
         print(f"darnit-amber: {e}", file=sys.stderr)
         return 1

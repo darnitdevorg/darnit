@@ -255,8 +255,34 @@ def _canonical(obj: Any) -> bytes:
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
 
 
+def _signer_args(key: Path | None, token_path: Path | None) -> list[str]:
+    """``-k key`` or, with ``--identity``, a Fulcio certificate from the OIDC token in ``token_path``."""
+    if token_path is not None:
+        from .identity import FULCIO_URL, OIDC_CLIENT_ID, OIDC_ISSUER
+
+        return [
+            "--signer-fulcio-url",
+            FULCIO_URL,
+            "--signer-fulcio-oidc-issuer",
+            OIDC_ISSUER,
+            "--signer-fulcio-oidc-client-id",
+            OIDC_CLIENT_ID,
+            "--signer-fulcio-token-path",
+            str(token_path.resolve()),  # a file, never argv: the token is a secret
+        ]
+    if key is None:
+        raise RunError("a signing key or --identity is required")
+    return ["-k", str(key.resolve())]  # witness runs inside the checkout
+
+
 def _witness(
-    step: str, key: Path, out: Path, cwd: Path, cmd: list[str], tsa: str | None = TSA_URL
+    step: str,
+    key: Path | None,
+    out: Path,
+    cwd: Path,
+    cmd: list[str],
+    tsa: str | None = TSA_URL,
+    token_path: Path | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     witness = shutil.which("witness")
     if not witness:
@@ -268,8 +294,7 @@ def _witness(
         step,
         "--attestations",
         WITNESS_ATTESTORS,
-        "-k",
-        str(key.resolve()),  # witness runs inside the checkout
+        *_signer_args(key, token_path),
         *(["-t", tsa] if tsa else []),  # RFC 3161 countersignature: proves when the signature existed
         "-o",
         str(out),
@@ -283,6 +308,23 @@ def _witness(
     return envelope, _witness_sections(stmt)
 
 
+def _signing(key: Path | None, envelope: dict[str, Any], tsa: str | None) -> dict[str, Any]:
+    """What the bundle records about its signer: a key fingerprint, or the identity in the Fulcio certificate."""
+    if key is not None:
+        return {"method": "key", "key_fingerprint": key_fingerprint(key), "timestamp_authority": tsa}
+    from .identity import certificate_identity, signature_chain
+
+    sig = next(s for s in envelope["signatures"] if s.get("certificate"))
+    who = certificate_identity(signature_chain(sig)[0])
+    return {
+        "method": "identity",
+        "identity": who["subject"],
+        "issuer": who["issuer"],
+        "certificate_sha256": who["certificate_sha256"],
+        "timestamp_authority": tsa,
+    }
+
+
 def execute(
     artifact: str,
     ref: str | None,
@@ -291,11 +333,16 @@ def execute(
     store: AttestationStore,
     rerun_of: str | None = None,
     tsa: str | None = TSA_URL,
+    identity: bool = False,
 ) -> dict[str, Any]:
     darnit_bin = Path(sys.executable).parent / "darnit"
     if not darnit_bin.exists():
         raise RunError(f"darnit CLI not found next to {sys.executable}")
-    key = key or default_key()
+    if identity and not tsa:
+        raise RunError(
+            "--identity needs a timestamp: the certificate lives ten minutes, the timestamp places the signature in that window"
+        )
+    key = None if identity else (key or default_key())
     exp_cmd = (entry.get("run") or {}).get("command")
     exp_outputs = (entry.get("run") or {}).get("outputs")  # None: infer from Witness products
     claims = _claims(entry)
@@ -303,6 +350,13 @@ def execute(
     with tempfile.TemporaryDirectory(prefix="amber-run-") as tmp:
         tmpdir = Path(tmp)
         repo = _clone(artifact, ref, tmpdir / "artifact") if _is_url(artifact) else Path(artifact).resolve()
+        token_path: Path | None = None
+        if identity:
+            from .identity import identity_token
+
+            token_path = tmpdir / "oidc.token"
+            token_path.touch(mode=0o600)
+            token_path.write_text(identity_token())  # one login per run; both Witness steps reuse it
         started = datetime.now(UTC).isoformat()
 
         audit_env, audit_w = _witness(
@@ -312,13 +366,16 @@ def execute(
             repo,
             ["sh", "-c", f"{darnit_bin} audit . -f amber --output json --no-fail > {AUDIT_OUTPUT}"],
             tsa,
+            token_path,
         )
         audit = json.loads((repo / AUDIT_OUTPUT).read_text())
 
         experiment: dict[str, Any] | None = None
         exp_env: dict[str, Any] | None = None
         if exp_cmd:
-            exp_env, exp_w = _witness("experiment", key, tmpdir / "experiment.json", repo, ["sh", "-c", exp_cmd], tsa)
+            exp_env, exp_w = _witness(
+                "experiment", key, tmpdir / "experiment.json", repo, ["sh", "-c", exp_cmd], tsa, token_path
+            )
             products = exp_w.get("product") or {}
             if exp_outputs is None:
                 exp_outputs = _infer_outputs(products)
@@ -351,7 +408,7 @@ def execute(
     predicate = {
         "started_at": started,
         "environment": _environment(),
-        "signing": {"method": "key", "key_fingerprint": key_fingerprint(key), "timestamp_authority": tsa},
+        "signing": _signing(key, audit_env, tsa),
         "corpus_entry": entry.get("id"),
         "entry": {
             "source": entry.get("_source", "file"),
@@ -399,6 +456,7 @@ def run(
     store: AttestationStore,
     command: list[str] | None = None,
     tsa: str | None = TSA_URL,
+    identity: bool = False,
 ) -> dict[str, Any]:
     """``command`` (argv after ``--``) overrides the entry's run.command; with no entry, everything else is inferred."""
     entry = load_entry(claims)
@@ -406,4 +464,4 @@ def run(
         entry = {**entry, "run": {**(entry.get("run") or {}), "command": shlex.join(command)}}
         if not claims:
             entry["_source"] = "inferred"
-    return execute(artifact, ref, key, entry, store, tsa=tsa)
+    return execute(artifact, ref, key, entry, store, tsa=tsa, identity=identity)
