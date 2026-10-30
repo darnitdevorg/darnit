@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Input**: User description: "044: close remaining false-PASS paths. A compliance verdict of PASS must come only from evidence that actually establishes the requirement. Covers #479, #486, #453; lowest priority #493. Builds on 041 (per-step outcome ceilings, ERROR, corpus false-PASS gate) and 040 (operator configuration). PR #532 (rename darnit-reproducibility to darnit-amber) is open; the #453 fix should survive that rename."
+**Input**: User description: "044: close remaining false-PASS paths. A compliance verdict of PASS must come only from evidence that actually establishes the requirement. Covers #479, #486, #453; lowest priority #493. Builds on 041 (per-step outcome ceilings, ERROR, corpus false-PASS gate) and 040 (operator configuration). PR #532 (rename darnit-amber to darnit-amber) is open; the #453 fix should survive that rename."
 
 ## Background
 

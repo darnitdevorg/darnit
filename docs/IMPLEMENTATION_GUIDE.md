@@ -25,7 +25,7 @@ against a fictional "My Compliance Standard". Along the way, we'll reference how
 > **Starting point**: `packages/darnit-hello/` is the minimal plugin template:
 > one control, the entry points, and a framework TOML inside the package. Copy
 > it and grow it with this guide. For real plugins with custom step types, see
-> `packages/darnit-reproducibility/` and `packages/darnit-gittuf/`.
+> `packages/darnit-amber/` and `packages/darnit-gittuf/`.
 
 ## Architecture Overview
 
@@ -1339,7 +1339,7 @@ steps = [
 ]
 ```
 
-> **Reference**: See `packages/darnit-reproducibility/src/darnit_reproducibility/handlers.py`
+> **Reference**: See `packages/darnit-amber/src/darnit_amber/handlers.py`
 > and `packages/darnit-gittuf/src/darnit_gittuf/handlers.py` for real custom
 > handlers, registered in each package's `implementation.py`.
 
@@ -1769,8 +1769,8 @@ from darnit.core.handlers import get_handler_registry
 | Reference implementation | `packages/darnit-baseline/src/darnit_baseline/implementation.py` |
 | Reference TOML | `packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml` |
 | Plugin template | `packages/darnit-hello/` |
-| Plugin with custom step types | `packages/darnit-reproducibility/src/darnit_reproducibility/implementation.py` |
-| Custom step type tests | `tests/darnit_reproducibility/test_handlers.py` |
+| Plugin with custom step types | `packages/darnit-amber/src/darnit_amber/implementation.py` |
+| Custom step type tests | `tests/darnit_amber/test_handlers.py` |
 | Framework spec | `docs/architecture/framework-design.md` |
 | Composition resolver | `packages/darnit/src/darnit/core/composition.py` |
 | Composition spec | `specs/013-plugin-composition/spec.md` |

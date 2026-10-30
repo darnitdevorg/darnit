@@ -1,8 +1,8 @@
-"""Tests for ReproducibilityImplementation plugin protocol compliance."""
+"""Tests for AmberImplementation plugin protocol compliance."""
 
 import importlib.metadata
 
-from darnit_reproducibility.implementation import ReproducibilityImplementation
+from darnit_amber.implementation import AmberImplementation
 
 
 def _framework_controls(impl):
@@ -13,20 +13,20 @@ def _framework_controls(impl):
     return load_controls_from_framework(load_framework_config(impl.get_framework_config_path()))
 
 
-class TestReproducibilityImplementation:
-    """Tests that ReproducibilityImplementation satisfies the plugin protocol."""
+class TestAmberImplementation:
+    """Tests that AmberImplementation satisfies the plugin protocol."""
 
     def setup_method(self):
-        self.impl = ReproducibilityImplementation()
+        self.impl = AmberImplementation()
 
     def test_name(self) -> None:
-        assert self.impl.name == "reproducibility"
+        assert self.impl.name == "amber"
 
     def test_display_name(self) -> None:
         assert len(self.impl.display_name) > 0
 
     def test_version_matches_package_metadata(self) -> None:
-        assert self.impl.version == importlib.metadata.version("darnit-reproducibility")
+        assert self.impl.version == importlib.metadata.version("darnit-amber")
 
     def test_framework_toml_defines_five_controls(self) -> None:
         assert len(_framework_controls(self.impl)) == 5

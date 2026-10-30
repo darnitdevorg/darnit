@@ -116,7 +116,7 @@ Single workspace repo. `packages/darnit/src/darnit/context/` is the sole product
 
 - [X] T017 Run the full workspace sweep from repo root: `uv run pytest tests/ -q --deselect tests/darnit/context/test_dot_project_upstream.py::TestUpstreamSpecSync::test_upstream_spec_unchanged` (excluding the deselected test because it is separately verified in T010, T012, and T013). Confirm exit code 0.
 
-- [X] T018 [P] Verify no file outside `packages/darnit/src/darnit/context/` and `.github/dot-project-spec-hash.txt` was modified under `packages/*/src/`: `git diff --name-only main..HEAD | grep -E 'packages/(darnit-baseline|darnit-gittuf|darnit-reproducibility)/src/'` MUST produce zero lines. This is the plan's Structure Decision property (single-file reconciliation in `dot_project.py`).
+- [X] T018 [P] Verify no file outside `packages/darnit/src/darnit/context/` and `.github/dot-project-spec-hash.txt` was modified under `packages/*/src/`: `git diff --name-only main..HEAD | grep -E 'packages/(darnit-baseline|darnit-gittuf|darnit-amber)/src/'` MUST produce zero lines. This is the plan's Structure Decision property (single-file reconciliation in `dot_project.py`).
 
 - [X] T019 [P] Run `uv run ruff check .` and `uv run ruff format --check .` on the repo root; both MUST exit 0. Fix any formatting-only issues raised.
 

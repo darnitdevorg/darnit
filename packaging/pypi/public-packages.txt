@@ -1,5 +1,6 @@
 darnit-core
 darnit-baseline
 darnit-gittuf
+darnit-amber
 darnit-reproducibility
 darnit-mcp
