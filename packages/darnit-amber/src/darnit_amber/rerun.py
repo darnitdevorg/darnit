@@ -5,9 +5,12 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from .identity import pae as _pae
+from .identity import verify_identity_signature
 from .run import TSA_URL, RunError, _canonical, execute
 
 
@@ -18,10 +21,6 @@ def read_bundle(store: Any, bundle_id: str) -> dict[str, Any]:
         root = Path(store._root)
         raw = (root / f"{bundle_id}.intoto.json").read_bytes()
     return json.loads(raw)
-
-
-def _pae(payload_type: str, payload: bytes) -> bytes:
-    return b"DSSEv1 %d %s %d " % (len(payload_type), payload_type.encode(), len(payload)) + payload
 
 
 def _der_len(n: int) -> bytes:
@@ -94,10 +93,10 @@ def _timestamps(env: dict[str, Any]) -> list[dict[str, Any]]:
     import rfc3161_client
 
     out: list[dict[str, Any]] = []
-    for sig in env.get("signatures", []):
+    for index, sig in enumerate(env.get("signatures", [])):
         signature = base64.b64decode(sig["sig"])
         for t in sig.get("timestamps") or []:
-            item: dict[str, Any] = {"type": t.get("type")}
+            item: dict[str, Any] = {"type": t.get("type"), "signature": index}
             try:
                 response = rfc3161_client.decode_timestamp_response(_wrap_token(base64.b64decode(t["data"])))
                 info = response.tst_info
@@ -118,9 +117,36 @@ def _timestamps(env: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
+def _trusted_time(stamps: list[dict[str, Any]], index: int) -> datetime | None:
+    """The earliest time a trusted timestamp proves signature ``index`` existed."""
+    times = [
+        datetime.fromisoformat(t["time"])
+        for t in stamps
+        if t.get("signature") == index and t.get("covers_signature") and t.get("tsa_chain") == "ok"
+    ]
+    return min(times) if times else None
+
+
+def _verify_identities(env: dict[str, Any], stamps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Every certificate-bearing signature on the envelope, checked against Sigstore's Fulcio roots."""
+    out = []
+    for index, sig in enumerate(env.get("signatures", [])):
+        if not sig.get("certificate"):
+            continue
+        try:
+            out.append(
+                verify_identity_signature(env, sig, _trusted_time(stamps, index), _trusted_root().get_fulcio_certs())
+            )
+        except Exception as e:  # noqa: BLE001 - reported, never fatal
+            out.append({"ok": False, "error": f"{type(e).__name__}: {e}"})
+    return out
+
+
 def _verify_envelope(env: dict[str, Any], pubkey: Path | None) -> str:
     """'unsigned-check' when no key; 'ok' or raises when a key is given."""
     if pubkey is None:
+        if any(s.get("certificate") for s in env.get("signatures", [])):
+            return "see identity"
         return "skipped (no --pubkey)"
     from cryptography.hazmat.primitives import serialization
 
@@ -156,12 +182,20 @@ def verify(store: Any, bundle_id: str, pubkey: Path | None) -> dict[str, Any]:
     stamped = [t for ts in checks["timestamps"].values() for t in ts]
     checks["timestamp_covers_signature"] = bool(stamped) and all(t.get("covers_signature") for t in stamped)
     checks["timestamp_authority_trusted"] = bool(stamped) and all(t.get("tsa_chain") == "ok" for t in stamped)
+    identities = {name: _verify_identities(env, checks["timestamps"][name]) for name, env in envs.items()}
+    if any(identities.values()):
+        checks["identity"] = identities
+        checks["identity_verified"] = all(i.get("ok") for ids in identities.values() for i in ids) and all(
+            identities.values()
+        )
     checks["signing"] = stmt["predicate"].get("signing")
     checks["verified"] = all(v is True for k, v in checks.items() if isinstance(v, bool))
     return {"id": bundle_id, "subject": stmt["subject"][0], **checks}
 
 
-def rerun(store: Any, bundle_id: str, key: Path | None, tsa: str | None = TSA_URL) -> dict[str, Any]:
+def rerun(
+    store: Any, bundle_id: str, key: Path | None, tsa: str | None = TSA_URL, identity: bool = False
+) -> dict[str, Any]:
     first = read_bundle(store, bundle_id)
     stmt = first["statement"]
     pred = stmt["predicate"]
@@ -176,7 +210,7 @@ def rerun(store: Any, bundle_id: str, key: Path | None, tsa: str | None = TSA_UR
         "run": {"command": exp["command"], "outputs": [o["path"] for o in exp["outputs"]]},
         "claims": [{k: v for k, v in c.items() if k not in ("measured", "verdict", "reason")} for c in first_claims],
     }
-    new = execute(artifact, commit, key, entry, store, rerun_of=bundle_id, tsa=tsa)
+    new = execute(artifact, commit, key, entry, store, rerun_of=bundle_id, tsa=tsa, identity=identity)
     new_pred = new["statement"]["predicate"]
     mine = {o["path"]: o["sha256"] for o in new_pred["experiment"]["outputs"]}
     outputs = [

@@ -76,7 +76,7 @@ Nothing leaves the researcher's machine by default except a hash.
 | | what it proves | who learns what |
 |---|---|---|
 | default | the bundle was signed with the researcher's key and existed at the time in the RFC 3161 countersignature (Sigstore's timestamp authority) | the timestamp authority sees a hash of the signature, nothing else |
-| `--identity` (planned) | who signed: a short-lived Sigstore certificate from a GitHub/Google/institutional login | the identity (email or login) is recorded in Sigstore's public certificate log |
+| `--identity` | who signed: a short-lived Sigstore certificate from a GitHub/Google/institutional login | the identity (email or login) is recorded in Sigstore's public certificate log |
 | `--publish` (planned) | anyone can look the bundle up by hash in Rekor and see it has not been altered or backdated | the envelope and signer identity become public |
 
 The default key is generated once, ed25519, under darnit's data directory
@@ -86,12 +86,24 @@ public half next to it); `--key` uses another PEM key instead, and
 records the key's fingerprint and the timestamp authority under `signing`,
 never a path.
 
-`verify` reports, per envelope, the signature check (with `--pubkey`), and
-each timestamp's time, whether it covers that signature, and whether its
-signer chains to a timestamp authority in Sigstore's trusted root (fetched
-through TUF; the copy sigstore-python ships is used offline). A bundle is
-`verified` only when every timestamp passes both. Identities and Rekor
-inclusion come with `--identity` and `--publish`.
+`run --identity` signs with no key at all. Amber prints a URL; open it on
+any device, log in, and paste the code back (in GitHub Actions, or with a
+token in `SIGSTORE_ID_TOKEN`, there is no prompt). Fulcio issues a
+certificate valid for ten minutes bound to that login; Witness signs with
+it and keeps the certificate in the envelope. The bundle records the
+identity and issuer under `signing` instead of a key fingerprint. The
+timestamp is mandatory here: it is what places the signature inside the
+certificate's ten minutes.
+
+`verify` reports, per envelope, the signature check (with `--pubkey`, or
+from the certificate for an `--identity` bundle), and each timestamp's
+time, whether it covers that signature, and whether its signer chains to a
+timestamp authority in Sigstore's trusted root (fetched through TUF; the
+copy sigstore-python ships is used offline). For an `--identity` bundle it
+adds, per signature, the identity and issuer, whether the certificate
+chains to Fulcio in the same trusted root, and whether the timestamp falls
+in the certificate's window. A bundle is `verified` only when every check
+passes. Rekor inclusion comes with `--publish`.
 
 ## Entry files
 
