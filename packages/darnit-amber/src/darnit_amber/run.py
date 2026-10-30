@@ -308,19 +308,25 @@ def _witness(
     return envelope, _witness_sections(stmt)
 
 
-def _signing(key: Path | None, envelope: dict[str, Any], tsa: str | None) -> dict[str, Any]:
-    """What the bundle records about its signer: a key fingerprint, or the identity in the Fulcio certificate."""
+def _signing(key: Path | None, envelopes: dict[str, dict[str, Any]], tsa: str | None) -> dict[str, Any]:
+    """What the bundle records about its signer: a key fingerprint, or the identity in the Fulcio certificates.
+
+    Witness asks Fulcio for a certificate per step, so one login yields one certificate per envelope.
+    """
     if key is not None:
         return {"method": "key", "key_fingerprint": key_fingerprint(key), "timestamp_authority": tsa}
     from .identity import certificate_identity, signature_chain
 
-    sig = next(s for s in envelope["signatures"] if s.get("certificate"))
-    who = certificate_identity(signature_chain(sig)[0])
+    certs = {}
+    for name, env in envelopes.items():
+        sig = next(s for s in env["signatures"] if s.get("certificate"))
+        certs[name] = certificate_identity(signature_chain(sig)[0])
+    first = next(iter(certs.values()))
     return {
         "method": "identity",
-        "identity": who["subject"],
-        "issuer": who["issuer"],
-        "certificate_sha256": who["certificate_sha256"],
+        "identity": first["subject"],
+        "issuer": first["issuer"],
+        "certificates_sha256": {name: c["certificate_sha256"] for name, c in certs.items()},
         "timestamp_authority": tsa,
     }
 
@@ -408,7 +414,7 @@ def execute(
     predicate = {
         "started_at": started,
         "environment": _environment(),
-        "signing": _signing(key, audit_env, tsa),
+        "signing": _signing(key, {"amber-audit": audit_env, **({"experiment": exp_env} if exp_env else {})}, tsa),
         "corpus_entry": entry.get("id"),
         "entry": {
             "source": entry.get("_source", "file"),
