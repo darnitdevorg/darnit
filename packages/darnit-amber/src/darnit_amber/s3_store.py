@@ -81,10 +81,13 @@ class S3AttestationStore:
             kw: dict[str, Any] = {"Bucket": self._bucket}
             if self._prefix:
                 kw["Prefix"] = self._prefix + "/"
+            base = kw.get("Prefix", "")
             for page in paginator.paginate(**kw):
                 for obj in page.get("Contents", []):
-                    name = obj["Key"].rsplit("/", 1)[-1]
-                    ids.append(name.split(".", 1)[0])
+                    rest = obj["Key"][len(base) :]
+                    if "/" in rest or not rest.endswith(".intoto.json"):
+                        continue  # an output blob under <id>/outputs/, or something else
+                    ids.append(rest[: -len(".intoto.json")])
         except Exception as e:
             raise StoreOperationError(f"{self._BACKEND_NAME}: list failed: {e}") from e
         return ids

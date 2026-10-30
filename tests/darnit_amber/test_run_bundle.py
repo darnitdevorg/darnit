@@ -160,15 +160,19 @@ def test_rerun_compares_claims_not_just_files(monkeypatch, tmp_path):
 
     def fake_execute(artifact, ref, key, entry, store, rerun_of=None, **kw):
         seen["entry"] = entry
+        experiment = {"command": "true", "exit_code": 0, "outputs": [{"path": "t.txt", "sha256": "bbb"}]}
+        claims = [{"id": "c", "measured": "2", "verdict": "NOT_COMPARABLE"}]
         return {
+            "id": "second",
             "statement": {
                 "subject": first["statement"]["subject"],
                 "predicate": {
-                    "experiment": {"command": "true", "exit_code": 0, "outputs": [{"path": "t.txt", "sha256": "bbb"}]},
-                    "claims": [{"id": "c", "measured": "2", "verdict": "NOT_COMPARABLE"}],
+                    "experiment": experiment,
+                    "claims": claims,
                     "verdict": "NOT_COMPARABLE",
+                    "reruns": amber_run.compare_rerun(rerun_of, experiment, claims),
                 },
-            }
+            },
         }
 
     class Store:
@@ -190,6 +194,7 @@ def test_rerun_compares_claims_not_just_files(monkeypatch, tmp_path):
         "result": "same",
     }
     assert out["drift"] is False
+    assert out["id"] == "second"
 
 
 def test_infer_outputs_drops_darnit_and_git_files():
@@ -345,7 +350,7 @@ def _make_chain(email="marc@example.edu", issuer="https://github.com/login/oauth
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.primitives.asymmetric import ec
-    from cryptography.x509.oid import NameOID, ObjectIdentifier
+    from cryptography.x509.oid import NameOID
 
     now = datetime.now(UTC).replace(microsecond=0)
     root_key = ec.generate_private_key(ec.SECP256R1())
@@ -359,23 +364,42 @@ def _make_chain(email="marc@example.edu", issuer="https://github.com/login/oauth
         .not_valid_before(now - timedelta(days=1))
         .not_valid_after(now + timedelta(days=1))
         .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+        .add_extension(x509.KeyUsage(False, False, False, False, False, True, True, False, False), critical=True)
+        .add_extension(x509.SubjectKeyIdentifier.from_public_key(root_key.public_key()), critical=False)
         .sign(root_key, hashes.SHA256())
     )
     leaf_key = ec.generate_private_key(ec.SECP256R1())
+    leaf = _fulcio_shaped_leaf(leaf_key.public_key(), root, root_key, email, issuer, now)
+    _ROOT_KEYS[root.public_bytes(serialization_pem())] = root_key
+    return root, leaf, leaf_key, now
+
+
+def _fulcio_shaped_leaf(public_key, issuer_cert, issuer_key, email, issuer, now, *, eku=True):
+    """A ten-minute leaf like Fulcio's: empty subject, SAN email, issuer OID, code-signing EKU, SKI/AKI."""
+    from datetime import timedelta
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.x509.oid import ExtendedKeyUsageOID, ObjectIdentifier
+
     der_utf8 = bytes([0x0C, len(issuer)]) + issuer.encode()
-    leaf = (
+    b = (
         x509.CertificateBuilder()
         .subject_name(x509.Name([]))
-        .issuer_name(root_name)
-        .public_key(leaf_key.public_key())
-        .serial_number(2)
+        .issuer_name(issuer_cert.subject)
+        .public_key(public_key)
+        .serial_number(x509.random_serial_number())
         .not_valid_before(now - timedelta(minutes=1))
         .not_valid_after(now + timedelta(minutes=9))
+        .add_extension(x509.KeyUsage(True, False, False, False, False, False, False, False, False), critical=True)
         .add_extension(x509.SubjectAlternativeName([x509.RFC822Name(email)]), critical=True)
         .add_extension(x509.UnrecognizedExtension(ObjectIdentifier("1.3.6.1.4.1.57264.1.8"), der_utf8), critical=False)
-        .sign(root_key, hashes.SHA256())
+        .add_extension(x509.SubjectKeyIdentifier.from_public_key(public_key), critical=False)
+        .add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(issuer_cert.public_key()), critical=False)
     )
-    return root, leaf, leaf_key, now
+    if eku:
+        b = b.add_extension(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.CODE_SIGNING]), critical=False)
+    return b.sign(issuer_key, hashes.SHA256())
 
 
 def _identity_envelope(leaf, leaf_key):
@@ -418,11 +442,11 @@ def test_identity_signature_verifies_inside_the_window_against_the_trusted_root(
     assert good["subject"] == "marc@example.edu"
 
     late = verify_identity_signature(env, sig, now + timedelta(hours=1), [root])
-    assert late["signature"] == "ok" and late["ok"] is False and "not valid at" in late["chain"]
+    assert late["signature"] == "ok" and late["ok"] is False and "no valid path" in late["chain"]
 
     other_root, _l, _k, _n = _make_chain()
     stranger = verify_identity_signature(env, sig, now, [other_root])
-    assert stranger["ok"] is False and "no path" in stranger["chain"]
+    assert stranger["ok"] is False and "no valid path" in stranger["chain"]
 
     untimed = verify_identity_signature(env, sig, None, [root])
     assert untimed["ok"] is False and untimed["chain"].startswith("skipped")
@@ -440,10 +464,20 @@ def test_identity_signature_rejects_a_tampered_payload():
 def test_verify_reports_identity_from_the_envelope(monkeypatch, tmp_path):
     """An identity-signed bundle verifies with no --pubkey; the trusted time comes from its timestamp."""
     from darnit_amber import rerun as rr
+    from darnit_amber.identity import certificate_identity
 
     root, leaf, key, now = _make_chain()
     env = _identity_envelope(leaf, key)
-    stmt = {"subject": [{"name": "x", "digest": {}}], "predicate": {"signing": {"method": "identity"}}}
+    stmt = {
+        "subject": [{"name": "x", "digest": {}}],
+        "predicate": {
+            "signing": {
+                "method": "identity",
+                "certificates_sha256": {"amber-audit": certificate_identity(leaf)["certificate_sha256"]},
+            },
+            "witness_envelopes_sha256": {"amber-audit": hashlib.sha256(amber_run._canonical(env)).hexdigest()},
+        },
+    }
     bundle_id = hashlib.sha256(amber_run._canonical(stmt)).hexdigest()
     bundle = {"id": bundle_id, "statement": stmt, "witness_envelopes": {"amber-audit": env}}
     (tmp_path / f"{bundle_id}.intoto.json").write_bytes(amber_run._canonical(bundle))
@@ -465,7 +499,16 @@ def test_verify_reports_identity_from_the_envelope(monkeypatch, tmp_path):
     assert out["signatures"] == {"amber-audit": "see identity"}
     assert out["identity"]["amber-audit"][0]["subject"] == "marc@example.edu"
     assert out["identity_verified"] is True
+    assert out["envelopes_match_statement"] is True
+    assert out["signatures_verified"] is True
     assert out["verified"] is True
+
+    # the same bundle with the envelope replaced by one signed by a different, honest certificate: not this bundle
+    other_root, other_leaf, other_key, _ = _make_chain()
+    swapped = {**bundle, "witness_envelopes": {"amber-audit": _identity_envelope(other_leaf, other_key)}}
+    (tmp_path / f"{bundle_id}.intoto.json").write_bytes(amber_run._canonical(swapped))
+    out = rr.verify(Store(), bundle_id, None)
+    assert out["envelopes_match_statement"] is False and out["verified"] is False
 
 
 def test_witness_signs_with_fulcio_when_given_a_token_file(monkeypatch, tmp_path):
@@ -501,22 +544,34 @@ def test_identity_without_timestamp_is_refused(tmp_path, capsys):
     assert "needs a timestamp" in capsys.readouterr().err
 
 
-def test_real_identity_bundle_verifies_offline():
-    """A bundle signed with a real Fulcio certificate on 2026-10-30 (md6796@nyu.edu via GitHub).
+# Real bundles made on the darnit VM (see the fixtures' README): verifiable forever because verify
+# uses the timestamp's time, and offline because the trusted root is the copy sigstore-python ships.
+FIXTURE_IDENTITY = "6de52228dbe31ec857742ac54a1b4cb2d93b83aa772cc2c71bb0bde473769ca2"
+FIXTURE_PUBLISHED = "047999f75203abd626ea5190ad82b530827450cb0ffd085ddea995dbe9917384"
+FIXTURE_PUBLISHED_LOG_INDEXES = {"amber-audit": 3596892495, "experiment": 3596895974}
 
-    It stays verifiable after the certificate's ten minutes because verify uses the
-    timestamp's time; the Fulcio and TSA roots come from the trusted root sigstore ships.
-    """
+
+@pytest.fixture
+def offline_root(monkeypatch):
+    from darnit_amber import rerun as rr
+    from sigstore.models import ClientTrustConfig
+
+    monkeypatch.setattr(rr, "_TRUST_ROOT", ClientTrustConfig.production(offline=True).trusted_root)
+
+
+class FixtureStore:
+    _root = Path(__file__).parent / "fixtures"
+
+
+def test_real_identity_bundle_verifies_offline(offline_root):
+    """A bundle signed with a real Fulcio certificate (GitHub login) and timestamped by Sigstore's TSA."""
     from darnit_amber import rerun as rr
 
-    class Store:
-        _root = Path(__file__).parent / "fixtures"
-
-    out = rr.verify(Store(), "6de52228dbe31ec857742ac54a1b4cb2d93b83aa772cc2c71bb0bde473769ca2", None)
+    out = rr.verify(FixtureStore(), FIXTURE_IDENTITY, None, online=False)
+    assert out["envelopes_match_statement"] is True
     assert out["signatures"] == {"amber-audit": "see identity", "experiment": "see identity"}
     for name in ("amber-audit", "experiment"):
         (who,) = out["identity"][name]
-        assert who["subject"] == "md6796@nyu.edu"
         assert who["issuer"] == "https://github.com/login/oauth"
         assert who["signature"] == "ok" and who["chain"] == "ok"
     assert out["timestamp_authority_trusted"] is True
@@ -669,28 +724,197 @@ def test_run_publishes_every_envelope_and_records_it(monkeypatch, tmp_path):
     assert pub["experiment"]["log_index"] == 2
 
 
-def test_real_published_bundle_verifies_offline():
-    """A key-signed bundle published to Rekor on 2026-10-30 (log indexes 3596892495 and 3596895974).
-
-    Offline: the signature with the fixture's public key, the timestamp, and the inclusion
-    proof and checkpoint from the stored Rekor response against Rekor's key in the trusted root.
-    """
+def test_real_published_bundle_verifies_offline(offline_root):
+    """A key-signed bundle published to Rekor: signature with the fixture's public key, timestamp, inclusion proof."""
     from darnit_amber import rerun as rr
 
-    class Store:
-        _root = Path(__file__).parent / "fixtures"
-
-    out = rr.verify(
-        Store(),
-        "047999f75203abd626ea5190ad82b530827450cb0ffd085ddea995dbe9917384",
-        Store._root / "047999f7-signing.pub",
-        online=False,
-    )
+    out = rr.verify(FixtureStore(), FIXTURE_PUBLISHED, FixtureStore._root / "published-signing.pub", online=False)
+    assert out["envelopes_match_statement"] is True
     assert out["signatures"] == {"amber-audit": "ok", "experiment": "ok"}
+    assert out["signer_matches_statement"] is True
     assert out["timestamp_authority_trusted"] is True
-    for name, index in (("amber-audit", 3596892495), ("experiment", 3596895974)):
+    for name, index in FIXTURE_PUBLISHED_LOG_INDEXES.items():
         p = out["publication"][name]
         assert p["log_index"] == index
         assert p["entry_matches_envelope"] is True and p["inclusion"] == "ok" and p["online"] is None
     assert out["published"] is True
     assert out["verified"] is True
+
+
+# --- cold-review findings (2026-10-30): forgery, unchecked signatures, unbound envelopes, paths ---
+
+_ROOT_KEYS: dict = {}
+
+
+def serialization_pem():
+    from cryptography.hazmat.primitives import serialization
+
+    return serialization.Encoding.PEM
+
+
+def _root_key_of(root):
+    return _ROOT_KEYS[root.public_bytes(serialization_pem())]
+
+
+def test_identity_chain_rejects_a_leaf_issued_by_another_leaf():
+    """Any Fulcio user could otherwise mint a certificate naming someone else and pass it as an intermediate."""
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from darnit_amber.identity import verify_identity_signature
+
+    root, honest_leaf, honest_key, now = _make_chain(email="attacker@evil.example")
+    forged_key = ec.generate_private_key(ec.SECP256R1())
+    forged = _fulcio_shaped_leaf(forged_key.public_key(), honest_leaf, honest_key, "jcappos@nyu.edu", "https://x", now)
+    env = _identity_envelope(forged, forged_key)
+    sig = env["signatures"][0]
+    sig["intermediates"] = [base64.b64encode(honest_leaf.public_bytes(serialization_pem())).decode()]
+    out = verify_identity_signature(env, sig, now, [root])
+    assert out["subject"] == "jcappos@nyu.edu"  # what the forged certificate claims
+    assert out["signature"] == "ok"  # it is self-consistent
+    assert out["ok"] is False and out["chain"] != "ok"  # but no CA issued it
+
+
+def test_identity_chain_requires_the_code_signing_eku():
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from darnit_amber.identity import verify_identity_signature
+
+    root, _leaf, _key, now = _make_chain()
+    key = ec.generate_private_key(ec.SECP256R1())
+    no_eku = _fulcio_shaped_leaf(key.public_key(), root, _root_key_of(root), "a@b", "https://x", now, eku=False)
+    env = _identity_envelope(no_eku, key)
+    out = verify_identity_signature(env, env["signatures"][0], now, [root])
+    assert out["ok"] is False and "key usage" in out["chain"]
+
+
+def test_key_signed_bundle_without_pubkey_is_not_verified(tmp_path, monkeypatch):
+    """Skipping the signature check must never produce verified: true."""
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from darnit_amber import rerun as rr
+    from darnit_amber.identity import pae
+
+    key = ec.generate_private_key(ec.SECP256R1())  # an EC key: Witness-generated keys are P-256, not ed25519
+    payload = b'{"predicate":{"attestations":[]}}'
+    sig = key.sign(pae("t", payload), ec.ECDSA(hashes.SHA256()))
+    env = {
+        "payloadType": "t",
+        "payload": base64.b64encode(payload).decode(),
+        "signatures": [{"sig": base64.b64encode(sig).decode()}],
+    }
+    pub = tmp_path / "k.pub"
+    spki = serialization.PublicFormat.SubjectPublicKeyInfo
+    pub.write_bytes(key.public_key().public_bytes(serialization.Encoding.PEM, spki))
+    der = key.public_key().public_bytes(serialization.Encoding.DER, spki)
+    stmt = {
+        "subject": [{"name": "x", "digest": {}}],
+        "predicate": {
+            "signing": {"method": "key", "key_fingerprint": "sha256:" + hashlib.sha256(der).hexdigest()},
+            "witness_envelopes_sha256": {"amber-audit": hashlib.sha256(amber_run._canonical(env)).hexdigest()},
+        },
+    }
+    bundle_id = hashlib.sha256(amber_run._canonical(stmt)).hexdigest()
+    (tmp_path / f"{bundle_id}.intoto.json").write_bytes(
+        amber_run._canonical({"id": bundle_id, "statement": stmt, "witness_envelopes": {"amber-audit": env}})
+    )
+
+    class Store:
+        _root = tmp_path
+
+    stamp = [{"signature": 0, "covers_signature": True, "tsa_chain": "ok", "time": "2026-01-01T00:00:00+00:00"}]
+    monkeypatch.setattr(rr, "_timestamps", lambda env: stamp)
+    without = rr.verify(Store(), bundle_id, None)
+    assert without["signatures_verified"] is False and without["verified"] is False
+    assert without["signatures"]["amber-audit"].startswith("not checked")
+
+    with_key = rr.verify(Store(), bundle_id, pub)  # EC keys verify too (finding 4)
+    assert with_key["signatures"]["amber-audit"] == "ok"
+    assert with_key["signer_matches_statement"] is True and with_key["verified"] is True
+
+    other = ec.generate_private_key(ec.SECP256R1())
+    (tmp_path / "o.pub").write_bytes(other.public_key().public_bytes(serialization.Encoding.PEM, spki))
+    wrong = rr.verify(Store(), bundle_id, tmp_path / "o.pub")
+    assert wrong["signatures_verified"] is False and wrong["verified"] is False
+
+
+def test_verify_fails_when_an_envelope_named_by_the_statement_is_missing(tmp_path):
+    from darnit_amber import rerun as rr
+
+    env = {"payloadType": "t", "payload": base64.b64encode(b"{}").decode(), "signatures": []}
+    stmt = {
+        "subject": [{"name": "x", "digest": {}}],
+        "predicate": {
+            "experiment": {"command": "true", "outputs": []},
+            "witness_envelopes_sha256": {"amber-audit": "0" * 64, "experiment": "1" * 64},
+        },
+    }
+    bundle_id = hashlib.sha256(amber_run._canonical(stmt)).hexdigest()
+    (tmp_path / f"{bundle_id}.intoto.json").write_bytes(
+        amber_run._canonical({"id": bundle_id, "statement": stmt, "witness_envelopes": {"amber-audit": env}})
+    )
+
+    class Store:
+        _root = tmp_path
+
+    out = rr.verify(Store(), bundle_id, None)
+    assert out["envelopes_match_statement"] is False
+    assert out["outputs_match_witness_products"] is False  # the experiment envelope is gone, not vacuously fine
+    assert out["verified"] is False
+
+
+def test_output_paths_stay_inside_the_checkout(tmp_path):
+    from darnit_amber.run import safe_rel
+
+    assert safe_rel("out/result.txt") == "out/result.txt"
+    for bad in ("/etc/hostname", "../x", "a/../../x", "", "C:\\x"):
+        with pytest.raises(amber_run.RunError):
+            safe_rel(bad)
+
+    class Store:
+        _root = tmp_path
+
+    with pytest.raises(amber_run.RunError):
+        amber_run.read_blob(Store(), "id", "/etc/hostname")
+    assert amber_run._infer_outputs({"ok.txt": {}, "/abs": {}, "../up": {}, ".git/x": {}}) == ["ok.txt"]
+
+
+def test_s3_list_bundles_ignores_output_blobs():
+    from darnit_amber.s3_store import S3AttestationStore
+
+    pages = [
+        {
+            "Contents": [
+                {"Key": "amber/runs/abc.intoto.json"},
+                {"Key": "amber/runs/abc/outputs/result.txt"},
+                {"Key": "amber/runs/notes.md"},
+            ]
+        }
+    ]
+
+    class Paginator:
+        def paginate(self, **kw):
+            return pages
+
+    class Client:
+        def get_paginator(self, _):
+            return Paginator()
+
+    store = S3AttestationStore.__new__(S3AttestationStore)
+    store._client, store._bucket, store._prefix = Client(), "b", "amber/runs"
+    assert store.list_bundles() == ["abc"]
+
+
+def test_witness_environment_never_carries_the_oidc_token(monkeypatch, tmp_path):
+    from darnit_amber import run as r
+    from darnit_amber.identity import TOKEN_ENV
+
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen["env"] = kw.get("env")
+        raise FileNotFoundError
+
+    monkeypatch.setenv(TOKEN_ENV, "secret")
+    monkeypatch.setattr(r.shutil, "which", lambda _: "/bin/witness")
+    monkeypatch.setattr(r.subprocess, "run", fake_run)
+    with pytest.raises(FileNotFoundError):
+        r._witness("s", None, tmp_path / "o", tmp_path, ["true"], token_path=tmp_path / "tok")
+    assert TOKEN_ENV not in seen["env"] and "PATH" in seen["env"]

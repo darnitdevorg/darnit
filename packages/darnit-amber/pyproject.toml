@@ -6,9 +6,10 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "boto3>=1.43.118",
-    "cryptography>=42",
+    "cryptography>=46",
+    "pyopenssl>=24",  # strict X.509 path validation of Fulcio certificates, as sigstore-python does it
     "rfc3161-client>=1.0",
-    "sigstore>=4.0",
+    "sigstore>=4.0,<5",  # publish.py and verify use sigstore's Rekor client and TransparencyLogEntry (private API; pinned)
     "darnit-core>=0.1.1",
     # PEP 440 requirement parsing for the requirements.txt pin classifier.
     # darnit-core already imports `packaging` at runtime (core/composition.py,

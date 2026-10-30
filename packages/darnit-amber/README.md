@@ -39,9 +39,10 @@ darnit-amber run --store s3 --bucket amber-runs -- ./run_experiment.sh
 
 darnit runs the Amber audit and the command under CNCF Witness and stores
 a signed **run bundle**: which repository and commit (from git), the exact
-command, the environment, every input file, every file the command created
-or changed (with its contents, up to 10 MB each), and the Witness
-attestations. Nothing is written by hand.
+command, the environment (Witness records the machine's environment
+variables, hostname and user name, minus its list of known secrets), every
+file the command created or changed (with its contents, up to 10 MB each),
+and the Witness attestations. Nothing is written by hand.
 
 Then, pointing at a number in one of those outputs, the researcher states
 the paper's claim:
@@ -77,14 +78,15 @@ Nothing leaves the researcher's machine by default except a hash.
 |---|---|---|
 | default | the bundle was signed with the researcher's key and existed at the time in the RFC 3161 countersignature (Sigstore's timestamp authority) | the timestamp authority sees a hash of the signature, nothing else |
 | `--identity` | who signed: a short-lived Sigstore certificate from a GitHub/Google/institutional login | the identity (email or login) is recorded in Sigstore's public certificate log |
-| `--publish` | anyone can look the envelope up in Rekor, Sigstore's public log, and see it has not been altered or backdated | the envelope (hashes, command, environment, signature) and the signer become public; outputs do not |
+| `--publish` | anyone can look the run up in Rekor, Sigstore's public log, and see it has not been altered or backdated | Rekor stores the envelope's hashes, the signature and the signer (certificate or public key), not the envelope itself; the bundle and outputs stay in the researcher's store |
 
 The default key is generated once, ed25519, under darnit's data directory
 (`~/.local/share/darnit/amber/signing.key` on Linux, mode 0600, with the
 public half next to it); `--key` uses another PEM key instead, and
-`--no-timestamp` skips the countersignature for offline runs. The bundle
-records the key's fingerprint and the timestamp authority under `signing`,
-never a path.
+`--no-timestamp` skips the countersignature for offline runs; such a bundle
+is signed but cannot be `verified`, because nothing places its signature in
+time. The bundle records the key's fingerprint and the timestamp authority
+under `signing`, never a path.
 
 `run --identity` signs with no key at all. Amber prints a URL; open it on
 any device, log in, and paste the code back (in GitHub Actions, or with a
@@ -95,8 +97,13 @@ identity and issuer under `signing` instead of a key fingerprint. The
 timestamp is mandatory here: it is what places the signature inside the
 certificate's ten minutes.
 
-`verify` reports, per envelope, the signature check (with `--pubkey`, or
-from the certificate for an `--identity` bundle), and each timestamp's
+`verify` first checks that the bundle is one piece: the id is the hash of
+the statement, and the statement names each Witness envelope by digest and
+its signer by key fingerprint or certificate digest, so an envelope cannot
+be dropped or swapped. It then reports, per envelope, the signature check
+(`--pubkey` is required for a key-signed bundle: a signature nobody checked
+never counts as verified; an `--identity` bundle is checked from its
+certificate), and each timestamp's
 time, whether it covers that signature, and whether its signer chains to a
 timestamp authority in Sigstore's trusted root (fetched through TUF; the
 copy sigstore-python ships is used offline). For an `--identity` bundle it

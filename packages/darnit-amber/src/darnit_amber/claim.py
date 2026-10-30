@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .rerun import read_bundle
-from .run import RunError, _canonical, _claims, measure_claim, overall_verdict, read_blob, write_blob
+from .run import RunError, _canonical, _claims, measure_claim, overall_verdict, read_blob, safe_rel, write_blob
 
 
 def claim(store: Any, bundle_id: str, spec: dict[str, Any]) -> dict[str, Any]:
@@ -20,7 +20,7 @@ def claim(store: Any, bundle_id: str, spec: dict[str, Any]) -> dict[str, Any]:
     exp = pred.get("experiment")
     if not exp:
         raise RunError("bundle has no experiment")
-    path = spec["measure"]["file"]
+    path = safe_rel(spec["measure"]["file"])
     out = next((o for o in exp["outputs"] if o["path"] == path), None)
     if out is None:
         raise RunError(f"{path} is not an output of this run; outputs: {[o['path'] for o in exp['outputs']]}")

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .identity import pae as _pae
-from .identity import verify_identity_signature
+from .identity import verify_identity_signature, verify_with
 from .publish import verify_publication
 from .run import TSA_URL, RunError, _canonical, execute
 
@@ -94,11 +94,11 @@ def _timestamps(env: dict[str, Any]) -> list[dict[str, Any]]:
     import rfc3161_client
 
     out: list[dict[str, Any]] = []
-    for index, sig in enumerate(env.get("signatures", [])):
-        signature = base64.b64decode(sig["sig"])
+    for index, sig in enumerate(env.get("signatures") or []):
         for t in sig.get("timestamps") or []:
             item: dict[str, Any] = {"type": t.get("type"), "signature": index}
             try:
+                signature = base64.b64decode(sig["sig"])
                 response = rfc3161_client.decode_timestamp_response(_wrap_token(base64.b64decode(t["data"])))
                 info = response.tst_info
                 imprint = info.message_imprint
@@ -143,53 +143,89 @@ def _verify_identities(env: dict[str, Any], stamps: list[dict[str, Any]]) -> lis
     return out
 
 
-def _verify_envelope(env: dict[str, Any], pubkey: Path | None) -> str:
-    """'unsigned-check' when no key; 'ok' or raises when a key is given."""
+def _key_fingerprint(pubkey: Path) -> str:
+    from cryptography.hazmat.primitives import serialization
+
+    key = serialization.load_pem_public_key(pubkey.read_bytes())
+    der = key.public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+    return "sha256:" + hashlib.sha256(der).hexdigest()
+
+
+def _verify_envelope(env: dict[str, Any], pubkey: Path | None) -> tuple[str, bool]:
+    """The key-signature check of one envelope: what to report, and whether it passed.
+
+    A certificate-signed envelope is checked by ``_verify_identities``; a
+    key-signed one needs ``--pubkey``, and without it the check fails rather
+    than being skipped, so ``verified`` can never be true for a bundle whose
+    signature nobody checked.
+    """
+    signatures = env.get("signatures") or []
+    if any(s.get("certificate") for s in signatures):
+        return "see identity", True
     if pubkey is None:
-        if any(s.get("certificate") for s in env.get("signatures", [])):
-            return "see identity"
-        return "skipped (no --pubkey)"
+        return "not checked: key-signed bundle and no --pubkey", False
     from cryptography.hazmat.primitives import serialization
 
     key = serialization.load_pem_public_key(pubkey.read_bytes())
     payload = base64.b64decode(env["payload"])
     pae = _pae(env["payloadType"], payload)
-    for sig in env["signatures"]:
+    for sig in signatures:
         try:
-            key.verify(base64.b64decode(sig["sig"]), pae)  # type: ignore[call-arg]
-            return "ok"
-        except Exception:  # noqa: BLE001
+            verify_with(key, base64.b64decode(sig["sig"]), pae)
+            return "ok", True
+        except Exception:  # noqa: BLE001 - try the next signature
             continue
-    raise RunError("no Witness signature verifies with the given public key")
+    return "no Witness signature verifies with the given public key", False
 
 
 def verify(store: Any, bundle_id: str, pubkey: Path | None, online: bool = True) -> dict[str, Any]:
     bundle = read_bundle(store, bundle_id)
     stmt = bundle["statement"]
+    pred = stmt["predicate"]
     recomputed = hashlib.sha256(_canonical(stmt)).hexdigest()
     checks: dict[str, Any] = {"id_matches_statement": recomputed == bundle["id"] == bundle_id}
-    exp = stmt["predicate"].get("experiment")
-    envs = bundle.get("witness_envelopes", {})
-    if exp and "experiment" in envs:
-        w = json.loads(base64.b64decode(envs["experiment"]["payload"]))
-        prod = next(
-            (a["attestation"] for a in w["predicate"]["attestations"] if a["type"].endswith("/product/v0.1")), {}
-        )
-        checks["outputs_match_witness_products"] = all(
+    envs = bundle.get("witness_envelopes") or {}
+
+    # The statement names every envelope by digest: a bundle cannot drop or swap one.
+    expected = pred.get("witness_envelopes_sha256") or {}
+    checks["envelopes_match_statement"] = (
+        bool(expected)
+        and set(expected) == set(envs)
+        and all(hashlib.sha256(_canonical(envs[name])).hexdigest() == digest for name, digest in expected.items())
+    )
+
+    exp = pred.get("experiment")
+    if exp:
+        w = json.loads(base64.b64decode(envs["experiment"]["payload"])) if "experiment" in envs else {}
+        attestations = {a["type"]: a["attestation"] for a in (w.get("predicate") or {}).get("attestations") or []}
+        prod = next((v for k, v in attestations.items() if k.endswith("/product/v0.1")), {})
+        run = next((v for k, v in attestations.items() if k.endswith("/command-run/v0.1")), {})
+        checks["outputs_match_witness_products"] = bool(w) and all(
             (prod.get(o["path"]) or {}).get("digest", {}).get("sha256") == o["sha256"] for o in exp["outputs"]
         )
-    checks["signatures"] = {name: _verify_envelope(env, pubkey) for name, env in envs.items()}
+        checks["command_matches_witness"] = bool(w) and run.get("cmd") == ["sh", "-c", exp["command"]]
+
+    signatures = {name: _verify_envelope(env, pubkey) for name, env in envs.items()}
+    checks["signatures"] = {name: text for name, (text, _ok) in signatures.items()}
     checks["timestamps"] = {name: _timestamps(env) for name, env in envs.items()}
     stamped = [t for ts in checks["timestamps"].values() for t in ts]
     checks["timestamp_covers_signature"] = bool(stamped) and all(t.get("covers_signature") for t in stamped)
     checks["timestamp_authority_trusted"] = bool(stamped) and all(t.get("tsa_chain") == "ok" for t in stamped)
+
+    signing = pred.get("signing") or {}
     identities = {name: _verify_identities(env, checks["timestamps"][name]) for name, env in envs.items()}
     if any(identities.values()):
         checks["identity"] = identities
-        checks["identity_verified"] = all(i.get("ok") for ids in identities.values() for i in ids) and all(
-            identities.values()
+        recorded = signing.get("certificates_sha256") or {}
+        checks["identity_verified"] = all(
+            ids and all(i.get("ok") and i.get("certificate_sha256") == recorded.get(name) for i in ids)
+            for name, ids in identities.items()
         )
-    publication = stmt["predicate"].get("publication")
+    checks["signatures_verified"] = bool(envs) and all(ok for _text, ok in signatures.values())
+    if pubkey is not None and signing.get("method") == "key":
+        checks["signer_matches_statement"] = _key_fingerprint(pubkey) == signing.get("key_fingerprint")
+
+    publication = pred.get("publication")
     if publication:
         checks["publication"] = {}
         for name, record in publication.items():
@@ -198,9 +234,10 @@ def verify(store: Any, bundle_id: str, pubkey: Path | None, online: bool = True)
             except Exception as e:  # noqa: BLE001 - reported, never fatal
                 checks["publication"][name] = {"ok": False, "error": f"{type(e).__name__}: {e}"}
         checks["published"] = all(p.get("ok") for p in checks["publication"].values())
-    checks["signing"] = stmt["predicate"].get("signing")
+    checks["signing"] = signing
     checks["verified"] = all(v is True for k, v in checks.items() if isinstance(v, bool))
-    return {"id": bundle_id, "subject": stmt["subject"][0], **checks}
+    subject = (stmt.get("subject") or [{}])[0]
+    return {"id": bundle_id, "subject": subject, **checks}
 
 
 def rerun(
@@ -219,51 +256,22 @@ def rerun(
         raise RunError("bundle has no experiment to rerun")
     artifact = stmt["subject"][0]["name"]
     commit = stmt["subject"][0]["digest"].get("gitCommit")
-    first_claims = pred.get("claims") or []
     entry = {
         "id": pred.get("corpus_entry"),
         "run": {"command": exp["command"], "outputs": [o["path"] for o in exp["outputs"]]},
-        "claims": [{k: v for k, v in c.items() if k not in ("measured", "verdict", "reason")} for c in first_claims],
+        "claims": [
+            {k: v for k, v in c.items() if k not in ("measured", "verdict", "reason")} for c in pred.get("claims") or []
+        ],
     }
-    new = execute(artifact, commit, key, entry, store, rerun_of=bundle_id, tsa=tsa, identity=identity, publish=publish)
+    new = execute(artifact, commit, key, entry, store, rerun_of=first, tsa=tsa, identity=identity, publish=publish)
     new_pred = new["statement"]["predicate"]
-    mine = {o["path"]: o["sha256"] for o in new_pred["experiment"]["outputs"]}
-    outputs = [
-        {
-            "path": o["path"],
-            "first": o["sha256"],
-            "rerun": mine.get(o["path"]),
-            "result": "identical" if mine.get(o["path"]) == o["sha256"] else "changed",
-        }
-        for o in exp["outputs"]
-    ]
-    again = {c["id"]: c for c in new_pred.get("claims") or []}
-    claims = [
-        {
-            "id": c["id"],
-            "first": {"measured": c.get("measured"), "verdict": c.get("verdict")},
-            "rerun": {
-                "measured": again.get(c["id"], {}).get("measured"),
-                "verdict": again.get(c["id"], {}).get("verdict"),
-            },
-            "result": "same" if again.get(c["id"], {}).get("verdict") == c.get("verdict") else "changed",
-        }
-        for c in first_claims
-    ]
-    measured = [c for c in claims if c["first"]["measured"] is not None]
-    drift = any(c["result"] == "changed" for c in claims) or (
-        not measured and any(o["result"] == "changed" for o in outputs)
-    )
-    new_pred["reruns"] = {"of": bundle_id, "outputs": outputs, "claims": claims, "drift": drift}
-    # the id covers the comparison too: recompute and store
-    new["id"] = hashlib.sha256(_canonical(new["statement"])).hexdigest()
-    store.write(new["id"], _canonical(new), "application/vnd.in-toto+json")
+    comparison = new_pred["reruns"]
     return {
         "id": new["id"],
         "rerun_of": bundle_id,
         "exit_code": new_pred["experiment"]["exit_code"],
         "verdict": new_pred.get("verdict"),
-        "outputs": outputs,
-        "claims": claims,
-        "drift": drift,
+        "outputs": comparison["outputs"],
+        "claims": comparison["claims"],
+        "drift": comparison["drift"],
     }

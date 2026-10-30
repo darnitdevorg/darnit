@@ -33,8 +33,17 @@ TSA_URL = "https://timestamp.sigstore.dev/api/v1/timestamp"
 MAX_STORED_OUTPUT = 10 * 1024 * 1024  # outputs up to this size are kept next to the bundle
 
 
+def safe_rel(path: str) -> str:
+    """``path`` as a relative path inside the checkout, or raise: output paths come from an untrusted repository."""
+    p = Path(path)
+    if not path or p.is_absolute() or path.startswith(("/", "\\")) or ".." in p.parts or "\\" in path:
+        raise RunError(f"output path {path!r} is not a relative path inside the repository")
+    return p.as_posix()
+
+
 def write_blob(store: Any, bundle_id: str, path: str, data: bytes) -> None:
     """Keep an experiment output next to its bundle: s3 key or local file <id>/outputs/<path>."""
+    path = safe_rel(path)
     if hasattr(store, "_client"):
         store.write_blob(f"{bundle_id}/outputs/{path}", data)
         return
@@ -44,6 +53,7 @@ def write_blob(store: Any, bundle_id: str, path: str, data: bytes) -> None:
 
 
 def read_blob(store: Any, bundle_id: str, path: str) -> bytes:
+    path = safe_rel(path)
     if hasattr(store, "_client"):
         return store.read_blob(f"{bundle_id}/outputs/{path}")
     return (Path(store._root) / bundle_id / "outputs" / path).read_bytes()
@@ -112,8 +122,16 @@ def _git_remote(repo: Path) -> str | None:
 
 
 def _infer_outputs(products: dict[str, Any]) -> list[str]:
-    """Files the command created or changed, as Witness saw them, minus darnit's own."""
-    return sorted(p for p in products if p != AUDIT_OUTPUT and not p.startswith(".git/"))
+    """Files the command created or changed, as Witness saw them, minus darnit's own and anything not inside the checkout."""
+    out = []
+    for p in products:
+        if p == AUDIT_OUTPUT or p.startswith(".git/"):
+            continue
+        try:
+            out.append(safe_rel(p))
+        except RunError:
+            continue
+    return sorted(out)
 
 
 def _version(dist: str) -> str | None:
@@ -301,7 +319,10 @@ def _witness(
         "--",
         *cmd,
     ]
-    r = subprocess.run(full, cwd=cwd, capture_output=True, text=True)
+    from .identity import TOKEN_ENV
+
+    env = {k: v for k, v in os.environ.items() if k != TOKEN_ENV}  # Witness attests its environment
+    r = subprocess.run(full, cwd=cwd, capture_output=True, text=True, env=env)
     if r.returncode != 0 or not out.exists():
         raise RunError(f"witness run ({step}) failed:\n{r.stderr[-2000:]}")
     envelope, stmt = _decode_envelope(out)
@@ -319,7 +340,9 @@ def _signing(key: Path | None, envelopes: dict[str, dict[str, Any]], tsa: str | 
 
     certs = {}
     for name, env in envelopes.items():
-        sig = next(s for s in env["signatures"] if s.get("certificate"))
+        sig = next((s for s in env["signatures"] if s.get("certificate")), None)
+        if sig is None:
+            raise RunError(f"witness signed the {name} envelope without a certificate; --identity needs Fulcio")
         certs[name] = certificate_identity(signature_chain(sig)[0])
     first = next(iter(certs.values()))
     return {
@@ -331,18 +354,60 @@ def _signing(key: Path | None, envelopes: dict[str, dict[str, Any]], tsa: str | 
     }
 
 
+def compare_rerun(
+    first: dict[str, Any], experiment: dict[str, Any] | None, claims: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Outputs and claims of this run against the bundle it repeats; ``drift`` is a verdict change, or an output change when nothing was measured."""
+    first_pred = first["statement"]["predicate"]
+    first_exp = first_pred.get("experiment") or {}
+    first_claims = first_pred.get("claims") or []
+    mine = {o["path"]: o["sha256"] for o in (experiment or {}).get("outputs") or []}
+    outputs = [
+        {
+            "path": o["path"],
+            "first": o["sha256"],
+            "rerun": mine.get(o["path"]),
+            "result": "identical" if mine.get(o["path"]) == o["sha256"] else "changed",
+        }
+        for o in first_exp.get("outputs") or []
+    ]
+    again = {c["id"]: c for c in claims}
+    compared = [
+        {
+            "id": c["id"],
+            "first": {"measured": c.get("measured"), "verdict": c.get("verdict")},
+            "rerun": {
+                "measured": again.get(c["id"], {}).get("measured"),
+                "verdict": again.get(c["id"], {}).get("verdict"),
+            },
+            "result": "same" if again.get(c["id"], {}).get("verdict") == c.get("verdict") else "changed",
+        }
+        for c in first_claims
+    ]
+    measured = [c for c in compared if c["first"]["measured"] is not None]
+    drift = any(c["result"] == "changed" for c in compared) or (
+        not measured and any(o["result"] == "changed" for o in outputs)
+    )
+    return {"of": first["id"], "outputs": outputs, "claims": compared, "drift": drift}
+
+
 def execute(
     artifact: str,
     ref: str | None,
     key: Path | None,
     entry: dict[str, Any],
     store: AttestationStore,
-    rerun_of: str | None = None,
+    rerun_of: dict[str, Any] | None = None,
     tsa: str | None = TSA_URL,
     identity: bool = False,
     publish: str | None = None,
 ) -> dict[str, Any]:
-    """``publish`` is a Rekor URL: each envelope is recorded there and the proof kept under ``publication``."""
+    """``publish`` is a Rekor URL: each envelope is recorded there and the proof kept under ``publication``.
+
+    ``rerun_of`` is the first bundle when this run repeats it: the comparison
+    goes into the predicate before the id is computed, so one bundle is
+    written, with its outputs under that id.
+    """
     darnit_bin = Path(sys.executable).parent / "darnit"
     if not darnit_bin.exists():
         raise RunError(f"darnit CLI not found next to {sys.executable}")
@@ -410,6 +475,8 @@ def execute(
             measure_claim(c, repo)
         for c in claims:
             c["matches_expected"] = (c["verdict"] == c["expected_verdict"]) if c.get("expected_verdict") else None
+        for path in list(blobs):
+            safe_rel(path)
         commit = _git_commit(repo)
         subject_name = artifact if _is_url(artifact) else (_git_remote(repo) or str(repo))
 
@@ -445,8 +512,12 @@ def execute(
         "experiment": experiment,
         "claims": claims,
         "verdict": overall_verdict(claims),
-        "reruns": {"of": rerun_of} if rerun_of else None,
+        "reruns": compare_rerun(rerun_of, experiment, claims) if rerun_of else None,
         "witness_attestations": sorted(audit_w),
+        # The statement, and so the bundle id, covers the envelopes: a bundle cannot swap them.
+        "witness_envelopes_sha256": {
+            name: hashlib.sha256(_canonical(env)).hexdigest() for name, env in envelopes.items()
+        },
     }
     statement = {
         "_type": STATEMENT_TYPE,
@@ -479,6 +550,9 @@ def run(
 ) -> dict[str, Any]:
     """``command`` (argv after ``--``) overrides the entry's run.command; with no entry, everything else is inferred."""
     entry = load_entry(claims)
+    if artifact in (".", "") and (entry.get("artifact") or {}).get("clone"):
+        artifact = entry["artifact"]["clone"]
+        ref = ref or entry["artifact"].get("ref")
     if command:
         entry = {**entry, "run": {**(entry.get("run") or {}), "command": shlex.join(command)}}
         if not claims:

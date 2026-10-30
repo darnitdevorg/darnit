@@ -101,7 +101,8 @@ def signature_chain(sig: dict[str, Any]) -> list[x509.Certificate]:
     return out
 
 
-def _verify_with(key: Any, signature: bytes, data: bytes) -> None:
+def verify_with(key: Any, signature: bytes, data: bytes) -> None:
+    """Raise unless ``signature`` over ``data`` verifies with ``key`` (ECDSA P-256/SHA-256, RSA PKCS#1 v1.5, Ed25519)."""
     if isinstance(key, ec.EllipticCurvePublicKey):
         key.verify(signature, data, ec.ECDSA(hashes.SHA256()))
     elif isinstance(key, rsa.RSAPublicKey):
@@ -115,29 +116,38 @@ def _verify_with(key: Any, signature: bytes, data: bytes) -> None:
 def _chain_to_trusted(
     leaf: x509.Certificate, candidates: list[x509.Certificate], anchors: list[x509.Certificate], when: datetime
 ) -> str:
-    """Walk issuers from the leaf until a certificate from the trusted root; every link valid at ``when``."""
-    trusted = {a.public_bytes(serialization.Encoding.DER) for a in anchors}
-    cert, hops = leaf, 0
-    while True:
-        if cert.public_bytes(serialization.Encoding.DER) in trusted:
-            return "ok"
-        if not (cert.not_valid_before_utc <= when <= cert.not_valid_after_utc):
-            return f"{cert.subject.rfc4514_string() or 'certificate'} not valid at {when.isoformat()}"
-        issuer = None
-        for c in [*candidates, *anchors]:
-            if c.subject != cert.issuer:
-                continue
-            try:
-                cert.verify_directly_issued_by(c)
-            except Exception:  # noqa: BLE001 - wrong issuer key, try the next
-                continue
-            issuer = c
-            break
-        if issuer is None:
-            return "no path to a Fulcio certificate in Sigstore's trusted root"
-        cert, hops = issuer, hops + 1
-        if hops > 8:
-            return "certificate chain too long"
+    """Path validation of ``leaf`` to one of ``anchors`` at ``when``, as sigstore-python does it.
+
+    OpenSSL in strict mode builds the path and enforces the CA constraints
+    (basicConstraints, keyUsage, path length, key identifiers); ``candidates``
+    (the envelope's intermediates) are untrusted and can only link, never
+    anchor. A leaf is also required to carry the code-signing EKU, which is
+    what Fulcio issues; a certificate that is not a CA can never issue one.
+    """
+    from cryptography.x509.oid import ExtendedKeyUsageOID, ExtensionOID
+    from OpenSSL.crypto import X509, X509Store, X509StoreContext, X509StoreContextError, X509StoreFlags
+
+    try:
+        eku = leaf.extensions.get_extension_for_oid(ExtensionOID.EXTENDED_KEY_USAGE).value
+    except x509.ExtensionNotFound:
+        return "leaf certificate has no extended key usage"
+    if ExtendedKeyUsageOID.CODE_SIGNING not in eku:
+        return "leaf certificate is not a code-signing certificate"
+    store = X509Store()
+    store.set_flags(X509StoreFlags.X509_STRICT)
+    for anchor in anchors:
+        store.add_cert(X509.from_cryptography(anchor))
+    store.set_time(when)
+    context = X509StoreContext(
+        store, X509.from_cryptography(leaf), chain=[X509.from_cryptography(c) for c in candidates]
+    )
+    try:
+        verified = context.get_verified_chain()
+    except X509StoreContextError as e:
+        return f"no valid path to a Fulcio certificate in Sigstore's trusted root: {e}"
+    if len(verified) < 2:
+        return "leaf certificate is itself a trust anchor"
+    return "ok"
 
 
 def verify_identity_signature(
@@ -149,7 +159,7 @@ def verify_identity_signature(
     result: dict[str, Any] = {**certificate_identity(leaf), "signature": None, "chain": None, "signed_at": None}
     try:
         data = pae(env["payloadType"], base64.b64decode(env["payload"]))
-        _verify_with(leaf.public_key(), base64.b64decode(sig["sig"]), data)
+        verify_with(leaf.public_key(), base64.b64decode(sig["sig"]), data)
         result["signature"] = "ok"
     except Exception as e:  # noqa: BLE001
         result["signature"] = f"invalid: {type(e).__name__}"
