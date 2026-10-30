@@ -266,14 +266,6 @@ class TestHandlerInvocationSchema:
         assert inv.model_extra["expr"] == "exit_code == 0"
 
     @pytest.mark.unit
-    def test_shared_reference(self):
-        """Test shared field on HandlerInvocation."""
-        from darnit.config.framework_schema import HandlerInvocation
-
-        inv = HandlerInvocation(handler="exec", shared="branch_protection")
-        assert inv.shared == "branch_protection"
-
-    @pytest.mark.unit
     def test_use_locator(self):
         """Test use_locator field defaults to False."""
         from darnit.config.framework_schema import HandlerInvocation
@@ -575,152 +567,6 @@ class TestInferredFrom:
 
 
 # =============================================================================
-# 10.7: Shared handler cache tests
-# =============================================================================
-
-
-class TestSharedHandlerCache:
-    """Tests for shared handler cache in orchestrator."""
-
-    @pytest.mark.unit
-    def test_shared_cache_populated_on_first_execution(self):
-        """First execution of shared handler populates the cache."""
-        from darnit.config.framework_schema import HandlerInvocation
-
-        registry = get_sieve_handler_registry()
-        call_count = {"n": 0}
-
-        def counting_handler(config, context):
-            call_count["n"] += 1
-            return HandlerResult(
-                status=HandlerResultStatus.PASS,
-                message="ok",
-                confidence=1.0,
-                evidence={"found": True},
-            )
-
-        # Register with ceiling={"pass", "fail"} so counting_handler's
-        # PASS can conclude the control (feature 041). Without this, the
-        # default empty ceiling would downgrade to WARN and the shared-cache test would fail for reasons
-        # unrelated to caching behavior.
-        registry.register(
-            "shared_check", "deterministic", counting_handler,
-            ceiling={"pass", "fail"},
-        )
-
-        orchestrator = SieveOrchestrator()
-        invocations = [
-            HandlerInvocation(handler="shared_check", shared="bp_check"),
-        ]
-        control = _make_control("T-01", handler_invocations=invocations)
-        context = _make_context()
-        result = orchestrator._dispatch_handler_invocations(control, context)
-
-        assert result is not None
-        assert result.status == "PASS"
-        assert "bp_check" in orchestrator._shared_cache
-        assert call_count["n"] == 1
-
-    @pytest.mark.unit
-    def test_shared_cache_reused_on_second_execution(self):
-        """Second execution of same shared handler uses cache."""
-        from darnit.config.framework_schema import HandlerInvocation
-
-        registry = get_sieve_handler_registry()
-        call_count = {"n": 0}
-
-        def counting_handler(config, context):
-            call_count["n"] += 1
-            return HandlerResult(
-                status=HandlerResultStatus.PASS,
-                message="ok",
-                confidence=1.0,
-                evidence={"found": True},
-            )
-
-        registry.register(
-            "shared_check", "deterministic", counting_handler,
-            ceiling={"pass", "fail"},
-        )
-
-        orchestrator = SieveOrchestrator()
-
-        # First control
-        inv1 = [HandlerInvocation(handler="shared_check", shared="bp_check")]
-        control1 = _make_control("T-01", handler_invocations=inv1)
-        orchestrator._dispatch_handler_invocations(control1, _make_context())
-
-        # Second control — should use cache
-        inv2 = [HandlerInvocation(handler="shared_check", shared="bp_check")]
-        control2 = _make_control("T-02", handler_invocations=inv2)
-        orchestrator._dispatch_handler_invocations(control2, _make_context())
-
-        assert call_count["n"] == 1  # Only called once
-
-    @pytest.mark.unit
-    def test_cache_scoped_to_audit_run(self):
-        """Cache is cleared between audit runs via reset_caches."""
-        from darnit.config.framework_schema import HandlerInvocation
-
-        registry = get_sieve_handler_registry()
-        call_count = {"n": 0}
-
-        def counting_handler(config, context):
-            call_count["n"] += 1
-            return HandlerResult(
-                status=HandlerResultStatus.PASS,
-                message="ok",
-                confidence=1.0,
-            )
-
-        registry.register(
-            "h", "deterministic", counting_handler,
-            ceiling={"pass", "fail"},
-        )
-
-        orchestrator = SieveOrchestrator()
-        inv = [HandlerInvocation(handler="h", shared="cache_key")]
-
-        # First run
-        control1 = _make_control("T-01", handler_invocations=inv)
-        orchestrator._dispatch_handler_invocations(control1, _make_context())
-        assert call_count["n"] == 1
-
-        # Reset
-        orchestrator.reset_caches()
-
-        # Second run — handler called again
-        control2 = _make_control("T-01", handler_invocations=inv)
-        orchestrator._dispatch_handler_invocations(control2, _make_context())
-        assert call_count["n"] == 2
-
-    @pytest.mark.unit
-    def test_error_propagation_from_shared_cache(self):
-        """Shared handler error is cached and propagated."""
-        from darnit.config.framework_schema import HandlerInvocation
-
-        registry = get_sieve_handler_registry()
-        registry.register(
-            "failing_handler",
-            "deterministic",
-            _make_handler(HandlerResultStatus.ERROR, "API error"),
-            ceiling={"pass", "fail"},
-        )
-
-        orchestrator = SieveOrchestrator()
-        inv = [
-            HandlerInvocation(handler="failing_handler", shared="bad_api"),
-        ]
-        control = _make_control("T-01", handler_invocations=inv)
-        result = orchestrator._dispatch_handler_invocations(control, _make_context())
-
-        assert result is not None
-        assert result.status == "ERROR"
-        # Error result is cached
-        assert "bad_api" in orchestrator._shared_cache
-
-
-# =============================================================================
 # 10.8: use_locator and auto-derived on_pass tests
 # =============================================================================
 
@@ -999,7 +845,7 @@ class TestEndToEndIntegration:
 
     @pytest.mark.unit
     def test_full_audit_with_handler_features(self):
-        """E2E: shared handlers, when clauses, dependencies, inferred_from."""
+        """E2E: when clauses, dependencies, inferred_from."""
         from darnit.config.framework_schema import HandlerInvocation
 
         registry = get_sieve_handler_registry()
@@ -1022,9 +868,9 @@ class TestEndToEndIntegration:
 
         orchestrator = SieveOrchestrator()
 
-        # Control A: simple pass with shared handler (flat list)
+        # Control A: simple pass (flat list)
         inv_a = [
-            HandlerInvocation(handler="always_pass", shared="shared_check"),
+            HandlerInvocation(handler="always_pass"),
         ]
         ctrl_a = _make_control("A-01", handler_invocations=inv_a)
 
@@ -1069,9 +915,6 @@ class TestEndToEndIntegration:
 
         # D should FAIL (always_fail handler)
         assert result_map["D-01"].status == "FAIL"
-
-        # Shared handler should have been called exactly once
-        assert "shared_check" in orchestrator._shared_cache
 
     @pytest.mark.unit
     def test_inference_annotation_in_report(self):

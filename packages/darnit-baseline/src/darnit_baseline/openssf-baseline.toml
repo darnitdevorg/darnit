@@ -388,24 +388,6 @@ presentation_hint = "[mit/apache-2.0/bsd-3-clause/other]"
 # confirm_project_data.
 
 # =============================================================================
-# Shared Handlers (cached across controls within a single audit run)
-# =============================================================================
-
-# gh_api (feature 041): a referencing step declares fail_on_status and
-# concludes itself; `gh api` exit 1 is never read as FAIL.
-[shared_handlers.branch_protection_api]
-handler = "gh_api"
-endpoint = "/repos/$OWNER/$REPO/branches/$BRANCH/protection"
-
-[shared_handlers.repo_info_api]
-handler = "gh_api"
-endpoint = "/repos/$OWNER/$REPO"
-
-[shared_handlers.release_list_api]
-handler = "gh_api"
-endpoint = "/repos/$OWNER/$REPO/releases?per_page=5"
-
-# =============================================================================
 # Level 1 Controls - Access Control (AC)
 # =============================================================================
 

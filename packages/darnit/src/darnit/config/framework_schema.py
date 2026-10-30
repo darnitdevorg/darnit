@@ -171,9 +171,6 @@ class HandlerInvocation(BaseModel):
     # Handler name (registered in the sieve handler registry)
     handler: str
 
-    # Reference to a shared handler definition (from [shared_handlers] section)
-    shared: str | None = None
-
     # Convenience: populate files from locator.discover at load time
     use_locator: bool = False
 
@@ -207,6 +204,19 @@ class HandlerInvocation(BaseModel):
 
     # All other fields pass through to the handler
     model_config = ConfigDict(extra="allow")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _no_shared_reference(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "shared" in data:
+            raise ValueError(_SHARED_HANDLERS_REMOVED)
+        return data
+
+
+_SHARED_HANDLERS_REMOVED = (
+    "shared handlers were removed ([shared_handlers] and the step key shared, framework-design "
+    "Appendix C): declare the step's full configuration on each control that uses it"
+)
 
 
 # =============================================================================
@@ -443,42 +453,6 @@ class ProjectUpdateRemediationConfig(BaseModel):
     # Whether to create .project/ directory if it doesn't exist
     create_if_missing: bool = True
 
-    model_config = ConfigDict(extra="allow")
-
-
-# =============================================================================
-# Shared Handler Configuration
-# =============================================================================
-
-
-class SharedHandlerConfig(BaseModel):
-    """Configuration for a shared handler that can be referenced by multiple controls.
-
-    Shared handlers allow expensive operations (e.g., GitHub API calls) to be
-    defined once and reused across controls. When a control references a shared
-    handler via ``HandlerInvocation.shared``, the shared handler's config is
-    merged with the per-control overrides (control takes precedence).
-
-    Results are cached per audit run — the handler executes once, and all
-    controls referencing the same shared handler get the cached result.
-
-    Example:
-        ```toml
-        [shared_handlers.branch_protection]
-        handler = "exec"
-        command = ["gh", "api", "/repos/$OWNER/$REPO/branches/$BRANCH/protection"]
-        output_format = "json"
-
-        [[controls."OSPS-AC-03.01".passes]]
-        shared = "branch_protection"
-        expr = "json.required_pull_request_reviews != null"
-        ```
-    """
-
-    # Handler name (registered in the sieve handler registry)
-    handler: str
-
-    # All other fields pass through to the handler
     model_config = ConfigDict(extra="allow")
 
 
@@ -1500,9 +1474,6 @@ class FrameworkConfig(BaseModel):
     # Template definitions for remediation
     templates: dict[str, TemplateConfig] = Field(default_factory=dict)
 
-    # Shared handler definitions (cached per audit run)
-    shared_handlers: dict[str, SharedHandlerConfig] = Field(default_factory=dict)
-
     # Control definitions
     controls: dict[str, ControlConfig] = Field(default_factory=dict)
 
@@ -1547,6 +1518,13 @@ class FrameworkConfig(BaseModel):
     _source_path: str | None = PrivateAttr(default=None)
 
     model_config = ConfigDict(extra="allow")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _no_shared_handlers(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "shared_handlers" in data:
+            raise ValueError(_SHARED_HANDLERS_REMOVED)
+        return data
 
     # =========================================================================
     # Convenience Methods
