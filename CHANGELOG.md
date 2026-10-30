@@ -612,6 +612,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `read_full_audit_cache` enforce a match against `expected_target` so an
   audit cached under a trusted target cannot be reused by an untrusted run
   (fixes #659).
+- The audit report's "Confirm project context" step reads answers confirmed
+  operator-side for the repository the audit names (#664). Before, it called
+  the pending-context check without the identity, so after every question
+  was answered for an untrusted repository the report still asked for all of
+  them.
 - Control `when` and step `when` now use one evaluator
   (framework-design 5.1.1). A list-valued control `when` such as
   `{ ci_provider = ["github", "gitlab"] }` made the control N/A even when
