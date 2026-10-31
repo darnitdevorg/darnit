@@ -963,6 +963,7 @@ class RemediationExecutor:
             default_branch=self.default_branch,
             control_id=control_id,
             project_context=dict(self._project_values),
+            usable_project=dict(self._context_values),
             mode=mode,
             platform=self.platform,
         )

@@ -114,6 +114,10 @@ class ContextSieve:
             "governance_model": {
                 "deterministic": self._detect_governance_deterministic,
             },
+            "required_status_checks": {
+                "deterministic": self._detect_status_checks_deterministic,
+                "api": self._detect_status_checks_api,
+            },
         }
 
     def detect(
@@ -683,6 +687,113 @@ class ContextSieve:
             return contributors
         except (subprocess.TimeoutExpired, subprocess.SubprocessError):
             return []
+
+    # =========================================================================
+    # Status Checks Detection
+    # =========================================================================
+
+    def _detect_status_checks_deterministic(
+        self, local_path: str, owner: str | None = None, repo: str | None = None
+    ) -> list[ContextSignal]:
+        """Detect status checks from GitHub Actions workflow files.
+
+        Sources:
+        - .github/workflows/*.yml, *.yaml
+        """
+        signals = []
+        try:
+            from darnit.remediation.github import detect_workflow_checks
+
+            detected = detect_workflow_checks(local_path)
+            if detected:
+                checks = sorted({c["check_name"] for c in detected if c.get("check_name")})
+                if checks:
+                    signals.append(
+                        ContextSignal(
+                            source=SignalSource.PROJECT_MANIFEST,
+                            value=checks,
+                            raw_confidence=0.6,
+                            method="Parsed GitHub Actions workflows (.github/workflows)",
+                            evidence={"checks": checks, "count": len(checks)},
+                        )
+                    )
+        except Exception as e:
+            logger.debug(f"Workflow checks detection failed: {e}")
+
+        return signals
+
+    def _detect_status_checks_api(
+        self,
+        local_path: str,
+        owner: str,
+        repo: str,
+    ) -> list[ContextSignal]:
+        """Detect status check names seen passing on recent PRs via GitHub API.
+
+        Queries recent pull requests, finds the most recent PR with passing
+        check runs or commit statuses, and proposes those check names.
+        """
+        signals = []
+        from darnit.core.utils import gh_api_with_status
+
+        try:
+            endpoint = f"/repos/{owner}/{repo}/pulls?state=all&sort=updated&direction=desc&per_page=5"
+            body, status, error = gh_api_with_status(endpoint)
+            if status != 200 or not isinstance(body, list):
+                logger.debug(f"Failed to fetch PRs: {error or status}")
+                return signals
+
+            for pr in body:
+                if not isinstance(pr, dict):
+                    continue
+                pr_number = pr.get("number")
+                head_sha = pr.get("head", {}).get("sha")
+                if not head_sha:
+                    continue
+
+                passing_checks: set[str] = set()
+
+                # 1. Check runs
+                cr_endpoint = f"/repos/{owner}/{repo}/commits/{head_sha}/check-runs"
+                cr_body, cr_status, _ = gh_api_with_status(cr_endpoint)
+                if cr_status == 200 and isinstance(cr_body, dict):
+                    for cr in cr_body.get("check_runs", []):
+                        if isinstance(cr, dict) and cr.get("conclusion") == "success":
+                            name = cr.get("name")
+                            if name:
+                                passing_checks.add(name)
+
+                # 2. Combined commit status contexts
+                st_endpoint = f"/repos/{owner}/{repo}/commits/{head_sha}/status"
+                st_body, st_status, _ = gh_api_with_status(st_endpoint)
+                if st_status == 200 and isinstance(st_body, dict):
+                    for st in st_body.get("statuses", []):
+                        if isinstance(st, dict) and st.get("state") == "success":
+                            ctx = st.get("context")
+                            if ctx:
+                                passing_checks.add(ctx)
+
+                if passing_checks:
+                    checks_list = sorted(passing_checks)
+                    signals.append(
+                        ContextSignal(
+                            source=SignalSource.GITHUB_API,
+                            value=checks_list,
+                            raw_confidence=0.9,
+                            method=f"Checks seen passing on PR #{pr_number}",
+                            evidence={
+                                "pr_number": pr_number,
+                                "checks": checks_list,
+                                "head_sha": head_sha,
+                                "count": len(checks_list),
+                            },
+                        )
+                    )
+                    break  # Found recent PR with passing checks
+        except Exception as e:
+            logger.debug(f"GitHub API status check detection failed: {e}")
+
+        return signals
 
 
 # Singleton instance
