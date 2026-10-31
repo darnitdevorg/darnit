@@ -93,3 +93,41 @@ def test_pattern_list_covers_txt_and_no_ext_readme(
     files = _pattern_files(framework, control_id)
     assert "README.txt" in files, f"{control_id}: missing README.txt in {files}"
     assert "README" in files, f"{control_id}: missing README in {files}"
+
+
+# A pattern step with `fail_on_miss` concludes FAIL when none of its files
+# exists (#665). One that reads README.md must list every README variant, or
+# a project with only README.rst fails without its README being read.
+_README_VARIANTS = ("README.md", "README.rst", "README.txt", "README")
+
+
+def _fail_on_miss_steps() -> list[tuple[str, dict]]:
+    return sorted(
+        (
+            (control_id, p)
+            for control_id, control in _load_framework()["controls"].items()
+            for p in control.get("passes", [])
+            if p.get("handler") in ("pattern", "regex") and p.get("fail_on_miss")
+        ),
+        key=lambda step: step[0],
+    )
+
+
+@pytest.mark.parametrize(
+    ("control_id", "step"),
+    [s for s in _fail_on_miss_steps() if "README.md" in s[1].get("files", [])],
+    ids=lambda v: v if isinstance(v, str) else "",
+)
+def test_fail_on_miss_lists_every_readme_variant(control_id: str, step: dict):
+    files = step["files"]
+    missing = [v for v in _README_VARIANTS if v not in files]
+    assert not missing, f"{control_id}: fail_on_miss pattern lacks {missing}: {files}"
+
+
+# Remediation acts on that FAIL. On a case-sensitive filesystem, a file it
+# creates under a name the step does not list leaves the control failing.
+@pytest.mark.parametrize(("control_id", "step"), _fail_on_miss_steps(), ids=lambda v: v if isinstance(v, str) else "")
+def test_fail_on_miss_lists_what_remediation_creates(framework: dict, control_id: str, step: dict):
+    handlers = framework["controls"][control_id].get("remediation", {}).get("handlers", [])
+    created = {h["path"] for h in handlers if h.get("handler") == "file_create"}
+    assert created <= set(step["files"]), f"{control_id}: remediation creates {created - set(step['files'])}"
