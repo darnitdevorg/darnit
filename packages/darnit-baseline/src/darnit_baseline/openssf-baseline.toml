@@ -1445,7 +1445,7 @@ look_for_urls = false
 [[controls."OSPS-DO-06.01".passes]]
 handler = "pattern"
 fail_on_miss = true  # missing from every file listed: FAIL, so remediation plans it (#665)
-files = ["README.md", "CONTRIBUTING.md", "docs/dependencies.md", "DEPENDENCIES.md"]
+files = ["README.md", "README.rst", "README.txt", "README", "CONTRIBUTING.md", "docs/dependencies.md", "docs/DEPENDENCIES.md", "DEPENDENCIES.md"]
 
 [controls."OSPS-DO-06.01".passes.pattern.patterns]
 dependency_docs = "(dependenc|package|library).*(select|obtain|track|manage|update|policy)"
@@ -3315,7 +3315,7 @@ help_md = """Document testing process.
 [[controls."OSPS-QA-06.02".passes]]
 handler = "pattern"
 fail_on_miss = true  # missing from every file listed: FAIL, so remediation plans it (#665)
-files = ["README.md", "CONTRIBUTING.md", "docs/testing.md", "docs/TESTING.md"]
+files = ["README.md", "README.rst", "README.txt", "README", "CONTRIBUTING.md", "docs/testing.md", "docs/TESTING.md"]
 
 [controls."OSPS-QA-06.02".passes.pattern.patterns]
 test_docs = "(run.*test|test.*instruction|how to test)"
@@ -4230,7 +4230,7 @@ handler = "pattern"
 fail_on_miss = true  # missing from every file listed: FAIL, so remediation plans it (#665)
 # rst variants added; ARCHITECTURE/DESIGN commonly live as .rst
 # in Sphinx-based Python projects.
-files = ["ARCHITECTURE.md", "ARCHITECTURE.rst", "docs/architecture.md", "docs/architecture.rst", "docs/design.md", "docs/design.rst", "DESIGN.md", "DESIGN.rst", "README.md", "README.rst"]
+files = ["ARCHITECTURE.md", "ARCHITECTURE.rst", "docs/architecture.md", "docs/architecture.rst", "docs/design.md", "docs/design.rst", "DESIGN.md", "DESIGN.rst", "README.md", "README.rst", "README.txt", "README"]
 pass_if_any = true
 
 [controls."OSPS-SA-01.01".passes.pattern.patterns]
