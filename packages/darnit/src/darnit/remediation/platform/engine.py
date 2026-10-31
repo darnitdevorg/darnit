@@ -118,8 +118,7 @@ def platform_repository(local_path: str, owner: str | None, repo: str | None) ->
 
 def resolve_platform_require(require: Mapping[str, Any], context: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Resolve context variables in a platform requirement mapping."""
-    if not context:
-        return dict(require)
+    ctx = context or {}
     resolved: dict[str, Any] = {}
     for key, value in require.items():
         if isinstance(value, list):
@@ -129,20 +128,25 @@ def resolve_platform_require(require: Mapping[str, Any], context: Mapping[str, A
                     var_name = item.strip("${}").strip("$")
                     if var_name.startswith("context."):
                         var_name = var_name[len("context.") :]
-                    val = context.get(var_name)
+                    val = ctx.get(var_name)
                     if val is None:
-                        val = context.get(f"context.{var_name}")
+                        val = ctx.get(f"context.{var_name}")
+                    if val is None:
+                        raise ValueError(f"Unresolved context placeholder in platform requirement: {item}")
                     if isinstance(val, list):
-                        new_list.extend(str(v).strip() for v in val if str(v).strip())
-                    elif isinstance(val, str) and val:
-                        if "," in val:
-                            new_list.extend(s.strip() for s in val.split(",") if s.strip())
-                        else:
-                            new_list.append(val.strip())
+                        items = [str(v).strip() for v in val if str(v).strip()]
+                        if not items:
+                            raise ValueError(f"Context key '{var_name}' resolved to empty list")
+                        new_list.extend(items)
+                    elif isinstance(val, str):
+                        s = val.strip()
+                        if not s:
+                            raise ValueError(f"Context key '{var_name}' resolved to empty string")
+                        new_list.append(s)
                     elif val:
                         new_list.append(str(val))
                     else:
-                        new_list.append(item)
+                        raise ValueError(f"Context key '{var_name}' has invalid value: {val!r}")
                 else:
                     new_list.append(item)
             resolved[key] = new_list
@@ -150,18 +154,26 @@ def resolve_platform_require(require: Mapping[str, Any], context: Mapping[str, A
             var_name = value.strip("${}").strip("$")
             if var_name.startswith("context."):
                 var_name = var_name[len("context.") :]
-            val = context.get(var_name)
+            val = ctx.get(var_name)
             if val is None:
-                val = context.get(f"context.{var_name}")
-            if val is not None:
-                if key == "require_status_checks" and isinstance(val, str):
-                    resolved[key] = [s.strip() for s in val.split(",") if s.strip()]
-                elif key == "require_status_checks" and isinstance(val, list):
-                    resolved[key] = [str(v).strip() for v in val if str(v).strip()]
+                val = ctx.get(f"context.{var_name}")
+            if val is None:
+                raise ValueError(f"Unresolved context placeholder in platform requirement: {value}")
+            if key == "require_status_checks":
+                if isinstance(val, list):
+                    items = [str(v).strip() for v in val if str(v).strip()]
+                    if not items:
+                        raise ValueError(f"Context key '{var_name}' resolved to empty list")
+                    resolved[key] = items
+                elif isinstance(val, str):
+                    s = val.strip()
+                    if not s:
+                        raise ValueError(f"Context key '{var_name}' resolved to empty string")
+                    resolved[key] = [s]
                 else:
-                    resolved[key] = val
+                    raise ValueError(f"Context key '{var_name}' must be list or string of check names")
             else:
-                resolved[key] = value
+                resolved[key] = val
         else:
             resolved[key] = value
     return resolved
@@ -182,7 +194,24 @@ def platform_requests(
             if handler.handler == "platform_setting":
                 extra = handler.model_extra or {}
                 require = extra["require"]
-                if context:
+                has_placeholder = any(
+                    (isinstance(v, str) and (v.startswith("${") or v.startswith("$")))
+                    or (
+                        isinstance(v, list)
+                        and any(isinstance(x, str) and (x.startswith("${") or x.startswith("$")) for x in v)
+                    )
+                    for v in require.values()
+                )
+                if has_placeholder:
+                    if not context:
+                        # Cannot plan a requirement whose context is unconfirmed/missing
+                        continue
+                    try:
+                        require = resolve_platform_require(require, context)
+                    except ValueError:
+                        # Unresolved context value - cannot plan requirement
+                        continue
+                elif context:
                     require = resolve_platform_require(require, context)
                 requests.append(
                     PlatformRequirement(target=extra["target"], require=require, branch=extra.get("branch"))

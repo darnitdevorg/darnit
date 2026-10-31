@@ -355,8 +355,8 @@ detect = [
 [context.required_status_checks]
 type = "list"
 prompt = "Which status checks should be required before merging?"
-hint = "List of status check contexts/names (e.g., CI jobs, test, linter)"
-examples = ["build, test"]
+hint = "List of status check contexts/names (enter as separate items, e.g. test (ubuntu-latest, 3.12)). Proposes checks seen passing on recent PRs, which may include third-party contexts (e.g. Codecov, DCO); verify before confirming."
+examples = ["build", "test"]
 affects = ["OSPS-QA-03.01"]
 store_as = "branch_protection.required_status_checks"
 # A user-judgment key (feature 042, FR-005): detection may propose a candidate
