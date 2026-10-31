@@ -566,13 +566,13 @@ jobs:
         run: |
           set -euo pipefail
           # --help is the simplest one-shot invocation: it exercises the
-          # uvx fetch + the darnit-mcp entry-point resolution, and exits
+          # uvx fetch + the `darnit serve` entry-point resolution, and exits
           # 0 without hanging on stdio MCP input.
           DARNIT_MCP_VERSION="$VERSION" \
           CLAUDE_PLUGIN_ROOT=/tmp/plugin-extract/darnit \
             /tmp/plugin-extract/darnit/bin/darnit-mcp-runner --help \
             | head -5
-          echo "✓ Wrapper exec'd uvx and darnit-mcp printed its help"
+          echo "✓ Wrapper exec'd uvx and darnit serve printed its help"
 
       - name: Wrapper errors actionably when neither uvx nor pipx is available
         env:

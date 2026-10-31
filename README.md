@@ -37,26 +37,43 @@ The Baseline isn't just about security—it covers testing requirements, build p
 
 ## Installation
 
-> [!NOTE]
-> PyPI, pipx, `uv tool install`, container, Homebrew, and standalone-binary
-> channels are not published yet - tracked in
-> [#229](https://github.com/kusari-oss/darnit/issues/229) (which depends on
-> PyPI publishing, [#228](https://github.com/kusari-oss/darnit/issues/228)).
-> Until those land, install from source with [`uv`](https://docs.astral.sh/uv/):
+Install the `darnit` command with [`uv`](https://docs.astral.sh/uv/):
 
 ```bash
-git clone https://github.com/kusari-oss/darnit
+uv tool install git+https://github.com/darnitdevorg/darnit
+
+darnit audit /path/to/repo
+darnit serve      # MCP server mode; OpenSSF Baseline by default
+```
+
+The package is `darnit-mcp`; the command it installs is `darnit` (there is no
+`darnit-mcp` command). To run darnit without installing it:
+
+```bash
+uvx --from darnit-mcp darnit audit /path/to/repo                                       # PyPI
+uvx --from "git+https://github.com/darnitdevorg/darnit@v0.1.1" darnit audit /path/to/repo  # a tag
+```
+
+`uv tool install darnit-mcp` and `pipx install darnit-mcp` from PyPI need a release
+after 0.1.1, the first whose `darnit-mcp` provides the `darnit` command
+([#621](https://github.com/darnitdevorg/darnit/issues/621)). See
+[`docs/install/from-source.md`](docs/install/from-source.md) for pinning a tag, and
+[`docs/install/README.md`](docs/install/README.md) for the other channels.
+
+> [!NOTE]
+> Container, Homebrew, and standalone-binary channels are not published yet -
+> tracked in [#229](https://github.com/darnitdevorg/darnit/issues/229).
+
+To work on darnit itself:
+
+```bash
+git clone https://github.com/darnitdevorg/darnit
 cd darnit
 uv sync
 
 uv run darnit audit /path/to/repo
 uv run darnit serve --framework openssf-baseline   # MCP server mode
 ```
-
-Once [#229](https://github.com/kusari-oss/darnit/issues/229) lands, `pipx install darnit-mcp`
-and `uv tool install darnit-mcp` will become the recommended end-user paths, with
-container, Homebrew, standalone-binary, and Claude Code plugin channels documented in
-[`docs/install/README.md`](docs/install/README.md).
 ### Optional: Opengrep for taint analysis
 
 The threat model generator can use [Opengrep](https://github.com/opengrep/opengrep)
@@ -352,14 +369,14 @@ Add the darnit MCP server to your Claude Code settings:
 }
 ```
 
-**Option 3: Using uvx** (if published to PyPI):
+**Option 3: Using uvx** (from PyPI; the package is `darnit-mcp`, the command is `darnit`):
 
 ```json
 {
   "mcpServers": {
     "openssf-baseline": {
       "command": "uvx",
-      "args": ["darnit", "serve", "--framework", "openssf-baseline"]
+      "args": ["--from", "darnit-mcp", "darnit", "serve", "--framework", "openssf-baseline"]
     }
   }
 }

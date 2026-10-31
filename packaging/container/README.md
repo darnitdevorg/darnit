@@ -1,6 +1,6 @@
 # darnit container image
 
-Official darnit container image published to `ghcr.io/kusari-oss/darnit` on every release tag.
+Official darnit container image published to `ghcr.io/darnitdevorg/darnit` on every release tag.
 
 > End-user install documentation: [`docs/install/container.md`](../../docs/install/container.md). This README sits next to the Dockerfile and is the source for the image's overview on GHCR.
 
@@ -8,45 +8,56 @@ Official darnit container image published to `ghcr.io/kusari-oss/darnit` on ever
 
 ```bash
 # Pin to a specific release
-docker pull ghcr.io/kusari-oss/darnit:v0.1.0
+docker pull ghcr.io/darnitdevorg/darnit:v0.1.0
 
 # Latest stable
-docker pull ghcr.io/kusari-oss/darnit:latest
+docker pull ghcr.io/darnitdevorg/darnit:latest
 
 # Pre-release (not promoted to :latest)
-docker pull ghcr.io/kusari-oss/darnit:v0.1.0rc1
+docker pull ghcr.io/darnitdevorg/darnit:v0.1.0rc1
 
-# Rolling build of main (unsigned)
-docker pull ghcr.io/kusari-oss/darnit:edge
+# Rolling build of main, from source (unsigned)
+docker pull ghcr.io/darnitdevorg/darnit:edge
 ```
 
 ## Run
 
 ```bash
-# Audit the current directory
-docker run --rm -v "$PWD:/repo" ghcr.io/kusari-oss/darnit:latest audit
+# Run darnit on the current directory: `darnit harness /repo`, the end-to-end
+# audit with model calls (ANTHROPIC_API_KEY) and platform checks (GH_TOKEN)
+docker run --rm -e ANTHROPIC_API_KEY -e GH_TOKEN -v "$PWD:/repo" ghcr.io/darnitdevorg/darnit:latest
 
-# Run as the MCP server (stdio)
-docker run --rm -i ghcr.io/kusari-oss/darnit:latest mcp
+# MCP server on stdio, for agent clients
+docker run --rm -i -e GH_TOKEN -v "$PWD:/repo" ghcr.io/darnitdevorg/darnit:latest serve
+
+# Deterministic audit without model calls, for testing
+docker run --rm -v "$PWD:/repo" ghcr.io/darnitdevorg/darnit:latest audit /repo
 
 # Print the bundled version
-docker run --rm ghcr.io/kusari-oss/darnit:latest --version
+docker run --rm ghcr.io/darnitdevorg/darnit:latest --version
 ```
 
-The image's `WORKDIR` is `/repo`. The entrypoint dispatches the first arg to `darnit` (for `audit`/`remediate`/`list-controls`/`plan`/`profiles`/`validate`/`--version`/`--help`), to `darnit-mcp` for `mcp`, or executes the user's command directly otherwise.
+The entrypoint is the `darnit` CLI and the default command is `harness /repo`; the image's `WORKDIR` is `/repo`. Without `ANTHROPIC_API_KEY` the harness stops with a setup error, exit 2.
+
+There is no shell. Run another program in the image with `--entrypoint` (for example `--entrypoint git`). For a shell while debugging, build with `--build-arg RUNTIME_BASE=gcr.io/distroless/cc-debian12:debug-nonroot` and run `--entrypoint /busybox/sh`. Git hooks and git credential helpers with arguments do not work in the image; see [`docs/install/container.md`](../../docs/install/container.md#no-shell-inside).
 
 ## Image contents
 
-- **Base**: `python:3.12-slim-bookworm`
-- **darnit**: installed from PyPI via `pip install darnit-mcp==<version>` (the version is recorded as the `org.opencontainers.image.version` OCI label)
-- **CLIs**: `git`, `gh` (GitHub CLI from `cli.github.com`)
-- **Runtime user**: `darnit` (uid 10001), non-root
+Built from source by this directory's Dockerfile: a release image from its tagged commit, `:edge` from `main`. The packages come from `uv.lock` (frozen); nothing about darnit is installed from PyPI.
+
+- **Base**: `gcr.io/distroless/cc-debian12:nonroot`, pinned by digest (glibc, CA certificates; no shell or package manager)
+- **Python**: 3.12 from uv's python-build-standalone builds (`uv python install`), without the parts darnit never loads (Tcl/Tk, IDLE, the embedding library, headers)
+- **darnit**: `darnit-mcp`, `darnit-core`, `darnit-baseline`, `darnit-gittuf`, `darnit-reproducibility` and `darnit-csl`, non-editable, without development dependencies. The build fails if `darnit-hello`, `darnit-testchecks`, `pytest` or `ruff` reaches the venv.
+- **Downloaded tools**, pinned by version and sha256 per architecture (the Dockerfile notes where each pin came from): `zizmor`, `gittuf`, `gh`; and `uv`, by image digest
+- **Debian 12 tools**: `git` (with `git-remote-http` for https), `grep`, `gpg`, `ssh-keygen`. Not pinned to versions, so a rebuild picks up security updates. The build runs `ldd` on every ELF file the image runs and copies each shared library the base lacks from the same Debian release (36 libraries, about 16 MB, 28 of them for git's https transport); an unresolved library fails the build. The dpkg status of each package a file came from is copied to `/var/lib/dpkg/status.d/`, so image scanners see them.
+- **Git**: `safe.directory=/repo` in `/etc/gitconfig`. The mounted repository belongs to the host user, not the container user; without the setting git refuses it and the audit loses the repository identity (#586). It turns off git's ownership check for `/repo`, so mount only repositories you would run git in natively; #617 tracks hardening darnit's own git calls.
+- **Runtime user**: `nonroot` (uid 65532)
+- **Version label**: `org.opencontainers.image.version`, from the `IMAGE_VERSION` build arg (the release version, or the commit sha for `:edge`)
 
 What's deliberately **not** in the image:
-- `pip` from a build context (the runtime stage has the venv pre-built; no in-place installs)
+- A shell, a package manager, or pip in the venv
 - Build toolchain (gcc, make, etc.)
-- Apt or pip caches
-- Shell history
+- Apt, pip or uv caches
 
 ## Platforms
 
@@ -61,8 +72,8 @@ The release image is multi-arch:
 Every release tag (stable and pre-release) is signed with cosign keyless OIDC.
 
 ```bash
-cosign verify ghcr.io/kusari-oss/darnit:v0.1.0 \
-  --certificate-identity-regexp '^https://github\.com/kusari-oss/darnit/\.github/workflows/release\.yml@' \
+cosign verify ghcr.io/darnitdevorg/darnit:v0.1.0 \
+  --certificate-identity-regexp '^https://github\.com/darnitdevorg/darnit/\.github/workflows/release\.yml@' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
@@ -73,7 +84,7 @@ The `:edge` rolling build is **not** signed — it's for development only.
 Each signed image has an SPDX-JSON SBOM attached via cosign attestation:
 
 ```bash
-cosign download attestation ghcr.io/kusari-oss/darnit:v0.1.0 \
+cosign download attestation ghcr.io/darnitdevorg/darnit:v0.1.0 \
   | jq -r '.payload' | base64 -d | jq '.predicate' > darnit-sbom.spdx.json
 ```
 
@@ -83,21 +94,17 @@ Compressed-size target: 300 MB (soft). The release workflow records the size in 
 
 ## Building locally
 
-The image is normally built by the release pipeline, but you can build it locally for testing:
+From the repository root:
 
 ```bash
-# Build for the current platform only. VERSION must be a real darnit-mcp
-# release on PyPI (or TestPyPI if you adjust the install command).
-docker build \
-  --build-arg VERSION=0.1.0 \
-  -t darnit-local \
-  -f packaging/container/Dockerfile \
-  .
+docker build -f packaging/container/Dockerfile -t darnit-local .
+docker run --rm -e ANTHROPIC_API_KEY -e GH_TOKEN -v "$PWD:/repo" darnit-local
 
-docker run --rm -v "$PWD:/repo" darnit-local audit
+# The checks CI runs on pull requests that touch the image
+scripts/container-image-smoke.sh darnit-local
 ```
 
-The `--build-arg VERSION` is required — the Dockerfile refuses to build without an explicit pinned version.
+The image contains the checkout's packages, local changes included. `--build-arg IMAGE_VERSION=<version>` sets the version label (default `dev`). To bump a pinned tool, change its version and sha256 build args together. `--build-arg RUNTIME_BASE=gcr.io/distroless/cc-debian12:debug-nonroot` builds a variant with a busybox shell at `/busybox/sh`, for debugging only.
 
 ## Recovery from a bad image
 
