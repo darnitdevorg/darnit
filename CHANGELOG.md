@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Developer test flow automation scripts (`scripts/clean_and_install_dev.sh`,
+  `scripts/setup_dev_projects.sh`, `scripts/run_dev_test_flow.sh`) to
+  generate reproducible test fixtures (`failing-empty`,
+  `partially-compliant`, `passing-reference`) and assert baseline audit
+  verdicts locally before opening pull requests.
+
 ### Security
 
 - Platform remediation reads the current settings first, changes only what a
