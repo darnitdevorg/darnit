@@ -142,7 +142,7 @@ The subject identifies the repository state being attested:
 | `baseline.version` | string | Yes | OSPS baseline version (e.g., "2026.02.19") |
 | `repository.url` | string | Yes | Repository URL |
 | `repository.commit` | string | Yes | Full commit SHA |
-| `configuration.project_type` | string | Yes | Project type from project.toml |
+| `configuration.project_type` | string | Yes | Value of `ProjectConfig.type`; falls back to `"software"` when no project config is present |
 | `configuration.excluded_controls` | array | No | Controls marked N/A in config |
 | `summary.level_achieved` | int | Yes | Highest fully-compliant level (0-3) |
 | `controls` | array | Yes | Individual control results |
