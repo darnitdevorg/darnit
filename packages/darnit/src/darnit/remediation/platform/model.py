@@ -61,8 +61,6 @@ def _check_requirement(kind: str, key: str, value: Any) -> Any:
             raise ValueError("require_approvals must be an integer of at least 1")
         return value
     if key == "require_status_checks":
-        if isinstance(value, str) and (value.startswith("${") or value.startswith("$")):
-            value = [value]
         if not isinstance(value, list) or not value or not all(isinstance(c, str) and c for c in value):
             raise ValueError("require_status_checks must be a non-empty list of status-check contexts")
         return sorted(set(value))
