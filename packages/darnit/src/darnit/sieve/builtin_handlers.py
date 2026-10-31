@@ -29,6 +29,7 @@ from typing import Any
 
 from darnit.core.error_class import ErrorClass
 from darnit.core.repo_files import escaping_entry, open_in_repository, within_repository
+from darnit.core.utils import dir_entries, get_file_identity, resolve_case_exact_path
 
 from .handler_registry import (
     HandlerContext,
@@ -280,8 +281,9 @@ def file_exists_handler(config: dict[str, Any], context: HandlerContext) -> Hand
             # sorted() so "first match wins" is stable across filesystems.
             # Determinism Tier 1 (#418).
             matches = _skip_outside(sorted(glob.glob(os.path.join(context.local_path, pattern))), context, skipped)
-            if matches:
-                found = matches[0]
+            exact_matches = [m for m in matches if resolve_case_exact_path(m, context.local_path)]
+            if exact_matches:
+                found = exact_matches[0]
                 rel_path = os.path.relpath(found, context.local_path)
                 return _record_skipped(
                     HandlerResult(
@@ -299,32 +301,34 @@ def file_exists_handler(config: dict[str, Any], context: HandlerContext) -> Hand
             # downstream consumers (and audit reviewers) can see where it
             # actually lives.
             for dirpath, _depth in _walk_depth_limited(context.local_path, max_depth):
-                candidate = os.path.join(dirpath, pattern)
-                if os.path.exists(candidate) and _skip_outside([candidate], context, skipped):
-                    rel_path = os.path.relpath(candidate, context.local_path)
-                    return _record_skipped(
-                        HandlerResult(
-                            status=HandlerResultStatus.PASS,
-                            message=f"Required file found: {rel_path}",
-                            confidence=1.0,
-                            evidence={
-                                "found_file": candidate,
-                                "relative_path": rel_path,
-                                "files_checked": files,
-                                "max_depth": max_depth,
-                            },
-                        ),
-                        skipped,
-                    )
+                if pattern in dir_entries(dirpath):
+                    candidate = os.path.join(dirpath, pattern)
+                    if os.path.exists(candidate) and _skip_outside([candidate], context, skipped):
+                        rel_path = os.path.relpath(candidate, context.local_path)
+                        return _record_skipped(
+                            HandlerResult(
+                                status=HandlerResultStatus.PASS,
+                                message=f"Required file found: {rel_path}",
+                                confidence=1.0,
+                                evidence={
+                                    "found_file": candidate,
+                                    "relative_path": rel_path,
+                                    "files_checked": files,
+                                    "max_depth": max_depth,
+                                },
+                            ),
+                            skipped,
+                        )
         else:
-            path = os.path.join(context.local_path, pattern)
-            if os.path.exists(path) and _skip_outside([path], context, skipped):
+            exact = resolve_case_exact_path(pattern, context.local_path)
+            if exact and os.path.exists(exact) and _skip_outside([exact], context, skipped):
+                rel_path = os.path.relpath(exact, context.local_path)
                 return _record_skipped(
                     HandlerResult(
                         status=HandlerResultStatus.PASS,
-                        message=f"Required file found: {pattern}",
+                        message=f"Required file found: {rel_path}",
                         confidence=1.0,
-                        evidence={"found_file": path, "relative_path": pattern, "files_checked": files},
+                        evidence={"found_file": exact, "relative_path": rel_path, "files_checked": files},
                     ),
                     skipped,
                 )
@@ -795,20 +799,30 @@ def _regex_exclude_evidence(
                 os.path.join(context.local_path, pattern),
                 recursive=True,
             )
-            found.extend(matches)
+            found.extend(m for m in matches if resolve_case_exact_path(m, context.local_path))
         elif max_depth > 0:
             # Depth-limited walk for plain filenames (no wildcards).
             # dirs.clear() at the boundary depth means directory entries AT
             # that depth are no longer descended into; only files at each
             # visited dir are matched here.
             for dirpath, _d in _walk_depth_limited(context.local_path, max_depth):
-                candidate = os.path.join(dirpath, pattern)
-                if os.path.exists(candidate):
-                    found.append(candidate)
+                if pattern in dir_entries(dirpath):
+                    candidate = os.path.join(dirpath, pattern)
+                    if os.path.exists(candidate):
+                        found.append(candidate)
         else:
-            candidate = os.path.join(context.local_path, pattern)
-            if os.path.exists(candidate):
-                found.append(candidate)
+            exact = resolve_case_exact_path(pattern, context.local_path)
+            if exact and os.path.exists(exact):
+                found.append(exact)
+
+    deduped_found: list[str] = []
+    seen_ids: set[tuple[int, int] | str] = set()
+    for f in found:
+        fid = get_file_identity(f)
+        if fid not in seen_ids:
+            seen_ids.add(fid)
+            deduped_found.append(f)
+    found = deduped_found
 
     skipped: list[str] = []
     found = _skip_outside(found, context, skipped)
@@ -859,6 +873,7 @@ def _resolve_regex_files(
     files_list = config.get("files", [])
     if files_list:
         resolved: list[str] = []
+        seen_file_ids: set[tuple[int, int] | str] = set()
         for file_pattern in files_list:
             if "*" in file_pattern or "?" in file_pattern:
                 # Glob patterns: always use glob.glob; max_depth does not apply.
@@ -870,19 +885,31 @@ def _resolve_regex_files(
                         recursive=True,
                     )
                 )
-                resolved.extend(m for m in matches if os.path.isfile(m))
+                for m in matches:
+                    if os.path.isfile(m) and resolve_case_exact_path(m, context.local_path):
+                        fid = get_file_identity(m)
+                        if fid not in seen_file_ids:
+                            seen_file_ids.add(fid)
+                            resolved.append(m)
             elif max_depth > 0:
                 # Depth-limited walk for plain filenames (no wildcards).
                 # Only files are collected; dirs.clear() at the depth boundary
                 # prevents descending further without skipping files at that depth.
                 for dirpath, _d in _walk_depth_limited(context.local_path, max_depth):
-                    candidate = os.path.join(dirpath, file_pattern)
-                    if os.path.isfile(candidate):
-                        resolved.append(candidate)
+                    if file_pattern in dir_entries(dirpath):
+                        candidate = os.path.join(dirpath, file_pattern)
+                        if os.path.isfile(candidate):
+                            fid = get_file_identity(candidate)
+                            if fid not in seen_file_ids:
+                                seen_file_ids.add(fid)
+                                resolved.append(candidate)
             else:
-                full = os.path.join(context.local_path, file_pattern)
-                if os.path.isfile(full):
-                    resolved.append(full)
+                exact = resolve_case_exact_path(file_pattern, context.local_path)
+                if exact and os.path.isfile(exact):
+                    fid = get_file_identity(exact)
+                    if fid not in seen_file_ids:
+                        seen_file_ids.add(fid)
+                        resolved.append(exact)
         return resolved if resolved else None
 
     # Legacy singular format: file = "README.md" or file = "$FOUND_FILE"
@@ -895,11 +922,9 @@ def _resolve_regex_files(
         if not file_path:
             return None
 
-    if not os.path.isabs(file_path):
-        file_path = os.path.join(context.local_path, file_path)
-
-    if os.path.isfile(file_path):
-        return [file_path]
+    exact = resolve_case_exact_path(file_path, context.local_path)
+    if exact and os.path.isfile(exact):
+        return [exact]
     return None
 
 
@@ -1082,13 +1107,18 @@ def llm_eval_handler(config: dict[str, Any], context: HandlerContext) -> Handler
     files_to_include = config.get("files_to_include", [])
     file_contents: dict[str, str] = {}
     skipped: list[str] = []
+    seen_file_ids: set[tuple[int, int] | str] = set()
 
     def _read(resolved: str) -> None:
         if not resolved or len(file_contents) >= 5:
             return
-        full = os.path.join(context.local_path, resolved) if not os.path.isabs(resolved) else resolved
-        if not os.path.lexists(full) or not _skip_outside([full], context, skipped):
+        full = resolve_case_exact_path(resolved, context.local_path)
+        if not full or not os.path.isfile(full) or not _skip_outside([full], context, skipped):
             return
+        file_id = get_file_identity(full)
+        if file_id in seen_file_ids:
+            return
+        seen_file_ids.add(file_id)
         try:
             with open_in_repository(context.local_path, full, encoding="utf-8", errors="ignore") as fh:
                 rel = os.path.relpath(full, context.local_path)
@@ -1167,12 +1197,19 @@ def llm_extract_handler(config: dict[str, Any], context: HandlerContext) -> Hand
     globs = config.get("files", [])
     file_contents: dict[str, str] = {}
     skipped: list[str] = []
+    seen_file_ids: set[tuple[int, int] | str] = set()
     for pattern in globs[:5]:  # cap breadth
         matches = globmod.glob(
             os.path.join(context.local_path, pattern),
             recursive=True,
         )
         for m in _skip_outside(matches, context, skipped)[:5]:  # cap depth per glob
+            if not resolve_case_exact_path(m, context.local_path):
+                continue
+            file_id = get_file_identity(m)
+            if file_id in seen_file_ids:
+                continue
+            seen_file_ids.add(file_id)
             try:
                 with open_in_repository(context.local_path, m, encoding="utf-8", errors="ignore") as fh:
                     rel = os.path.relpath(m, context.local_path)
