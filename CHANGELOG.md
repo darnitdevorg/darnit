@@ -656,17 +656,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `WARN [unexpected_exit]` from zizmor exiting 3 or `grep` exiting 2, and
   zizmor and `grep` are not run, so their `unexpected_exit` log lines are
   gone. A new `darnit-baseline` step type, `github_workflows_present`
-  (ceiling `{fail}`), is the first step of the three controls and concludes
-  that WARN; it never reports PASS or FAIL, and with workflow files present
-  it is evidence only (later steps' indexes move up by one). The WARN is now
-  concluded by that step (`concluded_by = "github_workflows_present"`,
-  authority `dispositive`) rather than left undetermined, and it replaces an
-  ERROR when zizmor or `grep` is not installed. For OSPS-BR-01.01 an
+  (ceiling `{fail}`), is the first step of the three controls and the first
+  in-tree step type to conclude WARN under a `{fail}` ceiling. Because that
+  WARN is conclusive, the manual step no longer runs when there is nothing
+  to audit; the descriptive WARN is the operator guidance. The result stays
+  non-compliant and is not PASS, FAIL, or N/A. It is concluded by that step
+  (`concluded_by = "github_workflows_present"`, authority `dispositive`)
+  rather than left undetermined, and it replaces an ERROR when zizmor or
+  `grep` is not installed. With workflow files present the step is evidence
+  only (later steps' indexes move up by one). For OSPS-BR-01.01 an
   `action.yml` or `action.yaml` anywhere in the repository also counts as
   something to audit, since zizmor's `template-injection` audit reads action
   definitions too, so zizmor still runs and reports findings in a standalone
-  action. A confirmed non-GitHub `ci_provider` still makes the controls N/A
-  (#584).
+  action. A confirmed non-GitHub `ci_provider` still makes the controls N/A.
+  The SC-008 / FR-017 regression guard is narrowed only for these three
+  controls, and only for fixtures with no relevant auditable inputs (#584).
 - Configure `fail_exit_codes = [0]` for OpenSSF Baseline OSPS-BR-01.02
   (`grep -rln github.head_ref .github/workflows/`) so exit 0 on a match records
   as non-conclusive evidence without an `unexpected_exit` error class (fixes #647).
