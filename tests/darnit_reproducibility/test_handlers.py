@@ -705,13 +705,12 @@ class TestRepoDepsPin:
         assert result.status == HandlerResultStatus.PASS
         assert calls == [], "lock-file path must not read requirements.txt"
 
-    def test_requirements_family_spellings_are_still_not_discovered(self, tmp_path: Path) -> None:
-        """FR-019: discovery did not widen. A repo whose only requirements file
-        is `requirements-dev.txt` is INCONCLUSIVE today and stays that way."""
+    def test_requirements_family_spellings_are_discovered(self, tmp_path: Path) -> None:
+        """Issue #536 widens discovery beyond root requirements.txt (037 FR-019)."""
         (tmp_path / "requirements-dev.txt").write_text("numpy>=1.0", encoding="utf-8")
         (tmp_path / "requirements").mkdir()
         (tmp_path / "requirements" / "base.txt").write_text("numpy>=1.0", encoding="utf-8")
-        assert repro_deps_pinned_handler({}, make_ctx(tmp_path)).status == HandlerResultStatus.INCONCLUSIVE
+        assert repro_deps_pinned_handler({}, make_ctx(tmp_path)).status == HandlerResultStatus.FAIL
 
     @pytest.mark.parametrize(
         ("filename", "contents"),
