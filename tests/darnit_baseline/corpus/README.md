@@ -25,6 +25,7 @@ tests/darnit_baseline/corpus/
 |-- known_false_pass.toml   # tolerated false PASS results (empty since US5)
 `-- <fixture>/
     |-- labels.toml         # expected outcomes and platform recordings (required)
+    |-- recorded/<tool>.json  # recorded tool calls (only with `recorded = true`)
     `-- <repository files>  # the fixture's file tree, as a plain directory
 ```
 
@@ -38,7 +39,7 @@ change.
 | `placeholder-docs` | README, CONTRIBUTING, SECURITY, SUPPORT that say only TODO |
 | `placeholder-governance` | GOVERNANCE, MAINTAINERS, CODEOWNERS, CONTRIBUTING, LICENSE that say only TODO |
 | `policy-denies-process` | A SECURITY.md stating there is no policy, process, or contact |
-| `write-all-workflow` | A workflow granting `permissions: write-all` |
+| `write-all-workflow` | A single-job workflow granting `permissions: write-all` at the workflow level |
 | `reference-good` | A small well-formed repository |
 | `platform-no-protection` | Classic protection 404, no rulesets |
 | `platform-ruleset-protection` | Protection only through an active ruleset |
@@ -46,6 +47,9 @@ change.
 | `platform-rate-limited` | 429, and a 403 whose message is a rate limit |
 | `platform-org-2fa-hidden` | Org hides its 2FA requirement; the auditor has 2FA |
 | `zizmor-no-findings-document` | zizmor exits 0 and prints nothing; the workflow has a template injection and `write-all` (feature 044, #479) |
+| `zizmor-config-suppression` | A template injection and `write-all`, with both zizmor rules disabled in `.github/zizmor.yml` |
+| `zizmor-inline-ignore` | A template injection and `write-all`, each with a `# zizmor: ignore[...]` comment |
+| `zizmor-gitignored-workflow` | A template injection and `write-all` in a workflow that `.gitignore` lists (GitHub still runs it) |
 | `plugin-redefines-manual` | A plugin tries to register `manual` as a step type that concludes PASS (feature 044, #486) |
 
 The reproducibility framework has its own corpus in
@@ -77,6 +81,10 @@ jq = { ".has_issues" = "true" }
 stdout = ""
 exit_code = 0
 
+# Or replay calls recorded from the real tool, from recorded/<tool>.json.
+[fixture.tools.zizmor]
+recorded = true
+
 # Optional plugin that tries to register step types before the audit; each
 # returns, and registers as its ceiling, the given outcome.
 [fixture.plugin]
@@ -96,7 +104,7 @@ why = "No LICENSE file."
 |---|---|---|
 | `[fixture].description` | str | What the fixture represents. |
 | `[fixture.platform."<path>"]` | table | Recorded response: `status` (int), `body`, optional `error` (the `gh` error text), optional `jq` (output of `gh api --jq <expr>` keyed by expression). |
-| `[fixture.tools.<name>]` | table | Stand-in executable `<name>`: `stdout` (str, default empty), `exit_code` (int, default 0). |
+| `[fixture.tools.<name>]` | table | Stand-in executable `<name>`: `stdout` (str, default empty), `exit_code` (int, default 0); or `recorded = true` to replay `recorded/<name>.json` (see "Recorded tools"). |
 | `[fixture.plugin]` | table | `name` (the plugin) and `step_types` (`{ <step type> = "pass" \| "fail" }`). The run reports the names the registry refused under `refused_registrations`. |
 | `[labels."<control_id>"].expected` | str | `PASS`, `FAIL`, `NOT_PASS`, or `N/A`. |
 | `[labels."<control_id>"].why` | str | Short rationale against the upstream requirement text. |
@@ -114,6 +122,34 @@ checks today:
 
 Controls without a label are not measured on that fixture.
 
+## Recorded tools
+
+A stand-in with `recorded = true` replays the calls in
+`<fixture>/recorded/<tool>.json`, written from the real tool by
+`scripts/record_corpus_tools.py`, so corpus runs stay offline and
+deterministic without the tool installed. Each call holds the arguments
+(the audited copy's path written as `$REPO_PATH`), exit code, stdout, and
+stderr. A call whose arguments were not recorded exits 2 and is listed in the
+fixture's `unrecorded_calls`, which fails `test_recorded_tools_cover_every_call`.
+The file also holds the calls of the commands listed in `SUPERSEDED_COMMANDS`
+in `runner.py`, which `test_superseded_zizmor_command_fails_the_gate` uses to
+show that the corpus fails them.
+
+Re-record after changing a recorded tool's command in the framework TOML,
+after changing such a fixture, or when moving to a new tool version:
+
+```text
+uv run python scripts/record_corpus_tools.py --tool zizmor=$(command -v zizmor)
+uv run pytest tests/darnit_baseline/corpus/ -v
+```
+
+The recordings in this directory come from zizmor 1.30.1 (each file's
+`version`). Review the diff before committing.
+
+`zizmor-gitignored-workflow/.github/workflows/triage.yml` is listed in that
+fixture's own `.gitignore`, which applies inside this repository too; it is
+committed with `git add -f`.
+
 Keep fixtures tiny and text-only: no binaries (they would change this
 repository's own audit), no `.env` files (ignored by the root `.gitignore`),
 no Python files. Workflow files under `tests/` are never run by GitHub, which
@@ -129,7 +165,8 @@ calls through `gh_api_with_status` are served by `RecordedGhApi`; `gh`
 subprocesses from `exec` steps are served the same recordings by a stub
 first on a `PATH` that otherwise holds only `/usr/bin` and `/bin`. An
 unrecorded path answers as a transport failure. Stand-in tools are written to
-the same directory as the `gh` stub. A fixture's plugin registers its step
+the same directory as the `gh` stub. `labels.toml` and the top-level
+`recorded/` directory are not copied. A fixture's plugin registers its step
 types before the audit and the registry is restored after it. `HOME` and the
 XDG directories point into the scratch directory.
 
