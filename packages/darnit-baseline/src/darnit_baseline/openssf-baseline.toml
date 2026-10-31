@@ -670,6 +670,15 @@ run: |
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-BR-01.01"
 location_hint = ".github/workflows"
 
+# No workflow file means nothing to audit (#584): WARN with that reason, and
+# zizmor (exit 3, unexpected_exit) never runs. With workflow files present it
+# is evidence only. zizmor's template-injection audit also reads action
+# definitions, which it collects from the whole tree, so an action.yml or
+# action.yaml anywhere also lets zizmor run.
+[[controls."OSPS-BR-01.01".passes]]
+handler = "github_workflows_present"
+actions = true
+
 [[controls."OSPS-BR-01.01".passes]]
 handler = "exec"
 command = ["zizmor", "--format", "json", "--offline", "$PATH"]
@@ -755,6 +764,12 @@ run: |
   echo "Building branch: $BRANCH"
 ```
 """
+
+# No workflow file means nothing to audit (#584): WARN with that reason, and
+# grep (exit 2, unexpected_exit) never runs. With workflow files present it
+# is evidence only.
+[[controls."OSPS-BR-01.02".passes]]
+handler = "github_workflows_present"
 
 # Keyword absence, evidence only (feature 041): not finding github.head_ref
 # does not show branch names are handled safely (github.ref_name and event
@@ -2971,6 +2986,13 @@ help_md = """Minimize CI/CD job permissions.
 3. Use job-level instead of workflow-level permissions
 4. Avoid using `write-all` or `admin` permissions
 """
+
+# No workflow file means nothing to audit (#584): WARN with that reason, and
+# zizmor (exit 3, unexpected_exit) never runs. With workflow files present it
+# is evidence only. No `actions = true`: zizmor's excessive-permissions audit
+# reads workflows only.
+[[controls."OSPS-AC-04.02".passes]]
+handler = "github_workflows_present"
 
 # Primary: zizmor's `excessive-permissions` deep audit. zizmor models per-step
 # action requirements and flags workflow- or job-level grants broader than the

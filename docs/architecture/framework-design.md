@@ -2032,6 +2032,7 @@ Implementation-registered sieve handlers (non-exhaustive):
 | Step type | Registered by | Ceiling |
 |-----------|---------------|---------|
 | `github_branch_protection` | `darnit-baseline`: the classic-branch-protection + repository-rulesets two-surface check for `OSPS-AC-03.01`, `OSPS-AC-03.02`, `OSPS-QA-03.01`, `OSPS-QA-07.01`; see `specs/032-ruleset-branch-protection/contracts/github-branch-protection-handler.md` | `{pass, fail}` (reads platform settings) |
+| `github_workflows_present` | `darnit-baseline`: the first step of `OSPS-BR-01.01`, `OSPS-BR-01.02`, `OSPS-AC-04.02`; WARN saying there is nothing to audit when `.github/workflows/` holds no `.yml` or `.yaml` file inside the repository and, with `actions = true` (`OSPS-BR-01.01`, whose zizmor audit also reads action definitions), the repository holds no `action.yml` or `action.yaml` outside `.git`; otherwise INCONCLUSIVE (#584) | `{fail}`: it concludes only that WARN, never PASS or FAIL |
 | `generate_threat_model` | `darnit-baseline` (remediation, `supports_plan=True`; returns its files as `FileChange`s, section 4.2) | `{}` (a remediation handler, section 3.0.1) |
 | `gittuf_verify_policy`, `gittuf_commits_signed` | `darnit-gittuf` | `{pass, fail}` (cryptographic verification) |
 | `repro_deps_pinned`, `repro_build_env_declared`, `repro_hermetic_build`, `repro_provenance_exists`, `repro_bit_for_bit` | `darnit-reproducibility` | `{fail}`: they decide from text and file-presence signals, so PASS needs a corpus-backed promotion (section 3.0.1) |

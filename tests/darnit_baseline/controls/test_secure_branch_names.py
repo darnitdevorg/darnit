@@ -63,7 +63,9 @@ class TestSecureBranchNames:
         config = load_framework_by_name("openssf-baseline")
         control = config.controls["OSPS-BR-01.02"]
         assert control.passes, "OSPS-BR-01.02 must have passes"
-        exec_step = control.passes[0]
+        # github_workflows_present is the first step (#584); the grep step follows it.
+        assert control.passes[0].handler == "github_workflows_present"
+        exec_step = control.passes[1]
         assert exec_step.handler == "exec"
         assert exec_step.model_extra.get("pass_exit_codes") == [1]
         assert exec_step.model_extra.get("fail_exit_codes") == [0]
@@ -78,8 +80,10 @@ class TestSecureBranchNames:
         result = SieveOrchestrator().verify(ctrl, _ctx(tmp_path))
         assert result.status == "WARN"
         assert result.error_class is None
-        # The exec step was recorded in pass_history with exit 0 evidence without concluding
-        exec_attempt = result.pass_history[0]
+        # The guard is evidence only when a workflow file exists; the grep step follows it.
+        assert result.pass_history[0].checks_performed == ["handler:github_workflows_present"]
+        exec_attempt = result.pass_history[1]
+        assert exec_attempt.checks_performed == ["handler:exec"]
         assert exec_attempt.result.outcome == PassOutcome.FAIL
         assert exec_attempt.result.evidence.get("exit_code") == 0
         assert "ci.yml" in exec_attempt.result.evidence.get("stdout", "")
@@ -93,6 +97,8 @@ class TestSecureBranchNames:
         result = SieveOrchestrator().verify(ctrl, _ctx(tmp_path))
         assert result.status == "WARN"
         assert result.error_class is None
-        exec_attempt = result.pass_history[0]
+        assert result.pass_history[0].checks_performed == ["handler:github_workflows_present"]
+        exec_attempt = result.pass_history[1]
+        assert exec_attempt.checks_performed == ["handler:exec"]
         assert exec_attempt.result.outcome == PassOutcome.PASS
         assert exec_attempt.result.evidence.get("exit_code") == 1
