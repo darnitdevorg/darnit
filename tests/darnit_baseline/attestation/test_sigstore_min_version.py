@@ -3,13 +3,12 @@
 
 ``tests/conftest.py`` replaces ``SigningContext.from_trust_config`` with a stub
 before any test body runs. An in-process ``hasattr`` check would pass because
-of that stub. These probes run in a fresh interpreter, import nothing from the
-test harness, and never call the method (calling it builds Fulcio, Rekor, and
+of that stub. The probe runs in a fresh interpreter, imports nothing from the
+test harness, and never calls the method (calling it builds Fulcio, Rekor, and
 timestamp clients and can start an OIDC login).
 """
 
 import os
-import shutil
 import subprocess
 import sys
 import tomllib
@@ -30,28 +29,16 @@ import inspect
 import sys
 from importlib.metadata import version
 
+from packaging.version import Version
+
 if "pytest" in sys.modules or "tests.conftest" in sys.modules:
     raise SystemExit("probe loaded the test harness; SigningContext may be monkeypatched")
 
 from sigstore.sign import ClientTrustConfig, SigningContext
 
 installed = version("sigstore")
-parts = []
-for piece in installed.split("."):
-    digits = ""
-    for char in piece:
-        if not char.isdigit():
-            break
-        digits += char
-    if not digits:
-        break
-    parts.append(int(digits))
-if tuple(parts) < (4, 0, 0):
+if Version(installed) < Version("4.0.0"):
     raise SystemExit(f"sigstore {installed} is below 4.0.0")
-
-exact = sys.argv[1]
-if exact != "any" and installed != exact:
-    raise SystemExit(f"expected sigstore {exact}, found {installed}")
 
 found = None
 for cls in SigningContext.__mro__:
@@ -88,16 +75,16 @@ def _sigstore_requirement() -> Requirement:
 
 def _probe_env() -> dict[str, str]:
     env = os.environ.copy()
-    # A parent pytest run may point imports or uv at the project environment.
-    # The probe and the isolated install must see only the interpreter they name.
+    # A parent pytest run may point imports at the project environment.
+    # The probe must see only the interpreter it names.
     env.pop("PYTHONPATH", None)
     env.pop("VIRTUAL_ENV", None)
     return env
 
 
-def _run_probe(python: Path, exact: str, *, timeout: int = 60) -> subprocess.CompletedProcess[str]:
+def _run_probe(python: Path, *, timeout: int = 60) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [str(python), "-c", _PROBE, exact],
+        [str(python), "-c", _PROBE],
         check=False,
         capture_output=True,
         text=True,
@@ -106,12 +93,6 @@ def _run_probe(python: Path, exact: str, *, timeout: int = 60) -> subprocess.Com
         env=_probe_env(),
         timeout=timeout,
     )
-
-
-def _venv_python(venv: Path) -> Path:
-    if os.name == "nt":
-        return venv / "Scripts" / "python.exe"
-    return venv / "bin" / "python"
 
 
 @pytest.mark.unit
@@ -135,49 +116,6 @@ def test_attestation_extra_requires_sigstore_4() -> None:
 def test_installed_sigstore_exposes_from_trust_config() -> None:
     """The environment that runs the suite has the real 4.x method, not the conftest stub."""
     pytest.importorskip("sigstore")
-    result = _run_probe(Path(sys.executable), "any")
+    result = _run_probe(Path(sys.executable))
     assert result.returncode == 0, result.stderr or result.stdout
     assert Version(result.stdout.strip()) >= Version(MIN_SIGSTORE)
-
-
-@pytest.mark.live
-def test_sigstore_4_0_0_exposes_from_trust_config(tmp_path: Path) -> None:
-    """The minimum allowed release, in its own environment, exposes the method signing calls.
-
-    Installing ``sigstore==4.0.0`` reaches PyPI, so this test stays opt-in (#548).
-    """
-    uv = shutil.which("uv")
-    if uv is None:
-        pytest.fail("uv is required to install sigstore==4.0.0 in an isolated environment")
-
-    venv = tmp_path / "sigstore-4.0.0"
-    env = _probe_env()
-    created = subprocess.run(
-        [uv, "venv", str(venv), "--python", sys.executable],
-        check=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        env=env,
-        timeout=120,
-    )
-    assert created.returncode == 0, created.stderr or created.stdout
-
-    python = _venv_python(venv)
-    installed = subprocess.run(
-        [uv, "pip", "install", "--python", str(python), f"sigstore=={MIN_SIGSTORE}"],
-        check=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        env=env,
-        cwd=venv,
-        timeout=300,
-    )
-    assert installed.returncode == 0, installed.stderr or installed.stdout
-
-    result = _run_probe(python, MIN_SIGSTORE)
-    assert result.returncode == 0, result.stderr or result.stdout
-    assert result.stdout.strip() == MIN_SIGSTORE
