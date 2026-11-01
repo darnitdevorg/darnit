@@ -7,7 +7,7 @@ evidence is never trusted.
 """
 
 import asyncio
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from darnit.core.logging import get_logger
 
@@ -182,8 +182,11 @@ def get_judgment_requests_impl(
         )
 
     try:
-        results = judgment_audit(
-            resolved_path, framework_name, operator_config, owner, repo, target, control_ids=control_ids or None
+        results = cast(
+            "list[dict[str, Any]]",
+            judgment_audit(
+                resolved_path, framework_name, operator_config, owner, repo, target, control_ids=control_ids or None
+            ),
         )
     except Exception as exc:  # noqa: BLE001 - surfaced to the client
         logger.warning("get_judgment_requests: could not audit %s: %s", resolved_path, exc)
@@ -333,8 +336,11 @@ def get_pass_candidates_impl(
         )
 
     try:
-        results = judgment_audit(
-            resolved_path, framework_name, operator_config, owner, repo, target, control_ids=control_ids or None
+        results = cast(
+            "list[dict[str, Any]]",
+            judgment_audit(
+                resolved_path, framework_name, operator_config, owner, repo, target, control_ids=control_ids or None
+            ),
         )
         controls = _claim_controls(_load_framework(framework_name), operator_config.config)
     except Exception as exc:  # noqa: BLE001 - surfaced to the client
