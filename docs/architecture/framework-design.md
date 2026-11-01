@@ -1,6 +1,6 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.18
+> **Version**: 1.0.0-alpha.19
 > **Status**: Authoritative
 > **Last Updated**: 2026-10-23
 
@@ -204,6 +204,12 @@ A WARN counts as FAIL for compliance calculations (Constitution Principle II), w
 - **WHEN** a handler returns WARN and `fail` is not in the step's effective set
 - **THEN** the orchestrator MUST NOT conclude the control
 - **AND** it MUST attach evidence and continue, or terminate INCONCLUSIVE if this was the last step
+
+#### Scenario: All passes inconclusive falls through to WARN
+- **WHEN** no pass concludes a control
+- **THEN** the control MUST be WARN with authority `suggestive`
+- **AND** the result message MUST carry the last informative step message (annotated with `(evidence only)` when the step ran as evidence only)
+- **AND** when no informative step ran, it MUST report `Could not automatically verify - manual verification required`
 
 ### 3.0.1 Step Ceilings and Declarations
 
@@ -878,7 +884,7 @@ Platform settings are written only by the platform engine (4.5). An `exec` step 
 
 **Plan support.** Handler registration takes a flag `supports_plan` (default `False`): `registry.register(..., supports_plan=True)`. The built-in `file_create`, `project_update`, `yaml_inject`, `manual`, and `platform_setting` handlers register with `supports_plan=True`; `exec` is previewable only as section 4.4 describes. A step whose handler did not register `supports_plan=True` is not run in plan mode; it is reported as "cannot be previewed exactly" (`previewable = False`) and requires individual approval (15.3). A plugin handler without plan support that writes files itself is outside the run manifest, so the git tools never commit those files (15.7).
 
-The Baseline's `generate_threat_model` returns every file it would create or change (the threat model files, and the stale flags of `.project/threatmodel/mitigations.yaml`) as `FileChange`s and never writes. A target that resolves outside the repository makes the step an error with no changes. An existing file is left alone (`none`, `already_exists`) unless `overwrite` is set, and with `overwrite` it is planned as `modify` only when git tracks it; an existing file git does not track (including an ignored file), or any existing file outside a git work tree, stays `none`. It does not register plan support: its files record the time they were generated, so a preview could not equal the apply.
+The Baseline's `generate_threat_model` returns every file it would create or change (the threat model files, and the stale flags of `.project/threatmodel/mitigations.yaml`) as `FileChange`s and never writes. A target that resolves outside the repository makes the step an error with no changes. An existing file is left alone (`none`, `already_exists`) unless `overwrite` is set, and with `overwrite` it is planned as `modify` only when git tracks it; an existing file git does not track (including an ignored file), or any existing file outside a git work tree, stays `none`. It registers plan support: its files record only the UTC date of the scan, never a time of day, so its preview equals its apply and it is approved like any other previewable step (15.3).
 
 **Preview contents.** A preview is a list of `PlanItem`s, one per remediation step:
 
@@ -912,6 +918,11 @@ Templates and `when` clauses are evaluated in plan mode exactly as in apply mode
 - **THEN** the step MUST NOT run in plan mode
 - **AND** its `PlanItem` MUST have `previewable = False` and `requires_individual_approval = True`
 - **AND** it MUST NOT run in a batch apply unless its `PlanItem.digest` was approved
+
+#### Scenario: Threat model preview equals its apply
+- **WHEN** the `generate_threat_model` remediation is previewed and then applied on the same UTC date with no intervening change
+- **THEN** its `PlanItem` MUST have `previewable = True`
+- **AND** the files the apply writes MUST equal the files the preview listed
 
 #### Scenario: Target file has uncommitted user changes
 - **WHEN** a planned `FileChange` targets a path with uncommitted user changes
@@ -1377,7 +1388,7 @@ submit_judgment(
 ) -> {status: "candidate" | "finding" | "rejected" | "error", candidate | finding | rejection | error}
 ```
 
-It re-runs the audit for `local_path` to re-gather the control's judged content (the client's copy is never trusted), applies section 3.5, and for a valid positive judgment records the candidate (`source = "mcp_agent"`). A negative judgment returns a suggestive FAIL finding and stores nothing; an invalid one returns a rejection naming the excerpts not found and stores nothing. A control that does not reach its model step is rejected.
+It re-runs the audit of `local_path` for that control only to re-gather the control's judged content (the client's copy is never trusted), applies section 3.5, and for a valid positive judgment records the candidate (`source = "mcp_agent"`). A negative judgment returns a suggestive FAIL finding and stores nothing; an invalid one returns a rejection naming the excerpts not found and stores nothing. A control that does not reach its model step is rejected.
 
 ```
 confirm_pass_candidate(
@@ -1386,7 +1397,9 @@ confirm_pass_candidate(
 ) -> str
 ```
 
-An operator confirms candidates through `confirm_pass_candidate`, registered on every framework server beside `submit_judgment` (OpenSSF Baseline also accepts `confirm_project_data(confirm_pass_candidate=[...])`, which runs the same confirmation). It re-gathers the evidence and confirms only a stored candidate whose digest matches the current evidence, recording `confirmed_by`, `confirmed_at`, and `expires_at` (operator policy `confirmation_expiry_days`). An agent calls it only on the operator's explicit instruction.
+An operator confirms candidates through `confirm_pass_candidate`, registered on every framework server beside `submit_judgment` (OpenSSF Baseline also accepts `confirm_project_data(confirm_pass_candidate=[...])`, which runs the same confirmation). It re-gathers the evidence by auditing only the named controls and confirms only a stored candidate whose digest matches the current evidence, recording `confirmed_by`, `confirmed_at`, and `expires_at` (operator policy `confirmation_expiry_days`). An agent calls it only on the operator's explicit instruction.
+
+A control's judged content (section 3.5) does not depend on any other control, so these subset audits gather exactly what a full audit gathers for that control: operator custom controls and pass overrides are applied first, the level and tag filters next, and then the named controls are selected. A subset audit is never written to the audit cache. The other controls' statuses that a full audit lists in `gathered_evidence` are not part of the judged content or the evidence digest, and a subset audit leaves them out.
 
 **ActionPlan.** For the `audit` step, `submit_action_result` accepts no client payload: the server runs the audit itself and records only the results the engine produced. In-process drivers submit the engine's result object (`run_audit_step`); a plain mapping carrying audit results is rejected with `ResultSchemaMismatch`.
 
@@ -1711,14 +1724,14 @@ A detection step's `value_if_fail` applies only when the step ran to completion 
 
 ### 7.8 Canonical Key Names and Vocabularies
 
-Each context key has one canonical name and one vocabulary, taken from the framework TOML. Stored legacy names and spellings are read as the canonical form (`ci.provider` and bare `provider` read as `ci_provider`; `github_actions` -> `github`, `gitlab_ci` -> `gitlab`, `azure_pipelines` -> `azure`, `bitbucket_pipelines` -> `other`, `unknown` -> no value). The framework writes only canonical names and values. Every read of the CI provider goes through this normalization (`darnit.config.context_keys`), including `ProjectConfig.get_ci_provider()`, and the framework has one CI detector (`detect_ci_provider`), which returns canonical values.
+Each context key has one canonical name and one vocabulary, taken from the framework TOML. Stored legacy names and spellings are read as the canonical form (`ci.provider` and bare `provider` read as `ci_provider`; `github_actions` -> `github`, `gitlab_ci` -> `gitlab`, `azure_pipelines` -> `azure`, `bitbucket_pipelines` -> `other`, `unknown` -> no value). The framework writes only canonical names and values. Every read of the CI provider goes through this normalization (`darnit.config.context_keys`), and the framework has one CI detector (`detect_ci_provider`), which returns canonical values.
 
 ### 7.9 Reads Never Write; One Writer
 
 - Auditing (every driver), listing pending data, report generation, a remediation preview (plan mode, section 4.2), the remediation context guard in every mode, and the harness collect phase SHALL NOT create, modify, or delete any file in the audited repository.
 - `darnit.config.context_writes` is the only code that writes context values and in-repository confirmation records. It writes only `.project/darnit.yaml` (never `.project/project.yaml`), preserves sections and comments it does not change (including feature 040 `controls:` claims), and refuses every write, returning the errors, when `.project/project.yaml` or `.project/darnit.yaml` is present but unparseable or invalid. The loader distinguishes absent, valid, and invalid files (`load_project_config_checked`).
 - `init_project_config` (MCP) creates only an empty `.project/darnit.yaml` when `.project/` is absent, and reports instead of overwriting when it is present.
-- An applied remediation's `project_update` (written by the remediation executor, section 4.2) and the file-reference sync after a remediation creates a file (`update_config_after_file_create`) write only the dotted paths they target, through the loader's round-trip helper (`update_project_config`): CNCF fields to `.project/project.yaml`, other fields to `.project/darnit.yaml`, preserving comments, ordering, indentation, and fields darnit does not own. An absent `.project/project.yaml` is created with `name` and the targeted fields only. No darnit code replaces a whole project file. The file-reference sync after remediation records only a `project_reference` declared on the `file_create` step, only for a file created in this run, and only when the field is empty or already equal (section 4.3). When either file is present but invalid they write nothing: planning the update (`plan_project_update`, used by the `project_update` handler and the remediation's `project_update`) raises with the validation errors (an applied remediation reports `project_update: failed: <errors>`), and the sync function returns false.
+- An applied remediation's `project_update` (written by the remediation executor, section 4.2) and the file-reference sync after a remediation creates a file (`render_reference_update`) write only the dotted paths they target, through the loader's round-trip rendering (`render_project_config_update`): CNCF fields to `.project/project.yaml`, other fields to `.project/darnit.yaml`, preserving comments, ordering, indentation, and fields darnit does not own. An absent `.project/project.yaml` is created with `name` and the targeted fields only. No darnit code replaces a whole project file. The file-reference sync after remediation records only a `project_reference` declared on the `file_create` step, only for a file created in this run, and only when the field is empty or already equal (section 4.3). When either file is present but invalid they write nothing: planning the update (`plan_project_update`, used by the `project_update` handler and the remediation's `project_update`) raises with the validation errors (an applied remediation reports `project_update: failed: <errors>`), and the file-reference sync records nothing and reports why.
 - An audit reads nothing from a present-but-invalid `.project/` file and reports each validation error in the report's `warnings` (JSON) and as a warning line (Markdown).
 
 ### 7.10 Confirmation Tool Contract
@@ -2019,13 +2032,30 @@ Implementation-registered sieve handlers (non-exhaustive):
 | Step type | Registered by | Ceiling |
 |-----------|---------------|---------|
 | `github_branch_protection` | `darnit-baseline`: the classic-branch-protection + repository-rulesets two-surface check for `OSPS-AC-03.01`, `OSPS-AC-03.02`, `OSPS-QA-03.01`, `OSPS-QA-07.01`; see `specs/032-ruleset-branch-protection/contracts/github-branch-protection-handler.md` | `{pass, fail}` (reads platform settings) |
-| `generate_threat_model` | `darnit-baseline` (remediation; returns its files as `FileChange`s, section 4.2) | `{}` (a remediation handler, section 3.0.1) |
+| `generate_threat_model` | `darnit-baseline` (remediation, `supports_plan=True`; returns its files as `FileChange`s, section 4.2) | `{}` (a remediation handler, section 3.0.1) |
 | `gittuf_verify_policy`, `gittuf_commits_signed` | `darnit-gittuf` | `{pass, fail}` (cryptographic verification) |
 | `repro_deps_pinned`, `repro_build_env_declared`, `repro_hermetic_build`, `repro_provenance_exists`, `repro_bit_for_bit` | `darnit-reproducibility` | `{fail}`: they decide from text and file-presence signals, so PASS needs a corpus-backed promotion (section 3.0.1) |
 | `repro_witness_attestation` | `darnit-reproducibility` | `{fail}`: a verified runtime-trace attestation can show network access but, until monitor types are allowlisted, cannot show its absence (section 3.0.1, #553) |
 | `csl_llm_if_present` | `darnit-csl` | `{fail}` |
 
 The reproducibility ceilings are part of that framework's own registration, not its package name, so they hold under a rename of the package.
+
+`gittuf_commits_signed` reads git's signature status (`%G?`) for the last five commits. Only `G` (good signature from a valid key) counts as signed; the step passes only when at least one commit was checked and every checked commit is `G`.
+
+- FAIL: `N` (no signature), `B` (bad), `R` (revoked key), `Y` (expired key), `X` (expired signature).
+- ERROR, class `evaluation`: `E` (the signature cannot be checked, for example the key is missing), a commit with a `gpgsig` header that git reports as `N` (git cannot check it here, for example an SSH signature without `gpg.ssh.allowedSignersFile`, or no `gpg`), and a status git does not document. The signatures exist but this machine cannot check them: a broken measurement, not evidence either way.
+- INCONCLUSIVE: `U` (good signature, unknown validity: nothing on this machine says the key is trusted; for SSH, git reports `U` whenever `gpg.ssh.allowedSignersFile` is set, even to a missing file), and no commits to check.
+- A FAIL outweighs an ERROR, and an ERROR outweighs INCONCLUSIVE.
+
+When `git` (for `gittuf_commits_signed`) or `gittuf` (for `gittuf_verify_policy`) is not installed, the step is ERROR, class `missing_tool`.
+
+#### Scenario: Unverifiable commit signature
+- **WHEN** a checked commit carries a signature git reports as `E`, for example random bytes in an OpenPGP signature packet
+- **THEN** the `gittuf_commits_signed` step MUST be ERROR, class `evaluation`, and MUST NOT pass
+
+#### Scenario: No commits to check
+- **WHEN** `gittuf_commits_signed` finds no commits
+- **THEN** it MUST be INCONCLUSIVE, never PASS
 
 A handler used in a phase different from its registered affinity SHALL trigger a warning but still execute.
 
@@ -2211,6 +2241,7 @@ plan -> [confirmation missing]            -> needs_confirmation
                          -> could not run -> changed_not_verified
 ```
 
+- A `fixed`, `changed_not_passing`, or `changed_not_verified` outcome lists the files it wrote and each file it kept because of uncommitted user changes (`action = "none"`, `reason = "user_changes_present"`), so an apply that wrote some files and kept others reports the conflict (4.2).
 - Only a definite success with a non-empty change counts as changed. INCONCLUSIVE, ERROR, a step that did not run, and `action = "none"` never count as success.
 - The run summary (counts per `kind`) is derived from the outcomes. The Markdown and JSON reports, and every downstream decision (whether to commit or open a pull request), are derived from the outcomes, never from matching symbols or words in output text.
 - If the check for unconfirmed project context cannot complete, remediation does not run and the call returns the error.
@@ -2452,6 +2483,7 @@ The following requirements have been superseded: by the handler dispatch archite
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.19 | 2026-10-23 | `generate_threat_model` registers plan support: its files record the UTC scan date, not a time, so the preview equals the apply. Changed outcomes also list files kept because of uncommitted user changes (Sections 4.2, 12, 15.4; #673) |
 | 1.0.0-alpha.18 | 2026-10-23 | `generate_threat_model` writes only through the remediation executor and the run manifest: the remediation handler returns `FileChange`s and has ceiling `{}`, and the MCP tool writes only to a validated repository path (Sections 3.0.1, 4.2, 12, 15.8) |
 | 1.0.0-alpha.17 | 2026-10-18 | Reads of the audited repository resolve symbolic links and stay inside it: a path that resolves outside is never read, never counts as present, and is recorded in `skipped_outside_repository`; CEL `file_exists` follows the same rule (Sections 3.0.4, 3.5, 3.7) |
 | 1.0.0-alpha.16 | 2026-10-08 | `ComplianceImplementation` reduced to its five used members; `get_all_controls`, `get_controls_by_level`, `get_rules_catalog`, `get_remediation_registry`, and `register_controls` removed (Section 6.3; Appendix C; #487). `register_handlers()` is the handler registration hook, `register_sieve_handlers()` accepted only for compatibility, import-time registration not introspectable (Sections 6.4, 12; #451) |

@@ -106,7 +106,7 @@ def audit_openssf_baseline(
     """
     Run a comprehensive OpenSSF Baseline audit on a repository.
 
-    This checks compliance with OSPS v2025.10.10 across 62 controls at 3 maturity levels.
+    This checks compliance with OSPS v2026.02.19 across 62 controls at 3 maturity levels.
 
     Args:
         owner: GitHub Org/User (auto-detected from git if not provided)

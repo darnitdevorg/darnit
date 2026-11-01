@@ -300,36 +300,3 @@ def sync_discovered_to_config(
                 ext.ci = ci_discovered
 
     return changes
-
-
-def discover_and_create_config(
-    local_path: str,
-    file_locations: dict[str, list[str]] | None = None,
-    name: str | None = None,
-    project_type: str = "software"
-) -> ProjectConfig:
-    """Discover files and create a new config with discovered values.
-
-    Args:
-        local_path: Path to the repository
-        file_locations: Mapping of ref_path -> list of possible file patterns
-        name: Project name (auto-detected if not provided)
-        project_type: Type of project
-
-    Returns:
-        New ProjectConfig with discovered files populated
-    """
-    from darnit.config.schema import create_minimal_config
-
-    project_name = name or discover_project_name(local_path) or "unnamed"
-
-    config = create_minimal_config(
-        name=project_name,
-        project_type=project_type,
-    )
-    config.local_path = local_path
-
-    # Sync discovered files
-    sync_discovered_to_config(config, local_path, file_locations, fix=True)
-
-    return config

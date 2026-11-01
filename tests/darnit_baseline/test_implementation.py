@@ -27,9 +27,11 @@ class TestOSPSBaselineImplementation:
     @pytest.mark.unit
     def test_properties(self, impl):
         """Test implementation properties."""
+        from importlib.metadata import version as get_package_version
+
         assert impl.name == "openssf-baseline"
         assert impl.display_name == "OpenSSF Baseline"
-        assert impl.version == "0.1.0"
+        assert impl.version == get_package_version("darnit-baseline")
         assert impl.spec_version == "OSPS v2026.02.19"
 
     @pytest.mark.unit
@@ -102,16 +104,10 @@ class TestHandlerRegistration:
         impl.register_handlers()
 
         registry = get_handler_registry()
-        handlers = registry.list_handlers()
-
-        # Should have handlers registered
-        assert len(handlers) > 0
 
         # Check some specific handlers exist
-        handler_names = {h.name for h in handlers}
-        assert "audit_openssf_baseline" in handler_names
-        assert "create_security_policy" in handler_names
-        assert "enable_branch_protection" in handler_names
+        for name in ("audit_openssf_baseline", "create_security_policy", "enable_branch_protection"):
+            assert registry.get_handler_info(name) is not None, name
 
     @pytest.mark.skipif(
         importlib.util.find_spec("tree_sitter_language_pack") is None,

@@ -625,20 +625,6 @@ def file_exists(local_path: str, *patterns: str) -> bool:
     return False
 
 
-def file_contains(local_path: str, filename_patterns: list[str], content_pattern: str) -> bool:
-    """Check if any matching file contains the content pattern."""
-    for pattern in filename_patterns:
-        for filepath in glob_module.glob(os.path.join(local_path, pattern), recursive=True):
-            try:
-                with open_in_repository(local_path, filepath, encoding='utf-8', errors='ignore') as f:
-                    if re.search(content_pattern, f.read(), re.IGNORECASE):
-                        return True
-            except OSError as e:
-                logger.debug(f"Could not read {filepath}: {type(e).__name__}")
-                continue
-    return False
-
-
 def read_file(local_path: str, filename: str) -> str | None:
     """Read a file's contents, returning None if not found."""
     filepath = os.path.join(local_path, filename)
@@ -650,11 +636,6 @@ def read_file(local_path: str, filename: str) -> str | None:
             logger.debug(f"Could not read {filepath}: {type(e).__name__}")
             return None
     return None
-
-
-def make_result(control_id: str, status: str, details: str, level: int = 1) -> dict[str, Any]:
-    """Create a standardized result dictionary."""
-    return {"id": control_id, "status": status, "details": details, "level": level}
 
 
 def get_git_commit(local_path: str) -> str | None:

@@ -8,16 +8,11 @@ from datetime import UTC, datetime
 import pytest
 
 from darnit.config.context_schema import (
-    BaselineExtension,
-    BaselineExtensionConfig,
-    CNCFProjectConfig,
     ContextDefinition,
     ContextPromptRequest,
     ContextSource,
     ContextType,
     ContextValue,
-    ExtensionMetadata,
-    ProjectExtensions,
 )
 
 
@@ -322,95 +317,3 @@ class TestContextPromptRequest:
         assert request.current_value is not None
         assert request.current_value.value == "github"
 
-
-class TestCNCFExtensionModels:
-    """Tests for CNCF extension format models."""
-
-    def test_extension_metadata(self) -> None:
-        """Test ExtensionMetadata creation."""
-        meta = ExtensionMetadata(
-            author="OpenSSF",
-            homepage="https://baseline.openssf.org",
-            version="0.1.0",
-        )
-        assert meta.author == "OpenSSF"
-        assert meta.version == "0.1.0"
-
-    def test_baseline_extension_config(self) -> None:
-        """Test BaselineExtensionConfig with context."""
-        config = BaselineExtensionConfig(
-            context={
-                "governance": {
-                    "maintainers": ContextValue.user_confirmed(["@user1"]),
-                },
-            },
-            controls={
-                "OSPS-BR-02.01": {"status": "not_applicable", "reason": "No releases"},
-            },
-        )
-        assert "governance" in config.context
-        assert "OSPS-BR-02.01" in config.controls
-
-    def test_baseline_extension(self) -> None:
-        """Test full BaselineExtension."""
-        ext = BaselineExtension(
-            metadata=ExtensionMetadata(author="OpenSSF"),
-            config=BaselineExtensionConfig(),
-        )
-        assert ext.metadata.author == "OpenSSF"
-
-    def test_project_extensions_alias(self) -> None:
-        """Test ProjectExtensions handles hyphenated key."""
-        data = {
-            "openssf-baseline": {
-                "metadata": {"author": "OpenSSF"},
-                "config": {},
-            }
-        }
-        extensions = ProjectExtensions.model_validate(data)
-        assert extensions.openssf_baseline is not None
-        assert extensions.openssf_baseline.metadata.author == "OpenSSF"
-
-    def test_cncf_project_config(self) -> None:
-        """Test full CNCFProjectConfig."""
-        config = CNCFProjectConfig(
-            schema_version="1.1.0",
-            name="test-project",
-            extensions=ProjectExtensions(
-                openssf_baseline=BaselineExtension(
-                    metadata=ExtensionMetadata(author="OpenSSF"),
-                    config=BaselineExtensionConfig(),
-                )
-            ),
-        )
-        assert config.schema_version == "1.1.0"
-        assert config.name == "test-project"
-        assert config.extensions.openssf_baseline is not None
-
-    def test_cncf_config_from_yaml_dict(self) -> None:
-        """Test loading CNCF config from YAML-style dict."""
-        data = {
-            "schema_version": "1.1.0",
-            "name": "my-project",
-            "extensions": {
-                "openssf-baseline": {
-                    "metadata": {
-                        "author": "OpenSSF",
-                        "homepage": "https://baseline.openssf.org",
-                    },
-                    "config": {
-                        "context": {
-                            "governance": {
-                                "maintainers": {
-                                    "source": "user_confirmed",
-                                    "value": ["@user1"],
-                                    "confidence": 1.0,
-                                }
-                            }
-                        }
-                    },
-                }
-            },
-        }
-        config = CNCFProjectConfig.model_validate(data)
-        assert config.extensions.openssf_baseline.metadata.author == "OpenSSF"

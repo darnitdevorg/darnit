@@ -40,6 +40,31 @@ def _load_framework_config():
         return None
 
 
+@lru_cache(maxsize=1)
+def _baseline_spec_url(spec_version: str | None = None) -> str:
+    """Derive specification URL from spec_version string."""
+    if not spec_version:
+        from darnit.tools.audit import framework_metadata
+
+        meta = framework_metadata("openssf-baseline")
+        spec_version = meta.get("spec_version")
+        if not spec_version:
+            raise ValueError("Framework 'openssf-baseline' metadata missing spec_version")
+    v = spec_version.replace("OSPS", "").replace("v", "").strip()
+    slug = v.replace(".", "-")
+    return f"https://baseline.openssf.org/versions/{slug}"
+
+
+def _baseline_rule_anchor(control_id: str) -> str:
+    """Build anchor for baseline documentation URL (e.g. OSPS-AC-01.01 -> osps-ac-0101)."""
+    parts = control_id.split("-", 2)
+    if len(parts) == 3:
+        prefix, domain, num = parts
+        num_clean = num.replace(".", "").replace("-", "").lower()
+        return f"{prefix.lower()}-{domain.lower()}-{num_clean}"
+    return control_id.lower().replace(".", "").replace("-", "")
+
+
 def _get_control_from_toml(control_id: str) -> dict[str, Any] | None:
     """Get control metadata from TOML framework config.
 
@@ -93,6 +118,7 @@ def _get_control_from_toml(control_id: str) -> dict[str, Any] | None:
     else:
         default_level = "warning"
 
+    spec_url = _baseline_spec_url()
     return {
         "name": control.name,
         "domain": domain or "",
@@ -104,7 +130,7 @@ def _get_control_from_toml(control_id: str) -> dict[str, Any] | None:
         "tags": tag_list,
         "location_hint": getattr(control, 'location_hint', '') or "",
         "default_level": default_level,
-        "docs_url": control.docs_url or f"https://baseline.openssf.org/versions/2025-10-10#{control_id}",
+        "docs_url": control.docs_url or f"{spec_url}#{_baseline_rule_anchor(control_id)}",
     }
 
 
@@ -137,10 +163,17 @@ DOMAIN_INFO = {
 SARIF_SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json"
 SARIF_VERSION = "2.1.0"
 
+def _tool_version() -> str:
+    from importlib.metadata import version as _pkg_version
+
+    return _pkg_version("darnit-baseline")
+
+
 # Tool information
-TOOL_NAME = "openssf-baseline-audit"
-TOOL_VERSION = "0.1.0"
 TOOL_INFO_URI = "https://baseline.openssf.org/"
+TOOL_NAME = "openssf-baseline"
+TOOL_VERSION = _tool_version()
+
 
 # Status to SARIF level mapping
 STATUS_TO_LEVEL = {
@@ -203,8 +236,8 @@ def generate_sarif_audit(
 
     meta = framework_metadata("openssf-baseline")
     driver: dict[str, Any] = {
-        "name": TOOL_NAME,
-        "version": TOOL_VERSION,
+        "name": meta["name"],
+        "version": _tool_version(),
         "informationUri": TOOL_INFO_URI,
         "rules": rules,
     }
@@ -311,7 +344,7 @@ def build_sarif_rules(
             "fullDescription": {
                 "text": rule_meta.get("full", "")[:1024]
             },
-            "helpUri": f"https://baseline.openssf.org/versions/2025-10-10#{control_id}",
+            "helpUri": f"{_baseline_spec_url()}#{_baseline_rule_anchor(control_id)}",
             "help": {
                 "text": _strip_markdown(rule_meta.get("help_md", "")),
                 "markdown": rule_meta.get("help_md", ""),

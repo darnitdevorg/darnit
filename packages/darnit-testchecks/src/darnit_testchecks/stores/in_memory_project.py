@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from darnit.context.dot_project import MaintainerEntry, ProjectConfig
+    from darnit.context.dot_project import ProjectConfig
 
 
 class InMemoryProjectStateStore:
@@ -27,9 +27,6 @@ class InMemoryProjectStateStore:
     def read_project(self) -> ProjectConfig | None:
         self.read_count += 1
         return self.project
-
-    def read_maintainers(self) -> list[MaintainerEntry]:
-        return []
 
     def close(self) -> None:
         return None

@@ -518,56 +518,6 @@ def load_controls_from_toml(framework_path: Path) -> list[ControlSpec]:
     return load_controls_from_effective(config)
 
 
-def load_controls_by_name(framework_name: str) -> list[ControlSpec]:
-    """Load executable controls for a framework resolved via entry points.
-
-    Args:
-        framework_name: Framework identifier (e.g., "openssf-baseline")
-
-    Returns:
-        List of executable ControlSpec objects
-
-    Raises:
-        ValueError: If framework not found
-    """
-    from .merger import load_effective_config_by_name
-
-    config = load_effective_config_by_name(framework_name)
-    return load_controls_from_effective(config)
-
-
-# =============================================================================
-# Registration Helper
-# =============================================================================
-
-
-def register_controls_from_config(
-    config: EffectiveConfig,
-    registry_func: Callable[[ControlSpec], None] | None = None,
-) -> int:
-    """Load controls from config and register them.
-
-    Args:
-        config: Effective configuration
-        registry_func: Function to register each control
-            (defaults to sieve.registry.register_control)
-
-    Returns:
-        Number of controls registered
-    """
-    if registry_func is None:
-        from darnit.sieve.registry import register_control
-
-        registry_func = register_control
-
-    controls = load_controls_from_effective(config)
-
-    for control in controls:
-        registry_func(control)
-
-    return len(controls)
-
-
 # =============================================================================
 # Feature 041: step authority validation (contracts/step-declarations.md)
 # =============================================================================

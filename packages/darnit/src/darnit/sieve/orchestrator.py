@@ -268,8 +268,7 @@ class SieveOrchestrator:
         # Dependency results: keyed by control ID, populated as controls are verified
         self._dependency_results: dict[str, SieveResult] = {}
         # MCP client-session pool. Constructed lazily on the first dispatch
-        # that references ``handler = "mcp"``; torn down in
-        # ``verify_batch``'s finally block or on ``reset_caches``.
+        # that references ``handler = "mcp"``; torn down on ``reset_caches``.
         self._mcp_pool: Any | None = None
 
     def reset_caches(self) -> None:
@@ -368,6 +367,8 @@ class SieveOrchestrator:
         accumulated_evidence: dict[str, Any] = {}
         last_error_class: str | None = None
         first_error: dict[str, Any] | None = None
+        last_informative_message: str | None = None
+        last_informative_evidence_only: bool = False
 
         # Build handler context
         handler_ctx = HandlerContext(
@@ -644,6 +645,26 @@ class SieveOrchestrator:
                     }
                 continue
 
+            # Issue #648: remember the last informative step message for the
+            # all-inconclusive WARN fallthrough below. Manual passes are excluded
+            # via handler and phase checks.
+            msg = handler_result.message
+            if (
+                invocation.handler not in ("manual", "manual_steps")
+                and phase != VerificationPhase.MANUAL
+                and msg
+                and msg.strip()
+            ):
+                last_informative_message = msg.strip()
+                last_informative_evidence_only = (
+                    disposition
+                    in (
+                        StepDisposition.ATTACH_EVIDENCE_AND_CONTINUE,
+                        StepDisposition.TERMINATE_INCONCLUSIVE,
+                    )
+                    and handler_result.status != HandlerResultStatus.INCONCLUSIVE
+                )
+
             # ATTACH_EVIDENCE_AND_CONTINUE or TERMINATE_INCONCLUSIVE fall
             # through to the LLM-consultation / continue path below.
 
@@ -696,11 +717,19 @@ class SieveOrchestrator:
                 },
             )
 
-        # All handler invocations inconclusive
+        # All handler invocations inconclusive (issue #648)
+        if last_informative_message:
+            if last_informative_evidence_only and not last_informative_message.endswith("(evidence only)"):
+                message = f"{last_informative_message} (evidence only)"
+            else:
+                message = last_informative_message
+        else:
+            message = "Could not automatically verify - manual verification required"
+
         return SieveResult(
             control_id=control_spec.control_id,
             status="WARN",
-            message="Could not automatically verify - manual verification required",
+            message=message,
             level=control_spec.level,
             conclusive_phase=VerificationPhase.MANUAL,
             pass_history=pass_history,
@@ -915,50 +944,6 @@ class SieveOrchestrator:
             concluded_by="none",
         )
 
-    def verify_batch(
-        self,
-        control_specs: list[ControlSpec],
-        context_factory: callable,
-    ) -> list[SieveResult]:
-        """
-        Verify multiple controls in dependency-aware order.
-
-        Performs topological sort based on depends_on and inferred_from,
-        then verifies in order so dependency results are available.
-
-        Args:
-            control_specs: List of control specifications
-            context_factory: Function that creates CheckContext for a control_id
-
-        Returns:
-            List of SieveResults in original order
-        """
-        # Reset caches for this audit run
-        self.reset_caches()
-
-        # Resolve execution order
-        ordered = _resolve_execution_order(control_specs)
-
-        # Execute in dependency order, collect results. The finally block
-        # guarantees the MCP pool (if any was constructed) is torn down on
-        # every exit path -- success, exception, or interrupt.
-        result_map: dict[str, SieveResult] = {}
-        try:
-            for spec in ordered:
-                context = context_factory(spec.control_id)
-                result = self.verify(spec, context)
-                result_map[spec.control_id] = result
-        finally:
-            if self._mcp_pool is not None:
-                try:
-                    self._mcp_pool.teardown_all()
-                except Exception as err:  # noqa: BLE001 - best-effort teardown
-                    logger.warning("MCP pool teardown at verify_batch exit raised: %s", err)
-                self._mcp_pool = None
-
-        # Return in original order
-        return [result_map[spec.control_id] for spec in control_specs if spec.control_id in result_map]
-
     def _apply_on_pass(
         self,
         control_spec: ControlSpec,
@@ -1036,65 +1021,3 @@ def _handler_status_to_outcome(status: HandlerResultStatus) -> PassOutcome:
         HandlerResultStatus.INCONCLUSIVE: PassOutcome.INCONCLUSIVE,
     }
     return mapping.get(status, PassOutcome.INCONCLUSIVE)
-
-
-def _resolve_execution_order(
-    control_specs: list[ControlSpec],
-) -> list[ControlSpec]:
-    """Topological sort of controls based on depends_on and inferred_from.
-
-    Cycle detection: warns and removes back-edges to break cycles.
-    Unknown references: silently ignored (already validated at load time).
-
-    Args:
-        control_specs: Controls to sort
-
-    Returns:
-        Controls in dependency-respecting order
-    """
-    specs_by_id = {s.control_id: s for s in control_specs}
-    in_scope = set(specs_by_id.keys())
-
-    # Build adjacency: control_id -> set of control_ids it depends on
-    deps: dict[str, set[str]] = {}
-    for spec in control_specs:
-        spec_deps: set[str] = set()
-        depends_on = spec.metadata.get("depends_on", [])
-        if depends_on:
-            spec_deps.update(d for d in depends_on if d in in_scope)
-        inferred_from = spec.metadata.get("inferred_from")
-        if inferred_from and inferred_from in in_scope:
-            spec_deps.add(inferred_from)
-        deps[spec.control_id] = spec_deps
-
-    # DFS-based topological sort
-    visited: set[str] = set()
-    in_stack: set[str] = set()
-    order: list[str] = []
-
-    def _visit(cid: str) -> None:
-        if cid in visited:
-            return
-        if cid in in_stack:
-            logger.warning("Dependency cycle detected involving control '%s'", cid)
-            return  # Break cycle
-        in_stack.add(cid)
-        for dep in deps.get(cid, set()):
-            _visit(dep)
-        in_stack.remove(cid)
-        visited.add(cid)
-        order.append(cid)
-
-    for cid in deps:
-        _visit(cid)
-
-    # Map back to specs in dependency order
-    ordered = [specs_by_id[cid] for cid in order if cid in specs_by_id]
-
-    # Append any specs not covered (shouldn't happen, but defensive)
-    seen = {s.control_id for s in ordered}
-    for spec in control_specs:
-        if spec.control_id not in seen:
-            ordered.append(spec)
-
-    return ordered

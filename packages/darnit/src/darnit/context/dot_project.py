@@ -675,8 +675,8 @@ class DotProjectReader:
             warnings.warn(
                 (
                     "The .project/ specification field `cncf_slack_channel` is "
-                    "deprecated upstream. This alias is accepted by darnit "
-                    "spec version 1.2.0 and will be removed in the next release. "
+                    "deprecated upstream. This alias is still accepted by "
+                    "darnit and will be removed in a future release. "
                     "Migrate to the `slack_channels` list form defined in the "
                     "CNCF spec: "
                     "https://github.com/cncf/automation/tree/main/utilities/dot-project"

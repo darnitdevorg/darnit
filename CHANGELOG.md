@@ -59,6 +59,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - the `security_policy_minimal` template, which no remediation used (an
     operator custom control naming it now fails to find it);
   - `scripts/extract_templates.py` and `scripts/audit_hermetic_real_repos.py`.
+- **BREAKING:** `read_maintainers` is removed from the plugin-facing
+  `ProjectStateStore` protocol (`darnit.stores.protocols`) and its
+  implementations (`FilesystemProjectStateStore`, `InMemoryProjectStateStore`).
+  Maintainers are populated onto `ProjectConfig.maintainer_entries` and
+  `ProjectConfig.maintainers` via `read_project()`; the separate method
+  had no callers and `InMemoryProjectStateStore` returned an empty list
+  (#608).
 - **BREAKING:** `write_project` and `write_maintainers` are removed from the
   plugin-facing `ProjectStateStore` protocol (`darnit.stores.protocols`) and
   its filesystem default (`darnit.stores.defaults.project`). Writes to
@@ -165,6 +172,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `scripts/create-example-test-repo.py`. Plugin authors start from
   `darnit-hello`; the custom step types the tests used moved to the test-only
   `darnit-testchecks` package (#487).
+- **BREAKING (Python API only):** unused functions, classes, and modules in
+  the core package that no product code called. No behavior change for CLI,
+  MCP, or TOML users. Removed import paths:
+  - modules `darnit.context.collection`, `darnit.context.inject`,
+    `darnit.context.detectors`, `darnit.remediation.helpers`, and
+    `darnit.sieve.project_context`, with their `darnit.context` and
+    `darnit.remediation` re-exports;
+  - `darnit.config`: `resolve_file_for_control`,
+    `update_config_after_file_create`, `sync_discovered_file_to_config`
+    (`config.resolver`); `discover_and_create_config` (`config.discovery`);
+    `init_project_config` and `update_project_config` (`config.loader`; the
+    `init_project_config` MCP tool is unchanged); `parse_resource_ref`,
+    `get_path_from_ref`, `create_full_config`, and the `ProjectConfig`
+    methods `is_control_applicable`, `set_type_exclusions`,
+    `get_excluded_controls`, `get_security_contact`, `get_audits`,
+    `get_ci_provider`, `get_contributor_agreement_type` (`config.schema`);
+    `create_framework_config` and `FrameworkConfig.get_controls_by_domain`
+    (`config.framework_schema`); `EffectiveConfig.get_controls_by_domain`
+    (`config.merger`); `load_controls_by_name` and
+    `register_controls_from_config` (`config.control_loader`);
+    `ContextByCategory`, `ContextCategory`, `ExtensionMetadata`,
+    `BaselineExtensionConfig`, `CNCFBaselineExtension`, `ProjectExtensions`,
+    and `CNCFProjectConfig` (`config.context_schema`);
+  - `darnit.context.auto_detect`: `collect_auto_context_with_confidence`,
+    `detect_governance_model`, `detect_project_type`,
+    `detect_has_subprojects`;
+  - `darnit.core`: `PassInfo`, `TemplateInfo`, `register_pass`,
+    `get_template`, `list_handlers`, and the `HandlerRegistry` methods
+    `register_pass`, `get_pass`, `list_passes`, `register_template`,
+    `get_template`, `list_templates`, `discover_templates`, `list_handlers`
+    (`core.handlers`); `ExecutionContext.get_or_run_tool`,
+    `get_cached_result`, `cache_result`, and its `tool_outputs`,
+    `api_responses`, and `cached_results` fields (`core.models`);
+    `file_contains` and `make_result` (`core.utils`);
+  - `darnit.remediation`: `detect_workflow_checks` (`remediation.github`)
+    and `get_context_requirements_for_category`
+    (`remediation.context_validator`);
+  - `darnit.sieve`: `SieveOrchestrator.verify_batch` and
+    `SieveHandlerRegistry.validate_phase`.
 
 ### Added
 
@@ -367,6 +413,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- In OpenSSF Baseline assessment attestation predicates, `assessor.name`
+  changes from `openssf-baseline-mcp` to `openssf-baseline`, `assessor.uri`
+  points to `https://github.com/darnitdevorg/darnit`, `assessor.version`
+  derives dynamically from `darnit-baseline` package metadata instead of
+  hard-coded `0.1.0`, and `baseline.version` / `baseline.specification` derive
+  from the framework TOML metadata (`OSPS v2026.02.19`) instead of `2025.10.10`
+  (Refs #494).
 - **BREAKING:** `register_handlers()` is the one handler registration hook
   for plugins (#451). `darnit-gittuf` and `darnit-reproducibility` rename
   `register_sieve_handlers()` to `register_handlers()`, and their `register()`
@@ -600,11 +653,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `attestation` extra requires `sigstore>=4.0.0`. Signing calls
   `SigningContext.from_trust_config`, which sigstore 4.0.0 introduced, so
   a 3.x release no longer satisfies the extra (fixes #606).
+- Configure `fail_exit_codes = [0]` for OpenSSF Baseline OSPS-BR-01.02
+  (`grep -rln github.head_ref .github/workflows/`) so exit 0 on a match records
+  as non-conclusive evidence without an `unexpected_exit` error class (fixes #647).
 - Scope the full-audit cache by trust target: `write_audit_cache` records
   the run's `target` in the cache envelope, and `read_audit_cache` /
   `read_full_audit_cache` enforce a match against `expected_target` so an
   audit cached under a trusted target cannot be reused by an untrusted run
   (fixes #659).
+- The OpenSSF Baseline threat model remediation (OSPS-SA-03.02) can be
+  previewed, so a batch approval covers it like any other file remediation.
+  Its `SUMMARY.md` and `raw-findings.json` recorded the scan time to the
+  second, so the preview could never equal the apply and the step needed its
+  own approval. They now record the UTC scan date (#673).
+- A `fixed`, `changed_not_passing`, or `changed_not_verified` remediation
+  outcome now also lists the files kept because they had uncommitted user
+  changes (`user_changes_present`). An apply that wrote some files and kept
+  others reported only the written ones (#673).
 - Control `when` and step `when` now use one evaluator
   (framework-design 5.1.1). A list-valued control `when` such as
   `{ ci_provider = ["github", "gitlab"] }` made the control N/A even when
@@ -620,6 +685,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   declared contradicting evidence was present, and `confirm_project_data`
   would confirm it. The audit and the confirmation tool now read the
   framework's controls plus the operator's custom controls.
+- `submit_judgment` and `confirm_pass_candidate` audit only the controls
+  they check instead of the whole framework (#653). Each call used to run a
+  full audit (about 9 seconds on a small repository) and the server handles
+  calls one at a time, so the 30 judgments of an OpenSSF Baseline run spent
+  over 5 minutes queued. They now take about 0.4 seconds each. The judged
+  content and evidence digest are unchanged, and these subset audits no
+  longer overwrite the audit cache.
 - `remediate_audit_findings` no longer trusts a repository because the
   checkout's origin remote names it. Called without `owner` and `repo`, it
   filled them from the remote and then decided trust from them, so a clone
@@ -630,6 +702,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   platform calls. The pending-context guard now reads confirmations for
   that repository too: it used to ignore operator-side confirmations, so
   an untrusted repository could never be remediated.
+- gittuf GT-02.01 (`gittuf_commits_signed`) passes only when every checked
+  commit has a good signature (`%G?` = `G`). It counted `E` (cannot be
+  checked, so any random bytes in a signature packet), `U` (unknown
+  validity; for SSH, any key once `gpg.ssh.allowedSignersFile` is set) and
+  `X` as signed, and passed a history signed only by revoked or expired
+  keys as "All 0 recent commits are signed". Now `N`, `B`, `R`, `Y` and `X`
+  are FAIL; `E`, and a signature git is not set up to check (such as SSH
+  without `gpg.ssh.allowedSignersFile`), are `ERROR`, class `evaluation`;
+  `U` and an empty history are inconclusive.
+- gittuf GT-01.02 and GT-02.01 are `ERROR`, class `missing_tool`, when
+  `gittuf` or `git` is not installed. They were WARN, as if a person needed
+  to check the repository.
+- gittuf GT-01.01 fails when `refs/gittuf/policy` is missing. Its
+  `git show-ref --verify` exits 128 for a missing ref, not the declared
+  fail code 1, so the control was WARN; the step now passes `--quiet`, which
+  exits 1.
+- The `darnit-mcp` package now provides the `darnit` command, so
+  `uv tool install darnit-mcp` and
+  `uv tool install git+https://github.com/darnitdevorg/darnit` work; they
+  failed with "No executables are provided by package `darnit-mcp`". The
+  Claude Code plugin runner and the container's `mcp` command ran a
+  `darnit-mcp` executable that no package provides; both now run
+  `darnit serve`. The command is `darnit`, so `uvx darnit-mcp` still does
+  not work: use `uvx --from darnit-mcp darnit` (#621).
 - When `cel-python` or `tree-sitter-language-pack` fails to import, the
   error now gives the real cause. Both guards said "not installed" for any
   import error, which was wrong for an installed package with a missing
@@ -661,13 +757,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   grepping the text report, so a reworded message cannot hide a broken
   dependency, and it refuses a `dist/` holding more than one wheel of a
   package (#575).
-- A filtered audit is no longer reused as a full one (#542). The audit
-  cache records the audit's scope: framework, level, tag filter, and
-  whether any filter narrowed the control set. A filtered audit is cached
-  under its own key, and remediation reads only an unfiltered level 3
-  audit of its framework, through the store the audit wrote to. Before,
-  `darnit audit --tags level=1` left a cache that remediation treated as
-  a full audit. Cache files from earlier versions are ignored and rebuilt.
 - A filtered audit is no longer reused as a full one (#542). Only an
   unfiltered audit is cached: a run narrowed by `--tags`, `--include`,
   `--exclude` or a profile does not write the audit cache. Remediation

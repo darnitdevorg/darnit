@@ -148,7 +148,7 @@ class TestEndToEnd:
             _ctx(),
         )
         assert result.status == "WARN"
-        assert result.message == FALLTHROUGH_MESSAGE
+        assert result.message == f"{WARN_MESSAGE} (evidence only)"
 
     @pytest.mark.unit
     def test_warn_carries_result_fields(self) -> None:
@@ -189,6 +189,96 @@ class TestEndToEnd:
         assert PassOutcome.WARN in outcomes
         assert PassOutcome.INCONCLUSIVE not in outcomes
 
+    @pytest.mark.unit
+    def test_fallthrough_warn_carries_last_informative_message_with_evidence_only(self) -> None:
+        """Issue #648: positive evidence on a step that cannot conclude PASS under 041."""
+
+        def evidence_pass(config, context):
+            return HandlerResult(
+                status=HandlerResultStatus.PASS,
+                message="Pattern matched in 2 result(s)",
+                confidence=0.8,
+            )
+
+        def manual_step(config, context):
+            return HandlerResult(
+                status=HandlerResultStatus.INCONCLUSIVE,
+                message="Manual verification required",
+            )
+
+        get_sieve_handler_registry().register("test_evidence_pattern", "deterministic", evidence_pass, ceiling={"fail"})
+        get_sieve_handler_registry().register("test_manual_step", "manual", manual_step, ceiling=set())
+
+        result = SieveOrchestrator().verify(
+            _control(
+                "WARN-648-01",
+                [
+                    HandlerInvocation(handler="test_evidence_pattern"),
+                    HandlerInvocation(handler="test_manual_step"),
+                ],
+            ),
+            _ctx(),
+        )
+        assert result.status == "WARN"
+        assert result.message == "Pattern matched in 2 result(s) (evidence only)"
+
+    @pytest.mark.unit
+    def test_fallthrough_warn_carries_inconclusive_informative_message(self) -> None:
+        """Issue #648: non-matching pattern step conveys what failed, not generic line."""
+
+        def pattern_miss(config, context):
+            return HandlerResult(
+                status=HandlerResultStatus.INCONCLUSIVE,
+                message="5 of 11 pattern checks failed",
+                confidence=0.7,
+            )
+
+        def manual_step(config, context):
+            return HandlerResult(
+                status=HandlerResultStatus.INCONCLUSIVE,
+                message="Manual verification required",
+            )
+
+        get_sieve_handler_registry().register("test_pattern_miss", "deterministic", pattern_miss, ceiling={"fail"})
+        get_sieve_handler_registry().register("test_manual_fallback", "manual", manual_step, ceiling=set())
+
+        result = SieveOrchestrator().verify(
+            _control(
+                "WARN-648-02",
+                [
+                    HandlerInvocation(handler="test_pattern_miss"),
+                    HandlerInvocation(handler="test_manual_fallback"),
+                ],
+            ),
+            _ctx(),
+        )
+        assert result.status == "WARN"
+        assert result.message == "5 of 11 pattern checks failed"
+
+    @pytest.mark.unit
+    def test_fallthrough_warn_generic_message_when_only_manual_steps(self) -> None:
+        """Issue #648: control with only manual passes retains generic fallback message."""
+
+        def manual_only(config, context):
+            return HandlerResult(
+                status=HandlerResultStatus.INCONCLUSIVE,
+                message="Manual verification required",
+            )
+
+        get_sieve_handler_registry().register("test_pure_manual", "manual", manual_only, ceiling=set())
+
+        result = SieveOrchestrator().verify(
+            _control(
+                "WARN-648-03",
+                [
+                    HandlerInvocation(handler="test_pure_manual"),
+                ],
+            ),
+            _ctx(),
+        )
+        assert result.status == "WARN"
+        assert result.message == FALLTHROUGH_MESSAGE
+
 
 class TestCelPostStep:
     """Contract T-6 / C-6.
@@ -226,3 +316,4 @@ class TestDocumentationIsInSync:
             "(constitution Development Workflow item 3: spec first, then code)"
         )
         assert "`WARN`" in spec
+        assert "All passes inconclusive falls through to WARN" in spec

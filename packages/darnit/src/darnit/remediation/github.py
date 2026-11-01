@@ -6,94 +6,12 @@ the platform engine (``darnit.remediation.platform``, feature 043).
 """
 
 import json
-import os
 from typing import Any
 
 from darnit.core.logging import get_logger
-from darnit.core.repo_files import open_in_repository
 from darnit.core.utils import detect_repo_from_git
 
 logger = get_logger("remediation.github")
-
-
-def detect_workflow_checks(local_path: str) -> list[dict[str, Any]]:
-    """
-    Detect potential status check names from GitHub Actions workflows.
-
-    Args:
-        local_path: Path to the repository
-
-    Returns:
-        A list of dicts with job info including workflow, job_id, job_name,
-        check_name, and source filename.
-    """
-    workflow_dir = os.path.join(local_path, ".github", "workflows")
-    checks = []
-
-    if not os.path.exists(workflow_dir):
-        return checks
-
-    try:
-        import yaml
-    except ImportError:
-        logger.debug("PyYAML not available for workflow detection")
-        return checks
-
-    try:
-        filenames = os.listdir(workflow_dir)
-    except OSError as e:
-        logger.debug(f"Cannot read workflow directory: {e}")
-        return checks
-
-    for filename in filenames:
-        if not filename.endswith(('.yml', '.yaml')):
-            continue
-
-        filepath = os.path.join(workflow_dir, filename)
-        try:
-            with open_in_repository(local_path, filepath, encoding='utf-8') as f:
-                content = f.read()
-
-            workflow = yaml.safe_load(content)
-            if workflow and isinstance(workflow, dict):
-                workflow_name = workflow.get('name', filename.replace('.yml', '').replace('.yaml', ''))
-                jobs = workflow.get('jobs', {})
-
-                for job_id, job_config in jobs.items():
-                    if isinstance(job_config, dict):
-                        job_name = job_config.get('name', job_id)
-                        # Check for matrix builds
-                        strategy = job_config.get('strategy', {})
-                        matrix = strategy.get('matrix', {})
-
-                        if matrix:
-                            # Expand matrix combinations for common patterns
-                            for _key, values in matrix.items():
-                                if isinstance(values, list):
-                                    for val in values:
-                                        checks.append({
-                                            'workflow': workflow_name,
-                                            'job_id': job_id,
-                                            'job_name': job_name,
-                                            'check_name': f"{job_name} ({val})",
-                                            'source': filename
-                                        })
-                        else:
-                            checks.append({
-                                'workflow': workflow_name,
-                                'job_id': job_id,
-                                'job_name': job_name,
-                                'check_name': job_name,
-                                'source': filename
-                            })
-        except OSError as e:
-            logger.debug(f"Cannot read workflow file {filename}: {e}")
-            continue
-        except yaml.YAMLError as e:
-            logger.debug(f"Invalid YAML in {filename}: {e}")
-            continue
-
-    return checks
 
 
 TOOL_STEP = "enable_branch_protection"
@@ -303,6 +221,5 @@ def enable_branch_protection(
 
 
 __all__ = [
-    "detect_workflow_checks",
     "enable_branch_protection",
 ]
