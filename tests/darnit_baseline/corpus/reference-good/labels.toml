@@ -1,6 +1,9 @@
 [fixture]
 description = "A small well-formed repository whose documents and configuration satisfy the labelled controls"
 
+[fixture.tools.zizmor]
+recorded = true
+
 [labels."OSPS-AC-04.02"]
 expected = "PASS"
 why = "The only workflow grants contents: read, the minimum a test job needs."
