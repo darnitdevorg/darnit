@@ -88,7 +88,7 @@ user-local = "darnit.stores.defaults.user_local:UserLocalAuditCacheStore"
 
 [project.optional-dependencies]
 attestation = [
-    "sigstore>=3.0.0",
+    "sigstore>=4.0.0",  # SigningContext.from_trust_config (#606); absent before 4.0.0
     "in-toto-attestation>=0.9.0",
     "urllib3>=2.6.3,<3",  # CVE-2025-66471, CVE-2026-21441, CVE-2025-66418 fixes
     "cryptography>=46.0.6,<48",  # CVE-2026-34073 DNS name constraint bypass

@@ -650,6 +650,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The `attestation` extra requires `sigstore>=4.0.0`. Signing calls
+  `SigningContext.from_trust_config`, which sigstore 4.0.0 introduced, so
+  a 3.x release no longer satisfies the extra (fixes #606).
 - Configure `fail_exit_codes = [0]` for OpenSSF Baseline OSPS-BR-01.02
   (`grep -rln github.head_ref .github/workflows/`) so exit 0 on a match records
   as non-conclusive evidence without an `unexpected_exit` error class (fixes #647).
