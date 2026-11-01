@@ -12,7 +12,8 @@ Typical use (two steps per repo):
     uv run python scripts/csl_onboard.py --repo uptane/uptane-standard \
         --scope-file scopes/uptane.md \
         --contacts "Name One <a@x.org>, Name Two <b@y.org>" \
-        --code-license Apache-2.0 --spec-name "Uptane"
+        --code-license Apache-2.0 --governance-mode csl \
+        --coc-policy csl --spec-name "Uptane"
 
 The scope is passed as a FILE, not a command-line string, so long prose does not
 have to survive shell quoting. Nothing is written unless --scope-file is given.
@@ -98,17 +99,17 @@ def main() -> int:
     p.add_argument("--repo", required=True, help="owner/name, e.g. uptane/uptane-standard")
     p.add_argument("--scope-file", help="markdown file holding the drafted scope")
     p.add_argument("--contacts", default="", help="real Code of Conduct contacts")
-    p.add_argument("--coc-policy", choices=["csl", "umbrella", "org"], default="csl",
+    p.add_argument("--coc-policy", choices=["csl", "umbrella", "org"], default=None,
                    help="org = point the notices at an existing project/org Code of Conduct")
     p.add_argument("--coc-reference", default="",
                    help="markdown sentence linking the existing CoC (required with --coc-policy org)")
-    p.add_argument("--code-license", default="Apache-2.0")
-    p.add_argument("--governance-mode", choices=["csl", "umbrella"], default="csl",
+    p.add_argument("--code-license", default=None)
+    p.add_argument("--governance-mode", choices=["csl", "umbrella"], default=None,
                    help="'umbrella' references existing project governance instead "
                         "of asserting the verbatim CSL policy")
     p.add_argument("--governance-reference", default="",
                    help="what the umbrella governance is (name or URL)")
-    p.add_argument("--spec-name", default="")
+    p.add_argument("--spec-name", default=None)
     p.add_argument("--workdir", default=".", help="where repos are cloned")
     p.add_argument("--branch", default="csl-compliance")
     p.add_argument("--dir", default=None, help="override local directory name")
@@ -118,6 +119,22 @@ def main() -> int:
     owner, _, name = a.repo.partition("/")
     if not owner or not name:
         return print("--repo must be owner/name") or 1
+    if a.scope_file and not a.audit_only:
+        decisions = {
+            "--code-license": a.code_license,
+            "--governance-mode": a.governance_mode,
+            "--coc-policy": a.coc_policy,
+            "--spec-name": a.spec_name,
+        }
+        missing = [option for option, value in decisions.items() if not value or not value.strip()]
+        if missing:
+            p.error(
+                "remediation requires explicit choices for: " + ", ".join(missing)
+                + "\nExample values only — choose what fits your project:\n"
+                '  --code-license MIT --governance-mode csl '
+                '--coc-policy csl --spec-name "My Specification"'
+            )
+
     slug = a.dir or (f"{owner}-{name}" if name in _GENERIC else name)
     workdir = Path(a.workdir).resolve()
     repo_dir = workdir / slug
@@ -155,7 +172,7 @@ def main() -> int:
     print("\n== remediate")
     report = asyncio.run(remediate_community_spec(
         local_path=str(repo_dir), scope=scope, coc_contacts=a.contacts,
-        code_license=a.code_license, spec_name=a.spec_name or name,
+        code_license=a.code_license, spec_name=a.spec_name,
         governance_mode=a.governance_mode,
         governance_reference=a.governance_reference,
         coc_policy=a.coc_policy, coc_reference=a.coc_reference,
