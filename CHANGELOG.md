@@ -650,6 +650,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- OpenSSF Baseline: a missing document fails again, so remediation plans it
+  (#665). OSPS-SA-01.01, DO-03.02, DO-04.01, DO-05.01, DO-06.01, and
+  QA-06.02 set `fail_on_miss`, and a pattern step with `fail_on_miss` now
+  concludes FAIL when none of the files it lists exists. Before, the miss went
+  to a model judgment with only the README, the control stayed PENDING, and
+  remediation never created the document. On the wtf-frontend replay
+  (`scripts/comply_replay.py`) remediation now writes ARCHITECTURE.md and
+  the dependency, testing, and release-verification documents; what it
+  writes still needs a judgment and a person's confirmation to pass.
 - Configure `fail_exit_codes = [0]` for OpenSSF Baseline OSPS-BR-01.02
   (`grep -rln github.head_ref .github/workflows/`) so exit 0 on a match records
   as non-conclusive evidence without an `unexpected_exit` error class (fixes #647).

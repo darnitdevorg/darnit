@@ -523,7 +523,7 @@ fail_on_miss = false
 | `min_matches` | `int` | Matches needed per pattern per file (default: 1) |
 | `exclude_files` | `list[str]` | Exclude mode: globs whose presence is reported (see below) |
 | `max_depth` | `int` | Search subdirectories up to this depth for non-glob entries (default: 0) |
-| `fail_on_miss` | `bool` | FAIL instead of INCONCLUSIVE on no match (default: false). Step field; requires `fail` in the step's effective set. |
+| `fail_on_miss` | `bool` | FAIL instead of INCONCLUSIVE on no match, including when none of the listed `files` exist (default: false). Step field; requires `fail` in the step's effective set. |
 | `expr` | `str` | CEL expression over `output` (the handler's evidence) and `project` (section 3.7) |
 
 These are the step type's declared `settings` and common step fields (section 3.0.3); any other key, such as a top-level `patterns`, fails loading.
@@ -533,7 +533,7 @@ These are the step type's declared `settings` and common step fields (section 3.
 **Behavior** (match mode):
 1. Match per `pass_if_any` -> PASS
 2. No match -> INCONCLUSIVE, unless `fail_on_miss = true` -> FAIL
-3. No files resolved -> INCONCLUSIVE
+3. No files resolved -> INCONCLUSIVE, unless `fail_on_miss = true` and the step lists `files` -> FAIL: none of the files the step looks in exists, which is the strongest miss
 
 Exclude mode (`exclude_files`) is unchanged: no files found -> PASS, files found -> FAIL, usually refined by `expr`.
 
@@ -551,6 +551,16 @@ Exclude mode (`exclude_files`) is unchanged: no files found -> PASS, files found
 - **WHEN** a `regex` handler is invoked with `fail_on_miss = true`
 - **AND** no patterns match in any file
 - **THEN** the handler MUST return FAIL
+
+#### Scenario: No listed file exists, with fail_on_miss
+- **WHEN** a `regex` handler is invoked with `files` and `fail_on_miss = true`
+- **AND** none of the listed files exists
+- **THEN** the handler MUST return FAIL
+
+#### Scenario: No listed file exists, without fail_on_miss
+- **WHEN** a `regex` handler is invoked with `files` and without `fail_on_miss`
+- **AND** none of the listed files exists
+- **THEN** the handler MUST return INCONCLUSIVE and evaluation MUST continue
 
 ### 3.5 llm_eval Handler
 
