@@ -4548,8 +4548,8 @@ Supports filtering by:
 
 Output formats:
 - "markdown" (default): Human-readable report with remediation guidance
-- "json": Full JSON with all evidence and pass history (~164K for 62 controls)
-- "summary": Compact JSON with id/status/level/details only (~5-8K for 62 controls)
+- "json": Full JSON with all evidence and pass history (large; use get_judgment_requests for what a judgment needs)
+- "summary": Compact JSON with id/status/level/details, plus pending.kind on PENDING rows
 - "sarif": SARIF format for tool integration
 
 Examples:
@@ -4640,18 +4640,11 @@ Each question carries its candidate, if any, as data: `candidate: {value, origin
 labelled UNCONFIRMED. Command templates and answer mappings hold placeholders only;
 `allowed_values` lists every allowed value of an enum; `format_hint` is a format, never an answer.
 
-MANDATORY WORKFLOW - your next action after calling this tool MUST be calling AskUserQuestion:
-1. Call this tool. It returns "questions" and "ask_user_batch" (AskUserQuestion-compatible objects).
-2. Show the person each question's candidate value and origin, labelled unconfirmed. Then call
-   AskUserQuestion with questions=<ask_user_batch>, VERBATIM. Ask the questions that have no
-   ask_user entry after that, listing every allowed value.
-3. After the person answers, use "answer_mapping" to call confirm_project_data(). A "Yes" on a
-   candidate becomes accept_candidates with that question's candidate.digest, filled in only now.
-4. Call this tool again for the next batch. Repeat until status is "complete".
-
-`stored_unconfirmed` lists values stored in .project/ without a confirmation (key, value,
-location). Show them to the person; confirm or reject the ones the person names in one
-confirm_project_data call with `confirm_stored` / `reject_stored`.
+The result's `procedure` lists the steps to follow, in order: show candidates, ask the
+questions (`ask_user_batch` is AskUserQuestion-compatible; pass it verbatim), record the answers
+with confirm_project_data, call this tool again until status is "complete", review
+`stored_unconfirmed` values, and summarize. Your next action after calling this tool MUST be
+asking the person the questions.
 
 Do NOT pre-fill or suggest answers. Never type a detected value as an answer.
 """

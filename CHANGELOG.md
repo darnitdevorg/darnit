@@ -214,6 +214,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `get_judgment_requests`, on every framework server beside
+  `submit_judgment`, returns what a coding agent needs to judge the controls
+  awaiting a judgment: each control's prompt, analysis hints, and the keys
+  of its files in a shared `files` map holding exactly the content
+  `submit_judgment` checks citations against. Pages stay under 40,000
+  bytes, with `remaining` for the next call, and controls with a stored
+  PASS candidate are left out unless `include_judged` is set. The `darnit-audit`
+  and `darnit-comply` skills use it instead of the `json` audit output,
+  which is about 1 MB and too large for an MCP client's tool result (#644).
+  `summary` rows of a PENDING control now carry `pending.kind`, and a PASS
+  candidate's model, reasoning, and number of cited excerpts.
 - `darnit install --from-source` registers the darnit executable of the
   running installation as the MCP server command. Without it, the entry
   runs the darnit-mcp release on PyPI through `uvx`, even when darnit was
@@ -420,6 +431,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hard-coded `0.1.0`, and `baseline.version` / `baseline.specification` derive
   from the framework TOML metadata (`OSPS v2026.02.19`) instead of `2025.10.10`
   (Refs #494).
+- `get_pending_data` and `get_judgment_requests` return a `procedure`: the
+  steps a coding agent follows with the result (how to show candidates and
+  ask the questions, the exact `confirm_project_data` or `submit_judgment`
+  call, and the next call), naming only the repository the caller named.
+  A `confirm_project_data` result on the OpenSSF Baseline server ends with
+  the next `get_pending_data` call. The `darnit-data`, `darnit-audit`,
+  `darnit-comply`, and `darnit-remediate` skills defer to these procedures
+  instead of restating them or telling the agent to follow another skill,
+  which a client may not load, so `darnit-comply` collected data
+  differently from `darnit-data`. The comply and remediate skills now pass
+  `owner` and `repo` to `remediate_audit_findings`.
 - **BREAKING:** `register_handlers()` is the one handler registration hook
   for plugins (#451). `darnit-gittuf` and `darnit-reproducibility` rename
   `register_sieve_handlers()` to `register_handlers()`, and their `register()`
