@@ -164,6 +164,7 @@ def confirm_project_data_impl(
     host: str | None = None,
     framework_name: str | None = None,
     confirm_pass_candidate: list[str] | None = None,
+    next_step: str | None = None,
     **values: Any,
 ) -> str:
     """Record a person's confirmation of project data values.
@@ -196,6 +197,8 @@ def confirm_project_data_impl(
         confirm_pass_candidate: Control IDs whose PASS candidate (a positive
                          model judgment) the operator confirms for the current
                          evidence. Recorded operator-side, never in the repository.
+        next_step: The call that follows, added to a result that handled
+                         context values (the framework's ``get_pending_data``).
         **values: The person's answer per context key.
 
     Returns:
@@ -250,7 +253,7 @@ def confirm_project_data_impl(
             )
             for key in dict.fromkeys([*requested, *expiries])
         ]
-        return _report(claims_result, results)
+        return _report(claims_result, results, next_step)
 
     try:
         operator_config = resolve_operator_config(resolved_path)
@@ -292,14 +295,17 @@ def confirm_project_data_impl(
         )
     for key in wanted("reject_stored"):
         results += reject_stored_value(resolved_path, key, **common)
-    return _report(claims_result, results)
+    return _report(claims_result, results, next_step)
 
 
-def _report(claims_result: str, results: list[Any]) -> str:
+def _report(claims_result: str, results: list[Any], next_step: str | None = None) -> str:
     lines = ["Project data:"]
     for result in results:
         lines.extend(_result_lines(result))
-    if any(result.outcome in ("confirmed", "deleted") for result in results):
+    if next_step:
+        lines.append("")
+        lines.append(next_step)
+    elif any(result.outcome in ("confirmed", "deleted") for result in results):
         lines.append("")
         lines.append("Re-run the audit to see the updated status.")
     claims_section = f"{claims_result}\n\n" if claims_result else ""
