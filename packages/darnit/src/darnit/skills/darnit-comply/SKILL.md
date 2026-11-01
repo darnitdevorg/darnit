@@ -4,7 +4,7 @@ description: Run the full compliance pipeline — audit, collect data, remediate
 compatibility: Requires darnit MCP server running (darnit serve) and gh CLI for PR creation
 metadata:
   author: kusari-oss
-  version: "2.1"
+  version: "2.4"
 ---
 
 # Full Compliance Pipeline
@@ -19,32 +19,40 @@ Register darnit's MCP server at user scope (`darnit install` does this by defaul
 
 Darnit registers tools per implementation module. Look for available tools matching `audit_*` for the audit step, and `remediate_audit_findings` for remediation. If the user specifies a framework, use those tools. If only one set is available, use it. If multiple exist, ask.
 
+## The repository
+
+Name the audited repository on every darnit call, the audit included: `owner` and `repo`, plus `host` when it is not github.com. darnit applies the person's confirmed answers, stored PASS candidates, and trust only to a named repository, and never takes the name from the checkout's remotes. Before the first call, ask the person to confirm which repository this is, offering the checkout's `origin` remote as the suggestion, and use their answer for every call.
+
 ## Workflow
 
 ### 1. Initial audit
 
-Call the appropriate `audit_*` tool with `output_format: "summary"` and any profile the user mentioned. The "summary" format returns compact JSON (~5-8K vs ~164K for full JSON). Present a brief summary: total controls, pass/fail/warn counts, compliance percentage. For each PENDING control with `pending.kind = "llm_judgment"`, follow the `/darnit-audit` skill: call `submit_judgment` with your verdict, reasoning, and passages copied verbatim from the files in `evidence.llm_consultation.file_contents`. Never state your own verdict as the audit result: a `"pass"` becomes a PASS candidate that stays non-compliant until the operator confirms it.
+Call the appropriate `audit_*` tool with `owner` and `repo` naming the audited repository, `output_format: "summary"`, and any profile the user mentioned. The "summary" format returns compact JSON; PENDING rows carry `pending.kind`. Do not use `output_format: "json"`: it is too large for a tool result. Present a brief summary: total controls, pass/fail/warn counts, compliance percentage.
 
-### 2. Collect data (if needed)
+### 2. Judgments
 
-If WARN controls exist due to missing data:
-- Tell the user you'll collect data to improve accuracy
-- Follow the `/darnit-data` skill workflow: call `get_pending_data`, present questions, call `confirm_project_data` for answers
-- Continue until `status: "complete"` or the user says "skip remaining"
+If any row has `pending.kind = "llm_judgment"`, call `get_judgment_requests` with `owner`, `repo`, and `local_path` naming the audited repository, and follow the `procedure` in its result until `remaining` is empty. Never state your own verdict as the audit result: a `"pass"` becomes a PASS candidate that stays non-compliant until the operator confirms it. Keep every `submit_judgment` result with `status: "finding"` for the final report: a finding is not stored, so a later audit shows that control awaiting a judgment again.
 
-### 3. Remediation plan
+### 3. Collect data
+
+Tell the user you'll collect project data, then call `get_pending_data` with `owner`, `repo`, and `local_path` naming the audited repository, and follow the `procedure` in its result until `status` is `"complete"` or the user says to skip the rest.
+
+### 4. Remediation plan
+
+If data was confirmed in step 3, call the audit again (same arguments) and show what changed: confirmed answers can make controls pass or not applicable.
 
 If there are FAIL controls with auto-fixes:
-- Call `remediate_audit_findings` with `dry_run: true`
+- Call `remediate_audit_findings` with `dry_run: true`, and `owner` and `repo` naming the audited repository
 - Read the fenced JSON block after the report: its `plan` lists each item's `file_changes`, `change_sets`, `requires_individual_approval`, and `digest`
 - Present every file change; every platform change set with each field as `before -> after`, its `impact_notes`, and its digest; and every item that needs individual approval. Show a high-impact change (repository visibility, organization settings) on its own with its impact
 - Ask the person which changes to apply, asking separately about each platform change set and each item that needs individual approval
 
-If no failures or no auto-fixes: report the status and list manual steps. Skip to step 6.
+If no failures or no auto-fixes: report the status and list manual steps. Skip to step 8.
 
-### 4. Apply fixes (if confirmed)
+### 5. Apply fixes (if confirmed)
 
 Call `remediate_audit_findings` with:
+- `owner` and `repo` naming the audited repository
 - `dry_run: false`
 - `approve: [...]`: only the digests the person approved, copied from the preview
 - `branch_name: "fix/compliance"` (or `"fix/compliance-{profile}"`)
@@ -55,7 +63,7 @@ Call `remediate_audit_findings` with:
 This single call creates the branch, applies all remediations, and commits.
 Do NOT make separate calls to `create_remediation_branch` or `commit_remediation_changes`.
 
-### 5. Enhance generated files (value-add)
+### 6. Enhance generated files (value-add)
 
 Read the generated template files and improve them with project-specific content:
 - Fill in real project details (maintainer names, security contact, CI/CD specifics)
@@ -64,11 +72,19 @@ Read the generated template files and improve them with project-specific content
 
 If files were enhanced, make a new commit with the improvements.
 
-### 6. Create PR and final report
+### 7. Judge what changed
 
-Ask if the user wants a PR. If yes, call `create_remediation_pr` and display the URL.
+Remediation's documents are not compliant until judged and confirmed: their outcomes are `changed_not_passing` with `pending_kind`. After step 6, call `get_judgment_requests` with `owner`, `repo`, and `local_path` and no `control_ids`, and follow its `procedure`. Judge after improving the files, not before: an edit changes the evidence and makes an earlier candidate stale. Do not judge again a control you received a finding for in this run unless its files changed since; keep each new finding. If a control cannot be judged, say why.
 
-Show before/after compliance comparison, list of changes made, and remaining manual items.
+### 8. Confirm
+
+Call `get_pass_candidates` with `owner`, `repo`, `local_path`, and `run_id` set to the apply's `run_id` (from the fenced JSON block of step 5; omit it if nothing was applied), and follow its `procedure`.
+
+### 9. Final audit, PR, and report
+
+Call the audit again (same arguments as step 1). Ask if the user wants a PR. If yes, call `create_remediation_pr` and display the URL.
+
+Show the before/after comparison and the changes made, then list separately: controls that pass; controls awaiting the person's confirmation; controls awaiting a judgment, with why; controls you judged as not meeting the requirement, with the finding and what the person would need to change; and the remaining manual items. Say that confirmations are recorded for the person on this machine only: CI or another maintainer sees those controls PENDING until they confirm there.
 
 ## Gotchas
 
