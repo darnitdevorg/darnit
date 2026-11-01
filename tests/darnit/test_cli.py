@@ -234,6 +234,108 @@ def test_install_from_source_fails_when_executable_is_missing(tmp_path, monkeypa
     assert any("--from-source" in record.message for record in caplog.records)
 
 
+def _config(name="openssf-baseline"):
+    from darnit.config import load_effective_config_by_name
+
+    return load_effective_config_by_name(name)
+
+
+def _controls(name="openssf-baseline"):
+    from darnit.config import load_controls_from_effective
+
+    return load_controls_from_effective(_config(name))
+
+
+def _baseline_controls():
+    return _controls()
+
+
+def test_resolve_profile_ids_selects_the_profile_controls():
+    from darnit.cli import _resolve_profile_ids
+
+    controls = _baseline_controls()
+    ids = _resolve_profile_ids("level1_quick", _config(), controls)
+
+    assert ids == {c.control_id for c in controls if c.level == 1}
+    assert 0 < len(ids) < len(controls)
+    assert _resolve_profile_ids("openssf-baseline:level1_quick", _config(), controls) == ids
+
+
+def test_resolve_profile_ids_reads_the_loaded_framework_config():
+    """community-spec defines profiles in its TOML but ships no get_audit_profiles()."""
+    from darnit.cli import _resolve_profile_ids
+
+    controls = _controls("community-spec")
+    ids = _resolve_profile_ids("required_files", _config("community-spec"), controls)
+
+    assert ids is not None
+    assert 0 < len(ids) <= len(controls)
+
+
+def test_resolve_profile_ids_rejects_an_unknown_profile(caplog):
+    from darnit.cli import _resolve_profile_ids
+
+    assert _resolve_profile_ids("no-such-profile", _config(), _baseline_controls()) is None
+    assert any("Cannot use profile" in record.message for record in caplog.records)
+
+
+def test_resolve_profile_ids_rejects_a_framework_without_profiles(caplog):
+    from darnit.cli import _resolve_profile_ids
+
+    assert _resolve_profile_ids("level1_quick", _config("testchecks"), []) is None
+    assert any("Cannot use profile" in record.message for record in caplog.records)
+
+
+def test_audit_profile_narrows_the_controls_that_run(tmp_path, monkeypatch):
+    """--profile reaches the control filter; before, the flag was parsed and ignored."""
+    from darnit import filtering
+
+    seen = {}
+    real_filter = filtering.filter_controls
+
+    def spy(controls, filters, include_ids, exclude_ids):
+        seen["include_ids"] = include_ids
+        return real_filter(controls, filters, include_ids, exclude_ids)
+
+    def fake_audit(**kwargs):
+        seen["audit"] = kwargs
+        return [], {}
+
+    monkeypatch.setattr("darnit.filtering.filter_controls", spy)
+    monkeypatch.setattr("darnit.tools.audit.run_sieve_audit", fake_audit)
+    code = main(["audit", "-f", "openssf-baseline", "--profile", "level1_quick", "--no-fail", str(tmp_path)])
+
+    assert code == 0
+    level1 = {c.control_id for c in _baseline_controls() if c.level == 1}
+    assert seen["include_ids"] == level1
+    assert {c.control_id for c in seen["audit"]["controls"]} == level1
+
+
+def test_audit_profile_with_a_tag_that_leaves_nothing_fails(tmp_path, caplog):
+    code = main(["audit", "-f", "openssf-baseline", "--profile", "level1_quick", "-t", "level=3", "--no-fail", str(tmp_path)])
+
+    assert code == 1
+    assert any("leave no controls" in record.message for record in caplog.records)
+
+
+def test_plan_rejects_profile_until_568(tmp_path, caplog):
+    code = main(["plan", "-f", "community-spec", "--profile", "required_files", str(tmp_path)])
+
+    assert code == 1
+    assert any("#568" in record.message for record in caplog.records)
+
+
+def test_profiles_command_lists_profiles_from_the_framework_config(caplog):
+    code = main(["profiles", "--impl", "community-spec"])
+
+    assert code == 0
+    assert any("required_files" in record.message for record in caplog.records)
+
+
+def test_audit_with_an_unknown_profile_fails_before_running(tmp_path):
+    assert main(["audit", "-f", "openssf-baseline", "--profile", "no-such-profile", "--no-fail", str(tmp_path)]) == 1
+
+
 class TestCreateParser:
     """Tests for CLI argument parsing."""
 
@@ -449,7 +551,8 @@ def _mixed_results() -> list[dict]:
         },
         {
             "id": "OSPS-LLM-01.01",
-            "status": "PENDING", "pending": {"kind": "llm_judgment"},
+            "status": "PENDING",
+            "pending": {"kind": "llm_judgment"},
             "details": "Awaiting LLM analysis",
             "level": 1,
         },
