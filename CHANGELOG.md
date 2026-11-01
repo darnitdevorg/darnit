@@ -71,6 +71,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its filesystem default (`darnit.stores.defaults.project`). Writes to
   `.project/` are managed exclusively by `darnit.config.context_writes`
   under feature 042 single-writer rules (#588, fixes #574).
+- **BREAKING (Python API only):** `audit_openssf_baseline` no longer accepts
+  `auto_init_config`, and `get_pending_data` no longer accepts `level` or
+  `profile` (#528). None of them was read. Python callers passing them get a
+  `TypeError`. MCP clients that still send them are unaffected: FastMCP
+  ignores unknown arguments. `get_pending_context` no longer accepts `level`;
+  that ignored parameter was removed in #552.
 - `.baseline.toml` reading and the code that existed only for it:
   `load_user_config` (including its `trusted` path),
   `load_user_config_with_report`, `validate_user_config`, `deep_merge`, and

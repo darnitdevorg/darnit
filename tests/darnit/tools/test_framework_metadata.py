@@ -110,7 +110,6 @@ class TestJsonOutputIncludesMetadata:
             raw = audit_openssf_baseline(
                 local_path=str(tmp_path),
                 output_format="json",
-                auto_init_config=False,
                 attest=False,
                 prefer_upstream=False,
             )
