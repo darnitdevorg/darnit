@@ -44,6 +44,8 @@ governance), `CSL-06.01` (README discoverability).
 3. **Source-code license** for sample/reference code (e.g. `Apache-2.0`, `MIT`).
 4. **Governance mode**: `csl` (ship the full CSL policy) or `umbrella`
    (reference existing governance, e.g. a CNCF project charter).
+5. **Specification name**: the name to use in the generated documents; it is
+   not inferred from the repository name.
 
 ## Path 1 — one-command driver (recommended)
 
@@ -58,14 +60,21 @@ uv run python scripts/csl_onboard.py --repo <owner>/<repo> \
     --scope-file scopes/<repo>.md \
     --coc-policy org \
     --coc-reference "X is a [CNCF](https://www.cncf.io/) project and follows the [X Code of Conduct](<url>)." \
-    --code-license Apache-2.0 --spec-name "<Spec Name>"
+    --code-license Apache-2.0 --governance-mode csl --spec-name "<Spec Name>"
 
 # 2b. No existing CoC anywhere — named-individuals fallback:
 uv run python scripts/csl_onboard.py --repo <owner>/<repo> \
     --scope-file scopes/<repo>.md \
     --contacts "Name One <a@x.org>, Name Two <b@y.org>" \
-    --code-license Apache-2.0 --spec-name "<Spec Name>"
+    --coc-policy csl \
+    --code-license Apache-2.0 --governance-mode csl --spec-name "<Spec Name>"
 ```
+
+For remediation, explicitly supply `--code-license`, `--governance-mode`,
+`--coc-policy`, and `--spec-name`. None has a default. The choices above are
+examples: choose the values appropriate to your project. Missing or blank
+choices are reported together before cloning, branching, or remediation.
+Audit-only runs and the initial scope-template step do not require these choices.
 
 The driver clones, branches, audits, remediates from your scope file, scans
 every generated file for placeholder text, re-audits, and prints the fork/PR
