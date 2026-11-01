@@ -44,9 +44,10 @@ OWNER, REPO = "o", "r"
 REPOSITORY = "github.com/o/r"
 WORKFLOW = "name: ci\non:\n  push:\n\njobs:\n  build:\n    runs-on: ubuntu-latest\n"
 _GIT_ENV = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
-# A confirmed answer for the user-judgment key the license steps need, so
-# LICENSE creation is previewed and applied like every other file.
-CONTEXT = {"license_type": "mit"}
+# Confirmed answers for user-judgment keys (license_type for LICENSE creation,
+# required_status_checks for QA-03.01 branch protection status checks), so they
+# are previewed and applied like every other remediation.
+CONTEXT = {"license_type": "mit", "required_status_checks": ["build"]}
 
 
 def _shipped_tomls() -> list[Path]:
@@ -213,8 +214,15 @@ def test_the_fixture_exercises_files_and_platform_settings(repo: Path) -> None:
             if _planned_operations(preview.plan):
                 with_operations.add(control_id)
 
-    assert len(with_files) >= 40
-    assert {"OSPS-AC-03.01", "OSPS-AC-03.02", "OSPS-QA-07.01", "OSPS-QA-01.01", "OSPS-VM-03.01"} <= with_operations
+    assert len(with_files) >= 39
+    assert {
+        "OSPS-AC-03.01",
+        "OSPS-AC-03.02",
+        "OSPS-QA-01.01",
+        "OSPS-QA-03.01",
+        "OSPS-QA-07.01",
+        "OSPS-VM-03.01",
+    } <= with_operations
 
 
 @pytest.mark.unit

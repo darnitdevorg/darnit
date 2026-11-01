@@ -1346,12 +1346,17 @@ def platform_setting_handler(config: dict[str, Any], context: HandlerContext) ->
         PlatformRequirement,
         PlatformSession,
         platform_repository,
+        resolve_platform_require,
         resolve_policy,
     )
 
+    require = resolve_platform_require(
+        config.get("require") or {},
+        context.usable_project or context.project_context,
+    )
     try:
         request = PlatformRequirement(
-            target=config.get("target"), require=config.get("require") or {}, branch=config.get("branch")
+            target=config.get("target"), require=require, branch=config.get("branch")
         )
     except ValueError as e:
         return HandlerResult(status=HandlerResultStatus.ERROR, message=f"Invalid platform_setting: {e}")

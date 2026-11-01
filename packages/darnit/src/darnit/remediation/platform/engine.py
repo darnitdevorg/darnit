@@ -11,7 +11,7 @@ the outcome is ``manual`` and no platform call is made.
 
 from __future__ import annotations
 
-from collections.abc import Collection, Iterable, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
@@ -116,7 +116,75 @@ def platform_repository(local_path: str, owner: str | None, repo: str | None) ->
     return hint.canonical if hint is not None else None
 
 
-def platform_requests(framework: Any, control_ids: Iterable[str]) -> list[PlatformRequirement]:
+def resolve_platform_require(require: Mapping[str, Any], context: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """Resolve context variables in a platform requirement mapping."""
+    ctx = context or {}
+    resolved: dict[str, Any] = {}
+    for key, value in require.items():
+        if isinstance(value, list):
+            new_list = []
+            for item in value:
+                if isinstance(item, str) and (item.startswith("${") or item.startswith("$")):
+                    var_name = item.strip("${}").strip("$")
+                    if var_name.startswith("context."):
+                        var_name = var_name[len("context.") :]
+                    val = ctx.get(var_name)
+                    if val is None:
+                        val = ctx.get(f"context.{var_name}")
+                    if val is None:
+                        raise ValueError(f"Unresolved context placeholder in platform requirement: {item}")
+                    if isinstance(val, list):
+                        items = [str(v).strip() for v in val if str(v).strip()]
+                        if not items:
+                            raise ValueError(f"Context key '{var_name}' resolved to empty list")
+                        new_list.extend(items)
+                    elif isinstance(val, str):
+                        s = val.strip()
+                        if not s:
+                            raise ValueError(f"Context key '{var_name}' resolved to empty string")
+                        new_list.append(s)
+                    elif val:
+                        new_list.append(str(val))
+                    else:
+                        raise ValueError(f"Context key '{var_name}' has invalid value: {val!r}")
+                else:
+                    new_list.append(item)
+            resolved[key] = new_list
+        elif isinstance(value, str) and (value.startswith("${") or value.startswith("$")):
+            var_name = value.strip("${}").strip("$")
+            if var_name.startswith("context."):
+                var_name = var_name[len("context.") :]
+            val = ctx.get(var_name)
+            if val is None:
+                val = ctx.get(f"context.{var_name}")
+            if val is None:
+                raise ValueError(f"Unresolved context placeholder in platform requirement: {value}")
+            if key == "require_status_checks":
+                if isinstance(val, list):
+                    items = [str(v).strip() for v in val if str(v).strip()]
+                    if not items:
+                        raise ValueError(f"Context key '{var_name}' resolved to empty list")
+                    resolved[key] = items
+                elif isinstance(val, str):
+                    s = val.strip()
+                    if not s:
+                        raise ValueError(f"Context key '{var_name}' resolved to empty string")
+                    resolved[key] = [s]
+                else:
+                    raise ValueError(f"Context key '{var_name}' must be list or string of check names")
+            else:
+                resolved[key] = val
+        else:
+            resolved[key] = value
+    return resolved
+
+
+def platform_requests(
+    framework: Any,
+    control_ids: Iterable[str],
+    *,
+    context: Mapping[str, Any] | None = None,
+) -> list[PlatformRequirement]:
     """Every ``platform_setting`` requirement declared by the remediations of ``control_ids``."""
     requests: list[PlatformRequirement] = []
     for control_id in control_ids:
@@ -125,8 +193,28 @@ def platform_requests(framework: Any, control_ids: Iterable[str]) -> list[Platfo
         for handler in getattr(remediation, "handlers", None) or []:
             if handler.handler == "platform_setting":
                 extra = handler.model_extra or {}
+                require = extra["require"]
+                has_placeholder = any(
+                    (isinstance(v, str) and (v.startswith("${") or v.startswith("$")))
+                    or (
+                        isinstance(v, list)
+                        and any(isinstance(x, str) and (x.startswith("${") or x.startswith("$")) for x in v)
+                    )
+                    for v in require.values()
+                )
+                if has_placeholder:
+                    if not context:
+                        # Cannot plan a requirement whose context is unconfirmed/missing
+                        continue
+                    try:
+                        require = resolve_platform_require(require, context)
+                    except ValueError:
+                        # Unresolved context value - cannot plan requirement
+                        continue
+                elif context:
+                    require = resolve_platform_require(require, context)
                 requests.append(
-                    PlatformRequirement(target=extra["target"], require=extra["require"], branch=extra.get("branch"))
+                    PlatformRequirement(target=extra["target"], require=require, branch=extra.get("branch"))
                 )
     return requests
 
@@ -428,4 +516,5 @@ __all__ = [
     "plan",
     "platform_repository",
     "platform_requests",
+    "resolve_platform_require",
 ]

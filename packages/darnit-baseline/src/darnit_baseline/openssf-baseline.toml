@@ -352,6 +352,19 @@ detect = [
     { handler = "file_exists", files = [".travis.yml"], value_if_pass = "travis" },
 ]
 
+[context.required_status_checks]
+type = "list"
+prompt = "Which status checks should be required before merging?"
+hint = "List of status check contexts/names (enter as separate items, e.g. test (ubuntu-latest, 3.12)). Proposes checks seen passing on recent PRs, which may include third-party contexts (e.g. Codecov, DCO); verify before confirming."
+examples = ["build", "test"]
+affects = ["OSPS-QA-03.01"]
+store_as = "branch_protection.required_status_checks"
+# A user-judgment key (feature 042, FR-005): detection may propose a candidate
+# for the person to confirm; it never concludes the value.
+auto_detect = false
+required = false
+allow_sieve_hints = true
+
 [context.platform]
 type = "enum"
 prompt = "What hosting platform does this project use?"
@@ -2632,11 +2645,30 @@ docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-QA-03.01"
 location_hint = ".github/settings.yml"
 help_md = """Configure required status checks.
 
-**Remediation:**
-1. Go to Repository Settings → Branches
-2. Edit branch protection rule
-3. Enable 'Require status checks to pass'
-4. Select required checks
+**Auto-remediation (recommended):**
+Darnit can configure this for you via the GitHub Branch Protection API.
+
+- MCP tool: `enable_branch_protection` previews by default; it reads the
+  current protection, plans only the missing settings (never lowering
+  existing ones), and applies the change when its digest is approved. Pass
+  `require_status_checks = true` and `status_checks = [...]` with the desired checks.
+- TOML remediation: a `platform_setting` requirement (`require_status_checks`)
+  on the default branch's protection, applied under the operator's
+  remediation policy. Required status checks are confirmed by the user,
+  with candidates proposed from recent pull requests.
+
+Requires the `gh` CLI to be authenticated with a token holding `repo` scope.
+
+**Manual fallback:**
+1. Navigate to Repository Settings → Branches → Branch protection rules
+2. Edit the rule for your default branch (or create one)
+3. Enable 'Require status checks to pass before merging'
+4. Search for and select each required status check by name
+5. Save changes
+
+**References:**
+- [GitHub Branch Protection (UI)](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)
+- [REST API: branch protection](https://docs.github.com/en/rest/branches/branch-protection)
 """
 
 [[controls."OSPS-QA-03.01".passes]]
@@ -2652,7 +2684,19 @@ steps = [
 ]
 
 [controls."OSPS-QA-03.01".remediation]
-safe = false
+requires_api = true
+
+[[controls."OSPS-QA-03.01".remediation.requires_context]]
+key = "required_status_checks"
+required = true
+confidence_threshold = 0.9
+prompt_if_auto_detected = true
+warning = "Required status check names are a person's choice. Please confirm which status checks must pass before merging."
+
+[[controls."OSPS-QA-03.01".remediation.handlers]]
+handler = "platform_setting"
+target = "branch_protection"
+require = { require_status_checks = ["${context.required_status_checks}"] }
 
 [[controls."OSPS-QA-03.01".remediation.handlers]]
 handler = "manual"
@@ -2664,6 +2708,7 @@ steps = [
     "Search for and select each required status check by name",
     "Save changes",
 ]
+docs_url = "https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches"
 
 [controls."OSPS-QA-06.01"]
 name = "AutomatedTests"
