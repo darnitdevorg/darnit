@@ -1,6 +1,6 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.19
+> **Version**: 1.0.0-alpha.20
 > **Status**: Authoritative
 > **Last Updated**: 2026-10-29
 
@@ -2489,8 +2489,8 @@ The following requirements have been superseded: by the handler dispatch archite
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.20 | 2026-10-29 | Removed shared handlers (`[shared_handlers]`, the `shared` step key): a second control referencing a shared step got the first control's verdict without evaluating its own `expr`, and the effective configuration never resolved them; declaring either now fails loading (Section 3.0.3; Appendix C) |
 | 1.0.0-alpha.19 | 2026-10-23 | `generate_threat_model` registers plan support: its files record the UTC scan date, not a time, so the preview equals the apply. Changed outcomes also list files kept because of uncommitted user changes (Sections 4.2, 12, 15.4; #673) |
-| 1.0.0-alpha.19 | 2026-10-29 | Removed shared handlers (`[shared_handlers]`, the `shared` step key): a second control referencing a shared step got the first control's verdict without evaluating its own `expr`, and the effective configuration never resolved them; declaring either now fails loading (Section 3.0.3; Appendix C) |
 | 1.0.0-alpha.18 | 2026-10-23 | `generate_threat_model` writes only through the remediation executor and the run manifest: the remediation handler returns `FileChange`s and has ceiling `{}`, and the MCP tool writes only to a validated repository path (Sections 3.0.1, 4.2, 12, 15.8) |
 | 1.0.0-alpha.17 | 2026-10-18 | Reads of the audited repository resolve symbolic links and stay inside it: a path that resolves outside is never read, never counts as present, and is recorded in `skipped_outside_repository`; CEL `file_exists` follows the same rule (Sections 3.0.4, 3.5, 3.7) |
 | 1.0.0-alpha.16 | 2026-10-08 | `ComplianceImplementation` reduced to its five used members; `get_all_controls`, `get_controls_by_level`, `get_rules_catalog`, `get_remediation_registry`, and `register_controls` removed (Section 6.3; Appendix C; #487). `register_handlers()` is the handler registration hook, `register_sieve_handlers()` accepted only for compatibility, import-time registration not introspectable (Sections 6.4, 12; #451) |
