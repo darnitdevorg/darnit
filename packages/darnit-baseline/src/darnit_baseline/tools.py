@@ -41,10 +41,12 @@ OSPS_REMEDIATION_MAP: dict = {
 def _compact_result(r: dict[str, Any]) -> dict[str, Any]:
     """Reduce one check result to the `summary` output shape.
 
-    Drops evidence and pass_history (~5-8K vs ~164K for 62 controls) but
-    keeps ``error_class`` when present. Feature 036: a summary that hides
-    "we could not verify" is worse than no summary -- a consumer would
-    read an unreachable network as a real compliance failure.
+    Drops evidence and pass_history but keeps ``error_class`` when present.
+    Feature 036: a summary that hides "we could not verify" is worse than no
+    summary -- a consumer would read an unreachable network as a real
+    compliance failure. A PENDING row keeps ``pending`` so a client can tell
+    a control awaiting a judgment from a PASS candidate awaiting
+    confirmation (framework-design 5.4).
     """
     compact: dict[str, Any] = {
         "id": r.get("id"),
@@ -56,6 +58,16 @@ def _compact_result(r: dict[str, Any]) -> dict[str, Any]:
         compact["error_class"] = r["error_class"]
     if r.get("assertion") is not None:
         compact["assertion"] = r["assertion"]
+    if r.get("status") == "PENDING" and r.get("pending") is not None:
+        pending: dict[str, Any] = {"kind": r["pending"].get("kind")}
+        candidate = r.get("candidate")
+        if candidate is not None:
+            pending["candidate"] = {
+                "model": candidate.get("model", ""),
+                "reasoning": candidate.get("reasoning", ""),
+                "cited_excerpts": len(candidate.get("cited_evidence") or []),
+            }
+        compact["pending"] = pending
     return compact
 
 
@@ -120,7 +132,7 @@ def audit_openssf_baseline(
               - Bare values match against control tags dict keys
         output_format: Output format - "markdown", "json", "summary", "sarif", or "badge".
               Default: "markdown".
-              Use "summary" for compact JSON (id/status/level/details only, no evidence).
+              Use "summary" for compact JSON (id/status/level/details, pending on PENDING rows; no evidence).
               Use "badge" to generate an OpenSSF Best Practices Badge automation-proposal URL.
         auto_init_config: Create .project.yaml if missing. Default: True
         attest: Generate in-toto attestation after audit. Default: False
@@ -252,8 +264,8 @@ def audit_openssf_baseline(
 
         return generate_badge_url(results, resolved_project_url)
     elif output_format == "summary":
-        # Compact JSON: only id/status/level/details — no evidence or pass_history.
-        # ~5-8K vs ~164K for full JSON with 62 controls.
+        # Compact JSON: id/status/level/details (plus pending, error_class,
+        # assertion when present) -- no evidence or pass_history.
         from darnit.tools.audit import framework_metadata
 
         compact_results = [_compact_result(r) for r in results]

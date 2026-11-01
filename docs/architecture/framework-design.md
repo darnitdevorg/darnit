@@ -1391,6 +1391,17 @@ submit_judgment(
 It re-runs the audit of `local_path` for that control only to re-gather the control's judged content (the client's copy is never trusted), applies section 3.5, and for a valid positive judgment records the candidate (`source = "mcp_agent"`). A negative judgment returns a suggestive FAIL finding and stores nothing; an invalid one returns a rejection naming the excerpts not found and stores nothing. A control that does not reach its model step is rejected.
 
 ```
+get_judgment_requests(
+  owner: str, repo: str, host: str = "github.com", local_path: str = ".",
+  control_ids: list[str] | None = None, include_judged: bool = False
+) -> {status: "ok", files, requests, remaining, oversized?} | {status: "rejected" | "error", rejection | error}
+```
+
+A coding agent obtains what it judges through `get_judgment_requests`, registered beside `submit_judgment` and requiring the same named repository identity. It audits `local_path` the same way and returns one request per control left `PENDING` (`llm_judgment`), optionally limited to `control_ids`: the control's `prompt`, `analysis_hints`, `target_key` when set, `evidence_digest`, and the keys of its files in a shared `files` map. Each `files` entry holds `path`, `digest`, and `content`, where `content` is exactly the content `submit_judgment` checks the control's citations against (including its caps); a file read by several controls appears once, under a distinct key only if its content differs. `gathered_evidence` and the rest of the control's evidence are not returned. A control with a stored candidate for its current digest (`PENDING`, `confirmation`) is left out unless `include_judged` is true. Requests are ordered by control id and paged: a page holds whole requests and its serialized result stays under 40,000 bytes (UTF-8), below the size at which a coding agent's client writes a tool result to a file instead of showing it, and `remaining` lists the controls not yet returned, to be passed as `control_ids` on the next call. A single request larger than the page limit is returned alone, with `oversized = true`. The tool records nothing, and `submit_judgment` never trusts its output.
+
+The compact `summary` output of an audit carries, on each `PENDING` row, `pending.kind` and, for a candidate, `pending.candidate` (its model, reasoning, and number of cited excerpts, never the excerpts), so a client can tell a control awaiting a judgment from one awaiting confirmation without the full evidence.
+
+```
 confirm_pass_candidate(
   control_ids: list[str], owner: str, repo: str,
   host: str = "github.com", local_path: str = "."
