@@ -12,11 +12,13 @@ Every function here only reads the repository.
 
 from __future__ import annotations
 
+import functools
 import os
 import posixpath
 import subprocess
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any
 
 TRAILER_KEY = "Darnit-Remediation-Run"
 
@@ -36,13 +38,211 @@ class GitStateError(RuntimeError):
     """A git command needed to establish the repository's state failed."""
 
 
-def run_git(repo: str | Path, *args: str, stdin: str | None = None) -> subprocess.CompletedProcess[str]:
+@functools.lru_cache(maxsize=1)
+def _auditor_gpg_program() -> str:
+    """Return the auditor's configured gpg.program, falling back to 'gpg'."""
+    for scope in ("--global", "--system"):
+        try:
+            res = subprocess.run(
+                ["git", "config", "--includes", scope, "--get", "gpg.program"],
+                capture_output=True,
+                text=True,
+                timeout=5.0,
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                return res.stdout.strip()
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            break
+    return "gpg"
+
+
+@functools.lru_cache(maxsize=1)
+def _auditor_gpg_ssh_program() -> str:
+    """Return the auditor's configured gpg.ssh.program, falling back to 'ssh-keygen'."""
+    for scope in ("--global", "--system"):
+        try:
+            res = subprocess.run(
+                ["git", "config", "--includes", scope, "--get", "gpg.ssh.program"],
+                capture_output=True,
+                text=True,
+                timeout=5.0,
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                return res.stdout.strip()
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            break
+    return "ssh-keygen"
+
+
+@functools.lru_cache(maxsize=1)
+def _auditor_gpg_x509_program() -> str:
+    """Return the auditor's configured gpg.x509.program, falling back to 'gpgsm'."""
+    for scope in ("--global", "--system"):
+        try:
+            res = subprocess.run(
+                ["git", "config", "--includes", scope, "--get", "gpg.x509.program"],
+                capture_output=True,
+                text=True,
+                timeout=5.0,
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                return res.stdout.strip()
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            break
+    return "gpgsm"
+
+
+_filter_overrides_cache: dict[Path, tuple[tuple[Any, ...], list[str]]] = {}
+
+
+def clear_repo_filter_cache() -> None:
+    """Clear the cached git filter overrides."""
+    _filter_overrides_cache.clear()
+
+
+def _repo_filter_overrides(repo: str | Path) -> list[str]:
+    """Find filter names in ``repo``'s git config and submodule configs, returning args to neutralize them.
+
+    Results are cached per repository based on .git/config and submodule config mtimes (issue #617).
+    """
+    try:
+        repo_path = Path(repo).resolve()
+    except (OSError, ValueError):
+        return []
+
+    git_target = repo_path / ".git"
+    git_dir: Path | None = None
+    if git_target.is_file():
+        try:
+            content = git_target.read_text().strip()
+            if content.startswith("gitdir:"):
+                git_dir = (repo_path / content.split(":", 1)[1].strip()).resolve()
+        except OSError:
+            git_dir = None
+    elif git_target.is_dir():
+        git_dir = git_target
+
+    if not git_dir or not git_dir.is_dir():
+        return []
+
+    # Build cache fingerprint from config mtime and submodule config mtimes
+    main_cfg = git_dir / "config"
+    try:
+        main_mtime = main_cfg.stat().st_mtime_ns if main_cfg.is_file() else 0
+    except OSError:
+        main_mtime = 0
+
+    modules_dir = git_dir / "modules"
+    sub_configs: list[Path] = []
+    modules_mtime: int | None = None
+    if modules_dir.is_dir():
+        try:
+            modules_mtime = modules_dir.stat().st_mtime_ns
+            sub_configs = sorted(modules_dir.rglob("config"))
+        except OSError:
+            sub_configs = []
+
+    sub_mtimes: list[tuple[str, int]] = []
+    for sc in sub_configs:
+        try:
+            if sc.is_file():
+                sub_mtimes.append((str(sc), sc.stat().st_mtime_ns))
+        except OSError:
+            pass
+
+    cache_key = (main_mtime, modules_mtime, tuple(sub_mtimes))
+    if repo_path in _filter_overrides_cache:
+        cached_key, cached_overrides = _filter_overrides_cache[repo_path]
+        if cached_key == cache_key:
+            return list(cached_overrides)
+
+    names: set[str] = set()
+
+    def _extract_filter_names(output: str) -> None:
+        for line in output.splitlines():
+            parts = line.split(None, 1)
+            if parts:
+                key = parts[0]
+                if key.startswith("filter.") and "." in key[7:]:
+                    name = key[7:].rsplit(".", 1)[0]
+                    if name:
+                        names.add(name)
+
+    # 1. Main repository config
+    try:
+        res = subprocess.run(
+            ["git", "config", "--get-regexp", r"^filter\."],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            timeout=5.0,
+        )
+        if res.returncode == 0 and res.stdout:
+            _extract_filter_names(res.stdout)
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        pass
+
+    # 2. Submodule configs located in .git/modules/**/config
+    for cfg in sub_configs:
+        try:
+            res = subprocess.run(
+                ["git", "config", "--file", str(cfg), "--get-regexp", r"^filter\."],
+                cwd=repo,
+                capture_output=True,
+                text=True,
+                timeout=5.0,
+            )
+            if res.returncode == 0 and res.stdout:
+                _extract_filter_names(res.stdout)
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            pass
+
+    overrides: list[str] = []
+    for name in sorted(names):
+        overrides.extend([
+            "-c", f"filter.{name}.clean=",
+            "-c", f"filter.{name}.process=",
+            "-c", f"filter.{name}.required=false",
+        ])
+
+    _filter_overrides_cache[repo_path] = (cache_key, overrides)
+    return list(overrides)
+
+
+def run_git(
+    repo: str | Path,
+    *args: str,
+    stdin: str | None = None,
+    timeout: float | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """Run a read-side git command on ``repo`` safely.
+
+    To protect the auditor from untrusted repository configuration (issue #617),
+    this helper disables ``core.fsmonitor``, neutralizes clean and process filters,
+    and pins ``gpg.program``, ``gpg.ssh.program``, and ``gpg.x509.program`` to the
+    auditor's configuration (or defaults).
+    """
+    cmd = [
+        "git",
+        "--no-optional-locks",
+        "-c",
+        "core.fsmonitor=false",
+        "-c",
+        f"gpg.program={_auditor_gpg_program()}",
+        "-c",
+        f"gpg.ssh.program={_auditor_gpg_ssh_program()}",
+        "-c",
+        f"gpg.x509.program={_auditor_gpg_x509_program()}",
+        *_repo_filter_overrides(repo),
+        *args,
+    ]
     return subprocess.run(
-        ["git", "--no-optional-locks", *args],
+        cmd,
         cwd=repo,
         capture_output=True,
         text=True,
         input=stdin,
+        timeout=timeout,
     )
 
 
