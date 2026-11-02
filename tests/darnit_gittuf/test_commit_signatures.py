@@ -144,19 +144,32 @@ def _ctx(repo: Path) -> HandlerContext:
 
 def _status_shim(monkeypatch: pytest.MonkeyPatch, status: str) -> None:
     """Report every commit with ``status``: git cannot easily produce R, Y or X locally."""
+    def _shim_output(stdout: str) -> str:
+        lines = []
+        for line in stdout.splitlines():
+            if "\x1f" in line:
+                sha, _status, key = line.split("\x1f")
+                lines.append("\x1f".join([sha, status, key or "0123456789ABCDEF"]))
+            else:  # the alternating %G?/%GK lines read before this fix
+                lines.append(status if line == "N" else line)
+        return "\n".join(lines) + "\n"
+
+    real_run_git = getattr(handlers, "run_git", None)
+    if real_run_git is not None:
+        def fake_run_git(repo, *args, **kwargs):
+            result = real_run_git(repo, *args, **kwargs)
+            if args and args[0] == "log":
+                return subprocess.CompletedProcess(result.args, result.returncode, _shim_output(result.stdout), result.stderr)
+            return result
+
+        monkeypatch.setattr(handlers, "run_git", fake_run_git)
+
     real_run = subprocess.run
 
     def run(args, **kwargs):
         result = real_run(args, **kwargs)
         if list(args[:2]) == ["git", "log"]:
-            lines = []
-            for line in result.stdout.splitlines():
-                if "\x1f" in line:
-                    sha, _status, key = line.split("\x1f")
-                    lines.append("\x1f".join([sha, status, key or "0123456789ABCDEF"]))
-                else:  # the alternating %G?/%GK lines read before this fix
-                    lines.append(status if line == "N" else line)
-            result = subprocess.CompletedProcess(args, result.returncode, "\n".join(lines) + "\n", result.stderr)
+            result = subprocess.CompletedProcess(args, result.returncode, _shim_output(result.stdout), result.stderr)
         return result
 
     monkeypatch.setattr(handlers, "subprocess", SimpleNamespace(run=run, TimeoutExpired=subprocess.TimeoutExpired))

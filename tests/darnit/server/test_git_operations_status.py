@@ -104,7 +104,7 @@ def test_unpushed_commits_reported(repo: Path, monkeypatch: pytest.MonkeyPatch) 
     real_run = subprocess.run
 
     def mock_run(cmd: list[str], *args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
-        if cmd[:2] == ["git", "log"] and "@{u}..HEAD" in cmd:
+        if cmd[0] == "git" and "log" in cmd and "@{u}..HEAD" in cmd:
             return subprocess.CompletedProcess(cmd, returncode=0, stdout="a1b2c3d Fix security header\n", stderr="")
         return real_run(cmd, *args, **kwargs)
 
