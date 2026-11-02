@@ -59,7 +59,6 @@ packages/darnit/src/darnit/cli.py: error: Incompatible types in assignment (expr
 packages/darnit/src/darnit/cli.py: error: Item "None" of "str | None" has no attribute "get"  [union-attr]
 packages/darnit/src/darnit/cli.py: error: Item "str" of "str | None" has no attribute "get"  [union-attr]
 packages/darnit/src/darnit/cli.py: error: Need type annotation for "by_level" (hint: "by_level: dict[<type>, <type>] = ...")  [var-annotated]
-packages/darnit/src/darnit/cli.py: error: Need type annotation for "by_level" (hint: "by_level: dict[<type>, <type>] = ...")  [var-annotated]
 packages/darnit/src/darnit/cli.py: error: Need type annotation for "by_status" (hint: "by_status: dict[<type>, <type>] = ...")  [var-annotated]
 packages/darnit/src/darnit/config/context_resolve.py: error: Incompatible types in assignment (expression has type "str | None", variable has type "str")  [assignment]
 packages/darnit/src/darnit/config/context_resolve.py: error: List item 0 has incompatible type "tuple[Any, None]"; expected "tuple[Any, str]"  [list-item]
