@@ -22,6 +22,28 @@ logger = get_logger("darnit_reproducibility.handlers")
 _MAX_EVIDENCE_EXAMPLES = 10
 
 
+def _iter_evidence_files(path: Path, patterns: tuple[str, ...]) -> list[Path]:
+    """Find evidence at the root and two directory levels below it."""
+    results: list[Path] = []
+
+    def _find(directory: Path, depth: int) -> None:
+        try:
+            for entry in sorted(directory.iterdir()):
+                if entry.is_symlink() or entry.name in _SKIP_DIRS:
+                    continue
+                if (entry.is_file() or entry.name == ".devcontainer") and any(
+                    entry.match(pattern) for pattern in patterns
+                ):
+                    results.append(entry)
+                if depth < 2 and entry.is_dir() and not entry.name.startswith("."):
+                    _find(entry, depth + 1)
+        except OSError:
+            pass
+
+    _find(path, 0)
+    return results
+
+
 def _pyproject_declares_dependencies(root: Path, path: Path) -> bool:
     try:
         data = tomllib.loads(read_repository_text(root, path))
@@ -67,7 +89,7 @@ def repro_deps_pinned_handler(
     """Check that dependencies are pinned to exact versions.
 
     A lock file is the strongest signal and short-circuits everything else.
-    Failing that, a `requirements.txt` is READ rather than merely noticed
+    Failing that, every discovered requirements file is READ rather than merely noticed
     (feature 037, issue #429): a file pinned with hashes passes, one pinned
     with `==` alone decides nothing because its transitive dependencies still
     float (feature 044: a WARN would conclude the control under `{fail}` and
@@ -111,10 +133,14 @@ def repro_deps_pinned_handler(
         "go.mod": "Go module",
     }
 
+    dependency_files = _iter_evidence_files(path, tuple(lock_files) + ("*requirements*.txt", "requirements/*.txt"))
+    requirements_files = [candidate for candidate in dependency_files if candidate.name not in lock_files]
+
     found_locks = []
     for filename, label in lock_files.items():
-        if (path / filename).exists():
-            found_locks.append(f"{filename} ({label})")
+        for candidate in dependency_files:
+            if candidate.name == filename:
+                found_locks.append(f"{candidate.relative_to(path).as_posix()} ({label})")
 
     found_loose = []
     for filename, label in loose_manifests.items():
@@ -124,6 +150,10 @@ def repro_deps_pinned_handler(
         if filename == "pyproject.toml" and not _pyproject_declares_dependencies(path, candidate):
             continue
         found_loose.append(f"{filename} ({label})")
+    for candidate in requirements_files:
+        filename = candidate.relative_to(path).as_posix()
+        if filename != "requirements.txt":
+            found_loose.append(f"{filename} (pip requirements)")
 
     evidence: dict[str, Any] = {
         "lock_files_found": found_locks,
@@ -141,25 +171,47 @@ def repro_deps_pinned_handler(
             evidence=evidence,
         )
 
-    requirements = path / "requirements.txt"
     not_inspectable: str | None = None
-    if requirements.exists():
+    if requirements_files:
         from .requirements_pins import FileClassification
 
-        report, unreadable = _inspect_requirements(path, requirements)
-        evidence["inspected_file"] = "requirements.txt"
+        # ALL requirements files must be fully pinned; any unpinned file wins.
+        # The lock-file early return above deliberately remains the exception.
+        priority = {
+            FileClassification.UNPINNED: 0,
+            FileClassification.NOT_INSPECTABLE: 1,
+            FileClassification.VERSION_PINNED: 2,
+            FileClassification.HASH_PINNED: 3,
+            FileClassification.NO_REQUIREMENTS: 4,
+        }
+        inspected = [(candidate, *_inspect_requirements(path, candidate)) for candidate in requirements_files]
+        requirements, report, unreadable = min(
+            inspected,
+            key=lambda item: priority[
+                FileClassification.NOT_INSPECTABLE if item[1] is None else item[1].classification
+            ],
+        )
+        filename = requirements.relative_to(path).as_posix()
+        evidence["inspected_file"] = filename
+        if len(inspected) > 1:
+            evidence["requirements_files_inspected"] = {
+                candidate.relative_to(path).as_posix(): (
+                    "not_inspectable" if report is None else report.classification.value
+                )
+                for candidate, report, _ in inspected
+            }
 
         if unreadable is not None:
             evidence["classification"] = "not_inspectable"
             evidence["not_inspectable_reason"] = unreadable
-            not_inspectable = f"requirements.txt contents could not be inspected: {unreadable}"
+            not_inspectable = f"{filename} contents could not be inspected: {unreadable}"
         else:
             evidence["classification"] = report.classification.value
             evidence["requirement_count"] = len(report.lines)
 
             if report.classification is FileClassification.NOT_INSPECTABLE:
                 evidence["not_inspectable_reason"] = report.reason
-                not_inspectable = f"requirements.txt contents could not be fully inspected: {report.reason}"
+                not_inspectable = f"{filename} contents could not be fully inspected: {report.reason}"
 
         classification = None if report is None else report.classification
 
@@ -167,7 +219,9 @@ def repro_deps_pinned_handler(
             return HandlerResult(
                 status=HandlerResultStatus.PASS,
                 message=(
-                    f"requirements.txt: all {len(report.lines)} requirement(s) pinned to an exact version with a hash"
+                    f"{filename}: all {len(report.lines)} requirement(s) pinned to an exact version with a hash"
+                    if len(inspected) == 1
+                    else f"All requirements across {len(inspected)} files pinned to exact versions with hashes"
                 ),
                 confidence=0.8,
                 evidence=evidence,
@@ -182,7 +236,7 @@ def repro_deps_pinned_handler(
             return HandlerResult(
                 status=HandlerResultStatus.INCONCLUSIVE,
                 message=(
-                    f"requirements.txt pins all {len(report.lines)} direct dependency(ies) "
+                    f"{filename} pins all {len(report.lines)} direct dependency(ies) "
                     "to exact versions but carries no hashes, so transitive dependencies "
                     "resolve at install time and are not pinned. A lock file or "
                     "hash-pinned requirements would close this."
@@ -197,7 +251,7 @@ def repro_deps_pinned_handler(
             shown = ", ".join(_sample(report.unpinned)[:3])
             return HandlerResult(
                 status=HandlerResultStatus.FAIL,
-                message=(f"requirements.txt has {len(report.unpinned)} unpinned requirement(s), including: {shown}"),
+                message=(f"{filename} has {len(report.unpinned)} unpinned requirement(s), including: {shown}"),
                 confidence=0.8,
                 evidence=evidence,
             )
@@ -208,7 +262,7 @@ def repro_deps_pinned_handler(
         # dependencies are unpinned -- an unresolved `-r` include may be
         # hash-pinned (feature 044, FR-010). Either way the file decides
         # nothing; treat it as absent and let any other loose manifest decide.
-        found_loose = [f for f in found_loose if not f.startswith("requirements.txt")]
+        found_loose = [f for f in found_loose if not f.endswith(" (pip requirements)")]
         evidence["loose_manifests_found"] = found_loose
 
     if found_loose:
@@ -271,15 +325,24 @@ def repro_build_env_declared_handler(
     # Content-dependent in principle; not inspected in v0. A `.devcontainer`
     # usually delegates to a Dockerfile or an image reference and a Vagrantfile
     # names a box with an optional version, so both deserve the same treatment
-    # as Dockerfile eventually. Widening is detection work of the same shape as
-    # #433 and #446 and is deliberately not bundled here.
+    # as Dockerfile eventually. Compose files also need their own classifier.
     deferred = {
         ".devcontainer": "Dev container",
         "Vagrantfile": "Vagrant",
+        "docker-compose*.y*ml": "Docker Compose",
     }
 
+    env_files = _iter_evidence_files(
+        path, tuple(inherently_pinned) + ("Dockerfile*", "Containerfile*") + tuple(deferred)
+    )
+
     def _present(names: dict[str, str]) -> list[str]:
-        return [f"{n} ({label})" for n, label in names.items() if (path / n).exists()]
+        return [
+            f"{candidate.relative_to(path).as_posix()} ({label})"
+            for pattern, label in names.items()
+            for candidate in env_files
+            if candidate.match(pattern + "*" if pattern in container_files else pattern)
+        ]
 
     found_pinned = _present(inherently_pinned)
     found_container = _present(container_files)
@@ -299,16 +362,19 @@ def repro_build_env_declared_handler(
             evidence=evidence,
         )
 
-    if found_pinned:
+    # ANY qualifying environment declaration suffices, unlike dependency
+    # pinning's ALL-files rule; containers still need the existing digest check.
+    if found_pinned or found_deferred:
         return _pass()
 
     if found_container:
         unpinned: list[str] = []
         inspected: list[str] = []
-        for name in container_files:
-            target = path / name
-            if not target.exists():
+        pinned = False
+        for target in env_files:
+            if not target.name.startswith(tuple(container_files)):
                 continue
+            name = target.relative_to(path).as_posix()
             try:
                 report = classify(read_repository_text(path, target))
             except (OSError, UnicodeDecodeError) as exc:
@@ -322,8 +388,12 @@ def repro_build_env_declared_handler(
             inspected.append(name)
             if report.classification is ContainerClassification.UNPINNED:
                 unpinned.extend(f"{name}: {ref}" for ref in report.unpinned)
+            else:
+                pinned = True
 
         evidence["containers_inspected"] = inspected
+        if pinned:
+            return _pass()
         if unpinned:
             evidence["unpinned_images"] = unpinned
             # Feature 044 (FR-011): not WARN, for the same reason as a
@@ -339,12 +409,6 @@ def repro_build_env_declared_handler(
                 confidence=0.85,
                 evidence=evidence,
             )
-        if inspected:
-            return _pass()
-
-    if found_deferred:
-        return _pass()
-
     return HandlerResult(
         status=HandlerResultStatus.INCONCLUSIVE,
         message="No build environment declaration found",
