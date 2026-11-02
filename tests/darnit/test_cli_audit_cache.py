@@ -25,6 +25,7 @@ def _repo_with_one_commit(path) -> None:
         (["-t", "level=1"], False),
         (["--include", "OSPS-QA-05.01"], False),
         (["--exclude", "OSPS-QA-05.01"], False),
+        (["--profile", "level1_quick"], False),
     ],
 )
 def test_only_a_plain_audit_is_cached(tmp_path, flags, cached) -> None:
