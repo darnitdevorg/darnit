@@ -4,6 +4,7 @@ from datetime import datetime
 
 import pytest
 
+from darnit.config.schema import ProjectConfig
 from darnit_baseline.attestation.predicate import build_assessment_predicate
 
 
@@ -202,8 +203,25 @@ class TestBuildAssessmentPredicate:
         assert timestamp is not None
 
     @pytest.mark.unit
-    def test_configuration_section(self, sample_results):
-        """Test configuration section."""
+    def test_project_type_from_config(self, sample_results):
+        """Test project type comes from the schema's type field."""
+        project_config = ProjectConfig(name="testrepo", type="specification")
+        predicate = build_assessment_predicate(
+            owner="testorg",
+            repo="testrepo",
+            commit="abc123",
+            ref="main",
+            level=3,
+            results=sample_results,
+            project_config=project_config,
+            adapters_used=["builtin"]
+        )
+
+        assert predicate["configuration"]["project_type"] == project_config.type
+
+    @pytest.mark.unit
+    def test_configuration_without_project_config(self, sample_results):
+        """Test project type still falls back to software without a config."""
         predicate = build_assessment_predicate(
             owner="testorg",
             repo="testrepo",
