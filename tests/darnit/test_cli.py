@@ -498,3 +498,78 @@ def test_format_results_text_show_all_does_not_duplicate_sections():
     assert "--- PENDING (" not in rendered
     assert "--- N/A (1) ---" in rendered
     assert rendered.count("OSPS-NA-01.01") == 1
+
+
+@pytest.mark.unit
+def test_validate_command_executes_on_all_shipped_frameworks():
+    """`darnit validate` succeeds on every shipped framework TOML."""
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parents[2]
+    shipped_tomls = sorted(repo_root.glob("packages/*/src/*/*.toml"))
+    assert len(shipped_tomls) >= 6
+
+    for toml_path in shipped_tomls:
+        exit_code = main(["validate", str(toml_path)])
+        assert exit_code == 0, f"Validation failed for {toml_path}"
+
+
+@pytest.mark.unit
+def test_plan_command_executes_on_all_shipped_frameworks(tmp_path):
+    """`darnit plan` succeeds on all registered framework implementations."""
+    from darnit.core.discovery import discover_implementations
+
+    impls = discover_implementations()
+    assert "openssf-baseline" in impls
+
+    for name in sorted(impls):
+        exit_code = main(["plan", "-f", name, str(tmp_path)])
+        assert exit_code == 0, f"Plan failed for framework {name}"
+
+
+@pytest.mark.unit
+def test_validate_and_plan_sort_with_unleveled_controls_last(tmp_path, caplog):
+    """Controls mixing int levels and None are sorted with None last without TypeError."""
+    import logging
+
+    framework_file = tmp_path / "mixed_levels.toml"
+    framework_file.write_text(
+        """[metadata]
+name = "mixed-levels"
+display_name = "Mixed Levels"
+version = "0.1.0"
+description = "Test framework with mixed levels"
+
+[controls."MIX-01"]
+name = "LevelOne"
+description = "First level control"
+level = 1
+
+[controls."MIX-02"]
+name = "LevelTwo"
+description = "Second level control"
+tags = { level = 2 }
+
+[controls."MIX-NONE"]
+name = "Unleveled"
+description = "Control without a level"
+"""
+    )
+
+    with caplog.at_level(logging.INFO):
+        exit_code = main(["validate", str(framework_file)])
+    assert exit_code == 0
+    assert "L1=1, L2=1, none=1" in caplog.text
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        plan_exit = main(["plan", "-f", str(framework_file), str(tmp_path)])
+    assert plan_exit == 0
+    assert "Level 1 (1 controls):" in caplog.text
+    assert "Level 2 (1 controls):" in caplog.text
+    assert "No level (1 controls):" in caplog.text
+
+    idx_l1 = caplog.text.index("Level 1")
+    idx_l2 = caplog.text.index("Level 2")
+    idx_none = caplog.text.index("No level")
+    assert idx_l1 < idx_l2 < idx_none

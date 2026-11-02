@@ -242,19 +242,9 @@ def control_from_effective(
     # Build the tags dict - effective.tags already includes level/domain from merger
     tags = dict(effective.tags) if effective.tags else {}
 
-    # Extract level/domain/security_severity from tags if not present as top-level
-    # This supports the new flexible schema where everything can be in tags
     level = effective.level
-    if level is None and "level" in tags:
-        level = tags["level"]
-
     domain = effective.domain
-    if domain is None and "domain" in tags:
-        domain = tags["domain"]
-
     security_severity = effective.security_severity
-    if security_severity is None and "security_severity" in tags:
-        security_severity = tags["security_severity"]
 
     metadata: dict = {
         "security_severity": security_severity,
@@ -341,18 +331,9 @@ def control_from_framework(
     # Build tags dict from config - tags is now Dict[str, Any]
     tags = dict(control_config.tags) if control_config.tags else {}
 
-    # Extract level/domain/security_severity from tags if not present as top-level
     level = control_config.level
-    if level is None and "level" in tags:
-        level = tags["level"]
-
     domain = control_config.domain
-    if domain is None and "domain" in tags:
-        domain = tags["domain"]
-
     security_severity = control_config.security_severity
-    if security_severity is None and "security_severity" in tags:
-        security_severity = tags["security_severity"]
 
     # Build metadata dict
     metadata: dict = {

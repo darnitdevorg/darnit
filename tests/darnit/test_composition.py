@@ -11,8 +11,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
-from darnit.config.framework_schema import FrameworkConfig
+from darnit.config.framework_schema import ControlConfig, FrameworkConfig, OverrideBlock
 from darnit.config.merger import _parse_framework_only
 from darnit.core.composition import (
     _TAG_COMPOSED_FROM,
@@ -23,6 +24,7 @@ from darnit.core.composition import (
     CompositionOrphanOverrideError,
     CompositionUnknownFieldError,
     CompositionVersionMismatchError,
+    _apply_override,
     resolve_composition,
 )
 
@@ -309,6 +311,21 @@ def test_overrides_replace_fields(composite_fixtures_dir, fixture_source_loader)
     assert ctrl.passes is not None
     assert len(ctrl.passes) == 1
     assert ctrl.passes[0].handler == "file_exists"
+
+
+@pytest.mark.unit
+def test_overrides_sync_tags_level_and_validate():
+    """Composite overrides sync tags.level with top-level level and revalidate (fixes #568, #589)."""
+    base_ctrl = ControlConfig(name="Base", description="base desc", level=1, tags={"level": 1})
+    override = OverrideBlock(tags={"level": 3})
+    updated = _apply_override("TEST-01", base_ctrl, override)
+    assert updated.level == 3
+    assert updated.tags["level"] == 3
+
+    # Invalid tags.level string (e.g. 'L3') is rejected by revalidation
+    invalid_override = OverrideBlock(tags={"level": "L3"})
+    with pytest.raises(ValidationError):
+        _apply_override("TEST-01", base_ctrl, invalid_override)
 
 
 @pytest.mark.unit
