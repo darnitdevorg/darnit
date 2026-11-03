@@ -243,34 +243,34 @@ The framework SHALL support optional presentation metadata on context definition
 - **AND** the type is not `boolean` or `enum`
 - **THEN** `presentation_hint` SHALL be `null`
 
-### Requirement: Single-item pagination for pending context
-The implementation-layer `get_pending_context` tool SHALL return context items one at a time by default.
+### Requirement: Batch pagination for pending data
+The implementation-layer `get_pending_data` tool SHALL return up to four pending questions per batch by default.
 
-#### Scenario: Default pagination returns one item
-- **WHEN** `get_pending_context` is called without a `limit` parameter
-- **THEN** the response SHALL contain at most one pending context question
-- **AND** the question SHALL be the highest-priority missing item
+#### Scenario: Default pagination returns up to four items
+- **WHEN** `get_pending_data` is called without a `limit` parameter
+- **THEN** the response SHALL contain at most four pending context questions
+- **AND** questions SHALL follow the tool's context-key order
 
 #### Scenario: Explicit limit overrides default
-- **WHEN** `get_pending_context` is called with `limit=5`
+- **WHEN** `get_pending_data` is called with `limit=5`
 - **THEN** the response SHALL contain at most 5 pending context questions
-- **AND** they SHALL be sorted by priority (highest first)
+- **AND** they SHALL be sorted in the tool's context-key order
 
 #### Scenario: Limit of zero returns all items
-- **WHEN** `get_pending_context` is called with `limit=0`
+- **WHEN** `get_pending_data` is called with `limit=0`
 - **THEN** the response SHALL contain all pending context questions
-- **AND** they SHALL be sorted by priority (highest first)
+- **AND** they SHALL be sorted in the tool's context-key order
 
 ### Requirement: Progress indicator for pending context
-The `get_pending_context` response SHALL include progress information so callers can display position in the sequence.
+The `get_pending_data` response SHALL include progress information so callers can display position in the sequence.
 
 #### Scenario: Progress included in response
-- **WHEN** `get_pending_context` returns pending questions
-- **THEN** the response SHALL include a `progress` object with `current` and `total` fields
-- **AND** `total` SHALL reflect the total number of pending items (not just the returned slice)
-- **AND** `current` SHALL reflect the position of the first returned item in the full sequence
+- **WHEN** `get_pending_data` returns pending questions
+- **THEN** the response SHALL include a `progress` object with `answered` and `total` fields
+- **AND** `total` SHALL reflect all relevant context items, including answered items
+- **AND** `answered` SHALL equal the total number of items minus the number still pending
 
 #### Scenario: Progress on final question
 - **WHEN** only one pending context item remains
-- **AND** `get_pending_context` is called
-- **THEN** `progress.current` SHALL equal `progress.total`
+- **AND** `get_pending_data` is called
+- **THEN** `progress.answered` SHALL equal `progress.total - 1`
