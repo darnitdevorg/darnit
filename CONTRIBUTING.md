@@ -209,6 +209,20 @@ directory.
 - Ensure all tests pass before submitting a PR
 - Maintain or improve test coverage
 
+To verify changes against reproducible test fixtures (`failing-empty`,
+`partially-compliant`, and `passing-reference`) before submitting a PR, run the
+developer test flow:
+
+```bash
+./scripts/run_dev_test_flow.sh
+```
+
+To clean caches and sync dependencies cleanly:
+
+```bash
+./scripts/clean_and_install_dev.sh
+```
+
 See the [Testing Guide](docs/getting-started/testing.md) for details.
 
 ### Documentation

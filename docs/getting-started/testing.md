@@ -42,6 +42,15 @@ uv run pytest tests/integration/ -v
 
 These are excluded from the default test run because they're slower.
 
+### Developer verification flow
+
+To test changes end-to-end against local test repositories (`failing-empty`,
+`partially-compliant`, and `passing-reference`) with known baseline audit verdicts:
+
+```bash
+./scripts/run_dev_test_flow.sh
+```
+
 ### Network and external tools
 
 No test reaches GitHub or runs the real `gh` or `zizmor` by default (#548). An autouse
