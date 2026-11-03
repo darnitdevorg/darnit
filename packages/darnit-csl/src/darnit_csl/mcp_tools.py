@@ -95,8 +95,11 @@ def _readme_links(repo: Path) -> RemediationConfig | None:
     None when the README already links the scope file.
     """
     from darnit.config.framework_schema import HandlerInvocation, RemediationConfig
+    from darnit.core.repo_files import within_repository
 
-    readme = next((name for name in _README_CANDIDATES if (repo / name).is_file()), None)
+    readme = next(
+        (name for name in _README_CANDIDATES if (repo / name).is_file() and within_repository(repo, name)), None
+    )
     text = (repo / readme).read_bytes().decode("utf-8") if readme else "# Specification\n"
     if "02-scope.md" in text:
         return None

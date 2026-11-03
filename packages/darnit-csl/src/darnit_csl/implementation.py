@@ -8,6 +8,7 @@ the framework loads the TOML via :meth:`get_framework_config_path`.
 
 from __future__ import annotations
 
+import importlib.metadata
 from pathlib import Path
 
 
@@ -28,7 +29,10 @@ class CommunitySpecImplementation:
 
     @property
     def version(self) -> str:
-        return "0.1.0"
+        try:
+            return importlib.metadata.version("darnit-csl")
+        except importlib.metadata.PackageNotFoundError:
+            return "dev"
 
     @property
     def spec_version(self) -> str:

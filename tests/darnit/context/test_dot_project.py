@@ -1189,123 +1189,6 @@ repositories:
         assert "bob" in context.get("project.maintainers", [])
 
 
-class TestDotProjectInjection:
-    """Test injection of .project/ context into CheckContext."""
-
-    @pytest.mark.unit
-    def test_inject_project_context(self, temp_dir: Path):
-        """inject_project_context populates context.project_context."""
-        from darnit.context.inject import inject_project_context
-        from darnit.sieve.models import CheckContext
-
-        project_dir = temp_dir / ".project"
-        project_dir.mkdir()
-        (project_dir / "project.yaml").write_text("""
-name: my-project
-repositories:
-  - https://github.com/org/repo
-security:
-  policy:
-    path: SECURITY.md
-""")
-
-        context = CheckContext(
-            owner="org",
-            repo="repo",
-            local_path=str(temp_dir),
-            default_branch="main",
-            control_id="TEST-01",
-        )
-
-        inject_project_context(context)
-
-        assert context.project_context.get("project.security.policy_path") == "SECURITY.md"
-
-    @pytest.mark.unit
-    def test_create_check_context_with_project(self, temp_dir: Path):
-        """create_check_context_with_project creates context with .project/ data."""
-        from darnit.context.inject import create_check_context_with_project
-
-        project_dir = temp_dir / ".project"
-        project_dir.mkdir()
-        (project_dir / "project.yaml").write_text("""
-name: my-project
-repositories:
-  - https://github.com/org/repo
-security:
-  policy:
-    path: SECURITY.md
-""")
-
-        context = create_check_context_with_project(
-            owner="org",
-            repo="repo",
-            local_path=str(temp_dir),
-            default_branch="main",
-            control_id="TEST-01",
-        )
-
-        assert context.project_context.get("project.security.policy_path") == "SECURITY.md"
-
-    @pytest.mark.unit
-    def test_get_project_value(self, temp_dir: Path):
-        """get_project_value retrieves values from project_context."""
-        from darnit.context.inject import get_project_value, inject_project_context
-        from darnit.sieve.models import CheckContext
-
-        project_dir = temp_dir / ".project"
-        project_dir.mkdir()
-        (project_dir / "project.yaml").write_text("""
-name: my-project
-repositories:
-  - https://github.com/org/repo
-security:
-  policy:
-    path: SECURITY.md
-""")
-
-        context = CheckContext(
-            owner="org",
-            repo="repo",
-            local_path=str(temp_dir),
-            default_branch="main",
-            control_id="TEST-01",
-        )
-        inject_project_context(context)
-
-        assert get_project_value(context, "project.security.policy_path") == "SECURITY.md"
-        assert get_project_value(context, "nonexistent", "default") == "default"
-
-    @pytest.mark.unit
-    def test_has_project_value(self, temp_dir: Path):
-        """has_project_value checks if key exists in project_context."""
-        from darnit.context.inject import has_project_value, inject_project_context
-        from darnit.sieve.models import CheckContext
-
-        project_dir = temp_dir / ".project"
-        project_dir.mkdir()
-        (project_dir / "project.yaml").write_text("""
-name: my-project
-repositories:
-  - https://github.com/org/repo
-security:
-  policy:
-    path: SECURITY.md
-""")
-
-        context = CheckContext(
-            owner="org",
-            repo="repo",
-            local_path=str(temp_dir),
-            default_branch="main",
-            control_id="TEST-01",
-        )
-        inject_project_context(context)
-
-        assert has_project_value(context, "project.security.policy_path") is True
-        assert has_project_value(context, "nonexistent") is False
-
-
 class TestDotProjectIntegration:
     """Integration tests for .project/ functionality (Task 1.5.4)."""
 
@@ -1488,13 +1371,9 @@ project-maintainers:
 
     @pytest.mark.integration
     def test_context_injection_end_to_end(self, temp_dir: Path):
-        """Test complete flow from .project/ file to CheckContext."""
+        """Test complete flow from .project/ file to the mapped context."""
         from darnit.context.dot_project import DotProjectWriter
-        from darnit.context.inject import (
-            create_check_context_with_project,
-            get_project_value,
-            has_project_value,
-        )
+        from darnit.context.dot_project_mapper import DotProjectMapper
 
         # Create .project/ via writer
         writer = DotProjectWriter(temp_dir)
@@ -1517,24 +1396,15 @@ project-maintainers:
 - bob
 """)
 
-        # Create CheckContext with injected .project/ data
-        context = create_check_context_with_project(
-            owner="org",
-            repo="repo",
-            local_path=str(temp_dir),
-            default_branch="main",
-            control_id="TEST-01",
-        )
+        # Map the .project/ data as the audit does
+        context = DotProjectMapper(str(temp_dir)).get_context()
 
         # Verify all context variables
-        assert has_project_value(context, "project.security.policy_path")
-        assert get_project_value(context, "project.security.policy_path") == "SECURITY.md"
+        assert context["project.security.policy_path"] == "SECURITY.md"
 
-        assert has_project_value(context, "project.governance.codeowners_path")
-        assert get_project_value(context, "project.governance.codeowners_path") == ".github/CODEOWNERS"
+        assert context["project.governance.codeowners_path"] == ".github/CODEOWNERS"
 
-        assert has_project_value(context, "project.maintainers")
-        maintainers = get_project_value(context, "project.maintainers")
+        maintainers = context["project.maintainers"]
         assert "alice" in maintainers
         assert "bob" in maintainers
 

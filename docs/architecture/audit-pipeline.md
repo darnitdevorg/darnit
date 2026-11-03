@@ -67,8 +67,3 @@ All audit entry points that produce markdown output SHALL use `format_results_ma
 
 ### Requirement: No duplicate utility functions
 Functions that exist in multiple copies within the same package SHALL be consolidated to a single implementation.
-
-#### Scenario: detect_workflow_checks consolidation
-- **WHEN** workflow check detection is needed
-- **THEN** callers SHALL use `detect_workflow_checks()` from `darnit.remediation.github`
-- **AND** the duplicate in `darnit.remediation.helpers` SHALL be deleted

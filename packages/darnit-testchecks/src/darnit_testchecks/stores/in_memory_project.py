@@ -2,40 +2,31 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from darnit.context.dot_project import MaintainerEntry, ProjectConfig
+    from darnit.context.dot_project import ProjectConfig
 
 
 class InMemoryProjectStateStore:
     """Dict-backed ProjectStateStore for tests.
 
-    Seed via ``store.write_project(config)`` before running the audit.
-    Tests can inspect ``store._state`` after the audit for assertions.
+    Seed via constructor ``InMemoryProjectStateStore(project=config)``
+    before running the audit.
+    Tests can inspect ``store.project`` after the audit for assertions.
     """
 
-    def __init__(self, **kwargs) -> None:
-        self._state: dict[str, object] = {
-            "project": None,
-            "maintainers": [],
-        }
+    def __init__(
+        self,
+        project: ProjectConfig | None = None,
+        **kwargs: Any,
+    ) -> None:
+        self.project: ProjectConfig | None = project
         self.read_count = 0
-        self.write_count = 0
 
-    def read_project(self) -> "ProjectConfig | None":
+    def read_project(self) -> ProjectConfig | None:
         self.read_count += 1
-        return self._state["project"]  # type: ignore[return-value]
-
-    def write_project(self, config: "ProjectConfig") -> None:
-        self.write_count += 1
-        self._state["project"] = config
-
-    def read_maintainers(self) -> "list[MaintainerEntry]":
-        return list(self._state["maintainers"])  # type: ignore[arg-type]
-
-    def write_maintainers(self, entries: "list[MaintainerEntry]") -> None:
-        self._state["maintainers"] = list(entries)
+        return self.project
 
     def close(self) -> None:
         return None

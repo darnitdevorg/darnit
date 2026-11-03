@@ -11,10 +11,10 @@ darnit ships through five channels. Pick the one that matches your situation; ea
 | On macOS arm64 or Linux with Homebrew | **Homebrew** | [homebrew.md](homebrew.md) |
 | Want a self-contained binary, no package manager | **Standalone binary** | [binary.md](binary.md) |
 | A Claude Code user who wants `/darnit:darnit-audit` and the MCP server in one install | **Claude Code plugin** | [claude-code-plugin.md](claude-code-plugin.md) |
-| Want to try an unreleased feature, contribute, or run a specific branch | **From source** (clone + `uv tool install --editable`) | [from-source.md](from-source.md) |
+| Want to try an unreleased feature, contribute, or run a specific branch | **From source** (`uv tool install git+https://…`, or a clone) | [from-source.md](from-source.md) |
 | Building your own darnit-compatible compliance plugin | (not an install path — see [`docs/packaging-plugins.md`](../packaging-plugins.md)) | — |
 
-If you're not sure: **`pipx install darnit-mcp`** works for most users and is the simplest path. The other channels exist because real-world environments have constraints (no Python, locked-down CI runners, brew-only macOS workflows, agent-first usage).
+If you're not sure: **`uv tool install git+https://github.com/darnitdevorg/darnit`** puts `darnit` on PATH with every plugin ([from-source.md](from-source.md)), and **`uvx --from darnit-mcp darnit`** runs the PyPI release without installing it. The package is `darnit-mcp`; the command is `darnit`. `uv tool install darnit-mcp` and `pipx install darnit-mcp` need a release after 0.1.1, the first whose `darnit-mcp` declares the `darnit` command ([#621](https://github.com/darnitdevorg/darnit/issues/621)). The other channels exist because real-world environments have constraints (no Python, locked-down CI runners, brew-only macOS workflows, agent-first usage).
 
 ## What's the same across all channels
 

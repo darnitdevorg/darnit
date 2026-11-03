@@ -9,12 +9,11 @@ Key components:
 - create_server: Factory function for creating FastMCP servers
 """
 
-from .factory import create_server, create_server_from_dict
+from .factory import create_server
 from .registry import ToolRegistry, ToolSpec
 
 __all__ = [
     "ToolSpec",
     "ToolRegistry",
     "create_server",
-    "create_server_from_dict",
 ]

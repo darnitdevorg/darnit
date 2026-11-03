@@ -17,7 +17,6 @@ from darnit.remediation.context_validator import (
     ContextCheckResult,
     check_context_requirements,
     format_context_prompt,
-    get_context_requirements_for_category,
 )
 
 
@@ -304,46 +303,6 @@ class TestStaleValueDetection:
 
         assert result.ready is True
         assert result.missing_context == []
-
-
-class TestGetContextRequirementsForCategory:
-    """Tests for get_context_requirements_for_category function."""
-
-    def test_returns_empty_when_no_requirements(self):
-        """Should return empty list when no requirements defined."""
-        result = get_context_requirements_for_category(
-            category="security_policy",
-            control_id=None,
-            framework=None,
-            registry={"security_policy": {"description": "test"}},
-        )
-        assert result == []
-
-    def test_loads_from_registry_as_fallback(self):
-        """Should load requirements from Python registry when no TOML."""
-        registry = {
-            "codeowners": {
-                "description": "Create CODEOWNERS",
-                "requires_context": [
-                    {
-                        "key": "maintainers",
-                        "required": True,
-                        "confidence_threshold": 0.9,
-                    }
-                ],
-            },
-        }
-
-        result = get_context_requirements_for_category(
-            category="codeowners",
-            control_id=None,
-            framework=None,
-            registry=registry,
-        )
-
-        assert len(result) == 1
-        assert result[0].key == "maintainers"
-        assert result[0].confidence_threshold == 0.9
 
 
 class TestOrchestratorContextIntegration:

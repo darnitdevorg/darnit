@@ -113,6 +113,11 @@ def scrub(text: str, fixture: Path) -> str:
         "**Generated At:** <SCRUBBED-TIMESTAMP>",
         text,
     )
+    text = re.sub(
+        r"(\*\*Framework:\*\* .*? v)\S+",
+        r"\1<SCRUBBED-VERSION>",
+        text,
+    )
     text = re.sub(r'"duration_ms": \d+', '"duration_ms": "<SCRUBBED-DURATION>"', text)
     return text
 

@@ -36,9 +36,11 @@ class TestBuildAssessmentPredicate:
             adapters_used=["builtin"]
         )
 
-        assert predicate["assessor"]["name"] == "openssf-baseline-mcp"
-        assert predicate["assessor"]["version"] == "0.1.0"
-        assert "uri" in predicate["assessor"]
+        from importlib.metadata import version as get_package_version
+
+        assert predicate["assessor"]["name"] == "openssf-baseline"
+        assert predicate["assessor"]["version"] == get_package_version("darnit-baseline")
+        assert predicate["assessor"]["uri"] == "https://github.com/darnitdevorg/darnit"
 
     @pytest.mark.unit
     def test_baseline_info(self, sample_results):
@@ -54,9 +56,8 @@ class TestBuildAssessmentPredicate:
             adapters_used=["builtin"]
         )
 
-        assert predicate["baseline"]["version"] == "2025.10.10"
-        assert "specification" in predicate["baseline"]
-        assert "baseline.openssf.org" in predicate["baseline"]["specification"]
+        assert predicate["baseline"]["version"] == "2026.02.19"
+        assert predicate["baseline"]["specification"] == "https://baseline.openssf.org/versions/2026-02-19"
 
     @pytest.mark.unit
     def test_repository_info(self, sample_results):

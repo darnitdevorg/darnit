@@ -39,6 +39,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- **BREAKING (Python API only):** unused code in darnit-baseline, the core
+  tools and server modules, and two scripts. No behavior change for CLI, MCP,
+  or TOML users. Removed:
+  - the `darnit_baseline.config` package (`darnit_baseline.config.mappings`
+    with `PROJECT_TYPE_EXCLUSIONS`, `DEFAULT_FILE_LOCATIONS`, and its
+    re-exports of `darnit.config` names);
+  - `darnit.tools.audit_org`: `run_org_audit`, `aggregate_org_results`,
+    `format_org_results_markdown`, `format_org_results_json` (the
+    `list_org_repos` and `audit_org` MCP tools are unchanged);
+  - `darnit.tools` / `darnit.tools.audit`: `list_available_checks` and
+    `AuditOptions` (the `list_available_checks` MCP tool is
+    darnit-baseline's own and is unchanged);
+  - `darnit.server` / `darnit.server.factory`: `create_server_from_dict`
+    (use `create_server` with a TOML path);
+  - the `template` parameter of darnit-baseline's `create_security_policy`,
+    which was never read. MCP clients that still send it are unaffected;
+    Python callers passing `template=` get a `TypeError`;
+  - the `security_policy_minimal` template, which no remediation used (an
+    operator custom control naming it now fails to find it);
+  - `scripts/extract_templates.py` and `scripts/audit_hermetic_real_repos.py`.
+- **BREAKING:** `read_maintainers` is removed from the plugin-facing
+  `ProjectStateStore` protocol (`darnit.stores.protocols`) and its
+  implementations (`FilesystemProjectStateStore`, `InMemoryProjectStateStore`).
+  Maintainers are populated onto `ProjectConfig.maintainer_entries` and
+  `ProjectConfig.maintainers` via `read_project()`; the separate method
+  had no callers and `InMemoryProjectStateStore` returned an empty list
+  (#608).
+- **BREAKING:** `write_project` and `write_maintainers` are removed from the
+  plugin-facing `ProjectStateStore` protocol (`darnit.stores.protocols`) and
+  its filesystem default (`darnit.stores.defaults.project`). Writes to
+  `.project/` are managed exclusively by `darnit.config.context_writes`
+  under feature 042 single-writer rules (#588, fixes #574).
 - `.baseline.toml` reading and the code that existed only for it:
   `load_user_config` (including its `trusted` path),
   `load_user_config_with_report`, `validate_user_config`, `deep_merge`, and
@@ -140,9 +172,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `scripts/create-example-test-repo.py`. Plugin authors start from
   `darnit-hello`; the custom step types the tests used moved to the test-only
   `darnit-testchecks` package (#487).
+- **BREAKING (Python API only):** unused functions, classes, and modules in
+  the core package that no product code called. No behavior change for CLI,
+  MCP, or TOML users. Removed import paths:
+  - modules `darnit.context.collection`, `darnit.context.inject`,
+    `darnit.context.detectors`, `darnit.remediation.helpers`, and
+    `darnit.sieve.project_context`, with their `darnit.context` and
+    `darnit.remediation` re-exports;
+  - `darnit.config`: `resolve_file_for_control`,
+    `update_config_after_file_create`, `sync_discovered_file_to_config`
+    (`config.resolver`); `discover_and_create_config` (`config.discovery`);
+    `init_project_config` and `update_project_config` (`config.loader`; the
+    `init_project_config` MCP tool is unchanged); `parse_resource_ref`,
+    `get_path_from_ref`, `create_full_config`, and the `ProjectConfig`
+    methods `is_control_applicable`, `set_type_exclusions`,
+    `get_excluded_controls`, `get_security_contact`, `get_audits`,
+    `get_ci_provider`, `get_contributor_agreement_type` (`config.schema`);
+    `create_framework_config` and `FrameworkConfig.get_controls_by_domain`
+    (`config.framework_schema`); `EffectiveConfig.get_controls_by_domain`
+    (`config.merger`); `load_controls_by_name` and
+    `register_controls_from_config` (`config.control_loader`);
+    `ContextByCategory`, `ContextCategory`, `ExtensionMetadata`,
+    `BaselineExtensionConfig`, `CNCFBaselineExtension`, `ProjectExtensions`,
+    and `CNCFProjectConfig` (`config.context_schema`);
+  - `darnit.context.auto_detect`: `collect_auto_context_with_confidence`,
+    `detect_governance_model`, `detect_project_type`,
+    `detect_has_subprojects`;
+  - `darnit.core`: `PassInfo`, `TemplateInfo`, `register_pass`,
+    `get_template`, `list_handlers`, and the `HandlerRegistry` methods
+    `register_pass`, `get_pass`, `list_passes`, `register_template`,
+    `get_template`, `list_templates`, `discover_templates`, `list_handlers`
+    (`core.handlers`); `ExecutionContext.get_or_run_tool`,
+    `get_cached_result`, `cache_result`, and its `tool_outputs`,
+    `api_responses`, and `cached_results` fields (`core.models`);
+    `file_contains` and `make_result` (`core.utils`);
+  - `darnit.remediation`: `detect_workflow_checks` (`remediation.github`)
+    and `get_context_requirements_for_category`
+    (`remediation.context_validator`);
+  - `darnit.sieve`: `SieveOrchestrator.verify_batch` and
+    `SieveHandlerRegistry.validate_phase`.
 
 ### Added
 
+- `darnit install --from-source` registers the darnit executable of the
+  running installation as the MCP server command. Without it, the entry
+  runs the darnit-mcp release on PyPI through `uvx`, even when darnit was
+  installed from a source checkout.
+- GT-01.01 remediation initializes gittuf locally with a maintainer-confirmed
+  SSH key path through a registered plugin handler. It refuses existing
+  `refs/gittuf/*` and preserves HEAD, Git configuration, and working-tree files.
 - Operator configuration: a user-level TOML file found the same way by the
   CLI, MCP server, and harness (`--operator-config PATH`, else
   `$XDG_CONFIG_HOME/darnit/config.toml` or `~/.config/darnit/config.toml`,
@@ -338,6 +416,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- In OpenSSF Baseline assessment attestation predicates, `assessor.name`
+  changes from `openssf-baseline-mcp` to `openssf-baseline`, `assessor.uri`
+  points to `https://github.com/darnitdevorg/darnit`, `assessor.version`
+  derives dynamically from `darnit-baseline` package metadata instead of
+  hard-coded `0.1.0`, and `baseline.version` / `baseline.specification` derive
+  from the framework TOML metadata (`OSPS v2026.02.19`) instead of `2025.10.10`
+  (Refs #494).
 - **BREAKING:** `register_handlers()` is the one handler registration hook
   for plugins (#451). `darnit-gittuf` and `darnit-reproducibility` rename
   `register_sieve_handlers()` to `register_handlers()`, and their `register()`
@@ -568,22 +653,135 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Configure `fail_exit_codes = [0]` for OpenSSF Baseline OSPS-BR-01.02
+  (`grep -rln github.head_ref .github/workflows/`) so exit 0 on a match records
+  as non-conclusive evidence without an `unexpected_exit` error class (fixes #647).
+- Scope the full-audit cache by trust target: `write_audit_cache` records
+  the run's `target` in the cache envelope, and `read_audit_cache` /
+  `read_full_audit_cache` enforce a match against `expected_target` so an
+  audit cached under a trusted target cannot be reused by an untrusted run
+  (fixes #659).
+- The OpenSSF Baseline threat model remediation (OSPS-SA-03.02) can be
+  previewed, so a batch approval covers it like any other file remediation.
+  Its `SUMMARY.md` and `raw-findings.json` recorded the scan time to the
+  second, so the preview could never equal the apply and the step needed its
+  own approval. They now record the UTC scan date (#673).
+- A `fixed`, `changed_not_passing`, or `changed_not_verified` remediation
+  outcome now also lists the files kept because they had uncommitted user
+  changes (`user_changes_present`). An apply that wrote some files and kept
+  others reported only the written ones (#673).
+- Control `when` and step `when` now use one evaluator
+  (framework-design 5.1.1). A list-valued control `when` such as
+  `{ ci_provider = ["github", "gitlab"] }` made the control N/A even when
+  the value was in the list, which could make a level compliant; a list now
+  means membership. A verification step whose `when` names a key the
+  context does not hold now runs instead of being skipped, and a value read
+  from the audited repository that no honored claim backs (for example an
+  unconfirmed `.project/project.yaml` value) no longer skips a step.
+  Remediation handlers are unchanged: a missing key still skips them.
+- A not-applicable claim on an operator custom control now checks the
+  control's `contradicted_by`. Claim assessment read it only from the
+  framework TOML, so a trusted repository's claim was honored even when the
+  declared contradicting evidence was present, and `confirm_project_data`
+  would confirm it. The audit and the confirmation tool now read the
+  framework's controls plus the operator's custom controls.
+- `submit_judgment` and `confirm_pass_candidate` audit only the controls
+  they check instead of the whole framework (#653). Each call used to run a
+  full audit (about 9 seconds on a small repository) and the server handles
+  calls one at a time, so the 30 judgments of an OpenSSF Baseline run spent
+  over 5 minutes queued. They now take about 0.4 seconds each. The judged
+  content and evidence digest are unchanged, and these subset audits no
+  longer overwrite the audit cache.
+- `remediate_audit_findings` no longer trusts a repository because the
+  checkout's origin remote names it. Called without `owner` and `repo`, it
+  filled them from the remote and then decided trust from them, so a clone
+  of a trusted repository was remediated as trusted (for example, its
+  not-applicable claims were honored) although the operator named nothing.
+  Trust now comes only from the `owner`, `repo`, and new `host` arguments
+  or CI metadata (framework-design 14.2); the remote still addresses
+  platform calls. The pending-context guard now reads confirmations for
+  that repository too: it used to ignore operator-side confirmations, so
+  an untrusted repository could never be remediated.
+- gittuf GT-02.01 (`gittuf_commits_signed`) passes only when every checked
+  commit has a good signature (`%G?` = `G`). It counted `E` (cannot be
+  checked, so any random bytes in a signature packet), `U` (unknown
+  validity; for SSH, any key once `gpg.ssh.allowedSignersFile` is set) and
+  `X` as signed, and passed a history signed only by revoked or expired
+  keys as "All 0 recent commits are signed". Now `N`, `B`, `R`, `Y` and `X`
+  are FAIL; `E`, and a signature git is not set up to check (such as SSH
+  without `gpg.ssh.allowedSignersFile`), are `ERROR`, class `evaluation`;
+  `U` and an empty history are inconclusive.
+- gittuf GT-01.02 and GT-02.01 are `ERROR`, class `missing_tool`, when
+  `gittuf` or `git` is not installed. They were WARN, as if a person needed
+  to check the repository.
+- gittuf GT-01.01 fails when `refs/gittuf/policy` is missing. Its
+  `git show-ref --verify` exits 128 for a missing ref, not the declared
+  fail code 1, so the control was WARN; the step now passes `--quiet`, which
+  exits 1.
+- The `darnit-mcp` package now provides the `darnit` command, so
+  `uv tool install darnit-mcp` and
+  `uv tool install git+https://github.com/darnitdevorg/darnit` work; they
+  failed with "No executables are provided by package `darnit-mcp`". The
+  Claude Code plugin runner and the container's `mcp` command ran a
+  `darnit-mcp` executable that no package provides; both now run
+  `darnit serve`. The command is `darnit`, so `uvx darnit-mcp` still does
+  not work: use `uvx --from darnit-mcp darnit` (#621).
+- `darnit plan` and `darnit validate` sort controls without a declared maturity
+  level (`level = None`) last instead of crashing with a `TypeError` when
+  encountering mixed leveled and unleveled controls. Top-level control
+  attributes (`level`, `domain`, `security_severity`) and `tags` are synchronized
+  as a single canonical source of truth at schema load time; conflicting
+  declarations and non-integer `tags.level` values (including booleans) reject
+  loading with validation errors. Composition `include_levels` and `get_controls_by_level`
+  now select tag-leveled controls, and `include_tags = { level = N }` selects controls
+  that set a top-level level (#568, #589).
 - When `cel-python` or `tree-sitter-language-pack` fails to import, the
   error now gives the real cause. Both guards said "not installed" for any
   import error, which was wrong for an installed package with a missing
   dependency or a broken release (#573).
+- `darnit install` names the framework in the MCP entry it writes
+  (`serve --framework openssf-baseline`). The `uvx` entry runs the
+  darnit-mcp release on PyPI, and releases before 0.2.0 serve the first
+  installed framework by name, which on a full install is gittuf. The
+  command is also logged, so the PATH fallback of `--from-source` is
+  visible.
 - `darnit serve` with no `--framework` now serves OpenSSF Baseline when it
   is installed, the same default as `darnit audit`. It used to take the
   first installed framework by name, which on a full `darnit-mcp` install
   is `gittuf`, so the MCP entry that `darnit install` writes gave clients
   the gittuf tools. With several frameworks installed and no baseline it
   now asks for `--framework` instead of guessing.
+- The `github_branch_protection` handler reports a missing repository
+  identity as error class `unavailable`, the class the `gh_api` handler
+  uses for the same case (#579). Both messages now say the owner or name
+  is unknown instead of assuming a missing git remote, which is one of
+  two causes. Spec 3.8 records the rule.
 - The `gh_api` step no longer calls the platform when its endpoint needs
   `$OWNER` or `$REPO` and the checkout has no repository identity (no git
   remote). It used to substitute an empty owner, ask for `/repos//name`,
   and report the 404 that came back; a step declaring 404 in
   `fail_on_status` would have turned that into FAIL. It is now `ERROR`,
   class `unavailable`, with a message that says why.
+- The non-dev install smoke check reads the audit's JSON output instead of
+  grepping the text report, so a reworded message cannot hide a broken
+  dependency, and it refuses a `dist/` holding more than one wheel of a
+  package (#575).
+- A filtered audit is no longer reused as a full one (#542). Only an
+  unfiltered audit is cached: a run narrowed by `--tags`, `--include`,
+  `--exclude` or a profile does not write the audit cache. Remediation
+  reads only a level 3 audit of its framework, through the store the
+  audit wrote to, and expires it through that same store after it changes
+  something. Before, `darnit audit --tags level=1` left a cache that
+  remediation treated as a full audit, and with a configured
+  `[stores.cache]` a remediation left the old audit in place. Cache files
+  from earlier versions are ignored and rebuilt.
+- `darnit audit --profile NAME` now narrows the audit to the controls the
+  profile selects. The flag was accepted and then ignored, so every
+  control ran. Profiles are read from the loaded framework config, so
+  `-f community-spec` and `-f path/to/framework.toml` work too, and
+  `darnit profiles` lists the same set. An unknown profile name is an
+  error, as is a profile that, with the other filters, leaves nothing to
+  audit. `darnit plan --profile` is refused until #568 is fixed; it used to print the full plan.
 - Installs without the development dependencies work again (`uv tool install`
   from a checkout, and any install from a built wheel). Two things broke
   them: `tree-sitter-language-pack` 1.6.3, the newest release the old
@@ -603,6 +801,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The OpenSSF Baseline OSPS-LE-02.01 regex step runs: it set `patterns`
   where the handler read `pattern`, so it recorded "Missing pattern" instead
   of the SPDX evidence. The control's outcome is unchanged.
+- Tests: no test reaches real Sigstore signing. With the `attestation` extra
+  installed, an attestation test started Sigstore's interactive OIDC login
+  and hung waiting for a browser; the signer is now stubbed, and any test
+  that opens a browser or signs with Sigstore fails at once (#604).
 
 ## [0.1.1] - 2026-10-03
 

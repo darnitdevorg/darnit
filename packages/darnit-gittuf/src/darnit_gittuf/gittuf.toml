@@ -30,9 +30,24 @@ required = true
 name = "GittufInitialized"
 description = "Repository has Gittuf initialized"
 tags = { level = 1, domain = "GT" }
+help_md = """For a new gittuf installation, confirm `gittuf_root_key` through
+`confirm_project_data` using the absolute local path to the maintainer's existing
+SSH private key, never its contents or a `.pub` path. Install git, gittuf, and
+ssh-keygen on PATH and configure Git author and committer identity.
+
+Signing must be non-interactive: use an unencrypted key or unlock it in ssh-agent
+before starting Darnit, with the agent available to that process. This remediation
+does not support interactive passphrase entry.
+
+Approve GT-01.01 remediation to initialize, stage, and apply the root of trust
+locally. Setup refuses to run if any refs/gittuf/* exist. It leaves HEAD, Git
+configuration, and working-tree files untouched. Branch policies and additional
+key holders remain maintainer decisions; nothing is pushed.
+"""
 
 [[controls."GT-01.01".passes]]
 handler = "exec"
+# With --quiet a missing ref exits 1; without it, 128, the code git also uses for "not a git repository".
 command = ["git", "show-ref", "--verify", "--quiet", "refs/gittuf/policy"]
 pass_exit_codes = [0]
 fail_exit_codes = [1]
@@ -52,10 +67,7 @@ safe = false
 requires_context = [{key = "gittuf_root_key", required = true}]
 
 [[controls."GT-01.01".remediation.handlers]]
-handler = "exec"
-command = ["python", "-I", "-m", "darnit_gittuf.setup", "--repo", "$PATH", "--owner", "$OWNER", "--name", "$REPO"]
-timeout = 240
-pass_exit_codes = [0]
+handler = "gittuf_initialize"
 
 # =============================================================================
 # Control: Is the Gittuf policy valid?

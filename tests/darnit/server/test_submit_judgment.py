@@ -144,6 +144,56 @@ class TestSubmitJudgment:
 
 
 @pytest.mark.integration
+class TestReGatheringOnlyTheJudgedControl:
+    """#653: a judgment re-gathers its control's evidence, not the whole framework's."""
+
+    def test_only_the_judged_control_is_audited_and_nothing_is_cached(
+        self, repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from darnit.tools import audit as audit_module
+
+        calls: list[tuple[dict, list[str]]] = []
+        real = audit_module.run_sieve_audit
+
+        def spy(*args: object, **kwargs: object):
+            results, summary = real(*args, **kwargs)
+            calls.append((kwargs, [r["id"] for r in results]))
+            return results, summary
+
+        monkeypatch.setattr(audit_module, "run_sieve_audit", spy)
+
+        assert _submit(repo)["status"] == "candidate"
+
+        [(kwargs, evaluated)] = calls
+        assert evaluated == [CONTROL]
+        assert kwargs["write_cache"] is False
+
+    def test_the_candidate_matches_the_evidence_a_full_audit_gathers(self, repo: Path) -> None:
+        from darnit.trust.judgments import evidence_digest
+
+        candidate = _submit(repo)["candidate"]
+
+        assert candidate["evidence_digest"] == evidence_digest(audit(repo)["evidence"]["llm_consultation"])
+
+    def test_control_ids_select_after_operator_controls_are_added(self, repo: Path) -> None:
+        from darnit.config.operator.loader import resolve_operator_config
+        from darnit.tools.audit import run_sieve_audit
+
+        results, _ = run_sieve_audit(
+            OWNER,
+            REPO,
+            str(repo),
+            "main",
+            level=1,
+            control_ids=[CONTROL, "NOT-A-CONTROL"],
+            framework_name=FRAMEWORK,
+            operator_config=resolve_operator_config(str(repo)),
+        )
+
+        assert [r["id"] for r in results] == [CONTROL]
+
+
+@pytest.mark.integration
 class TestConfirmingACandidate:
     def _confirm(self, checkout: Path, **names: str) -> str:
         from darnit.server.tools.project_data import confirm_project_data_impl
@@ -216,11 +266,17 @@ class TestConfirmPassCandidateTool:
         assert load_confirmations() == []
 
 
-@pytest.mark.unit
-def test_every_framework_server_registers_confirm_pass_candidate() -> None:
-    from darnit.server.factory import create_server_from_dict
+def _framework_server(tmp_path: Path):
+    from darnit.server.factory import create_server
 
-    server = create_server_from_dict({"metadata": {"name": FRAMEWORK}, "mcp": {"name": "t"}})
+    config = tmp_path / "framework.toml"
+    config.write_text(f'[metadata]\nname = "{FRAMEWORK}"\n\n[mcp]\nname = "t"\n', encoding="utf-8")
+    return create_server(config)
+
+
+@pytest.mark.unit
+def test_every_framework_server_registers_confirm_pass_candidate(tmp_path: Path) -> None:
+    server = _framework_server(tmp_path)
     tools = {tool.name: tool for tool in asyncio.new_event_loop().run_until_complete(server.list_tools())}
 
     assert set(tools["confirm_pass_candidate"].inputSchema["properties"]) == {
@@ -233,10 +289,8 @@ def test_every_framework_server_registers_confirm_pass_candidate() -> None:
 
 
 @pytest.mark.unit
-def test_every_framework_server_registers_submit_judgment() -> None:
-    from darnit.server.factory import create_server_from_dict
-
-    server = create_server_from_dict({"metadata": {"name": FRAMEWORK}, "mcp": {"name": "t"}})
+def test_every_framework_server_registers_submit_judgment(tmp_path: Path) -> None:
+    server = _framework_server(tmp_path)
     tools = {tool.name: tool for tool in asyncio.new_event_loop().run_until_complete(server.list_tools())}
 
     assert "submit_judgment" in tools

@@ -1,18 +1,15 @@
 """Tests for handler registration system."""
 
 import re
-from pathlib import Path
 
 import pytest
 
 from darnit.core.handlers import (
     HandlerImportRefused,
     HandlerRegistry,
-    TemplateInfo,
     get_handler,
     get_handler_registry,
     register_handler,
-    register_pass,
 )
 
 
@@ -53,8 +50,8 @@ class TestHandlerRegistry:
         registry = HandlerRegistry()
         assert registry.get_handler("nonexistent") is None
 
-    def test_list_handlers(self) -> None:
-        """Test listing all handlers."""
+    def test_handlers_record_their_plugin(self) -> None:
+        """Each handler records the plugin context it was registered under."""
         registry = HandlerRegistry()
 
         def handler1():
@@ -68,12 +65,8 @@ class TestHandlerRegistry:
         registry.set_plugin_context("plugin-b")
         registry.register_handler("handler2", handler2)
 
-        all_handlers = registry.list_handlers()
-        assert len(all_handlers) == 2
-
-        plugin_a_handlers = registry.list_handlers(plugin="plugin-a")
-        assert len(plugin_a_handlers) == 1
-        assert plugin_a_handlers[0].name == "handler1"
+        assert registry.get_handler_info("handler1").plugin == "plugin-a"
+        assert registry.get_handler_info("handler2").plugin == "plugin-b"
 
     def test_handler_override_warning(self) -> None:
         """Test that overriding a handler logs a warning."""
@@ -115,96 +108,8 @@ class TestHandlerRegistry:
         assert registry._load_handler_from_path("darnit.nonexistent.module:func") is None
 
 
-class TestPassRegistry:
-    """Tests for pass registration in HandlerRegistry."""
-
-    def test_register_pass(self) -> None:
-        """Test registering a custom pass class."""
-        registry = HandlerRegistry()
-
-        class MyCustomPass:
-            """A custom pass implementation."""
-
-            pass
-
-        registry.register_pass("my_pass", MyCustomPass)
-
-        assert registry.get_pass("my_pass") is MyCustomPass
-        passes = registry.list_passes()
-        assert len(passes) == 1
-        assert passes[0].name == "my_pass"
-
-    def test_pass_with_plugin_context(self) -> None:
-        """Test pass registration with plugin context."""
-        registry = HandlerRegistry()
-        registry.set_plugin_context("my-plugin")
-
-        class CustomPass:
-            pass
-
-        registry.register_pass("custom", CustomPass)
-
-        passes = registry.list_passes(plugin="my-plugin")
-        assert len(passes) == 1
-        assert passes[0].plugin == "my-plugin"
-
-
-class TestTemplateRegistry:
-    """Tests for template registration in HandlerRegistry."""
-
-    def test_register_template(self, tmp_path: Path) -> None:
-        """Test registering a template file."""
-        registry = HandlerRegistry()
-
-        template_file = tmp_path / "security.md"
-        template_file.write_text("# Security Policy")
-
-        registry.register_template("security", template_file)
-
-        template = registry.get_template("security")
-        assert template is not None
-        assert template.name == "security"
-        assert template.path == template_file
-
-    def test_template_load_content(self, tmp_path: Path) -> None:
-        """Test loading template content."""
-        template_file = tmp_path / "test.md"
-        template_file.write_text("Hello, $NAME!")
-
-        template = TemplateInfo(name="test", path=template_file)
-        content = template.load_content()
-
-        assert content == "Hello, $NAME!"
-        assert template.content == content  # Cached
-
-    def test_discover_templates(self, tmp_path: Path) -> None:
-        """Test automatic template discovery."""
-        registry = HandlerRegistry()
-
-        # Create some template files
-        (tmp_path / "security.md").write_text("# Security")
-        (tmp_path / "readme.md").write_text("# Readme")
-        (tmp_path / "config.json").write_text("{}")  # Not a template
-        (tmp_path / "template.j2").write_text("{{ var }}")
-
-        registry.set_plugin_context("test-plugin")
-        count = registry.discover_templates(tmp_path)
-
-        assert count == 3  # .md and .j2 files
-        assert registry.get_template("security") is not None
-        assert registry.get_template("readme") is not None
-        assert registry.get_template("template") is not None
-        assert registry.get_template("config") is None  # .json not included
-
-    def test_discover_templates_nonexistent_dir(self, tmp_path: Path) -> None:
-        """Test discovery on non-existent directory returns 0."""
-        registry = HandlerRegistry()
-        count = registry.discover_templates(tmp_path / "nonexistent")
-        assert count == 0
-
-
 class TestDecorators:
-    """Tests for @register_handler and @register_pass decorators."""
+    """Tests for the @register_handler decorator."""
 
     def test_register_handler_decorator(self) -> None:
         """Test @register_handler decorator."""
@@ -232,31 +137,6 @@ class TestDecorators:
         handler = get_handler("another_handler")
         assert handler is another_handler
 
-    def test_register_pass_decorator(self) -> None:
-        """Test @register_pass decorator."""
-        global_registry = get_handler_registry()
-        global_registry.clear()
-
-        @register_pass("decorated_pass")
-        class MyDecoratedPass:
-            pass
-
-        pass_cls = global_registry.get_pass("decorated_pass")
-        assert pass_cls is MyDecoratedPass
-
-    def test_register_pass_decorator_no_args(self) -> None:
-        """Test @register_pass without arguments uses class name."""
-        global_registry = get_handler_registry()
-        global_registry.clear()
-
-        @register_pass
-        class AnotherPass:
-            pass
-
-        pass_cls = global_registry.get_pass("AnotherPass")
-        assert pass_cls is AnotherPass
-
-
 class TestRegistryClear:
     """Tests for registry clear functionality."""
 
@@ -267,17 +147,12 @@ class TestRegistryClear:
         def handler():
             pass
 
-        class Pass:
-            pass
-
         registry.register_handler("h", handler)
-        registry.register_pass("p", Pass)
         registry.set_plugin_context("plugin")
 
         registry.clear()
 
         assert registry.get_handler("h") is None
-        assert registry.get_pass("p") is None
         assert registry._current_plugin is None
 
 

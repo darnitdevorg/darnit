@@ -87,7 +87,7 @@ def sign_attestation(
     if not ATTESTATION_AVAILABLE:
         raise RuntimeError(
             "Attestation signing requires optional dependencies. "
-            "Install with: pip install baseline-mcp[attestation]"
+            "Install with: pip install darnit-core[attestation]"
         )
 
     # Create sigstore-compatible subject

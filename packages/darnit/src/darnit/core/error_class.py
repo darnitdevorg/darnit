@@ -39,7 +39,8 @@ missing_tool     Feature 041. A tool the step needs (``gh``, a command's
                  binary, a required MCP server executable) is not installed,
                  or a command exited 127 or said "command not found".
 unavailable      Feature 041. The platform API answered with a 5xx or a status
-                 the step did not declare, or the request never got a response.
+                 the step did not declare, the request never got a response,
+                 or the request could not be made (no repository identity).
 evaluation       Feature 041. The step ran but its result could not be
                  evaluated (for example a CEL ``expr`` error over a response).
 unexpected_exit  #562. A command exited with a code its step did not declare,

@@ -84,8 +84,7 @@ RUN set -eux; \
 # image — installs from inside the running container are not supported.
 COPY --from=builder /opt/venv /opt/venv
 
-# Put the venv on PATH so `darnit` and `darnit-mcp` resolve as plain
-# command names. PYTHONUNBUFFERED keeps logs flowing in stdio MCP mode.
+# Put the venv on PATH so `darnit` resolves as a plain command name. PYTHONUNBUFFERED keeps logs flowing in stdio MCP mode.
 ENV PATH="/opt/venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1

@@ -163,7 +163,7 @@ Download `darnit-claude-plugin-0.1.0.zip` from the GitHub release page, then ins
 
 ### Prerequisite
 
-The plugin invokes `uvx darnit-mcp` (preferred) or `pipx run darnit-mcp` (fallback). At least one of these MUST be on PATH:
+The plugin invokes `uvx --from darnit-mcp darnit serve` (preferred) or `pipx run --spec darnit-mcp darnit serve` (fallback); the `darnit-mcp` package provides the `darnit` command (#621). At least one of these MUST be on PATH:
 
 - **`uv`** (provides `uvx`) — https://docs.astral.sh/uv/
 - **`pipx`** — https://pipx.pypa.io/

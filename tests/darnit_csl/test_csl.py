@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.metadata
 from pathlib import Path
 
 import pytest
@@ -24,6 +25,7 @@ class TestImplementation:
         impl = CommunitySpecImplementation()
         assert impl.name == "community-spec"
         assert impl.spec_version == "CSL 1.0"
+        assert impl.version == importlib.metadata.version("darnit-csl")
 
     def test_framework_path_exists(self) -> None:
         path = get_framework_path()

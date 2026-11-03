@@ -43,10 +43,6 @@ controls = [
 description = "Standard SECURITY.md template for vulnerability reporting"
 file = "templates/security_policy_standard.tmpl"
 
-[templates.security_policy_minimal]
-description = "Minimal SECURITY.md template"
-file = "templates/security_policy_minimal.tmpl"
-
 [templates.contributing_standard]
 description = "Standard CONTRIBUTING.md template"
 file = "templates/contributing_standard.tmpl"
@@ -767,6 +763,7 @@ run: |
 handler = "exec"
 command = ["grep", "-rln", "github.head_ref", ".github/workflows/"]
 pass_exit_codes = [1]
+fail_exit_codes = [0]
 timeout = 10
 concludes = []
 

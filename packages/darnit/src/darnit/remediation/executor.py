@@ -58,10 +58,9 @@ from darnit.config.framework_schema import (
 )
 from darnit.config.when_evaluator import evaluate_when
 from darnit.core.logging import get_logger
+from darnit.core.repo_files import within_repository
+from darnit.core.utils import detect_repo_from_git
 from darnit.remediation import git_state, manifest
-from darnit.remediation.helpers import (
-    detect_repo_from_git,
-)
 from darnit.remediation.plan import Approval, FileChange, PlanItem, content_digest, normalize_repo_path
 
 logger = get_logger("remediation.executor")
@@ -713,7 +712,7 @@ class RemediationExecutor:
         assert change.content is not None
         root = os.path.realpath(self.local_path)
         full_path = os.path.join(root, change.path)
-        if os.path.commonpath([root, os.path.realpath(full_path)]) != root:
+        if not within_repository(root, full_path):
             raise WriteRefused(f"{change.path} resolves outside the repository")
         user_changes, ignored = self._vcs_state(change.path)
         if user_changes:
@@ -1015,7 +1014,7 @@ class RemediationExecutor:
             handler_config["handler"] = invocation.handler
 
             # Evaluate when clause — skip handler if condition not met
-            if invocation.when and not evaluate_when(invocation.when, when_context):
+            if invocation.when and not evaluate_when(invocation.when, when_context, missing_excludes=True):
                 logger.debug(
                     "Control %s: remediation handler '%s' skipped (when clause not met: %s)",
                     control_id,

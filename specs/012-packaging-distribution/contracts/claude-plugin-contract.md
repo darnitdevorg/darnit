@@ -71,16 +71,16 @@ Claude Code's plugin manifest does **not** support a fallback chain natively. Th
 
 ```bash
 #!/bin/sh
-# Wrapper invoked by the Claude Code plugin to start darnit-mcp.
+# Wrapper invoked by the Claude Code plugin to start the darnit MCP server.
 # DARNIT_MCP_VERSION is set by plugin.json's mcpServers.env.
 set -eu
 exec_via_uvx() {
     command -v uvx >/dev/null 2>&1 || return 1
-    exec uvx --from "darnit-mcp==${DARNIT_MCP_VERSION}" darnit-mcp
+    exec uvx --from "darnit-mcp==${DARNIT_MCP_VERSION}" darnit serve "$@"
 }
 exec_via_pipx() {
     command -v pipx >/dev/null 2>&1 || return 1
-    exec pipx run "darnit-mcp==${DARNIT_MCP_VERSION}"
+    exec pipx run --spec "darnit-mcp==${DARNIT_MCP_VERSION}" darnit serve "$@"
 }
 exec_via_uvx 2>/dev/null
 exec_via_pipx 2>/dev/null
@@ -90,6 +90,8 @@ echo "  - uv (provides uvx):  https://docs.astral.sh/uv/getting-started/installa
 echo "  - pipx:               https://pipx.pypa.io/stable/installation/" >&2
 exit 127
 ```
+
+The `darnit-mcp` package provides the `darnit` command, not a `darnit-mcp` command; the MCP server is `darnit serve`, which defaults to openssf-baseline. (Amended for #621: the runner used to call a `darnit-mcp` executable that no package provides.)
 
 The runner is `chmod +x` at build time, and `plugin.json` references it via `${CLAUDE_PLUGIN_ROOT}` so the path resolves regardless of where Claude Code installs the plugin.
 

@@ -18,6 +18,7 @@ from darnit.config.schema import (
     SecurityConfig,
 )
 from darnit.core.logging import get_logger
+from darnit.core.repo_files import open_in_repository
 
 logger = get_logger("config.discovery")
 
@@ -79,7 +80,7 @@ def discover_ci_config(local_path: str) -> CIConfig | None:
         for workflow_path in workflows:
             full_path = os.path.join(local_path, workflow_path)
             try:
-                with open(full_path, encoding='utf-8') as f:
+                with open_in_repository(local_path, full_path, encoding='utf-8') as f:
                     content = f.read()
 
                 # Detect testing
@@ -141,7 +142,7 @@ def discover_project_name(local_path: str) -> str | None:
     try:
         pkg_path = os.path.join(local_path, "package.json")
         if os.path.exists(pkg_path):
-            with open(pkg_path, encoding="utf-8") as f:
+            with open_in_repository(local_path, pkg_path, encoding="utf-8") as f:
                 data = json.load(f)
                 if "name" in data:
                     return data["name"]
@@ -153,7 +154,7 @@ def discover_project_name(local_path: str) -> str | None:
         import tomllib
         pyproj_path = os.path.join(local_path, "pyproject.toml")
         if os.path.exists(pyproj_path):
-            with open(pyproj_path, 'rb') as f:
+            with open_in_repository(local_path, pyproj_path, 'rb') as f:
                 data = tomllib.load(f)
                 if "project" in data and "name" in data["project"]:
                     return data["project"]["name"]
@@ -165,7 +166,7 @@ def discover_project_name(local_path: str) -> str | None:
         import tomllib
         cargo_path = os.path.join(local_path, "Cargo.toml")
         if os.path.exists(cargo_path):
-            with open(cargo_path, 'rb') as f:
+            with open_in_repository(local_path, cargo_path, 'rb') as f:
                 data = tomllib.load(f)
                 if "package" in data and "name" in data["package"]:
                     return data["package"]["name"]
@@ -176,7 +177,7 @@ def discover_project_name(local_path: str) -> str | None:
     try:
         go_mod_path = os.path.join(local_path, "go.mod")
         if os.path.exists(go_mod_path):
-            with open(go_mod_path, encoding="utf-8") as f:
+            with open_in_repository(local_path, go_mod_path, encoding="utf-8") as f:
                 first_line = f.readline().strip()
                 if first_line.startswith("module "):
                     module_path = first_line[7:].strip()
@@ -299,36 +300,3 @@ def sync_discovered_to_config(
                 ext.ci = ci_discovered
 
     return changes
-
-
-def discover_and_create_config(
-    local_path: str,
-    file_locations: dict[str, list[str]] | None = None,
-    name: str | None = None,
-    project_type: str = "software"
-) -> ProjectConfig:
-    """Discover files and create a new config with discovered values.
-
-    Args:
-        local_path: Path to the repository
-        file_locations: Mapping of ref_path -> list of possible file patterns
-        name: Project name (auto-detected if not provided)
-        project_type: Type of project
-
-    Returns:
-        New ProjectConfig with discovered files populated
-    """
-    from darnit.config.schema import create_minimal_config
-
-    project_name = name or discover_project_name(local_path) or "unnamed"
-
-    config = create_minimal_config(
-        name=project_name,
-        project_type=project_type,
-    )
-    config.local_path = local_path
-
-    # Sync discovered files
-    sync_discovered_to_config(config, local_path, file_locations, fix=True)
-
-    return config

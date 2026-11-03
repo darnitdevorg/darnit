@@ -13,6 +13,7 @@ import glob as glob_module
 import os
 import re
 
+from darnit.core.repo_files import open_in_repository
 from darnit.sieve.handler_registry import (
     HandlerContext,
     HandlerResult,
@@ -34,7 +35,7 @@ def readme_description_handler(
         filepath = os.path.join(context.local_path, name)
         if os.path.exists(filepath):
             try:
-                with open(filepath, encoding="utf-8", errors="ignore") as f:
+                with open_in_repository(context.local_path, filepath, encoding="utf-8", errors="ignore") as f:
                     content = f.read()
             except OSError:
                 continue
@@ -84,7 +85,7 @@ def readme_quality_handler(
         )
 
     try:
-        with open(readme_path, encoding="utf-8", errors="ignore") as f:
+        with open_in_repository(context.local_path, readme_path, encoding="utf-8", errors="ignore") as f:
             content = f.read().lower()
     except OSError:
         return HandlerResult(

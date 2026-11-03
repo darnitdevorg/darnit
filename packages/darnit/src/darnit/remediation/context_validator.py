@@ -242,47 +242,8 @@ def _get_context_definition(
     return framework.context.get_definition(context_key)
 
 
-def get_context_requirements_for_category(
-    category: str,
-    control_id: str | None = None,
-    framework: FrameworkConfig | None = None,
-    registry: dict[str, Any] | None = None,
-) -> list[ContextRequirement]:
-    """Get context requirements for a remediation category.
-
-    Checks both TOML (via framework) and Python registry (fallback).
-    Priority: TOML > Python registry
-
-    Args:
-        category: Remediation category name (e.g., "codeowners")
-        control_id: Optional control ID for TOML lookup
-        framework: Optional FrameworkConfig for TOML requirements
-        registry: Optional Python registry dict
-
-    Returns:
-        List of ContextRequirement for this category
-    """
-    requirements: list[ContextRequirement] = []
-
-    # Try TOML first (primary source)
-    if framework and control_id:
-        control = framework.controls.get(control_id)
-        if control and control.remediation and control.remediation.requires_context:
-            requirements.extend(control.remediation.requires_context)
-
-    # Fall back to Python registry if no TOML requirements
-    if not requirements and registry:
-        category_info = registry.get(category, {})
-        req_list = category_info.get("requires_context", [])
-        for req_dict in req_list:
-            requirements.append(ContextRequirement(**req_dict))
-
-    return requirements
-
-
 __all__ = [
     "ContextCheckResult",
     "check_context_requirements",
     "format_context_prompt",
-    "get_context_requirements_for_category",
 ]

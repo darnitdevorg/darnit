@@ -29,14 +29,9 @@ from .discovery import (
 from .handlers import (
     HandlerInfo,
     HandlerRegistry,
-    PassInfo,
-    TemplateInfo,
     get_handler,
     get_handler_registry,
-    get_template,
-    list_handlers,
     register_handler,
-    register_pass,
 )
 from .logging import get_logger
 from .models import AuditResult, CheckResult
@@ -96,14 +91,9 @@ __all__ = [
     # Handler registry (new)
     "HandlerRegistry",
     "HandlerInfo",
-    "PassInfo",
-    "TemplateInfo",
     "get_handler_registry",
     "get_handler",
-    "list_handlers",
-    "get_template",
     "register_handler",
-    "register_pass",
     # Verification (Sigstore)
     "PluginVerifier",
     "VerificationConfig",

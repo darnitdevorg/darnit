@@ -1,5 +1,7 @@
 """Tests for ReproducibilityImplementation plugin protocol compliance."""
 
+import importlib.metadata
+
 from darnit_reproducibility.implementation import ReproducibilityImplementation
 
 
@@ -22,6 +24,9 @@ class TestReproducibilityImplementation:
 
     def test_display_name(self) -> None:
         assert len(self.impl.display_name) > 0
+
+    def test_version_matches_package_metadata(self) -> None:
+        assert self.impl.version == importlib.metadata.version("darnit-reproducibility")
 
     def test_framework_toml_defines_five_controls(self) -> None:
         assert len(_framework_controls(self.impl)) == 5

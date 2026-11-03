@@ -30,7 +30,7 @@ The summary and each level add ``pending``, ``pass_candidates``,
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Optional
 
-from darnit.tools.audit import calculate_compliance
+from darnit.tools.audit import calculate_compliance, framework_metadata
 
 if TYPE_CHECKING:
     from darnit.config.schema import ProjectConfig
@@ -152,10 +152,26 @@ def build_assessment_predicate(
     if excluded:
         config_section["excluded_controls"] = excluded
 
+    meta = framework_metadata("openssf-baseline")
+    from importlib.metadata import version as _pkg_version
+
+    tool_version = _pkg_version("darnit-baseline")
+
+    spec_raw = meta.get("spec_version")
+    if not spec_raw:
+        raise ValueError("Framework 'openssf-baseline' metadata missing spec_version")
+    baseline_version = spec_raw.replace("OSPS", "").replace("v", "").strip()
+    baseline_slug = baseline_version.replace(".", "-")
+    spec_url = f"https://baseline.openssf.org/versions/{baseline_slug}"
+
     predicate = {
-        "assessor": {"name": "openssf-baseline-mcp", "version": "0.1.0", "uri": "https://github.com/ossf/baseline-mcp"},
+        "assessor": {
+            "name": meta["name"],
+            "version": tool_version,
+            "uri": "https://github.com/darnitdevorg/darnit",
+        },
         "timestamp": datetime.now(UTC).isoformat(),
-        "baseline": {"version": "2025.10.10", "specification": "https://baseline.openssf.org/versions/2025-10-10"},
+        "baseline": {"version": baseline_version, "specification": spec_url},
         "repository": {"url": f"https://github.com/{owner}/{repo}", "commit": commit},
         "configuration": config_section,
         "summary": {

@@ -242,19 +242,9 @@ def control_from_effective(
     # Build the tags dict - effective.tags already includes level/domain from merger
     tags = dict(effective.tags) if effective.tags else {}
 
-    # Extract level/domain/security_severity from tags if not present as top-level
-    # This supports the new flexible schema where everything can be in tags
     level = effective.level
-    if level is None and "level" in tags:
-        level = tags["level"]
-
     domain = effective.domain
-    if domain is None and "domain" in tags:
-        domain = tags["domain"]
-
     security_severity = effective.security_severity
-    if security_severity is None and "security_severity" in tags:
-        security_severity = tags["security_severity"]
 
     metadata: dict = {
         "security_severity": security_severity,
@@ -341,18 +331,9 @@ def control_from_framework(
     # Build tags dict from config - tags is now Dict[str, Any]
     tags = dict(control_config.tags) if control_config.tags else {}
 
-    # Extract level/domain/security_severity from tags if not present as top-level
     level = control_config.level
-    if level is None and "level" in tags:
-        level = tags["level"]
-
     domain = control_config.domain
-    if domain is None and "domain" in tags:
-        domain = tags["domain"]
-
     security_severity = control_config.security_severity
-    if security_severity is None and "security_severity" in tags:
-        security_severity = tags["security_severity"]
 
     # Build metadata dict
     metadata: dict = {
@@ -516,56 +497,6 @@ def load_controls_from_toml(framework_path: Path) -> list[ControlSpec]:
 
     config = load_effective_config(framework_path)
     return load_controls_from_effective(config)
-
-
-def load_controls_by_name(framework_name: str) -> list[ControlSpec]:
-    """Load executable controls for a framework resolved via entry points.
-
-    Args:
-        framework_name: Framework identifier (e.g., "openssf-baseline")
-
-    Returns:
-        List of executable ControlSpec objects
-
-    Raises:
-        ValueError: If framework not found
-    """
-    from .merger import load_effective_config_by_name
-
-    config = load_effective_config_by_name(framework_name)
-    return load_controls_from_effective(config)
-
-
-# =============================================================================
-# Registration Helper
-# =============================================================================
-
-
-def register_controls_from_config(
-    config: EffectiveConfig,
-    registry_func: Callable[[ControlSpec], None] | None = None,
-) -> int:
-    """Load controls from config and register them.
-
-    Args:
-        config: Effective configuration
-        registry_func: Function to register each control
-            (defaults to sieve.registry.register_control)
-
-    Returns:
-        Number of controls registered
-    """
-    if registry_func is None:
-        from darnit.sieve.registry import register_control
-
-        registry_func = register_control
-
-    controls = load_controls_from_effective(config)
-
-    for control in controls:
-        registry_func(control)
-
-    return len(controls)
 
 
 # =============================================================================

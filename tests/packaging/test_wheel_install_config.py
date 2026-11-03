@@ -109,9 +109,11 @@ def test_framework_config_resolves_under_wheel_install(
     target_wheel = _build_wheel(package_name, dist_dir)
     core_wheel = _build_wheel("darnit-core", dist_dir)
 
-    # 2. Create a fresh venv.
+    # 2. Create a fresh venv. Symlink the interpreter, as `python -m venv`
+    # does on POSIX: a copied standalone CPython (uv-managed, as on
+    # ubuntu-26.04 runners) cannot find its libpython relative to the copy.
     venv_path = tmp_path / "venv"
-    venv.EnvBuilder(with_pip=True, clear=True).create(str(venv_path))
+    venv.EnvBuilder(with_pip=True, clear=True, symlinks=sys.platform != "win32").create(str(venv_path))
     venv_python = _venv_python(venv_path)
     assert venv_python.is_file(), f"venv python not found at {venv_python}"
 

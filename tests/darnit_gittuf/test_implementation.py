@@ -1,5 +1,6 @@
 """Tests for GittufImplementation plugin protocol compliance."""
 
+import importlib.metadata
 
 from darnit_gittuf.implementation import GittufImplementation
 
@@ -24,9 +25,8 @@ class TestGittufImplementation:
     def test_display_name(self) -> None:
         assert "Gittuf" in self.impl.display_name
 
-    def test_version_is_string(self) -> None:
-        assert isinstance(self.impl.version, str)
-        assert len(self.impl.version) > 0
+    def test_version_matches_package_metadata(self) -> None:
+        assert self.impl.version == importlib.metadata.version("darnit-gittuf")
 
     def test_framework_toml_defines_three_controls(self) -> None:
         controls = _framework_controls(self.impl)

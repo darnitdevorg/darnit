@@ -422,5 +422,5 @@ For issues or feedback:
 
 ---
 
-*Generated for OpenSSF Baseline MCP Server v0.1.0*
-*OSPS Specification: v2025.10.10*
+*Generated for darnit-baseline v0.1.1*
+*OSPS Specification: v2026.02.19*

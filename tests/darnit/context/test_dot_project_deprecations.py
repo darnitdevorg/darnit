@@ -3,8 +3,8 @@
 Locks the warning behavior in both directions:
   (a) PRESENCE (US1 acceptance scenario 2): a `.project/project.yaml`
       that still uses `cncf_slack_channel` triggers a `DeprecationWarning`
-      whose message names the old key, the replacement, and the current
-      spec version.
+      whose message names the old key and the replacement, and does
+      not cite an internal darnit version number.
   (b) ABSENCE (US1 acceptance scenario 3): a repo that has already
       migrated to `slack_channels` (or omits the key entirely) MUST NOT
       be nagged. No `DeprecationWarning` fires on load.
@@ -12,6 +12,7 @@ Locks the warning behavior in both directions:
 
 from __future__ import annotations
 
+import re
 import warnings
 from pathlib import Path
 
@@ -50,12 +51,16 @@ cncf_slack_channel: "#legacy-channel"
         w for w in dep_warnings
         if "cncf_slack_channel" in str(w.message)
         and "slack_channels" in str(w.message)
-        and "1.2.0" in str(w.message)
     ]
     assert matched, (
-        "warning message MUST name the old key, the replacement, and the "
-        f"spec version 1.2.0; got {[str(w.message) for w in dep_warnings]!r}"
+        "warning message MUST name the old key and the replacement; got "
+        f"{[str(w.message) for w in dep_warnings]!r}"
     )
+    # The message must not cite an internal darnit reconcile counter that
+    # users cannot look up (issue #506).
+    message = str(matched[0].message)
+    assert "spec version" not in message
+    assert not re.search(r"\d+\.\d+\.\d+", message)
 
     # The old-key value still populates the scalar attribute.
     assert config is not None

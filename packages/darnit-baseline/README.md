@@ -1,6 +1,6 @@
 # darnit-baseline
 
-OpenSSF Baseline (OSPS v2025.10.10) compliance implementation for the [darnit](../darnit) framework — **62 controls** across **8 domains** and **3 maturity levels** (25 L1, 17 L2, 20 L3).
+OpenSSF Baseline (OSPS v2026.02.19) compliance implementation for the [darnit](../darnit) framework — **62 controls** across **8 domains** and **3 maturity levels** (25 L1, 17 L2, 20 L3).
 
 ## How Controls Are Verified
 

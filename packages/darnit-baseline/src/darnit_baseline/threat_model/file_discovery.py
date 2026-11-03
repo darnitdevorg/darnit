@@ -21,6 +21,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+from darnit.core.repo_files import within_repository
+
 from .discovery_models import FileScanStats
 from .parsing import detect_language_from_path
 
@@ -144,7 +146,8 @@ def walk_repo(
     if not root.is_dir():
         raise ValueError(f"walk_repo: root is not a directory: {root}")
 
-    gitignore_dirs = _parse_gitignore_dirs(root / ".gitignore")
+    gitignore = root / ".gitignore"
+    gitignore_dirs = _parse_gitignore_dirs(gitignore) if within_repository(root, gitignore) else set()
     extra = {name for name in extra_excludes if name}
     effective_excludes = BASELINE_EXCLUDED_DIRS | gitignore_dirs | extra
 
@@ -160,6 +163,9 @@ def walk_repo(
             fpath = Path(dirpath) / name
             lang = detect_language_from_path(fpath)
             if lang is None:
+                continue
+            if not within_repository(root, fpath):
+                logger.debug("skipping %s: resolves outside the repository", fpath)
                 continue
             try:
                 relpath = str(fpath.relative_to(root))

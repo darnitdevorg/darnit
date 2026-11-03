@@ -5,6 +5,7 @@ no implementation. ``testchecks-steps`` is the fixture for a plugin that
 registers custom sieve step types through ``register_handlers()``.
 """
 
+import importlib.metadata
 from importlib.resources import files
 from pathlib import Path
 
@@ -22,7 +23,10 @@ class CustomStepsImplementation:
 
     @property
     def version(self) -> str:
-        return "0.1.0"
+        try:
+            return importlib.metadata.version("darnit-testchecks")
+        except importlib.metadata.PackageNotFoundError:
+            return "dev"
 
     @property
     def spec_version(self) -> str:

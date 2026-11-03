@@ -31,6 +31,7 @@ except ImportError:
     import tomli as tomllib  # type: ignore
 
 from darnit.core.logging import get_logger
+from darnit.core.repo_files import read_repository_text
 
 from .framework_schema import (
     ControlConfig,
@@ -124,13 +125,6 @@ class EffectiveConfig:
         Note: Controls without a level (level=None) are not included.
         """
         return {cid: ctrl for cid, ctrl in self.controls.items() if ctrl.level == level}
-
-    def get_controls_by_domain(self, domain: str) -> dict[str, EffectiveControl]:
-        """Get all controls in a specific domain.
-
-        Note: Controls without a domain (domain=None) are not included.
-        """
-        return {cid: ctrl for cid, ctrl in self.controls.items() if ctrl.domain == domain}
 
 
 # =============================================================================
@@ -484,7 +478,7 @@ def _operator_shaped_settings(repo_path: Path) -> list[IgnoredSetting]:
         if not path.is_file():
             continue
         try:
-            keys = list(tomllib.loads(path.read_text(encoding="utf-8")))
+            keys = list(tomllib.loads(read_repository_text(repo_path, path)))
         except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
             keys = ["*"]
         settings.extend(IgnoredSetting(rel, key, OPERATOR_CONFIGURATION_HOME) for key in keys)
@@ -498,7 +492,7 @@ def _project_extension_settings(repo_path: Path) -> list[IgnoredSetting]:
     import yaml
 
     try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        data = yaml.safe_load(read_repository_text(repo_path, path))
     except (OSError, UnicodeDecodeError, yaml.YAMLError):
         return []
     if not isinstance(data, dict):

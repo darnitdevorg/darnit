@@ -31,6 +31,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 from darnit.core.logging import configure_logging, get_logger
 from darnit.sieve.models import CheckResult
@@ -247,6 +248,43 @@ def _operator_target(args: argparse.Namespace, operator) -> tuple[bool, str | No
     return True, canonical
 
 
+def _framework_profiles(config: Any) -> dict:
+    """The audit profiles the loaded framework config defines, by framework name."""
+    fw = getattr(config, "_framework_config", None)
+    profiles = getattr(fw, "audit_profiles", None)
+    return {config.framework_name: dict(profiles)} if profiles else {}
+
+
+def _resolve_profile_ids(profile_name: str, config: Any, controls: list) -> set[str] | None:
+    """Return the control IDs an audit profile selects for the loaded framework.
+
+    Profiles come from the loaded framework config, so `-f community-spec`
+    and `-f path/to/framework.toml` work, not only frameworks that ship an
+    implementation plugin. Logs the reason and returns None when the profile
+    cannot be used: the framework defines no such profile, the name is
+    ambiguous, or the profile selects no controls.
+    """
+    from darnit.config.profile_resolver import (
+        ProfileAmbiguousError,
+        ProfileNotFoundError,
+        resolve_profile,
+        resolve_profile_control_ids,
+    )
+
+    framework_name = config.framework_name
+    try:
+        _, profile_config = resolve_profile(profile_name, _framework_profiles(config))
+    except (ProfileNotFoundError, ProfileAmbiguousError) as e:
+        logger.error(f"Cannot use profile '{profile_name}': {e}")
+        return None
+
+    profile_ids = set(resolve_profile_control_ids(profile_config, controls))
+    if not profile_ids:
+        logger.error(f"Profile '{profile_name}' selects no controls in {framework_name}")
+        return None
+    return profile_ids
+
+
 def cmd_audit(args: argparse.Namespace) -> int:
     """Run compliance audit against a repository.
 
@@ -312,8 +350,23 @@ def cmd_audit(args: argparse.Namespace) -> int:
     include_ids = set(args.include.split(",")) if args.include else None
     exclude_ids = set(args.exclude.split(",")) if args.exclude else set()
 
+    loaded_count = len(controls)
+
+    # --profile narrows the run to the controls the named audit profile selects
+    if getattr(args, "profile", None):
+        profile_ids = _resolve_profile_ids(args.profile, config, controls)
+        if profile_ids is None:
+            return 1
+        include_ids = profile_ids if include_ids is None else include_ids & profile_ids
+        if not include_ids:
+            logger.error(f"Profile '{args.profile}' and --include have no controls in common")
+            return 1
+
     # Apply filters
     controls = filter_controls(controls, filters, include_ids, exclude_ids)
+    if not controls and getattr(args, "profile", None):
+        logger.error(f"Profile '{args.profile}' and the other filters leave no controls to audit")
+        return 1
 
     logger.info(f"Auditing {repo_path} with {len(controls)} controls")
 
@@ -334,6 +387,10 @@ def cmd_audit(args: argparse.Namespace) -> int:
         default_branch=default_branch,
         level=3,
         controls=controls,
+        # Issue #542: the CLI narrows `controls` itself, so it says whether
+        # it did. Comparing the counts covers every filter, present and
+        # future, without listing the flags. A filtered audit is not cached.
+        cache_filtered=len(controls) < loaded_count,
         stop_on_llm=True,
         # Issue #427: the framework name has to reach the audit driver, not
         # just the control loader above. Without it the driver cannot
@@ -377,6 +434,13 @@ def cmd_plan(args: argparse.Namespace) -> int:
         load_effective_config_by_name,
     )
     from darnit.filtering import matches_filters, parse_tags_arg
+
+    if getattr(args, "profile", None):
+        # `plan` crashes on frameworks whose controls carry no level (#568), so
+        # the flag cannot be wired in a way that can be tested on the Baseline.
+        # Refusing is better than accepting it and printing the full plan.
+        logger.error("darnit plan does not support --profile yet (#568); use darnit audit --profile")
+        return 1
 
     repo_path = Path(args.repo_path).resolve()
 
@@ -422,7 +486,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
     total_shown = 0
     total_filtered = 0
 
-    for level in sorted(by_level.keys()):
+    for level in sorted(by_level.keys(), key=lambda k: (k is None, k if k is not None else 0)):
         controls = by_level[level]
         shown_controls = []
 
@@ -443,7 +507,8 @@ def cmd_plan(args: argparse.Namespace) -> int:
         if not shown_controls:
             continue
 
-        logger.info(f"Level {level} ({len(shown_controls)} controls):")
+        level_str = f"Level {level}" if level is not None else "No level"
+        logger.info(f"{level_str} ({len(shown_controls)} controls):")
         for cid, ctrl in shown_controls:
             logger.info(f"  • {cid}: {ctrl.name}")
         total_shown += len(shown_controls)
@@ -481,12 +546,22 @@ def cmd_validate(args: argparse.Namespace) -> int:
         logger.info(f"  Controls: {len(config.controls)}")
 
         # Show level breakdown
-        by_level = {}
+        by_level: dict[int | None, int] = {}
         for _cid, ctrl in config.controls.items():
             by_level.setdefault(ctrl.level, 0)
             by_level[ctrl.level] += 1
 
-        logger.info(f"  By level: {', '.join(f'L{k}={v}' for k, v in sorted(by_level.items()))}")
+        parts = []
+        for k, v in sorted(
+            by_level.items(),
+            key=lambda item: (item[0] is None, item[0] if item[0] is not None else 0),
+        ):
+            if k is not None:
+                parts.append(f"L{k}={v}")
+            else:
+                parts.append(f"none={v}")
+
+        logger.info(f"  By level: {', '.join(parts)}")
         return 0
 
 
@@ -575,13 +650,18 @@ def cmd_profiles(args: argparse.Namespace) -> int:
     filter_impl = getattr(args, "impl", None)
     found_any = False
 
-    for name, impl in impls.items():
+    from darnit.config import load_effective_config_by_name
+
+    for name in impls:
         if filter_impl and name != filter_impl:
             continue
-        get_profiles = getattr(impl, "get_audit_profiles", None)
-        if not callable(get_profiles):
+        # Read the profiles from the framework config, as `audit --profile`
+        # does, so the two commands agree on what exists.
+        try:
+            profiles = _framework_profiles(load_effective_config_by_name(name)).get(name)
+        except (ValueError, OSError) as exc:  # unknown name, invalid TOML or unreadable file: skip, do not hide the others
+            logger.debug(f"Could not load {name}: {exc}")
             continue
-        profiles = get_profiles()
         if not profiles:
             continue
         found_any = True
@@ -638,6 +718,23 @@ def _install_skills(target_dir: Path, force: bool = False) -> int:
     return installed
 
 
+def _local_darnit_executable() -> Path | None:
+    """Return the darnit console script of the running installation, if any.
+
+    Looks next to the running interpreter first, so the answer is the same
+    whether darnit was started from a virtual environment, through a symlink,
+    or by ``uv run``. Falls back to ``darnit`` on PATH.
+    """
+    import shutil
+
+    name = "darnit.exe" if sys.platform == "win32" else "darnit"
+    candidate = Path(sys.executable).parent / name
+    if candidate.is_file():
+        return candidate
+    found = shutil.which("darnit")
+    return Path(found) if found else None
+
+
 def cmd_install(args: argparse.Namespace) -> int:
     """Install darnit MCP server config and skills into a supported client."""
     import shutil
@@ -652,6 +749,27 @@ def cmd_install(args: argparse.Namespace) -> int:
             "`--project` only applies to Claude Code (writes .mcp.json). "
             f"Ignoring --project for --client {args.client}."
         )
+
+    # Resolve the command first, so a failed lookup writes nothing: no
+    # client directory, no backup of an existing settings file.
+    if getattr(args, "from_source", False):
+        darnit_exe = _local_darnit_executable()
+        if darnit_exe is None:
+            logger.error("--from-source: the darnit executable of this installation was not found.")
+            return 1
+        # Name the framework. Both entries do: `darnit serve` without
+        # --framework took the first installed framework by name until #577,
+        # and the uvx entry runs whatever darnit-mcp release is on PyPI.
+        darnit_entry = {
+            "command": str(darnit_exe),
+            "args": ["serve", "--framework", "openssf-baseline"],
+        }
+    else:
+        darnit_entry = {
+            "command": "uvx",
+            "args": ["--from", "darnit-mcp", "darnit", "serve", "--framework", "openssf-baseline"],
+        }
+    logger.info("Registering MCP server command: %s %s", darnit_entry["command"], " ".join(darnit_entry["args"]))
 
     if args.client in ("claude", "claude-code"):
         if args.project:
@@ -690,10 +808,6 @@ def cmd_install(args: argparse.Namespace) -> int:
         shutil.copy2(settings_path, backup_path)
 
     mcp_servers = config.setdefault("mcpServers", {})
-    darnit_entry = {
-        "command": "uvx",
-        "args": ["--from", "darnit-mcp", "darnit", "serve"],
-    }
 
     if "darnit" in mcp_servers and not args.force:
         response = input(f"'darnit' entry already exists in {settings_path}. Overwrite? [y/N]: ").strip().lower()
@@ -1767,6 +1881,12 @@ def create_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Install skills into .claude/skills/ and MCP config into .mcp.json (per-project) instead of "
              "user-scope paths. Not recommended: the repository then controls how darnit is launched.",
+    )
+    install_parser.add_argument(
+        "--from-source",
+        action="store_true",
+        help="Register the darnit executable of this installation (a source checkout or any other "
+             "non-PyPI install) instead of `uvx --from darnit-mcp`.",
     )
     install_parser.set_defaults(func=cmd_install)
 

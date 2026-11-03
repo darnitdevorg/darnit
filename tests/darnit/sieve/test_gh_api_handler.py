@@ -258,6 +258,8 @@ class TestMissingRepositoryIdentity:
         result = self._run_without_owner({"fail_on_status": [404]})
         assert responder.calls == []
         assert result.status == HandlerResultStatus.ERROR
+        assert result.error_class == "unavailable"
+        assert "no git remote, and none was given" in result.message
 
     def test_endpoint_that_needs_no_identity_still_runs(self, recorded) -> None:
         responder = recorded({"/user": {"status": 200, "body": {}}})

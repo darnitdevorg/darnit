@@ -66,7 +66,6 @@ DOCUMENTATION_TEMPLATES = [
     "sca_policy_template",
     "secrets_management_policy",
     "security_assessment_template",
-    "security_policy_minimal",
     "security_policy_standard",
     "support_scope_template",
     "support_template",

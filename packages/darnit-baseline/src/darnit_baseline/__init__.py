@@ -1,4 +1,4 @@
-"""darnit-baseline - OpenSSF Baseline (OSPS v2025.10.10) implementation for darnit.
+"""darnit-baseline - OpenSSF Baseline (OSPS v2026.02.19) implementation for darnit.
 
 This package provides the OpenSSF Baseline compliance checks as a darnit plugin.
 It registers automatically via Python entry points when installed.
@@ -18,7 +18,7 @@ Usage:
     path = get_framework_path()  # Returns Path to openssf-baseline.toml
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 from pathlib import Path
 

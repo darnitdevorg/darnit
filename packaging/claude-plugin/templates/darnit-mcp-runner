@@ -27,13 +27,13 @@ fi
 # of a tool is silent, but the exec inherits the script's stderr.
 try_uvx() {
     if command -v uvx >/dev/null 2>&1; then
-        exec uvx --from "darnit-mcp==${DARNIT_MCP_VERSION}" darnit-mcp "$@"
+        exec uvx --from "darnit-mcp==${DARNIT_MCP_VERSION}" darnit serve "$@"
     fi
 }
 
 try_pipx() {
     if command -v pipx >/dev/null 2>&1; then
-        exec pipx run "darnit-mcp==${DARNIT_MCP_VERSION}" "$@"
+        exec pipx run --spec "darnit-mcp==${DARNIT_MCP_VERSION}" darnit serve "$@"
     fi
 }
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import functools
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -105,7 +106,7 @@ def audit_openssf_baseline(
     """
     Run a comprehensive OpenSSF Baseline audit on a repository.
 
-    This checks compliance with OSPS v2025.10.10 across 62 controls at 3 maturity levels.
+    This checks compliance with OSPS v2026.02.19 across 62 controls at 3 maturity levels.
 
     Args:
         owner: GitHub Org/User (auto-detected from git if not provided)
@@ -226,6 +227,9 @@ def audit_openssf_baseline(
         level=level,
         controls=controls,
         tags=tags_list,
+        # Issue #542: a profile narrows `controls` above. Tags are
+        # recorded by run_sieve_audit itself.
+        cache_filtered=bool(profile),
         stop_on_llm=True,
         framework_name="openssf-baseline",
         operator_config=operator_config,
@@ -442,7 +446,6 @@ def create_security_policy(
     owner: str | None = None,
     repo: str | None = None,
     local_path: str = ".",
-    template: str = "standard",
 ) -> str:
     """
     Create a SECURITY.md file for vulnerability reporting.
@@ -459,7 +462,6 @@ def create_security_policy(
         owner: GitHub Org/User (auto-detected if not provided)
         repo: Repository Name (auto-detected if not provided)
         local_path: Path to repository
-        template: Template to use (standard, minimal, enterprise)
 
     Returns:
         What was done, followed by a fenced JSON block with the run record
@@ -504,9 +506,9 @@ def create_security_policy(
     written = [c.path for c in outcome.file_changes if c.changes]
     if written:
         try:
-            from darnit.core import audit_cache
+            from darnit.tools.audit import invalidate_full_audit_cache
 
-            audit_cache.invalidate_audit_cache(str(repo_path))
+            invalidate_full_audit_cache(str(repo_path), "openssf-baseline")
         except Exception as exc:  # noqa: BLE001
             from darnit.core.logging import get_logger
 
@@ -911,6 +913,21 @@ def _origin_text(origin: dict | None) -> str:
     return f"{origin['kind']} ({origin['method']})" if origin.get("method") else origin["kind"]
 
 
+def _ask_user_header(key: str) -> str:
+    """Return a readable AskUserQuestion header no longer than 12 characters."""
+    label = key.removeprefix("has_").removeprefix("is_").replace("_", " ").title().strip()
+    if len(label) <= 12:
+        return label or "Question"
+
+    words: list[str] = []
+    for word in label.split():
+        candidate = " ".join([*words, word])
+        if len(candidate) > 12:
+            break
+        words.append(word)
+    return " ".join(words) or label[:12]
+
+
 def _build_context_question(req) -> dict:
     """A structured question for one pending context key (contract: context-confirmation-tools.md).
 
@@ -993,7 +1010,7 @@ def _build_ask_user_params(key: str, question_dict: dict, definition) -> dict | 
     input_type = question_dict.get("input_type")
     question_text = question_dict["prompt"]
 
-    header = key.removeprefix("has_").removeprefix("is_").replace("_", " ").title()[:12]
+    header = _ask_user_header(key)
 
     if input_type == "confirm":
         return {
@@ -1013,8 +1030,10 @@ def _build_ask_user_params(key: str, question_dict: dict, definition) -> dict | 
         return None
 
     if definition.type == "boolean":
+        if hint := question_dict.get("hint"):
+            question_text = f"{question_text} {hint}"
         options = [
-            {"label": "Yes", "description": definition.hint or "Yes, this applies"},
+            {"label": "Yes", "description": "Yes, this applies"},
             {"label": "No", "description": "No, this does not apply"},
         ]
     else:
@@ -1034,6 +1053,82 @@ def _build_ask_user_params(key: str, question_dict: dict, definition) -> dict | 
 # =============================================================================
 # Threat Model & Attestation Tools
 # =============================================================================
+
+
+def _threat_model_output_path(repo_path: Path, output_path: str) -> str:
+    """``output_path`` as a repository-relative path that stays inside ``repo_path``; ValueError otherwise."""
+    from darnit.remediation.plan import normalize_repo_path
+
+    relative = normalize_repo_path(output_path)
+    root = os.path.realpath(repo_path)
+    if os.path.commonpath([root, os.path.realpath(os.path.join(root, relative))]) != root:
+        raise ValueError(f"{output_path} resolves outside the repository")
+    return relative
+
+
+def _write_threat_model_files(
+    repo_path: Path,
+    owner: str | None,
+    repo: str | None,
+    changes: list[Any],
+    headline: str,
+) -> str:
+    """Write planned threat model files through the remediation executor (framework-design 15.8).
+
+    Each file is a ``file_create`` step, so the executor applies its checks
+    (containment, uncommitted user changes, ignore rules) and records what it
+    writes in the run manifest for the git tools.
+    """
+    from darnit.config.framework_schema import HandlerInvocation, RemediationConfig
+    from darnit.remediation import manifest
+    from darnit.remediation.executor import RemediationExecutor
+
+    left = [c for c in changes if not c.changes]
+    steps = [
+        HandlerInvocation(handler="file_create", path=c.path, content=c.content, overwrite=c.action == "modify")
+        for c in changes
+        if c.changes
+    ]
+    written: list[str] = []
+    errors: list[str] = []
+    run_id: str | None = None
+    if steps:
+        executor = RemediationExecutor(
+            local_path=str(repo_path), owner=owner, repo=repo, run_id=manifest.new_run_id()
+        )
+        result = executor.execute("OSPS-SA-03.02", RemediationConfig(handlers=steps), dry_run=False)
+        written = [c.path for c in result.file_changes if c.changes]
+        left += [c for c in result.file_changes if not c.changes]
+        errors = [
+            str(entry.get("message", ""))
+            for entry in result.details.get("handlers", [])
+            if entry.get("status") == "error"
+        ]
+        run_id = result.run_id or (executor.run_id if written else None)
+    if written:
+        try:
+            from darnit.tools.audit import invalidate_full_audit_cache
+
+            invalidate_full_audit_cache(str(repo_path), "openssf-baseline")
+        except Exception as exc:  # noqa: BLE001
+            from darnit.core.logging import get_logger
+
+            get_logger("darnit_baseline.tools").warning(f"Failed to invalidate audit cache: {exc}")
+
+    lines = [headline]
+    if written:
+        lines.append(f"Wrote {len(written)} file(s) in {repo_path}: {', '.join(written)}")
+        lines.append(f"Run id: {run_id} (commit_remediation_changes commits exactly these files)")
+    else:
+        lines.append("Nothing was written.")
+    for change in left:
+        lines.append(
+            f"Not written: {change.path} ({change.reason}; an existing file is replaced only when "
+            "git tracks it and it has no uncommitted changes)"
+        )
+    for error in errors:
+        lines.append(f"Error: {error}")
+    return "\n".join(lines)
 
 
 def generate_threat_model(
@@ -1056,13 +1151,19 @@ def generate_threat_model(
         local_path: ABSOLUTE path to repo
         output_format: Output format - "markdown", "sarif", or "json"
         output_path: Optional file path (relative to local_path) to write
-            the threat model to disk. If not provided, returns content as string.
+            the threat model to. If not provided, returns content as string
+            and writes nothing. The path must stay inside the repository
+            (no "..", no ".git", no symbolic link leading out of it). The
+            files are written through the remediation executor and recorded
+            in a remediation run, so commit_remediation_changes can commit
+            them. A missing file is created; an existing file is replaced
+            only when git tracks it and it has no uncommitted changes.
         detail_level: Detail level for Markdown output - "summary" or "detailed"
             (default). Only affects Markdown; SARIF/JSON always include full detail.
 
     Returns:
         Threat model report with identified threats and recommendations,
-        or a confirmation message if output_path is provided.
+        or, if output_path is provided, the files written and the run id.
     """
     from darnit_baseline.threat_model.grouping import group_by_cli_family
     from darnit_baseline.threat_model.ranking import (
@@ -1081,6 +1182,13 @@ def generate_threat_model(
     repo_path = Path(local_path).resolve()
     if not repo_path.exists():
         return f"❌ Error: Repository path not found: {repo_path}"
+
+    relative: str | None = None
+    if output_path:
+        try:
+            relative = _threat_model_output_path(repo_path, output_path)
+        except ValueError as e:
+            return f"Error: threat model not written: {e}"
 
     try:
         result = discover_all(repo_path)
@@ -1116,10 +1224,13 @@ def generate_threat_model(
                 cli_families=cli_families,
             )
 
-        if output_path:
+        if relative is not None:
+            from darnit_baseline.threat_model.remediation import planned_file_change
+
             # Use multi-file pipeline for the new canonical location.
-            if output_path.endswith("SUMMARY.md") or "threatmodel" in output_path:
-                from darnit.sieve.handler_registry import HandlerContext
+            if relative.endswith("SUMMARY.md") or "threatmodel" in relative:
+                from darnit.remediation.plan import FileChange
+                from darnit.sieve.handler_registry import HandlerContext, HandlerResultStatus
                 from darnit_baseline.threat_model.remediation import (
                     generate_threat_model_handler,
                 )
@@ -1129,24 +1240,20 @@ def generate_threat_model(
                     owner=owner or "",
                     repo=repo or "",
                     control_id="OSPS-SA-03.02",
+                    mode="plan",
                 )
-                handler_result = generate_threat_model_handler(
-                    {"path": output_path, "overwrite": True},
-                    context,
+                handler_result = generate_threat_model_handler({"path": relative, "overwrite": True}, context)
+                if handler_result.status != HandlerResultStatus.PASS:
+                    return f"Error: threat model not written: {handler_result.message}"
+                changes = [FileChange.model_validate(c) for c in handler_result.evidence.get("file_changes", [])]
+                headline = f"Multi-file threat model for {relative} ({len(ranked)} findings)."
+            else:
+                changes = [planned_file_change(str(repo_path), relative, content, overwrite=True)]
+                headline = (
+                    f"Threat model for {relative} ({len(content)} bytes, "
+                    f"{len(emitted)} findings, {overflow.total} trimmed)."
                 )
-                files = handler_result.evidence.get("files_written", [output_path])
-                return (
-                    f"Multi-file threat model written to {output_path} "
-                    f"({len(ranked)} findings, {len(files)} files)"
-                )
-
-            target = repo_path / output_path
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(content, encoding="utf-8")
-            return (
-                f"Threat model written to {output_path} ({len(content)} bytes, "
-                f"{len(emitted)} findings, {overflow.total} trimmed)"
-            )
+            return _write_threat_model_files(repo_path, owner, repo, changes, headline)
 
         return content
     except Exception as e:
@@ -1252,6 +1359,7 @@ def remediate_audit_findings(
     create_pr: bool = False,
     enhance_with_llm: bool = False,
     approve: list | None = None,
+    host: str | None = None,
 ) -> str:
     """
     Apply automated remediations for failed audit controls.
@@ -1270,8 +1378,10 @@ def remediate_audit_findings(
 
     Args:
         local_path: ABSOLUTE path to repo
-        owner: GitHub org/user (auto-detected if not provided)
-        repo: Repository name (auto-detected if not provided)
+        owner: GitHub org/user. With ``repo``, names the repository whose
+            trust and confirmations apply; detected from the checkout for
+            platform calls only when not provided
+        repo: Repository name (see ``owner``)
         categories: Optional filter — list of category names, or ["all"]
         dry_run: If True (default), show what would be changed without applying
         profile: Optional audit profile name to filter remediation to profile controls only
@@ -1287,6 +1397,7 @@ def remediate_audit_findings(
             changes are written only for approved change-set digests under the
             default remediation policy; ``dry_run=False`` alone approves
             nothing. Pass only digests the person approved.
+        host: Host of the repository ``owner`` and ``repo`` name, when not github.com
 
     Returns:
         Summary of applied or planned remediations (with git workflow status if applicable)
@@ -1302,7 +1413,12 @@ def remediate_audit_findings(
         return "Error: create_pr requires auto_commit=True"
 
     from darnit.core.utils import detect_owner_repo
+    from darnit.trust.decision import target_from_owner_repo
 
+    # Trust comes from the repository the caller names, never from the
+    # checkout's remote (framework-design 14.2); detection only addresses
+    # platform calls.
+    target = target_from_owner_repo(owner, repo, host)
     detected_owner, detected_repo = detect_owner_repo(str(repo_path))
     owner = owner or detected_owner
     repo = repo or detected_repo
@@ -1313,7 +1429,7 @@ def remediate_audit_findings(
         from darnit.config.context_storage import get_pending_context as _get_pending
 
         pending = _get_pending(
-            local_path=str(repo_path), owner=owner, repo=repo,
+            local_path=str(repo_path), owner=owner, repo=repo, target=target,
         )
     except Exception as e:
         return (
@@ -1358,6 +1474,7 @@ def remediate_audit_findings(
             local_path=str(repo_path),
             owner=owner,
             repo=repo,
+            target=target,
             categories=categories or ["all"],
             dry_run=dry_run,
             profile=profile,

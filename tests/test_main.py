@@ -10,16 +10,10 @@ class TestServerFactory:
 
     def test_server_creates_from_framework(self):
         """Test that server can be created from openssf-baseline framework."""
-        import tomllib
-
-        from darnit.server.factory import create_server_from_dict
+        from darnit.server.factory import create_server
         from darnit_baseline import get_framework_path
 
-        path = get_framework_path()
-        with open(path, "rb") as f:
-            config = tomllib.load(f)
-
-        server = create_server_from_dict(config)
+        server = create_server(get_framework_path())
         assert server is not None
         assert "openssf-baseline" in server.name.lower() or "darnit" in server.name.lower()
 

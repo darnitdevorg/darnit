@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from darnit.core.repo_files import within_repository
 from darnit.sieve.builtin_handlers import llm_eval_handler
 from darnit.sieve.handler_registry import (
     HandlerContext,
@@ -36,7 +37,7 @@ def csl_llm_if_present(config: dict[str, Any], context: HandlerContext) -> Handl
     files = config.get("files_to_include", [])
     for f in files:
         full = f if os.path.isabs(f) else os.path.join(context.local_path, f)
-        if os.path.isfile(full):
+        if os.path.isfile(full) and within_repository(context.local_path, full):
             return llm_eval_handler(config, context)
 
     return HandlerResult(

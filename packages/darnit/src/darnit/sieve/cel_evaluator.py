@@ -203,12 +203,15 @@ class CELEvaluator:
             return
 
         # file_exists(path: string) -> bool
-        # Checks if a file exists relative to repo root
+        # Whether path exists inside the repository; a path that resolves
+        # outside it does not exist (framework-design.md 3.0.4).
         def file_exists_cel(path: celtypes.StringType) -> celtypes.BoolType:
+            from darnit.core.repo_files import within_repository
+
             if self.repo_path is None:
                 return celtypes.BoolType(False)
             file_path = self.repo_path / str(path)
-            return celtypes.BoolType(file_path.exists())
+            return celtypes.BoolType(file_path.exists() and within_repository(self.repo_path, file_path))
 
         self._custom_functions["file_exists"] = file_exists_cel
 

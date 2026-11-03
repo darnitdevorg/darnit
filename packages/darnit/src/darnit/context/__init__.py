@@ -24,15 +24,6 @@ Example:
         confidence = result.confidence  # e.g., 0.75 for 75%
 """
 
-from .collection import (
-    coerce_context_value,
-    parse_codeowners,
-    parse_json_path,
-    parse_markdown_list,
-    parse_yaml_path,
-    resolve_context_value,
-    validate_context_value,
-)
 from .confidence import (
     SIGNAL_WEIGHTS,
     CombinedConfidence,
@@ -52,12 +43,6 @@ from .dot_project import (
 from .dot_project_mapper import DotProjectMapper
 from .dot_project_merger import merge_configs
 from .dot_project_org import OrgProjectResolver
-from .inject import (
-    create_check_context_with_project,
-    get_project_value,
-    has_project_value,
-    inject_project_context,
-)
 from .sieve import (
     ContextDetectionResult,
     ContextSieve,
@@ -86,16 +71,4 @@ __all__ = [
     "DotProjectMapper",
     "OrgProjectResolver",
     "merge_configs",
-    "inject_project_context",
-    "create_check_context_with_project",
-    "get_project_value",
-    "has_project_value",
-    # Context collection
-    "parse_markdown_list",
-    "parse_yaml_path",
-    "parse_json_path",
-    "parse_codeowners",
-    "resolve_context_value",
-    "validate_context_value",
-    "coerce_context_value",
 ]

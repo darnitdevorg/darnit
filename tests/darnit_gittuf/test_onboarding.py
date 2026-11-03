@@ -6,10 +6,10 @@ import json
 import os
 import shutil
 import subprocess
-import sys
-from pathlib import Path
+import venv
 
 import pytest
+from darnit_gittuf.handlers import gittuf_initialize_handler
 from darnit_gittuf.setup import POLICY, ROOT_KEY, RSL, SetupError, initialize, references
 
 from darnit.config.merger import load_framework_by_name
@@ -31,7 +31,6 @@ def generated_repo(tmp_path, monkeypatch):
             pytest.skip(f"{tool} is required")
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
-    monkeypatch.setenv("PATH", str(Path(sys.executable).parent) + os.pathsep + os.environ["PATH"])
     for name in list(os.environ):
         if name.startswith(("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_")) or name in (
             "GIT_CONFIG_COUNT",
@@ -41,7 +40,7 @@ def generated_repo(tmp_path, monkeypatch):
             "GIT_COMMON_DIR",
         ):
             monkeypatch.delenv(name)
-    # Both the test and the exec child use this isolated operator configuration.
+    # Use an isolated operator configuration for this repository.
     config_root = tmp_path / "config"
     monkeypatch.setenv("XDG_CONFIG_HOME", str(config_root))
     operator = config_root / "darnit" / "config.toml"
@@ -80,8 +79,9 @@ def test_missing_gittuf(generated_repo, monkeypatch):
     repo, _key = generated_repo
     which = shutil.which
     monkeypatch.setattr(shutil, "which", lambda name: None if name == "gittuf" else which(name))
-    with pytest.raises(SetupError, match="gittuf is not installed"):
-        initialize(str(repo), "fixture", "onboarding")
+    result = gittuf_initialize_handler({}, HandlerContext(local_path=str(repo), owner="fixture", repo="onboarding"))
+    assert result.status == HandlerResultStatus.ERROR
+    assert "gittuf is not installed" in result.message
     assert not references(str(repo))
 
 
@@ -109,7 +109,11 @@ def test_existing_metadata_is_preserved(generated_repo, real_gittuf, ref):
     assert references(str(repo)) == before
 
 
-def test_declared_remediation_initializes_a_real_repo(generated_repo, real_gittuf):
+def test_declared_remediation_initializes_a_real_repo(generated_repo, real_gittuf, tmp_path, monkeypatch):
+    # An isolated tool install need not share the Python interpreter on PATH.
+    unrelated_python = tmp_path / "unrelated-python"
+    venv.EnvBuilder(with_pip=False).create(unrelated_python)
+    monkeypatch.setenv("PATH", str(unrelated_python / "bin") + os.pathsep + os.environ["PATH"])
     repo, key = generated_repo
     confirm(repo, key)
     control = load_framework_by_name("gittuf").controls["GT-01.01"]

@@ -14,6 +14,7 @@ import re
 from typing import Any
 
 from darnit.core.logging import get_logger
+from darnit.core.repo_files import open_in_repository
 
 logger = get_logger("threat_model.dependencies")
 
@@ -126,7 +127,7 @@ def _parse_pyproject_toml(repo_path: str, declared: set[str]) -> None:
             continue
         path = os.path.join(root, "pyproject.toml")
         try:
-            content = _read_file(path)
+            content = _read_file(repo_path, path)
         except OSError:
             continue
 
@@ -146,7 +147,7 @@ def _parse_requirements_txt(repo_path: str, declared: set[str]) -> None:
         if name.startswith("requirements") and name.endswith(".txt"):
             path = os.path.join(repo_path, name)
             try:
-                content = _read_file(path)
+                content = _read_file(repo_path, path)
             except OSError:
                 continue
             for line in content.splitlines():
@@ -162,7 +163,7 @@ def _parse_package_json(repo_path: str, declared: set[str]) -> None:
     if not os.path.isfile(path):
         return
     try:
-        content = _read_file(path)
+        content = _read_file(repo_path, path)
         data: dict[str, Any] = json.loads(content)
     except (OSError, json.JSONDecodeError):
         return
@@ -180,7 +181,7 @@ def _parse_go_mod(repo_path: str, declared: set[str]) -> None:
     if not os.path.isfile(path):
         return
     try:
-        content = _read_file(path)
+        content = _read_file(repo_path, path)
     except OSError:
         return
     for match in re.finditer(r"^\s*(\S+)\s+v", content, re.MULTILINE):
@@ -188,8 +189,8 @@ def _parse_go_mod(repo_path: str, declared: set[str]) -> None:
         _add_matches(module, declared)
 
 
-def _read_file(path: str) -> str:
-    with open(path, errors="ignore", encoding="utf-8") as f:
+def _read_file(repo_path: str, path: str) -> str:
+    with open_in_repository(repo_path, path, errors="ignore", encoding="utf-8") as f:
         return f.read()
 
 

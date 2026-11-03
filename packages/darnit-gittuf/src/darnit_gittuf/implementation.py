@@ -1,5 +1,6 @@
 """Gittuf plugin implementation for darnit."""
 
+import importlib.metadata
 from pathlib import Path
 
 from darnit_gittuf import handlers
@@ -22,7 +23,10 @@ class GittufImplementation:
 
     @property
     def version(self) -> str:
-        return "0.1.0"
+        try:
+            return importlib.metadata.version("darnit-gittuf")
+        except importlib.metadata.PackageNotFoundError:
+            return "dev"
 
     @property
     def spec_version(self) -> str:
@@ -42,7 +46,7 @@ class GittufImplementation:
         return path
 
     def register_handlers(self) -> None:
-        """Register the Gittuf-specific check handlers."""
+        """Register the Gittuf-specific check and remediation handlers."""
         from darnit.sieve.handler_registry import get_sieve_handler_registry
 
         from . import handlers
@@ -67,6 +71,15 @@ class GittufImplementation:
             handler_fn=handlers.gittuf_commits_signed_handler,
             description="Check last 5 commits for cryptographic signatures",
             ceiling={"pass", "fail"},
+            settings=frozenset(),
+        )
+
+        registry.register(
+            "gittuf_initialize",
+            phase="deterministic",
+            handler_fn=handlers.gittuf_initialize_handler,
+            description="Initialize gittuf with a confirmed root signing key",
+            supports_plan=False,
             settings=frozenset(),
         )
 

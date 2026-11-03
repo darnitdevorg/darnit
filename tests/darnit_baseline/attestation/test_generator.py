@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from darnit.core.models import AuditResult
+from darnit_baseline.attestation import generator
 from darnit_baseline.attestation.generator import (
     BASELINE_PREDICATE_TYPE,
     build_unsigned_statement,
@@ -175,29 +176,62 @@ class TestGenerateAttestationFromResults:
         assert expected_file.exists()
 
     @pytest.mark.unit
-    def test_signed_without_dependencies(self, sample_audit_result, temp_dir: Path):
-        """Test signing behavior when sigstore not available."""
-        # Try to sign - should return unsigned with error if sigstore not available
+    def test_signed_without_dependencies(self, sample_audit_result, temp_dir: Path, monkeypatch):
+        """Without sigstore, signing returns the unsigned statement and an error, and writes nothing."""
+        monkeypatch.setattr(generator, "ATTESTATION_AVAILABLE", False)
+        output_path = temp_dir / "test.sigstore.json"
+
         result = generate_attestation_from_results(
-            audit_result=sample_audit_result,
-            sign=True,
-            output_path=str(temp_dir / "test.sigstore.json")
+            audit_result=sample_audit_result, sign=True, output_path=str(output_path)
         )
 
-        # Result should either be signed attestation or error with unsigned statement
-        parsed = None
-        if "error" in result.lower():
-            # Extract JSON from the result
-            lines = result.split("\n")
-            json_start = None
-            for i, line in enumerate(lines):
-                if line.strip().startswith("{"):
-                    json_start = i
-                    break
-            if json_start is not None:
-                json_str = "\n".join(lines[json_start:])
-                parsed = json.loads(json_str)
-                assert "error" in parsed or "unsigned_statement" in parsed
-        else:
-            # Signing succeeded
-            assert "Attestation saved" in result
+        parsed = json.loads(result)
+        assert "optional dependencies" in parsed["error"]
+        assert parsed["unsigned_statement"]["predicateType"] == BASELINE_PREDICATE_TYPE
+        assert not output_path.exists()
+
+    @pytest.mark.unit
+    def test_signed_bundle_is_saved(self, sample_audit_result, temp_dir: Path, monkeypatch):
+        """The signer's bundle is what gets saved; the signer is stubbed so no test reaches Sigstore (#604)."""
+        calls = []
+        bundle = {"mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json", "dsseEnvelope": {}}
+
+        def fake_sign(**kwargs):
+            calls.append(kwargs)
+            return bundle
+
+        monkeypatch.setattr(generator, "ATTESTATION_AVAILABLE", True)
+        monkeypatch.setattr(generator, "sign_attestation", fake_sign)
+        output_path = temp_dir / "test.sigstore.json"
+
+        result = generate_attestation_from_results(
+            audit_result=sample_audit_result, sign=True, staging=True, output_path=str(output_path)
+        )
+
+        assert "Attestation saved" in result
+        assert json.loads(output_path.read_text()) == bundle
+        assert len(calls) == 1
+        assert calls[0]["predicate_type"] == BASELINE_PREDICATE_TYPE
+        assert calls[0]["subject_name"] == "git+https://github.com/testorg/testrepo"
+        assert calls[0]["commit"] == "abc123def456"
+        assert calls[0]["use_staging"] is True
+
+    @pytest.mark.unit
+    def test_signing_failure_returns_unsigned_statement(self, sample_audit_result, temp_dir: Path, monkeypatch):
+        """A signing error returns the unsigned statement with the error, and writes nothing."""
+
+        def failing_sign(**_kwargs):
+            raise RuntimeError("no identity token")
+
+        monkeypatch.setattr(generator, "ATTESTATION_AVAILABLE", True)
+        monkeypatch.setattr(generator, "sign_attestation", failing_sign)
+        output_path = temp_dir / "test.sigstore.json"
+
+        result = generate_attestation_from_results(
+            audit_result=sample_audit_result, sign=True, output_path=str(output_path)
+        )
+
+        parsed = json.loads(result)
+        assert parsed["error"] == "Signing failed: no identity token"
+        assert parsed["unsigned_statement"]["subject"][0]["digest"]["gitCommit"] == "abc123def456"
+        assert not output_path.exists()

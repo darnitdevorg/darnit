@@ -513,7 +513,7 @@ requires-dist = [
     { name = "packaging", specifier = ">=23.0" },
     { name = "pydantic", specifier = ">=2.0.0" },
     { name = "pydantic", extras = ["email"], specifier = ">=2.0.0" },
-    { name = "pydantic-ai-slim", extras = ["anthropic"], specifier = ">=0.0.14" },
+    { name = "pydantic-ai-slim", extras = ["anthropic"], specifier = ">=2.24,<3" },
     { name = "pyyaml", specifier = ">=6.0.0" },
     { name = "ruamel-yaml", specifier = ">=0.18.0" },
     { name = "sigstore", marker = "extra == 'attestation'", specifier = ">=3.0.0" },

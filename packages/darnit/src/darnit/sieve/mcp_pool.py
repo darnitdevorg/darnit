@@ -1,8 +1,8 @@
 """Per-audit MCP client-session pool.
 
 Spawn-lazy: no session is created until a control's mcp-handler pass actually
-references its server. Teardown-in-finally: verify_batch guarantees every
-session is closed before returning, even on exceptions.
+references its server. ``SieveOrchestrator.reset_caches`` closes every
+session.
 
 Sync-over-async bridge: MCP's stdio client requires a live event loop for
 the subprocess's read/write pumps. Darnit's sieve orchestrator is
@@ -208,8 +208,8 @@ class McpPool:
 
     Owns the allowlist (a dict of ``server_name -> McpServerConfig``) and
     the cache of live sessions. Constructed lazily by the orchestrator on
-    first reference to an mcp-handler pass; torn down in the orchestrator's
-    ``verify_batch`` finally block.
+    first reference to an mcp-handler pass; torn down by the orchestrator's
+    ``reset_caches``.
     """
 
     def __init__(

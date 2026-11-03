@@ -25,6 +25,7 @@ from pydantic import ValidationError
 
 from darnit.config.schema import ControlOverride, ControlStatusValue
 from darnit.core.logging import get_logger
+from darnit.core.repo_files import read_repository_text
 from darnit.trust.confirmations import Confirmation, find_confirmation
 
 if TYPE_CHECKING:
@@ -89,7 +90,7 @@ def _project_claims(repo: Path) -> list[ProjectAssertion]:
     if not path.is_file():
         return []
     try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        data = yaml.safe_load(read_repository_text(repo, path))
     except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
         logger.warning("Could not read %s: %s", PROJECT_ASSERTIONS_FILE, exc)
         return []
@@ -162,18 +163,18 @@ def context_value_assertions(
     fails against ``context`` but holds once repository-supplied values are
     replaced by detected ones (or dropped).
     """
-    from darnit.sieve.orchestrator import evaluate_when_clause
+    from darnit.config.when_evaluator import evaluate_when
 
     claims = []
     for control_id, when in controls_when.items():
-        if not when or evaluate_when_clause(dict(when), dict(context)):
+        if not when or evaluate_when(when, context):
             continue
-        if not evaluate_when_clause(dict(when), neutral_context(when, context, detected, repository_values)):
+        if not evaluate_when(when, neutral_context(when, context, detected, repository_values)):
             continue
         key = next(
             k
             for k, expected in when.items()
-            if k in repository_values and context.get(k) is not None and context[k] != expected
+            if k in repository_values and not evaluate_when({k: expected}, {k: context.get(k)})
         )
         claims.append(
             ProjectAssertion(

@@ -42,7 +42,7 @@ dependencies = [
     # runtime dependency; LLM-assisted checks are core product functionality
     # and there is no shipping "no-LLM" install tier. Swappable at code time
     # via the LLMStep Protocol (single-file replacement), not via install flag.
-    "pydantic-ai-slim[anthropic]>=0.0.14",
+    "pydantic-ai-slim[anthropic]>=2.24,<3",  # Agent(output_type=...), RunResult.output; cap at next major
 ]
 
 [project.urls]

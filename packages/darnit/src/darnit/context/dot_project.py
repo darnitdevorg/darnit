@@ -56,7 +56,12 @@ import logging
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from darnit.core.repo_files import open_in_repository
+
+if TYPE_CHECKING:
+    from darnit.stores.protocols import ProjectStateStore
 
 logger = logging.getLogger(__name__)
 
@@ -361,15 +366,14 @@ class DotProjectReader:
     forward compatibility with spec evolution.
 
     Feature 033: accepts an optional :class:`~darnit.stores.protocols.ProjectStateStore`.
-    When a store is provided, ``read()`` and related methods delegate to
-    the store's ``read_project()`` / ``read_maintainers()``. When None,
-    the reader falls back to direct filesystem I/O on ``<repo_path>/.project/``
-    (the pre-feature behavior). The filesystem default store's own
-    ``read_project()`` constructs a ``DotProjectReader`` with ``store=None``
-    to break the recursion.
+    When a store is provided, ``read()`` delegates to the store's
+    ``read_project()``. When None, the reader falls back to direct filesystem
+    I/O on ``<repo_path>/.project/`` (the pre-feature behavior). The filesystem
+    default store's own ``read_project()`` constructs a ``DotProjectReader``
+    with ``store=None`` to break the recursion.
     """
 
-    def __init__(self, repo_path: str | Path, store: object | None = None):
+    def __init__(self, repo_path: str | Path, store: ProjectStateStore | None = None):
         """Initialize reader with repository path.
 
         Args:
@@ -381,7 +385,7 @@ class DotProjectReader:
         self.project_dir = self.repo_path / ".project"
         self.project_yaml = self.project_dir / "project.yaml"
         self.maintainers_yaml = self.project_dir / "maintainers.yaml"
-        self._store = store
+        self._store: ProjectStateStore | None = store
 
     def exists(self) -> bool:
         """Check if .project/project.yaml exists."""
@@ -414,7 +418,7 @@ class DotProjectReader:
             yaml = YAML()
             yaml.preserve_quotes = True
 
-            with open(self.project_yaml, encoding="utf-8") as f:
+            with open_in_repository(self.repo_path, self.project_yaml, encoding="utf-8") as f:
                 data = yaml.load(f)
 
             if data is None:
@@ -455,7 +459,7 @@ class DotProjectReader:
             from ruamel.yaml import YAML
 
             yaml = YAML()
-            with open(self.maintainers_yaml, encoding="utf-8") as f:
+            with open_in_repository(self.repo_path, self.maintainers_yaml, encoding="utf-8") as f:
                 data = yaml.load(f)
 
             if data is None:
@@ -671,8 +675,8 @@ class DotProjectReader:
             warnings.warn(
                 (
                     "The .project/ specification field `cncf_slack_channel` is "
-                    "deprecated upstream. This alias is accepted by darnit "
-                    "spec version 1.2.0 and will be removed in the next release. "
+                    "deprecated upstream. This alias is still accepted by "
+                    "darnit and will be removed in a future release. "
                     "Migrate to the `slack_channels` list form defined in the "
                     "CNCF spec: "
                     "https://github.com/cncf/automation/tree/main/utilities/dot-project"

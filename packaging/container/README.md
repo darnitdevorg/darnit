@@ -33,7 +33,7 @@ docker run --rm -i ghcr.io/kusari-oss/darnit:latest mcp
 docker run --rm ghcr.io/kusari-oss/darnit:latest --version
 ```
 
-The image's `WORKDIR` is `/repo`. The entrypoint dispatches the first arg to `darnit` (for `audit`/`remediate`/`list-controls`/`plan`/`profiles`/`validate`/`--version`/`--help`), to `darnit-mcp` for `mcp`, or executes the user's command directly otherwise.
+The image's `WORKDIR` is `/repo`. The entrypoint dispatches the first arg to `darnit` (for `audit`/`remediate`/`list-controls`/`plan`/`profiles`/`validate`/`--version`/`--help`), to `darnit serve` for `mcp`, or executes the user's command directly otherwise.
 
 ## Image contents
 

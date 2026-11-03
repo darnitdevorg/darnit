@@ -37,7 +37,7 @@ Signing behavior:
     - Locally: Opens browser for OIDC authentication
 
 Note:
-    Signing requires optional dependencies: pip install baseline-mcp[attestation]
+    Signing requires optional dependencies: pip install darnit-core[attestation]
 """
 
 # Git helpers

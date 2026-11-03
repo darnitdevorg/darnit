@@ -178,7 +178,8 @@ class HandlerInvocation(BaseModel):
     use_locator: bool = False
 
     # Conditional dispatch — handler is skipped when condition evaluates to false
-    # Keys are context keys, values are expected values (same semantics as control-level when)
+    # Keys are context keys, values are expected values, evaluated like control-level when
+    # (framework-design 5.1.1); in a remediation handler a missing key skips the handler
     # Consumed by orchestrator/executor before dispatch; NOT passed to the handler
     when: dict[str, Any] | None = None
 
@@ -697,6 +698,54 @@ class ControlConfig(BaseModel):
         if v is None:
             return {}
         return v
+
+    @model_validator(mode="after")
+    def _sync_level_and_domain_with_tags(self) -> "ControlConfig":
+        """Synchronize optional top-level attributes (level, domain, security_severity) with tags.
+
+        Framework controls may declare maturity level, domain, and severity either
+        as top-level attributes or inside the flexible tags dictionary (e.g. tags = { level = 1 }).
+        Top-level attributes are canonical. If present in only one location, values are synchronized.
+        Conflicting declarations or invalid tags.level types reject loading.
+        """
+        if "level" in self.tags:
+            tag_level = self.tags["level"]
+            if isinstance(tag_level, bool) or not isinstance(tag_level, int):
+                raise ValueError(f"tags.level must be an integer, got {tag_level!r} ({type(tag_level).__name__})")
+            if self.level is not None and self.level != tag_level:
+                raise ValueError(
+                    f"Conflicting level declarations: attribute level={self.level} != tags.level={tag_level}"
+                )
+            self.level = tag_level
+        elif self.level is not None:
+            self.tags["level"] = self.level
+
+        if "domain" in self.tags:
+            tag_domain = self.tags["domain"]
+            if not isinstance(tag_domain, str):
+                raise ValueError(f"tags.domain must be a string, got {tag_domain!r} ({type(tag_domain).__name__})")
+            if self.domain is not None and self.domain != tag_domain:
+                raise ValueError(
+                    f"Conflicting domain declarations: attribute domain={self.domain!r} != tags.domain={tag_domain!r}"
+                )
+            self.domain = tag_domain
+        elif self.domain is not None:
+            self.tags["domain"] = self.domain
+
+        if "security_severity" in self.tags:
+            tag_sev = self.tags["security_severity"]
+            if isinstance(tag_sev, bool) or not isinstance(tag_sev, (int, float)):
+                raise ValueError(f"tags.security_severity must be a number, got {tag_sev!r} ({type(tag_sev).__name__})")
+            tag_sev_float = float(tag_sev)
+            if self.security_severity is not None and self.security_severity != tag_sev_float:
+                raise ValueError(
+                    f"Conflicting security_severity declarations: attribute security_severity={self.security_severity} != tags.security_severity={tag_sev_float}"
+                )
+            self.security_severity = tag_sev_float
+        elif self.security_severity is not None:
+            self.tags["security_severity"] = self.security_severity
+
+        return self
 
 
 # =============================================================================
@@ -1557,43 +1606,3 @@ class FrameworkConfig(BaseModel):
         Note: Controls without a level (level=None) are not included.
         """
         return {control_id: control for control_id, control in self.controls.items() if control.level == level}
-
-    def get_controls_by_domain(self, domain: str) -> dict[str, ControlConfig]:
-        """Get all controls in a specific domain.
-
-        Note: Controls without a domain (domain=None) are not included.
-        """
-        return {control_id: control for control_id, control in self.controls.items() if control.domain == domain}
-
-
-# =============================================================================
-# Factory Functions
-# =============================================================================
-
-
-def create_framework_config(
-    name: str,
-    display_name: str,
-    version: str = "0.1.0",
-    spec_version: str | None = None,
-) -> FrameworkConfig:
-    """Create a minimal framework configuration.
-
-    Args:
-        name: Framework identifier (e.g., "openssf-baseline")
-        display_name: Human-readable name
-        version: Framework version
-        spec_version: Specification version being implemented
-
-    Returns:
-        Minimal FrameworkConfig instance
-    """
-    return FrameworkConfig(
-        metadata=FrameworkMetadata(
-            name=name,
-            display_name=display_name,
-            version=version,
-            spec_version=spec_version,
-        ),
-        controls={},
-    )

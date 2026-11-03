@@ -221,10 +221,6 @@ class ContextPromptRequest(BaseModel):
     priority: int = 0  # Higher = more important (usually len(control_ids))
 
 
-# Type alias for context organized by category
-ContextByCategory = dict[str, dict[str, ContextValue]]
-
-
 class Standing(str, Enum):
     """Whether a context value may be used (feature 042, FR-003)."""
 
@@ -277,94 +273,3 @@ class ResolvedValue(BaseModel):
 
 
 ContextPromptRequest.model_rebuild()
-
-
-class ContextCategory(BaseModel):
-    """A category of context values (governance, security, build, etc.).
-
-    Organizes related context values together.
-    Categories are defined by the store_as field in ContextDefinition.
-    """
-
-    model_config = ConfigDict(extra="allow")
-
-    # Dynamic fields are allowed via extra="allow"
-    # Each field is a ContextValue keyed by context key name
-
-
-# CNCF Extension Format Models (schema_version 1.1.0+)
-
-
-class ExtensionMetadata(BaseModel):
-    """Metadata for a CNCF .project extension.
-
-    Used in the extensions.openssf-baseline.metadata section.
-    """
-
-    author: str
-    homepage: str | None = None
-    version: str | None = None
-    description: str | None = None
-
-
-class BaselineExtensionConfig(BaseModel):
-    """Configuration for the openssf-baseline extension.
-
-    Used in extensions.openssf-baseline.config section.
-    Contains context values organized by category and control overrides.
-    """
-
-    model_config = ConfigDict(extra="allow")
-
-    # Context organized by category: governance, security, build, etc.
-    # Each category contains key -> ContextValue mappings
-    context: dict[str, dict[str, ContextValue | Any]] | None = None
-
-    # Control overrides: control_id -> {status, reason}
-    controls: dict[str, Any] | None = None
-
-
-class BaselineExtension(BaseModel):
-    """CNCF-compliant openssf-baseline extension.
-
-    Top-level structure for the extension in project.yaml:
-    extensions:
-      openssf-baseline:
-        metadata: {...}
-        config: {...}
-    """
-
-    metadata: ExtensionMetadata
-    config: BaselineExtensionConfig
-
-
-class ProjectExtensions(BaseModel):
-    """All extensions in a .project file.
-
-    Container for extensions defined in project.yaml.
-    Uses alias to handle hyphenated key names.
-    """
-
-    model_config = ConfigDict(populate_by_name=True, extra="allow")
-
-    openssf_baseline: BaselineExtension | None = Field(default=None, alias="openssf-baseline")
-    # Other extensions can be added here with similar pattern
-
-
-class CNCFProjectConfig(BaseModel):
-    """CNCF .project/project.yaml schema (v1.1.0+).
-
-    Top-level project configuration following CNCF conventions.
-    Uses the extensions: section for tool-specific data.
-
-    Note: The CNCF spec is still under development (PR #131).
-    This model may need updates as the spec evolves.
-    """
-
-    model_config = ConfigDict(extra="allow")
-
-    schema_version: str = "1.1.0"
-    name: str | None = None
-    description: str | None = None
-    type: str | None = None
-    extensions: ProjectExtensions | None = None

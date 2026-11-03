@@ -6,7 +6,7 @@
 #   audit, remediate, list-controls, plan, profiles, validate, --version, --help
 #     → forwarded to `darnit` CLI
 #   mcp
-#     → forwarded to `darnit-mcp` (stdio MCP server)
+#     → forwarded to `darnit serve` (stdio MCP server)
 #   anything else (including a path or shell command)
 #     → executed directly (escape hatch for advanced users)
 #
@@ -25,7 +25,7 @@ case "$1" in
         ;;
     mcp)
         shift
-        exec darnit-mcp "$@"
+        exec darnit serve "$@"
         ;;
     *)
         # Escape hatch — exec the user's command directly. Lets advanced

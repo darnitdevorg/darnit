@@ -19,6 +19,7 @@ from darnit.config.framework_schema import FrameworkConfig, TemplateConfig
 from darnit.config.loader import load_project_config
 from darnit.core.logging import get_logger
 from darnit.core.models import AuditResult
+from darnit.core.repo_files import open_in_repository
 from darnit.core.utils import (
     get_git_commit,
     get_git_ref,
@@ -65,15 +66,6 @@ _DOMAIN_LABELS: dict[str, str] = {
     "SA": "Security Architecture",
     "VM": "Vulnerability Management",
 }
-
-
-def _get_domain(control_id: str) -> str:
-    """Extract the 2-letter domain code from a control ID.
-
-    Example: "OSPS-VM-01.01" → "VM"
-    """
-    parts = control_id.split("-")
-    return parts[1] if len(parts) >= 2 else "??"
 
 
 def _resolve_categories_to_control_ids(
@@ -515,7 +507,7 @@ def _apply_declarative_remediation(
             import yaml
             project_yaml = os.path.join(local_path, ".project", "project.yaml")
             if os.path.isfile(project_yaml):
-                with open(project_yaml, encoding="utf-8") as f:
+                with open_in_repository(local_path, project_yaml, encoding="utf-8") as f:
                     raw = yaml.safe_load(f) or {}
                 # Flatten nested keys: {security: {contact: "x"}} -> {"security.contact": "x"}
                 def _flatten(d: dict, prefix: str = "") -> dict[str, str]:
@@ -1037,6 +1029,8 @@ def remediate_audit_findings(
     Returns:
         Markdown-formatted summary of applied or planned remediations
     """
+    from darnit.trust.decision import target_from_owner_repo
+
     return run_remediation(
         local_path=local_path,
         owner=owner,
@@ -1047,6 +1041,7 @@ def remediate_audit_findings(
         enhance_with_llm=enhance_with_llm,
         approve=approve,
         run_id=run_id,
+        target=target_from_owner_repo(owner, repo),
     ).markdown
 
 
@@ -1060,11 +1055,16 @@ def run_remediation(
     enhance_with_llm: bool = False,
     approve: list[str] | None = None,
     run_id: str | None = None,
+    target: str | None = None,
 ) -> RemediationReport:
     """:func:`remediate_audit_findings`, returning the run record with the report.
 
-    ``run`` is None when remediation did not run (an error, nothing to
-    remediate, or context that needs confirmation).
+    ``target`` is the repository identity the operator named; it alone
+    decides trust for the run, its context reads, and its re-check
+    (framework-design 14.2). ``owner`` and ``repo`` only address platform
+    calls and label the report, and are detected from the checkout when
+    not given. ``run`` is None when remediation did not run (an error,
+    nothing to remediate, or context that needs confirmation).
     """
     # Validate path
     resolved_path, path_error = validate_local_path(local_path)
@@ -1073,9 +1073,6 @@ def run_remediation(
     local_path = resolved_path
 
     from darnit.core.utils import detect_owner_repo
-    from darnit.trust.decision import target_from_owner_repo
-
-    target = target_from_owner_repo(owner, repo)
 
     # Auto-detect owner/repo (origin first)
     if not owner or not repo:
@@ -1117,8 +1114,15 @@ def run_remediation(
     error: str | None = None
 
     try:
-        from darnit.core.audit_cache import read_audit_cache
-        cache = read_audit_cache(local_path)
+        # Issue #542: remediation acts on a full level-3 audit of this
+        # framework, which is what it runs on a miss. A level-1, filtered or
+        # other-framework cache is a subset, so it must miss. The read goes
+        # through the store and key the audit writes to.
+        # Issue #659: pass target so an audit cached under a trusted target
+        # is not reused by an untrusted run.
+        from darnit.tools.audit import read_full_audit_cache
+
+        cache = read_full_audit_cache(local_path, "openssf-baseline", level=3, target=target)
     except Exception as exc:
         logger.warning(f"Audit cache read failed: {exc}")
         cache = None
@@ -1279,9 +1283,9 @@ def run_remediation(
         outcomes = _outcomes(results, lambda ids: _recheck(ids, local_path, owner, repo, target))
         if any(_written(r) or _applied_change_sets(r) for r in results):
             try:
-                from darnit.core import audit_cache
+                from darnit.tools.audit import invalidate_full_audit_cache
 
-                audit_cache.invalidate_audit_cache(local_path)
+                invalidate_full_audit_cache(local_path, "openssf-baseline")
             except Exception as exc:
                 logger.warning(f"Failed to invalidate audit cache: {exc}")
 
@@ -1355,6 +1359,15 @@ def _run_approvals(platform_approvals: list[Approval], results: list[dict[str, A
 def _written(r: dict[str, Any]) -> list[FileChange]:
     """The files this control's apply wrote."""
     return [FileChange.model_validate(c) for c in r.get("file_changes", []) if c.get("action") != "none"]
+
+
+def _written_or_kept(r: dict[str, Any]) -> list[FileChange]:
+    """The files this control's apply wrote, and those it kept because they have uncommitted user changes."""
+    return [
+        FileChange.model_validate(c)
+        for c in r.get("file_changes", [])
+        if c.get("action") != "none" or c.get("reason") == "user_changes_present"
+    ]
 
 
 def _applied_change_sets(r: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1446,7 +1459,7 @@ def _rechecked_outcome(r: dict[str, Any], result: dict[str, Any] | None, failure
     """The outcome of a control whose apply changed something, from its re-check (15.5)."""
     common: dict[str, Any] = {
         "control_id": r.get("control_id", "?"),
-        "file_changes": _written(r),
+        "file_changes": _written_or_kept(r),
         "change_sets": _applied_change_sets(r),
         "reason": "; ".join(r.get("references", []) + _enhancement_notes(r)) or None,
     }

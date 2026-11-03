@@ -1,0 +1,21 @@
+# Reference repositories for scripts/comply_replay.py (#655, #639).
+#
+# Each is replayed from a fixed commit taken before any compliance work, with
+# the answers a person gave for it. Recorded counts live in
+# comply_replay_expected.json.
+
+[references.wtf-frontend]
+url = "https://github.com/whiskeytastingfoundation/wtf-frontend.git"
+commit = "939e838"  # 2025-04-29, before the compliance PRs (#20, #31-#35)
+owner = "whiskeytastingfoundation"
+repo = "wtf-frontend"
+framework = "openssf-baseline"
+
+[references.wtf-frontend.answers]
+maintainers = ["@mlieberman85"]
+security_contact = "security@example.com"
+governance_model = "bdfl"
+is_library = false
+has_compiled_assets = false
+has_subprojects = false
+license_type = "apache-2.0"

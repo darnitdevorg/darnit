@@ -14,6 +14,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from darnit.core.repo_files import within_repository
 from darnit.remediation import git_state
 from darnit.remediation.plan import FileChange, content_digest, normalize_repo_path
 
@@ -69,14 +70,13 @@ def escaping_symlinks(root: str | Path, paths: Iterable[str]) -> list[str]:
     resolve inside the checkout yet leave a scratch copy (``../<checkout
     folder>/file``), so the preview checks the copy as well, before running.
     """
-    real_root = os.path.realpath(root)
     escaping = []
     for path in paths:
         full = os.path.join(root, path)
         if os.path.islink(full) and os.path.isabs(os.readlink(full)):
             escaping.append(path)
             continue
-        if os.path.commonpath([real_root, os.path.realpath(full)]) != real_root:
+        if not within_repository(root, full):
             escaping.append(path)
     return escaping
 

@@ -8,7 +8,6 @@ import json
 import os
 
 from darnit.config.discovery import (
-    discover_and_create_config,
     discover_ci_config,
     discover_files,
     discover_project_name,
@@ -318,38 +317,3 @@ class TestSyncDiscoveredToConfig:
         changes = sync_discovered_to_config(config, str(temp_dir))
 
         assert any("CI" in c for c in changes)
-
-
-# ---------------------------------------------------------------------------
-# discover_and_create_config
-# ---------------------------------------------------------------------------
-
-
-class TestDiscoverAndCreateConfig:
-    def test_creates_config_with_discovered_name_from_package_json(self, temp_dir):
-        (temp_dir / "package.json").write_text(json.dumps({"name": "cool-project"}))
-
-        config = discover_and_create_config(str(temp_dir))
-
-        assert config.name == "cool-project"
-
-    def test_creates_config_with_provided_name(self, temp_dir):
-        config = discover_and_create_config(str(temp_dir), name="explicit-name")
-
-        assert config.name == "explicit-name"
-
-    def test_config_local_path_set(self, temp_dir):
-        config = discover_and_create_config(str(temp_dir))
-
-        assert config.local_path == str(temp_dir)
-
-    def test_discovered_files_added_to_config(self, temp_dir):
-        (temp_dir / "SECURITY.md").write_text("# Security")
-
-        config = discover_and_create_config(
-            str(temp_dir),
-            file_locations={"security.policy": ["SECURITY.md"]},
-        )
-
-        assert config.security is not None
-        assert config.security.policy is not None

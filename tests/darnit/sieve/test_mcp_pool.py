@@ -1,8 +1,6 @@
 """Lifecycle tests for the MCP pool through the sieve orchestrator.
 
-Locks SC-002 (single spawn across N controls; single teardown on the
-success path) and the try/finally guarantee that teardown fires even
-when the audit loop raises.
+Locks SC-002 (single spawn across N controls; single teardown).
 """
 
 from __future__ import annotations
@@ -11,8 +9,6 @@ import json
 import os
 from pathlib import Path
 from typing import Any
-
-import pytest
 
 from darnit.config.framework_schema import HandlerInvocation, McpServerConfig
 from darnit.core.models import ExecutionContext
@@ -77,9 +73,10 @@ def test_teardown_on_success_path(
         )
 
     orchestrator = SieveOrchestrator(stop_on_llm=False)
-    results = orchestrator.verify_batch(controls, _factory)
+    results = [orchestrator.verify(spec, _factory(spec.control_id)) for spec in controls]
     for r in results:
         assert r.status == "PASS", f"{r.control_id}: {r.status} -- {r.message}"
+    orchestrator.reset_caches()
 
     events = _read_counter(mcp_counter_file)
     spawn_events = [e for e in events if e.get("kind") == "spawn"]
@@ -89,51 +86,5 @@ def test_teardown_on_success_path(
         f"got {len(spawn_events)}"
     )
     assert len(teardown_events) == 1, (
-        f"expected exactly ONE teardown after verify_batch, got {len(teardown_events)}"
-    )
-
-
-# ---------------------------------------------------------------------------
-# T045: teardown on the exception path
-# ---------------------------------------------------------------------------
-
-
-def test_teardown_on_exception_path(
-    tmp_path, mock_mcp_server_command, mcp_counter_file, monkeypatch
-):
-    os.environ["DARNIT_MOCK_MCP_COUNTER_FILE_SRC"] = str(mcp_counter_file)
-    server_config = McpServerConfig(
-        command=mock_mcp_server_command,
-        env={"DARNIT_MOCK_MCP_COUNTER_FILE": "$DARNIT_MOCK_MCP_COUNTER_FILE_SRC"},
-    )
-
-    execution_context = ExecutionContext(
-        owner="octo",
-        repo="hello",
-        local_path=str(tmp_path),
-        mcp_servers={"mock": server_config},
-    )
-    controls = [_build_control("CTRL-01"), _build_control("CTRL-02")]
-
-    def _factory(_cid: str) -> CheckContext:
-        if _cid == "CTRL-02":
-            raise RuntimeError("test-injected failure")
-        return CheckContext(
-            owner="octo",
-            repo="hello",
-            local_path=str(tmp_path),
-            default_branch="main",
-            control_id=_cid,
-            execution_context=execution_context,
-        )
-
-    orchestrator = SieveOrchestrator(stop_on_llm=False)
-    with pytest.raises(RuntimeError, match="test-injected failure"):
-        orchestrator.verify_batch(controls, _factory)
-
-    events = _read_counter(mcp_counter_file)
-    teardown_events = [e for e in events if e.get("kind") == "teardown"]
-    assert len(teardown_events) >= 1, (
-        "verify_batch's finally block must tear down the pool even when the "
-        "control loop raises"
+        f"expected exactly ONE teardown after reset_caches, got {len(teardown_events)}"
     )

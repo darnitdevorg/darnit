@@ -10,6 +10,7 @@ from typing import Any, NamedTuple
 
 from darnit.core.error_class import ErrorClass
 from darnit.core.logging import get_logger
+from darnit.core.repo_files import open_in_repository, within_repository
 from darnit.trust.identity import IdentitySource, RepositoryIdentity, canonical_identity
 
 logger = get_logger("utils")
@@ -616,25 +617,11 @@ def detect_owner_repo(
 
 
 def file_exists(local_path: str, *patterns: str) -> bool:
-    """Check if any file matching the patterns exists."""
+    """Check if any file matching the patterns exists inside the repository (framework-design.md 3.0.4)."""
     for pattern in patterns:
         matches = glob_module.glob(os.path.join(local_path, pattern), recursive=True)
-        if matches:
+        if any(within_repository(local_path, m) for m in matches):
             return True
-    return False
-
-
-def file_contains(local_path: str, filename_patterns: list[str], content_pattern: str) -> bool:
-    """Check if any matching file contains the content pattern."""
-    for pattern in filename_patterns:
-        for filepath in glob_module.glob(os.path.join(local_path, pattern), recursive=True):
-            try:
-                with open(filepath, encoding='utf-8', errors='ignore') as f:
-                    if re.search(content_pattern, f.read(), re.IGNORECASE):
-                        return True
-            except OSError as e:
-                logger.debug(f"Could not read {filepath}: {type(e).__name__}")
-                continue
     return False
 
 
@@ -643,17 +630,12 @@ def read_file(local_path: str, filename: str) -> str | None:
     filepath = os.path.join(local_path, filename)
     if os.path.exists(filepath):
         try:
-            with open(filepath, encoding='utf-8', errors='ignore') as f:
+            with open_in_repository(local_path, filepath, encoding='utf-8', errors='ignore') as f:
                 return f.read()
         except OSError as e:
             logger.debug(f"Could not read {filepath}: {type(e).__name__}")
             return None
     return None
-
-
-def make_result(control_id: str, status: str, details: str, level: int = 1) -> dict[str, Any]:
-    """Create a standardized result dictionary."""
-    return {"id": control_id, "status": status, "details": details, "level": level}
 
 
 def get_git_commit(local_path: str) -> str | None:
