@@ -1444,7 +1444,8 @@ look_for_urls = false
 
 [[controls."OSPS-DO-06.01".passes]]
 handler = "pattern"
-files = ["README.md", "CONTRIBUTING.md", "docs/dependencies.md", "DEPENDENCIES.md"]
+fail_on_miss = true  # missing from every file listed: FAIL, so remediation plans it (#665)
+files = ["README.md", "README.rst", "README.txt", "README", "CONTRIBUTING.md", "docs/dependencies.md", "docs/DEPENDENCIES.md", "DEPENDENCIES.md"]
 
 [controls."OSPS-DO-06.01".passes.pattern.patterns]
 dependency_docs = "(dependenc|package|library).*(select|obtain|track|manage|update|policy)"
@@ -3313,7 +3314,8 @@ help_md = """Document testing process.
 
 [[controls."OSPS-QA-06.02".passes]]
 handler = "pattern"
-files = ["README.md", "CONTRIBUTING.md", "docs/testing.md", "docs/TESTING.md"]
+fail_on_miss = true  # missing from every file listed: FAIL, so remediation plans it (#665)
+files = ["README.md", "README.rst", "README.txt", "README", "CONTRIBUTING.md", "docs/testing.md", "docs/TESTING.md"]
 
 [controls."OSPS-QA-06.02".passes.pattern.patterns]
 test_docs = "(run.*test|test.*instruction|how to test)"
@@ -3944,6 +3946,7 @@ help_md = """Document how to verify release author.
 
 [[controls."OSPS-DO-03.02".passes]]
 handler = "pattern"
+fail_on_miss = true  # missing from every file listed: FAIL, so remediation plans it (#665)
 # rst/txt/no-ext README variants added so this pass can PASS/FAIL
 # deterministically on projects that don't ship .md-based READMEs
 # (Python/Sphinx projects like tqdm surfaced the gap; see issue #402).
@@ -4003,6 +4006,7 @@ help_md = """Document support policy.
 
 [[controls."OSPS-DO-04.01".passes]]
 handler = "pattern"
+fail_on_miss = true  # missing from every file listed: FAIL, so remediation plans it (#665)
 # rst/txt/no-ext README variants added (see #402 sibling change).
 files = ["SUPPORT.md", "SECURITY.md", "README.md", "README.rst", "README.txt", "README", "docs/support.md"]
 
@@ -4068,6 +4072,7 @@ help_md = """Document end-of-life policy.
 
 [[controls."OSPS-DO-05.01".passes]]
 handler = "pattern"
+fail_on_miss = true  # missing from every file listed: FAIL, so remediation plans it (#665)
 # rst/txt/no-ext README variants added (see #402 sibling change).
 files = ["SUPPORT.md", "SECURITY.md", "README.md", "README.rst", "README.txt", "README", "CONTRIBUTING.md"]
 
@@ -4222,9 +4227,10 @@ look_for_urls = true
 
 [[controls."OSPS-SA-01.01".passes]]
 handler = "pattern"
+fail_on_miss = true  # missing from every file listed: FAIL, so remediation plans it (#665)
 # rst variants added; ARCHITECTURE/DESIGN commonly live as .rst
 # in Sphinx-based Python projects.
-files = ["ARCHITECTURE.md", "ARCHITECTURE.rst", "docs/architecture.md", "docs/architecture.rst", "docs/design.md", "docs/design.rst", "DESIGN.md", "DESIGN.rst", "README.md", "README.rst"]
+files = ["ARCHITECTURE.md", "ARCHITECTURE.rst", "docs/architecture.md", "docs/architecture.rst", "docs/design.md", "docs/design.rst", "DESIGN.md", "DESIGN.rst", "README.md", "README.rst", "README.txt", "README"]
 pass_if_any = true
 
 [controls."OSPS-SA-01.01".passes.pattern.patterns]
