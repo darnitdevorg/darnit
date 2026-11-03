@@ -429,18 +429,12 @@ def cmd_plan(args: argparse.Namespace) -> int:
     run 'darnit serve' and connect via MCP.
     """
     from darnit.config import (
+        load_controls_from_effective,
         load_effective_config,
         load_effective_config_auto,
         load_effective_config_by_name,
     )
     from darnit.filtering import matches_filters, parse_tags_arg
-
-    if getattr(args, "profile", None):
-        # `plan` crashes on frameworks whose controls carry no level (#568), so
-        # the flag cannot be wired in a way that can be tested on the Baseline.
-        # Refusing is better than accepting it and printing the full plan.
-        logger.error("darnit plan does not support --profile yet (#568); use darnit audit --profile")
-        return 1
 
     repo_path = Path(args.repo_path).resolve()
 
@@ -465,15 +459,28 @@ def cmd_plan(args: argparse.Namespace) -> int:
     include_ids = set(args.include.split(",")) if args.include else None
     exclude_ids = set(args.exclude.split(",")) if args.exclude else set()
 
+    # --profile narrows the plan to the controls the named audit profile selects.
+    profile = getattr(args, "profile", None)
+    if profile:
+        profile_ids = _resolve_profile_ids(profile, config, load_controls_from_effective(config))
+        if profile_ids is None:
+            return 1
+        include_ids = profile_ids if include_ids is None else include_ids & profile_ids
+        if not include_ids:
+            logger.error(f"Profile '{profile}' and --include have no controls in common")
+            return 1
+
     logger.info(f"=== Execution Plan: {config.framework_name} ===")
     logger.info(f"Framework: {config.framework_name} v{config.framework_version}")
     if config.spec_version:
         logger.info(f"Spec: {config.spec_version}")
     logger.info(f"Repository: {repo_path}")
+    if profile:
+        logger.info(f"Profile: {profile}")
     if filters:
         logger.info(f"Filters: {', '.join(f'{f.field}{f.operator}{f.value}' for f in filters)}")
-    if include_ids:
-        logger.info(f"Include: {', '.join(sorted(include_ids))}")
+    if args.include:
+        logger.info(f"Include: {', '.join(sorted(set(args.include.split(','))))}")
     if exclude_ids:
         logger.info(f"Exclude: {', '.join(sorted(exclude_ids))}")
 
@@ -515,6 +522,10 @@ def cmd_plan(args: argparse.Namespace) -> int:
 
     if total_filtered > 0:
         logger.info(f"({total_filtered} controls filtered out)")
+
+    if total_shown == 0 and profile:
+        logger.error(f"Profile '{profile}' and the other filters leave no controls to plan")
+        return 1
 
     return 0
 
