@@ -17,12 +17,35 @@ This document maps out the decision-making processes in the OpenSSF Baseline MCP
 ## Main Audit Flow
 
 ```text
-audit_openssf_baseline(owner, repo, local_path, level)
-    → Validate the repository path and identity
-    → Load framework rules and operator configuration
-    → Read project metadata from .project/ and resolve context values
-    → Run the selected controls through the sieve
-    → Calculate compliance and format the report
+┌────────────────────────────────────────────────────────────────┐
+│ audit_openssf_baseline(owner, repo, local_path, level)         │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Validate the repository path and identity                      │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Load framework rules and operator configuration                │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Read .project/ metadata and resolve context values             │
+│ Reads do not create files or save discoveries                  │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Run selected controls through the sieve                        │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Calculate compliance and format the report                     │
+└────────────────────────────────────────────────────────────────┘
 ```
 
 Auditing does not create project configuration or save discovered values.
@@ -160,11 +183,27 @@ The project context system allows users to confirm facts about their project tha
 ### 3.1 Context Resolution
 
 ```text
-resolve_context(local_path, definitions)
-    → Read stored values, confirmation records, and current detection results
-    → Assign each key a standing: confirmed, concluded, candidate, or unknown
-    → usable() returns confirmed values and concluded auto-detect values
-    → get_pending_data shows relevant candidates and unknown values to the person
+┌────────────────────────────────────────────────────────────────┐
+│ resolve_context(local_path, definitions)                       │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Read stored values, confirmation records,                      │
+│ and current detection results                                  │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Assign each key a standing:                                    │
+│ confirmed, concluded, candidate, or unknown                    │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ usable(): confirmed + concluded auto-detect values             │
+│ get_pending_data(): relevant candidates + unknown values       │
+└────────────────────────────────────────────────────────────────┘
 ```
 
 A value entered by hand in `.project/` is not automatically confirmed.
@@ -200,6 +239,24 @@ A value entered by hand in `.project/` is not automatically confirmed.
 
 ### 3.3 CI Provider Context
 
+```text
+┌────────────────────────────────────────────────────────────────┐
+│ Read CI files and resolve context values                       │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Use confirmed values or concluded auto-detect values           │
+│ Keep unconfirmed values as candidates                          │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Evaluate the control using the available evidence              │
+│ A tool name in a workflow does not prove its checks pass       │
+└────────────────────────────────────────────────────────────────┘
+```
+
 CI files provide evidence about the provider and configured tools. Context values
 are read through `resolve_context()`; checks use only confirmed values or values
 concluded by an `auto_detect = true` key in the current run. Finding a tool name
@@ -210,10 +267,31 @@ in a workflow is evidence, not proof that its checks pass.
 Use the MCP tools instead of editing a legacy TOML context section:
 
 ```text
-get_pending_data(local_path="/path/to/repo", owner="example", repo="project")
-    → Show the questions and any unconfirmed candidates to the person
-    → Record their answers with confirm_project_data
-    → Call get_pending_data again for the next batch
+┌────────────────────────────────────────────────────────────────┐
+│ get_pending_data(local_path=..., owner=..., repo=...)          │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Show questions and unconfirmed candidates to the person        │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Person answers or explicitly accepts a candidate               │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ confirm_project_data(local_path=..., owner=..., repo=...)      │
+│ Record only the answers the person provided                    │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Call get_pending_data again for the next batch                 │
+│ Repeat until no questions remain                               │
+└────────────────────────────────────────────────────────────────┘
 ```
 
 For example, after the person explicitly says the project has no subprojects:
@@ -488,16 +566,50 @@ Only after the person accepts does the agent fill in the digest; the confirmatio
 ### 5.1 Loading Project Configuration
 
 ```text
-load_project_config_checked(local_path)
-    → Read .project/project.yaml (standard project metadata)
-    → Read .project/darnit.yaml (DARNIT context and claims)
-    → Validate each file and report whether it is absent, valid, or invalid
+┌────────────────────────────────────────────────────────────────┐
+│ load_project_config_checked(local_path)                        │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Read .project/project.yaml: standard project metadata          │
+│ Read .project/darnit.yaml: DARNIT context and claims           │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Validate each file independently                               │
+│ Report absent, valid, or invalid; do not write files           │
+└────────────────────────────────────────────────────────────────┘
 ```
 
 `load_project_config()` provides the combined project configuration for readers.
 It does not create files or save discoveries.
 
 ### 5.2 Writing Project Data
+
+```text
+┌────────────────────────────────────────────────────────────────┐
+│ Person explicitly confirms project data                        │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ confirm_project_data → config/context_writes.py                │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Validate project files                                         │
+│ If either file is invalid: refuse the write                    │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Trusted repository: write to .project/darnit.yaml              │
+│ Otherwise: store the confirmation operator-side                │
+└────────────────────────────────────────────────────────────────┘
+```
 
 Context confirmations go through `confirm_project_data` and
 `config/context_writes.py`. Writers refuse invalid project files instead of
@@ -1021,11 +1133,26 @@ Use the provided verification script instead.
 
 ## Configuration Files Summary
 
-| File | Purpose | Written by |
-|------|---------|------------|
-| `.project/project.yaml` | Standard project metadata and document references | Project authors; declared remediation updates |
-| `.project/darnit.yaml` | DARNIT context, confirmations, and control claims | Explicit confirmations for trusted repositories; declared remediation updates |
-| `~/.config/darnit/config.toml` | Operator settings, trust, plugins, and control overrides | The operator |
+```text
+┌────────────────────────────────────────────────────────────────┐
+│ .project/project.yaml                                          │
+│ Standard project metadata and document references              │
+│ Written by project authors or declared remediation updates     │
+└────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────┐
+│ .project/darnit.yaml                                           │
+│ DARNIT context, confirmations, and control claims              │
+│ Written by explicit confirmations for trusted repositories     │
+│ or declared remediation updates                                │
+└────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────┐
+│ ~/.config/darnit/config.toml                                   │
+│ Operator settings, trust, plugins, and control overrides       │
+│ Written by the operator                                        │
+└────────────────────────────────────────────────────────────────┘
+```
 
 An audit reads these files without syncing discoveries back into them. Repository
 content cannot override operator settings. `.baseline.toml` is no longer read;
