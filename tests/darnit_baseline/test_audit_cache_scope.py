@@ -23,7 +23,7 @@ def test_only_an_unfiltered_audit_is_cached(tmp_path, profile, cached) -> None:
 
     _repo_with_one_commit(tmp_path)
 
-    audit_openssf_baseline(local_path=str(tmp_path), profile=profile, auto_init_config=False)
+    audit_openssf_baseline(local_path=str(tmp_path), profile=profile)
 
     cache = read_full_audit_cache(str(tmp_path), "openssf-baseline", level=3)
     assert (cache is not None) is cached

@@ -13,8 +13,7 @@ Guide the user through providing missing project data that darnit needs for accu
 
 ## Workflow
 
-1. Call `get_pending_data` MCP tool with `local_path` set to the repository root and `level` set to `3`.
-   - If the user mentioned a profile, pass it as the `profile` parameter to scope questions to that profile's controls.
+1. Call `get_pending_data` MCP tool with `local_path` set to the repository root.
    - This call writes nothing.
 
 2. The tool returns a batch of `questions` (and `ask_user_batch` for the ones a selector can hold). For each question:
