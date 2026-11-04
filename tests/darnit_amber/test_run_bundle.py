@@ -1263,10 +1263,10 @@ def test_cli_rerun_refuses_without_a_terminal_or_yes(monkeypatch, capsys):
 # --- real bundles made on the darnit VM (see the fixtures' README): verifiable forever because verify uses the
 # timestamp's time, and offline because the trusted root is the copy sigstore-python ships ---
 
-FIXTURE_IDENTITY = "97e67cac94a6de720146c3a6e4002c14bc37caf4aacc074447ff5424c1c7cbf5"
+FIXTURE_IDENTITY = "fcaecc716ae5ebc4acc2ca53b5e823bc4743978633e257a823a4f0152bfb4aef"
 FIXTURE_IDENTITY_SUBJECT = ("md6796@nyu.edu", "https://github.com/login/oauth")
-FIXTURE_PUBLISHED = "7b3039f7e11b5dad4adad29901861c137c81e2003125cf820b6f31566c8ca844"
-FIXTURE_PUBLISHED_LOG_INDEXES = {"amber-audit": 3599179102, "experiment": 3599180143}
+FIXTURE_PUBLISHED = "c3e2fda5054fc34e3dc2b3f7f6596f0a14055064e9206b9a87705dfa399a35f4"
+FIXTURE_PUBLISHED_LOG_INDEXES = {"statement": 3691869540, "amber-audit": 3691869544, "experiment": 3691869564}
 
 
 @pytest.fixture
