@@ -250,6 +250,26 @@ def _baseline_controls():
     return _controls()
 
 
+def _planned_control_ids(caplog: pytest.LogCaptureFixture) -> set[str]:
+    """Control IDs the plan command listed, one bullet per control."""
+    prefix = "  • "
+    found = set()
+    for record in caplog.records:
+        message = record.message
+        if message.startswith(prefix) and ": " in message:
+            found.add(message.removeprefix(prefix).split(": ", 1)[0])
+    return found
+
+
+def _run_plan(argv: list[str], caplog: pytest.LogCaptureFixture) -> tuple[int, set[str]]:
+    import logging
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        code = main(argv)
+    return code, _planned_control_ids(caplog)
+
+
 def test_resolve_profile_ids_selects_the_profile_controls():
     from darnit.cli import _resolve_profile_ids
 
@@ -318,11 +338,279 @@ def test_audit_profile_with_a_tag_that_leaves_nothing_fails(tmp_path, caplog):
     assert any("leave no controls" in record.message for record in caplog.records)
 
 
-def test_plan_rejects_profile_until_568(tmp_path, caplog):
-    code = main(["plan", "-f", "community-spec", "--profile", "required_files", str(tmp_path)])
+def test_plan_profile_shows_exactly_level1_quick_controls(tmp_path, caplog):
+    """openssf-baseline --profile level1_quick lists that profile and nothing else."""
+    from darnit.cli import _resolve_profile_ids
+
+    controls = _baseline_controls()
+    expected = {c.control_id for c in controls if c.level == 1}
+
+    assert expected
+    assert expected < {c.control_id for c in controls}
+    assert _resolve_profile_ids("level1_quick", _config(), controls) == expected
+
+    code, shown = _run_plan(
+        ["plan", "-f", "openssf-baseline", "--profile", "level1_quick", str(tmp_path)],
+        caplog,
+    )
+
+    assert code == 0
+    assert shown == expected
+    assert "OSPS-BR-02.01" not in shown
+
+
+def test_plan_profile_shows_community_spec_required_files(tmp_path, caplog):
+    """community-spec --profile required_files lists the profile's controls."""
+    from darnit.cli import _resolve_profile_ids
+
+    expected = {
+        "CSL-01.01",
+        "CSL-01.02",
+        "CSL-02.01",
+        "CSL-03.01",
+        "CSL-04.01",
+        "CSL-05.01",
+    }
+    resolved = _resolve_profile_ids("required_files", _config("community-spec"), _controls("community-spec"))
+    assert resolved == expected
+
+    code, shown = _run_plan(
+        ["plan", "-f", "community-spec", "--profile", "required_files", str(tmp_path)],
+        caplog,
+    )
+
+    assert code == 0
+    assert shown == expected
+    assert "CSL-06.01" not in shown
+
+
+def test_plan_unknown_profile_fails(tmp_path, caplog):
+    code, shown = _run_plan(
+        ["plan", "-f", "openssf-baseline", "--profile", "no-such-profile", str(tmp_path)],
+        caplog,
+    )
 
     assert code == 1
-    assert any("#568" in record.message for record in caplog.records)
+    assert shown == set()
+    assert any("Cannot use profile 'no-such-profile'" in record.message for record in caplog.records)
+
+
+def test_plan_profile_unknown_to_the_loaded_framework_fails(tmp_path, caplog):
+    code, shown = _run_plan(
+        ["plan", "-f", "community-spec", "--profile", "openssf-baseline:level1_quick", str(tmp_path)],
+        caplog,
+    )
+
+    assert code == 1
+    assert shown == set()
+    assert any("Cannot use profile" in record.message for record in caplog.records)
+
+
+def test_plan_profile_that_selects_no_controls_fails(tmp_path, caplog):
+    framework = tmp_path / "empty_profile.toml"
+    framework.write_text(
+        """[metadata]
+name = "empty-profile"
+display_name = "Empty Profile"
+version = "0.1.0"
+description = "A profile whose filters match nothing"
+
+[audit_profiles.nothing]
+description = "Matches no controls"
+tags = { level = 9 }
+
+[controls."EMP-01"]
+name = "Present"
+description = "A control the profile does not select"
+level = 1
+"""
+    )
+
+    code, shown = _run_plan(["plan", "-f", str(framework), "--profile", "nothing", str(tmp_path)], caplog)
+
+    assert code == 1
+    assert shown == set()
+    assert any("selects no controls" in record.message for record in caplog.records)
+
+
+def test_plan_profile_and_include_with_no_overlap_fails(tmp_path, caplog):
+    code, shown = _run_plan(
+        [
+            "plan",
+            "-f",
+            "openssf-baseline",
+            "--profile",
+            "level1_quick",
+            "--include",
+            "OSPS-BR-02.01",
+            str(tmp_path),
+        ],
+        caplog,
+    )
+
+    assert code == 1
+    assert shown == set()
+    assert any("no controls in common" in record.message for record in caplog.records)
+
+
+def test_plan_profile_intersects_include(tmp_path, caplog):
+    """--include keeps only the overlap with the profile."""
+    code, shown = _run_plan(
+        [
+            "plan",
+            "-f",
+            "openssf-baseline",
+            "--profile",
+            "level1_quick",
+            "--include",
+            "OSPS-AC-01.01,OSPS-BR-02.01",
+            str(tmp_path),
+        ],
+        caplog,
+    )
+
+    assert code == 0
+    assert shown == {"OSPS-AC-01.01"}
+
+
+def test_plan_profile_honors_exclude(tmp_path, caplog):
+    expected = {c.control_id for c in _baseline_controls() if c.level == 1} - {"OSPS-AC-01.01"}
+
+    code, shown = _run_plan(
+        [
+            "plan",
+            "-f",
+            "openssf-baseline",
+            "--profile",
+            "level1_quick",
+            "--exclude",
+            "OSPS-AC-01.01",
+            str(tmp_path),
+        ],
+        caplog,
+    )
+
+    assert code == 0
+    assert shown == expected
+
+
+def test_plan_profile_honors_tags(tmp_path, caplog):
+    expected = {c.control_id for c in _baseline_controls() if c.level == 1 and c.domain == "AC"}
+    assert expected
+    assert "OSPS-BR-01.01" not in expected
+
+    code, shown = _run_plan(
+        ["plan", "-f", "openssf-baseline", "--profile", "level1_quick", "-t", "domain=AC", str(tmp_path)],
+        caplog,
+    )
+
+    assert code == 0
+    assert shown == expected
+
+
+def test_plan_profile_combines_include_exclude_and_tags(tmp_path, caplog):
+    """Each filter removes a control the others would have kept."""
+    code, shown = _run_plan(
+        [
+            "plan",
+            "-f",
+            "openssf-baseline",
+            "--profile",
+            "level1_quick",
+            "--include",
+            "OSPS-AC-01.01,OSPS-AC-03.01,OSPS-BR-01.01,OSPS-AC-04.01",
+            "--exclude",
+            "OSPS-AC-03.01",
+            "-t",
+            "domain=AC",
+            str(tmp_path),
+        ],
+        caplog,
+    )
+
+    assert code == 0
+    assert shown == {"OSPS-AC-01.01"}
+
+
+def test_plan_profile_and_tag_that_leaves_nothing_fails(tmp_path, caplog):
+    code, shown = _run_plan(
+        ["plan", "-f", "openssf-baseline", "--profile", "level1_quick", "-t", "level=3", str(tmp_path)],
+        caplog,
+    )
+
+    assert code == 1
+    assert shown == set()
+    assert any("leave no controls" in record.message for record in caplog.records)
+
+
+def test_plan_profile_include_excluded_entirely_fails(tmp_path, caplog):
+    code, shown = _run_plan(
+        [
+            "plan",
+            "-f",
+            "openssf-baseline",
+            "--profile",
+            "level1_quick",
+            "--include",
+            "OSPS-AC-01.01",
+            "--exclude",
+            "OSPS-AC-01.01",
+            str(tmp_path),
+        ],
+        caplog,
+    )
+
+    assert code == 1
+    assert shown == set()
+    assert any("leave no controls" in record.message for record in caplog.records)
+
+
+def test_plan_profile_includes_controls_with_no_level(tmp_path, caplog):
+    """A profile can select a control that declares no maturity level."""
+    framework = tmp_path / "unleveled.toml"
+    framework.write_text(
+        """[metadata]
+name = "unleveled-profile"
+display_name = "Unleveled Profile"
+version = "0.1.0"
+description = "Profile selects a control with no level"
+
+[audit_profiles.only_unleveled]
+description = "The control with no level"
+controls = ["MIX-NONE"]
+
+[controls."MIX-01"]
+name = "LevelOne"
+description = "Has a level"
+level = 1
+
+[controls."MIX-NONE"]
+name = "Unleveled"
+description = "Control without a level"
+"""
+    )
+
+    code, shown = _run_plan(
+        ["plan", "-f", str(framework), "--profile", "only_unleveled", str(tmp_path)],
+        caplog,
+    )
+
+    assert code == 0
+    assert shown == {"MIX-NONE"}
+    assert "No level (1 controls):" in caplog.text
+    assert "Level 1" not in caplog.text
+
+
+def test_plan_without_profile_lists_controls_a_profile_would_omit(tmp_path, caplog):
+    """Omitting --profile still plans the whole framework."""
+    expected = {c.control_id for c in _baseline_controls()}
+
+    code, shown = _run_plan(["plan", "-f", "openssf-baseline", str(tmp_path)], caplog)
+
+    assert code == 0
+    assert shown == expected
+    assert "OSPS-AC-01.01" in shown
+    assert "OSPS-BR-02.01" in shown
 
 
 def test_profiles_command_lists_profiles_from_the_framework_config(caplog):
