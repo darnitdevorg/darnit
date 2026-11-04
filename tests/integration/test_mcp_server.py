@@ -93,7 +93,7 @@ class TestMCPServerIntegration:
                 tools_result = await session.list_tools()
                 tool_names = [t.name for t in tools_result.tools]
 
-                # Verify all 22 expected tools are present
+                # Verify all 23 expected tools are present
                 expected_tools = [
                     # Audit
                     "audit_openssf_baseline",
@@ -123,14 +123,15 @@ class TestMCPServerIntegration:
                     "run_next_action",
                     "submit_action_result",
                     # Judgments & Candidates (Feature 041)
+                    "get_judgment_requests",
                     "submit_judgment",
                     "confirm_pass_candidate",
                 ]
                 for tool in expected_tools:
                     assert tool in tool_names, f"Missing tool: {tool}"
 
-                # Should have exactly 22 tools
-                assert len(tool_names) == 22, f"Expected 22 tools, got {len(tool_names)}: {tool_names}"
+                # Should have exactly 23 tools
+                assert len(tool_names) == 23, f"Expected 23 tools, got {len(tool_names)}: {tool_names}"
 
     @pytest.mark.asyncio
     async def test_list_available_checks(self, mcp_server_params):

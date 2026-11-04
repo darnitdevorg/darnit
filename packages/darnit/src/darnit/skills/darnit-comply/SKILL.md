@@ -23,7 +23,7 @@ Darnit registers tools per implementation module. Look for available tools match
 
 ### 1. Initial audit
 
-Call the appropriate `audit_*` tool with `output_format: "summary"` and any profile the user mentioned. The "summary" format returns compact JSON (~5-8K vs ~164K for full JSON). Present a brief summary: total controls, pass/fail/warn counts, compliance percentage. For each PENDING control with `pending.kind = "llm_judgment"`, follow the `/darnit-audit` skill: call `submit_judgment` with your verdict, reasoning, and passages copied verbatim from the files in `evidence.llm_consultation.file_contents`. Never state your own verdict as the audit result: a `"pass"` becomes a PASS candidate that stays non-compliant until the operator confirms it.
+Call the appropriate `audit_*` tool with `output_format: "summary"` and any profile the user mentioned. The "summary" format returns compact JSON; PENDING rows carry `pending.kind`. Do not use `output_format: "json"`: it is too large for a tool result. Present a brief summary: total controls, pass/fail/warn counts, compliance percentage. If any row has `pending.kind = "llm_judgment"`, follow the `/darnit-audit` skill: call `get_judgment_requests` with `owner`, `repo`, and `local_path` (and again with `control_ids` set to `remaining` until it is empty), then for each request call `submit_judgment` with your verdict, reasoning, and passages copied verbatim from the `content` of the request's files. Never state your own verdict as the audit result: a `"pass"` becomes a PASS candidate that stays non-compliant until the operator confirms it.
 
 ### 2. Collect data (if needed)
 
