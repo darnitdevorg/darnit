@@ -146,7 +146,7 @@ Confirm context with the `confirm_project_data` MCP tool, which records who conf
 | `ci_provider` | enum | Yes | BR-01.01, BR-01.02, AC-04.01, AC-04.02 | When-clause: controls only run if `"github"` |
 | `license_type` | enum (`mit`, `apache-2.0`, `bsd-3-clause`, `other`) | No | LE-02.01, LE-03.01 | Selects the LICENSE template when no license file exists; `other` gives manual steps. darnit never picks a license |
 
-**Auto-detected without prompting:** `detected_ecosystem` (from manifest files: pyproject.toml → python, package.json → node, Cargo.toml → rust, go.mod → go) is detected automatically by `collect_auto_context()` and injected into both audit and remediation paths. It never appears in `get_pending_context` questions.
+**Auto-detected without prompting:** `detected_ecosystem` (from manifest files: pyproject.toml → python, package.json → node, Cargo.toml → rust, go.mod → go) is detected automatically by `collect_auto_context()` and injected into both audit and remediation paths. It never appears in `get_pending_data` questions.
 
 ## Remediation Capabilities
 
@@ -296,7 +296,7 @@ Verification-only controls that check conditions which already exist or can't be
 - Manual-only controls have varying depth of guidance (some have 2 steps, some have 6)
 - `dependabot.yml` auto-detects project ecosystem — falls back to `github-actions` only if ecosystem is unrecognized
 - Ecosystem detection maps primary language to ecosystem (python→python, javascript/typescript→node, go→go, rust→rust, java→java, ruby→ruby); unrecognized languages get no ecosystem
-- **Monorepo limitation:** Language and ecosystem auto-detection only checks manifest files at the repository root (e.g., `pyproject.toml`, `go.mod`, `package.json`). Nested service directories are not scanned. In a monorepo with multiple languages, only the root-level manifest is detected — check order favors Go and Rust over Python and JavaScript. Use `confirm_project_data(detected_ecosystem="...")` to override if the wrong ecosystem is selected
+- **Monorepo limitation:** Language and ecosystem auto-detection only checks manifest files at the repository root (e.g., `pyproject.toml`, `go.mod`, `package.json`). Nested service directories are not scanned. In a monorepo with multiple languages, only the root-level manifest is detected — check order favors Go and Rust over Python and JavaScript. `detected_ecosystem` is not a confirmable context key, so `confirm_project_data` cannot override it.
 
 ## External Tool Dependencies
 

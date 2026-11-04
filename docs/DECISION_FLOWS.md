@@ -17,77 +17,39 @@ This document maps out the decision-making processes in the OpenSSF Baseline MCP
 ## Main Audit Flow
 
 ```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                        audit_openssf_baseline()                              │
-│                     (owner, repo, local_path, level)                        │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                      │
-                                      ▼
-                    ┌─────────────────────────────────┐
-                    │   Validate & Resolve local_path  │
-                    │   - Must be absolute path        │
-                    │   - Must exist                   │
-                    │   - Check owner/repo match       │
-                    └─────────────────────────────────┘
-                                      │
-                           ┌──────────┴──────────┐
-                           │                     │
-                           ▼                     ▼
-                     [Valid Path]          [Invalid Path]
-                           │                     │
-                           │                     └──► Return Error
-                           ▼
-          ┌────────────────────────────────────────────┐
-          │        Load project.toml (if exists)        │
-          └────────────────────────────────────────────┘
-                           │
-              ┌────────────┼────────────┐
-              │            │            │
-              ▼            ▼            ▼
-        [Exists]    [Not Found]   [auto_init=False]
-              │            │            │
-              │            │            └──► Skip config
-              │            │
-              ▼            ▼
-   ┌──────────────┐  ┌──────────────────────────┐
-   │ Sync missing │  │ Auto-create project.toml │
-   │ discoveries  │  │ from discovered files    │
-   └──────────────┘  └──────────────────────────┘
-              │                    │
-              └────────┬───────────┘
-                       │
-                       ▼
-          ┌────────────────────────────────────┐
-          │   Discover files & CI config        │
-          │   (SECURITY.md, workflows, etc.)    │
-          └────────────────────────────────────┘
-                       │
-                       ▼
-          ┌────────────────────────────────────┐
-          │     Run Checks via Sieve System     │
-          │                                     │
-          │  Level 1: 24 controls (always)      │
-          │  Level 2: 18 controls (if level≥2)  │
-          │  Level 3: 20 controls (if level≥3)  │
-          │                                     │
-          │  Each control runs through 4-phase  │
-          │  sieve (see Sieve Verification)     │
-          └────────────────────────────────────┘
-                       │
-                       ▼
-          ┌────────────────────────────────────┐
-          │    Filter by Control Applicability  │
-          │    (project type, N/A overrides)    │
-          └────────────────────────────────────┘
-                       │
-                       ▼
-          ┌────────────────────────────────────┐
-          │      Generate Markdown Report       │
-          │   - Summary (PASS/FAIL/WARN/N/A)    │
-          │   - Failures with remediation       │
-          │   - Warnings                        │
-          └────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│ audit_openssf_baseline(owner, repo, local_path, level)         │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Validate the repository path and identity                      │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Load framework rules and operator configuration                │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Read .project/ metadata and resolve context values             │
+│ Reads do not create files or save discoveries                  │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Run selected controls through the sieve                        │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Calculate compliance and format the report                     │
+└────────────────────────────────────────────────────────────────┘
 ```
+
+Auditing does not create project configuration or save discovered values.
+Unconfirmed candidates remain pending until the person confirms them.
 
 ---
 
@@ -221,48 +183,31 @@ The project context system allows users to confirm facts about their project tha
 ### 3.1 Context Resolution
 
 ```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                     Check needs project context                              │
-│                  (e.g., CI provider, has_subprojects)                        │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                      │
-                                      ▼
-                    ┌─────────────────────────────────┐
-                    │ is_context_confirmed(local_path, │
-                    │                    context_key)  │
-                    └─────────────────────────────────┘
-                                      │
-                           ┌──────────┴──────────┐
-                           │                     │
-                           ▼                     ▼
-                    [Key in config]        [Key not found]
-                           │                     │
-                           ▼                     ▼
-              ┌─────────────────────┐   ┌─────────────────────┐
-              │ get_context_value() │   │ Return INCONCLUSIVE │
-              │                     │   │ with prompt to      │
-              │ Returns user's      │   │ confirm in          │
-              │ confirmed value     │   │ project.toml        │
-              └─────────────────────┘   └─────────────────────┘
-                           │                     │
-                           ▼                     │
-              ┌─────────────────────┐            │
-              │ Use value in check  │            │
-              │ logic:              │            │
-              │                     │            │
-              │ ci_provider="none"  │            │
-              │  → N/A for CI checks│            │
-              │                     │            │
-              │ ci_provider="gitlab"│            │
-              │  → Check .gitlab-ci │            │
-              │    OR manual verify │            │
-              └─────────────────────┘            │
-                           │                     │
-                           └──────────┬──────────┘
-                                      │
-                                      ▼
-                                [Continue check]
+┌────────────────────────────────────────────────────────────────┐
+│ resolve_context(local_path, definitions)                       │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Read stored values, confirmation records,                      │
+│ and current detection results                                  │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Assign each key a standing:                                    │
+│ confirmed, concluded, candidate, or unknown                    │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ usable(): confirmed + concluded auto-detect values             │
+│ get_pending_data(): relevant candidates + unknown values       │
+└────────────────────────────────────────────────────────────────┘
 ```
+
+A value entered by hand in `.project/` is not automatically confirmed.
+`confirm_project_data` records an explicit answer for the named repository.
 
 ### 3.2 Context Keys & Affected Controls
 
@@ -292,95 +237,76 @@ The project context system allows users to confirm facts about their project tha
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 3.3 CI Provider Decision Tree
+### 3.3 CI Provider Context
 
 ```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                  CI-related check (e.g., OSPS-VM-06.02 SAST)                 │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                      │
-                                      ▼
-                    ┌─────────────────────────────────┐
-                    │  .github/workflows/ exists?      │
-                    └─────────────────────────────────┘
-                                      │
-                           ┌──────────┴──────────┐
-                           │                     │
-                           ▼                     ▼
-                        [Yes]                  [No]
-                           │                     │
-                           ▼                     ▼
-              ┌─────────────────────┐   ┌─────────────────────┐
-              │ Scan workflows for  │   │ Check other CI      │
-              │ SAST tools:         │   │ config files:       │
-              │                     │   │                     │
-              │ • codeql            │   │ • .gitlab-ci.yml    │
-              │ • semgrep           │   │ • Jenkinsfile       │
-              │ • sonar             │   │ • .circleci/config  │
-              │ • bandit            │   │ • azure-pipelines   │
-              └─────────────────────┘   │ • .travis.yml       │
-                           │            └─────────────────────┘
-                           │                     │
-                           │            ┌────────┴────────┐
-                           │            │                 │
-                           │            ▼                 ▼
-                           │      [Config found]    [No config]
-                           │            │                 │
-                           │            ▼                 ▼
-                           │    ┌───────────────┐ ┌───────────────┐
-                           │    │ Scan for SAST │ │ Check         │
-                           │    │ in that CI    │ │ project.toml  │
-                           │    └───────────────┘ │ [ci_provider] │
-                           │            │         └───────────────┘
-                           │            │                 │
-                           │            │         ┌───────┴───────┐
-                           │            │         │               │
-                           │            │         ▼               ▼
-                           │            │   [Confirmed]     [Not set]
-                           │            │         │               │
-                           │            │    ┌────┴────┐          │
-                           │            │    │         │          │
-                           │            │    ▼         ▼          │
-                           │            │ "none"    "other"       │
-                           │            │    │         │          │
-                           │            │    ▼         ▼          ▼
-                           │            │  N/A     WARN:      INCONCLUSIVE:
-                           │            │         "manual     "confirm CI
-                           │            │         verify"     in project.toml"
-                           ▼            ▼
-              ┌─────────────────────────────────────────┐
-              │  Tool found? → PASS with evidence       │
-              │  No tool?    → FAIL or INCONCLUSIVE     │
-              └─────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│ Read CI files and resolve context values                       │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Use confirmed values or concluded auto-detect values           │
+│ Keep unconfirmed values as candidates                          │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Evaluate the control using the available evidence              │
+│ A tool name in a workflow does not prove its checks pass       │
+└────────────────────────────────────────────────────────────────┘
 ```
 
-### 3.4 project.toml Context Section
+CI files provide evidence about the provider and configured tools. Context values
+are read through `resolve_context()`; checks use only confirmed values or values
+concluded by an `auto_detect = true` key in the current run. Finding a tool name
+in a workflow is evidence, not proof that its checks pass.
 
-```toml
-# In project.toml
+### 3.4 Confirming Project Context
 
-[project.context]
-# User-confirmed facts that affect control evaluation
+Use the MCP tools instead of editing a legacy TOML context section:
 
-# Does this project have subprojects or related repositories?
-has_subprojects = false
-
-# Does this project make official releases?
-has_releases = true
-
-# Is this a library/framework consumed by other projects?
-is_library = false
-
-# Does this project have compiled/binary release assets?
-has_compiled_assets = false
-
-# What CI/CD system does this project use?
-# Options: github, gitlab, jenkins, circleci, azure, travis, none, other
-ci_provider = "gitlab"
-
-# Path to CI config (for non-GitHub CI)
-ci_config_path = ".gitlab-ci.yml"
+```text
+┌────────────────────────────────────────────────────────────────┐
+│ get_pending_data(local_path=..., owner=..., repo=...)          │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Show questions and unconfirmed candidates to the person        │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Person answers or explicitly accepts a candidate               │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ confirm_project_data(local_path=..., owner=..., repo=...)      │
+│ Record only the answers the person provided                    │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Call get_pending_data again for the next batch                 │
+│ Repeat until no questions remain                               │
+└────────────────────────────────────────────────────────────────┘
 ```
+
+For example, after the person explicitly says the project has no subprojects:
+
+```python
+confirm_project_data(
+    local_path="/path/to/repo",
+    owner="example",
+    repo="project",
+    has_subprojects=False,
+)
+```
+
+Confirmations are stored in `.project/darnit.yaml` for a trusted repository,
+otherwise in operator-side storage. Reads never write.
 
 ---
 
@@ -637,97 +563,59 @@ Only after the person accepts does the agent fill in the digest; the confirmatio
 
 ## Project Configuration Lifecycle
 
-### 4.1 Loading project.toml
+### 5.1 Loading Project Configuration
 
 ```text
-┌──────────────────────────────────────────────────────────────────┐
-│                    load_project_config(local_path)                │
-└──────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-              ┌───────────────────────────────────┐
-              │  Look for config file:            │
-              │  1. project.toml                  │
-              │  2. .project.toml                 │
-              └───────────────────────────────────┘
-                              │
-                    ┌─────────┴─────────┐
-                    │                   │
-                    ▼                   ▼
-              [File Found]        [Not Found]
-                    │                   │
-                    │                   └──► Return None
-                    ▼
-              ┌─────────────────────────────┐
-              │      Parse TOML file         │
-              └─────────────────────────────┘
-                    │
-                    ├──► schema_version
-                    ├──► [project] section → name, type, controls
-                    ├──► [security] section → policy, threat_model, ...
-                    ├──► [governance] section → contributing, codeowners, ...
-                    ├──► [legal] section → license, contributor_agreement
-                    ├──► [testing] section → docs, requirements
-                    ├──► [releases] section → verification, ...
-                    └──► [ci] section → provider, github.*, ...
-                              │
-                              ▼
-                    ┌─────────────────────────┐
-                    │  Return ProjectConfig    │
-                    └─────────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│ load_project_config_checked(local_path)                        │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Read .project/project.yaml: standard project metadata          │
+│ Read .project/darnit.yaml: DARNIT context and claims           │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Validate each file independently                               │
+│ Report absent, valid, or invalid; do not write files           │
+└────────────────────────────────────────────────────────────────┘
 ```
 
-### 4.2 Syncing Discovered Items
+`load_project_config()` provides the combined project configuration for readers.
+It does not create files or save discoveries.
+
+### 5.2 Writing Project Data
 
 ```text
-┌──────────────────────────────────────────────────────────────────┐
-│        sync_discovered_to_config(config, local_path)              │
-└──────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-              ┌───────────────────────────────────┐
-              │   For each discovered file:       │
-              │   (SECURITY.md, LICENSE, etc.)    │
-              └───────────────────────────────────┘
-                              │
-                    ┌─────────┴─────────┐
-                    │                   │
-                    ▼                   ▼
-           [Already in config]   [Not in config]
-                    │                   │
-                    │                   ▼
-                    │           ┌───────────────────┐
-                    │           │ Add to config as  │
-                    │           │ ResourceReference │
-                    │           └───────────────────┘
-                    │                   │
-                    └─────────┬─────────┘
-                              │
-                              ▼
-              ┌───────────────────────────────────┐
-              │   For each CI capability:         │
-              │   (testing, security_scanning...) │
-              └───────────────────────────────────┘
-                              │
-                    ┌─────────┴─────────┐
-                    │                   │
-                    ▼                   ▼
-           [Already in config]   [Not in config]
-                    │                   │
-                    │                   ▼
-                    │           ┌───────────────────┐
-                    │           │   Merge into CI   │
-                    │           │   (add, don't     │
-                    │           │    overwrite)     │
-                    │           └───────────────────┘
-                    │                   │
-                    └─────────┬─────────┘
-                              │
-                              ▼
-              ┌───────────────────────────────────┐
-              │ Return (modified: bool, changes)  │
-              └───────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│ Person explicitly confirms project data                        │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ confirm_project_data → config/context_writes.py                │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Validate project files                                         │
+│ If either file is invalid: refuse the write                    │
+└────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Trusted repository: write to .project/darnit.yaml              │
+│ Otherwise: store the confirmation operator-side                │
+└────────────────────────────────────────────────────────────────┘
 ```
+
+Context confirmations go through `confirm_project_data` and
+`config/context_writes.py`. Writers refuse invalid project files instead of
+replacing them. Applied remediation can record a document reference when its
+`file_create` step declares `project_reference`; reading or auditing alone does
+not sync discovered files into the configuration.
 
 ---
 
@@ -887,7 +775,7 @@ For projects not using GitHub Actions, CI-related controls use project context a
 Infer   INCONCLUSIVE:                                         │         │
 provider  "Confirm CI                                         │         │
 from      provider in                                         │         │
-file      project.toml"                                       │         │
+file      MCP tools"                                          │         │
    │                                                          │         │
    └──────────────────────────────────────────────────────────┘         │
                               │                                         │
@@ -911,24 +799,21 @@ file      project.toml"                                       │         │
 
 ### 6.5 CI Provider Configuration Reference
 
-```toml
-# project.toml example for non-GitHub CI
+CI references belong in `.project/darnit.yaml`, not `project.toml`:
 
-[project.context]
-# Tell the audit which CI system you use
-ci_provider = "gitlab"    # or jenkins, circleci, azure, travis, none, other
-ci_config_path = ".gitlab-ci.yml"
-
-[ci]
-provider = "gitlab"
-provider_config = ".gitlab-ci.yml"
-
-# For GitLab CI, can specify capabilities discovered/confirmed
-[ci.gitlab]
-testing = [".gitlab-ci.yml"]           # Jobs that run tests
-security_scanning = [".gitlab-ci.yml"]  # Jobs that run SAST
-code_quality = [".gitlab-ci.yml"]       # Jobs that run linting
+```yaml
+ci:
+  provider: gitlab
+  workflows:
+    - .gitlab-ci.yml
+  testing:
+    - .gitlab-ci.yml
+  security_scanning:
+    - .gitlab-ci.yml
 ```
+
+These are configuration references, not confirmation records or proof of a
+successful CI run. Confirm context answers through `confirm_project_data`.
 
 ---
 
@@ -958,16 +843,16 @@ code_quality = [".gitlab-ci.yml"]       # Jobs that run linting
                            ▼
           ┌────────────────────────────────────────────┐
           │      Auto-detect owner/repo from git        │
-          │      Load/create project.toml               │
+          │      Read .project/ configuration           │
           └────────────────────────────────────────────┘
                            │
                            ▼
           ┌────────────────────────────────────────────┐
-          │           Run All Check Functions           │
+          │           Run Sieve Audit                   │
           │                                             │
-          │   Level 1: check_level1_*() → results      │
-          │   Level 2: check_level2_*() → results      │
-          │   Level 3: check_level3_*() → results      │
+          │   Select controls from framework TOML      │
+          │   Run their configured passes             │
+          │   Resolve context without writing files   │
           └────────────────────────────────────────────┘
                            │
                            ▼
@@ -1211,8 +1096,7 @@ Use the provided verification script instead.
 │    },                                                                        │
 │    "configuration": {                                                        │
 │      "project_type": "software",                                            │
-│      "excluded_controls": ["OSPS-BR-02.01"],                                │
-│      "adapters_used": ["builtin"]                                           │
+│      "excluded_controls": ["OSPS-BR-02.01"]                                │
 │    },                                                                        │
 │    "summary": {                                                              │
 │      "level_assessed": 3,                                                   │
@@ -1250,29 +1134,29 @@ Use the provided verification script instead.
 ## Configuration Files Summary
 
 ```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           Configuration Files                                │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  project.toml                      │  operator configuration (user-level)    │
-│  ─────────────────────────────────────────────────────────────────────────   │
-│  Purpose: Project metadata &       │  Purpose: tool settings, never read     │
-│           documentation locations  │           from the audited repository   │
-│                                    │                                         │
-│  Contains:                         │  Contains:                              │
-│  • schema_version                  │  • schema_version                       │
-│  • [project] name, type, controls  │  • [plugins], [mcp_servers], [stores]   │
-│  • [security] policy, threat_model │  • [custom_controls.*]                  │
-│  • [governance] contributing, etc. │  • [controls.*] pass overrides          │
-│  • [testing] docs, requirements    │                                         │
-│  • [releases] verification         │                                         │
-│  • [ci.github] workflows, etc.     │                                         │
-│                                    │                                         │
-│  Created by: audit (auto) or user  │  Created by: user only                  │
-│  Auto-synced: Yes                  │  Auto-synced: No                        │
-│                                    │                                         │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│ .project/project.yaml                                          │
+│ Standard project metadata and document references              │
+│ Written by project authors or declared remediation updates     │
+└────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────┐
+│ .project/darnit.yaml                                           │
+│ DARNIT context, confirmations, and control claims              │
+│ Written by explicit confirmations for trusted repositories     │
+│ or declared remediation updates                                │
+└────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────┐
+│ ~/.config/darnit/config.toml                                   │
+│ Operator settings, trust, plugins, and control overrides       │
+│ Written by the operator                                        │
+└────────────────────────────────────────────────────────────────┘
 ```
+
+An audit reads these files without syncing discoveries back into them. Repository
+content cannot override operator settings. `.baseline.toml` is no longer read;
+use `darnit config migrate` to migrate old configuration.
 
 ---
 
@@ -1282,10 +1166,9 @@ Use the provided verification script instead.
 
 | Function | Location | Purpose |
 |----------|----------|---------|
-| `audit_openssf_baseline()` | main.py | Main entry point for audits |
-| `load_project_config()` | main.py | Load project.toml |
-| `sync_discovered_to_config()` | main.py | Sync discovered items to config |
-| `discover_ci_config()` | main.py | Discover CI capabilities |
+| `audit_openssf_baseline()` | `darnit_baseline/tools.py` | Main entry point for audits |
+| `load_project_config()` | `darnit/config/loader.py` | Read project configuration from `.project/` |
+| `discover_ci_config()` | `darnit/config/discovery.py` | Discover CI configuration without writing it |
 
 ### Sieve System Functions
 
@@ -1296,10 +1179,6 @@ Use the provided verification script instead.
 | `ControlRegistry` | sieve/registry.py | Registry of control specifications |
 | `get_control_registry()` | sieve/registry.py | Get global control registry |
 | `ControlSpec` | sieve/models.py | Control definition with passes |
-| `DeterministicPass` | sieve/passes.py | File/API boolean checks |
-| `PatternPass` | sieve/passes.py | Regex content matching |
-| `LLMPass` | sieve/passes.py | LLM-assisted verification |
-| `ManualPass` | sieve/passes.py | Human verification steps |
 | `PassResult` | sieve/models.py | Result from a single pass |
 | `SieveResult` | sieve/models.py | Final verification result |
 | `CheckContext` | sieve/models.py | Context for check execution |
@@ -1309,6 +1188,8 @@ Use the provided verification script instead.
 | Function | Location | Purpose |
 |----------|----------|---------|
 | `resolve_context()` | config/context_resolve.py | Every key's value and standing; `usable()` is the only mapping consumers read |
-| `get_pending_context()` | config/context_storage.py | Pending questions with candidates as data (read-only) |
+| `get_pending_data()` | `darnit_baseline/tools.py` | MCP tool for pending questions and unconfirmed candidates |
+| `get_pending_context()` | `darnit/config/context_storage.py` | Internal read-only helper used by the MCP tool |
+| `confirm_project_data()` | `darnit_baseline/tools.py` | MCP tool to record a person's explicit answers |
 | `context_writes` | config/context_writes.py | The only writer of context values and confirmation records |
 | `[context.*]` | framework TOML | Context keys, vocabularies, and affected controls |
