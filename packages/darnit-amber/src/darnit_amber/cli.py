@@ -12,18 +12,46 @@ from .publish import REKOR_URL
 from .rerun import rerun, verify
 from .run import TSA_URL, RunError, run
 
+# What a bad entry, a bad regex, a missing file or a store problem raise: reported, not traced back.
+_REPORTED = (RunError, OSError, KeyError, ValueError, TypeError)
+
 
 def _make_store(a: argparse.Namespace):  # noqa: ANN202
     if a.store == "s3":
         if not a.bucket:
             raise RunError("--bucket is required with --store s3")
-        from .s3_store import S3AttestationStore
+        try:
+            from .s3_store import S3AttestationStore
+        except ImportError as e:
+            raise RunError("--store s3 needs boto3: pip install 'darnit-amber[s3]'") from e
 
         return S3AttestationStore(bucket=a.bucket, prefix=a.prefix, endpoint_url=a.endpoint_url)
     from darnit.stores.defaults.local_fs import LocalFsAttestationStore
 
     a.out.mkdir(parents=True, exist_ok=True)
     return LocalFsAttestationStore(root=a.out)
+
+
+def _add_verify_args(q: argparse.ArgumentParser) -> None:
+    q.add_argument("--pubkey", type=Path, help="PEM public key the bundle must be signed with")
+    q.add_argument("--expect-identity", help="for an --identity bundle: the email or login the certificate must name")
+    q.add_argument(
+        "--expect-issuer", help="for an --identity bundle: the OIDC issuer, e.g. https://github.com/login/oauth"
+    )
+    q.add_argument("--offline", action="store_true", help="do not re-fetch published entries from Rekor")
+
+
+def _consent(yes: bool):  # noqa: ANN202
+    def ask(command: str) -> bool:
+        print(f"rerun will execute, on this machine, with your environment:\n  {command}", file=sys.stderr)
+        if yes:
+            return True
+        if not sys.stdin.isatty():
+            print("pass --yes to confirm (stdin is not a terminal)", file=sys.stderr)
+            return False
+        return input("run it? [y/N] ").strip().lower() in ("y", "yes")
+
+    return ask
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -51,14 +79,19 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--tsa", default=TSA_URL, help="RFC 3161 timestamp authority (default: Sigstore's)")
     r.add_argument("--no-timestamp", action="store_true", help="do not countersign with a timestamp authority")
     r.add_argument("--claims", type=Path, help="corpus entry (yaml or json): claims and run.command")
+    r.add_argument(
+        "--allow-dirty",
+        action="store_true",
+        help="run on a checkout with uncommitted changes; the bundle then records no commit and cannot be rerun",
+    )
     r.add_argument("--store", choices=["local-fs", "s3"], default="local-fs", help="attestation store backend")
     r.add_argument("--out", type=Path, default=Path("amber-runs"), help="local-fs: store directory")
     r.add_argument("--bucket", help="s3: bucket name")
     r.add_argument("--prefix", default="amber/runs", help="s3: key prefix")
     r.add_argument("--endpoint-url", help="s3: endpoint for S3-compatible services")
     for name, help_ in (
-        ("verify", "check a stored bundle: id, outputs vs Witness products, signatures, timestamps, identity"),
-        ("rerun", "re-execute a stored bundle's experiment and compare outputs"),
+        ("verify", "check a stored bundle: id, statement signature, outputs vs Witness, timestamps, identity"),
+        ("rerun", "verify a stored bundle, then re-execute its experiment and compare outputs"),
         ("claim", "attach a paper claim to a stored run, measured from its stored outputs"),
     ):
         q = sub.add_parser(name, help=help_)
@@ -69,9 +102,10 @@ def main(argv: list[str] | None = None) -> int:
         q.add_argument("--prefix", default="amber/runs")
         q.add_argument("--endpoint-url")
         if name == "verify":
-            q.add_argument("--pubkey", type=Path, help="PEM public key of the Witness signer")
-            q.add_argument("--offline", action="store_true", help="do not re-fetch published entries from Rekor")
+            _add_verify_args(q)
         elif name == "rerun":
+            _add_verify_args(q)
+            q.add_argument("--yes", action="store_true", help="execute the bundle's command without asking")
             q.add_argument("--key", type=Path, help="signing key for this rerun (default: the generated one)")
             q.add_argument("--identity", action="store_true")
             q.add_argument("--publish", action="store_true")
@@ -89,6 +123,9 @@ def main(argv: list[str] | None = None) -> int:
             q.add_argument("--source", help="where the threshold comes from, e.g. 'Table 3, row 2'")
             q.add_argument("--expected", choices=["REPRODUCED", "NOT_REPRODUCED", "NOT_COMPARABLE"])
             q.add_argument("--not-comparable", metavar="REASON", help="record the value but do not judge it")
+            q.add_argument("--key", type=Path, help="key that signs the derived bundle (default: the generated one)")
+            q.add_argument("--tsa", default=TSA_URL)
+            q.add_argument("--no-timestamp", action="store_true")
     argv = sys.argv[1:] if argv is None else list(argv)
     command: list[str] = []
     if "--" in argv:
@@ -100,7 +137,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             store = _make_store(a)
             if a.cmd == "verify":
-                result = verify(store, a.bundle_id, a.pubkey, online=not a.offline)
+                result = verify(store, a.bundle_id, a.pubkey, not a.offline, a.expect_identity, a.expect_issuer)
             elif a.cmd == "rerun":
                 result = rerun(
                     store,
@@ -109,6 +146,11 @@ def main(argv: list[str] | None = None) -> int:
                     None if a.no_timestamp else a.tsa,
                     a.identity,
                     a.rekor if a.publish else None,
+                    pubkey=a.pubkey,
+                    expect_identity=a.expect_identity,
+                    expect_issuer=a.expect_issuer,
+                    online=not a.offline,
+                    consent=_consent(a.yes),
                 )
             else:
                 spec = {
@@ -126,8 +168,8 @@ def main(argv: list[str] | None = None) -> int:
                         "reason": a.not_comparable,
                     },
                 }
-                result = claim(store, a.bundle_id, spec)
-        except (RunError, FileNotFoundError, KeyError) as e:
+                result = claim(store, a.bundle_id, spec, a.key, None if a.no_timestamp else a.tsa)
+        except _REPORTED as e:
             print(f"darnit-amber: {e}", file=sys.stderr)
             return 1
         print(json.dumps(result, indent=2))
@@ -149,8 +191,9 @@ def main(argv: list[str] | None = None) -> int:
             None if a.no_timestamp else a.tsa,
             a.identity,
             a.rekor if a.publish else None,
+            a.allow_dirty,
         )
-    except RunError as e:
+    except _REPORTED as e:
         print(f"darnit-amber: {e}", file=sys.stderr)
         return 1
     pred = bundle["statement"]["predicate"]
@@ -166,7 +209,7 @@ def main(argv: list[str] | None = None) -> int:
         "verdict": pred.get("verdict"),
         "signing": pred.get("signing"),
         "publication": {
-            n: {"log": p["log"], "log_index": p["log_index"]} for n, p in (pred.get("publication") or {}).items()
+            n: {"log": p["log"], "log_index": p["log_index"]} for n, p in (bundle.get("publication") or {}).items()
         }
         or None,
         "claims": [

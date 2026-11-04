@@ -1,8 +1,9 @@
 """``darnit-amber run``: execute the Amber audit and the corpus experiment under Witness, emit a run bundle.
 
 One bundle per run: an in-toto v1 statement whose predicate is ``amber/run/v1``,
-with the Witness DSSE envelopes that captured the run. The bundle id is the
-sha256 of the canonical statement. See darnit issue #677.
+signed by the researcher as a DSSE envelope, with the Witness DSSE envelopes
+that captured the run. The bundle id is the sha256 of the canonical statement.
+See darnit issue #677 and specs/046-amber-run-bundle.
 """
 
 from __future__ import annotations
@@ -18,19 +19,51 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
+from darnit.stores.defaults.platform_paths import user_data_root
 from darnit.stores.protocols import AttestationStore
 
 PREDICATE_TYPE = "https://darnit.dev/amber/run/v1"
 STATEMENT_TYPE = "https://in-toto.io/Statement/v1"
-WITNESS_ATTESTORS = "environment,git,command-run,product"
-AUDIT_OUTPUT = "amber-audit.json"
+# Witness always records material and product, and command-run is built in. The environment attestor is
+# left out on purpose: it records the host name, the user name and every variable a blocklist does not
+# know; the statement carries an allowlisted snapshot instead (ENV_ALLOWLIST).
+WITNESS_ATTESTORS = "git"
 # Sigstore's public RFC 3161 timestamp authority: it sees a hash of the signature and nothing else.
 TSA_URL = "https://timestamp.sigstore.dev/api/v1/timestamp"
 MAX_STORED_OUTPUT = 10 * 1024 * 1024  # outputs up to this size are kept next to the bundle
+# Variables recorded in the bundle: what decides how code runs, never credentials, paths or names
+# (PATH is left out: it names the user's home directory on most machines).
+ENV_ALLOWLIST = (
+    "LANG",
+    "LANGUAGE",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TZ",
+    "SHELL",
+    "TERM",
+    "VIRTUAL_ENV",
+    "CONDA_PREFIX",
+    "CONDA_DEFAULT_ENV",
+    "PYTHONPATH",
+    "PYTHONHASHSEED",
+    "PYTHONDONTWRITEBYTECODE",
+    "OMP_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "CUDA_VISIBLE_DEVICES",
+    "NVIDIA_VISIBLE_DEVICES",
+    "SOURCE_DATE_EPOCH",
+)
+
+
+class RunError(RuntimeError):
+    pass
 
 
 def safe_rel(path: str) -> str:
@@ -59,14 +92,23 @@ def read_blob(store: Any, bundle_id: str, path: str) -> bytes:
     return (Path(store._root) / bundle_id / "outputs" / path).read_bytes()
 
 
-class RunError(RuntimeError):
-    pass
+def read_output(store: Any, bundle: dict[str, Any], path: str) -> bytes:
+    """A stored output of ``bundle``, checked against the digest in its statement: the store is not trusted."""
+    path = safe_rel(path)
+    outputs = ((bundle["statement"]["predicate"].get("experiment") or {}).get("outputs")) or []
+    out = next((o for o in outputs if o["path"] == path), None)
+    if out is None:
+        raise RunError(f"{path} is not an output of this run; outputs: {[o['path'] for o in outputs]}")
+    if not out.get("stored"):
+        raise RunError(f"{path} was not stored with the bundle (too large or not captured)")
+    data = read_blob(store, bundle["id"], path)
+    if hashlib.sha256(data).hexdigest() != out.get("sha256"):
+        raise RunError(f"stored output {path} does not match the digest in the statement")
+    return data
 
 
 def default_key() -> Path:
     """The researcher's signing key, generated once under darnit's data root (ed25519, 0600)."""
-    from darnit.stores.defaults.platform_paths import user_data_root
-
     key = user_data_root() / "amber" / "signing.key"
     if key.is_file():
         return key
@@ -100,6 +142,21 @@ def _is_url(s: str) -> bool:
     return s.startswith(("https://", "http://", "git@", "ssh://"))
 
 
+def public_url(url: str) -> str:
+    """``url`` without credentials: a token in a clone URL must not end up in a bundle made to be shared."""
+    if not url.startswith(("https://", "http://", "ssh://")):
+        return url
+    p = urlsplit(url)
+    if not (p.username or p.password):
+        return url
+    host = p.hostname or ""
+    if p.port:
+        host = f"{host}:{p.port}"
+    if p.scheme == "ssh" and p.username:
+        host = f"{p.username}@{host}"  # the ssh user (git@) is part of the address, a password is not
+    return urlunsplit((p.scheme, host, p.path, p.query, p.fragment))
+
+
 def _clone(url: str, ref: str | None, dest: Path) -> Path:
     r = subprocess.run(["git", "clone", "-q", url, str(dest)], capture_output=True, text=True)
     if r.returncode != 0:
@@ -121,11 +178,19 @@ def _git_remote(repo: Path) -> str | None:
     return r.stdout.strip() or None
 
 
+def _git_dirty(repo: Path) -> list[str]:
+    """Tracked files that differ from HEAD: a run on those is not a run of the commit."""
+    r = subprocess.run(
+        ["git", "-C", str(repo), "status", "--porcelain", "--untracked-files=no"], capture_output=True, text=True
+    )
+    return [line[3:] for line in r.stdout.splitlines() if line.strip()]
+
+
 def _infer_outputs(products: dict[str, Any]) -> list[str]:
-    """Files the command created or changed, as Witness saw them, minus darnit's own and anything not inside the checkout."""
+    """Files the command created or changed, as Witness saw them, minus git's own and anything not inside the checkout."""
     out = []
     for p in products:
-        if p == AUDIT_OUTPUT or p.startswith(".git/"):
+        if p.startswith(".git/"):
             continue
         try:
             out.append(safe_rel(p))
@@ -148,13 +213,14 @@ def _environment() -> dict[str, Any]:
     except (ValueError, OSError):
         pass
     return {
-        "image_digest": None,  # pinned container image: PR B
-        "darnit": _version("darnit"),
+        "image_digest": None,  # pinned container image: darnit #677 step B
+        "darnit": _version("darnit-core"),
         "darnit_amber": _version("darnit-amber"),
         "python": platform.python_version(),
         "os": platform.platform(),
         "cpu_count": os.cpu_count(),
         "memory_bytes": mem,
+        "variables": {k: os.environ[k] for k in ENV_ALLOWLIST if k in os.environ},
     }
 
 
@@ -201,16 +267,6 @@ def _claims(entry: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
-_OPS = {
-    "==": lambda a, b, t: abs(a - b) <= t if isinstance(a, float) else a == b,
-    "!=": lambda a, b, t: not (abs(a - b) <= t) if isinstance(a, float) else a != b,
-    "<=": lambda a, b, t: a <= b + t,
-    ">=": lambda a, b, t: a >= b - t,
-    "<": lambda a, b, t: a < b,
-    ">": lambda a, b, t: a > b,
-}
-
-
 def _parse_threshold(threshold: str) -> tuple[str, str]:
     t = str(threshold).strip()
     for op in ("==", "!=", "<=", ">=", "<", ">"):
@@ -219,52 +275,90 @@ def _parse_threshold(threshold: str) -> tuple[str, str]:
     return "==", t
 
 
-def _coerce(a: str, b: str) -> tuple[Any, Any]:
+def _number(s: str) -> float | None:
     try:
-        return float(a), float(b)
-    except ValueError:
-        return a.strip(), b.strip()
+        return float(s)
+    except (TypeError, ValueError):
+        return None
 
 
-def measure_claim(claim: dict[str, Any], repo: Path) -> None:
-    """Fill ``measured``, ``verdict`` and ``reason`` from the checkout after the experiment ran."""
+def compare(value: str, threshold: str, tolerance: Any) -> tuple[bool | None, str]:
+    """``value`` against ``threshold`` (``op number`` or ``op text``): (holds, reason); ``None`` when not comparable.
+
+    Ordering operators need two numbers; ``==`` and ``!=`` fall back to a
+    text comparison, where the tolerance does not apply.
+    """
+    op, want = _parse_threshold(threshold)
+    a, b = _number(value), _number(want)
+    tol = _number(tolerance) if tolerance is not None else 0.0
+    if tol is None:
+        return None, f"tolerance {tolerance!r} is not a number"
+    if a is None or b is None:
+        if op in ("==", "!="):
+            same = value.strip() == want.strip()
+            return (same if op == "==" else not same), f"measured {value!r} {op} {want!r}"
+        return None, f"{op} needs two numbers: measured {value!r}, threshold {want!r}"
+    holds = {
+        "==": abs(a - b) <= tol,
+        "!=": abs(a - b) > tol,
+        "<=": a <= b + tol,
+        ">=": a >= b - tol,
+        "<": a < b + tol,
+        ">": a > b - tol,
+    }[op]
+    return holds, f"measured {value} {op} {want}" + (f" (tolerance {tol})" if tol else "")
+
+
+def measure_claim(claim: dict[str, Any], read: Callable[[str], bytes | None]) -> None:
+    """Fill ``measured``, ``verdict`` and ``reason``; ``read`` returns the bytes of an output the experiment produced, or None.
+
+    Never raises: a claim that cannot be measured is NOT_COMPARABLE with the reason.
+    """
     import re
 
     m = claim.get("measure")
     if not m:
         return
-    path = repo / m["file"]
-    if not path.is_file():
-        claim["reason"] = f"output {m['file']} not produced"
-        return
-    text = path.read_text(errors="replace")
-    found = re.search(m["regex"], text, re.M)
-    if not found:
-        claim["reason"] = f"regex did not match in {m['file']}"
-        return
-    value = found.group(1) if found.groups() else found.group(0)
-    if m.get("scale") is not None:
-        value = str(float(value) * float(m["scale"]))
-    claim["measured"] = value
-    if m.get("comparable") is False:
-        claim["reason"] = m.get("reason") or "measured, but not on the paper's terms"
-        return
-    if claim.get("threshold") is None:
-        claim["reason"] = "no threshold"
-        return
-    op, want = _parse_threshold(claim["threshold"])
-    a, b = _coerce(value, want)
-    tol = float(claim.get("tolerance") or 0) if isinstance(a, float) else 0
-    ok = _OPS[op](a, b, tol)
-    claim["verdict"] = "REPRODUCED" if ok else "NOT_REPRODUCED"
-    claim["reason"] = f"measured {value} {op} {want}" + (f" (tolerance {tol})" if tol else "")
+    try:
+        path = safe_rel(str(m.get("file") or ""))
+        data = read(path)
+        if data is None:
+            claim["reason"] = f"output {m.get('file')} not produced by the experiment"
+            return
+        found = re.search(m["regex"], data.decode(errors="replace"), re.M)
+        if not found:
+            claim["reason"] = f"regex did not match in {path}"
+            return
+        value = found.group(1) if found.groups() else found.group(0)
+        if m.get("scale") is not None:
+            n = _number(value)
+            if n is None:
+                claim["reason"] = f"scale given but {value!r} is not a number"
+                return
+            value = str(n * float(m["scale"]))
+        claim["measured"] = value
+        if m.get("comparable") is False:
+            claim["reason"] = m.get("reason") or "measured, but not on the paper's terms"
+            return
+        if claim.get("threshold") is None:
+            claim["reason"] = "no threshold"
+            return
+        holds, reason = compare(value, claim["threshold"], claim.get("tolerance"))
+        claim["reason"] = reason
+        if holds is not None:
+            claim["verdict"] = "REPRODUCED" if holds else "NOT_REPRODUCED"
+    except Exception as e:  # noqa: BLE001 - a bad regex or a bad spec is a measurement that failed, not a crash
+        claim["measured"] = None
+        claim["verdict"] = "NOT_COMPARABLE"
+        claim["reason"] = f"measurement failed: {type(e).__name__}: {e}"
 
 
 def overall_verdict(claims: list[dict[str, Any]]) -> str:
-    verdicts = {c["verdict"] for c in claims}
+    """REPRODUCED only when every claim is; a claim that could not be measured counts against the run."""
+    verdicts = [c["verdict"] for c in claims]
     if "NOT_REPRODUCED" in verdicts:
         return "NOT_REPRODUCED"
-    if "REPRODUCED" in verdicts:
+    if verdicts and all(v == "REPRODUCED" for v in verdicts):
         return "REPRODUCED"
     return "NOT_COMPARABLE"
 
@@ -293,6 +387,35 @@ def _signer_args(key: Path | None, token_path: Path | None) -> list[str]:
     return ["-k", str(key.resolve())]  # witness runs inside the checkout
 
 
+def _witness_bin() -> str:
+    witness = shutil.which("witness")
+    if not witness:
+        raise RunError("witness binary not found on PATH (https://github.com/in-toto/witness)")
+    return witness
+
+
+def _witness_env() -> dict[str, str]:
+    """The environment Witness and the experiment run in: this one, minus the OIDC token, plus darnit's own bin dir."""
+    from .identity import TOKEN_ENV
+
+    env = {k: v for k, v in os.environ.items() if k != TOKEN_ENV}
+    env["PATH"] = os.pathsep.join([str(Path(sys.executable).parent), env.get("PATH", "")])
+    return env
+
+
+def wrap_command(command: str) -> str:
+    """The shell script Witness runs for the experiment.
+
+    Witness writes no attestation when the command fails, and a failed
+    experiment is a result worth recording. The command runs in a subshell
+    and its exit status goes to the file named by ``$0``, outside the
+    checkout; the wrapper itself exits 0. ``verify`` recomputes this script
+    from the recorded command, so the command Witness saw is the one in the
+    statement.
+    """
+    return f'({command})\nprintf %s "$?" > "$0"\n'
+
+
 def _witness(
     step: str,
     key: Path | None,
@@ -302,11 +425,8 @@ def _witness(
     tsa: str | None = TSA_URL,
     token_path: Path | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    witness = shutil.which("witness")
-    if not witness:
-        raise RunError("witness binary not found on PATH (https://github.com/in-toto/witness)")
     full = [
-        witness,
+        _witness_bin(),
         "run",
         "--step",
         step,
@@ -319,14 +439,44 @@ def _witness(
         "--",
         *cmd,
     ]
-    from .identity import TOKEN_ENV
-
-    env = {k: v for k, v in os.environ.items() if k != TOKEN_ENV}  # Witness attests its environment
-    r = subprocess.run(full, cwd=cwd, capture_output=True, text=True, env=env)
+    r = subprocess.run(full, cwd=cwd, capture_output=True, text=True, env=_witness_env())
     if r.returncode != 0 or not out.exists():
         raise RunError(f"witness run ({step}) failed:\n{r.stderr[-2000:]}")
     envelope, stmt = _decode_envelope(out)
     return envelope, _witness_sections(stmt)
+
+
+def sign_statement(
+    statement: dict[str, Any], key: Path | None, tsa: str | None, token_path: Path | None = None
+) -> dict[str, Any]:
+    """The statement as a DSSE envelope signed by the researcher (``witness sign``, same signer as the steps).
+
+    The payload is the canonical statement, byte for byte: what the bundle
+    id hashes is what the signature covers, so nothing under ``predicate``
+    can be edited after the fact.
+    """
+    with tempfile.TemporaryDirectory(prefix="amber-sign-") as tmp:
+        src, dst = Path(tmp) / "statement.json", Path(tmp) / "statement.dsse.json"
+        src.write_bytes(_canonical(statement))
+        full = [
+            _witness_bin(),
+            "sign",
+            "-f",
+            str(src),
+            "-o",
+            str(dst),
+            "-t",
+            STATEMENT_TYPE,
+            *_signer_args(key, token_path),
+            *(["--timestamp-servers", tsa] if tsa else []),
+        ]
+        r = subprocess.run(full, capture_output=True, text=True, env=_witness_env())
+        if r.returncode != 0 or not dst.exists():
+            raise RunError(f"witness sign failed:\n{r.stderr[-2000:]}")
+        envelope = json.loads(dst.read_text())
+    if base64.b64decode(envelope["payload"]) != _canonical(statement):
+        raise RunError("witness sign changed the statement payload")
+    return envelope
 
 
 def _signing(key: Path | None, envelopes: dict[str, dict[str, Any]], tsa: str | None) -> dict[str, Any]:
@@ -391,6 +541,10 @@ def compare_rerun(
     return {"of": first["id"], "outputs": outputs, "claims": compared, "drift": drift}
 
 
+def _store_bundle(store: Any, bundle: dict[str, Any]) -> None:
+    store.write(bundle["id"], _canonical(bundle), "application/vnd.in-toto+json")
+
+
 def execute(
     artifact: str,
     ref: str | None,
@@ -401,12 +555,15 @@ def execute(
     tsa: str | None = TSA_URL,
     identity: bool = False,
     publish: str | None = None,
+    allow_dirty: bool = False,
+    clone_local: bool = False,
 ) -> dict[str, Any]:
-    """``publish`` is a Rekor URL: each envelope is recorded there and the proof kept under ``publication``.
+    """Run, sign, store; then, with ``publish`` (a Rekor URL), record the envelopes there.
 
     ``rerun_of`` is the first bundle when this run repeats it: the comparison
     goes into the predicate before the id is computed, so one bundle is
-    written, with its outputs under that id.
+    written, with its outputs under that id. ``clone_local`` clones a local
+    path too, so a rerun executes the recorded commit and not the working tree.
     """
     darnit_bin = Path(sys.executable).parent / "darnit"
     if not darnit_bin.exists():
@@ -422,7 +579,19 @@ def execute(
 
     with tempfile.TemporaryDirectory(prefix="amber-run-") as tmp:
         tmpdir = Path(tmp)
-        repo = _clone(artifact, ref, tmpdir / "artifact") if _is_url(artifact) else Path(artifact).resolve()
+        if _is_url(artifact) or clone_local:
+            repo = _clone(artifact, ref, tmpdir / "artifact")
+        else:
+            repo = Path(artifact).resolve()
+            if not repo.is_dir():
+                raise RunError(f"{artifact} is not a directory")
+        dirty = _git_dirty(repo)
+        if dirty and not allow_dirty:
+            raise RunError(
+                "the checkout has uncommitted changes to tracked files, so a run would not be a run of the commit: "
+                f"{', '.join(dirty[:5])}{', ...' if len(dirty) > 5 else ''}; commit or stash them, or pass --allow-dirty "
+                "to record the run without a commit"
+            )
         token_path: Path | None = None
         if identity:
             from .identity import identity_token
@@ -432,108 +601,137 @@ def execute(
             token_path.write_text(identity_token())  # one login per run; both Witness steps reuse it
         started = datetime.now(UTC).isoformat()
 
+        audit_file = tmpdir / "amber-audit.json"  # outside the checkout: the audit leaves nothing in the repository
         audit_env, audit_w = _witness(
             "amber-audit",
             key,
             tmpdir / "audit.json",
             repo,
-            ["sh", "-c", f"{darnit_bin} audit . -f amber --output json --no-fail > {AUDIT_OUTPUT}"],
+            [
+                "sh",
+                "-c",
+                f"darnit audit . -f amber --output json --no-fail > {audit_file}",
+            ],  # darnit: on PATH, see _witness_env
             tsa,
             token_path,
         )
-        audit = json.loads((repo / AUDIT_OUTPUT).read_text())
+        audit = json.loads(audit_file.read_text())
 
         experiment: dict[str, Any] | None = None
         exp_env: dict[str, Any] | None = None
+        captured: dict[str, bytes] = {}
         if exp_cmd:
+            exit_file = tmpdir / "exit"
             exp_env, exp_w = _witness(
-                "experiment", key, tmpdir / "experiment.json", repo, ["sh", "-c", exp_cmd], tsa, token_path
+                "experiment",
+                key,
+                tmpdir / "experiment.json",
+                repo,
+                ["sh", "-c", wrap_command(exp_cmd), str(exit_file)],
+                tsa,
+                token_path,
             )
+            if not exit_file.is_file():
+                raise RunError("the experiment's exit status was not recorded")
             products = exp_w.get("product") or {}
             if exp_outputs is None:
                 exp_outputs = _infer_outputs(products)
-            experiment = {
-                "command": exp_cmd,
-                "exit_code": exp_w.get("command-run", {}).get("exitcode"),
-                "outputs": [
+            outputs = []
+            for p in exp_outputs:
+                p = safe_rel(p)
+                digest = (products.get(p) or {}).get("digest", {}).get("sha256")
+                f = repo / p
+                data = f.read_bytes() if p in products and f.is_file() else None
+                if data is not None and hashlib.sha256(data).hexdigest() != digest:
+                    data = None  # changed after Witness hashed it: not the experiment's bytes
+                if data is not None:
+                    captured[p] = data
+                outputs.append(
                     {
                         "path": p,
-                        "sha256": (products.get(p) or {}).get("digest", {}).get("sha256"),
+                        "sha256": digest,
                         "captured": p in products,
+                        "stored": data is not None and len(data) <= MAX_STORED_OUTPUT,
                     }
-                    for p in exp_outputs
-                ],
+                )
+            experiment = {
+                "command": exp_cmd,
+                "exit_code": int(exit_file.read_text().strip() or -1),
+                "outputs": outputs,
                 "products": {p: d.get("digest", {}).get("sha256") for p, d in products.items()},
             }
-        blobs: dict[str, bytes] = {}
-        for o in (experiment or {}).get("outputs") or []:
-            f = repo / o["path"]
-            o["stored"] = bool(o["captured"] and f.is_file() and f.stat().st_size <= MAX_STORED_OUTPUT)
-            if o["stored"]:
-                blobs[o["path"]] = f.read_bytes()
+        blobs = {o["path"]: captured[o["path"]] for o in (experiment or {}).get("outputs") or [] if o["stored"]}
         for c in claims:
-            measure_claim(c, repo)
+            measure_claim(c, captured.get)  # only what the experiment produced, as Witness hashed it
         for c in claims:
             c["matches_expected"] = (c["verdict"] == c["expected_verdict"]) if c.get("expected_verdict") else None
-        for path in list(blobs):
-            safe_rel(path)
-        commit = _git_commit(repo)
-        subject_name = artifact if _is_url(artifact) else (_git_remote(repo) or str(repo))
+        commit = None if dirty else _git_commit(repo)
+        subject_name = public_url(artifact if _is_url(artifact) else (_git_remote(repo) or str(repo)))
 
-    envelopes = {"amber-audit": audit_env, **({"experiment": exp_env} if exp_env else {})}
-    publication = None
-    if publish:
-        from .publish import publish_envelope
+        envelopes = {"amber-audit": audit_env, **({"experiment": exp_env} if exp_env else {})}
+        signing = _signing(key, envelopes, tsa)
+        predicate = {
+            "started_at": started,
+            "environment": _environment(),
+            "signing": signing,
+            "corpus_entry": entry.get("id"),
+            "entry": {
+                "source": entry.get("_source", "file"),
+                "artifact": {"clone": subject_name, "ref": commit, "dirty": bool(dirty)},
+                "run": {"command": exp_cmd, "outputs": exp_outputs},
+                "environment": entry.get("environment"),
+            },
+            "audit": {
+                "framework": "amber",
+                "command": audit_w.get("command-run", {}).get("cmd"),
+                "exit_code": audit_w.get("command-run", {}).get("exitcode"),
+                "results": [
+                    {"id": x.get("id") or x.get("control_id"), "status": x.get("status")}
+                    for x in audit.get("results", [])
+                ],
+            },
+            "experiment": experiment,
+            "claims": claims,
+            "verdict": overall_verdict(claims),
+            "reruns": compare_rerun(rerun_of, experiment, claims) if rerun_of else None,
+            "witness_attestations": sorted(audit_w),
+            # The statement, and so the bundle id, covers the envelopes: a bundle cannot swap them.
+            "witness_envelopes_sha256": {
+                name: hashlib.sha256(_canonical(env)).hexdigest() for name, env in envelopes.items()
+            },
+        }
+        statement = {
+            "_type": STATEMENT_TYPE,
+            "subject": [{"name": subject_name, "digest": {"gitCommit": commit} if commit else {}}],
+            "predicateType": PREDICATE_TYPE,
+            "predicate": predicate,
+        }
+        statement_env = sign_statement(statement, key, tsa, token_path)
 
-        try:
-            publication = {name: publish_envelope(env, key, publish) for name, env in envelopes.items()}
-        except Exception as e:  # noqa: BLE001 - the run is signed and stored anyway; say what did not get published
-            raise RunError(f"publishing to {publish} failed: {type(e).__name__}: {e}") from e
-    predicate = {
-        "started_at": started,
-        "environment": _environment(),
-        "signing": _signing(key, envelopes, tsa),
-        "publication": publication,
-        "corpus_entry": entry.get("id"),
-        "entry": {
-            "source": entry.get("_source", "file"),
-            "artifact": {"clone": subject_name, "ref": commit},
-            "run": {"command": exp_cmd, "outputs": exp_outputs},
-            "environment": entry.get("environment"),
-        },
-        "audit": {
-            "framework": "amber",
-            "command": audit_w.get("command-run", {}).get("cmd"),
-            "exit_code": audit_w.get("command-run", {}).get("exitcode"),
-            "results": [
-                {"id": x.get("id") or x.get("control_id"), "status": x.get("status")} for x in audit.get("results", [])
-            ],
-        },
-        "experiment": experiment,
-        "claims": claims,
-        "verdict": overall_verdict(claims),
-        "reruns": compare_rerun(rerun_of, experiment, claims) if rerun_of else None,
-        "witness_attestations": sorted(audit_w),
-        # The statement, and so the bundle id, covers the envelopes: a bundle cannot swap them.
-        "witness_envelopes_sha256": {
-            name: hashlib.sha256(_canonical(env)).hexdigest() for name, env in envelopes.items()
-        },
-    }
-    statement = {
-        "_type": STATEMENT_TYPE,
-        "subject": [{"name": subject_name, "digest": {"gitCommit": commit} if commit else {}}],
-        "predicateType": PREDICATE_TYPE,
-        "predicate": predicate,
-    }
     bundle_id = hashlib.sha256(_canonical(statement)).hexdigest()
     bundle = {
         "id": bundle_id,
         "statement": statement,
+        "statement_envelope": statement_env,
         "witness_envelopes": envelopes,
+        "publication": None,
     }
-    store.write(bundle_id, _canonical(bundle), "application/vnd.in-toto+json")
+    _store_bundle(store, bundle)
     for path, data in blobs.items():
         write_blob(store, bundle_id, path, data)
+    if publish:
+        from .publish import publish_envelope
+
+        try:
+            bundle["publication"] = {
+                name: publish_envelope(env, key, publish)
+                for name, env in {"statement": statement_env, **envelopes}.items()
+            }
+        except Exception as e:  # noqa: BLE001 - the bundle is signed and stored; say what did not get published
+            raise RunError(
+                f"bundle {bundle_id} is stored; publishing to {publish} failed: {type(e).__name__}: {e}"
+            ) from e
+        _store_bundle(store, bundle)
     return bundle
 
 
@@ -547,6 +745,7 @@ def run(
     tsa: str | None = TSA_URL,
     identity: bool = False,
     publish: str | None = None,
+    allow_dirty: bool = False,
 ) -> dict[str, Any]:
     """``command`` (argv after ``--``) overrides the entry's run.command; with no entry, everything else is inferred."""
     entry = load_entry(claims)
@@ -557,4 +756,6 @@ def run(
         entry = {**entry, "run": {**(entry.get("run") or {}), "command": shlex.join(command)}}
         if not claims:
             entry["_source"] = "inferred"
-    return execute(artifact, ref, key, entry, store, tsa=tsa, identity=identity, publish=publish)
+    return execute(
+        artifact, ref, key, entry, store, tsa=tsa, identity=identity, publish=publish, allow_dirty=allow_dirty
+    )

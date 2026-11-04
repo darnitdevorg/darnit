@@ -5,14 +5,15 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from .identity import pae as _pae
-from .identity import verify_identity_signature, verify_with
+from .identity import signature_chain, verify_identity_signature, verify_with
 from .publish import verify_publication
-from .run import TSA_URL, RunError, _canonical, execute
+from .run import STATEMENT_TYPE, TSA_URL, RunError, _canonical, _is_url, execute, read_blob, wrap_command
 
 
 def read_bundle(store: Any, bundle_id: str) -> dict[str, Any]:
@@ -128,70 +129,155 @@ def _trusted_time(stamps: list[dict[str, Any]], index: int) -> datetime | None:
     return min(times) if times else None
 
 
-def _verify_identities(env: dict[str, Any], stamps: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Every certificate-bearing signature on the envelope, checked against Sigstore's Fulcio roots."""
-    out = []
-    for index, sig in enumerate(env.get("signatures", [])):
-        if not sig.get("certificate"):
-            continue
-        try:
-            out.append(
-                verify_identity_signature(env, sig, _trusted_time(stamps, index), _trusted_root().get_fulcio_certs())
-            )
-        except Exception as e:  # noqa: BLE001 - reported, never fatal
-            out.append({"ok": False, "error": f"{type(e).__name__}: {e}"})
-    return out
+def _every_signature_timestamped(env: dict[str, Any], stamps: list[dict[str, Any]]) -> bool:
+    """Each signature on the envelope has a trusted timestamp covering it; none is enough for an envelope with no signature."""
+    signatures = env.get("signatures") or []
+    return bool(signatures) and all(_trusted_time(stamps, i) is not None for i in range(len(signatures)))
+
+
+def _load_pubkey(pubkey: Path) -> Any:
+    from cryptography.hazmat.primitives import serialization
+
+    return serialization.load_pem_public_key(pubkey.read_bytes())
+
+
+def _spki_der(key: Any) -> bytes:
+    from cryptography.hazmat.primitives import serialization
+
+    return key.public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
 
 
 def _key_fingerprint(pubkey: Path) -> str:
-    from cryptography.hazmat.primitives import serialization
-
-    key = serialization.load_pem_public_key(pubkey.read_bytes())
-    der = key.public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
-    return "sha256:" + hashlib.sha256(der).hexdigest()
+    return "sha256:" + hashlib.sha256(_spki_der(_load_pubkey(pubkey))).hexdigest()
 
 
-def _verify_envelope(env: dict[str, Any], pubkey: Path | None) -> tuple[str, bool]:
-    """The key-signature check of one envelope: what to report, and whether it passed.
+class _Expected:
+    """What the caller says the signer is: a public key, or a Fulcio identity and issuer."""
 
-    A certificate-signed envelope is checked by ``_verify_identities``; a
-    key-signed one needs ``--pubkey``, and without it the check fails rather
-    than being skipped, so ``verified`` can never be true for a bundle whose
-    signature nobody checked.
+    def __init__(self, pubkey: Path | None, identity: str | None, issuer: str | None) -> None:
+        self.pubkey = pubkey
+        self.key = _load_pubkey(pubkey) if pubkey else None
+        self.identity = identity
+        self.issuer = issuer
+
+
+def _check_envelope(
+    env: dict[str, Any], stamps: list[dict[str, Any]], signer: dict[str, Any], expected: _Expected
+) -> dict[str, Any]:
+    """One DSSE envelope against the signer the statement names and the signer the caller expects.
+
+    ``ok`` requires: a signature that verifies (with ``--pubkey`` for a
+    key-signed envelope, with its certificate for a Fulcio one), the
+    statement's own description of the signer to match it (key fingerprint,
+    or identity and issuer and, where recorded, the certificate digest), and
+    the caller's expectation to match it: ``--pubkey`` must be the signing
+    key, also when the envelope carries a certificate; an identity-signed
+    envelope needs ``--expect-identity`` and ``--expect-issuer``.
     """
+    result: dict[str, Any] = {"method": signer.get("method"), "signature": None, "ok": False}
     signatures = env.get("signatures") or []
-    if any(s.get("certificate") for s in signatures):
-        return "see identity", True
-    if pubkey is None:
-        return "not checked: key-signed bundle and no --pubkey", False
-    from cryptography.hazmat.primitives import serialization
+    try:
+        payload = base64.b64decode(env["payload"])
+        data = _pae(env["payloadType"], payload)
+    except Exception as e:  # noqa: BLE001
+        result["signature"] = f"invalid envelope: {type(e).__name__}"
+        return result
+    cert_sigs = [(i, s) for i, s in enumerate(signatures) if s.get("certificate")]
+    if signer.get("method") == "key":
+        if cert_sigs:
+            result["signature"] = "the statement says key-signed, the envelope carries a certificate"
+            return result
+        if expected.key is None:
+            result["signature"] = "not checked: key-signed and no --pubkey"
+            return result
+        if _key_fingerprint(expected.pubkey) != signer.get("key_fingerprint"):  # type: ignore[arg-type]
+            result["signature"] = "--pubkey is not the key the statement names"
+            return result
+        for sig in signatures:
+            try:
+                verify_with(expected.key, base64.b64decode(sig["sig"]), data)
+                result["signature"] = "ok"
+                result["ok"] = True
+                return result
+            except Exception:  # noqa: BLE001 - try the next signature
+                continue
+        result["signature"] = "no signature verifies with --pubkey"
+        return result
+    if signer.get("method") != "identity":
+        result["signature"] = f"unknown signing method {signer.get('method')!r}"
+        return result
+    if not cert_sigs:
+        result["signature"] = "the statement says identity-signed, the envelope carries no certificate"
+        return result
+    index, sig = cert_sigs[0]
+    who = verify_identity_signature(env, sig, _trusted_time(stamps, index), _trusted_root().get_fulcio_certs())
+    result.update(who)
+    if not who["ok"]:
+        return result
+    leaf = signature_chain(sig)[0]
+    problems = []
+    if who["subject"] != signer.get("identity") or who["issuer"] != signer.get("issuer"):
+        problems.append("the certificate names a different identity or issuer than the statement")
+    recorded = signer.get("certificate_sha256")
+    if recorded and who["certificate_sha256"] != recorded:
+        problems.append("the certificate is not the one the statement names")
+    if expected.key is not None and _spki_der(expected.key) != _spki_der(leaf.public_key()):
+        problems.append("--pubkey is not the key in the certificate")
+    if expected.identity is None or expected.issuer is None:
+        problems.append("no expected identity: pass --expect-identity and --expect-issuer")
+    elif who["subject"] != expected.identity or who["issuer"] != expected.issuer:
+        problems.append(f"the certificate names {who['subject']} from {who['issuer']}, not the expected identity")
+    result["signature"] = "ok" if not problems else "; ".join(problems)
+    result["ok"] = not problems
+    return result
 
-    key = serialization.load_pem_public_key(pubkey.read_bytes())
-    payload = base64.b64decode(env["payload"])
-    pae = _pae(env["payloadType"], payload)
-    for sig in signatures:
-        try:
-            verify_with(key, base64.b64decode(sig["sig"]), pae)
-            return "ok", True
-        except Exception:  # noqa: BLE001 - try the next signature
-            continue
-    return "no Witness signature verifies with the given public key", False
+
+def _statement_signer(pred: dict[str, Any]) -> dict[str, Any]:
+    """Who signed the statement: the claimer of a derived bundle, else the run's signer."""
+    return pred.get("claim_signer") or pred.get("signing") or {}
 
 
-def verify(store: Any, bundle_id: str, pubkey: Path | None, online: bool = True) -> dict[str, Any]:
+def _witness_signer(signing: dict[str, Any], name: str) -> dict[str, Any]:
+    out = {k: v for k, v in signing.items() if k != "certificates_sha256"}
+    cert = (signing.get("certificates_sha256") or {}).get(name)
+    if cert:
+        out["certificate_sha256"] = cert
+    return out
+
+
+def verify(
+    store: Any,
+    bundle_id: str,
+    pubkey: Path | None,
+    online: bool = True,
+    expect_identity: str | None = None,
+    expect_issuer: str | None = None,
+) -> dict[str, Any]:
+    """Every check a bundle must pass; ``verified`` is true only when all of them do."""
     bundle = read_bundle(store, bundle_id)
     stmt = bundle["statement"]
     pred = stmt["predicate"]
+    expected = _Expected(pubkey, expect_identity, expect_issuer)
     recomputed = hashlib.sha256(_canonical(stmt)).hexdigest()
     checks: dict[str, Any] = {"id_matches_statement": recomputed == bundle["id"] == bundle_id}
     envs = bundle.get("witness_envelopes") or {}
+    stmt_env = bundle.get("statement_envelope") or {}
+
+    # The statement is signed: the payload the researcher signed is the statement the id hashes.
+    checks["statement_signed"] = bool(stmt_env) and stmt_env.get("payloadType") == STATEMENT_TYPE
+    try:
+        checks["statement_signed"] = checks["statement_signed"] and base64.b64decode(stmt_env["payload"]) == _canonical(
+            stmt
+        )
+    except Exception:  # noqa: BLE001
+        checks["statement_signed"] = False
 
     # The statement names every envelope by digest: a bundle cannot drop or swap one.
-    expected = pred.get("witness_envelopes_sha256") or {}
+    expected_envs = pred.get("witness_envelopes_sha256") or {}
     checks["envelopes_match_statement"] = (
-        bool(expected)
-        and set(expected) == set(envs)
-        and all(hashlib.sha256(_canonical(envs[name])).hexdigest() == digest for name, digest in expected.items())
+        bool(expected_envs)
+        and set(expected_envs) == set(envs)
+        and all(hashlib.sha256(_canonical(envs[name])).hexdigest() == digest for name, digest in expected_envs.items())
     )
 
     exp = pred.get("experiment")
@@ -203,41 +289,57 @@ def verify(store: Any, bundle_id: str, pubkey: Path | None, online: bool = True)
         checks["outputs_match_witness_products"] = bool(w) and all(
             (prod.get(o["path"]) or {}).get("digest", {}).get("sha256") == o["sha256"] for o in exp["outputs"]
         )
-        checks["command_matches_witness"] = bool(w) and run.get("cmd") == ["sh", "-c", exp["command"]]
-
-    signatures = {name: _verify_envelope(env, pubkey) for name, env in envs.items()}
-    checks["signatures"] = {name: text for name, (text, _ok) in signatures.items()}
-    checks["timestamps"] = {name: _timestamps(env) for name, env in envs.items()}
-    stamped = [t for ts in checks["timestamps"].values() for t in ts]
-    checks["timestamp_covers_signature"] = bool(stamped) and all(t.get("covers_signature") for t in stamped)
-    checks["timestamp_authority_trusted"] = bool(stamped) and all(t.get("tsa_chain") == "ok" for t in stamped)
+        cmd = run.get("cmd") or []
+        checks["command_matches_witness"] = (
+            bool(w) and len(cmd) == 4 and cmd[:3] == ["sh", "-c", wrap_command(exp["command"])]
+        )
+        # Stored outputs are what the statement says they are: a store can be written to by others.
+        stored_ok = True
+        for o in exp["outputs"]:
+            if not o.get("stored"):
+                continue
+            try:
+                stored_ok = (
+                    stored_ok and hashlib.sha256(read_blob(store, bundle_id, o["path"])).hexdigest() == o["sha256"]
+                )
+            except Exception:  # noqa: BLE001 - missing or unreadable: not what the statement says
+                stored_ok = False
+        checks["stored_outputs_match"] = stored_ok
 
     signing = pred.get("signing") or {}
-    identities = {name: _verify_identities(env, checks["timestamps"][name]) for name, env in envs.items()}
-    if any(identities.values()):
-        checks["identity"] = identities
-        recorded = signing.get("certificates_sha256") or {}
-        checks["identity_verified"] = all(
-            ids and all(i.get("ok") and i.get("certificate_sha256") == recorded.get(name) for i in ids)
-            for name, ids in identities.items()
-        )
-    checks["signatures_verified"] = bool(envs) and all(ok for _text, ok in signatures.values())
-    if pubkey is not None and signing.get("method") == "key":
-        checks["signer_matches_statement"] = _key_fingerprint(pubkey) == signing.get("key_fingerprint")
+    all_envs = {"statement": stmt_env, **envs}
+    checks["timestamps"] = {name: _timestamps(env) for name, env in all_envs.items()}
+    checks["timestamps_trusted"] = bool(all_envs) and all(
+        _every_signature_timestamped(env, checks["timestamps"][name]) for name, env in all_envs.items()
+    )
+    checks["signatures"] = {
+        "statement": _check_envelope(stmt_env, checks["timestamps"]["statement"], _statement_signer(pred), expected),
+        **{
+            name: _check_envelope(env, checks["timestamps"][name], _witness_signer(signing, name), expected)
+            for name, env in envs.items()
+        },
+    }
+    checks["signatures_verified"] = bool(envs) and all(s["ok"] for s in checks["signatures"].values())
 
-    publication = pred.get("publication")
+    publication = bundle.get("publication")
     if publication:
         checks["publication"] = {}
         for name, record in publication.items():
             try:
-                checks["publication"][name] = verify_publication(envs[name], record, _trusted_root(), online=online)
+                checks["publication"][name] = verify_publication(all_envs[name], record, _trusted_root(), online=online)
             except Exception as e:  # noqa: BLE001 - reported, never fatal
                 checks["publication"][name] = {"ok": False, "error": f"{type(e).__name__}: {e}"}
         checks["published"] = all(p.get("ok") for p in checks["publication"].values())
     checks["signing"] = signing
+    if pred.get("claim_signer"):
+        checks["claim_signer"] = pred["claim_signer"]
     checks["verified"] = all(v is True for k, v in checks.items() if isinstance(v, bool))
     subject = (stmt.get("subject") or [{}])[0]
-    return {"id": bundle_id, "subject": subject, **checks}
+    return {"id": bundle_id, "subject": subject, "verdict": pred.get("verdict"), **checks}
+
+
+def failed_checks(report: dict[str, Any]) -> list[str]:
+    return [k for k, v in report.items() if v is False and k != "verified"]
 
 
 def rerun(
@@ -247,7 +349,23 @@ def rerun(
     tsa: str | None = TSA_URL,
     identity: bool = False,
     publish: str | None = None,
+    pubkey: Path | None = None,
+    expect_identity: str | None = None,
+    expect_issuer: str | None = None,
+    online: bool = True,
+    consent: Callable[[str], bool] | None = None,
 ) -> dict[str, Any]:
+    """Verify the bundle, get consent for its command, then run it again at the recorded commit in a fresh clone.
+
+    The command runs on this machine with this user's environment (no
+    container yet: darnit #677 step B), so nothing in it is executed before
+    it verified and ``consent`` saw it.
+    """
+    report = verify(store, bundle_id, pubkey, online, expect_identity, expect_issuer)
+    if not report["verified"]:
+        raise RunError(
+            f"bundle {bundle_id} does not verify ({', '.join(failed_checks(report))}); rerun executes nothing from it"
+        )
     first = read_bundle(store, bundle_id)
     stmt = first["statement"]
     pred = stmt["predicate"]
@@ -256,6 +374,12 @@ def rerun(
         raise RunError("bundle has no experiment to rerun")
     artifact = stmt["subject"][0]["name"]
     commit = stmt["subject"][0]["digest"].get("gitCommit")
+    if not commit:
+        raise RunError("bundle records no commit (run with --allow-dirty), so there is nothing to rerun at")
+    if not _is_url(artifact) and not Path(artifact).is_dir():
+        raise RunError(f"the bundle's artifact {artifact} is a local path that does not exist here")
+    if consent is None or not consent(exp["command"]):
+        raise RunError("rerun not confirmed")
     entry = {
         "id": pred.get("corpus_entry"),
         "run": {"command": exp["command"], "outputs": [o["path"] for o in exp["outputs"]]},
@@ -263,7 +387,18 @@ def rerun(
             {k: v for k, v in c.items() if k not in ("measured", "verdict", "reason")} for c in pred.get("claims") or []
         ],
     }
-    new = execute(artifact, commit, key, entry, store, rerun_of=first, tsa=tsa, identity=identity, publish=publish)
+    new = execute(
+        artifact,
+        commit,
+        key,
+        entry,
+        store,
+        rerun_of=first,
+        tsa=tsa,
+        identity=identity,
+        publish=publish,
+        clone_local=True,
+    )
     new_pred = new["statement"]["predicate"]
     comparison = new_pred["reruns"]
     return {
