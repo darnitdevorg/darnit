@@ -5,6 +5,13 @@ Runs `git diff --name-only <base>...HEAD` and asserts no file under
 the current PR. Guards against a future maintainer accidentally adding
 a "small helper" to product code from a parity-tests PR.
 
+The same paths also change when a product PR has to update an existing
+parity-harness caller. Such a PR declares itself with the commit trailer
+``Parity-Guard: not-a-parity-pr``, read by git's own trailer parser. The
+trailer is a reviewer-visible claim, not proof that the harness edits are
+compatibility updates: a parity-suite PR can add the same trailer and bypass
+this guard, so reviewers have to confirm the claim before accepting the skip.
+
 Fails loudly (not silently) when the base ref cannot be reached under
 CI, since a shallow-clone runner that silently passes gives the
 maintainer a false sense of coverage. PR #370 review fix.
@@ -75,6 +82,11 @@ def _base_ref() -> str | None:
     return _find_reachable_base()
 
 
+_SELF = "tests/darnit/parity/tier1/test_no_product_changes.py"
+_FIXTURES = "tests/darnit/parity/fixtures/"
+_PRODUCT_PREFIXES = ("packages/darnit/src/", "packages/darnit-baseline/src/")
+
+
 def _is_ci() -> bool:
     """True on GitHub Actions and most other CI runners.
 
@@ -83,6 +95,39 @@ def _is_ci() -> bool:
     turning the "no base ref" case from skip -> fail.
     """
     return bool(os.environ.get("CI"))
+
+
+def _touches_parity_harness(changed: list[str]) -> bool:
+    """Whether tier1/tier2 parity code changed.
+
+    Fixture and expectation updates under fixtures/ come with product behavior
+    changes, and an edit to this guard alone is a meta-change; neither makes a
+    PR a parity-tests PR.
+    """
+    return any(
+        path.startswith("tests/darnit/parity/") and not path.startswith(_FIXTURES) and path != _SELF for path in changed
+    )
+
+
+def _product_paths(changed: list[str]) -> list[str]:
+    return [path for path in changed if path.startswith(_PRODUCT_PREFIXES)]
+
+
+def _declares_product_pr(base: str) -> bool:
+    """Whether a commit in ``base..HEAD`` has the trailer ``Parity-Guard: not-a-parity-pr``.
+
+    Git decides which lines are trailers, so the same words in a subject or
+    body do not count. ``key=`` matches case-insensitively and ``valueonly``
+    prints one value per line.
+    """
+    rc = subprocess.run(
+        ["git", "log", "--format=%(trailers:key=Parity-Guard,valueonly)", f"{base}..HEAD"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    )
+    return any(value.strip() == "not-a-parity-pr" for value in rc.stdout.splitlines())
 
 
 def test_no_product_source_changes() -> None:
@@ -119,23 +164,7 @@ def test_no_product_source_changes() -> None:
     )
     changed = [ln.strip() for ln in rc.stdout.splitlines() if ln.strip()]
 
-    # FR-014's scope is "parity-tests PR MUST NOT modify product source",
-    # so this check only applies to PRs that change the parity harness --
-    # the tier1/tier2 test code. A PR that changes product behavior
-    # legitimately updates parity fixtures and their expected outcomes under
-    # `tests/darnit/parity/fixtures/`, and that alone does not make it a
-    # parity-tests PR. A PR that doesn't touch the harness is not a
-    # parity-tests PR and may edit product code under `packages/*/src/`.
-    #
-    # Exclude this file itself from the heuristic: a PR that only touches
-    # the guard (to tune scope, adjust base-ref detection, etc.) is a
-    # meta-change to the guard, not a parity-tests-feature PR.
-    _SELF = "tests/darnit/parity/tier1/test_no_product_changes.py"
-    _FIXTURES = "tests/darnit/parity/fixtures/"
-    touches_parity_harness = any(
-        f.startswith("tests/darnit/parity/") and not f.startswith(_FIXTURES) and f != _SELF for f in changed
-    )
-    if not touches_parity_harness:
+    if not _touches_parity_harness(changed):
         pytest.skip(
             "FR-014 check skipped: PR does not modify the parity harness "
             "(tests/darnit/parity/ outside fixtures/, other than this guard), "
@@ -143,9 +172,16 @@ def test_no_product_source_changes() -> None:
             "guardrail does not apply.",
         )
 
-    forbidden = [
-        f for f in changed if (f.startswith("packages/darnit/src/") or f.startswith("packages/darnit-baseline/src/"))
-    ]
+    forbidden = _product_paths(changed)
+    if forbidden and _declares_product_pr(base):
+        pytest.skip(
+            "FR-014 check skipped: a commit in this PR carries the trailer "
+            "`Parity-Guard: not-a-parity-pr`, declaring that this is a product "
+            "change whose parity-harness edits are compatibility updates for "
+            "existing callers. Reviewers must confirm that declaration. The "
+            "trailer is a claim, not proof: a parity-suite change can carry the "
+            "same trailer and bypass this guard.",
+        )
     assert not forbidden, (
         "Feature 028 (parity tests) MUST NOT modify product source code "
         "(FR-014). Offending files:\n"
@@ -153,3 +189,62 @@ def test_no_product_source_changes() -> None:
         + "\n\nIf a change under packages/*/src/ is genuinely necessary, "
         "split it into a separate PR that is not scoped to feature 028."
     )
+
+
+_PRODUCT = "packages/darnit-baseline/src/darnit_baseline/tools.py"
+_HARNESS = "tests/darnit/parity/tier1/conftest.py"
+_FIXTURE = "tests/darnit/parity/fixtures/example/parity.toml"
+
+
+@pytest.mark.parametrize(
+    ("changed", "touches_harness", "product"),
+    [
+        pytest.param([_PRODUCT], False, [_PRODUCT], id="product-only"),
+        pytest.param([_FIXTURE, _PRODUCT], False, [_PRODUCT], id="fixtures-plus-product"),
+        pytest.param([_SELF, _PRODUCT], False, [_PRODUCT], id="guard-file-plus-product"),
+        pytest.param([_HARNESS, _PRODUCT], True, [_PRODUCT], id="harness-and-product"),
+        pytest.param([_HARNESS], True, [], id="harness-only"),
+        pytest.param([], False, [], id="empty-change-list"),
+    ],
+)
+def test_fr014_path_rules(changed: list[str], touches_harness: bool, product: list[str]) -> None:
+    assert _touches_parity_harness(changed) is touches_harness
+    assert _product_paths(changed) == product
+
+
+def _commit(*paragraphs: str) -> None:
+    message = [arg for paragraph in paragraphs for arg in ("-m", paragraph)]
+    subprocess.run(
+        ["git", "-c", "user.name=FR014", "-c", "user.email=fr014@example.com", "-c", "commit.gpgsign=false"]
+        + ["commit", "--allow-empty", "-q", *message],
+        check=True,
+    )
+
+
+@pytest.mark.parametrize(
+    ("commits", "declared"),
+    [
+        pytest.param([("Update callers.", "Parity-Guard: not-a-parity-pr")], True, id="valid-trailer"),
+        pytest.param([("Update callers.", "Parity-Guard: product-change")], False, id="invalid-value"),
+        pytest.param(
+            [
+                (
+                    "The review asked about Parity-Guard: not-a-parity-pr as an example.",
+                    "Signed-off-by: Ada <a@example.com>",
+                )
+            ],
+            False,
+            id="mentioned-in-prose",
+        ),
+        pytest.param([("Update callers.",)], False, id="no-trailer"),
+        pytest.param([("Update callers.",), ("Declare.", "Parity-Guard: not-a-parity-pr")], True, id="later-commit"),
+    ],
+)
+def test_parity_guard_trailer(tmp_path, monkeypatch, commits: list[tuple[str, ...]], declared: bool) -> None:
+    monkeypatch.chdir(tmp_path)
+    subprocess.run(["git", "init", "-q", "-b", "main"], check=True)
+    _commit("base")
+    subprocess.run(["git", "branch", "base"], check=True)
+    for paragraphs in commits:
+        _commit(*paragraphs)
+    assert _declares_product_pr("base") is declared
