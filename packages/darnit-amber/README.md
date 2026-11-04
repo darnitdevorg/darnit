@@ -38,11 +38,22 @@ darnit-amber run --store s3 --bucket amber-runs -- ./run_experiment.sh
 ```
 
 darnit runs the Amber audit and the command under CNCF Witness and stores
-a signed **run bundle**: which repository and commit (from git), the exact
-command, the environment (Witness records the machine's environment
-variables, hostname and user name, minus its list of known secrets), every
-file the command created or changed (with its contents, up to 10 MB each),
-and the Witness attestations. Nothing is written by hand.
+a signed **run bundle**: which repository and commit (from git; a checkout
+with uncommitted changes is refused unless `--allow-dirty`, and then no
+commit is recorded), the exact command and its exit status (a failing
+experiment is a result, so it still gets a bundle), the environment (Python,
+OS, CPU and memory, and an allowlist of variables such as `PATH`, `LANG`,
+`OMP_NUM_THREADS` and `CUDA_VISIBLE_DEVICES`; never the host name, the user
+name or anything that could hold a credential), every file the command
+created or changed (with its contents, up to 10 MB each), and the Witness
+attestations. Nothing is written by hand, and the whole statement is signed
+by the researcher.
+
+Two things the bundle records that are worth knowing before sharing it:
+Witness keeps the command's **stdout and stderr** in the `command-run`
+attestation, so an experiment that prints a secret stores it; and a clone
+URL is recorded without its credentials, but the command line is recorded
+as given.
 
 Then, pointing at a number in one of those outputs, the researcher states
 the paper's claim:
@@ -52,23 +63,29 @@ darnit-amber claim <bundle id> --id figure6a --file results/report.txt \
     --regex 'Queries/sec: ([0-9.]+)' --threshold '>= 120' --source 'Figure 6a'
 ```
 
-darnit measures it from the stored output and writes a new bundle
-(`derived_from` the first) with the verdict: `REPRODUCED`,
-`NOT_REPRODUCED`, or `NOT_COMPARABLE` with `--not-comparable "reason"`
-for numbers that depend on hardware the reviewer does not have.
+darnit measures it from the stored output (checked against the digest in
+the statement: a store is not trusted) and writes a new bundle
+(`derived_from` the first, signed by whoever makes the claim, recorded as
+`claim_signer`) with the verdict: `REPRODUCED`, `NOT_REPRODUCED`, or
+`NOT_COMPARABLE` with `--not-comparable "reason"` for numbers that depend
+on hardware the reviewer does not have.
 
 Anyone with the bundle id can later check and repeat it:
 
 ```
-darnit-amber verify <bundle id> --pubkey key.pub      # id, outputs vs Witness, signatures
-darnit-amber rerun  <bundle id>                       # same commit, same command, fresh clone
+darnit-amber verify <bundle id> --pubkey key.pub      # statement signature, outputs vs Witness, timestamps
+darnit-amber rerun  <bundle id> --pubkey key.pub      # verify, then: same commit, same command, fresh clone
 ```
 
-`rerun` reports, per claim, the first value and the new one with both
-verdicts, and per output whether the file is identical. `drift` is true
-only when a verdict changed (or an output changed and nothing was
-measured): a timing report that differs byte for byte but gives the same
-verdict is not drift.
+`rerun` verifies the bundle first and executes nothing from one that does
+not verify. It then prints the command and asks, because the command runs
+**on this machine, as this user, with this environment, in no container**
+(darnit #677 step B adds the container); `--yes` answers for a script. A
+local path is cloned at the recorded commit, never run in place. It
+reports, per claim, the first value and the new one with both verdicts,
+and per output whether the file is identical. `drift` is true only when a
+verdict changed (or an output changed and nothing was measured): a timing
+report that differs byte for byte but gives the same verdict is not drift.
 
 ## Signing, time, and what is public
 
@@ -97,26 +114,35 @@ identity and issuer under `signing` instead of a key fingerprint. The
 timestamp is mandatory here: it is what places the signature inside the
 certificate's ten minutes.
 
-`verify` first checks that the bundle is one piece: the id is the hash of
-the statement, and the statement names each Witness envelope by digest and
-its signer by key fingerprint or certificate digest, so an envelope cannot
-be dropped or swapped. It then reports, per envelope, the signature check
-(`--pubkey` is required for a key-signed bundle: a signature nobody checked
-never counts as verified; an `--identity` bundle is checked from its
-certificate), and each timestamp's
-time, whether it covers that signature, and whether its signer chains to a
-timestamp authority in Sigstore's trusted root (fetched through TUF; the
-copy sigstore-python ships is used offline). For an `--identity` bundle it
-adds, per signature, the identity and issuer, whether the certificate
-chains to Fulcio in the same trusted root, and whether the timestamp falls
-in the certificate's window. A bundle is `verified` only when every check
-passes.
+`verify` first checks that the bundle is one piece: the statement itself
+is a signed DSSE envelope (`statement_envelope`) whose payload is, byte for
+byte, the statement the id hashes, so nothing under `predicate` (claims,
+verdict, audit results, identity) can be edited after the fact; and the
+statement names each Witness envelope by digest and its signer by key
+fingerprint or certificate digest, so an envelope cannot be dropped or
+swapped. Stored outputs are hashed against the statement. It then reports,
+per envelope (the statement and each Witness step), the signature check
+and each timestamp's time, whether it covers that signature, and whether
+its signer chains to a timestamp authority in Sigstore's trusted root
+(fetched through TUF; the copy sigstore-python ships is used offline).
+Every signature needs a trusted timestamp. The verifier must say who the
+signer is: `--pubkey` for a key-signed bundle (a signature nobody checked
+never counts as verified), and `--expect-identity` with `--expect-issuer`
+for an `--identity` bundle, as `cosign verify` requires. For an
+`--identity` bundle it adds, per signature, the identity and issuer in the
+certificate (which must be the ones the statement names), whether the
+certificate chains to Fulcio in the same trusted root, and whether the
+timestamp falls in the certificate's window; `--pubkey` given alongside
+must be the key in the certificate. A bundle is `verified` only when every
+check passes.
 
-`run --publish` records each Witness envelope in Rekor as a `dsse` entry
-(with the certificate, or the key's public half, as verifier) and keeps
-the log index, integrated time and inclusion proof under `publication`.
-Only the envelope is published: the experiment's outputs stay in the
-researcher's store. `verify` checks, per envelope, that the log entry is
+`run --publish` records the statement envelope and each Witness envelope
+in Rekor as `dsse` entries (with the certificate, or the key's public half,
+as verifier) and keeps the log index, integrated time and inclusion proof
+under `publication`, next to the statement rather than inside it: the
+bundle is stored first, then published, so a failed publish leaves a
+stored, signed bundle and an error naming it. Only the envelopes are
+published: the experiment's outputs stay in the researcher's store. `verify` checks, per envelope, that the log entry is
 this envelope (payload hash and signatures), that the inclusion proof and
 its signed checkpoint verify against Rekor's key in the trusted root, and,
 unless `--offline`, that the log still holds the same entry at that index.
@@ -175,10 +201,18 @@ the value is numeric or a string (`== falsified`). Verdict per claim:
 
 - `REPRODUCED`: value found and the comparison holds (within `tolerance`)
 - `NOT_REPRODUCED`: value found, comparison fails
-- `NOT_COMPARABLE`: no `measure`, file or regex missing, or `comparable: false`
+- `NOT_COMPARABLE`: no `measure`, file not produced by the experiment or
+  regex missing, `comparable: false`, or a comparison that makes no sense
+  (`<`, `<=`, `>`, `>=` need two numbers; `9 ms` against `> 10` is not
+  reproduced, it is not comparable)
 
-The overall verdict is the worst claim. Each claim also records
-`matches_expected`, so a run of an entry doubles as a test of the entry.
+`measure.file` must be a file the experiment produced, as Witness recorded
+it: a `results/table.txt` committed with the artifact is never measured,
+however good its numbers look. The overall verdict is `REPRODUCED` only when
+every claim is, `NOT_REPRODUCED` when any is, and `NOT_COMPARABLE` otherwise:
+a claim that could not be measured counts against the run. Each claim also
+records `matches_expected`, so a run of an entry doubles as a test of the
+entry.
 
 Use `comparable: false` for performance numbers measured on different
 hardware than the paper's, or when the paper gives no tolerance: the value
@@ -207,7 +241,7 @@ environment:
 Today the image is built by hand from `containerfile` on the machine that
 runs the entry. A later step can build and push it to a registry (GHCR)
 and pin the digest automatically. `environment` is recorded verbatim in
-the bundle, next to Witness's own environment attestation of the host.
+the bundle, next to the host's `environment` snapshot in the predicate.
 
 ## Bundle contents
 
@@ -215,9 +249,14 @@ the bundle, next to Witness's own environment attestation of the host.
 `https://darnit.dev/amber/run/v1`: the entry (`corpus_entry`, `claims`
 with `measured`, `verdict`, `reason`), the Amber audit result, the
 experiment (`command`, `exit_code`, `outputs` with sha256), the overall
-`verdict`, and the Witness envelopes for both steps (environment, git,
-command-run, product attestations, signed and timestamped as below). The bundle id is
-the sha256 of the canonical statement.
+`verdict`, the `environment` snapshot, the signer (`signing`) and the
+digest of each Witness envelope. The bundle holds that statement, its
+signature (`statement_envelope`, a DSSE envelope over the canonical
+statement, signed and timestamped like the steps), the Witness envelopes
+for both steps (git, command-run and product attestations), and
+`publication` when published. The bundle id is the sha256 of the
+canonical statement. A bundle made with `--no-timestamp` is signed but
+cannot be `verified`: nothing places its signatures in time.
 
 `rerun` executes the same command at the same commit, re-measures the
 claims, and stores a new bundle with `reruns.of`, `reruns.outputs` (digest

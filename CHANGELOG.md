@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `darnit-amber run`, `verify`, `claim` and `rerun` (#677 steps A, C, D; #678;
+  specs/046-amber-run-bundle): one execution of an artifact's experiment under
+  Witness becomes a signed run bundle (statement signed as DSSE, Witness
+  envelopes bound by digest, outputs stored and hashed), with optional
+  `--identity` (Fulcio) signing and `--publish` to Rekor. Claims are measured
+  only from outputs the experiment produced; `rerun` verifies before it
+  executes and asks for consent. The S3 store is an extra:
+  `pip install 'darnit-amber[s3]'`.
+
 - Developer test flow automation scripts (`scripts/clean_and_install_dev.sh`,
   `scripts/setup_dev_projects.sh`, `scripts/run_dev_test_flow.sh`) to
   generate reproducible test fixtures (`failing-empty`,
