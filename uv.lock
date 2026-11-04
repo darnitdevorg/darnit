@@ -547,7 +547,6 @@ name = "darnit-amber"
 version = "0.1.1"
 source = { editable = "packages/darnit-amber" }
 dependencies = [
-    { name = "boto3" },
     { name = "cryptography" },
     { name = "darnit-core" },
     { name = "packaging" },
@@ -556,14 +555,20 @@ dependencies = [
     { name = "sigstore" },
 ]
 
+[package.optional-dependencies]
+s3 = [
+    { name = "boto3" },
+]
+
 [package.dev-dependencies]
 dev = [
+    { name = "boto3" },
     { name = "moto", extra = ["server"] },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "boto3", specifier = ">=1.43.118" },
+    { name = "boto3", marker = "extra == 's3'", specifier = ">=1.43.118" },
     { name = "cryptography", specifier = ">=46" },
     { name = "darnit-core", editable = "packages/darnit" },
     { name = "packaging", specifier = ">=23.0" },
@@ -571,9 +576,13 @@ requires-dist = [
     { name = "rfc3161-client", specifier = ">=1.0" },
     { name = "sigstore", specifier = ">=4.0,<5" },
 ]
+provides-extras = ["s3"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "moto", extras = ["server"], specifier = ">=5.2.4" }]
+dev = [
+    { name = "boto3", specifier = ">=1.43.118" },
+    { name = "moto", extras = ["server"], specifier = ">=5.2.4" },
+]
 
 [[package]]
 name = "darnit-baseline"
