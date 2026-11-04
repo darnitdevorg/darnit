@@ -1,6 +1,6 @@
 """Gittuf sieve handlers.
 
-These are the functions that actually run the checks.
+These are the functions that run checks and remediation.
 Each one receives a config dict and a HandlerContext,
 and returns a HandlerResult saying PASS, FAIL, or INCONCLUSIVE.
 """
@@ -11,8 +11,27 @@ from typing import Any
 
 from darnit.core.logging import get_logger
 from darnit.sieve.handler_registry import HandlerContext, HandlerResult, HandlerResultStatus
+from darnit_gittuf.setup import SetupError, initialize
 
 logger = get_logger("darnit_gittuf.handlers")
+
+
+def gittuf_initialize_handler(
+    config: dict[str, Any],
+    ctx: HandlerContext,
+) -> HandlerResult:
+    """Initialize gittuf using the maintainer's confirmed SSH key."""
+    try:
+        initialize(ctx.local_path, ctx.owner or None, ctx.repo or None)
+    except (SetupError, OSError, ValueError, subprocess.SubprocessError) as exc:
+        return HandlerResult(
+            status=HandlerResultStatus.ERROR,
+            message=f"Initialization stopped: {exc}. Inspect any existing metadata before retrying.",
+        )
+    return HandlerResult(
+        status=HandlerResultStatus.PASS,
+        message="Initial gittuf root applied locally. Branch policy remains a maintainer decision.",
+    )
 
 
 def gittuf_verify_policy_handler(

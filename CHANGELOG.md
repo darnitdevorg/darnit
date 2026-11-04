@@ -237,6 +237,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   running installation as the MCP server command. Without it, the entry
   runs the darnit-mcp release on PyPI through `uvx`, even when darnit was
   installed from a source checkout.
+- GT-01.01 remediation initializes gittuf locally with a maintainer-confirmed
+  SSH key path through a registered plugin handler. It refuses existing
+  `refs/gittuf/*` and preserves HEAD, Git configuration, and working-tree files.
 - Operator configuration: a user-level TOML file found the same way by the
   CLI, MCP server, and harness (`--operator-config PATH`, else
   `$XDG_CONFIG_HOME/darnit/config.toml` or `~/.config/darnit/config.toml`,

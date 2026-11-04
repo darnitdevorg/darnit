@@ -13,6 +13,15 @@ description = "Run Gittuf policy checks on a repository"
 builtin = "audit"
 description = "Run Gittuf policy checks"
 
+[context.gittuf_root_key]
+type = "string"
+prompt = "Which existing SSH key should hold the initial gittuf root authority? Provide its absolute local path, never private key contents."
+affects = ["GT-01.01"]
+store_as = "gittuf_root_key"
+auto_detect = false
+allow_sieve_hints = false
+required = true
+
 # =============================================================================
 # Control: Is Gittuf initialized in this repo?
 # =============================================================================
@@ -21,6 +30,20 @@ description = "Run Gittuf policy checks"
 name = "GittufInitialized"
 description = "Repository has Gittuf initialized"
 tags = { level = 1, domain = "GT" }
+help_md = """For a new gittuf installation, confirm `gittuf_root_key` through
+`confirm_project_data` using the absolute local path to the maintainer's existing
+SSH private key, never its contents or a `.pub` path. Install git, gittuf, and
+ssh-keygen on PATH and configure Git author and committer identity.
+
+Signing must be non-interactive: use an unencrypted key or unlock it in ssh-agent
+before starting Darnit, with the agent available to that process. This remediation
+does not support interactive passphrase entry.
+
+Approve GT-01.01 remediation to initialize, stage, and apply the root of trust
+locally. Setup refuses to run if any refs/gittuf/* exist. It leaves HEAD, Git
+configuration, and working-tree files untouched. Branch policies and additional
+key holders remain maintainer decisions; nothing is pushed.
+"""
 
 [[controls."GT-01.01".passes]]
 handler = "exec"
@@ -36,22 +59,15 @@ steps = [
     "Run: git show-ref --verify refs/gittuf/policy",
     "Verify the command exits with code 0",
     "If it fails, Gittuf has not been initialized in this repo",
-    "To initialize: run gittuf trust init, then gittuf policy init",
+    "To initialize: use GT-01.01 remediation with a confirmed root signing key",
 ]
 
 [controls."GT-01.01".remediation]
 safe = false
+requires_context = [{key = "gittuf_root_key", required = true}]
 
 [[controls."GT-01.01".remediation.handlers]]
-handler = "manual"
-steps = [
-    "1. gittuf trust init -k <signing-key>",
-    "2. gittuf trust add-policy-key -k <signing-key> --policy-key <pub-key>",
-    "3. gittuf trust apply --local-only -k <signing-key>",
-    "4. gittuf policy init -k <signing-key>",
-    "5. Add rules: gittuf policy add-rule ...",
-    "6. gittuf policy apply --local-only -k <signing-key>",
-]
+handler = "gittuf_initialize"
 
 # =============================================================================
 # Control: Is the Gittuf policy valid?
