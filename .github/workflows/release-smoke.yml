@@ -76,7 +76,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [darnit-core, darnit-baseline, darnit-csl, darnit-gittuf, darnit-reproducibility, darnit-mcp]
+        package: [darnit-core, darnit-baseline, darnit-gittuf, darnit-reproducibility, darnit-mcp]
     steps:
       - name: Checkout (for public-packages.txt sanity check)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
@@ -145,9 +145,6 @@ jobs:
             "darnit-baseline")
               "$venv/bin/python" -c "import darnit_baseline; print('darnit_baseline imports OK')"
               ;;
-            "darnit-csl")
-              "$venv/bin/python" -c "import darnit_csl; print('darnit_csl imports OK')"
-              ;;
             "darnit-gittuf")
               "$venv/bin/python" -c "import darnit_gittuf; print('darnit_gittuf imports OK')"
               ;;
@@ -203,15 +200,31 @@ jobs:
             exit 1
           fi
 
-          # Verify the PEP 740 attestations in the provenance object against the
-          # wheel and the publishing repository. sigstore 3.x has no
+          # pypi-attestations takes the signing workflow from the provenance
+          # file's own `publisher` block, so `--repository` alone would accept
+          # any workflow of this repository. Pin the publisher first: every
+          # bundle must come from release.yml, run in the `release` environment.
+          publishers=$(jq -c '[.attestation_bundles[].publisher]' /tmp/provenance.json)
+          echo "Publishers in provenance: $publishers"
+          if ! jq -e --arg repo "${{ github.repository }}" '
+                (.attestation_bundles | length) > 0 and
+                all(.attestation_bundles[].publisher;
+                    .kind == "GitHub" and .repository == $repo
+                    and .workflow == "release.yml" and .environment == "release")
+              ' /tmp/provenance.json > /dev/null; then
+            echo "::error::Provenance for $PKG $VERSION names a publisher other than release.yml in the release environment of ${{ github.repository }}: $publishers"
+            exit 1
+          fi
+
+          # Then verify the PEP 740 attestations in the provenance object against
+          # the wheel and the publishing repository. sigstore 3.x has no
           # `verify identity --cert-identity-regexp`, and the provenance object is
           # not a Sigstore bundle; pypi-attestations reads it as published.
           pypi-attestations verify pypi \
             --repository "https://github.com/${{ github.repository }}" \
             --provenance-file /tmp/provenance.json \
             "$wheel"
-          echo "✓ PEP 740 attestation verified for $PKG $VERSION"
+          echo "✓ PEP 740 attestation verified for $PKG $VERSION (release.yml, release environment)"
 
   # T028: pull the published image, run --version, then cosign-verify the
   # image's signing identity against the canonical release.yml workflow URI.

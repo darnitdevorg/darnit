@@ -1,6 +1,6 @@
 # Release Recovery Procedures
 
-Per-channel repair procedures for partial-failure recovery. The release workflow does **not** support re-running on an already-published tag (preflight rejects it per FR-002). Recovery is always channel-by-channel.
+Per-channel repair procedures for partial-failure recovery. A push of an already-released tag is rejected by preflight (FR-002); a failed run is repeated with `gh run rerun <run-id> --failed` or `workflow_dispatch` on the same tag, and channels that already succeeded are skipped or left alone, as each section says.
 
 > If a `release-failure` issue references this file, find the channel section below and follow the procedure.
 
@@ -19,21 +19,20 @@ If recovery is impossible (e.g., a wheel uploaded under the wrong version), the 
 
 ## PyPI
 
-The four per-package publish jobs (`publish-darnit`, `publish-darnit-baseline`, `publish-darnit-gittuf`, `publish-darnit-mcp`) are sequenced via `needs:` and `darnit` always publishes first. A failure can leave some packages uploaded and others not.
+The per-package publish jobs (`publish-darnit-core`, `publish-darnit-baseline`, `publish-darnit-gittuf`, `publish-darnit-reproducibility`, `publish-darnit-mcp`; the list is [`packaging/pypi/public-packages.txt`](pypi/public-packages.txt)) are sequenced via `needs:`, `darnit-core` first. Each publishes with PyPI Trusted Publishing from the `release` environment and `skip-existing: true`, so a job that runs again for a version already on the index skips the upload instead of failing. There is no manual publish path: nothing outside `release.yml` holds a credential for PyPI.
 
 ### Failure mode 1 — One or more packages uploaded; one failed mid-flight
 
 **Symptom**: `release.yml` shows green for some `publish-*` jobs and red for others. PyPI/TestPyPI shows the green ones live.
 
-**Important**: PyPI versions are **immutable**. You cannot re-upload version `X.Y.Z` after one byte of it is on the index, even via the `release.yml` re-run path (which preflight rejects anyway).
+**Important**: PyPI versions are **immutable**. A file that is on the index cannot be replaced; `skip-existing` only lets the workflow pass over it.
 
 **Procedure**:
 
 1. Determine which packages uploaded successfully. The `release.yml` job summary names each failed publish; PyPI's project page is the source of truth (`https://pypi.org/project/<package>/<version>/`).
-2. **For the failed packages**:
-   - If the failure was transient (network, OIDC token, rate limit) and re-running the publish step succeeds: download the dist artifact from the failed workflow run via `gh run download <run-id> --name dist`. Manually invoke the publish action against the package's `dist/<pkg>/` subdirectory, using the same OIDC environment. PyPI is **not** idempotent — if even one wheel for the version is up, the whole upload is rejected.
-   - If the failure was permanent (bad metadata, missing classifier, name collision): **roll forward to a fresh version**. PyPI version numbers cannot be reused; bump to a patch (`X.Y.Z+1`) and re-tag. The already-uploaded packages from the failed run remain on PyPI at the original version but will be unused — yank them via `https://pypi.org/manage/project/<pkg>/release/<version>/`.
-3. **For the succeeded packages**: leave them. Yanking is only necessary if the bad release was already advertised.
+2. **If the failure was transient** (network, OIDC token exchange, rate limit, a Trusted Publisher not yet configured for that package): fix the cause if there is one, then run the workflow again for the same tag. Either re-run the failed jobs of the same run (`gh run rerun <run-id> --failed`), which reuses the wheels that run built, or start a fresh run with `workflow_dispatch` and the tag as input, which rebuilds them from the tag. Both go through the `release` environment approval again. Already-published packages are skipped by `skip-existing`; the ones that failed are published. The tag push path is not usable for this: preflight rejects a tag that already has a GitHub Release, and the `release` job only runs once every publish job succeeded, so a run that failed in a publish job has no Release yet.
+3. **If the failure was permanent** (bad metadata, missing classifier, name collision): **roll forward to a fresh version**. PyPI version numbers cannot be reused; bump to a patch (`X.Y.Z+1`) and re-tag. The already-uploaded packages from the failed run remain on PyPI at the original version but will be unused — yank them via `https://pypi.org/manage/project/<pkg>/release/<version>/`.
+4. **For the succeeded packages**: leave them. Yanking is only necessary if the bad release was already advertised.
 
 ### Failure mode 2 — Sigstore attestation upload failed
 
