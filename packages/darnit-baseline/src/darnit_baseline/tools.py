@@ -803,7 +803,7 @@ def get_pending_data(
     target = target_from_owner_repo(owner, repo)
     # Only the repository the caller named goes into the procedure's calls,
     # never one detected from the checkout's remote.
-    procedure = data_collection_procedure(owner, repo, str(repo_path))
+    procedure = data_collection_procedure(owner, repo, str(repo_path), control_ids)
 
     # Auto-detect owner/repo from git
     if owner is None or repo is None:

@@ -14,30 +14,52 @@ import json
 
 _OWNER = "<owner of the audited repository>"
 _REPO = "<name of the audited repository>"
+# get_pending_data takes no host, so the confirm_project_data call it
+# describes carries a placeholder, never a host read from the checkout.
+_HOST = "<git host of the audited repository; omit for github.com>"
 
 
-def _args(owner: str | None, repo: str | None, host: str | None, local_path: str) -> str:
+def _args(
+    owner: str | None,
+    repo: str | None,
+    host: str | None,
+    local_path: str,
+    *,
+    host_placeholder: bool = False,
+    control_ids: list[str] | None = None,
+) -> str:
     parts = [
         f"owner={json.dumps(owner) if owner else _OWNER}",
         f"repo={json.dumps(repo) if repo else _REPO}",
     ]
     if host and host != "github.com":
         parts.append(f"host={json.dumps(host)}")
+    elif host_placeholder:
+        parts.append(f"host={_HOST}")
     parts.append(f"local_path={json.dumps(local_path)}")
+    if control_ids:
+        parts.append(f"control_ids={json.dumps(control_ids)}")
     return ", ".join(parts)
 
 
 def data_next_step(owner: str | None, repo: str | None, local_path: str) -> str:
     """The call that follows a ``confirm_project_data`` call (``get_pending_data`` takes no host)."""
     return (
-        f"Next: call get_pending_data({_args(owner, repo, None, local_path)}) for the remaining questions "
-        "and follow its procedure; when it returns status complete, re-run the audit."
+        f"Next: call get_pending_data({_args(owner, repo, None, local_path)}), with the same control_ids "
+        "if you passed any, for the remaining questions and follow its procedure; when it returns status "
+        "complete, re-run the audit."
     )
 
 
-def data_collection_procedure(owner: str | None, repo: str | None, local_path: str) -> list[str]:
+def data_collection_procedure(
+    owner: str | None,
+    repo: str | None,
+    local_path: str,
+    control_ids: list[str] | None = None,
+) -> list[str]:
     """Ordered steps for collecting project data from the person (``get_pending_data`` takes no host)."""
-    args = _args(owner, repo, None, local_path)
+    confirm_args = _args(owner, repo, None, local_path, host_placeholder=True)
+    next_args = _args(owner, repo, None, local_path, control_ids=control_ids)
     return [
         "1. For each question with a candidate, show the person candidate.value and candidate.origin, "
         "labelled UNCONFIRMED. A candidate is never a fact or a default answer.",
@@ -45,11 +67,13 @@ def data_collection_procedure(owner: str | None, repo: str | None, local_path: s
         "Claude Code); ask a question with no ask_user entry in plain text, listing every allowed_values "
         "entry. format_hint is a format, never an answer. Do not pre-fill or suggest answers.",
         "3. If the person says skip or does not know, leave that key out and move on.",
-        f"4. Record the answers in one call: confirm_project_data({args}, <key>=<the person's answer>). "
-        "Yes/No questions take true/false. For a Yes on a candidate pass "
-        'accept_candidates={"<key>": "<that question\'s candidate.digest>"}, filled in only after the '
-        "person said yes. Pass only what the person said, never a detected value.",
-        f"5. Call get_pending_data({args}) again and repeat from step 1 until status is complete.",
+        f"4. Record the answers in one call: confirm_project_data({confirm_args}, <key>=<the person's "
+        "answer>), using answer_mapping: Yes/No on a yes/no question is true/false; a chosen option is its "
+        'label as a string; Yes on a candidate is accept_candidates={"<key>": "<that question\'s '
+        'candidate.digest>"}, filled in only after the person said yes; No on a candidate, or Other, is '
+        "the value the person typed (ask for it if they did not type one). Pass only what the person "
+        "said, never a detected value.",
+        f"5. Call get_pending_data({next_args}) again and repeat from step 1 until status is complete.",
         "6. If stored_unconfirmed is not empty, show every entry (key, value, location) labelled "
         "unconfirmed, ask which to keep and which to reject, and make one confirm_project_data call with "
         "confirm_stored and reject_stored holding only the keys the person named. For an edit required "

@@ -630,7 +630,7 @@ class TestGetPendingDataProcedure:
         data = _parse_json_from_result(get_pending_data(local_path="/tmp/repo", owner="acme", repo="widget"))
 
         text = "\n".join(data["procedure"])
-        assert 'confirm_project_data(owner="acme", repo="widget", local_path="/tmp/repo"' in text
+        assert 'confirm_project_data(owner="acme", repo="widget", host=<git host of the audited repository; omit for github.com>, local_path="/tmp/repo"' in text
         assert 'get_pending_data(owner="acme", repo="widget", local_path="/tmp/repo")' in text
 
     @patch("darnit.core.utils.detect_owner_repo", return_value=("remote-owner", "remote-repo"))
