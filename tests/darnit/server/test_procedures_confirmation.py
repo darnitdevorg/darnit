@@ -49,6 +49,19 @@ class TestConfirmationProcedure:
         assert "your own" in text
         assert "actual practice" in text
 
+    def test_later_pages_keep_the_run(self) -> None:
+        """Page 2 onwards must still mark the documents the run wrote (#693 review)."""
+        step5 = confirmation_procedure("acme", "widget", "github.com", "/w", "01RUN")[4]
+
+        assert 'get_pass_candidates(owner="acme", repo="widget", local_path="/w", run_id="01RUN"' in step5
+        assert "run_id" not in confirmation_procedure("acme", "widget", "github.com", "/w")[4]
+
+    def test_confirm_is_called_only_after_a_confirm(self) -> None:
+        step4 = confirmation_procedure("acme", "widget", "github.com", "/w")[3]
+
+        assert step4.startswith('4. If the person answered "Confirm" for at least one candidate')
+        assert "otherwise do not call it" in step4
+
     def test_only_named_candidates_are_confirmed(self) -> None:
         text = _text()
 

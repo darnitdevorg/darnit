@@ -1307,6 +1307,7 @@ def run_remediation(
         dry_run=dry_run,
         categories=categories,
         run=run,
+        target=target,
     )
     return RemediationReport(markdown, run)
 
@@ -1683,11 +1684,20 @@ _AWAITING = {
 }
 
 
-def _next_steps_lines(run: RemediationRun, local_path: str, owner: str | None, repo: str | None) -> list[str]:
-    """What to do about changed controls awaiting a judgment or confirmation (15.9); ids only, no evidence."""
-    from darnit.server.procedures import remediation_next_steps
+def _next_steps_lines(run: RemediationRun, local_path: str, target: str | None) -> list[str]:
+    """What to do about changed controls awaiting a judgment or confirmation (15.9); ids only, no evidence.
 
-    host = run.repository.split("/", 1)[0] if owner and repo else None
+    The calls name the repository the caller named (``target``), never the
+    owner, repo, or host detected from the checkout's remote; without one
+    they hold placeholders (procedures contract).
+    """
+    from darnit.server.procedures import remediation_next_steps
+    from darnit.trust.decision import owner_repo_from_identity
+
+    owner = repo = host = None
+    if target:
+        host = target.split("/", 1)[0]
+        owner, repo = owner_repo_from_identity(target)
     steps = remediation_next_steps(owner, repo, host, local_path, run.awaiting, run.run_id)
     if not steps:
         return []
@@ -1798,6 +1808,7 @@ def _format_remediation_output(
     dry_run: bool,
     run: RemediationRun,
     categories: list[str] | None = None,
+    target: str | None = None,
 ) -> str:
     """The Markdown report rendered from ``run`` (contract section 5), followed by ``run`` as fenced JSON."""
     md = [
@@ -1810,7 +1821,7 @@ def _format_remediation_output(
     md += _review_lines(results, dry_run)
     if not dry_run:
         md += _consultation_lines(results)
-        md += _next_steps_lines(run, local_path, owner, repo)
+        md += _next_steps_lines(run, local_path, target)
     md += ["```json", json.dumps(run.model_dump(mode="json"), indent=2), "```", ""]
     return "\n".join(md)
 

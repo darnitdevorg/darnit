@@ -32,7 +32,7 @@ def submit_judgment_impl(
     from darnit.core.utils import validate_local_path
     from darnit.tools.audit import judgment_consultations
     from darnit.trust.decision import decide_trust, target_from_owner_repo
-    from darnit.trust.judgments import Judgment, assess_judgment, store_candidate
+    from darnit.trust.judgments import Judgment, assess_judgment, evidence_digest, store_candidate
 
     def rejected(reason: str, missing: list[str] | None = None) -> dict[str, Any]:
         rejection: dict[str, Any] = {"control_id": control_id, "reason": reason}
@@ -93,6 +93,7 @@ def submit_judgment_impl(
                 "concluded_by": "llm_judgment",
                 "reasoning": reasoning,
                 "cited_evidence": list(judgment.cited_evidence),
+                "evidence_digest": evidence_digest(consultation),
             },
             "stored": False,
         }
@@ -116,6 +117,9 @@ def submit_judgment_impl(
 # Claude Code writes a tool result of about 50,000 bytes or more to a file
 # instead of showing it to the model (#644).
 JUDGMENT_REQUEST_PAGE_BYTES = 40_000
+# A question tool asks at most 4 questions per call, and a confirmation page
+# asks one per candidate.
+CONFIRMATION_PAGE_QUESTIONS = 4
 
 
 def _judgment_request(result: dict[str, Any], file_keys: list[str]) -> dict[str, Any]:
@@ -388,22 +392,24 @@ def get_pass_candidates_impl(
             "source": candidate.get("source"),
             "evidence_digest": candidate.get("evidence_digest"),
         }
+        wrote = []
         for path in files:
             if path in written:
                 current = Path(resolved_path) / path
                 digest = content_digest(current.read_bytes()) if current.is_file() else None
-                item["remediation"] = {
-                    "run_id": run_id,
-                    "path": path,
-                    "written": True,
-                    "edited_after_write": digest != written[path],
-                }
-                break
+                wrote.append({"path": path, "edited_after_write": digest != written[path]})
+        if wrote:
+            item["remediation"] = {
+                "run_id": run_id,
+                "written": True,
+                "files": wrote,
+                "edited_after_write": any(f["edited_after_write"] for f in wrote),
+            }
         return item
 
     page: dict[str, Any] = {
         "status": "ok",
-        "procedure": confirmation_procedure(owner, repo, host, str(resolved_path)),
+        "procedure": confirmation_procedure(owner, repo, host, str(resolved_path), run_id),
         "candidates": [],
         "ask_user_batch": [],
         "awaiting_judgment": sorted(r["id"] for r in results if awaits(r, "llm_judgment")),
@@ -419,8 +425,16 @@ def get_pass_candidates_impl(
             "ask_user_batch": [*page["ask_user_batch"], _confirmation_question(item)],
             "remaining": [r["id"] for r in pending[index + 1 :]],
         }
-        if len(dump(trial).encode("utf-8")) <= JUDGMENT_REQUEST_PAGE_BYTES or not page["candidates"]:
+        fits = (
+            len(page["candidates"]) < CONFIRMATION_PAGE_QUESTIONS
+            and len(dump(trial).encode("utf-8")) <= JUDGMENT_REQUEST_PAGE_BYTES
+        )
+        if fits or not page["candidates"]:
             page = trial
+            if not fits:
+                page["oversized"] = True
+                page["remaining"] = [r["id"] for r in pending[index + 1 :]]
+                break
             continue
         page["remaining"] = [r["id"] for r in pending[index:]]
         break

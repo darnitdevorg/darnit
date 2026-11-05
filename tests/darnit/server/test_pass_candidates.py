@@ -92,15 +92,16 @@ def _snapshot(*roots: Path) -> dict[str, bytes]:
     }
 
 
-def _record_run(checkout: Path, path: str = "README.md") -> str:
+def _record_run(checkout: Path, *paths: str) -> str:
     from darnit.remediation import manifest
     from darnit.remediation.plan import content_digest
 
     repository = manifest.repository_identity(checkout, OWNER, REPO)
     run = manifest.start_run(repository, checkout=checkout)
-    manifest.record_file(
-        repository, run.run_id, path, content_digest((checkout / path).read_bytes()), checkout=checkout
-    )
+    for path in paths or ("README.md",):
+        manifest.record_file(
+            repository, run.run_id, path, content_digest((checkout / path).read_bytes()), checkout=checkout
+        )
     return run.run_id
 
 
@@ -189,6 +190,41 @@ class TestGetPassCandidates:
         ids = [c["control_id"] for page in pages for c in page["candidates"]]
         assert ids == [f"MANY-{i:02d}.01" for i in range(4)]
 
+    def test_a_page_asks_at_most_four_questions(self, tmp_path: Path) -> None:
+        """The question tool asks at most 4 at once, and the procedure passes the batch verbatim (#693 review)."""
+        checkout = _many_repo(tmp_path, controls=6)
+
+        first = _candidates(checkout)
+        second = _candidates(checkout, control_ids=first["remaining"])
+
+        assert len(first["candidates"]) == len(first["ask_user_batch"]) == 4
+        assert first["remaining"] == ["MANY-04.01", "MANY-05.01"]
+        assert [c["control_id"] for c in second["candidates"]] == ["MANY-04.01", "MANY-05.01"]
+        assert second["remaining"] == []
+        assert "oversized" not in first
+
+    def test_a_candidate_larger_than_a_page_is_returned_alone_and_marked(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        checkout = _many_repo(tmp_path, controls=2)
+        monkeypatch.setattr(judgments, "JUDGMENT_REQUEST_PAGE_BYTES", 500)
+
+        page = _candidates(checkout)
+
+        assert [c["control_id"] for c in page["candidates"]] == ["MANY-00.01"]
+        assert page["oversized"] is True
+        assert page["remaining"] == ["MANY-01.01"]
+
+    def test_a_finding_carries_the_evidence_digest(self, repo: Path) -> None:
+        """So a caller can tell later whether the control's files changed (#693 review)."""
+        [request] = json.loads(
+            judgments.get_judgment_requests_impl(OWNER, REPO, local_path=str(repo), framework_name=FRAMEWORK)
+        )["requests"]
+
+        finding = _judge(repo, verdict="fail")["finding"]
+
+        assert finding["evidence_digest"] == request["evidence_digest"]
+
     def test_records_nothing(self, repo: Path) -> None:
         from darnit.trust import confirmations
 
@@ -215,8 +251,8 @@ class TestDocumentsRemediationWrote:
 
         assert entry["remediation"] == {
             "run_id": run_id,
-            "path": "README.md",
             "written": True,
+            "files": [{"path": "README.md", "edited_after_write": False}],
             "edited_after_write": False,
         }
 
@@ -228,6 +264,43 @@ class TestDocumentsRemediationWrote:
         [entry] = _candidates(repo, run_id=run_id)["candidates"]
 
         assert entry["remediation"]["edited_after_write"] is True
+        assert entry["remediation"]["files"] == [{"path": "README.md", "edited_after_write": True}]
+
+    def test_every_judged_file_the_run_wrote_is_marked(self, tmp_path: Path) -> None:
+        """Not only the first judged file (#693 review)."""
+        checkout = make_repo(tmp_path)
+        for name in ("a.md", "b.md"):
+            (checkout / name).write_text(f"Document {name} text.\n", encoding="utf-8")
+        config = tmp_path / "operator" / "config.toml"
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text(
+            'schema_version = 1\n\n[custom_controls."TWO-01.01"]\n'
+            'name = "Two"\ndescription = "Two documents."\nlevel = 1\ndomain = "TWO"\n'
+            'passes = [\n  { handler = "llm_eval", prompt = "Judge.", files_to_include = ["a.md", "b.md"] },\n'
+            '  { handler = "manual", steps = ["Read it"] },\n]\n',
+            encoding="utf-8",
+        )
+        config.chmod(0o600)
+        set_launch_options(config)
+        run_id = _record_run(checkout, "a.md", "b.md")
+        (checkout / "b.md").write_text("Document b.md text, edited.\n", encoding="utf-8")
+        assert _judge(checkout, "TWO-01.01", excerpt="Document a.md text.")["status"] == "candidate"
+
+        [entry] = _candidates(checkout, run_id=run_id, control_ids=["TWO-01.01"])["candidates"]
+
+        assert entry["remediation"]["files"] == [
+            {"path": "a.md", "edited_after_write": False},
+            {"path": "b.md", "edited_after_write": True},
+        ]
+        assert entry["remediation"]["edited_after_write"] is True
+
+    def test_the_next_page_keeps_the_run(self, tmp_path: Path) -> None:
+        checkout = _many_repo(tmp_path, controls=5)
+
+        page = _candidates(checkout, run_id="01JAAAAAAAAAAAAAAAAAAAAAAA")
+
+        assert page["remaining"]
+        assert 'run_id="01JAAAAAAAAAAAAAAAAAAAAAAA"' in page["procedure"][4]
 
     def test_an_unknown_run_adds_a_note(self, repo: Path) -> None:
         _judge(repo)

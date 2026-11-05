@@ -121,6 +121,20 @@ class TestApplyAwaiting:
         assert "T-CAND" in steps
         assert output.index("## Next steps") < output.index("```json")
 
+    def test_next_steps_name_only_the_repository_the_caller_named(self, repo: Path) -> None:
+        """Never the host or owner detected from the checkout's remote (#693 review; procedures contract)."""
+        _output, run = _apply(repo)
+        run = run.model_copy(update={"repository": "gitlab.example.org/detected/remote"})
+
+        named = "\n".join(orchestrator._next_steps_lines(run, str(repo), "gitlab.example.org/group/sub/proj"))
+        unnamed = "\n".join(orchestrator._next_steps_lines(run, str(repo), None))
+
+        assert 'owner="group/sub", repo="proj", host="gitlab.example.org"' in named
+        assert "detected" not in named
+        assert "owner=<owner of the audited repository>" in unnamed
+        assert "host=" not in unnamed
+        assert "detected" not in unnamed
+
     def test_awaiting_outcomes_count_as_changed_files_for_the_gates(self, repo: Path) -> None:
         _output, run = _apply(repo)
 

@@ -116,9 +116,13 @@ def judgment_procedure(owner: str, repo: str, host: str, local_path: str) -> lis
     ]
 
 
-def confirmation_procedure(owner: str, repo: str, host: str, local_path: str) -> list[str]:
-    """Ordered steps for asking the operator about the PASS candidates on a ``get_pass_candidates`` page."""
+def confirmation_procedure(owner: str, repo: str, host: str, local_path: str, run_id: str | None = None) -> list[str]:
+    """Ordered steps for asking the operator about the PASS candidates on a ``get_pass_candidates`` page.
+
+    The next page's call carries ``run_id`` so it keeps marking the documents that run wrote.
+    """
     args = _args(owner, repo, host, local_path)
+    next_args = f"{args}, run_id={json.dumps(run_id)}" if run_id else args
     return [
         "1. Show every candidate on the page before asking anything: control_id and title, what it "
         "requires (description), the files, the reasoning, and each cited_evidence passage verbatim. "
@@ -130,10 +134,11 @@ def confirmation_procedure(owner: str, repo: str, host: str, local_path: str) ->
         "3. Ask with ask_user_batch verbatim through your question tool (AskUserQuestion in Claude Code); "
         "without one, ask in plain text, one candidate at a time. Do not pre-fill, recommend, or offer "
         "to confirm all.",
-        f"4. Call confirm_pass_candidate(control_ids=[<only the controls the person answered "
-        f'"Confirm" for>], {args}) once. Confirm nothing on silence, "Skip for now", "Do not confirm", '
-        "or an instruction that names no candidate the person was shown.",
-        f"5. If remaining is not empty, call get_pass_candidates({args}, control_ids=<remaining>) and "
+        '4. If the person answered "Confirm" for at least one candidate, call '
+        f"confirm_pass_candidate(control_ids=[<only those controls>], {args}) once; otherwise do not "
+        'call it. Confirm nothing on silence, "Skip for now", "Do not confirm", or an instruction that '
+        "names no candidate the person was shown.",
+        f"5. If remaining is not empty, call get_pass_candidates({next_args}, control_ids=<remaining>) and "
         "repeat from step 1.",
         "6. Tell the person what was confirmed, declined, and skipped, and that confirmations are "
         "recorded for them on this machine only: CI or another maintainer sees those controls PENDING "
