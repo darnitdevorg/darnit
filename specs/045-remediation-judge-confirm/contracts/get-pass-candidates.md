@@ -27,7 +27,8 @@ get_pass_candidates(
       "model_version": "...",
       "source": "mcp_agent",
       "evidence_digest": "sha256:...",
-      "remediation": {"run_id": "01...", "path": "CONTRIBUTING.md", "written": true, "edited_after_write": true}
+      "remediation": {"run_id": "01...", "written": true, "edited_after_write": true,
+                      "files": [{"path": "CONTRIBUTING.md", "edited_after_write": true}]}
     }
   ],
   "ask_user_batch": [
@@ -43,10 +44,11 @@ get_pass_candidates(
 ```
 
 - `candidates`: controls left `PENDING` with `pending.kind = "confirmation"` by an audit of `local_path` for the named repository, optionally limited to `control_ids`, sorted by id. Each entry's candidate matches the current evidence digest.
-- `remediation`: present only when `run_id` is given and a judged file is in that run's manifest; `edited_after_write` compares the file's current content digest with the manifest's `after_digest`.
+- `remediation`: present only when `run_id` is given and a judged file is in that run's manifest. `files` lists every judged file the run wrote; each `edited_after_write` compares the file's current content digest with the manifest's `after_digest`, and the top-level `edited_after_write` is true if any is.
 - `ask_user_batch`: one question per candidate on this page, no default, no option that confirms more than one candidate.
 - `awaiting_judgment`: controls still `PENDING (llm_judgment)` (never judged, or the content changed since); judge them with `get_judgment_requests` first. This includes controls judged `fail` earlier, because a finding is not stored. A caller that received a finding for a control in this run reports that finding instead of judging the control again, unless its files changed since.
-- Pages stay under 40,000 bytes; `remaining` lists candidates not on this page.
+- A page holds at most 4 candidates (the question tool asks at most 4 at once) and stays under 40,000 bytes; a single candidate larger than that is returned alone with `"oversized": true`. `remaining` lists candidates not on this page.
+- `procedure` carries `run_id` when given, so its call for the next page keeps the `remediation` blocks.
 
 ## Refusals and errors
 
