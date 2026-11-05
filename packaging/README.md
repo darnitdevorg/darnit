@@ -42,26 +42,24 @@ Before the next release works end-to-end, a maintainer with admin access must:
 
 ### PyPI Trusted Publishing
 
-Configure Trusted Publishing for each public package on PyPI:
+Configure Trusted Publishing for each public package, on PyPI and on TestPyPI (rc tags publish there). The publisher is the same on both:
 
-1. Open the package's PyPI project settings, then Publishing.
-2. Add a GitHub Trusted Publisher:
-   - Owner: `darnitdevorg`
-   - Repository: `darnit`
-   - Workflow: `release.yml`
-   - Environment: `release`
-3. Repeat for every package in [`packaging/pypi/public-packages.txt`](pypi/public-packages.txt).
+- Owner: `darnitdevorg`
+- Repository: `darnit`
+- Workflow: `release.yml`
+- Environment: `release`
 
-The public package set is currently:
+Where the project already exists (for example on PyPI, after an earlier token-based release): open the project's settings, then Publishing, and add the GitHub publisher above. Where it does not exist yet (every package on TestPyPI, and any new package on PyPI): add a **pending publisher** from the account page (Your account -> Publishing) with the project name and the same four fields. The first publish from the workflow then creates the project and the pending publisher becomes its Trusted Publisher. Nothing is uploaded by hand, and no account-scoped API token is created at any point.
+
+Repeat for every package in [`packaging/pypi/public-packages.txt`](pypi/public-packages.txt), currently:
 
 - `darnit-core`
 - `darnit-baseline`
-- `darnit-csl`
 - `darnit-gittuf`
 - `darnit-reproducibility`
 - `darnit-mcp`
 
-If a project does not exist yet on PyPI, create it with PyPI's pending publisher flow or ask a PyPI project owner to add the Trusted Publisher after the first manual creation. Do not reintroduce account-scoped API tokens.
+`darnit-csl` is a workspace package but is not published yet (how modules are published and bundled is being settled in #680).
 
 ### `release` environment
 
@@ -108,11 +106,10 @@ Configure the same Trusted Publisher entries on TestPyPI. Release-candidate tags
    gh run list --branch main --limit 5
    ```
 2. **Decide the version.** Stable releases are `vX.Y.Z`; pre-releases are `vX.Y.ZrcN` (no hyphen — PEP 440 canonical). Use a pre-release tag if this is the first run after a non-trivial release-pipeline change.
-3. **Bump `version` in every public `pyproject.toml`.** The six public packages must agree exactly with the tag (preflight enforces this):
+3. **Bump `version` in every public `pyproject.toml`.** The five public packages must agree exactly with the tag (preflight enforces this):
    - `pyproject.toml` (the root `darnit-mcp` package)
    - `packages/darnit/pyproject.toml` (name: `darnit-core`)
    - `packages/darnit-baseline/pyproject.toml`
-   - `packages/darnit-csl/pyproject.toml`
    - `packages/darnit-gittuf/pyproject.toml`
    - `packages/darnit-reproducibility/pyproject.toml`
 4. **Sync and verify locally:**
