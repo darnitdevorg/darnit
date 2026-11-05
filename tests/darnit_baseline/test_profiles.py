@@ -25,13 +25,13 @@ class TestBaselineProfiles:
         assert profile.controls == []
 
     def test_access_control_profile(self):
-        """access_control profile uses explicit control IDs."""
+        """access_control profile filters by domain."""
         from darnit.config.merger import load_framework_by_name
 
         config = load_framework_by_name("openssf-baseline")
         profile = config.audit_profiles["access_control"]
-        assert len(profile.controls) > 0
-        assert all(c.startswith("OSPS-AC-") for c in profile.controls)
+        assert profile.tags == {"domain": "AC"}
+        assert profile.controls == []
 
     def test_security_critical_profile(self):
         """security_critical profile uses gte tag filter."""
@@ -51,8 +51,8 @@ class TestBaselineProfiles:
         assert "level1_quick" in profiles
         assert isinstance(profiles["level1_quick"], AuditProfileConfig)
 
-    def test_profile_control_ids_resolve(self):
-        """Profile control IDs resolve against actual controls."""
+    def test_access_control_profile_resolves_all_ac_controls(self):
+        """Profile control IDs resolve against actual controls we obtain via the tag filter."""
         from darnit.config.control_loader import load_controls_from_framework
         from darnit.config.merger import load_framework_by_name
         from darnit.config.profile_resolver import resolve_profile_control_ids
@@ -62,5 +62,6 @@ class TestBaselineProfiles:
 
         profile = config.audit_profiles["access_control"]
         result = resolve_profile_control_ids(profile, controls)
-        assert len(result) > 0
-        assert all(r.startswith("OSPS-AC-") for r in result)
+        expected = {control.control_id for control in controls if control.tags.get("domain") == "AC"}
+        assert expected
+        assert set(result) == expected

@@ -29,11 +29,7 @@ tags = { security_severity_gte = 8.0 }
 
 [audit_profiles.access_control]
 description = "Access control domain — branch protection, MFA, permissions"
-controls = [
-    "OSPS-AC-01.01", "OSPS-AC-01.02", "OSPS-AC-01.03",
-    "OSPS-AC-02.01", "OSPS-AC-02.02",
-    "OSPS-AC-03.01", "OSPS-AC-03.02",
-]
+tags = { domain = "AC" }
 
 # =============================================================================
 # Templates for Remediation
