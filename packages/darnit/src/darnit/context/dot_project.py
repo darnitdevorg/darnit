@@ -4,7 +4,8 @@ This module implements reading and writing of .project/project.yaml files
 following the CNCF .project/ specification.
 
 Specification: https://github.com/cncf/automation/tree/main/utilities/dot-project
-Targeted Spec Version: 1.2.0 (based on types.go at commit 641b80619cd5, 2026-06-29)
+Schema version written to new files: 1.0.0 (upstream's `schema_version`; issue #502)
+Reader reconciled against the upstream `types.go` recorded in `.github/dot-project-spec-hash.txt`
 
 The reader is tolerant of unknown fields for forward compatibility with
 spec evolution. Required fields are validated per the CNCF types.go struct.
@@ -25,10 +26,6 @@ Example:
 
 Reconciliation history
 ----------------------
-- 1.0.0 (issue #502, 2026-09):
-    * Pinned `DOT_PROJECT_SPEC_VERSION` to upstream CNCF dot-project schema version
-      `1.0.0`. Earlier values (1.1.0 -> 1.4.0) were darnit-internal reconcile
-      counters rather than upstream versions.
 - 1.1.0 -> 1.2.0 (feature 030-dot-project-spec-sync, 2026-08-15):
     * `project_lead`: accepts scalar or list per upstream `StringOrSlice`;
       collapses to the first non-empty string element for the existing
@@ -52,6 +49,13 @@ Reconciliation history
       via the existing unknown-field catch-all in
       `_parse_maintainer_teams` into `MaintainerTeam._extra["managed"]`
       (NEW-IGNORED). No new attribute on `MaintainerTeam`.
+- 1.4.0 -> 1.0.0 (issue #502, 2026-09):
+    * `DOT_PROJECT_SPEC_VERSION` is now upstream's own `schema_version`
+      (`1.0.0`), the value a new `project.yaml` declares, so files darnit
+      writes validate against upstream tooling. The earlier values
+      (1.1.0 -> 1.4.0) were darnit-internal reconcile counters; the
+      tracked-hash file alone records which upstream `types.go` the reader
+      was reconciled against (feature 030, FR-004 as amended).
 """
 
 from __future__ import annotations
@@ -69,16 +73,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Targeted .project/ spec version. Pinned to upstream CNCF dot-project specification
-# version 1.0.0 (issue #502). Earlier values were darnit-internal counters.
+# The schema_version a new project.yaml declares: upstream CNCF dot-project's own
+# version (issue #502). It changes only when upstream publishes a new schema version;
+# reconciliations of the reader against upstream's types.go update the tracked-hash
+# file (.github/dot-project-spec-hash.txt), not this value.
 DOT_PROJECT_SPEC_VERSION = "1.0.0"
 DOT_PROJECT_SPEC_URL = "https://github.com/cncf/automation/tree/main/utilities/dot-project"
 
 # Reconciliation history
-#  - 1.0.0 (issue #502, 2026-09):
-#      * Pinned to upstream CNCF dot-project specification version 1.0.0;
-#        earlier values (1.1.0 -> 1.4.0) were darnit-internal reconcile counters,
-#        not upstream versions.
 #  - 1.1.0 -> 1.2.0 (feature 030-dot-project-spec-sync, 2026-08-14):
 #      * project_lead: accepts scalar or list; collapses to first.
 #      * package_managers[*]: accepts scalar or list; collapses to first.
@@ -102,6 +104,10 @@ DOT_PROJECT_SPEC_URL = "https://github.com/cncf/automation/tree/main/utilities/d
 #        field catch-all into `MaintainerTeam._extra["managed"]`
 #        (NEW-IGNORED). Adds no attribute to `MaintainerTeam`.
 #      * `cncf_slack_channel` deprecation alias retained.
+#  - 1.4.0 -> 1.0.0 (issue #502, 2026-09):
+#      * DOT_PROJECT_SPEC_VERSION is upstream's schema_version from here on;
+#        earlier values were darnit-internal reconcile counters. Upstream
+#        drift is tracked by .github/dot-project-spec-hash.txt only.
 
 
 @dataclass
