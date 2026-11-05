@@ -795,7 +795,13 @@ def get_pending_data(
         with their locations, for review with confirm_stored / reject_stored.
     """
     from darnit.config.context_storage import get_pending_context as _get_pending
-    from darnit.server.procedures import data_collection_procedure
+    from darnit.server.procedures import (
+        ASK_FOR_VALUE_MARKER,
+        CHAT_OPTION,
+        SKIP_MARKER,
+        SKIP_OPTION,
+        data_collection_procedure,
+    )
     from darnit.server.tools.project_data import stored_unconfirmed
     from darnit.trust.decision import target_from_owner_repo
 
@@ -864,12 +870,12 @@ def get_pending_data(
             if q["candidate"] is not None:
                 mapping["value_map"] = {
                     "Yes": {"accept_candidates": {q["key"]: "<candidate.digest>"}},
-                    "No": "ASK_USER_FOR_VALUE",
+                    "No": ASK_FOR_VALUE_MARKER,
                 }
             elif q["input_type"] == "select" and q.get("options") == ["true", "false"]:
                 mapping["value_map"] = {"Yes": True, "No": False}
             elif q["input_type"] == "free_text":
-                mapping["value_map"] = {SKIP_OPTION: "SKIP", CHAT_OPTION: "ASK_USER_FOR_VALUE"}
+                mapping["value_map"] = {SKIP_OPTION: SKIP_MARKER, CHAT_OPTION: ASK_FOR_VALUE_MARKER}
             answer_mapping.append(mapping)
 
         # Determine answered count from total minus pending
@@ -997,10 +1003,6 @@ def _build_context_question(req) -> dict:
     return question
 
 
-SKIP_OPTION = "Skip for now"
-CHAT_OPTION = "Answer in chat"
-
-
 def _build_ask_user_params(key: str, question_dict: dict, definition) -> dict:
     """AskUserQuestion parameters (question/header/options/multiSelect) for every question.
 
@@ -1010,6 +1012,8 @@ def _build_ask_user_params(key: str, question_dict: dict, definition) -> dict:
     chat options, never a value. A candidate's value is not repeated here; the
     person sees it from the question's ``candidate``.
     """
+    from darnit.server.procedures import CHAT_OPTION, SKIP_OPTION
+
     input_type = question_dict.get("input_type")
     question_text = question_dict["prompt"]
     header = _ask_user_header(key)

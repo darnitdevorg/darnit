@@ -82,7 +82,7 @@ Show before/after compliance comparison, list of changes made, and remaining man
 
 - Always show the remediation plan and get confirmation before applying changes. Never auto-apply.
 - Use `output_format: "summary"` for audits to keep token usage low.
-- Do NOT run a separate audit before calling `remediate_audit_findings` — it handles audit internally.
+- Do NOT run an audit just to feed `remediate_audit_findings`: it audits internally. The one audit after collecting data (step 4) is for showing the person what changed.
 - Do NOT call `create_remediation_branch` or `commit_remediation_changes` separately — use the built-in `branch_name` and `auto_commit` params.
 - Unsafe remediations, steps that cannot be previewed exactly, and high-impact platform changes run only when the person approved their own digest; a batch approval never covers them.
 - Platform changes follow the operator's `[remediation]` policy (`prompt`, `manual`, or `auto`), stated in the report. Never try to change it from the repository.

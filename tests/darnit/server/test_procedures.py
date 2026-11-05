@@ -74,6 +74,17 @@ class TestProcedures:
 
 
 @pytest.mark.unit
+def test_the_free_text_options_and_markers_are_the_shared_ones() -> None:
+    """The selector and answer_mapping use the strings record_value_confirmation refuses."""
+    from darnit.server.procedures import ASK_FOR_VALUE_MARKER, CHAT_OPTION, NOT_AN_ANSWER, SKIP_MARKER, SKIP_OPTION
+
+    assert {SKIP_OPTION, CHAT_OPTION, SKIP_MARKER, ASK_FOR_VALUE_MARKER} == NOT_AN_ANSWER
+    step3 = data_collection_procedure("acme", "widget", "/w")[2]
+    assert SKIP_OPTION in step3
+    assert CHAT_OPTION in step3
+
+
+@pytest.mark.unit
 def test_no_skill_tells_the_agent_to_follow_another_skill() -> None:
     """A skill defers to the procedure in a tool result, never to another skill's text (which a client may not load)."""
     pattern = re.compile(r"follow\s+(the\s+)?`?/?darnit[:\w-]*`?\s+skill", re.IGNORECASE)

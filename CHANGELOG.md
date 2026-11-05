@@ -451,7 +451,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only its first 4 values.) A choice question now offers its first 4 values
   and names every allowed value in the question, any of which can be typed
   under "Other"; a free-text question offers "Skip for now" and "Answer in
-  chat" and never a value. Selector headers are cut at a word boundary
+  chat" and never a value. `confirm_project_data` refuses those two labels,
+  and the `answer_mapping` markers `SKIP` and `ASK_USER_FOR_VALUE`, as a
+  value, so an agent that forwards the label its question tool returned
+  records nothing for that key. Selector headers are cut at a word boundary
   ("Compiled", not "Compiled Ass"), and a yes/no question's hint is in the
   question instead of next to "Yes".
 - The skills ask the person to confirm which repository is being audited
