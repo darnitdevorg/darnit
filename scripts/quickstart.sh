@@ -106,12 +106,17 @@ main() {
   if ! command -v git >/dev/null 2>&1; then
     die "git is required. Install it with your package manager and re-run."
   fi
+  # Everything this script installs (uv, zizmor, the darnit link) goes into one
+  # directory, so a single PATH entry covers it. The uv installer and `uv tool
+  # install` would otherwise follow XDG_BIN_HOME / XDG_DATA_HOME on their own.
+  local bindir="${XDG_BIN_HOME:-$HOME/.local/bin}"
+  export UV_INSTALL_DIR="$bindir" UV_TOOL_BIN_DIR="$bindir"
   if ! command -v uv >/dev/null 2>&1; then
-    export PATH="$HOME/.local/bin:$PATH"
+    export PATH="$bindir:$PATH"
   fi
   if ! command -v uv >/dev/null 2>&1; then
     info "uv is not installed. darnit uses it to manage Python and dependencies."
-    if ! confirm "Install uv $UV_VERSION from astral.sh into ~/.local/bin? Your shell profile is not changed." n; then
+    if ! confirm "Install uv $UV_VERSION from astral.sh into $bindir? Your shell profile is not changed." n; then
       die "uv is required. See https://docs.astral.sh/uv/getting-started/installation/"
     fi
     if command -v curl >/dev/null 2>&1; then
@@ -121,7 +126,7 @@ main() {
     else
       die "curl or wget is needed to install uv."
     fi
-    export PATH="$HOME/.local/bin:$PATH"
+    export PATH="$bindir:$PATH"
     if ! command -v uv >/dev/null 2>&1; then
       die "uv was installed but is not on PATH. Open a new shell and re-run."
     fi
@@ -158,8 +163,7 @@ main() {
   info "Installed $("$darnit" --version 2>&1 | tail -1)"
 
   # Put darnit on PATH, without replacing anything that is not this link
-  local bindir="${XDG_BIN_HOME:-$HOME/.local/bin}" link
-  link="$bindir/darnit"
+  local link="$bindir/darnit"
   if [ ! -e "$link" ] && [ ! -L "$link" ]; then
     mkdir -p "$bindir"
     ln -s "$darnit" "$link"
