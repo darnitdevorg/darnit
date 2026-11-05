@@ -788,9 +788,13 @@ class SieveOrchestrator:
             self._dependency_results[control_spec.control_id] = inferred
             return inferred
 
-        # Step 3: Inject dependency results into context
-        if self._dependency_results:
-            for dep_id, dep_result in self._dependency_results.items():
+        # Step 3: Inject dependency results into context: the status of each
+        # control this one declares in ``depends_on``, when it has been
+        # verified. Not every control verified so far (#485): that put dozens
+        # of unrelated ``dependency.*.status`` keys into every consultation.
+        for dep_id in control_spec.metadata.get("depends_on") or []:
+            dep_result = self._dependency_results.get(dep_id)
+            if dep_result is not None:
                 context.gathered_evidence[f"dependency.{dep_id}.status"] = dep_result.status
 
         # Step 4: Dispatch handler invocations
