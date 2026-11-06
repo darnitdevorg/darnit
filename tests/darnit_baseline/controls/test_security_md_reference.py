@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from darnit.sieve.handler_registry import (
     HandlerContext,
 )
@@ -70,16 +72,20 @@ class TestSecurityMdReferenceControl:
         # file_exists ran and recorded the paths it checked.
         assert "files_checked" in (result.evidence or {})
 
+    @pytest.mark.parametrize("filename", ["SECURITY.md", "security.md", ".github/security.md", "docs/security.md"])
     def test_second_run_does_not_pass_on_presence_alone(
         self,
         tmp_path: Path,
+        filename: str,
     ) -> None:
         """Feature 041 (was US4 acceptance #3 of feature 025): with SECURITY.md
         present, file_exists may not conclude PASS for a content control; the
         control is WARN with the found file recorded as evidence.
         """
         (tmp_path / "README.md").write_text("# proj\n")
-        (tmp_path / "SECURITY.md").write_text(
+        target_path = tmp_path / filename
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_text(
             "# Security Policy\n\nReport issues to sec@example.com\n",
         )
 
@@ -96,7 +102,7 @@ class TestSecurityMdReferenceControl:
         assert result.status == "WARN"
         assert result.authority == "suggestive"
         assert result.concluded_by == "none"
-        assert result.evidence["relative_path"] == "SECURITY.md"
+        assert result.evidence["relative_path"].lower() == filename.lower()
 
     def test_cli_and_direct_produce_equal_authority(self, tmp_path: Path) -> None:
         """US4 acceptance #4 + SC-004 (partial): the same control run two
