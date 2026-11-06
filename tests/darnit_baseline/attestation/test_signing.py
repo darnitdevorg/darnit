@@ -7,28 +7,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+pytest.importorskip("sigstore")
+
 import darnit_baseline.attestation.signing as signing_mod
-from darnit_baseline.attestation.signing import (
-    get_sigstore_api_version,
-    is_attestation_available,
-    sign_attestation,
-)
-
-
-@pytest.mark.unit
-class TestAttestationAvailability:
-    """Tests for attestation dependency and version detection."""
-
-    def test_is_attestation_available_boolean(self) -> None:
-        result = is_attestation_available()
-        assert isinstance(result, bool)
-        assert result == signing_mod.ATTESTATION_AVAILABLE
-
-    def test_get_sigstore_api_version_range(self) -> None:
-        version = get_sigstore_api_version()
-        assert isinstance(version, int)
-        assert version in (0, 1, 2, 3)
-        assert version == signing_mod.SIGSTORE_API_VERSION
+from darnit_baseline.attestation.signing import sign_attestation
 
 
 @pytest.mark.unit
@@ -48,16 +30,10 @@ class TestSignAttestationMissingDeps:
 
 
 @pytest.mark.unit
-class TestSignAttestationApiVersions:
-    """Tests for Sigstore signing paths across API versions 1, 2, and 3."""
+class TestSignAttestationV3:
+    """Tests for Sigstore signing via the v3 API (sigstore >= 3.0 / 4.x)."""
 
-    @pytest.fixture(autouse=True)
-    def _ensure_attestation_available(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(signing_mod, "ATTESTATION_AVAILABLE", True)
-
-    def test_sign_attestation_v3_production(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(signing_mod, "SIGSTORE_API_VERSION", 3)
-
+    def test_sign_attestation_v3_production(self) -> None:
         mock_bundle = MagicMock()
         mock_bundle.to_json.return_value = json.dumps({"mediaType": "bundle/v3", "verificationMaterial": {}})
 
@@ -105,9 +81,7 @@ class TestSignAttestationApiVersions:
             mock_signer.sign_dsse.assert_called_once_with(mock_stmt)
             assert res == {"mediaType": "bundle/v3", "verificationMaterial": {}}
 
-    def test_sign_attestation_v3_staging(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(signing_mod, "SIGSTORE_API_VERSION", 3)
-
+    def test_sign_attestation_v3_staging(self) -> None:
         mock_bundle = MagicMock()
         mock_bundle.to_json.return_value = json.dumps({"mediaType": "bundle/v3-staging"})
 
@@ -148,128 +122,12 @@ class TestSignAttestationApiVersions:
             mock_ctc.staging.assert_called_once()
             assert res == {"mediaType": "bundle/v3-staging"}
 
-    def test_sign_attestation_v2_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(signing_mod, "SIGSTORE_API_VERSION", 2)
-
-        mock_result = MagicMock()
-        mock_result.to_json.return_value = json.dumps({"mediaType": "bundle/v2"})
-
-        mock_signer = MagicMock()
-        mock_signer.sign_dsse.return_value = mock_result
-
-        mock_issuer = MagicMock()
-        mock_issuer.identity_token.return_value = "fake-token-v2"
-
-        with (
-            patch.object(signing_mod, "Signer", create=True) as mock_signer_cls,
-            patch.object(signing_mod, "Issuer", create=True) as mock_issuer_cls,
-            patch.object(signing_mod, "StatementBuilder"),
-            patch.object(signing_mod, "Subject"),
-            patch.object(signing_mod, "DigestSet"),
-        ):
-            mock_signer_cls.production.return_value = mock_signer
-            mock_issuer_cls.production.return_value = mock_issuer
-
-            res = sign_attestation(
-                predicate={"decision": "PASS"},
-                predicate_type="https://darnit.dev/predicate/v1",
-                subject_name="git+https://github.com/owner/repo",
-                commit="aabbccddee00112233445566778899aabbccddee",
-                use_staging=False,
-            )
-
-            mock_signer_cls.production.assert_called_once()
-            mock_issuer_cls.production.assert_called_once()
-            mock_signer.sign_dsse.assert_called_once()
-            assert res == {"mediaType": "bundle/v2"}
-
-    def test_sign_attestation_v2_staging(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(signing_mod, "SIGSTORE_API_VERSION", 2)
-
-        mock_result = MagicMock()
-        mock_result.to_json.return_value = json.dumps({"mediaType": "bundle/v2-staging"})
-
-        mock_signer = MagicMock()
-        mock_signer.sign_dsse.return_value = mock_result
-
-        mock_issuer = MagicMock()
-        mock_issuer.identity_token.return_value = "fake-token-v2-staging"
-
-        with (
-            patch.object(signing_mod, "Signer", create=True) as mock_signer_cls,
-            patch.object(signing_mod, "Issuer", create=True) as mock_issuer_cls,
-            patch.object(signing_mod, "StatementBuilder"),
-            patch.object(signing_mod, "Subject"),
-            patch.object(signing_mod, "DigestSet"),
-        ):
-            mock_signer_cls.staging.return_value = mock_signer
-            mock_issuer_cls.staging.return_value = mock_issuer
-
-            res = sign_attestation(
-                predicate={"decision": "PASS"},
-                predicate_type="https://darnit.dev/predicate/v1",
-                subject_name="git+https://github.com/owner/repo",
-                commit="aabbccddee00112233445566778899aabbccddee",
-                use_staging=True,
-            )
-
-            mock_signer_cls.staging.assert_called_once()
-            mock_issuer_cls.staging.assert_called_once()
-            assert res == {"mediaType": "bundle/v2-staging"}
-
-    def test_sign_attestation_v1_fallback(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(signing_mod, "SIGSTORE_API_VERSION", 1)
-
-        mock_bundle = MagicMock()
-        mock_bundle.to_json.return_value = json.dumps({"mediaType": "bundle/v1"})
-
-        mock_result = MagicMock()
-        mock_result.bundle = mock_bundle
-
-        mock_signer = MagicMock()
-        mock_signer.sign.return_value = mock_result
-        mock_signer_ctx = MagicMock()
-        mock_signer_ctx.__enter__.return_value = mock_signer
-        mock_signer_ctx.__exit__.return_value = None
-
-        mock_signing_ctx = MagicMock()
-        mock_signing_ctx.signer.return_value = mock_signer_ctx
-
-        mock_issuer = MagicMock()
-        mock_issuer.identity_token.return_value = "fake-token-v1"
-
-        with (
-            patch.object(signing_mod, "SigningContext") as mock_sc,
-            patch.object(signing_mod, "Issuer") as mock_issuer_cls,
-            patch.object(signing_mod, "StatementBuilder"),
-            patch.object(signing_mod, "Subject"),
-            patch.object(signing_mod, "DigestSet"),
-        ):
-            mock_sc.production.return_value = mock_signing_ctx
-            mock_issuer_cls.production.return_value = mock_issuer
-
-            res = sign_attestation(
-                predicate={"decision": "PASS"},
-                predicate_type="https://darnit.dev/predicate/v1",
-                subject_name="git+https://github.com/owner/repo",
-                commit="1234567890123456789012345678901234567890",
-                use_staging=False,
-            )
-
-            mock_sc.production.assert_called_once()
-            mock_signing_ctx.signer.assert_called_once_with(identity_token="fake-token-v1")
-            mock_signer.sign.assert_called_once()
-            assert res == {"mediaType": "bundle/v1"}
-
 
 @pytest.mark.unit
 class TestSignAttestationStatementBuilding:
     """Tests for Subject and StatementBuilder parameter construction."""
 
-    def test_subject_and_builder_parameters(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(signing_mod, "ATTESTATION_AVAILABLE", True)
-        monkeypatch.setattr(signing_mod, "SIGSTORE_API_VERSION", 3)
-
+    def test_subject_and_builder_parameters(self) -> None:
         captured_subject_args: dict = {}
         captured_builder_args: dict = {}
 
