@@ -435,6 +435,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- OpenSSF Baseline OSPS-AC-02.01 was renamed from `AllowForking` to
+  `RestrictCollaboratorPermissions`. It now records the organization's base
+  repository permission as evidence and keeps invitation verification manual.
+  OSPS-AC-04.01 was renamed from `ExplicitWorkflowPermissions` to
+  `RestrictDefaultWorkflowPermissions`. It now checks GitHub's default
+  workflow token permissions instead of scanning workflow files, and replaces
+  automated workflow edits with manual guidance.
+  ([#512](https://github.com/darnitdevorg/darnit/issues/512),
+  [#513](https://github.com/darnitdevorg/darnit/issues/513))
 - In OpenSSF Baseline assessment attestation predicates, `assessor.name`
   changes from `openssf-baseline-mcp` to `openssf-baseline`, `assessor.uri`
   points to `https://github.com/darnitdevorg/darnit`, `assessor.version`

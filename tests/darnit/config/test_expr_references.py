@@ -19,7 +19,7 @@ from darnit.core.errors import AuthorityViolation
 from darnit.sieve.cel_evaluator import CELCompilationError, expression_free_names
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SHIPPED_STEP_EXPRESSIONS = 21
+SHIPPED_STEP_EXPRESSIONS = 23
 
 
 def _validate(**step) -> None:

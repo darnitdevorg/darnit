@@ -482,14 +482,15 @@ steps = [
 docs_url = "https://docs.github.com/en/organizations/keeping-your-organization-secure/managing-two-factor-authentication-for-your-organization/requiring-two-factor-authentication-in-your-organization"
 
 [controls."OSPS-AC-02.01"]
-name = "AllowForking"
-description = "Allow repository forking for public collaboration"
+name = "RestrictCollaboratorPermissions"
+description = "Require explicit collaborator roles or minimal default access"
 tags = { level = 1, domain = "AC", access-control = true, collaboration = true }
 when = { platform = "github" }
 
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-AC-02.01"
-location_hint = ".github/settings.yml"
-help_md = """Configure repository to use minimal default permissions.
+help_md = """Configure the repository to use minimal default permissions.
+Organization base permissions apply to organization members. Verify outside
+collaborator invitations separately.
 
 **Remediation:**
 1. Go to Organization Settings → Member privileges
@@ -500,20 +501,20 @@ help_md = """Configure repository to use minimal default permissions.
 - [GitHub Repository Permissions](https://docs.github.com/en/organizations/managing-user-access-to-your-organizations-repositories/repository-roles-for-an-organization)
 """
 
-# The former allow_forking check was removed (feature 041): forking says
-# nothing about the permissions a new collaborator receives, and it
-# concluded PASS on the adversarial corpus where the requirement is unmet.
-# No automated step measures this requirement yet.
+# Organization base permissions do not apply to outside collaborators.
+[[controls."OSPS-AC-02.01".passes]]
+handler = "gh_api"
+endpoint = "/orgs/$OWNER"
+expr = 'response.body.default_repository_permission in ["none", "read"]'
+evidence_fields = ["default_repository_permission"]
+concludes = []
+
 [[controls."OSPS-AC-02.01".passes]]
 handler = "manual"
 steps = [
     "For an organization-owned repository: Organization Settings -> Member privileges, verify 'Base permissions' is 'No permission' or 'Read'",
-    "Verify new collaborators are added with an explicitly assigned role, not a default above the lowest privilege",
+    "For outside collaborators and personal repositories, verify that invitations require an explicit role or default to the lowest available access",
 ]
-
-# No remediation (feature 043): the former one enabled forking, which is not
-# what this control requires (#513). Its manual check steps above are the
-# guidance until an automated fix measures the right thing.
 
 [controls."OSPS-AC-03.01"]
 name = "PreventDirectCommits"
@@ -2350,62 +2351,36 @@ llm_enhance = "Customize this security policy: replace the placeholder email wit
 # =============================================================================
 
 [controls."OSPS-AC-04.01"]
-name = "ExplicitWorkflowPermissions"
-description = "Workflows define explicit permissions"
+name = "RestrictDefaultWorkflowPermissions"
+description = "Default GitHub Actions token permissions are restricted"
 tags = { level = 2, domain = "AC", security_severity = 6.5, access-control = true, ci-cd = true }
 when = { ci_provider = "github" }
 
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-AC-04.01"
-location_hint = ".github/workflows"
-help_md = """Configure workflows with explicit minimal permissions.
-
-**Remediation:**
-1. Add `permissions: {}` at workflow level for read-only default
-2. Only grant specific permissions where needed
-3. Use `permissions: read-all` for read-only jobs
-
-**Example:**
-```yaml
-permissions:
-  contents: read
-  pull-requests: write
-```
+help_md = """In Repository Settings → Actions → General → Workflow permissions,
+select 'Read repository contents and packages permissions'. If the setting
+is enforced by the organization, review the policy with an organization owner.
 """
 
 [[controls."OSPS-AC-04.01".passes]]
-handler = "pattern"
-files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
-pass_if_any = false
-
-[controls."OSPS-AC-04.01".passes.pattern.patterns]
-permissions = "^permissions:"
+handler = "gh_api"
+endpoint = "/repos/$OWNER/$REPO/actions/permissions/workflow"
+expr = '{"read": true, "write": false}[response.body.default_workflow_permissions]'
+evidence_fields = ["default_workflow_permissions"]
 
 [[controls."OSPS-AC-04.01".passes]]
 handler = "manual"
 steps = [
-    "Open each workflow file in .github/workflows/",
-    "Verify 'permissions:' block is defined at workflow or job level",
-    "Check permissions follow least-privilege principle",
+    "Open Repository Settings → Actions → General → Workflow permissions",
+    "Verify the effective default is 'Read repository contents and packages permissions'",
 ]
 
-# Unsafe: `permissions: {}` at the top of an existing workflow removes every
-# GITHUB_TOKEN permission from jobs that declare none, which can break them.
-[controls."OSPS-AC-04.01".remediation]
-safe = false
-
 [[controls."OSPS-AC-04.01".remediation.handlers]]
-handler = "yaml_inject"
-files = ".github/workflows/*.yml"
-key = "permissions"
-value = "{}"
-insert_after = "on"
-
-[[controls."OSPS-AC-04.01".remediation.handlers]]
-handler = "yaml_inject"
-files = ".github/workflows/*.yaml"
-key = "permissions"
-value = "{}"
-insert_after = "on"
+handler = "manual"
+steps = [
+    "In Workflow permissions, select 'Read repository contents and packages permissions'",
+    "If the organization enforces the setting, ask an organization owner to review the policy",
+]
 
 # =============================================================================
 # Level 2 Controls - Governance (GV)
