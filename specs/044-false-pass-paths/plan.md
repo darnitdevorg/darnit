@@ -110,7 +110,7 @@ packages/darnit/src/darnit/
     |-- framework_schema.py    # ControlConfig extra="forbid"
     `-- control_loader.py      # validate_step_authority: unknown keys, unregistered types, expr references, /user rule
 
-packages/darnit-reproducibility/src/darnit_reproducibility/implementation.py   # ceiling={"fail"} x5
+packages/darnit-amber/src/darnit_amber/implementation.py   # ceiling={"fail"} x5
 packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml             # AC-01.01 /user evidence_fields
 packages/darnit-hello/.../hello.toml, packages/darnit-example/.../example-hygiene.toml   # file_must_exist -> file_exists
 

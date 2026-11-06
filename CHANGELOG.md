@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `darnit-amber run`, `verify`, `claim` and `rerun` (#677 steps A, C, D; #678;
+  specs/046-amber-run-bundle): one execution of an artifact's experiment under
+  Witness becomes a signed run bundle (statement signed as DSSE, Witness
+  envelopes bound by digest, outputs stored and hashed), with optional
+  `--identity` (Fulcio) signing and `--publish` to Rekor. Claims are measured
+  only from outputs the experiment produced; `rerun` verifies before it
+  executes and asks for consent. The S3 store is an extra:
+  `pip install 'darnit-amber[s3]'`.
+
 - Developer test flow automation scripts (`scripts/clean_and_install_dev.sh`,
   `scripts/setup_dev_projects.sh`, `scripts/run_dev_test_flow.sh`) to
   generate reproducible test fixtures (`failing-empty`,
@@ -435,6 +444,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING:** the `darnit-reproducibility` plugin is renamed `darnit-amber`:
+  package `darnit_amber`, framework and MCP server name `amber`,
+  `AmberImplementation`, `amber.toml`. Control ids (`RE-*`), handler names
+  (`repro_*`) and the `audit_reproducibility` MCP tool are unchanged (#532).
+  Migration:
+  - `darnit-mcp` depends on a transitional `darnit-reproducibility` for this
+    one release: it has no entry points and only pulls in `darnit-amber`, so
+    upgrading `darnit-mcp` replaces the old plugin instead of leaving it
+    installed beside the new one. After upgrading, `pip uninstall
+    darnit-reproducibility`; the next release drops it.
+  - Rename `reproducibility` to `amber` in `darnit audit -f`, `darnit serve
+    --framework`, MCP client configurations (server name and framework
+    argument), and operator configuration: `[plugins].allowed` and
+    `[[compose]] source`.
+  - Python code: `import darnit_amber`; `darnit_reproducibility` re-exports it
+    with a `DeprecationWarning` for this release.
 - In OpenSSF Baseline assessment attestation predicates, `assessor.name`
   changes from `openssf-baseline-mcp` to `openssf-baseline`, `assessor.uri`
   points to `https://github.com/darnitdevorg/darnit`, `assessor.version`

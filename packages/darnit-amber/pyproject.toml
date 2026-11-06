@@ -1,0 +1,49 @@
+[project]
+name = "darnit-amber"
+version = "0.1.1"
+description = "Scientific reproducibility checks plugin for darnit"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "cryptography>=46",
+    "pyopenssl>=24",  # strict X.509 path validation of Fulcio certificates, as sigstore-python does it
+    "rfc3161-client>=1.0",
+    "sigstore>=4.0,<5",  # publish.py and verify use sigstore's Rekor client and TransparencyLogEntry (private API; pinned)
+    "darnit-core>=0.1.1",
+    # PEP 440 requirement parsing for the requirements.txt pin classifier.
+    # darnit-core already imports `packaging` at runtime (core/composition.py,
+    # config/framework_schema.py) without declaring it; this declares it where
+    # it is used rather than inheriting an undeclared import. See
+    # specs/037-pinned-requirements-detection/research.md R4.
+    "packaging>=23.0",
+]
+
+[project.optional-dependencies]
+s3 = ["boto3>=1.43.118"]  # the S3 attestation store; `darnit-amber run --store s3`
+
+[project.scripts]
+darnit-amber = "darnit_amber.cli:main"
+
+[project.entry-points."darnit.implementations"]
+amber = "darnit_amber:register"
+
+[project.entry-points."darnit.stores.attestation"]
+s3 = "darnit_amber.s3_store:S3AttestationStore"
+
+[project.entry-points."darnit.frameworks"]
+amber = "darnit_amber:get_framework_path"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/darnit_amber"]
+
+[dependency-groups]
+dev = [
+    "boto3>=1.43.118",
+    "moto[server]>=5.2.4",
+]
+# amber.toml lives at src/darnit_amber/amber.toml
+# (feature 021) and is packaged automatically by the entry above.

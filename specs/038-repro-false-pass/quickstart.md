@@ -20,7 +20,7 @@ Three reproducibility controls used to report repositories as better than the ev
 ## Running it
 
 ```bash
-uv run pytest tests/darnit_reproducibility/ -v
+uv run pytest tests/darnit_amber/ -v
 uv run ruff check .
 uv run pytest tests/ --ignore=tests/integration/ --ignore=tests/darnit/parity/tier2 -q
 uv run python scripts/validate_sync.py --verbose

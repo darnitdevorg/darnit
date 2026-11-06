@@ -1,0 +1,41 @@
+id: usenixsec2023-gigadoram
+title: "GigaDORAM: Breaking the Billion Address Barrier"
+venue: {name: USENIX Security, year: 2023}
+artifact:
+  clone: "https://github.com/jacob14916/GigaDORAM-USENIX23-Artifact.git"
+  ref_type: commit
+  ref: "06cfefbbf178b5a6e2e509ef67ecdc9001880e9a"
+environment:
+  image: "localhost/gigadoram:06cfefb"
+  image_digest: "sha256:60457c9084d9a3e798aadca121158a78948ee9e0f1b5f0699f2775a5ac93b44a"
+  containerfile: |
+    FROM docker.io/library/ubuntu:22.04
+    RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends python3 cmake git build-essential libssl-dev ca-certificates iproute2 sudo && rm -rf /var/lib/apt/lists/*
+    WORKDIR /opt
+    RUN git clone -q --branch 0.2.5 --depth 1 https://github.com/emp-toolkit/emp-tool.git && cd emp-tool && cmake -DCMAKE_BUILD_TYPE=Release . && make -j8 && make install && ldconfig
+    RUN git clone -q https://github.com/jacob14916/GigaDORAM-USENIX23-Artifact.git /opt/giga && cd /opt/giga && git checkout -q 06cfefbbf178b5a6e2e509ef67ecdc9001880e9a && ./compile.sh
+    WORKDIR /opt/giga
+  notes: "emp-tool pinned to 0.2.5 (2023): current emp-tool needs CMake 3.25, newer than Ubuntu 22.04's. tc inside the container needs NET_ADMIN."
+role: not_comparable
+expected_verdict: NOT_COMPARABLE
+claims:
+  - id: figure6a-queries-per-sec
+    metric: queries_per_sec
+    threshold: ">= 0"
+    unit: queries/s
+    source: "Figure 6a (log N = 20, 0.1 ms latency, 1 Gbit, 20 threads, 96-CPU machine)"
+    measurement_protocol: "benchmark_doram_locally.sh with netem on loopback; Queries/sec from doram_timing_report1.txt. This run: log N = 16, 2 threads, 200 queries on 8 cores."
+    expected_verdict: NOT_COMPARABLE
+    measure:
+      file: amber-out/doram_timing_report1.txt
+      regex: '^Queries/sec: ([0-9.]+)'
+      comparable: false
+      reason: "throughput on different hardware and a smaller configuration; the appendix gives no tolerance"
+run:
+  command: |
+    set -eu
+    test "$(git rev-parse HEAD)" = 06cfefbbf178b5a6e2e509ef67ecdc9001880e9a
+    mkdir -p amber-out
+    podman run --rm --cap-add NET_ADMIN -v "$PWD/amber-out:/out:Z" localhost/gigadoram:06cfefb sh -c './benchmark_doram_locally.sh 0.1ms 1Gbit --num-query-tests 200 --log-address-space 16 --num-levels 3 --num-threads 2 --log-amp-factor 5 --prf-circuit-filename LowMC_reuse_wires.txt --build-bottom-level-at-startup true >/dev/null 2>&1; cp single_server_results/doram_timing_report1.txt /out/'
+  outputs:
+    - amber-out/doram_timing_report1.txt
