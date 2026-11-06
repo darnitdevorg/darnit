@@ -155,12 +155,13 @@ class TestEveryAllowedValueReachable:
         assert question["allowed_values"] == _definitions()[key].values
 
     @pytest.mark.parametrize("key", ["governance_model", "ci_provider"])
-    def test_selector_omitted_when_more_than_four_values(self, key: str) -> None:
+    def test_selector_names_every_value_when_more_than_four(self, key: str) -> None:
         question = _build_context_question(_request(key))
+        values = _definitions()[key].values
 
-        assert "ask_user" not in question
-        for value in _definitions()[key].values:
-            assert value in question["prompt"]
+        assert [o["label"] for o in question["ask_user"]["options"]] == values[:4]
+        for value in values:
+            assert value in question["ask_user"]["question"]
 
     def test_selector_lists_every_value_when_four_or_fewer(self) -> None:
         question = _build_context_question(_request("platform"))
@@ -168,11 +169,13 @@ class TestEveryAllowedValueReachable:
         labels = [option["label"] for option in question["ask_user"]["options"]]
         assert labels == _definitions()["platform"].values
 
-    def test_questions_without_selector_are_still_returned(self) -> None:
-        payload = _payload([_request("governance_model"), _request("has_releases")])
+    def test_every_question_is_asked_in_one_batch(self) -> None:
+        payload = _payload([_request("governance_model"), _request("security_contact"), _request("has_releases")])
 
-        assert [q["key"] for q in payload["questions"]] == ["governance_model", "has_releases"]
-        assert [m["context_key"] for m in payload["answer_mapping"]] == ["has_releases"]
+        keys = [q["key"] for q in payload["questions"]]
+        assert sorted(keys) == ["governance_model", "has_releases", "security_contact"]
+        assert [m["context_key"] for m in payload["answer_mapping"]] == keys
+        assert len(payload["ask_user_batch"]) == 3
 
     def test_non_enum_has_no_allowed_values(self) -> None:
         assert _build_context_question(_request("maintainers"))["allowed_values"] is None
@@ -186,8 +189,8 @@ class TestExamplesAreHintsOnly:
         question = _build_context_question(_request(key))
 
         assert question["format_hint"] == " or ".join(examples)
-        assert "ask_user" not in question
         for example in examples:
+            assert example not in json.dumps(question["ask_user"]["options"])
             assert example not in question["command_template"]
 
     def test_examples_are_not_offered_in_the_payload(self) -> None:
@@ -198,7 +201,9 @@ class TestExamplesAreHintsOnly:
         templates = json.dumps([q["command_template"] for q in payload["questions"]])
         for request in pending:
             for example in request.definition.examples:
-                assert f'"{example}"' not in offered
+                # An enum's examples are allowed values, so they may be offered as values.
+                if request.definition.type != "enum":
+                    assert f'"{example}"' not in offered
                 assert example not in templates
 
 

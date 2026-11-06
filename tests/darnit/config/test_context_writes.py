@@ -253,6 +253,36 @@ class TestRefusals:
         assert result.outcome == "refused"
         assert "github" in result.reason
 
+    @pytest.mark.parametrize("marker", ["Skip for now", "Answer in chat", "SKIP", "ASK_USER_FOR_VALUE"])
+    @pytest.mark.parametrize(
+        ("key", "shape"),
+        [("security_contact", "string"), ("maintainers", "string"), ("maintainers", "list")],
+    )
+    def test_a_question_option_or_marker_is_not_an_answer(self, repo: Path, marker: str, key: str, shape: str) -> None:
+        """An agent forwarding the label the question tool returned records nothing (#672 review)."""
+        value: Any = ["@alice", marker] if shape == "list" else marker
+
+        result = _confirm(repo, key, value)
+
+        assert result.outcome == "refused"
+        assert marker in (result.reason or "")
+        assert "not an answer" in (result.reason or "")
+        assert not (repo / ".project" / "darnit.yaml").exists()
+
+    def test_refused_operator_side_too(self, repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+
+        result = _confirm(repo, "security_contact", "Skip for now", operator=_operator(trusted=False))
+
+        assert result.outcome == "refused"
+        assert not (tmp_path / "data").exists()
+        assert not (repo / ".project" / "darnit.yaml").exists()
+
+    def test_a_value_that_merely_contains_a_marker_is_an_answer(self, repo: Path) -> None:
+        result = _confirm(repo, "security_contact", "SKIP the form, email security@example.org")
+
+        assert result.outcome == "confirmed"
+
     def test_untrusted_without_a_named_repository(self, repo: Path) -> None:
         result = _confirm(repo, "maintainers", ["@alice"], target=None, operator=_operator(trusted=False))
 

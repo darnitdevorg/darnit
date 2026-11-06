@@ -80,6 +80,7 @@ class TestGetJudgmentRequests:
 
         assert response["status"] == "ok"
         assert response["remaining"] == []
+        assert response["skipped"] == []
         [request] = response["requests"]
         assert request["control_id"] == CONTROL
         assert request["kind"] == "llm_judgment"
@@ -138,6 +139,8 @@ class TestGetJudgmentRequests:
         )
 
         assert _requests(repo)["requests"] == []
+        assert _requests(repo)["skipped"] == [CONTROL]
+        assert _requests(repo, include_judged=True)["skipped"] == []
         [request] = _requests(repo, include_judged=True)["requests"]
         assert request["control_id"] == CONTROL
         assert request["kind"] == "confirmation"
@@ -228,3 +231,17 @@ def test_get_judgment_requests_returns_its_text_without_a_structured_copy(tmp_pa
     tools = {tool.name: tool for tool in asyncio.new_event_loop().run_until_complete(server.list_tools())}
 
     assert tools["get_judgment_requests"].outputSchema is None
+
+
+@pytest.mark.integration
+def test_every_page_carries_the_judgment_procedure(tmp_path: Path) -> None:
+    checkout = _big_repo(tmp_path)
+
+    pages = _all_pages(checkout)
+
+    assert len(pages) > 1
+    for page in pages:
+        text = "\n".join(page["procedure"])
+        assert "submit_judgment(" in text
+        assert f'owner="{OWNER}", repo="{REPO}", local_path="{checkout}"' in text
+        assert "get_judgment_requests(" in text

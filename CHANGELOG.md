@@ -222,6 +222,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `get_pass_candidates`, on every framework server beside
+  `confirm_pass_candidate`, returns the PASS candidates that match the
+  current evidence, with each control's title and requirement, the judged
+  files, the reasoning, and the cited passages, one question per candidate,
+  and the procedure for asking the operator. A page holds at most 4
+  candidates, the most a question tool asks at once. With a remediation
+  `run_id` it marks every judged document that run wrote and whether each
+  was edited since, on every page. It records nothing. A `submit_judgment`
+  finding now carries the control's `evidence_digest`. `/darnit-comply` now judges after improving the generated
+  files and asks the operator to confirm candidates before the final audit
+  and the pull request; `/darnit-audit` ends with the same step (#681).
+- A remediation outcome `changed_not_passing` whose re-check is PENDING
+  carries `pending_kind` (`llm_judgment` or `confirmation`), and an apply
+  lists those controls in `awaiting`, with a "Next steps" section in the
+  report, naming only the repository the caller named. The outcome kinds
+  and the commit and pull request gates are unchanged, and such a control
+  stays non-compliant (#681).
 - `get_judgment_requests`, on every framework server beside
   `submit_judgment`, returns what a coding agent needs to judge the controls
   awaiting a judgment: each control's prompt, analysis hints, and the keys
@@ -442,6 +459,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hard-coded `0.1.0`, and `baseline.version` / `baseline.specification` derive
   from the framework TOML metadata (`OSPS v2026.02.19`) instead of `2025.10.10`
   (Refs #494).
+- `get_pending_data` gives every question a selector, so a batch of up to 4
+  questions is asked in one round of the client's question tool (#650, #655).
+  After 0.1.1, free-text questions and choice questions with more than 4
+  values had none, so Claude Code switched between the question tool and
+  plain text within a batch. (In 0.1.1 a free-text question with two or more
+  examples offered the examples as answers, and a choice question showed
+  only its first 4 values.) A choice question now offers its first 4 values
+  and names every allowed value in the question, any of which can be typed
+  under "Other"; a free-text question offers "Skip for now" and "Answer in
+  chat" and never a value. `confirm_project_data` refuses those two labels,
+  and the `answer_mapping` markers `SKIP` and `ASK_USER_FOR_VALUE`, as a
+  value, so an agent that forwards the label its question tool returned
+  records nothing for that key. Selector headers are cut at a word boundary
+  ("Compiled", not "Compiled Ass"), and a yes/no question's hint is in the
+  question instead of next to "Yes".
+- The skills ask the person to confirm which repository is being audited
+  and name it on every darnit call, the audit included. An audit called
+  without `owner` and `repo` does not apply the person's confirmed answers or
+  stored PASS candidates, so after answering the data questions a re-audit
+  showed the same results. `darnit-comply` re-runs the audit after data is
+  confirmed and shows what changed.
+
+- `get_pending_data` and `get_judgment_requests` return a `procedure`: the
+  steps a coding agent follows with the result (how to show candidates and
+  ask the questions, the exact `confirm_project_data` or `submit_judgment`
+  call, and the next call), naming only the repository the caller named.
+  A `confirm_project_data` result on the OpenSSF Baseline server ends with
+  the next `get_pending_data` call. The `darnit-data`, `darnit-audit`,
+  `darnit-comply`, and `darnit-remediate` skills defer to these procedures
+  instead of restating them or telling the agent to follow another skill,
+  which a client may not load, so `darnit-comply` collected data
+  differently from `darnit-data`. The comply and remediate skills now pass
+  `owner` and `repo` to `remediate_audit_findings`, and `darnit-comply`
+  always calls `get_pending_data` (it used to only when WARN controls
+  were waiting on data); with nothing pending it returns `complete`.
+  The data procedure's `confirm_project_data` call names `host` as a
+  placeholder for repositories not on github.com, maps answers by
+  `answer_mapping` (a No on a candidate is the value the person typed,
+  never `false`), and keeps the caller's `control_ids` on the next
+  `get_pending_data` call.
 - **BREAKING:** `register_handlers()` is the one handler registration hook
   for plugins (#451). `darnit-gittuf` and `darnit-reproducibility` rename
   `register_sieve_handlers()` to `register_handlers()`, and their `register()`

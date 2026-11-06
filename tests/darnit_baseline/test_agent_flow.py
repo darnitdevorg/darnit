@@ -17,6 +17,8 @@ from pathlib import Path
 
 import pytest
 
+from darnit.server.procedures import CHAT_OPTION, SKIP_OPTION
+
 OWNER, REPO = "acme", "widget"
 JUDGED = "OSPS-DO-01.01"
 EXCERPT = "Widget converts Markdown documents to HTML from the command line."
@@ -80,6 +82,10 @@ def _json(result) -> dict:
     return json.loads(text[text.index("{") :])
 
 
+def _labels(question: dict) -> list[str]:
+    return [option["label"] for option in question["ask_user"]["options"]]
+
+
 async def _flow(checkout: Path, operator_config: Path) -> dict:
     from mcp.shared.memory import create_connected_server_and_client_session
 
@@ -99,6 +105,16 @@ async def _flow(checkout: Path, operator_config: Path) -> dict:
             seen["rounds"].append(pending)
             if pending["status"] != "pending":
                 break
+            if "forwarded_label" not in seen:
+                # An agent that forwards the label its question tool returned.
+                free_text = next(
+                    (q["key"] for q in pending["questions"] if _labels(q) == [SKIP_OPTION, CHAT_OPTION]), None
+                )
+                seen["forwarded_label"] = (
+                    free_text,
+                    free_text
+                    and _text(await session.call_tool("confirm_project_data", {**named, free_text: SKIP_OPTION})),
+                )
             answers = {q["key"]: ANSWERS[q["key"]] for q in pending["questions"]}
             seen.setdefault("confirmations", []).append(
                 _text(await session.call_tool("confirm_project_data", {**named, **answers}))
@@ -138,6 +154,18 @@ class TestAgentFlowOnAnUntrustedRepository:
         assert rounds[0]["status"] == "pending"
         assert rounds[-1]["status"] == "complete", rounds[-1]
         assert len(rounds) <= MAX_ROUNDS
+
+    def test_every_question_goes_through_the_question_tool(self, flow: dict) -> None:
+        for pending in flow["rounds"][:-1]:
+            assert len(pending["ask_user_batch"]) == len(pending["questions"])
+            assert len(pending["ask_user_batch"]) <= 4
+
+    def test_a_forwarded_option_label_is_refused(self, flow: dict) -> None:
+        """A selector label is not an answer even when the agent sends it as one (#672 review)."""
+        key, result = flow["forwarded_label"]
+        assert key is not None, "no free-text question in the first batch"
+        assert f"{key}: refused" in result, result
+        assert "not an answer" in result
 
     def test_answers_for_an_untrusted_repository_stay_out_of_the_checkout(self, flow: dict, tmp_path: Path) -> None:
         assert not (tmp_path / "repo" / ".project").exists()
