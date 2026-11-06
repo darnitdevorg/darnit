@@ -31,24 +31,41 @@ _DEPENDENCY_MAP: dict[str, list[str]] = {
     "pg": ["postgresql"],
     "postgres": ["postgresql"],
     "pg-promise": ["postgresql"],
+    "github.com/lib/pq": ["postgresql"],
+    "github.com/jackc/pgx": ["postgresql"],
+    "pq": ["postgresql"],
+    "pgx": ["postgresql"],
     "pymysql": ["mysql"],
     "mysqlclient": ["mysql"],
     "mysql2": ["mysql"],
     "mysql": ["mysql"],
+    "github.com/go-sql-driver/mysql": ["mysql"],
     "pymongo": ["mongodb"],
     "mongoose": ["mongodb"],
     "mongodb": ["mongodb"],
+    "go.mongodb.org/mongo-driver": ["mongodb"],
+    "mongo-driver": ["mongodb"],
     "redis": ["redis"],
     "ioredis": ["redis"],
     "aioredis": ["redis"],
+    "github.com/redis/go-redis": ["redis"],
+    "github.com/go-redis/redis": ["redis"],
+    "go-redis": ["redis"],
     "sqlite3": ["sqlite"],
     "better-sqlite3": ["sqlite"],
     "aiosqlite": ["sqlite"],
+    "github.com/mattn/go-sqlite3": ["sqlite"],
+    "go-sqlite3": ["sqlite"],
+    "modernc.org/sqlite": ["sqlite"],
     "boto3": ["s3"],
     "@aws-sdk/client-s3": ["s3"],
     "@prisma/client": ["prisma"],
     "prisma": ["prisma"],
     "drizzle-orm": ["drizzle"],
+    "gorm.io/gorm": ["gorm"],
+    "gorm": ["gorm"],
+    "entgo.io/ent": ["ent"],
+    "ent": ["ent"],
     "@supabase/supabase-js": ["supabase"],
     "supabase": ["supabase"],
     # --- Frameworks ---
@@ -60,6 +77,22 @@ _DEPENDENCY_MAP: dict[str, list[str]] = {
     "react": ["react"],
     "vue": ["vue"],
     "nuxt": ["vue"],
+    "github.com/gin-gonic/gin": ["gin"],
+    "gin": ["gin"],
+    "github.com/labstack/echo": ["echo"],
+    "echo": ["echo"],
+    "github.com/gofiber/fiber": ["fiber"],
+    "fiber": ["fiber"],
+    "github.com/go-chi/chi": ["chi"],
+    "chi": ["chi"],
+    "github.com/gorilla/mux": ["gorilla"],
+    "mux": ["gorilla"],
+    "github.com/julienschmidt/httprouter": ["httprouter"],
+    "httprouter": ["httprouter"],
+    "github.com/valyala/fasthttp": ["fasthttp"],
+    "fasthttp": ["fasthttp"],
+    "github.com/beego/beego": ["beego"],
+    "beego": ["beego"],
     # --- Auth ---
     "next-auth": ["nextauth"],
     "@clerk/nextjs": ["clerk"],
@@ -96,6 +129,7 @@ def parse_dependency_manifests(repo_path: str) -> set[str]:
 # Individual parsers
 # ---------------------------------------------------------------------------
 
+
 def _normalise_dep_name(raw: str) -> str:
     """Normalise a dependency name for lookup (lowercase, strip extras/version)."""
     name = raw.strip()
@@ -119,10 +153,21 @@ def _parse_pyproject_toml(repo_path: str, declared: set[str]) -> None:
     """Parse pyproject.toml for dependencies."""
     # Walk to find pyproject.toml files (monorepos may have several)
     for root, dirs, files in os.walk(repo_path):
-        dirs[:] = [d for d in dirs if d not in {
-            "node_modules", ".git", "venv", ".venv", "__pycache__",
-            "dist", "build", "env",
-        }]
+        dirs[:] = [
+            d
+            for d in dirs
+            if d
+            not in {
+                "node_modules",
+                ".git",
+                "venv",
+                ".venv",
+                "__pycache__",
+                "dist",
+                "build",
+                "env",
+            }
+        ]
         if "pyproject.toml" not in files:
             continue
         path = os.path.join(root, "pyproject.toml")
@@ -184,9 +229,30 @@ def _parse_go_mod(repo_path: str, declared: set[str]) -> None:
         content = _read_file(repo_path, path)
     except OSError:
         return
-    for match in re.finditer(r"^\s*(\S+)\s+v", content, re.MULTILINE):
-        module = match.group(1).split("/")[-1]
-        _add_matches(module, declared)
+
+    in_require_block = False
+    for line in content.splitlines():
+        line = line.strip()
+        if not line or line.startswith("//"):
+            continue
+        if line.startswith("require") and "(" in line:
+            if ")" not in line:
+                in_require_block = True
+            continue
+        if in_require_block:
+            if line.startswith(")"):
+                in_require_block = False
+                continue
+            match = re.match(r"^(?:require\s+)?([a-zA-Z0-9.\-_/]+)\s+v[0-9]", line)
+        else:
+            match = re.match(r"^require\s+([a-zA-Z0-9.\-_/]+)\s+v[0-9]", line)
+        if match:
+            raw_module = match.group(1)
+            unversioned = re.sub(r"/v[0-9]+$", "", raw_module)
+            base = unversioned.split("/")[-1]
+            _add_matches(raw_module, declared)
+            _add_matches(unversioned, declared)
+            _add_matches(base, declared)
 
 
 def _read_file(repo_path: str, path: str) -> str:
