@@ -49,6 +49,7 @@ def clean_registry():
 
 def _make_handler(status, message="ok", evidence=None, confidence=1.0):
     """Create a simple handler function that returns a fixed result."""
+
     def handler(config, context):
         return HandlerResult(
             status=status,
@@ -56,6 +57,7 @@ def _make_handler(status, message="ok", evidence=None, confidence=1.0):
             confidence=confidence,
             evidence=evidence or {},
         )
+
     return handler
 
 
@@ -114,7 +116,10 @@ class TestHandlerRegistry:
         handler_fn = _make_handler(HandlerResultStatus.PASS)
 
         registry.register(
-            "test_handler", "deterministic", handler_fn, "A test handler",
+            "test_handler",
+            "deterministic",
+            handler_fn,
+            "A test handler",
             ceiling={"pass", "fail"},
         )
 
@@ -135,12 +140,16 @@ class TestHandlerRegistry:
         """Test re-registering a core handler warns."""
         registry = SieveHandlerRegistry()
         registry.register(
-            "h1", "deterministic", _make_handler(HandlerResultStatus.PASS),
+            "h1",
+            "deterministic",
+            _make_handler(HandlerResultStatus.PASS),
             ceiling={"pass", "fail"},
         )
         # Re-register without plugin context — should log warning
         registry.register(
-            "h1", "deterministic", _make_handler(HandlerResultStatus.FAIL),
+            "h1",
+            "deterministic",
+            _make_handler(HandlerResultStatus.FAIL),
             ceiling={"pass", "fail"},
         )
         # Latest registration wins
@@ -153,13 +162,17 @@ class TestHandlerRegistry:
         """A plugin registration under a core name is refused (feature 044, FR-005)."""
         registry = SieveHandlerRegistry()
         registry.register(
-            "file_exists", "deterministic", _make_handler(HandlerResultStatus.PASS),
+            "file_exists",
+            "deterministic",
+            _make_handler(HandlerResultStatus.PASS),
             ceiling={"pass", "fail"},
         )
 
         registry.set_plugin_context("my-plugin")
         registry.register(
-            "file_exists", "deterministic", _make_handler(HandlerResultStatus.FAIL),
+            "file_exists",
+            "deterministic",
+            _make_handler(HandlerResultStatus.FAIL),
             ceiling={"pass", "fail"},
         )
         registry.set_plugin_context(None)
@@ -173,15 +186,21 @@ class TestHandlerRegistry:
         """Test listing handlers filtered by phase."""
         registry = SieveHandlerRegistry()
         registry.register(
-            "h1", "deterministic", _make_handler(HandlerResultStatus.PASS),
+            "h1",
+            "deterministic",
+            _make_handler(HandlerResultStatus.PASS),
             ceiling={"pass", "fail"},
         )
         registry.register(
-            "h2", "pattern", _make_handler(HandlerResultStatus.PASS),
+            "h2",
+            "pattern",
+            _make_handler(HandlerResultStatus.PASS),
             ceiling={"pass", "fail"},
         )
         registry.register(
-            "h3", "deterministic", _make_handler(HandlerResultStatus.PASS),
+            "h3",
+            "deterministic",
+            _make_handler(HandlerResultStatus.PASS),
             ceiling={"pass", "fail"},
         )
 
@@ -195,12 +214,16 @@ class TestHandlerRegistry:
         """Test listing handlers filtered by plugin."""
         registry = SieveHandlerRegistry()
         registry.register(
-            "core_h", "deterministic", _make_handler(HandlerResultStatus.PASS),
+            "core_h",
+            "deterministic",
+            _make_handler(HandlerResultStatus.PASS),
             ceiling={"pass", "fail"},
         )
         registry.set_plugin_context("baseline")
         registry.register(
-            "plugin_h", "pattern", _make_handler(HandlerResultStatus.PASS),
+            "plugin_h",
+            "pattern",
+            _make_handler(HandlerResultStatus.PASS),
             ceiling={"pass", "fail"},
         )
         registry.set_plugin_context(None)
@@ -219,7 +242,9 @@ class TestHandlerRegistry:
         """Test clearing the registry."""
         registry = SieveHandlerRegistry()
         registry.register(
-            "h1", "deterministic", _make_handler(HandlerResultStatus.PASS),
+            "h1",
+            "deterministic",
+            _make_handler(HandlerResultStatus.PASS),
             ceiling={"pass", "fail"},
         )
         assert registry.get("h1") is not None
@@ -320,9 +345,7 @@ class TestLegacyFormatRejection:
             RemediationConfig,
         )
 
-        rem = RemediationConfig(
-            handlers=[HandlerInvocation(handler="file_create", path="SECURITY.md")]
-        )
+        rem = RemediationConfig(handlers=[HandlerInvocation(handler="file_create", path="SECURITY.md")])
         assert len(rem.handlers) == 1
         assert rem.handlers[0].handler == "file_create"
 
@@ -373,19 +396,13 @@ class TestWhenClauseEvaluation:
     def test_when_multiple_conditions_all_must_match(self):
         """All when conditions must be true (AND semantics)."""
         orchestrator = SieveOrchestrator()
-        control = _make_control(
-            "T-01", when={"has_releases": True, "is_library": True}
-        )
+        control = _make_control("T-01", when={"has_releases": True, "is_library": True})
         # Both match
-        ctx_both = _make_context(
-            project_context={"has_releases": True, "is_library": True}
-        )
+        ctx_both = _make_context(project_context={"has_releases": True, "is_library": True})
         assert orchestrator._evaluate_when(control, ctx_both) is True
 
         # One doesn't match
-        ctx_partial = _make_context(
-            project_context={"has_releases": True, "is_library": False}
-        )
+        ctx_partial = _make_context(project_context={"has_releases": True, "is_library": False})
         assert orchestrator._evaluate_when(control, ctx_partial) is False
 
     @pytest.mark.unit
@@ -512,7 +529,9 @@ class TestSharedHandlerCache:
         # default empty ceiling would downgrade to WARN and the shared-cache test would fail for reasons
         # unrelated to caching behavior.
         registry.register(
-            "shared_check", "deterministic", counting_handler,
+            "shared_check",
+            "deterministic",
+            counting_handler,
             ceiling={"pass", "fail"},
         )
 
@@ -547,7 +566,9 @@ class TestSharedHandlerCache:
             )
 
         registry.register(
-            "shared_check", "deterministic", counting_handler,
+            "shared_check",
+            "deterministic",
+            counting_handler,
             ceiling={"pass", "fail"},
         )
 
@@ -582,7 +603,9 @@ class TestSharedHandlerCache:
             )
 
         registry.register(
-            "h", "deterministic", counting_handler,
+            "h",
+            "deterministic",
+            counting_handler,
             ceiling={"pass", "fail"},
         )
 
@@ -1008,10 +1031,7 @@ class TestEndToEndIntegration:
         assert "*(inferred)*" in md
         # A-01 should NOT have inference annotation
         lines = md.split("\n")
-        a01_lines = [
-            line for line in lines
-            if "A-01" in line and "PASS" not in line[:10]
-        ]
+        a01_lines = [line for line in lines if "A-01" in line and "PASS" not in line[:10]]
         for line in a01_lines:
             if "A-01" in line and "inferred" not in line.lower():
                 # Normal pass line for A-01 should not have annotation
@@ -1030,3 +1050,47 @@ class TestEndToEndIntegration:
         legacy = result.to_legacy_dict()
         assert "evidence" in legacy
         assert legacy["evidence"]["when"] == {"has_releases": True}
+
+
+# =============================================================================
+# #485: dependency evidence is scoped to declared dependencies
+# =============================================================================
+
+
+class TestDependencyEvidenceScope:
+    """Only a control's declared ``depends_on`` statuses reach its evidence (#485).
+
+    Before the fix every control verified so far was injected as a
+    ``dependency.<ID>.status`` key, so a level-3 run sent dozens of unrelated
+    keys with each consultation.
+    """
+
+    @pytest.mark.unit
+    def test_only_declared_dependencies_are_injected(self):
+        from darnit.config.framework_schema import HandlerInvocation
+
+        registry = get_sieve_handler_registry()
+        seen: dict[str, list[str]] = {}
+
+        def recording(config, context):
+            seen[context.control_id] = sorted(k for k in context.gathered_evidence if k.startswith("dependency."))
+            return HandlerResult(status=HandlerResultStatus.PASS, message="ok", evidence={})
+
+        registry.register("recording", "deterministic", recording, ceiling={"pass", "fail"})
+        orchestrator = SieveOrchestrator()
+        inv = [HandlerInvocation(handler="recording")]
+        controls = [
+            _make_control("A-01", handler_invocations=inv),
+            _make_control("B-01", handler_invocations=inv),
+            _make_control("C-01", depends_on=["A-01"], handler_invocations=inv),
+            _make_control("D-01", handler_invocations=inv),
+            _make_control("E-01", depends_on=["A-01", "B-01", "Z-99"], handler_invocations=inv),
+        ]
+        for spec in controls:
+            orchestrator.verify(spec, _make_context(control_id=spec.control_id))
+
+        assert seen["A-01"] == []
+        assert seen["B-01"] == []
+        assert seen["C-01"] == ["dependency.A-01.status"]  # not B-01, verified just before it
+        assert seen["D-01"] == []  # three controls verified before it, none declared
+        assert seen["E-01"] == ["dependency.A-01.status", "dependency.B-01.status"]  # Z-99 never verified: no key
