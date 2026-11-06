@@ -147,6 +147,34 @@ def _repository_record(
     return record
 
 
+def _not_an_answer(value: Any) -> str | None:
+    """The question option or answer_mapping marker ``value`` is (or holds), if any.
+
+    The free-text selector offers "Skip for now" and "Answer in chat", and
+    answer_mapping maps them to "SKIP" and "ASK_USER_FOR_VALUE". None of them
+    is an answer, and an agent may forward the label the question tool
+    returned, so they are refused here rather than trusted to the procedure.
+    """
+    from darnit.server.procedures import NOT_AN_ANSWER
+
+    items = value if isinstance(value, (list, tuple, set)) else [value]
+    for item in items:
+        if isinstance(item, str) and item.strip() in NOT_AN_ANSWER:
+            return item.strip()
+    return None
+
+
+def _refuse_not_an_answer(key: str, marker: str) -> WriteResult:
+    return WriteResult(
+        key,
+        "refused",
+        reason=(
+            f"{marker!r} is a question option or answer_mapping marker, not an answer; "
+            "leave the key out to skip it, or ask the person for the value"
+        ),
+    )
+
+
 def record_value_confirmation(
     local_path: str,
     key: str,
@@ -182,12 +210,16 @@ def record_value_confirmation(
     definition = _definitions(local_path, definitions).get(key)
     if definition is None:
         return WriteResult(key, "refused", reason=f"{key!r} is not a context key the framework defines")
+    if (marker := _not_an_answer(value)) is not None:
+        return _refuse_not_an_answer(key, marker)
     try:
         value = normalize_value(key, coerce_value(definition, value))
     except ValueError as exc:
         return WriteResult(key, "refused", reason=str(exc))
     if value is None:
         return WriteResult(key, "refused", reason="no value given")
+    if (marker := _not_an_answer(value)) is not None:
+        return _refuse_not_an_answer(key, marker)
     if not in_vocabulary(value, definition):
         return WriteResult(
             key, "refused", reason=f"{value!r} is not an allowed value; allowed: {', '.join(vocabulary(definition))}"

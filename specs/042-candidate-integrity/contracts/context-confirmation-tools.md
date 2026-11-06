@@ -24,7 +24,9 @@ Writes nothing. Each question:
 ```
 
 - `command_template` never contains a candidate value or a configuration example.
-- Enum questions list every allowed value in `allowed_values`; the selector options are omitted when there are more than 4.
+- Every question carries a selector (`ask_user`); the client's question tool shows at most 4 options and adds a free-text "Other". Enum questions list every allowed value in `allowed_values`; with more than 4, the selector offers the first 4 and its question names them all, and any of them can be typed under Other.
+- A free-text question's selector offers "Skip for now" and "Answer in chat", never a value; the answer is typed under Other. Its `answer_mapping.value_map` maps them to the markers `"SKIP"` and `"ASK_USER_FOR_VALUE"`, and a candidate question's maps "No" to `"ASK_USER_FOR_VALUE"`. These four strings are not answers: `confirm_project_data` refuses any of them as a value, alone or inside a list (`darnit.server.procedures.NOT_AN_ANSWER`).
+- The response carries `procedure`, the ordered steps for collecting the data (framework-design 7.10, `darnit.server.procedures`). Its calls name only the `owner`, `repo`, and `control_ids` the caller passed; the `confirm_project_data` call names `host` as a placeholder, since `get_pending_data` takes no `host`. It holds no candidate or detected value.
 - `answer_mapping.value_map["Yes"]` is `{"accept_candidates": {"<key>": "<candidate.digest>"}}`: a placeholder the agent fills from the question's `candidate.digest` only after the person has actually answered yes. The mapping never contains a ready-to-send digest, and it applies only to the person's own answer; accepting a candidate by digest is a confirmation and follows the same rule as any other.
 
 Response also includes:
