@@ -46,6 +46,9 @@ The old upstream field `CNCFSlackChannel` with YAML key `cncf_slack_channel` is 
 
 ## Decision 3: `DOT_PROJECT_SPEC_VERSION` bump target
 
+> **Superseded 2026-11-05 (issue #502).** `DOT_PROJECT_SPEC_VERSION` now mirrors upstream's `schema_version` (`1.0.0`): it is what darnit writes into new `project.yaml` files, and upstream validators reject values upstream never published. The rejected alternative below is the one adopted; the "per-file declaration" reading was right, and that is exactly why the value must be upstream's. Reconciliations no longer bump it; the tracked-hash file and the module's reconciliation history record upstream drift. The text below is kept as the record of the 2026-08-14 decision.
+
+
 Current value: `"1.1.0"` (declared in `dot_project.py:39`).
 
 **Decision**: Bump to `"1.2.0"`.
