@@ -24,9 +24,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/kusari-oss/darnit"
-Repository = "https://github.com/kusari-oss/darnit"
-Issues = "https://github.com/kusari-oss/darnit/issues"
+Homepage = "https://github.com/darnitdevorg/darnit"
+Repository = "https://github.com/darnitdevorg/darnit"
+Issues = "https://github.com/darnitdevorg/darnit/issues"
 
 # Discoverability: the implementation entry point.
 [project.entry-points."darnit.implementations"]
