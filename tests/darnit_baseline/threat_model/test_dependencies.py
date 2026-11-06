@@ -65,6 +65,35 @@ class TestAddMatches:
         _add_matches("@clerk/nextjs", declared)
         assert "clerk" in declared
 
+    def test_maps_go_datastore(self) -> None:
+        declared: set[str] = set()
+        _add_matches("github.com/redis/go-redis", declared)
+        _add_matches("go-redis", declared)
+        _add_matches("github.com/lib/pq", declared)
+        _add_matches("pq", declared)
+        _add_matches("mongo-driver", declared)
+        assert "redis" in declared
+        assert "postgresql" in declared
+        assert "mongodb" in declared
+
+    def test_maps_go_framework(self) -> None:
+        declared: set[str] = set()
+        _add_matches("github.com/gin-gonic/gin", declared)
+        _add_matches("gin", declared)
+        _add_matches("github.com/labstack/echo", declared)
+        _add_matches("fiber", declared)
+        _add_matches("chi", declared)
+        assert "gin" in declared
+        assert "echo" in declared
+        assert "fiber" in declared
+        assert "chi" in declared
+
+    def test_maps_go_orm(self) -> None:
+        declared: set[str] = set()
+        _add_matches("gorm.io/gorm", declared)
+        _add_matches("gorm", declared)
+        assert "gorm" in declared
+
     def test_unmatched_dependency_ignored(self) -> None:
         declared: set[str] = set()
         _add_matches("unknown-internal-util>=1.0", declared)
@@ -223,8 +252,88 @@ require (
         declared: set[str] = set()
         _parse_go_mod(str(tmp_path), declared)
 
-        # module extracted is basename e.g. "go-redis" -> normalises to "go-redis"
-        assert isinstance(declared, set)
+        assert "gin" in declared
+        assert "redis" in declared
+
+    def test_parses_require_block_with_versioned_modules(self, tmp_path: Path) -> None:
+        go_mod = tmp_path / "go.mod"
+        go_mod.write_text(
+            """
+module testservice
+
+go 1.22
+
+require (
+    github.com/jackc/pgx/v5 v5.5.5
+    go.mongodb.org/mongo-driver v1.14.0
+    gorm.io/gorm v1.25.7
+    github.com/labstack/echo/v4 v4.11.4
+    github.com/gofiber/fiber/v2 v2.52.4
+    github.com/go-chi/chi/v5 v5.0.12
+)
+""",
+            encoding="utf-8",
+        )
+        declared: set[str] = set()
+        _parse_go_mod(str(tmp_path), declared)
+
+        assert "postgresql" in declared
+        assert "mongodb" in declared
+        assert "gorm" in declared
+        assert "echo" in declared
+        assert "fiber" in declared
+        assert "chi" in declared
+
+    def test_parses_single_line_require_directives(self, tmp_path: Path) -> None:
+        go_mod = tmp_path / "go.mod"
+        go_mod.write_text(
+            """
+module standalone
+
+go 1.22
+
+require github.com/lib/pq v1.10.9
+require github.com/go-sql-driver/mysql v1.8.1
+require github.com/mattn/go-sqlite3 v1.14.22
+""",
+            encoding="utf-8",
+        )
+        declared: set[str] = set()
+        _parse_go_mod(str(tmp_path), declared)
+
+        assert "postgresql" in declared
+        assert "mysql" in declared
+        assert "sqlite" in declared
+
+    def test_parses_mixed_directives_and_comments(self, tmp_path: Path) -> None:
+        go_mod = tmp_path / "go.mod"
+        go_mod.write_text(
+            """
+module mixedapp
+
+go 1.22
+
+// Direct single-line requirement
+require github.com/lib/pq v1.10.9 // direct
+
+// Block requirements with comments and indirect tags
+require (
+    // Web framework
+    github.com/gin-gonic/gin v1.9.1
+    github.com/redis/go-redis/v9 v9.5.1 // indirect
+)
+
+replace example.com/foo => example.com/bar v1.0.0
+exclude example.com/broken v1.0.0
+""",
+            encoding="utf-8",
+        )
+        declared: set[str] = set()
+        _parse_go_mod(str(tmp_path), declared)
+
+        assert "postgresql" in declared
+        assert "gin" in declared
+        assert "redis" in declared
 
     def test_missing_go_mod_ignored(self, tmp_path: Path) -> None:
         declared: set[str] = set()
@@ -239,12 +348,14 @@ class TestParseDependencyManifests:
         (tmp_path / "pyproject.toml").write_text('dependencies = ["fastapi"]\n', encoding="utf-8")
         (tmp_path / "package.json").write_text('{"dependencies": {"next": "^14.0"}}', encoding="utf-8")
         (tmp_path / "requirements.txt").write_text("redis>=4.0\n", encoding="utf-8")
+        (tmp_path / "go.mod").write_text("module demo\n\nrequire github.com/gin-gonic/gin v1.9.1\n", encoding="utf-8")
 
         results = parse_dependency_manifests(str(tmp_path))
 
         assert "fastapi" in results
         assert "nextjs" in results
         assert "redis" in results
+        assert "gin" in results
 
     def test_empty_repository_returns_empty_set(self, tmp_path: Path) -> None:
         assert parse_dependency_manifests(str(tmp_path)) == set()
