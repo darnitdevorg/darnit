@@ -40,17 +40,27 @@ def discover_files(
     if file_locations is None:
         return {}
 
+    from darnit.core.utils import resolve_case_exact_path
+
     discovered = {}
 
     for ref_path, patterns in file_locations.items():
         for pattern in patterns:
-            full_pattern = os.path.join(local_path, pattern)
-            matches = glob_module.glob(full_pattern)
-            if matches:
-                # Use first match, relative path
-                rel_path = os.path.relpath(matches[0], local_path)
-                discovered[ref_path] = rel_path
-                break
+            if "*" in pattern or "?" in pattern:
+                full_pattern = os.path.join(local_path, pattern)
+                matches = glob_module.glob(full_pattern)
+                exact_matches = [m for m in matches if resolve_case_exact_path(m, local_path)]
+                if exact_matches:
+                    # Use first match, relative path
+                    rel_path = os.path.relpath(exact_matches[0], local_path)
+                    discovered[ref_path] = rel_path
+                    break
+            else:
+                exact = resolve_case_exact_path(pattern, local_path)
+                if exact and os.path.exists(exact):
+                    rel_path = os.path.relpath(exact, local_path)
+                    discovered[ref_path] = rel_path
+                    break
 
     return discovered
 

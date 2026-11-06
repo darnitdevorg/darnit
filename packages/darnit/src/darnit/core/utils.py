@@ -1,5 +1,6 @@
 """Shared utility functions for the baseline MCP server."""
 
+import functools
 import glob as glob_module
 import json
 import os
@@ -683,3 +684,103 @@ def get_git_ref(local_path: str) -> str | None:
     except (FileNotFoundError, OSError, subprocess.SubprocessError) as e:
         logger.debug(f"git ref command failed: {type(e).__name__}")
     return None
+
+
+@functools.lru_cache(maxsize=2048)
+def _dir_entries_for_mtime(dir_path: str, mtime_ns: int) -> frozenset[str]:
+    try:
+        return frozenset(os.listdir(dir_path))
+    except OSError:
+        return frozenset()
+
+
+def dir_entries(dir_path: str) -> frozenset[str]:
+    """Return directory entries as a frozenset, or empty frozenset on OSError.
+
+    Keys by directory path and st_mtime_ns so modifications (e.g. remediation file creation)
+    automatically invalidate the cache without requiring manual clearing.
+    """
+    try:
+        mtime_ns = os.stat(dir_path).st_mtime_ns
+    except OSError:
+        return frozenset()
+    return _dir_entries_for_mtime(dir_path, mtime_ns)
+
+
+def clear_dir_entries_cache() -> None:
+    """Clear cached directory listings (primarily for test environments)."""
+    _dir_entries_for_mtime.cache_clear()
+
+
+def resolve_case_exact_path(path: str, root: str | None = None) -> str | None:
+    """Verify that a path exists with case-exact directory entries.
+
+    On case-insensitive filesystems (such as macOS APFS or Windows NTFS),
+    `os.path.exists` or `open()` can succeed when probing a lowercase
+    path (e.g. `readme.md`) even if the repository only contains `README.md`.
+    This function traverses each path component and verifies against the
+    actual directory entries (`os.listdir`), ensuring exact-case matching
+    identical to case-sensitive filesystems (Linux).
+
+    Args:
+        path: File path (relative or absolute).
+        root: Optional repository root to anchor relative paths or bounds.
+
+    Returns:
+        The normalized absolute path if all components exist with exact case,
+        or None if any component is missing or mismatched in case.
+    """
+    if not path:
+        return None
+
+    if root is not None and not os.path.isabs(path):
+        full_path = os.path.normpath(os.path.join(os.path.abspath(root), path))
+        base = os.path.abspath(root)
+    else:
+        full_path = os.path.normpath(os.path.abspath(path))
+        if root is not None:
+            base_cand = os.path.abspath(root)
+            try:
+                if os.path.commonpath([base_cand, full_path]) == base_cand:
+                    base = base_cand
+                else:
+                    base = os.path.abspath(os.sep)
+            except ValueError:
+                base = os.path.abspath(os.sep)
+        else:
+            base = os.path.abspath(os.sep)
+
+    try:
+        rel = os.path.relpath(full_path, base)
+    except ValueError:
+        return None
+
+    if rel == ".":
+        return base
+    if rel == ".." or rel.startswith(".." + os.sep):
+        return None
+
+    curr = base
+    for part in rel.split(os.sep):
+        if not part or part == ".":
+            continue
+        if part not in dir_entries(curr):
+            return None
+        curr = os.path.join(curr, part)
+
+    return curr
+
+
+def get_file_identity(full_path: str) -> tuple[int, int] | str:
+    """Return a unique file identity (st_dev, st_ino) or realpath fallback.
+
+    Used to deduplicate candidate files (e.g. across case-aliases, symlinks,
+    or multiple probes pointing to the same underlying file) before reading
+    or reporting evidence.
+    """
+    try:
+        st = os.stat(full_path)
+        return (st.st_dev, st.st_ino)
+    except OSError:
+        return os.path.realpath(full_path)
+
