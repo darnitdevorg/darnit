@@ -37,7 +37,6 @@ def _ctx(local_path: Path) -> HandlerContext:
         control_id="TEST-01.01",
         project_context={},
         gathered_evidence={},
-        shared_cache={},
         dependency_results={},
     )
 

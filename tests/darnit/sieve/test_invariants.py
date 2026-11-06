@@ -75,7 +75,6 @@ class TestInconclusiveNeverPromotesToPass:
                         MagicMock(
                             handler="always_inconclusive",
                             when=None,
-                            shared=None,
                             model_extra={},
                         ),
                     ],

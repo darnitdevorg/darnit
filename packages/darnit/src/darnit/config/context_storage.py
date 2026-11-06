@@ -279,7 +279,6 @@ def _run_detect_pipeline(
             control_id=f"context.{key}",
             project_context={},
             gathered_evidence={},
-            shared_cache={},
             dependency_results={},
         )
 

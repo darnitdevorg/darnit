@@ -32,7 +32,7 @@ Each phase in the pipeline SHALL be an optional list of handler invocations. Eac
 - **AND** the framework schema SHALL NOT need to enumerate every handler's fields
 
 ### Requirement: HandlerInvocation schema uses extra="allow" for pass-through
-The `HandlerInvocation` model SHALL have `handler: str` (required), `shared: str | None` (optional reference to shared handler), `when: dict[str, Any] | None` (optional applicability condition), and SHALL allow extra fields via `extra="allow"`. Handler-specific configuration passes through without framework-level validation. The `when` field SHALL NOT be passed to handlers as configuration — it is consumed by the orchestrator/executor before dispatch.
+The `HandlerInvocation` model SHALL have `handler: str` (required), `when: dict[str, Any] | None` (optional applicability condition), and SHALL allow extra fields via `extra="allow"`. Handler-specific configuration passes through without framework-level validation. The `when` field SHALL NOT be passed to handlers as configuration — it is consumed by the orchestrator/executor before dispatch.
 
 #### Scenario: Unknown fields pass through
 - **WHEN** a handler invocation includes `{ handler = "custom_check", custom_param = "value" }`
