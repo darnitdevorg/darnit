@@ -17,8 +17,8 @@
 
 - Core: `packages/darnit/src/darnit/`
 - Baseline: `packages/darnit-baseline/src/darnit_baseline/`
-- Reproducibility: `packages/darnit-reproducibility/src/darnit_reproducibility/`
-- Tests: `tests/darnit/`, `tests/darnit_baseline/`, `tests/darnit_reproducibility/`
+- Reproducibility: `packages/darnit-amber/src/darnit_amber/`
+- Tests: `tests/darnit/`, `tests/darnit_baseline/`, `tests/darnit_amber/`
 
 Commits: `git commit -s` with an `Assisted-by: Claude:claude-opus-5-5` trailer, and no Co-authored-by line.
 
@@ -151,7 +151,7 @@ Commits: `git commit -s` with an `Assisted-by: Claude:claude-opus-5-5` trailer, 
 
 ### Tests for User Story 3
 
-- [X] T019 [P] [US3] Write tests in `tests/darnit_reproducibility/test_no_pass_from_signals.py`:
+- [X] T019 [P] [US3] Write tests in `tests/darnit_amber/test_no_pass_from_signals.py`:
   - a workflow mentioning `cosign sign` only in a comment: RE-02.02 is not PASS, and the signal is in evidence;
   - each of the five step types is registered with ceiling `{"fail"}`;
   - a manifest without a lockfile still FAILs `repro_deps_pinned`;
@@ -159,8 +159,8 @@ Commits: `git commit -s` with an `Assisted-by: Claude:claude-opus-5-5` trailer, 
 
 ### Implementation for User Story 3
 
-- [X] T020 [US3] Register `repro_hermetic_build`, `repro_provenance_exists`, `repro_bit_for_bit`, `repro_deps_pinned`, and `repro_build_env_declared` with `ceiling={"fail"}` in `packages/darnit-reproducibility/src/darnit_reproducibility/implementation.py`. Check that each handler's FAIL paths are genuine proof of non-compliance and keep them; turn any FAIL that comes from a mere absence of signals into INCONCLUSIVE.
-- [X] T021 [US3] Update the reproducibility tests and fixtures that expected a PASS from signals, naming FR-010 in each, under `tests/darnit_reproducibility/`. Update the reproducibility README/docs to say that automatic PASS needs a corpus-backed promotion.
+- [X] T020 [US3] Register `repro_hermetic_build`, `repro_provenance_exists`, `repro_bit_for_bit`, `repro_deps_pinned`, and `repro_build_env_declared` with `ceiling={"fail"}` in `packages/darnit-amber/src/darnit_amber/implementation.py`. Check that each handler's FAIL paths are genuine proof of non-compliance and keep them; turn any FAIL that comes from a mere absence of signals into INCONCLUSIVE.
+- [X] T021 [US3] Update the reproducibility tests and fixtures that expected a PASS from signals, naming FR-010 in each, under `tests/darnit_amber/`. Update the reproducibility README/docs to say that automatic PASS needs a corpus-backed promotion.
 
 **Checkpoint**: SC-004 holds.
 

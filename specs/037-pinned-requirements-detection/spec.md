@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Input**: User description: "Implement issue #429 -- `repro_deps_pinned` unconditionally flags an exact-pinned `requirements.txt` as a loose manifest. The check should inspect the file's contents: if every dependency specifies an exact version or a hash, it should not report a hard failure. Reported by @Jaydeep869 while evaluating `darnit-reproducibility` against real repositories."
+**Input**: User description: "Implement issue #429 -- `repro_deps_pinned` unconditionally flags an exact-pinned `requirements.txt` as a loose manifest. The check should inspect the file's contents: if every dependency specifies an exact version or a hash, it should not report a hard failure. Reported by @Jaydeep869 while evaluating `darnit-amber` against real repositories."
 
 ## Context
 
@@ -149,7 +149,7 @@ A repository containing both a lock file and a `requirements.txt` is judged on t
 
 ## Assumptions
 
-- The feature spans two packages. The content inspection is plugin-local to `darnit-reproducibility`, but FR-016's conclusive WARN outcome is a framework change in `darnit` core. That split is deliberate and consistent with Principle I: the plugin gains no framework privileges, the framework gains a vocabulary item that any handler may use.
+- The feature spans two packages. The content inspection is plugin-local to `darnit-amber`, but FR-016's conclusive WARN outcome is a framework change in `darnit` core. That split is deliberate and consistent with Principle I: the plugin gains no framework privileges, the framework gains a vocabulary item that any handler may use.
 - The scope is `requirements.txt` only. The other loose manifests have analogous content-inspection questions with ecosystem-specific answers, and bundling them would mean four parsers in one change.
 - Content inspection reads the file from disk at audit time. There is no caching requirement; these files are small and read once per audit.
 - The existing confidence value for the lock-file PASS (0.8) is treated as correct and is not revisited here, and every new verdict adopts it (FR-020). Giving content-derived verdicts a sharper confidence is deferred to the tightness taxonomy in #415, which is where confidence would gain a definition worth calibrating against.
