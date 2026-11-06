@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The MCP `commit_remediation_changes`, `create_remediation_branch`, and
+  `create_remediation_pr` tools accept optional `owner`, `repo`, and `host`
+  parameters, resolving recorded remediation runs when the local checkout has no
+  `origin` remote (fixes #726).
+
 ### Added
 
 - Developer test flow automation scripts (`scripts/clean_and_install_dev.sh`,
