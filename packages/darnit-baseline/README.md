@@ -94,7 +94,7 @@ Controls gated by `platform = "github"` require the GitHub CLI (`gh`). Additiona
 | QA-01.02 | 1 | Commit history is publicly visible | `exec` gh api | Manual |
 | QA-02.01 | 1 | Dependency manifest exists | `file` package.json, pyproject.toml, etc. | Manual |
 | QA-02.02 | 3 | SBOM delivered with compiled assets *(if has_compiled_assets)* | `pattern` workflows | Creates sbom.yml |
-| QA-03.01 | 2 | Status checks required before merge | `exec` gh api | Manual |
+| QA-03.01 | 2 | Status checks required before merge | `exec` gh api | Platform: require status checks (confirmed context) |
 | QA-04.01 | 1 | Subprojects are documented *(if has_subprojects)* | `pattern` README, docs | Manual |
 | QA-04.02 | 3 | Subprojects enforce equal security *(if has_subprojects)* | `pattern` security files | Manual |
 | QA-05.01 | 1 | No generated executables in repo | `pattern` absence check | Manual |
@@ -221,7 +221,7 @@ Five templates have `llm_enhance` prompts (marked with \*) that request LLM-base
 | QA-06.02 | `docs/TESTING.md` | Production | Ecosystem-aware: Python (pytest/coverage), Node (npm test/jest), Rust (cargo test), Go (go test/race). Auto-detected via `detected_ecosystem` context |
 | QA-06.03 | `docs/TEST-REQUIREMENTS.md` | Scaffold | Contribution test requirements; `make test` placeholder |
 
-### Platform Settings (5 requirements)
+### Platform Settings (6 requirements)
 
 Each is a `platform_setting` requirement handled by the platform engine, not a payload. Requirements on the same branch in one run are combined into one change set.
 
@@ -229,6 +229,7 @@ Each is a `platform_setting` requirement handled by the platform engine, not a p
 |---------|--------|-------------|--------|
 | AC-03.01 | `branch_protection` | `require_pull_request` | platform |
 | AC-03.02 | `branch_protection` | `prevent_deletion` | platform |
+| QA-03.01 | `branch_protection` | `require_status_checks` (from confirmed `required_status_checks` context) | platform |
 | QA-07.01 | `branch_protection` | `require_approvals = 1` (a minimum; never lowers a higher count) | platform |
 | QA-01.01 | `repository` | `visibility = "public"` | high-impact: all code, history, and Actions logs become public |
 | VM-03.01 | `vulnerability_reporting` | `enabled = true` | platform |
@@ -242,7 +243,7 @@ OSPS-AC-01.01 (organization two-factor enforcement) has no API and is manual und
 | BR-01.01 | `zizmor --fix=all --offline` | Requires external `zizmor` tool. Applies all fixes including unsafe. GitHub Actions only |
 | BR-01.02 | `zizmor --fix=all --offline` | Same command, targets branch name injection patterns |
 
-### Manual-Only (19 controls)
+### Manual-Only (18 controls)
 
 These controls provide step-by-step guidance but cannot be auto-remediated.
 
@@ -263,7 +264,6 @@ These controls provide step-by-step guidance but cannot be auto-remediated.
 | BR-05.01 | Standard dependency tooling — tool adoption is a project-level decision |
 | BR-02.02 | Assets linked to release IDs — release artifact process is project-specific |
 | DO-07.01 | Build instructions - project-specific |
-| QA-03.01 | Required status checks — which checks to require depends on CI setup |
 | QA-04.02 | Subproject security parity — requires cross-repo security review |
 | VM-01.01 | Disclosure process in SECURITY.md — content verification is judgment-based |
 | VM-04.01 | Security advisory support — GitHub platform feature, manual enablement |

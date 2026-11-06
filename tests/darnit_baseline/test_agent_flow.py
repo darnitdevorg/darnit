@@ -41,6 +41,7 @@ ANSWERS = {
     "ci_provider": "github",
     "license_type": "mit",
     "platform": "github",
+    "required_status_checks": ["build"],
 }
 MAX_ROUNDS = 5
 

@@ -601,4 +601,5 @@ class TestTomlDefinitionOrder:
         assert order[0] == "maintainers"
         assert "platform" in order
         assert "license_type" in order, "feature 043 T055c: a LICENSE is created only for a confirmed license"
-        assert len(order) == len(set(order)) == 10
+        assert "required_status_checks" in order
+        assert len(order) == len(set(order)) == 11

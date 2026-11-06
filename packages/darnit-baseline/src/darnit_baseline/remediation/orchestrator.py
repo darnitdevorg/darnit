@@ -1231,9 +1231,16 @@ def run_remediation(
     # Platform session: one policy, one set of approvals, and every
     # platform requirement of the run planned together (feature 043)
     # ------------------------------------------------------------------
+    from darnit.config.context_resolve import resolve_context
+    from darnit.config.context_storage import framework_definitions
     from darnit.config.operator.loader import OperatorConfigError
     from darnit.remediation import manifest
-    from darnit.remediation.platform import PlatformSession, platform_repository, platform_requests, resolve_policy
+    from darnit.remediation.platform import (
+        PlatformSession,
+        platform_repository,
+        platform_requests,
+        resolve_policy,
+    )
 
     try:
         policy = resolve_policy(local_path)
@@ -1241,9 +1248,12 @@ def run_remediation(
         return RemediationReport(f"Error: remediation policy unavailable: {e}")
     run_id = run_id or manifest.new_run_id()
     repository = platform_repository(local_path, owner, repo) or manifest.repository_identity(local_path, owner, repo)
+    usable_context = resolve_context(
+        local_path, framework_definitions(framework) if framework else None, target=target, detect=False
+    ).usable()
     session = PlatformSession(
         repository,
-        platform_requests(framework, [c for c in remediable_ids if c not in honored_claims]),
+        platform_requests(framework, [c for c in remediable_ids if c not in honored_claims], context=usable_context),
         policy=policy,
         approvals=approve or [],
     )
