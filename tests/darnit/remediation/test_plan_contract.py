@@ -95,9 +95,18 @@ def _fake_zizmor(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.M
 
 
 def _register_plugin_handlers() -> None:
+    """Register the handlers of every shipped plugin whose steps this module walks.
+
+    The steps come from every framework TOML, so each plugin's handlers must be
+    in the registry; with only the baseline registered, a gittuf step was found
+    only when tests/darnit_gittuf had run first in the same process.
+    """
+    from darnit_gittuf.implementation import GittufImplementation
+
     from darnit_baseline.implementation import OSPSBaselineImplementation
 
     OSPSBaselineImplementation().register_handlers()
+    GittufImplementation().register_handlers()
 
 
 @pytest.fixture(autouse=True, scope="module")
