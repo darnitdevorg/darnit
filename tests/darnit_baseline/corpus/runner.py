@@ -17,7 +17,11 @@ judgment is ``PENDING``, which is simply not PASS.
 
 A fixture may also declare stand-in tools (``[fixture.tools]``, put first on
 ``PATH``) and a plugin that tries to register step types before the audit
-(``[fixture.plugin]``, feature 044); the registry is restored afterwards.
+(``[fixture.plugin]``, feature 044); the registry is restored afterwards. A
+stand-in either prints a fixed output or replays calls recorded from the real
+tool (``recorded = true``, ``<fixture>/recorded/<tool>.json``); a call with
+arguments that were not recorded exits 2 and is reported in the run's
+``unrecorded_calls``. ``scripts/record_corpus_tools.py`` writes the recordings.
 """
 
 from __future__ import annotations
@@ -29,7 +33,7 @@ import shutil
 import sys
 import tempfile
 import tomllib
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import ExitStack, contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -40,12 +44,22 @@ from tests.conftest_helpers import write_stand_in_tool
 
 CORPUS_ROOT = Path(__file__).resolve().parent
 LABELS_FILE = "labels.toml"
+RECORDED_DIR = "recorded"
+REPO_PLACEHOLDER = "$REPO_PATH"
 KNOWN_FALSE_PASS_FILE = CORPUS_ROOT / "known_false_pass.toml"
 EXPECTED_VALUES = ("PASS", "FAIL", "NOT_PASS", "N/A")
 OWNER = "corpus"
 BRANCH = "main"
 LEVEL = 3
 RECORDINGS_ENV = "DARNIT_CORPUS_GH_RECORDINGS"
+
+# Measurement commands a later version replaced. Their calls are recorded too,
+# so a test can show the corpus fails them. Before, zizmor read the audited
+# repository's configuration, ignore comments, and .gitignore, and ran with
+# the regular persona.
+SUPERSEDED_COMMANDS: dict[str, list[list[str]]] = {
+    "zizmor": [["zizmor", "--format", "json", "--offline", "$PATH"]],
+}
 
 _CONCLUSIONS = frozenset({"PASS", "FAIL", "WARN"})
 _NOT_PASS_LABELS = frozenset({"FAIL", "NOT_PASS"})
@@ -96,6 +110,50 @@ if jq is not None:
 sys.stdout.write(json.dumps(recorded.get("body")) + "\\n")
 """.replace("__RECORDINGS_ENV__", RECORDINGS_ENV)
 
+# Replays a recorded tool: the call whose arguments match, with the audited
+# repository's path written as REPO_PLACEHOLDER in the recording.
+_REPLAY_STUB = """
+import json
+import sys
+
+RECORDING, REPO, MISSES, PLACEHOLDER = __CONSTANTS__
+args = [arg.replace(REPO, PLACEHOLDER) for arg in sys.argv[1:]]
+with open(RECORDING, encoding="utf-8") as handle:
+    recording = json.load(handle)
+for call in recording["calls"]:
+    if call["args"] == args:
+        sys.stdout.buffer.write(call.get("stdout", "").replace(PLACEHOLDER, REPO).encode("utf-8"))
+        sys.stderr.buffer.write(call.get("stderr", "").replace(PLACEHOLDER, REPO).encode("utf-8"))
+        sys.exit(int(call.get("exit_code", 0)))
+with open(MISSES, "a", encoding="utf-8") as handle:
+    handle.write(json.dumps({"tool": recording["tool"], "args": args}) + "\\n")
+sys.stderr.write("corpus stand-in: no recorded %s call with arguments %s\\n" % (recording["tool"], args))
+sys.exit(2)
+"""
+
+# Runs the real tool and logs the call for a recording.
+_RECORD_STUB = """
+import json
+import subprocess
+import sys
+
+REAL, REPO, LOG, PLACEHOLDER = __CONSTANTS__
+proc = subprocess.run([REAL, *sys.argv[1:]], capture_output=True, check=False)
+stdout = proc.stdout.decode("utf-8", errors="replace")
+stderr = proc.stderr.decode("utf-8", errors="replace")
+with open(LOG, "a", encoding="utf-8") as handle:
+    call = {
+        "args": [arg.replace(REPO, PLACEHOLDER) for arg in sys.argv[1:]],
+        "exit_code": proc.returncode,
+        "stdout": stdout.replace(REPO, PLACEHOLDER),
+        "stderr": stderr.replace(REPO, PLACEHOLDER),
+    }
+    handle.write(json.dumps(call) + "\\n")
+sys.stdout.buffer.write(proc.stdout)
+sys.stderr.buffer.write(proc.stderr)
+sys.exit(proc.returncode)
+"""
+
 
 class CorpusError(ValueError):
     """A fixture or its labels cannot be used."""
@@ -116,6 +174,13 @@ class Fixture:
     labels: dict[str, Label]
     tools: dict[str, dict[str, Any]] = field(default_factory=dict)
     plugin: dict[str, Any] | None = None
+
+    def recorded_tools(self) -> list[str]:
+        """Names of the stand-in tools that replay recorded calls."""
+        return sorted(name for name, tool in self.tools.items() if tool.get("recorded"))
+
+    def recording_path(self, tool: str) -> Path:
+        return self.path / RECORDED_DIR / f"{tool}.json"
 
     def recordings(self) -> dict[str, dict[str, Any]]:
         """Recorded platform responses keyed by concrete API path."""
@@ -153,6 +218,8 @@ class FixtureRun:
     results: dict[str, dict[str, Any]]
     steps: list[StepObservation]
     refused_registrations: list[str] = field(default_factory=list)
+    unrecorded_calls: list[dict[str, Any]] = field(default_factory=list)
+    recorded_calls: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
 
 
 @dataclass
@@ -284,6 +351,10 @@ def load_fixture(path: Path) -> Fixture:
             raise CorpusError(f"{labels_path}: [fixture.tools.{name}] needs a string stdout")
         if not isinstance(tool.get("exit_code", 0), int):
             raise CorpusError(f"{labels_path}: [fixture.tools.{name}] needs an integer exit_code")
+        if not isinstance(tool.get("recorded", False), bool):
+            raise CorpusError(f"{labels_path}: [fixture.tools.{name}].recorded must be a boolean")
+        if tool.get("recorded") and ("stdout" in tool or "exit_code" in tool):
+            raise CorpusError(f"{labels_path}: [fixture.tools.{name}] is recorded; it takes no stdout or exit_code")
     plugin = meta.get("plugin")
     if plugin is not None:
         step_types = plugin.get("step_types") if isinstance(plugin, dict) else None
@@ -375,6 +446,25 @@ def load_framework(name: str) -> Framework:
     path = impl.get_framework_config_path()
     controls = load_controls_from_framework(load_framework_config(Path(str(path))))
     return Framework(name=name, controls=controls, implementation=name)
+
+
+def with_tool_command(framework: Framework, tool: str, command: list[str]) -> Framework:
+    """A copy of ``framework`` whose steps running ``tool`` run ``command`` instead."""
+    import dataclasses
+
+    controls = []
+    for control in framework.controls:
+        invocations = control.metadata.get("handler_invocations") or []
+        replaced = [
+            inv.model_copy(update={"command": list(command)})
+            if ((inv.model_extra or {}).get("command") or [None])[0] == tool
+            else inv
+            for inv in invocations
+        ]
+        if any(a is not b for a, b in zip(replaced, invocations, strict=True)):
+            control = dataclasses.replace(control, metadata={**control.metadata, "handler_invocations": replaced})
+        controls.append(control)
+    return Framework(name=framework.name, controls=controls, implementation=framework.implementation)
 
 
 def framework_from_toml(path: Path) -> Framework:
@@ -488,10 +578,53 @@ def _observe_steps(sink: list[StepObservation]) -> Iterator[None]:
         yield
 
 
-def _write_tools(bin_dir: Path, tools: dict[str, dict[str, Any]]) -> None:
-    """Stand-in executables that print the declared stdout and exit with the declared code."""
-    for name, tool in tools.items():
-        write_stand_in_tool(bin_dir, name, stdout=tool.get("stdout", ""), exit_code=int(tool.get("exit_code", 0)))
+def _write_python_tool(bin_dir: Path, name: str, template: str, constants: tuple[str, ...]) -> None:
+    tool = bin_dir / name
+    tool.write_text(f"#!{sys.executable}\n" + template.replace("__CONSTANTS__", repr(constants)), encoding="utf-8")
+    tool.chmod(0o755)
+
+
+def _write_tools(
+    bin_dir: Path,
+    fixture: Fixture,
+    repo: Path,
+    scratch: Path,
+    record: Mapping[str, str],
+) -> None:
+    """Stand-in executables for the fixture's tools.
+
+    A fixed stand-in prints the declared stdout and exits with the declared
+    code. A recorded one replays ``<fixture>/recorded/<tool>.json``, or, when
+    ``record`` names the tool's real executable, runs it and logs each call.
+    """
+    for name, tool in fixture.tools.items():
+        if tool.get("recorded") and name in record:
+            log = scratch / f"{name}.calls.jsonl"
+            _write_python_tool(bin_dir, name, _RECORD_STUB, (record[name], str(repo), str(log), REPO_PLACEHOLDER))
+        elif tool.get("recorded"):
+            misses = scratch / "unrecorded-calls.jsonl"
+            constants = (str(fixture.recording_path(name)), str(repo), str(misses), REPO_PLACEHOLDER)
+            _write_python_tool(bin_dir, name, _REPLAY_STUB, constants)
+        else:
+            write_stand_in_tool(bin_dir, name, stdout=tool.get("stdout", ""), exit_code=int(tool.get("exit_code", 0)))
+
+
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.is_file():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def _copy_ignore(fixture_root: Path) -> Any:
+    """Leave ``labels.toml`` and the top-level ``recorded/`` directory out of the copy."""
+
+    def ignore(directory: str, names: list[str]) -> set[str]:
+        ignored = {n for n in names if n in ("__pycache__", ".DS_Store")}
+        if Path(directory) == fixture_root:
+            ignored |= {n for n in names if n in (LABELS_FILE, RECORDED_DIR)}
+        return ignored
+
+    return ignore
 
 
 @contextmanager
@@ -547,8 +680,13 @@ def _builtin_operator_config() -> Any:
     )
 
 
-def run_fixture(fixture: Fixture, framework: Framework) -> FixtureRun:
-    """Audit a copy of ``fixture`` with ``framework``'s controls, offline."""
+def run_fixture(fixture: Fixture, framework: Framework, record: Mapping[str, str] | None = None) -> FixtureRun:
+    """Audit a copy of ``fixture`` with ``framework``'s controls, offline.
+
+    ``record`` maps a recorded tool's name to its real executable: the tool
+    then runs for real and the run's ``recorded_calls`` hold its calls.
+    """
+    record = dict(record or {})
     from darnit.core.utils import RecordedGhApi, set_gh_api_responder
     from darnit.tools.audit import run_sieve_audit
 
@@ -557,7 +695,7 @@ def run_fixture(fixture: Fixture, framework: Framework) -> FixtureRun:
     with tempfile.TemporaryDirectory(prefix="darnit-corpus-") as scratch_name:
         scratch = Path(scratch_name).resolve()
         repo = scratch / fixture.name
-        shutil.copytree(fixture.path, repo, ignore=shutil.ignore_patterns(LABELS_FILE, "__pycache__", ".DS_Store"))
+        shutil.copytree(fixture.path, repo, ignore=_copy_ignore(fixture.path))
         home = scratch / "home"
         home.mkdir()
         bin_dir = scratch / "bin"
@@ -565,7 +703,7 @@ def run_fixture(fixture: Fixture, framework: Framework) -> FixtureRun:
         gh = bin_dir / "gh"
         gh.write_text(f"#!{sys.executable}\n{_GH_STUB}", encoding="utf-8")
         gh.chmod(0o755)
-        _write_tools(bin_dir, fixture.tools)
+        _write_tools(bin_dir, fixture, repo, scratch, record)
         recordings = fixture.recordings()
         recordings_path = scratch / "platform.json"
         recordings_path.write_text(json.dumps(recordings), encoding="utf-8")
@@ -600,11 +738,15 @@ def run_fixture(fixture: Fixture, framework: Framework) -> FixtureRun:
                 )
         finally:
             set_gh_api_responder(previous)
+        unrecorded = _read_jsonl(scratch / "unrecorded-calls.jsonl")
+        recorded = {name: _read_jsonl(scratch / f"{name}.calls.jsonl") for name in record}
     return FixtureRun(
         fixture=fixture,
         results={r["id"]: dict(r) for r in results},
         steps=observations,
         refused_registrations=refused,
+        unrecorded_calls=unrecorded,
+        recorded_calls=recorded,
     )
 
 
@@ -655,6 +797,8 @@ def measure(framework: Framework, fixtures: list[Fixture], version: str) -> Corp
         run = run_fixture(fixture, framework)
         if fixture.plugin is not None:
             fixture_meta[fixture.name]["refused_registrations"] = run.refused_registrations
+        if run.unrecorded_calls:
+            fixture_meta[fixture.name]["unrecorded_calls"] = run.unrecorded_calls
 
         for obs in run.steps:
             label = fixture.labels.get(obs.control_id)

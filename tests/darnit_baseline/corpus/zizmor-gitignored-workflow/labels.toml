@@ -1,0 +1,13 @@
+[fixture]
+description = "A second workflow has a template injection and grants write-all; .gitignore lists it, and GitHub still runs it"
+
+[fixture.tools.zizmor]
+recorded = true
+
+[labels."OSPS-BR-01.01"]
+expected = "FAIL"
+why = "triage.yml interpolates the issue title, an untrusted input, directly into a run: script; listing it in .gitignore does not stop GitHub running it."
+
+[labels."OSPS-AC-04.02"]
+expected = "FAIL"
+why = "triage.yml grants write-all to a job that echoes a line; listing it in .gitignore does not stop GitHub running it."

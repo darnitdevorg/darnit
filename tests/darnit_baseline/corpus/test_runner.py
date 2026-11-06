@@ -10,6 +10,7 @@ only for that fixture.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -214,6 +215,42 @@ def test_stand_in_tools_are_first_on_path(framework: Framework, corpus: Path) ->
     assert results[("without-tool", "SYN-05")].status == "ERROR"
 
 
+def _recording(fixture: Path, tool: str, calls: list[dict[str, object]]) -> None:
+    (fixture / "recorded").mkdir()
+    (fixture / "recorded" / f"{tool}.json").write_text(json.dumps({"tool": tool, "calls": calls}), encoding="utf-8")
+
+
+def test_recorded_tool_replays_matching_call_and_reports_others(framework: Framework, corpus: Path) -> None:
+    recorded = "[fixture.tools.corpus-tool]\nrecorded = true\n\n"
+    matching = _fixture(corpus, "recorded", recorded + _label("SYN-05", "FAIL"))
+    _recording(matching, "corpus-tool", [{"args": [], "exit_code": 0, "stdout": '{"ok": false}', "stderr": ""}])
+    other = _fixture(corpus, "other-args", recorded + _label("SYN-05", "FAIL"))
+    _recording(other, "corpus-tool", [{"args": ["--other"], "exit_code": 0, "stdout": '{"ok": true}'}])
+
+    report = run_corpus(framework, corpus)
+    results = {(c.fixture, c.control_id): c for c in report.controls}
+
+    assert results[("recorded", "SYN-05")].status == "FAIL"
+    assert "unrecorded_calls" not in report.fixtures["recorded"]
+    assert results[("other-args", "SYN-05")].status != "PASS"
+    assert report.fixtures["other-args"]["unrecorded_calls"] == [{"tool": "corpus-tool", "args": []}]
+
+
+def test_recordings_and_labels_stay_out_of_the_audited_copy(tmp_path: Path) -> None:
+    import shutil
+
+    from tests.darnit_baseline.corpus.runner import _copy_ignore
+
+    fixture = tmp_path / "fixture"
+    for rel in ("labels.toml", "recorded/t.json", "src/recorded/kept.txt", "README.md"):
+        (fixture / rel).parent.mkdir(parents=True, exist_ok=True)
+        (fixture / rel).write_text("x", encoding="utf-8")
+    shutil.copytree(fixture, tmp_path / "copy", ignore=_copy_ignore(fixture))
+
+    copied = sorted(p.relative_to(tmp_path / "copy").as_posix() for p in (tmp_path / "copy").rglob("*") if p.is_file())
+    assert copied == ["README.md", "src/recorded/kept.txt"]
+
+
 def test_stand_in_tool_writer_needs_no_monkeypatch(tmp_path: Path) -> None:
     """The runner and tests share one stand-in writer; the runner has no monkeypatch (044 review)."""
     import subprocess
@@ -257,6 +294,8 @@ def test_corpus_version_covers_labels(corpus: Path) -> None:
         '[labels."SYN-01"]\nexpected = "MAYBE"\nwhy = "x"\n',
         '[labels."SYN-01"]\nexpected = "FAIL"\n',
         '[fixture.tools.t]\nexit_code = "0"\n',
+        '[fixture.tools.t]\nrecorded = "yes"\n',
+        '[fixture.tools.t]\nrecorded = true\nstdout = "[]"\n',
         '[fixture.plugin]\nname = "p"\n',
         '[fixture.plugin]\nname = "p"\nstep_types = { manual = "maybe" }\n',
     ],
