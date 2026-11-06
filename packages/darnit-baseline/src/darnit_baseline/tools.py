@@ -1539,6 +1539,9 @@ def create_remediation_branch(
     local_path: str = ".",
     base_branch: str | None = None,
     run_id: str | None = None,
+    owner: str | None = None,
+    repo: str | None = None,
+    host: str | None = None,
 ) -> str:
     """
     Create a new branch for remediation work, or switch to an existing remediation branch.
@@ -1553,6 +1556,9 @@ def create_remediation_branch(
         local_path: Path to the repository
         base_branch: Branch to base off of (default: current branch)
         run_id: Remediation run to record the branch in (default: the latest run)
+        owner: Repository owner the run is recorded under (default: detected from git)
+        repo: Repository name the run is recorded under (default: detected from git)
+        host: Host of the repository owner and repo name, when not github.com
 
     Returns:
         Success message with branch name or error
@@ -1564,6 +1570,9 @@ def create_remediation_branch(
         local_path=local_path,
         base_branch=base_branch,
         run_id=run_id,
+        owner=owner,
+        repo=repo,
+        host=host,
     )
 
 
@@ -1571,6 +1580,9 @@ def commit_remediation_changes(
     local_path: str = ".",
     message: str | None = None,
     run_id: str | None = None,
+    owner: str | None = None,
+    repo: str | None = None,
+    host: str | None = None,
 ) -> str:
     """
     Commit the files a remediation run wrote, and nothing else.
@@ -1583,6 +1595,9 @@ def commit_remediation_changes(
         local_path: Path to the repository
         message: Commit message (auto-generated if not provided)
         run_id: Remediation run to commit (default: the latest run)
+        owner: Repository owner the run is recorded under (default: detected from git)
+        repo: Repository name the run is recorded under (default: detected from git)
+        host: Host of the repository owner and repo name, when not github.com
 
     Returns:
         Success message listing every committed file, or error
@@ -1593,6 +1608,9 @@ def commit_remediation_changes(
         local_path=local_path,
         message=message,
         run_id=run_id,
+        owner=owner,
+        repo=repo,
+        host=host,
     )
 
 
@@ -1603,6 +1621,9 @@ def create_remediation_pr(
     base_branch: str | None = None,
     draft: bool = False,
     run_id: str | None = None,
+    owner: str | None = None,
+    repo: str | None = None,
+    host: str | None = None,
 ) -> str:
     """
     Create a pull request for a remediation run's branch, pushing only that branch.
@@ -1616,6 +1637,9 @@ def create_remediation_pr(
         base_branch: Target branch for PR (default: repo default branch)
         draft: Create as draft PR (default: False)
         run_id: Remediation run whose branch to push (default: the latest run)
+        owner: Repository owner the run is recorded under (default: detected from git)
+        repo: Repository name the run is recorded under (default: detected from git)
+        host: Host of the repository owner and repo name, when not github.com
 
     Returns:
         Success message with PR URL or error
@@ -1629,6 +1653,9 @@ def create_remediation_pr(
         base_branch=base_branch,
         draft=draft,
         run_id=run_id,
+        owner=owner,
+        repo=repo,
+        host=host,
     )
 
 
