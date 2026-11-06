@@ -1,8 +1,8 @@
 """Sigstore signing for attestations.
 
 This module provides cryptographic signing of attestations using
-Sigstore keyless signing. It supports multiple Sigstore API versions
-(1.x, 2.x, and 3.x) for broad compatibility.
+Sigstore keyless signing through the sigstore ``ClientTrustConfig`` API.
+Older sigstore releases without it leave attestation signing unavailable.
 """
 
 import json
@@ -18,21 +18,9 @@ try:
 
     from sigstore.dsse import DigestSet, StatementBuilder, Subject
     from sigstore.oidc import Issuer
+    from sigstore.sign import ClientTrustConfig, SigningContext
 
-    # Import the correct API based on sigstore version
-    # sigstore >= 3.0 uses ClientTrustConfig
-    try:
-        from sigstore.sign import ClientTrustConfig, SigningContext
-        SIGSTORE_API_VERSION = 3
-    except ImportError:
-        # sigstore < 3.0 - try older API
-        try:
-            from sigstore.sign import Signer
-            SIGSTORE_API_VERSION = 2
-        except ImportError:
-            from sigstore.sign import SigningContext
-            SIGSTORE_API_VERSION = 1
-
+    SIGSTORE_API_VERSION = 3
     ATTESTATION_AVAILABLE = True
 except ImportError:
     ATTESTATION_AVAILABLE = False
@@ -52,7 +40,7 @@ def get_sigstore_api_version() -> int:
     """Get the detected Sigstore API version.
 
     Returns:
-        0 if not available, 1-3 for supported API versions
+        0 if not available, 3 for the supported ``ClientTrustConfig`` API
     """
     return SIGSTORE_API_VERSION
 
@@ -108,44 +96,21 @@ def sign_attestation(
     )
     stmt = builder.build()
 
-    # Sign with Sigstore using version-appropriate API
+    # Sign with Sigstore
     # Uses ambient credentials in CI (GitHub Actions, GitLab CI, etc.)
     # Falls back to browser OIDC flow locally
+    trust_config = ClientTrustConfig.staging() if use_staging else ClientTrustConfig.production()
+    ctx = SigningContext.from_trust_config(trust_config)
 
-    if SIGSTORE_API_VERSION >= 3:
-        # sigstore >= 3.0 API
-        trust_config = ClientTrustConfig.staging() if use_staging else ClientTrustConfig.production()
-        ctx = SigningContext.from_trust_config(trust_config)
+    # Get OIDC identity token (ambient in CI, browser flow locally)
+    oidc_url = trust_config.signing_config.get_oidc_url()
+    issuer = Issuer(oidc_url)
+    token = issuer.identity_token()
 
-        # Get OIDC identity token (ambient in CI, browser flow locally)
-        oidc_url = trust_config.signing_config.get_oidc_url()
-        issuer = Issuer(oidc_url)
-        token = issuer.identity_token()
+    with ctx.signer(token, cache=True) as signer:
+        bundle = signer.sign_dsse(stmt)
 
-        with ctx.signer(token, cache=True) as signer:
-            bundle = signer.sign_dsse(stmt)
-
-        return json.loads(bundle.to_json())
-
-    elif SIGSTORE_API_VERSION == 2:
-        # sigstore 2.x API
-        signer = Signer.staging() if use_staging else Signer.production()
-        issuer = Issuer.staging() if use_staging else Issuer.production()
-        token = issuer.identity_token()
-
-        result = signer.sign_dsse(stmt, identity_token=token)
-        return json.loads(result.to_json())
-
-    else:
-        # sigstore 1.x API (fallback)
-        ctx = SigningContext.staging() if use_staging else SigningContext.production()
-        issuer = Issuer.staging() if use_staging else Issuer.production()
-        token = issuer.identity_token()
-
-        with ctx.signer(identity_token=token) as signer:
-            result = signer.sign(stmt)
-
-        return json.loads(result.bundle.to_json())
+    return json.loads(bundle.to_json())
 
 
 __all__ = [

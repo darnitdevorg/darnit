@@ -2128,7 +2128,7 @@ def discover_all(
     # Feature 014-cobra-threat-model: tallies for the Limitations section
     # (FR-007). Total Go files scanned, how many imported cobra, how many
     # cobra-importing files where no query matched (i.e., unrecognised pattern).
-    cobra_stats = {"go_files_scanned": 0, "cobra_files": 0, "cobra_files_unmatched": 0, "unmatched_examples": []}
+    cobra_stats: dict[str, Any] = {"go_files_scanned": 0, "cobra_files": 0, "cobra_files_unmatched": 0, "unmatched_examples": []}
 
     for file in scanned_files:
         try:

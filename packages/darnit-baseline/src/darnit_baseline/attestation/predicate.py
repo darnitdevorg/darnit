@@ -144,7 +144,7 @@ def build_assessment_predicate(
 
     # Build configuration section
     config_section = {
-        "project_type": project_config.project_type if project_config else "software",
+        "project_type": project_config.type if project_config else "software",
         "adapters_used": adapters_used or ["builtin"],
     }
 
