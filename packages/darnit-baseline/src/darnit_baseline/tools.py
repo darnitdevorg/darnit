@@ -181,9 +181,7 @@ def audit_openssf_baseline(
     # Auto-detect owner/repo from git (origin first)
     from darnit.core.utils import detect_owner_repo
 
-    detected_owner, detected_repo = detect_owner_repo(
-        str(repo_path), prefer_upstream=prefer_upstream
-    )
+    detected_owner, detected_repo = detect_owner_repo(str(repo_path), prefer_upstream=prefer_upstream)
     owner = owner or detected_owner
     repo = repo or detected_repo
 
@@ -269,34 +267,46 @@ def audit_openssf_baseline(
         from darnit.tools.audit import framework_metadata
 
         compact_results = [_compact_result(r) for r in results]
-        output = json.dumps({
-            "metadata": framework_metadata("openssf-baseline"),
-            **metadata,
-            "owner": owner,
-            "repo": repo,
-            "level": level,
-            "summary": summary,
-            "results": compact_results,
-        }, indent=2)
+        output = json.dumps(
+            {
+                "metadata": framework_metadata("openssf-baseline"),
+                **metadata,
+                "owner": owner,
+                "repo": repo,
+                "level": level,
+                "summary": summary,
+                "results": compact_results,
+            },
+            indent=2,
+        )
     elif output_format == "json":
         from darnit.tools.audit import framework_metadata
 
-        output = json.dumps({
-            "metadata": framework_metadata("openssf-baseline"),
-            **metadata,
-            "owner": owner,
-            "repo": repo,
-            "level": level,
-            "summary": summary,
-            "results": results,
-        }, indent=2)
+        output = json.dumps(
+            {
+                "metadata": framework_metadata("openssf-baseline"),
+                **metadata,
+                "owner": owner,
+                "repo": repo,
+                "level": level,
+                "summary": summary,
+                "results": results,
+            },
+            indent=2,
+        )
     elif output_format == "sarif":
         from darnit_baseline.formatters.sarif import generate_sarif_audit
 
         compliance = calculate_compliance(results, level)
         audit_result = _build_audit_result(
-            owner or "", repo or "", repo_path, level,
-            default_branch, results, summary, compliance,
+            owner or "",
+            repo or "",
+            repo_path,
+            level,
+            default_branch,
+            results,
+            summary,
+            compliance,
         )
         output = json.dumps(generate_sarif_audit(audit_result), indent=2)
     else:
@@ -317,8 +327,15 @@ def audit_openssf_baseline(
 
     if attest:
         attest_note = _attest_audit(
-            owner, repo, repo_path, level, default_branch,
-            results, summary, sign=sign_attestation, staging=staging,
+            owner,
+            repo,
+            repo_path,
+            level,
+            default_branch,
+            results,
+            summary,
+            sign=sign_attestation,
+            staging=staging,
             trust=metadata["trust"],
         )
         # Only markdown output can carry the note without breaking the
@@ -355,12 +372,20 @@ def _attest_audit(
 
         compliance = calculate_compliance(results, level)
         audit_result = _build_audit_result(
-            owner, repo, repo_path, level, default_branch,
-            results, summary, compliance,
+            owner,
+            repo,
+            repo_path,
+            level,
+            default_branch,
+            results,
+            summary,
+            compliance,
         )
         audit_result.trust = trust
         message = generate_attestation_from_results(
-            audit_result, sign=sign, staging=staging,
+            audit_result,
+            sign=sign,
+            staging=staging,
         )
         first_line = message.splitlines()[0] if message else ""
         return first_line if first_line.startswith("✅") else message
@@ -392,9 +417,7 @@ def list_available_checks(profile: str | None = None) -> str:
         )
 
         try:
-            _, profile_config = resolve_profile(
-                profile, {"openssf-baseline": config.audit_profiles}
-            )
+            _, profile_config = resolve_profile(profile, {"openssf-baseline": config.audit_profiles})
             controls = load_controls_from_framework(config)
             profile_ids = set(resolve_profile_control_ids(profile_config, controls))
         except Exception:
@@ -408,11 +431,13 @@ def list_available_checks(profile: str | None = None) -> str:
         level = control.tags.get("level", 1) if control.tags else 1
         level_key = f"level{level}"
         if level_key in checks:
-            checks[level_key].append({
-                "id": control_id,
-                "name": control.name,
-                "description": control.description[:100] if control.description else "",
-            })
+            checks[level_key].append(
+                {
+                    "id": control_id,
+                    "name": control.name,
+                    "description": control.description[:100] if control.description else "",
+                }
+            )
 
     return json.dumps(checks, indent=2)
 
@@ -439,11 +464,7 @@ def get_project_config(local_path: str = ".") -> str:
     repo_path = Path(local_path).resolve()
 
     if not config_exists(repo_path):
-        return (
-            "No .project.yaml found.\n\n"
-            "To create one, use: init_project_config()\n"
-            "Or run: darnit init"
-        )
+        return "No .project.yaml found.\n\nTo create one, use: init_project_config()\nOr run: darnit init"
 
     try:
         config = _get_config(repo_path)
@@ -913,10 +934,13 @@ def get_pending_data(
         return result
 
     except Exception as e:
-        return json.dumps({
-            "status": "error",
-            "message": f"Error getting pending context: {e}",
-        }, indent=2)
+        return json.dumps(
+            {
+                "status": "error",
+                "message": f"Error getting pending context: {e}",
+            },
+            indent=2,
+        )
 
 
 def _origin_text(origin: dict | None) -> str:
@@ -1105,9 +1129,7 @@ def _write_threat_model_files(
     errors: list[str] = []
     run_id: str | None = None
     if steps:
-        executor = RemediationExecutor(
-            local_path=str(repo_path), owner=owner, repo=repo, run_id=manifest.new_run_id()
-        )
+        executor = RemediationExecutor(local_path=str(repo_path), owner=owner, repo=repo, run_id=manifest.new_run_id())
         result = executor.execute("OSPS-SA-03.02", RemediationConfig(handlers=steps), dry_run=False)
         written = [c.path for c in result.file_changes if c.changes]
         left += [c for c in result.file_changes if not c.changes]
@@ -1213,18 +1235,12 @@ def generate_threat_model(
         # multi-file pipeline (threat_model/remediation.py).
         cli_families = group_by_cli_family(result.entry_points)
         if cli_families:
-            assign_stride_for_cli_families(
-                cli_families, result.cobra_file_imports
-            )
+            assign_stride_for_cli_families(cli_families, result.cobra_file_imports)
 
         if output_format == "sarif":
-            content = generate_sarif_threat_model(
-                result, emitted, cli_families=cli_families
-            )
+            content = generate_sarif_threat_model(result, emitted, cli_families=cli_families)
         elif output_format == "json":
-            content = generate_json_summary(
-                result, emitted, overflow, cli_families=cli_families
-            )
+            content = generate_json_summary(result, emitted, overflow, cli_families=cli_families)
         else:
             options = GeneratorOptions(detail_level=detail_level)
             content = generate_markdown_threat_model(
@@ -1339,8 +1355,14 @@ def generate_attestation(
         )
         compliance = calculate_compliance(results, level)
         audit_result = _build_audit_result(
-            owner, repo, repo_path, level, default_branch,
-            results, summary, compliance,
+            owner,
+            repo,
+            repo_path,
+            level,
+            default_branch,
+            results,
+            summary,
+            compliance,
         )
         audit_result.trust = decide_trust(target, operator_config.config, repo_path).report()
         return generate_attestation_from_results(
@@ -1441,12 +1463,14 @@ def remediate_audit_findings(
         from darnit.config.context_storage import get_pending_context as _get_pending
 
         pending = _get_pending(
-            local_path=str(repo_path), owner=owner, repo=repo, target=target,
+            local_path=str(repo_path),
+            owner=owner,
+            repo=repo,
+            target=target,
         )
     except Exception as e:
         return (
-            f"Error: cannot check for unconfirmed project context: {e}. "
-            "Remediation did not run; nothing was changed."
+            f"Error: cannot check for unconfirmed project context: {e}. Remediation did not run; nothing was changed."
         )
     if pending:
         keys = [p.key for p in pending]
@@ -1474,7 +1498,11 @@ def remediate_audit_findings(
     git_report: list[str] = []
     if branch_name and not dry_run:
         branch_result = git_operations.create_remediation_branch_impl(
-            branch_name=branch_name, local_path=str(repo_path), run_id=run_id, owner=owner, repo=repo,
+            branch_name=branch_name,
+            local_path=str(repo_path),
+            run_id=run_id,
+            owner=owner,
+            repo=repo,
         )
         if git_state.current_branch(repo_path) != branch_name:
             return f"Error: the remediation branch was not checked out; remediation did not run.\n\n{branch_result}"
@@ -1510,13 +1538,19 @@ def remediate_audit_findings(
         if changed_files:
             git_report.append(
                 git_operations.commit_remediation_changes_impl(
-                    local_path=str(repo_path), run_id=run_id, owner=owner, repo=repo,
+                    local_path=str(repo_path),
+                    run_id=run_id,
+                    owner=owner,
+                    repo=repo,
                 )
             )
             if create_pr:
                 git_report.append(
                     git_operations.create_remediation_pr_impl(
-                        local_path=str(repo_path), run_id=run_id, owner=owner, repo=repo,
+                        local_path=str(repo_path),
+                        run_id=run_id,
+                        owner=owner,
+                        repo=repo,
                     )
                 )
         else:
@@ -1539,6 +1573,9 @@ def create_remediation_branch(
     local_path: str = ".",
     base_branch: str | None = None,
     run_id: str | None = None,
+    owner: str | None = None,
+    repo: str | None = None,
+    host: str | None = None,
 ) -> str:
     """
     Create a new branch for remediation work, or switch to an existing remediation branch.
@@ -1553,6 +1590,9 @@ def create_remediation_branch(
         local_path: Path to the repository
         base_branch: Branch to base off of (default: current branch)
         run_id: Remediation run to record the branch in (default: the latest run)
+        owner: Repository owner the run is recorded under (default: detected from git)
+        repo: Repository name the run is recorded under (default: detected from git)
+        host: Host of the repository owner and repo name, when not github.com
 
     Returns:
         Success message with branch name or error
@@ -1564,6 +1604,9 @@ def create_remediation_branch(
         local_path=local_path,
         base_branch=base_branch,
         run_id=run_id,
+        owner=owner,
+        repo=repo,
+        host=host,
     )
 
 
@@ -1571,6 +1614,9 @@ def commit_remediation_changes(
     local_path: str = ".",
     message: str | None = None,
     run_id: str | None = None,
+    owner: str | None = None,
+    repo: str | None = None,
+    host: str | None = None,
 ) -> str:
     """
     Commit the files a remediation run wrote, and nothing else.
@@ -1583,6 +1629,9 @@ def commit_remediation_changes(
         local_path: Path to the repository
         message: Commit message (auto-generated if not provided)
         run_id: Remediation run to commit (default: the latest run)
+        owner: Repository owner the run is recorded under (default: detected from git)
+        repo: Repository name the run is recorded under (default: detected from git)
+        host: Host of the repository owner and repo name, when not github.com
 
     Returns:
         Success message listing every committed file, or error
@@ -1593,6 +1642,9 @@ def commit_remediation_changes(
         local_path=local_path,
         message=message,
         run_id=run_id,
+        owner=owner,
+        repo=repo,
+        host=host,
     )
 
 
@@ -1603,6 +1655,9 @@ def create_remediation_pr(
     base_branch: str | None = None,
     draft: bool = False,
     run_id: str | None = None,
+    owner: str | None = None,
+    repo: str | None = None,
+    host: str | None = None,
 ) -> str:
     """
     Create a pull request for a remediation run's branch, pushing only that branch.
@@ -1616,6 +1671,9 @@ def create_remediation_pr(
         base_branch: Target branch for PR (default: repo default branch)
         draft: Create as draft PR (default: False)
         run_id: Remediation run whose branch to push (default: the latest run)
+        owner: Repository owner the run is recorded under (default: detected from git)
+        repo: Repository name the run is recorded under (default: detected from git)
+        host: Host of the repository owner and repo name, when not github.com
 
     Returns:
         Success message with PR URL or error
@@ -1629,6 +1687,9 @@ def create_remediation_pr(
         base_branch=base_branch,
         draft=draft,
         run_id=run_id,
+        owner=owner,
+        repo=repo,
+        host=host,
     )
 
 
@@ -1692,7 +1753,6 @@ def create_test_repository(
 # =============================================================================
 
 
-
 def _detect_default_branch(repo_path: Path) -> str:
     """Detect the default branch name."""
     import subprocess
@@ -1734,17 +1794,17 @@ def list_org_repos(
     """
     from darnit.tools.audit_org import enumerate_org_repos
 
-    repo_names, error = enumerate_org_repos(
-        owner, include_archived=include_archived
-    )
+    repo_names, error = enumerate_org_repos(owner, include_archived=include_archived)
     if error:
         return json.dumps({"error": error, "repos": [], "count": 0})
 
-    return json.dumps({
-        "owner": owner,
-        "repos": repo_names,
-        "count": len(repo_names),
-    })
+    return json.dumps(
+        {
+            "owner": owner,
+            "repos": repo_names,
+            "count": len(repo_names),
+        }
+    )
 
 
 def audit_org(
