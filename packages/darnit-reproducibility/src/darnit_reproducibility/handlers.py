@@ -27,18 +27,15 @@ def _iter_evidence_files(path: Path, patterns: tuple[str, ...]) -> list[Path]:
     results: list[Path] = []
 
     def _find(directory: Path, depth: int) -> None:
-        try:
-            for entry in sorted(directory.iterdir()):
-                if entry.is_symlink() or entry.name in _SKIP_DIRS:
-                    continue
-                if (entry.is_file() or entry.name == ".devcontainer") and any(
-                    entry.match(pattern) for pattern in patterns
-                ):
-                    results.append(entry)
-                if depth < 2 and entry.is_dir() and not entry.name.startswith("."):
-                    _find(entry, depth + 1)
-        except OSError:
-            pass
+        for entry in sorted(directory.iterdir()):
+            if entry.is_symlink() or entry.name in _SKIP_DIRS:
+                continue
+            if (entry.is_file() or entry.name == ".devcontainer") and any(
+                entry.match(pattern) for pattern in patterns
+            ):
+                results.append(entry)
+            if depth < 2 and entry.is_dir() and not entry.name.startswith("."):
+                _find(entry, depth + 1)
 
     _find(path, 0)
     return results
@@ -133,13 +130,20 @@ def repro_deps_pinned_handler(
         "go.mod": "Go module",
     }
 
-    dependency_files = _iter_evidence_files(path, tuple(lock_files) + ("*requirements*.txt", "requirements/*.txt"))
+    try:
+        dependency_files = _iter_evidence_files(path, tuple(lock_files) + ("*requirements*.txt", "requirements/*.txt"))
+    except OSError as exc:
+        return HandlerResult(
+            status=HandlerResultStatus.INCONCLUSIVE,
+            message=f"Could not search dependency files: {exc}",
+            confidence=0.0,
+        )
     requirements_files = [candidate for candidate in dependency_files if candidate.name not in lock_files]
 
     found_locks = []
     for filename, label in lock_files.items():
         for candidate in dependency_files:
-            if candidate.name == filename:
+            if candidate.name == filename and candidate.parent == path:
                 found_locks.append(f"{candidate.relative_to(path).as_posix()} ({label})")
 
     found_loose = []
@@ -332,9 +336,16 @@ def repro_build_env_declared_handler(
         "docker-compose*.y*ml": "Docker Compose",
     }
 
-    env_files = _iter_evidence_files(
-        path, tuple(inherently_pinned) + ("Dockerfile*", "Containerfile*") + tuple(deferred)
-    )
+    try:
+        env_files = _iter_evidence_files(
+            path, tuple(inherently_pinned) + ("Dockerfile*", "Containerfile*") + tuple(deferred)
+        )
+    except OSError as exc:
+        return HandlerResult(
+            status=HandlerResultStatus.INCONCLUSIVE,
+            message=f"Could not search build environment files: {exc}",
+            confidence=0.0,
+        )
 
     def _present(names: dict[str, str]) -> list[str]:
         return [

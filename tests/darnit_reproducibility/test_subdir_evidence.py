@@ -75,16 +75,26 @@ def test_dependency_aggregation_does_not_stop_at_scan_limit(repo_tree) -> None:
 
 
 @pytest.mark.parametrize("name", ["deps/uv.lock", "packages/app/package-lock.json"])
-def test_nested_lock_still_short_circuits_without_reading(repo_tree, monkeypatch, name: str) -> None:
+def test_nested_lock_does_not_hide_unpinned_requirements(repo_tree, name: str) -> None:
     repo = repo_tree({name: "not lock-file syntax", "requirements/base.txt": "requests\n"})
-
-    def no_read(*args, **kwargs):
-        pytest.fail("a lock file must short-circuit before any contents are read")
-
-    monkeypatch.setattr("darnit_reproducibility.handlers.read_repository_text", no_read)
     result = repro_deps_pinned_handler({}, repro_ctx(repo))
-    assert result.status == HandlerResultStatus.PASS
-    assert name in result.message
+    assert result.status == HandlerResultStatus.FAIL
+
+
+@pytest.mark.parametrize("handler", [repro_deps_pinned_handler, repro_build_env_declared_handler])
+def test_unreadable_directory_is_inconclusive(repo_tree, monkeypatch, handler) -> None:
+    repo = repo_tree({"hidden/requirements.txt": PINNED, "Dockerfile": DOCKERFILE})
+    original = Path.iterdir
+
+    def iterdir(path):
+        if path == repo / "hidden":
+            raise PermissionError("access denied")
+        return original(path)
+
+    monkeypatch.setattr(Path, "iterdir", iterdir)
+    result = handler({}, repro_ctx(repo))
+    assert result.status == HandlerResultStatus.INCONCLUSIVE
+    assert "Could not search" in result.message
 
 
 @pytest.mark.parametrize(
@@ -133,6 +143,11 @@ def test_symlinked_directories_do_not_count(repo_tree) -> None:
     root = repo_tree({"outside/requirements.txt": PINNED, "outside/Dockerfile": DOCKERFILE})
     repo = root / "repo"
     repo.mkdir()
-    (repo / "linked").symlink_to(root / "outside", target_is_directory=True)
+    try:
+        (repo / "linked").symlink_to(root / "outside", target_is_directory=True)
+    except OSError as exc:
+        if getattr(exc, "winerror", None) != 1314:
+            raise
+        pytest.skip("creating symlinks requires Windows developer mode or elevated privileges")
     assert repro_deps_pinned_handler({}, repro_ctx(repo)).status == HandlerResultStatus.INCONCLUSIVE
     assert repro_build_env_declared_handler({}, repro_ctx(repo)).status == HandlerResultStatus.INCONCLUSIVE
