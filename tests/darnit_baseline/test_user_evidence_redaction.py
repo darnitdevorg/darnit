@@ -40,18 +40,21 @@ PROFILE = {
 PERSONAL_VALUES = [PROFILE[k] for k in ("email", "location", "company", "bio", "name")]
 
 
+REPO_ENDPOINT = f"/repos/{OWNER}/{REPO}"
+ORG_ENDPOINT = f"/orgs/{OWNER}"
+
+
 @pytest.fixture
-def recorded_platform() -> Iterator[None]:
-    previous = set_gh_api_responder(
-        RecordedGhApi(
-            {
-                f"/orgs/{OWNER}": {"status": 404, "body": {"message": "Not Found"}, "error": "Not Found (HTTP 404)"},
-                "/user": {"status": 200, "body": PROFILE},
-            }
-        )
+def recorded_platform() -> Iterator[RecordedGhApi]:
+    responder = RecordedGhApi(
+        {
+            REPO_ENDPOINT: {"body": {"owner": {"type": "User"}}},
+            "/user": {"body": PROFILE},
+        }
     )
+    previous = set_gh_api_responder(responder)
     try:
-        yield
+        yield responder
     finally:
         set_gh_api_responder(previous)
 
@@ -107,6 +110,45 @@ class TestAc0101:
 
         assert result["evidence"]["endpoint"] == "/user"
         assert result["evidence"]["response"]["body"] == {"login": "auditor", "two_factor_authentication": True}
+
+    def test_personal_repo_only_checks_user_account(self, tmp_path: Path, recorded_platform: RecordedGhApi) -> None:
+        (result,) = _audit(tmp_path)
+
+        assert result["status"] == "WARN"
+        assert [call.endpoint for call in recorded_platform.calls] == [REPO_ENDPOINT, "/user"]
+        assert "user-owned" in result["evidence"]["verification_steps"][0]
+
+    def test_missing_user_mfa_field_still_gives_manual_steps(
+        self, tmp_path: Path, recorded_platform: RecordedGhApi
+    ) -> None:
+        recorded_platform.record("/user", {"body": {"login": OWNER}})
+        (result,) = _audit(tmp_path)
+
+        assert result["status"] == "WARN"
+        assert any("read:user" in step for step in result["evidence"]["verification_steps"])
+
+    @pytest.mark.parametrize(("enforced", "expected"), [(True, "PASS"), (False, "FAIL"), (None, "ERROR")])
+    def test_org_repo_checks_org_enforcement(
+        self, tmp_path: Path, recorded_platform: RecordedGhApi, enforced: bool | None, expected: str
+    ) -> None:
+        recorded_platform.record(REPO_ENDPOINT, {"body": {"owner": {"type": "Organization"}}})
+        body = {} if enforced is None else {"two_factor_requirement_enabled": enforced}
+        recorded_platform.record(ORG_ENDPOINT, {"body": body})
+        (result,) = _audit(tmp_path)
+
+        assert result["status"] == expected
+        assert [call.endpoint for call in recorded_platform.calls] == [REPO_ENDPOINT, ORG_ENDPOINT]
+
+    @pytest.mark.parametrize("response", [{"status": 403}, {"body": {}}])
+    def test_unknown_owner_requires_review(
+        self, tmp_path: Path, recorded_platform: RecordedGhApi, response: dict
+    ) -> None:
+        recorded_platform.record(REPO_ENDPOINT, response)
+        (result,) = _audit(tmp_path)
+
+        assert result["status"] == "WARN"
+        assert [call.endpoint for call in recorded_platform.calls] == [REPO_ENDPOINT]
+        assert "owner type could not be verified" in result["evidence"]["verification_steps"][0]
 
     def test_json_report_and_attestation_carry_no_profile(self, tmp_path: Path) -> None:
         from darnit_baseline.attestation.predicate import build_assessment_predicate
@@ -220,7 +262,12 @@ class TestPersonalRecordLoadRule:
 
     @pytest.mark.parametrize(
         "command",
-        [["gh", "api", "/repos/$OWNER/$REPO"], ["echo", "/user"], ["gh", "pr", "list"], ["gh", "api", "--jq", ".login"]],
+        [
+            ["gh", "api", "/repos/$OWNER/$REPO"],
+            ["echo", "/user"],
+            ["gh", "pr", "list"],
+            ["gh", "api", "--jq", ".login"],
+        ],
     )
     def test_exec_not_reading_a_personal_record_loads(self, command: list[str]) -> None:
         validate_step_authority("fw", "PRIV-01", [HandlerInvocation(handler="exec", command=command)])

@@ -439,34 +439,39 @@ enforcement when the repository sits inside an organization.
 
 location_hint = ".github/settings.yml"
 
-# gh_api (feature 041): 404 (a user, not an org) and 401/403 are ERROR,
-# never FAIL. No has() guard: the field is only visible to org owners, so
-# an absent field is an evaluation ERROR (unmeasured), not a FAIL.
+# An organization lookup applies only to organization-owned repositories.
 [[controls."OSPS-AC-01.01".passes]]
+when = { github_owner_type = "Organization" }
 handler = "gh_api"
 endpoint = "/orgs/$OWNER"
 expr = 'response.body.two_factor_requirement_enabled == true'
 
-# Evidence only: /user describes the account running the audit, not the
-# project. It also runs when an org hides its 2FA field from this token,
-# where concluding PASS from the auditor's own 2FA would be a false PASS.
-# Requires `gh auth refresh -s read:user` to see the field. Only the fields
-# the check reads are kept, so the auditor's profile never reaches reports
-# or attestations (feature 044).
+# The signed-in auditor's MFA is evidence only. The field may be hidden.
 [[controls."OSPS-AC-01.01".passes]]
+when = { github_owner_type = "User" }
 handler = "gh_api"
 endpoint = "/user"
-expr = 'response.body.two_factor_authentication == true'
+expr = 'has(response.body.two_factor_authentication) && response.body.two_factor_authentication == true'
 evidence_fields = ["login", "two_factor_authentication"]
 concludes = []
 
 [[controls."OSPS-AC-01.01".passes]]
+when = { github_owner_type = "Organization" }
+handler = "manual"
+steps = ["In Organization Settings → Authentication security, verify that MFA is required."]
+
+[[controls."OSPS-AC-01.01".passes]]
+when = { github_owner_type = "User" }
 handler = "manual"
 steps = [
-    "Navigate to Organization Settings → Security",
-    "Verify 'Require two-factor authentication' is enabled",
-    "(For user-owned repos) Verify the maintainer has 2FA enabled on their account: Settings → Password and authentication",
+    "This repository is user-owned. Verify that the owner has MFA enabled under GitHub Settings → Password and authentication.",
+    "If the signed-in account's MFA field is unavailable, check the setting directly or grant gh the read:user scope.",
 ]
+
+[[controls."OSPS-AC-01.01".passes]]
+when = { github_owner_type = "Unknown" }
+handler = "manual"
+steps = ["GitHub repository owner type could not be verified. Confirm the owner type, then verify the corresponding MFA setting."]
 
 # Manual under every remediation policy (feature 043): GitHub offers no API
 # to require two-factor authentication for an organization.

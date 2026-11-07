@@ -1,6 +1,10 @@
 [fixture]
 description = "Organization hides its 2FA requirement from the token; the account running the audit has 2FA"
 
+[fixture.platform."/repos/$OWNER/$REPO"]
+status = 200
+body = { owner = { type = "Organization" } }
+
 [fixture.platform."/orgs/$OWNER"]
 status = 200
 body = { login = "corpus", type = "Organization" }

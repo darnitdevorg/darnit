@@ -437,6 +437,22 @@ def _resolve_audit_context(
         return None
 
 
+def _github_owner_type(owner: str, repo: str) -> str:
+    """Read the GitHub owner type for step routing."""
+    from darnit.core.utils import gh_api_with_status
+
+    if not owner or not repo:
+        return "Unknown"
+    body, status, _ = gh_api_with_status(f"/repos/{owner}/{repo}")
+    if 200 <= status < 300 and isinstance(body, dict):
+        account = body.get("owner")
+        if isinstance(account, dict):
+            owner_type = account.get("type")
+            if owner_type in ("User", "Organization"):
+                return owner_type
+    return "Unknown"
+
+
 def _applicability_context(
     local_path: str,
     owner: str | None,
@@ -1042,6 +1058,19 @@ def run_sieve_audit(
         definitions=definitions,
         resolved=resolved_context,
     )
+
+    owner_type_key = "github_owner_type"
+    if any(
+        owner_type_key in (step.when or {})
+        for spec in all_controls
+        for step in spec.metadata.get("handler_invocations", [])
+    ):
+        owner_type = "Unknown"
+        if detected_context.get("platform") in (None, "github") and project_context.get("platform") in (None, "github"):
+            owner_type = _github_owner_type(owner, repo)
+        # Only GitHub's response can route these steps.
+        project_context[owner_type_key] = detected_context[owner_type_key] = owner_type
+        repository_values.pop(owner_type_key, None)
 
     if project_context:
         logger.info("Project context for when-clause evaluation: %s", project_context)
