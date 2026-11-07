@@ -2067,6 +2067,10 @@ steps = [
 name = "DependencyManifest"
 description = "Project has dependency manifest files"
 tags = { level = 1, domain = "QA", quality = true, dependencies = true }
+# The requirement applies only when the project's package management system
+# supports a dependency list. Skipped (N/A) for script-only projects such as
+# shell tools; when darnit cannot tell, the key is absent and the control runs.
+when = { package_manager_support = "supported" }
 
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-QA-02.01"
 location_hint = "package.json"

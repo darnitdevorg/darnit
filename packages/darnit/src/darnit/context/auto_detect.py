@@ -220,6 +220,114 @@ def detect_license_type(local_path: str) -> str | None:
     return None
 
 
+# Package-manager support (OSPS-QA-02.01 applicability)
+#
+# The control only applies "when the package management system supports it",
+# so a project written only in a language with no package manager (shell
+# scripts) has nothing to list.  The detection below is deliberately
+# conservative: it concludes "unsupported" only when it positively sees shell
+# scripts and nothing from any language or manifest it recognizes.  Anything
+# else, including an empty repository, an unfamiliar language, or a scan that
+# hit its limits, is left undetected so the control runs and can FAIL.
+
+# Manifests whose presence means a package manager is in use.
+_PACKAGE_MANIFEST_NAMES: frozenset[str] = frozenset(
+    {
+        "package.json",
+        "requirements.txt",
+        "pyproject.toml",
+        "setup.py",
+        "setup.cfg",
+        "Pipfile",
+        "Cargo.toml",
+        "go.mod",
+        "pom.xml",
+        "build.gradle",
+        "build.gradle.kts",
+        "Gemfile",
+        "composer.json",
+        "mix.exs",
+        "pubspec.yaml",
+        "Package.swift",
+    }
+)
+
+# Source files in languages that have a package manager.
+_PACKAGE_MANAGED_EXTENSIONS: frozenset[str] = frozenset(
+    {
+        ".py", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".go", ".rs",
+        ".java", ".kt", ".kts", ".scala", ".rb", ".php", ".cs", ".csproj",
+        ".swift", ".dart", ".ex", ".exs",
+    }
+)  # fmt: skip
+
+# Source files in languages darnit does not classify; seeing one means we
+# cannot say the project has no package manager.
+_OTHER_SOURCE_EXTENSIONS: frozenset[str] = frozenset(
+    {
+        ".c", ".h", ".cc", ".cpp", ".cxx", ".hpp", ".m", ".mm", ".pl", ".pm",
+        ".lua", ".jl", ".hs", ".ml", ".zig", ".nim", ".r", ".clj", ".erl",
+        ".groovy", ".v", ".sol",
+    }
+)  # fmt: skip
+
+# Shell scripts: the evidence that a project is script-only.
+_SCRIPT_EXTENSIONS: frozenset[str] = frozenset({".sh", ".bash", ".zsh", ".bats"})
+
+_SKIPPED_DIRS: frozenset[str] = frozenset(
+    {
+        ".git", ".hg", ".svn", "node_modules", "vendor", "venv", ".venv",
+        "__pycache__", ".tox", "site-packages", "dist", "build", "target",
+    }
+)  # fmt: skip
+
+_PACKAGE_SCAN_MAX_DEPTH = 4
+_PACKAGE_SCAN_MAX_ENTRIES = 5000
+
+
+def detect_package_manager_support(local_path: str) -> str | None:
+    """Detect whether the project is written in something a package manager covers.
+
+    Returns:
+        ``"supported"`` if a package manifest or package-managed source file is
+        present; ``"unsupported"`` if the repository holds shell scripts and no
+        manifest or source file in any language darnit recognizes; ``None`` if
+        uncertain (no scripts, an unclassified language, or an oversized tree).
+        Only ``"unsupported"`` can make a control not applicable.
+    """
+    root = Path(local_path)
+    if not root.is_dir():
+        return None
+
+    seen_script = False
+    seen_other_source = False
+    entries = 0
+
+    for current, dirnames, filenames in os.walk(root):
+        depth = len(Path(current).relative_to(root).parts)
+        # Sorted so the scan, and a scan that hits the limit, is deterministic.
+        dirnames[:] = sorted(
+            d for d in dirnames if d not in _SKIPPED_DIRS and not d.startswith(".") and depth < _PACKAGE_SCAN_MAX_DEPTH
+        )
+        for name in sorted(filenames):
+            entries += 1
+            if entries > _PACKAGE_SCAN_MAX_ENTRIES:
+                return None
+            if name in _PACKAGE_MANIFEST_NAMES:
+                return "supported"
+            suffix = Path(name).suffix.lower()
+            if suffix in _PACKAGE_MANAGED_EXTENSIONS:
+                return "supported"
+            if suffix in _OTHER_SOURCE_EXTENSIONS:
+                seen_other_source = True
+            elif suffix in _SCRIPT_EXTENSIONS:
+                seen_script = True
+
+    if seen_script and not seen_other_source:
+        return "unsupported"
+    return None
+
+
 # Map primary_language to ecosystem names used in TOML when clauses
 _LANGUAGE_TO_ECOSYSTEM: dict[str, str] = {
     "python": "python",
@@ -283,6 +391,12 @@ def collect_auto_context(
         ecosystem = _LANGUAGE_TO_ECOSYSTEM.get(primary_language)
         if ecosystem:
             detected["detected_ecosystem"] = ecosystem
+
+    # Absent when uncertain: a missing key leaves controls that depend on it
+    # running, so only a positive "unsupported" can mark one not applicable.
+    package_manager_support = detect_package_manager_support(local_path)
+    if package_manager_support:
+        detected["package_manager_support"] = package_manager_support
 
     # Always include languages (even empty list) so when clauses can evaluate
     detected["languages"] = detect_languages(local_path)
