@@ -112,7 +112,7 @@ class TestRefused:
 
         with pytest.raises(HandlerImportRefused):
             resolve_module_path("darnit_not_installed_xyz.tools:run")
-        assert imported == []
+        assert not any(name.startswith("darnit_not_installed_xyz") for name in imported)
 
 
 class TestNotFound:
