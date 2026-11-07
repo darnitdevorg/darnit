@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 
 from darnit.core.logging import get_logger
 from darnit.core.repo_files import read_repository_text
+from darnit.core.utils import resolve_case_exact_path
 
 if TYPE_CHECKING:
     from darnit.config.context_schema import ContextDefinition
@@ -183,16 +184,34 @@ def detect_license_type(local_path: str) -> str | None:
         "apache-2.0", "mit", "bsd-3-clause", "gpl", "isc", "mpl-2.0",
         "lgpl", "unlicense", or None if unknown.
     """
-    license_path = Path(local_path) / "LICENSE"
-    if not license_path.is_file():
-        # Also check LICENSE.md, LICENSE.txt
-        for alt in ("LICENSE.md", "LICENSE.txt"):
-            alt_path = Path(local_path) / alt
-            if alt_path.is_file():
-                license_path = alt_path
-                break
-        else:
-            return None
+    candidates = (
+        "LICENSE",
+        "LICENSE.md",
+        "LICENSE.txt",
+        "LICENCE",
+        "LICENCE.md",
+        "LICENCE.txt",
+        "COPYING",
+        "COPYING.md",
+        "COPYING.txt",
+        "license",
+        "license.md",
+        "license.txt",
+        "licence",
+        "licence.md",
+        "licence.txt",
+        "copying",
+        "copying.md",
+        "copying.txt",
+    )
+    license_path: Path | None = None
+    for candidate in candidates:
+        exact = resolve_case_exact_path(candidate, local_path)
+        if exact and os.path.isfile(exact):
+            license_path = Path(exact)
+            break
+    if license_path is None:
+        return None
 
     try:
         content = read_repository_text(local_path, license_path, errors="replace")[:1000]

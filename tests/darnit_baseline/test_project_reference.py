@@ -51,8 +51,20 @@ EXPECTED_REFERENCES = {
 # Where each referenced field's file conventionally lives (FR-016): a declared
 # reference must name a file of that kind.
 FIELD_FILE_LOCATIONS = {
-    "security.policy": ["SECURITY.md", "security.md", ".github/SECURITY.md", "docs/SECURITY.md", "docs/security.md"],
-    "governance.contributing": ["CONTRIBUTING.md", "contributing.md", ".github/CONTRIBUTING.md", "docs/CONTRIBUTING.md"],
+    "security.policy": [
+        "SECURITY.md",
+        "security.md",
+        ".github/SECURITY.md",
+        ".github/security.md",
+        "docs/SECURITY.md",
+        "docs/security.md",
+    ],
+    "governance.contributing": [
+        "CONTRIBUTING.md",
+        "contributing.md",
+        ".github/CONTRIBUTING.md",
+        "docs/CONTRIBUTING.md",
+    ],
     "governance.codeowners": ["CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS"],
     "governance.governance_doc": ["GOVERNANCE.md", "governance.md", "docs/GOVERNANCE.md", ".github/GOVERNANCE.md"],
     "governance.maintainers": [
@@ -62,7 +74,26 @@ FIELD_FILE_LOCATIONS = {
         "docs/MAINTAINERS.md",
         ".github/MAINTAINERS.md",
     ],
-    "legal.license": ["LICENSE", "LICENSE.md", "LICENSE.txt", "license", "COPYING"],
+    "legal.license": [
+        "LICENSE",
+        "LICENSE.md",
+        "LICENSE.txt",
+        "LICENCE",
+        "LICENCE.md",
+        "LICENCE.txt",
+        "COPYING",
+        "COPYING.md",
+        "COPYING.txt",
+        "license",
+        "license.md",
+        "license.txt",
+        "licence",
+        "licence.md",
+        "licence.txt",
+        "copying",
+        "copying.md",
+        "copying.txt",
+    ],
     "documentation.readme": ["README.md", "README", "readme.md", "README.rst"],
     "documentation.support": ["SUPPORT.md", "support.md", ".github/SUPPORT.md", "docs/SUPPORT.md"],
     "documentation.architecture": [
