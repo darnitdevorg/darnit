@@ -167,3 +167,17 @@ def test_parse_source_handles_non_utf8_bytes_under_str_binding(monkeypatch) -> N
     naughty = b"def foo():\n    return '\xff'\n"
     tree = parse_source("python", naughty)
     assert tree is not None  # didn't raise UnicodeDecodeError
+
+
+def test_make_query_when_tree_sitter_unavailable_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When tree-sitter or language pack failed to load, make_query must raise ValueError."""
+    monkeypatch.setattr(parsing, "TREE_SITTER_AVAILABLE", False)
+    with pytest.raises(ValueError, match="tree-sitter unavailable"):
+        make_query("python", "(identifier) @id")
+
+
+def test_make_query_invalid_sexpr_raises() -> None:
+    """Syntax errors in query S-expression must raise ValueError."""
+    with pytest.raises(ValueError, match="could not compile query"):
+        make_query("python", "(invalid_node_syntax [[")
+

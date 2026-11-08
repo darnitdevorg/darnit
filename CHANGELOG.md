@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Baseline handler registration no longer imports `tree-sitter` or the language
+  pack at registration time, preventing transient language pack download
+  failures from taking down all baseline handlers; when a plugin handler registration
+  fails with an exception, `validate_step_authority` includes the plugin name
+  and underlying exception instead of raising an ambiguous unregistered-step
+  `AuthorityViolation` (fixes #716).
 - The MCP `commit_remediation_changes`, `create_remediation_branch`, and
   `create_remediation_pr` tools accept optional `owner`, `repo`, and `host`
   parameters, resolving recorded remediation runs when the local checkout has no

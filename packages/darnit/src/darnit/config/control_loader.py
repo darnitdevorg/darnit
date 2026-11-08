@@ -641,7 +641,20 @@ def validate_step_authority(
         if info is None:
             if operator_supplied:
                 continue
-            reject(f"step type {inv.handler!r} is not registered")
+            from darnit.core.discovery import get_registration_error
+
+            owner_with_err = next(
+                (o for o in (framework, composed_from) if o and get_registration_error(o) is not None),
+                None,
+            )
+            if owner_with_err:
+                reg_err = get_registration_error(owner_with_err)
+                reject(
+                    f"step type {inv.handler!r} is not registered because plugin '{owner_with_err}' "
+                    f"failed handler registration: {type(reg_err).__name__}: {reg_err}"
+                )
+            else:
+                reject(f"step type {inv.handler!r} is not registered")
         _validate_step_keys(inv, info, reject)
 
         existence = bool(getattr(inv, "existence", False))
