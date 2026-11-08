@@ -4,7 +4,7 @@ description: Run the full compliance pipeline — audit, collect data, remediate
 compatibility: Requires darnit MCP server running (darnit serve) and gh CLI for PR creation
 metadata:
   author: kusari-oss
-  version: "2.2"
+  version: "2.3"
 ---
 
 # Full Compliance Pipeline
@@ -19,11 +19,15 @@ Register darnit's MCP server at user scope (`darnit install` does this by defaul
 
 Darnit registers tools per implementation module. Look for available tools matching `audit_*` for the audit step, and `remediate_audit_findings` for remediation. If the user specifies a framework, use those tools. If only one set is available, use it. If multiple exist, ask.
 
+## The repository
+
+Name the audited repository on every darnit call, the audit included: `owner` and `repo`, plus `host` when it is not github.com. darnit applies the person's confirmed answers, stored PASS candidates, and trust only to a named repository, and never takes the name from the checkout's remotes. Before the first call, ask the person to confirm which repository this is, offering the checkout's `origin` remote as the suggestion, and use their answer for every call.
+
 ## Workflow
 
 ### 1. Initial audit
 
-Call the appropriate `audit_*` tool with `output_format: "summary"` and any profile the user mentioned. The "summary" format returns compact JSON; PENDING rows carry `pending.kind`. Do not use `output_format: "json"`: it is too large for a tool result. Present a brief summary: total controls, pass/fail/warn counts, compliance percentage.
+Call the appropriate `audit_*` tool with `owner` and `repo` naming the audited repository, `output_format: "summary"`, and any profile the user mentioned. The "summary" format returns compact JSON; PENDING rows carry `pending.kind`. Do not use `output_format: "json"`: it is too large for a tool result. Present a brief summary: total controls, pass/fail/warn counts, compliance percentage.
 
 ### 2. Judgments
 
@@ -34,6 +38,8 @@ If any row has `pending.kind = "llm_judgment"`, call `get_judgment_requests` wit
 Tell the user you'll collect project data, then call `get_pending_data` with `owner`, `repo`, and `local_path` naming the audited repository, and follow the `procedure` in its result until `status` is `"complete"` or the user says to skip the rest.
 
 ### 4. Remediation plan
+
+If data was confirmed in step 3, call the audit again (same arguments) and show what changed: confirmed answers can make controls pass or not applicable.
 
 If there are FAIL controls with auto-fixes:
 - Call `remediate_audit_findings` with `dry_run: true`, and `owner` and `repo` naming the audited repository
@@ -76,7 +82,7 @@ Show before/after compliance comparison, list of changes made, and remaining man
 
 - Always show the remediation plan and get confirmation before applying changes. Never auto-apply.
 - Use `output_format: "summary"` for audits to keep token usage low.
-- Do NOT run a separate audit before calling `remediate_audit_findings` — it handles audit internally.
+- Do NOT run an audit just to feed `remediate_audit_findings`: it audits internally. The one audit after collecting data (step 4) is for showing the person what changed.
 - Do NOT call `create_remediation_branch` or `commit_remediation_changes` separately — use the built-in `branch_name` and `auto_commit` params.
 - Unsafe remediations, steps that cannot be previewed exactly, and high-impact platform changes run only when the person approved their own digest; a batch approval never covers them.
 - Platform changes follow the operator's `[remediation]` policy (`prompt`, `manual`, or `auto`), stated in the report. Never try to change it from the repository.

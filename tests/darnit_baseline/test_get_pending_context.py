@@ -254,8 +254,8 @@ class TestAskUserParams:
         assert ask["options"][1]["description"] == "No, this does not apply"
         assert ask["multiSelect"] is False
 
-    def test_enum_question_with_more_than_four_values_has_no_selector(self) -> None:
-        """Replaces "max 4 options shown": every allowed value must be reachable (feature 042, FR-015)."""
+    def test_enum_question_with_more_than_four_values_names_every_value(self) -> None:
+        """The selector shows 4 values and its question names them all, each typeable under Other (FR-015)."""
         values = ["github", "gitlab", "jenkins", "circleci", "azure", "travis"]
         defn = ContextDefinition(
             type=ContextType.ENUM,
@@ -271,10 +271,12 @@ class TestAskUserParams:
         )
         question = _build_context_question(req)
 
-        assert "ask_user" not in question
+        ask = question["ask_user"]
+        assert [o["label"] for o in ask["options"]] == values[:4]
+        assert "Other" in ask["question"]
         assert question["allowed_values"] == values
         for value in values:
-            assert value in question["prompt"]
+            assert value in ask["question"]
 
     def test_confirm_question_has_ask_user_accept_reject(self) -> None:
         """A detected candidate is asked as Yes/No; the options name its origin, not its value (feature 042, FR-013)."""
@@ -316,11 +318,14 @@ class TestAskUserParams:
         )
         question = _build_context_question(req)
 
-        assert "ask_user" not in question
+        ask = question["ask_user"]
+        assert [o["label"] for o in ask["options"]] == ["Skip for now", "Answer in chat"]
+        assert "security@example.com" not in json.dumps(ask)
+        assert "See SECURITY.md" not in json.dumps(ask)
         assert question["format_hint"] == "security@example.com or See SECURITY.md"
 
-    def test_free_text_without_examples_has_no_ask_user(self) -> None:
-        """Free text question without examples has no ask_user field."""
+    def test_free_text_offers_skip_and_chat_and_is_typed_under_other(self) -> None:
+        """A free-text question is in the batch; its answer is typed under Other, never chosen."""
         defn = ContextDefinition(
             type=ContextType.STRING,
             prompt="What is the project name?",
@@ -334,7 +339,9 @@ class TestAskUserParams:
         )
         question = _build_context_question(req)
 
-        assert "ask_user" not in question
+        ask = question["ask_user"]
+        assert ask["question"] == "What is the project name? Type your answer under Other."
+        assert [o["label"] for o in ask["options"]] == ["Skip for now", "Answer in chat"]
 
     def test_header_truncated_at_word_boundary(self) -> None:
         """Header keeps complete words instead of cutting through one."""
@@ -515,10 +522,9 @@ class TestAskUserBatch:
 
     @patch("darnit_baseline.tools.Path")
     @patch("darnit.config.context_storage.get_pending_context")
-    def test_no_batch_when_no_ask_user(self, mock_get, mock_path) -> None:
-        """No ask_user_batch field when questions lack ask_user params."""
+    def test_free_text_question_is_in_the_batch(self, mock_get, mock_path) -> None:
+        """A free-text question is asked in the same round as the others."""
         mock_path.return_value.resolve.return_value = "/tmp/repo"
-        # Free text without examples → no ask_user
         defn = ContextDefinition(
             type=ContextType.STRING,
             prompt="Project name?",
@@ -534,8 +540,14 @@ class TestAskUserBatch:
         result = get_pending_data(local_path="/tmp/repo")
         data = _parse_json_from_result(result)
 
-        assert "ask_user_batch" not in data
-        assert "answer_mapping" not in data
+        assert len(data["ask_user_batch"]) == 1
+        assert data["answer_mapping"] == [
+            {
+                "question_index": 0,
+                "context_key": "project_name",
+                "value_map": {"Skip for now": "SKIP", "Answer in chat": "ASK_USER_FOR_VALUE"},
+            }
+        ]
 
 
 class TestTomlDefinitionOrder:

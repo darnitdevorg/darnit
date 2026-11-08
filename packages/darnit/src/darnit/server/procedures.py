@@ -14,6 +14,15 @@ import json
 
 _OWNER = "<owner of the audited repository>"
 _REPO = "<name of the audited repository>"
+# The free-text selector's options and answer_mapping's markers stand for
+# "no answer". record_value_confirmation refuses them as a value, since an
+# agent may forward the label the question tool returns.
+SKIP_OPTION = "Skip for now"
+CHAT_OPTION = "Answer in chat"
+SKIP_MARKER = "SKIP"
+ASK_FOR_VALUE_MARKER = "ASK_USER_FOR_VALUE"
+NOT_AN_ANSWER = frozenset({SKIP_OPTION, CHAT_OPTION, SKIP_MARKER, ASK_FOR_VALUE_MARKER})
+
 # get_pending_data takes no host, so the confirm_project_data call it
 # describes carries a placeholder, never a host read from the checkout.
 _HOST = "<git host of the audited repository; omit for github.com>"
@@ -63,10 +72,12 @@ def data_collection_procedure(
     return [
         "1. For each question with a candidate, show the person candidate.value and candidate.origin, "
         "labelled UNCONFIRMED. A candidate is never a fact or a default answer.",
-        "2. Ask every question. Pass ask_user_batch verbatim to your question tool (AskUserQuestion in "
-        "Claude Code); ask a question with no ask_user entry in plain text, listing every allowed_values "
-        "entry. format_hint is a format, never an answer. Do not pre-fill or suggest answers.",
-        "3. If the person says skip or does not know, leave that key out and move on.",
+        "2. Ask every question at once: pass ask_user_batch verbatim to your question tool (AskUserQuestion "
+        "in Claude Code). A typed answer under Other is the person's answer. If a client has no question "
+        "tool, ask in plain text, listing every allowed_values entry. format_hint is a format, never an "
+        "answer. Do not pre-fill or suggest answers.",
+        f'3. "{SKIP_OPTION}", or a person who says skip or does not know, leaves that key out. For '
+        f'"{CHAT_OPTION}", ask that one question in plain text. Neither label is a value.',
         f"4. Record the answers in one call: confirm_project_data({confirm_args}, <key>=<the person's "
         "answer>), using answer_mapping: Yes/No on a yes/no question is true/false; a chosen option is its "
         'label as a string; Yes on a candidate is accept_candidates={"<key>": "<that question\'s '

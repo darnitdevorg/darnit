@@ -4,12 +4,16 @@ description: Apply automated fixes for failing compliance controls. Shows a plan
 compatibility: Requires darnit MCP server running (darnit serve)
 metadata:
   author: kusari-oss
-  version: "2.2"
+  version: "2.3"
 ---
 
 # Compliance Remediation
 
 Show a dry-run plan of fixes for failing controls, get confirmation, then apply changes on a new branch. After applying, enhance generated template files with project-specific content.
+
+## The repository
+
+Name the audited repository on every darnit call, the audit included: `owner` and `repo`, plus `host` when it is not github.com. darnit applies the person's confirmed answers, stored PASS candidates, and trust only to a named repository, and never takes the name from the checkout's remotes. Before the first call, ask the person to confirm which repository this is, offering the checkout's `origin` remote as the suggestion, and use their answer for every call.
 
 ## Workflow
 
