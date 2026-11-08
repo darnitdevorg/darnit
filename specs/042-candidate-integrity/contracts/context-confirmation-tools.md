@@ -25,6 +25,7 @@ Writes nothing. Each question:
 
 - `command_template` never contains a candidate value or a configuration example.
 - Enum questions list every allowed value in `allowed_values`; the selector options are omitted when there are more than 4.
+- The response carries `procedure`, the ordered steps for collecting the data (framework-design 7.10, `darnit.server.procedures`). Its calls name only the `owner`, `repo`, and `control_ids` the caller passed; the `confirm_project_data` call names `host` as a placeholder, since `get_pending_data` takes no `host`. It holds no candidate or detected value.
 - `answer_mapping.value_map["Yes"]` is `{"accept_candidates": {"<key>": "<candidate.digest>"}}`: a placeholder the agent fills from the question's `candidate.digest` only after the person has actually answered yes. The mapping never contains a ready-to-send digest, and it applies only to the person's own answer; accepting a candidate by digest is a confirmation and follows the same rule as any other.
 
 Response also includes:
