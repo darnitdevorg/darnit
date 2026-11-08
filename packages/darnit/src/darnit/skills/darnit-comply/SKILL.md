@@ -4,7 +4,7 @@ description: Run the full compliance pipeline — audit, collect data, remediate
 compatibility: Requires darnit MCP server running (darnit serve) and gh CLI for PR creation
 metadata:
   author: kusari-oss
-  version: "2.3"
+  version: "2.4"
 ---
 
 # Full Compliance Pipeline
@@ -31,7 +31,7 @@ Call the appropriate `audit_*` tool with `owner` and `repo` naming the audited r
 
 ### 2. Judgments
 
-If any row has `pending.kind = "llm_judgment"`, call `get_judgment_requests` with `owner`, `repo`, and `local_path` naming the audited repository, and follow the `procedure` in its result until `remaining` is empty. Never state your own verdict as the audit result: a `"pass"` becomes a PASS candidate that stays non-compliant until the operator confirms it.
+If any row has `pending.kind = "llm_judgment"`, call `get_judgment_requests` with `owner`, `repo`, and `local_path` naming the audited repository, and follow the `procedure` in its result until `remaining` is empty. Never state your own verdict as the audit result: a `"pass"` becomes a PASS candidate that stays non-compliant until the operator confirms it. Keep every `submit_judgment` result with `status: "finding"` for the final report: a finding is not stored, so a later audit shows that control awaiting a judgment again.
 
 ### 3. Collect data
 
@@ -47,7 +47,7 @@ If there are FAIL controls with auto-fixes:
 - Present every file change; every platform change set with each field as `before -> after`, its `impact_notes`, and its digest; and every item that needs individual approval. Show a high-impact change (repository visibility, organization settings) on its own with its impact
 - Ask the person which changes to apply, asking separately about each platform change set and each item that needs individual approval
 
-If no failures or no auto-fixes: report the status and list manual steps. Skip to step 7.
+If no failures or no auto-fixes: report the status and list manual steps. Skip to step 8.
 
 ### 5. Apply fixes (if confirmed)
 
@@ -72,11 +72,19 @@ Read the generated template files and improve them with project-specific content
 
 If files were enhanced, make a new commit with the improvements.
 
-### 7. Create PR and final report
+### 7. Judge what changed
 
-Ask if the user wants a PR. If yes, call `create_remediation_pr` and display the URL.
+Remediation's documents are not compliant until judged and confirmed: their outcomes are `changed_not_passing` with `pending_kind`. After step 6, call `get_judgment_requests` with `owner`, `repo`, and `local_path` and no `control_ids`, and follow its `procedure`. Judge after improving the files, not before: an edit changes the evidence and makes an earlier candidate stale. Do not judge again a control you received a finding for in this run unless its files changed since; keep each new finding. If a control cannot be judged, say why.
 
-Show before/after compliance comparison, list of changes made, and remaining manual items.
+### 8. Confirm
+
+Call `get_pass_candidates` with `owner`, `repo`, `local_path`, and `run_id` set to the apply's `run_id` (from the fenced JSON block of step 5; omit it if nothing was applied), and follow its `procedure`.
+
+### 9. Final audit, PR, and report
+
+Call the audit again (same arguments as step 1). Ask if the user wants a PR. If yes, call `create_remediation_pr` and display the URL.
+
+Show the before/after comparison and the changes made, then list separately: controls that pass; controls awaiting the person's confirmation; controls awaiting a judgment, with why; controls you judged as not meeting the requirement, with the finding and what the person would need to change; and the remaining manual items. Say that confirmations are recorded for the person on this machine only: CI or another maintainer sees those controls PENDING until they confirm there.
 
 ## Gotchas
 

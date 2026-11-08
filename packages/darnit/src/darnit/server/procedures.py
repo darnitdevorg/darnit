@@ -1,8 +1,9 @@
 """The steps a coding agent follows after a data or judgment tool returns.
 
 One source for the procedure text that ``get_pending_data``,
-``confirm_project_data``, and ``get_judgment_requests`` return, so every
-skill and client follows the same steps (framework-design 5.4, 7.10).
+``confirm_project_data``, ``get_judgment_requests``, ``get_pass_candidates``,
+and ``remediate_audit_findings`` return, so every skill and client follows
+the same steps (framework-design 5.4, 7.10, 15.9).
 Calls name only what the caller passed (the repository and checkout);
 an unnamed repository is a placeholder, never a value read from the
 checkout, and no step holds a candidate or detected value.
@@ -113,3 +114,56 @@ def judgment_procedure(owner: str, repo: str, host: str, local_path: str) -> lis
         "5. Controls in skipped already have a stored PASS candidate: do not request or judge them again.",
         "Confirm a PASS candidate only when the operator explicitly names it.",
     ]
+
+
+def confirmation_procedure(owner: str, repo: str, host: str, local_path: str, run_id: str | None = None) -> list[str]:
+    """Ordered steps for asking the operator about the PASS candidates on a ``get_pass_candidates`` page.
+
+    The next page's call carries ``run_id`` so it keeps marking the documents that run wrote.
+    """
+    args = _args(owner, repo, host, local_path)
+    next_args = f"{args}, run_id={json.dumps(run_id)}" if run_id else args
+    return [
+        "1. Show every candidate on the page before asking anything: control_id and title, what it "
+        "requires (description), the files, the reasoning, and each cited_evidence passage verbatim. "
+        'Label each "PASS candidate: not compliant until you confirm it".',
+        "2. For a candidate with a remediation block, say that darnit's remediation wrote the document, "
+        "whether it was edited afterwards (say so if you edited it), and that the judgment to confirm is "
+        "your own. Ask whether the document reflects the project's actual practice, not whether the "
+        "text reads well.",
+        "3. Ask with ask_user_batch verbatim through your question tool (AskUserQuestion in Claude Code); "
+        "without one, ask in plain text, one candidate at a time. Do not pre-fill, recommend, or offer "
+        "to confirm all.",
+        '4. If the person answered "Confirm" for at least one candidate, call '
+        f"confirm_pass_candidate(control_ids=[<only those controls>], {args}) once; otherwise do not "
+        'call it. Confirm nothing on silence, "Skip for now", "Do not confirm", or an instruction that '
+        "names no candidate the person was shown.",
+        f"5. If remaining is not empty, call get_pass_candidates({next_args}, control_ids=<remaining>) and "
+        "repeat from step 1.",
+        "6. Tell the person what was confirmed, declined, and skipped, and that confirmations are "
+        "recorded for them on this machine only: CI or another maintainer sees those controls PENDING "
+        "until they confirm there. Controls in awaiting_judgment need a judgment first.",
+    ]
+
+
+def remediation_next_steps(
+    owner: str | None, repo: str | None, host: str | None, local_path: str, awaiting: dict[str, list[str]], run_id: str
+) -> list[str]:
+    """What follows an apply whose changed controls await a judgment or a confirmation (15.4, 15.9)."""
+    if not awaiting:
+        return []
+    args = _args(owner, repo, host, local_path)
+    steps = []
+    if awaiting.get("llm_judgment"):
+        steps.append(
+            f"Awaiting a model judgment: {', '.join(awaiting['llm_judgment'])}. Improve the generated files "
+            f"first if you plan to, then call get_judgment_requests({args}) and follow its procedure; the "
+            "PASS candidates it produces are confirmed in the next step."
+        )
+    if awaiting.get("confirmation"):
+        steps.append(f"Awaiting the operator's confirmation: {', '.join(awaiting['confirmation'])}.")
+    steps.append(
+        f'Then call get_pass_candidates({args}, run_id="{run_id}") and follow its procedure. Until the '
+        "operator confirms, these controls are not compliant."
+    )
+    return steps

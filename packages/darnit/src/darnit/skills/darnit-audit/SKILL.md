@@ -4,7 +4,7 @@ description: Run a compliance audit on the current repository using darnit. Use 
 compatibility: Requires darnit MCP server running (darnit serve)
 metadata:
   author: kusari-oss
-  version: "2.2"
+  version: "2.3"
 ---
 
 # Compliance Audit
@@ -35,16 +35,19 @@ Name the audited repository on every darnit call, the audit included: `owner` an
 
 2. If any control is `PENDING` with `pending.kind = "llm_judgment"`, call `get_judgment_requests` with `owner`, `repo`, and `local_path` naming the audited repository, and follow the `procedure` in its result: it says how to judge each request, how to call `submit_judgment`, and how to fetch the next page. Your judgment is not the audit result:
    - A `"pass"` with verified citations becomes a PASS candidate (`PENDING`, `pending.kind = "confirmation"`), still non-compliant until the operator confirms it.
-   - A `"fail"` is reported as a model finding (suggestive FAIL).
+   - A `"fail"` is reported as a model finding (suggestive FAIL). Keep it for the report: a finding is not stored, so a later audit shows that control awaiting a judgment again.
    - A rejection means a cited passage was not found verbatim; the control stays unverified. Do not rephrase the passage to get it accepted unless it is genuinely in the file.
 
-3. Present the results as a compliance report:
+3. If any control is a PASS candidate (`PENDING`, `pending.kind = "confirmation"`), from your judgments or from earlier ones, call `get_pass_candidates` with `owner`, `repo`, and `local_path` naming the audited repository, and follow the `procedure` in its result. If the person confirmed any candidate, call the audit again so the report shows those controls as they now stand.
+
+4. Present the results as a compliance report:
    - Summary table: controls by level with pass/fail/warn counts and compliance percentage
    - Failures: each failing control with its description and suggested fix
    - Warnings: each WARN control with why it couldn't be verified and what to check manually
    - Judgments: each control you submitted a judgment for, with what `submit_judgment` returned (PASS candidate awaiting confirmation, model finding, or rejection) and your reasoning. Report candidates as awaiting confirmation, never as PASS.
+   - Confirmations: the candidates the person confirmed, declined, and skipped, and those still awaiting confirmation. Say that confirmations are recorded for the person on this machine only: CI or another maintainer sees those controls PENDING until they confirm there.
 
-4. Suggest next steps based on results:
+5. Suggest next steps based on results:
    - Missing context causing WARNs → suggest `/darnit-data`
    - Failures with auto-fixes available → suggest `/darnit-remediate`
    - All passing → congratulate the user
