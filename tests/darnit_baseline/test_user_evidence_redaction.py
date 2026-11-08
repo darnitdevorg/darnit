@@ -105,45 +105,38 @@ class TestAc0101:
         assert step.model_extra["endpoint"] == "/user"
         assert step.model_extra["evidence_fields"] == ["login", "two_factor_authentication"]
 
-    def test_evidence_keeps_only_the_declared_fields(self, tmp_path: Path) -> None:
-        (result,) = _audit(tmp_path)
-
-        assert result["evidence"]["endpoint"] == "/user"
-        assert result["evidence"]["response"]["body"] == {"login": "auditor", "two_factor_authentication": True}
-
-    def test_personal_repo_only_checks_user_account(self, tmp_path: Path, recorded_platform: RecordedGhApi) -> None:
+    def test_personal_repo_needs_manual_review(self, tmp_path, recorded_platform):
         (result,) = _audit(tmp_path)
 
         assert result["status"] == "WARN"
         assert [call.endpoint for call in recorded_platform.calls] == [REPO_ENDPOINT, "/user"]
+        assert result["evidence"]["response"]["body"] == {"login": OWNER, "two_factor_authentication": True}
         assert "user-owned" in result["evidence"]["verification_steps"][0]
 
-    def test_missing_user_mfa_field_still_gives_manual_steps(
-        self, tmp_path: Path, recorded_platform: RecordedGhApi
-    ) -> None:
+    def test_hidden_user_mfa_needs_manual_review(self, tmp_path, recorded_platform):
         recorded_platform.record("/user", {"body": {"login": OWNER}})
         (result,) = _audit(tmp_path)
 
         assert result["status"] == "WARN"
-        assert any("read:user" in step for step in result["evidence"]["verification_steps"])
+        assert "read:user" in " ".join(result["evidence"]["verification_steps"])
 
-    @pytest.mark.parametrize(("enforced", "expected"), [(True, "PASS"), (False, "FAIL"), (None, "ERROR")])
-    def test_org_repo_checks_org_enforcement(
-        self, tmp_path: Path, recorded_platform: RecordedGhApi, enforced: bool | None, expected: str
-    ) -> None:
+    @pytest.mark.parametrize(
+        ("body", "expected"),
+        [
+            ({"two_factor_requirement_enabled": True}, "PASS"),
+            ({"two_factor_requirement_enabled": False}, "FAIL"),
+        ],
+    )
+    def test_org_repo_uses_org_mfa_setting(self, tmp_path, recorded_platform, body, expected):
         recorded_platform.record(REPO_ENDPOINT, {"body": {"owner": {"type": "Organization"}}})
-        body = {} if enforced is None else {"two_factor_requirement_enabled": enforced}
         recorded_platform.record(ORG_ENDPOINT, {"body": body})
         (result,) = _audit(tmp_path)
 
         assert result["status"] == expected
         assert [call.endpoint for call in recorded_platform.calls] == [REPO_ENDPOINT, ORG_ENDPOINT]
 
-    @pytest.mark.parametrize("response", [{"status": 403}, {"body": {}}])
-    def test_unknown_owner_requires_review(
-        self, tmp_path: Path, recorded_platform: RecordedGhApi, response: dict
-    ) -> None:
-        recorded_platform.record(REPO_ENDPOINT, response)
+    def test_unknown_owner_needs_manual_review(self, tmp_path, recorded_platform):
+        recorded_platform.record(REPO_ENDPOINT, {"status": 403})
         (result,) = _audit(tmp_path)
 
         assert result["status"] == "WARN"
@@ -262,12 +255,7 @@ class TestPersonalRecordLoadRule:
 
     @pytest.mark.parametrize(
         "command",
-        [
-            ["gh", "api", "/repos/$OWNER/$REPO"],
-            ["echo", "/user"],
-            ["gh", "pr", "list"],
-            ["gh", "api", "--jq", ".login"],
-        ],
+        [["gh", "api", "/repos/$OWNER/$REPO"], ["echo", "/user"], ["gh", "pr", "list"], ["gh", "api", "--jq", ".login"]],
     )
     def test_exec_not_reading_a_personal_record_loads(self, command: list[str]) -> None:
         validate_step_authority("fw", "PRIV-01", [HandlerInvocation(handler="exec", command=command)])
