@@ -50,14 +50,26 @@ def _error(message: str) -> str:
     return f"Error: {message}"
 
 
-def _repository(local_path: str, owner: str | None, repo: str | None) -> str:
+def _repo_args(owner: str | None, repo: str | None, host: str | None = None) -> str:
+    if not (owner and repo):
+        return ""
+    host_arg = f', host="{host}"' if host else ""
+    return f', owner="{owner}", repo="{repo}"{host_arg}'
+
+
+def _repository(
+    local_path: str,
+    owner: str | None,
+    repo: str | None,
+    host: str | None = None,
+) -> str:
     """The identity the remediation executor records this checkout's runs under."""
     if not owner or not repo:
         detected = detect_repo_from_git(local_path)
         if detected:
             owner = owner or detected.get("owner")
             repo = repo or detected.get("repo")
-    return manifest.repository_identity(local_path, owner, repo)
+    return manifest.repository_identity(local_path, owner, repo, host=host)
 
 
 def _load_run(repository: str, run_id: str | None, checkout: str) -> tuple[manifest.RunManifest | None, str | None]:
@@ -83,6 +95,7 @@ def create_remediation_branch_impl(
     *,
     owner: str | None = None,
     repo: str | None = None,
+    host: str | None = None,
 ) -> str:
     """Create, or switch to, the branch for a remediation run.
 
@@ -102,6 +115,7 @@ def create_remediation_branch_impl(
             latest run for the repository, if it is not yet committed
         owner: Repository owner the run is recorded under (default: detected as the executor does)
         repo: Repository name the run is recorded under (default: detected as the executor does)
+        host: Host of the repository owner and repo name, when not github.com
 
     Returns:
         Success message with branch name or error
@@ -115,7 +129,7 @@ def create_remediation_branch_impl(
         if refusal:
             return _error(f"cannot use remediation branch '{branch_name}': {refusal}. Nothing was changed.")
 
-        repository = _repository(resolved_path, owner, repo)
+        repository = _repository(resolved_path, owner, repo, host=host)
         try:
             run = manifest.load_run(repository, run_id, checkout=resolved_path)
         except ValueError as e:
@@ -156,6 +170,7 @@ def create_remediation_branch_impl(
                 "**Remediation run:** none recorded yet; the commit step records the branch in the run it commits"
             )
             run_arg = ""
+        repo_args = _repo_args(owner, repo, host)
 
         if existed:
             headline = f"Switched to existing branch '{branch_name}'"
@@ -170,9 +185,9 @@ def create_remediation_branch_impl(
 {recorded}
 
 **Next steps:**
-1. Apply remediations: `remediate_audit_findings(local_path="{resolved_path}", dry_run=False)`
-2. Commit changes: `commit_remediation_changes(local_path="{resolved_path}"{run_arg})`
-3. Create PR: `create_remediation_pr(local_path="{resolved_path}"{run_arg})`
+1. Apply remediations: `remediate_audit_findings(local_path="{resolved_path}"{repo_args}, dry_run=False)`
+2. Commit changes: `commit_remediation_changes(local_path="{resolved_path}"{run_arg}{repo_args})`
+3. Create PR: `create_remediation_pr(local_path="{resolved_path}"{run_arg}{repo_args})`
 """
 
     except FileNotFoundError:
@@ -210,6 +225,7 @@ def commit_remediation_changes_impl(
     *,
     owner: str | None = None,
     repo: str | None = None,
+    host: str | None = None,
 ) -> str:
     """Commit the files a remediation run wrote, and nothing else.
 
@@ -226,6 +242,7 @@ def commit_remediation_changes_impl(
         run_id: Remediation run to commit (default: the latest run)
         owner: Repository owner the run is recorded under (default: detected as the executor does)
         repo: Repository name the run is recorded under (default: detected as the executor does)
+        host: Host of the repository owner and repo name, when not github.com
 
     Returns:
         Success message listing every committed file, or error
@@ -239,7 +256,7 @@ def commit_remediation_changes_impl(
         if refusal:
             return _error(f"cannot commit remediation changes: {refusal}. Nothing was committed.")
 
-        repository = _repository(resolved_path, owner, repo)
+        repository = _repository(resolved_path, owner, repo, host=host)
         run, problem = _load_run(repository, run_id, resolved_path)
         if run is None:
             return _error(f"{problem}. Nothing was committed.")
@@ -305,7 +322,8 @@ Review these files, then re-run remediation or commit them yourself.
     except Exception as e:
         return f"Error: {str(e)}"
 
-    return _report_commit(resolved_path, repository, run, branch, message, to_commit, prefix, ignored_note)
+    repo_args = _repo_args(owner, repo, host)
+    return _report_commit(resolved_path, repository, run, branch, message, to_commit, prefix, ignored_note, repo_args=repo_args)
 
 
 def _report_commit(
@@ -317,6 +335,7 @@ def _report_commit(
     to_commit: list[str],
     prefix: str,
     ignored_note: str,
+    repo_args: str = "",
 ) -> str:
     """Record and report a remediation commit that ``git commit`` has made.
 
@@ -376,7 +395,7 @@ def _report_commit(
 {_bullets(committed)}{ignored_note}{unexpected_note}
 
 **Next step:**
-Create a pull request: `create_remediation_pr(local_path="{resolved_path}", run_id="{run.run_id}")`
+Create a pull request: `create_remediation_pr(local_path="{resolved_path}", run_id="{run.run_id}"{repo_args})`
 """
 
 
@@ -434,6 +453,7 @@ def create_remediation_pr_impl(
     *,
     owner: str | None = None,
     repo: str | None = None,
+    host: str | None = None,
 ) -> str:
     """Push a remediation run's branch, and only that branch, and open a pull request.
 
@@ -456,6 +476,7 @@ def create_remediation_pr_impl(
         run_id: Remediation run whose branch to push (default: the latest run)
         owner: Repository owner the run is recorded under (default: detected as the executor does)
         repo: Repository name the run is recorded under (default: detected as the executor does)
+        host: Host of the repository owner and repo name, when not github.com
 
     Returns:
         Success message with PR URL or error
@@ -468,21 +489,22 @@ def create_remediation_pr_impl(
         if not is_work_tree(resolved_path):
             return "Error: Not a git repository"
 
-        repository = _repository(resolved_path, owner, repo)
+        repository = _repository(resolved_path, owner, repo, host=host)
         run, problem = _load_run(repository, run_id, resolved_path)
         if run is None:
             return _error(f"{problem}. Nothing was pushed.")
         branch = run.branch
+        repo_args = _repo_args(owner, repo, host)
         if branch is None:
             return _error(
                 f"remediation run {run.run_id} has no branch. Create one first: "
-                f'`create_remediation_branch(local_path="{resolved_path}", run_id="{run.run_id}")`'
+                f'`create_remediation_branch(local_path="{resolved_path}", run_id="{run.run_id}"{repo_args})`'
             )
         if branch in PROTECTED_BRANCHES:
             return f"""Error: Cannot create PR from '{branch}' branch.
 
 Create a remediation branch first:
-`create_remediation_branch(local_path="{resolved_path}")`
+`create_remediation_branch(local_path="{resolved_path}"{repo_args})`
 """
         if run.commit is None:
             return _error(
