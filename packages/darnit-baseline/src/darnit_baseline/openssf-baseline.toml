@@ -446,7 +446,12 @@ handler = "gh_api"
 endpoint = "/orgs/$OWNER"
 expr = 'response.body.two_factor_requirement_enabled == true'
 
-# The signed-in auditor's MFA is evidence only. The field may be hidden.
+# /user describes the signed-in auditor, who may not be the repository owner.
+# Keep concludes = [] so the auditor's MFA cannot produce a PASS (feature 041).
+# The MFA field may be hidden without read:user. With GitHub CLI, use
+# gh auth refresh -s read:user to request that scope.
+# Keep evidence_fields limited to login and MFA status so unrelated profile
+# data stays out of audit reports and attestations (feature 044).
 [[controls."OSPS-AC-01.01".passes]]
 when = { github_owner_type = "User" }
 handler = "gh_api"
