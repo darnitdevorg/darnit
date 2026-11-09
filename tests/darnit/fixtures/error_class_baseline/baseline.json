@@ -128,7 +128,7 @@
   {
     "authority": "dispositive",
     "concluded_by": "file_exists",
-    "details": "None of the required files found: ['LICENSE', 'LICENSE.md', 'LICENSE.txt', 'LICENCE', 'LICENCE.md', 'LICENCE.txt', 'COPYING', 'COPYING.md', 'COPYING.txt']",
+    "details": "None of the required files found: ['LICENSE', 'LICENSE.md', 'LICENSE.txt', 'LICENCE', 'LICENCE.md', 'LICENCE.txt', 'COPYING', 'COPYING.md', 'COPYING.txt', 'license', 'license.md', 'license.txt', 'licence', 'licence.md', 'licence.txt', 'copying', 'copying.md', 'copying.txt']",
     "evidence": {
       "files_checked": [
         "LICENSE",
@@ -139,7 +139,16 @@
         "LICENCE.txt",
         "COPYING",
         "COPYING.md",
-        "COPYING.txt"
+        "COPYING.txt",
+        "license",
+        "license.md",
+        "license.txt",
+        "licence",
+        "licence.md",
+        "licence.txt",
+        "copying",
+        "copying.md",
+        "copying.txt"
       ],
       "max_depth": 0
     },
@@ -154,7 +163,7 @@
         "phase": "deterministic",
         "result": {
           "confidence": 1.0,
-          "message": "None of the required files found: ['LICENSE', 'LICENSE.md', 'LICENSE.txt', 'LICENCE', 'LICENCE.md', 'LICENCE.txt', 'COPYING', 'COPYING.md', 'COPYING.txt']",
+          "message": "None of the required files found: ['LICENSE', 'LICENSE.md', 'LICENSE.txt', 'LICENCE', 'LICENCE.md', 'LICENCE.txt', 'COPYING', 'COPYING.md', 'COPYING.txt', 'license', 'license.md', 'license.txt', 'licence', 'licence.md', 'licence.txt', 'copying', 'copying.md', 'copying.txt']",
           "outcome": "fail"
         }
       }

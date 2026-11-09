@@ -42,7 +42,7 @@
 
 *These controls are NOT satisfied and must be addressed:*
 
-- **OSPS-LE-03.01** (L1): None of the required files found: ['LICENSE', 'LICENSE.md', 'LICENSE.txt', 'LICENCE', 'LICENCE.md', 'LICENCE.txt', 'COPYING', 'COPYING.md', 'COPYING.txt']
+- **OSPS-LE-03.01** (L1): None of the required files found: ['LICENSE', 'LICENSE.md', 'LICENSE.txt', 'LICENCE', 'LICENCE.md', 'LICENCE.txt', 'COPYING', 'COPYING.md', 'COPYING.txt', 'license', 'license.md', 'license.txt', 'licence', 'licence.md', 'licence.txt', 'copying', 'copying.md', 'copying.txt']
   - *Resolved by:* `file_exists` (pass #0)
 
   > **ℹ️ Note for OSPS-LE-03.01:**

@@ -259,7 +259,11 @@ store_as = "security.contact"
 # A user-judgment key (feature 042, FR-005); see maintainers.
 auto_detect = false
 required = false
-hint_sources = ["SECURITY.md", ".github/SECURITY.md"]
+hint_sources = [
+    "SECURITY.md", "security.md",
+    ".github/SECURITY.md", ".github/security.md",
+    "docs/SECURITY.md", "docs/security.md",
+]
 allow_sieve_hints = true
 # Rejects detected values containing "example.com" or "example.org" before
 # they can be stored or offered for confirmation (feature 039).
@@ -1688,6 +1692,9 @@ discover = [
     "LICENSE", "LICENSE.md", "LICENSE.txt",
     "LICENCE", "LICENCE.md", "LICENCE.txt",
     "COPYING", "COPYING.md", "COPYING.txt",
+    "license", "license.md", "license.txt",
+    "licence", "licence.md", "licence.txt",
+    "copying", "copying.md", "copying.txt",
 ]
 kind = "file"
 
@@ -1749,7 +1756,11 @@ help_md = """Use an OSI-approved open source license.
 # Local check: Look for SPDX identifier in project files (no API needed)
 [[controls."OSPS-LE-02.01".passes]]
 handler = "regex"
-files = ["LICENSE*", "COPYING*", "NOTICE*", "package.json", "pyproject.toml", "Cargo.toml", "go.mod"]
+files = [
+    "LICENSE*", "LICENCE*", "COPYING*", "NOTICE*",
+    "license*", "licence*", "copying*", "notice*",
+    "package.json", "pyproject.toml", "Cargo.toml", "go.mod",
+]
 pattern = '(?i)(SPDX-License-Identifier\s*:\s*\S+|"license"\s*:\s*"[^"]+"|license\s*=\s*"[^"]+"|License\s*::\s*OSI)'
 pass_if_any = true
 expr = 'output.any_match'
@@ -1868,6 +1879,9 @@ discover = [
     "LICENSE", "LICENSE.md", "LICENSE.txt",
     "LICENCE", "LICENCE.md", "LICENCE.txt",
     "COPYING", "COPYING.md", "COPYING.txt",
+    "license", "license.md", "license.txt",
+    "licence", "licence.md", "licence.txt",
+    "copying", "copying.md", "copying.txt",
 ]
 kind = "file"
 
@@ -2286,7 +2300,11 @@ help_md = """Add security contacts to SECURITY.md.
 
 [controls."OSPS-VM-02.01".locator]
 project_path = "security.policy"
-discover = ["SECURITY.md", ".github/SECURITY.md", "docs/SECURITY.md"]
+discover = [
+    "SECURITY.md", "security.md",
+    ".github/SECURITY.md", ".github/security.md",
+    "docs/SECURITY.md", "docs/security.md",
+]
 kind = "file"
 
 [controls."OSPS-VM-02.01".locator.llm_hints]
@@ -2728,7 +2746,11 @@ help_md = """Create CVD policy in SECURITY.md.
 
 [controls."OSPS-VM-01.01".locator]
 project_path = "security.policy"
-discover = ["SECURITY.md", ".github/SECURITY.md", "docs/SECURITY.md"]
+discover = [
+    "SECURITY.md", "security.md",
+    ".github/SECURITY.md", ".github/security.md",
+    "docs/SECURITY.md", "docs/security.md",
+]
 kind = "file"
 
 [controls."OSPS-VM-01.01".locator.llm_hints]
@@ -2738,7 +2760,11 @@ look_for_urls = true
 
 [[controls."OSPS-VM-01.01".passes]]
 handler = "pattern"
-files = ["SECURITY.md"]
+files = [
+    "SECURITY.md", "security.md",
+    ".github/SECURITY.md", ".github/security.md",
+    "docs/SECURITY.md", "docs/security.md",
+]
 
 [controls."OSPS-VM-01.01".passes.pattern.patterns]
 disclosure = "(disclos|report|contact)"
@@ -2796,7 +2822,11 @@ help_md = """Enable private vulnerability reporting.
 
 [controls."OSPS-VM-03.01".locator]
 project_path = "security.policy"
-discover = ["SECURITY.md", ".github/SECURITY.md"]
+discover = [
+    "SECURITY.md", "security.md",
+    ".github/SECURITY.md", ".github/security.md",
+    "docs/SECURITY.md", "docs/security.md",
+]
 kind = "file"
 
 [controls."OSPS-VM-03.01".locator.llm_hints]
@@ -2816,7 +2846,11 @@ concludes = ["pass"]
 # PatternPass: Check for private contact methods in SECURITY.md
 [[controls."OSPS-VM-03.01".passes]]
 handler = "pattern"
-files = ["SECURITY.md", ".github/SECURITY.md"]
+files = [
+    "SECURITY.md", "security.md",
+    ".github/SECURITY.md", ".github/security.md",
+    "docs/SECURITY.md", "docs/security.md",
+]
 
 [controls."OSPS-VM-03.01".passes.pattern.patterns]
 private_contact = "(private|confidential|security advisory|PGP|GPG|security@|email)"
@@ -3074,7 +3108,12 @@ help_md = """Document secrets management policy.
 
 [[controls."OSPS-BR-07.02".passes]]
 handler = "pattern"
-files = ["SECURITY.md", "docs/security.md", "docs/SECRETS-POLICY.md", "CONTRIBUTING.md"]
+files = [
+    "SECURITY.md", "security.md",
+    ".github/SECURITY.md", ".github/security.md",
+    "docs/SECURITY.md", "docs/security.md",
+    "docs/SECRETS-POLICY.md", "CONTRIBUTING.md",
+]
 
 [controls."OSPS-BR-07.02".passes.pattern.patterns]
 secrets_policy = "(secret|credential|token|key).*(management|policy|handling|rotation)"
@@ -3436,7 +3475,12 @@ Run: `create_security_policy()` or `ensure_vex_policy()`
 
 [[controls."OSPS-VM-04.02".passes]]
 handler = "pattern"
-files = ["SECURITY.md", ".github/SECURITY.md", "docs/VEX-POLICY.md"]
+files = [
+    "SECURITY.md", "security.md",
+    ".github/SECURITY.md", ".github/security.md",
+    "docs/SECURITY.md", "docs/security.md",
+    "docs/VEX-POLICY.md",
+]
 
 [controls."OSPS-VM-04.02".passes.pattern.patterns]
 vex_policy = "(vex|vulnerability.exploitability|exploitability.exchange)"
@@ -3500,7 +3544,12 @@ help_md = """Define SCA remediation policy.
 
 [[controls."OSPS-VM-05.01".passes]]
 handler = "pattern"
-files = ["SECURITY.md", "docs/security.md", "docs/SCA-POLICY.md"]
+files = [
+    "SECURITY.md", "security.md",
+    ".github/SECURITY.md", ".github/security.md",
+    "docs/SECURITY.md", "docs/security.md",
+    "docs/SCA-POLICY.md",
+]
 
 [controls."OSPS-VM-05.01".passes.pattern.patterns]
 sca_policy = "(dependency|SCA|software composition|remediat)"
@@ -3717,7 +3766,12 @@ help_md = """Define SAST remediation policy.
 
 [[controls."OSPS-VM-06.01".passes]]
 handler = "pattern"
-files = ["SECURITY.md", "docs/SAST-POLICY.md"]
+files = [
+    "SECURITY.md", "security.md",
+    ".github/SECURITY.md", ".github/security.md",
+    "docs/SECURITY.md", "docs/security.md",
+    "docs/SAST-POLICY.md",
+]
 
 [controls."OSPS-VM-06.01".passes.pattern.patterns]
 sast_policy = "(SAST|static analysis|code scan|remediat)"
@@ -4336,7 +4390,12 @@ help_md = """Perform and document security assessment.
 
 [[controls."OSPS-SA-03.01".passes]]
 handler = "pattern"
-files = ["SECURITY.md", "docs/security.md", "CONTRIBUTING.md", "docs/SECURITY-ASSESSMENT.md"]
+files = [
+    "SECURITY.md", "security.md",
+    ".github/SECURITY.md", ".github/security.md",
+    "docs/SECURITY.md", "docs/security.md",
+    "CONTRIBUTING.md", "docs/SECURITY-ASSESSMENT.md",
+]
 
 [controls."OSPS-SA-03.01".passes.pattern.patterns]
 security_assessment = "(security.*(assessment|review|audit)|pre-release.*security)"
@@ -4489,7 +4548,11 @@ tags = { level = 1, domain = "VM", "stage1-ref" = true }
 # orchestrator so both properties hold; documented for follow-up.
 [[controls."STAGE1-REF-SECURITY-01".passes]]
 handler = "file_exists"
-files = ["SECURITY.md", "docs/SECURITY.md", ".github/SECURITY.md"]
+files = [
+    "SECURITY.md", "security.md",
+    ".github/SECURITY.md", ".github/security.md",
+    "docs/SECURITY.md", "docs/security.md",
+]
 authority = "dispositive"
 
 [[controls."STAGE1-REF-SECURITY-01".passes]]

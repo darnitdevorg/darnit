@@ -232,6 +232,23 @@ class TestDetectLicenseType:
         (tmp_path / "LICENSE.md").write_text("# MIT License")
         assert detect_license_type(str(tmp_path)) == "apache-2.0"
 
+    def test_lowercase_license_detected(self, tmp_path):
+        """Issue #717: detect_license_type recognizes lowercase license file."""
+        (tmp_path / "license").write_text("MIT License\n\nCopyright (c) 2026")
+        assert detect_license_type(str(tmp_path)) == "mit"
+
+    def test_lowercase_license_md_detected(self, tmp_path):
+        (tmp_path / "license.md").write_text("Apache License\nVersion 2.0")
+        assert detect_license_type(str(tmp_path)) == "apache-2.0"
+
+    def test_licence_detected(self, tmp_path):
+        (tmp_path / "licence").write_text("MIT License\n\nCopyright (c) 2026")
+        assert detect_license_type(str(tmp_path)) == "mit"
+
+    def test_copying_detected(self, tmp_path):
+        (tmp_path / "copying").write_text("GNU General Public License\nVersion 3")
+        assert detect_license_type(str(tmp_path)) == "gpl"
+
 
 class TestCollectAutoContext:
     def test_collects_all(self, tmp_path):
