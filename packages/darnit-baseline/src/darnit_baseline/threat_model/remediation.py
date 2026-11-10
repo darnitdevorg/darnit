@@ -35,7 +35,6 @@ from .renderers.group_file import render_group_file
 from .renderers.raw_json import render_raw_json
 from .renderers.summary import render_summary
 from .sidecar import SIDECAR_REL_PATH, compute_fingerprint, detect_stale, load_sidecar, match_findings, render_sidecar
-from .ts_discovery import DiscoveryConfig, discover_all
 
 # Backward-compat alias
 _severity_band = severity_band
@@ -91,6 +90,8 @@ def _run_ts_pipeline(
     from dataclasses import asdict as _asdict
 
     try:
+        from .ts_discovery import DiscoveryConfig, discover_all
+
         result = discover_all(
             Path(local_path),
             config=DiscoveryConfig(shallow_threshold=shallow_threshold),

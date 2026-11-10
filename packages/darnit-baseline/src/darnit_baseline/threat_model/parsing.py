@@ -24,23 +24,24 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+_IMPORT_FAILURE: str = ""
 try:
     import tree_sitter as ts
     from tree_sitter_language_pack import get_language, get_parser
 
     TREE_SITTER_AVAILABLE = True
-except ImportError as _import_error:  # pragma: no cover — dependency is required in pyproject.toml
+except Exception as _import_error:  # pragma: no cover — dependency is required in pyproject.toml
     TREE_SITTER_AVAILABLE = False
     ts = None  # type: ignore[assignment]
     # Keep the real cause. A release that installs without an importable module
-    # (tree-sitter-language-pack 1.6.3, #573) is not "not installed".
-    _IMPORT_FAILURE = f"tree-sitter-language-pack could not be imported: {_import_error}"
+    # (tree-sitter-language-pack 1.6.3, #573) or fails to load/download parsers (#716).
+    _IMPORT_FAILURE = f"tree-sitter-language-pack could not be loaded: {_import_error}"
 
     def get_language(name: str) -> Any:  # type: ignore[misc]
-        raise ImportError(_IMPORT_FAILURE)
+        raise RuntimeError(_IMPORT_FAILURE)
 
     def get_parser(name: str) -> Any:  # type: ignore[misc]
-        raise ImportError(_IMPORT_FAILURE)
+        raise RuntimeError(_IMPORT_FAILURE)
 
 
 logger = logging.getLogger("darnit_baseline.threat_model.parsing")
@@ -104,7 +105,12 @@ def get_tree_sitter_parser(language_name: str) -> Any:
             f"Unsupported language: {language_name!r}. "
             f"Supported: {sorted(SUPPORTED_LANGUAGES)}"
         )
-    return get_parser(language_name)
+    if not TREE_SITTER_AVAILABLE:
+        raise ValueError(f"tree-sitter unavailable: {_IMPORT_FAILURE}")
+    try:
+        return get_parser(language_name)
+    except Exception as e:
+        raise ValueError(f"could not obtain parser for {language_name}: {e}") from e
 
 
 def parse_source(language_name: str, content: bytes) -> Any:
@@ -155,8 +161,13 @@ def make_query(language_name: str, sexpr: str) -> Any:
             f"Unsupported language: {language_name!r}. "
             f"Supported: {sorted(SUPPORTED_LANGUAGES)}"
         )
-    language = get_language(language_name)
-    return ts.Query(language, sexpr)
+    if not TREE_SITTER_AVAILABLE or ts is None:
+        raise ValueError(f"tree-sitter unavailable: {_IMPORT_FAILURE}")
+    try:
+        language = get_language(language_name)
+        return ts.Query(language, sexpr)
+    except Exception as e:
+        raise ValueError(f"could not compile query for {language_name}: {e}") from e
 
 
 def run_query(query: Any, root_node: Any) -> Iterator[dict[str, list[Any]]]:
