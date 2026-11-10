@@ -181,6 +181,7 @@ class RemediationExecutor:
         platform: PlatformSession | None = None,
         approvals: Collection[str] = (),
         item_approver: ItemApprover | None = None,
+        host: str | None = None,
     ):
         """Initialize the executor.
 
@@ -224,6 +225,9 @@ class RemediationExecutor:
                 at a terminal). Every such item of a control must be approved
                 before any step of the control runs; asking stops at the first
                 refusal. When None, such an item ends as needs approval.
+            host: Host of ``owner``/``repo`` when the caller named one other
+                than github.com; the run manifest is recorded under it
+                (framework-design 15.6).
         """
         self.local_path = os.path.abspath(local_path)
         self.templates = templates or {}
@@ -251,6 +255,7 @@ class RemediationExecutor:
 
         self.owner = owner
         self.repo = repo
+        self.host = host
 
     def _get_template_context(self, control_id: str) -> dict[str, Any]:
         """Build the Jinja2 template context dictionary.
@@ -637,7 +642,7 @@ class RemediationExecutor:
             result.run_id = self.run_id
 
     def _ensure_run(self) -> tuple[str, str]:
-        repository = manifest.repository_identity(self.local_path, self.owner, self.repo)
+        repository = manifest.repository_identity(self.local_path, self.owner, self.repo, host=self.host)
         if not self._run_ready:
             if self.run_id is None:
                 self.run_id = manifest.start_run(repository, checkout=self.local_path).run_id
@@ -669,7 +674,7 @@ class RemediationExecutor:
         """Path to recorded content digest of every file this run wrote, from one read of the run manifest."""
         if self.run_id is None:
             return {}
-        repository = manifest.repository_identity(self.local_path, self.owner, self.repo)
+        repository = manifest.repository_identity(self.local_path, self.owner, self.repo, host=self.host)
         run = manifest.load_run(repository, self.run_id, checkout=self.local_path)
         return {f.path: f.after_digest for f in run.files} if run else {}
 
