@@ -47,6 +47,8 @@ ZIZMOR_CONTROLS = {
     "OSPS-BR-01.01": "template-injection",
     "OSPS-AC-04.02": "excessive-permissions",
 }
+# The zizmor step follows github_workflows_present (#584).
+ZIZMOR_STEP = 1
 
 
 def _context(repo: Path, control_id: str, project: dict[str, Any] | None = None) -> CheckContext:
@@ -114,8 +116,8 @@ class TestShippedZizmorControls:
 
         assert result.status == "ERROR"
         assert result.error["class"] == "evaluation"
-        assert result.resolving_pass_index == 0
-        first = result.pass_history[0].result
+        assert result.resolving_pass_index == ZIZMOR_STEP
+        first = result.pass_history[ZIZMOR_STEP].result
         assert first.outcome.value == "error"
         assert first.evidence["expr"].startswith("!output.json.exists")
         assert first.evidence["expr_error"]
@@ -130,8 +132,8 @@ class TestShippedZizmorControls:
         result = _verify(_shipped(control_id), repo)
 
         assert result.status == "FAIL"
-        assert result.resolving_pass_index == 0
-        assert result.pass_history[0].result.evidence["json"] == [{"ident": ZIZMOR_CONTROLS[control_id]}]
+        assert result.resolving_pass_index == ZIZMOR_STEP
+        assert result.pass_history[ZIZMOR_STEP].result.evidence["json"] == [{"ident": ZIZMOR_CONTROLS[control_id]}]
 
     @pytest.mark.parametrize("control_id", sorted(ZIZMOR_CONTROLS))
     def test_other_findings_are_pass(self, control_id: str, repo: Path, zizmor) -> None:
@@ -315,7 +317,7 @@ class TestExprDecides:
 
     def test_shipped_zizmor_steps_declare_it(self) -> None:
         for control_id in ZIZMOR_CONTROLS:
-            assert _shipped(control_id).metadata["handler_invocations"][0].expr_decides is True
+            assert _shipped(control_id).metadata["handler_invocations"][ZIZMOR_STEP].expr_decides is True
 
 
 def _write_project(repo: Path, darnit: dict[str, Any]) -> None:
