@@ -302,17 +302,48 @@ def repro_build_env_declared_handler(
     if found_pinned:
         return _pass()
 
+    # Inspect all discovered container build files before accepting any of them.
+    container_paths: list[Path] = []
+
+    def _find_containers(directory: Path, depth: int) -> None:
+        for entry in sorted(directory.iterdir()):
+            if entry.is_symlink():
+                continue
+            if entry.is_file() and entry.name.startswith(tuple(container_files)):
+                container_paths.append(entry)
+            elif (
+                depth < 2
+                and entry.is_dir()
+                and not entry.name.startswith(".")
+                and entry.name not in _SKIP_DIRS
+                and entry.name not in {"docs", "examples"}
+            ):
+                _find_containers(entry, depth + 1)
+
+    try:
+        _find_containers(path, 0)
+    except OSError as exc:
+        return HandlerResult(
+            status=HandlerResultStatus.INCONCLUSIVE,
+            message=f"Could not search build environment files: {exc}",
+            confidence=0.0,
+            evidence=evidence,
+        )
+
+    found_container = [f"{target.relative_to(path).as_posix()} (Docker)" for target in container_paths]
+    found[:] = found_pinned + found_container + found_deferred
+
     if found_container:
         unpinned: list[str] = []
         inspected: list[str] = []
-        for name in container_files:
-            target = path / name
-            if not target.exists():
-                continue
+        unreadable: list[str] = []
+        for target in container_paths:
+            name = target.relative_to(path).as_posix()
             try:
                 report = classify(read_repository_text(path, target))
             except (OSError, UnicodeDecodeError) as exc:
                 logger.debug("could not read %s: %s", target, exc)
+                unreadable.append(name)
                 continue
             if report.classification is ContainerClassification.NO_IMAGES:
                 # Declares no base image, so it is evidence of neither good nor
@@ -337,6 +368,14 @@ def repro_build_env_declared_handler(
                     "Pin by digest (image@sha256:...)"
                 ),
                 confidence=0.85,
+                evidence=evidence,
+            )
+        if unreadable:
+            evidence["containers_unreadable"] = unreadable
+            return HandlerResult(
+                status=HandlerResultStatus.INCONCLUSIVE,
+                message=f"Could not inspect container build file(s): {', '.join(unreadable)}",
+                confidence=0.0,
                 evidence=evidence,
             )
         if inspected:
