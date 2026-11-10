@@ -28,11 +28,9 @@ def _iter_evidence_files(path: Path, patterns: tuple[str, ...]) -> list[Path]:
 
     def _find(directory: Path, depth: int) -> None:
         for entry in sorted(directory.iterdir()):
-            if entry.is_symlink() or entry.name in _SKIP_DIRS:
+            if entry.is_symlink() or entry.name in _SKIP_DIRS or entry.name in {"docs", "examples"}:
                 continue
-            if (entry.is_file() or entry.name == ".devcontainer") and any(
-                entry.match(pattern) for pattern in patterns
-            ):
+            if entry.is_file() and any(entry.match(pattern) for pattern in patterns):
                 results.append(entry)
             if depth < 2 and entry.is_dir() and not entry.name.startswith("."):
                 _find(entry, depth + 1)
@@ -329,31 +327,15 @@ def repro_build_env_declared_handler(
     # Content-dependent in principle; not inspected in v0. A `.devcontainer`
     # usually delegates to a Dockerfile or an image reference and a Vagrantfile
     # names a box with an optional version, so both deserve the same treatment
-    # as Dockerfile eventually. Compose files also need their own classifier.
+    # as Dockerfile eventually. Widening is detection work of the same shape as
+    # #433 and #446 and is deliberately not bundled here.
     deferred = {
         ".devcontainer": "Dev container",
         "Vagrantfile": "Vagrant",
-        "docker-compose*.y*ml": "Docker Compose",
     }
 
-    try:
-        env_files = _iter_evidence_files(
-            path, tuple(inherently_pinned) + ("Dockerfile*", "Containerfile*") + tuple(deferred)
-        )
-    except OSError as exc:
-        return HandlerResult(
-            status=HandlerResultStatus.INCONCLUSIVE,
-            message=f"Could not search build environment files: {exc}",
-            confidence=0.0,
-        )
-
     def _present(names: dict[str, str]) -> list[str]:
-        return [
-            f"{candidate.relative_to(path).as_posix()} ({label})"
-            for pattern, label in names.items()
-            for candidate in env_files
-            if candidate.match(pattern + "*" if pattern in container_files else pattern)
-        ]
+        return [f"{n} ({label})" for n, label in names.items() if (path / n).exists()]
 
     found_pinned = _present(inherently_pinned)
     found_container = _present(container_files)
@@ -373,19 +355,16 @@ def repro_build_env_declared_handler(
             evidence=evidence,
         )
 
-    # ANY qualifying environment declaration suffices, unlike dependency
-    # pinning's ALL-files rule; containers still need the existing digest check.
-    if found_pinned or found_deferred:
+    if found_pinned:
         return _pass()
 
     if found_container:
         unpinned: list[str] = []
         inspected: list[str] = []
-        pinned = False
-        for target in env_files:
-            if not target.name.startswith(tuple(container_files)):
+        for name in container_files:
+            target = path / name
+            if not target.exists():
                 continue
-            name = target.relative_to(path).as_posix()
             try:
                 report = classify(read_repository_text(path, target))
             except (OSError, UnicodeDecodeError) as exc:
@@ -399,12 +378,8 @@ def repro_build_env_declared_handler(
             inspected.append(name)
             if report.classification is ContainerClassification.UNPINNED:
                 unpinned.extend(f"{name}: {ref}" for ref in report.unpinned)
-            else:
-                pinned = True
 
         evidence["containers_inspected"] = inspected
-        if pinned:
-            return _pass()
         if unpinned:
             evidence["unpinned_images"] = unpinned
             # Feature 044 (FR-011): not WARN, for the same reason as a
@@ -420,6 +395,12 @@ def repro_build_env_declared_handler(
                 confidence=0.85,
                 evidence=evidence,
             )
+        if inspected:
+            return _pass()
+
+    if found_deferred:
+        return _pass()
+
     return HandlerResult(
         status=HandlerResultStatus.INCONCLUSIVE,
         message="No build environment declaration found",

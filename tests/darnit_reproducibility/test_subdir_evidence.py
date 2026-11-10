@@ -1,20 +1,16 @@
-"""Issue #536: bounded discovery, ALL requirements, and ANY build environment."""
+"""Issue #536: bounded requirements discovery and aggregation."""
 
 from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from darnit_reproducibility.handlers import (
-    repro_build_env_declared_handler,
-    repro_deps_pinned_handler,
-)
+from darnit_reproducibility.handlers import repro_deps_pinned_handler
 
 from darnit.sieve.handler_registry import HandlerResultStatus
 
 from .conftest import repro_ctx
 
 PINNED = f"numpy==1.26.4 --hash=sha256:{'a' * 64}\n"
-DOCKERFILE = f"FROM alpine@sha256:{'a' * 64}\n"
 
 
 @pytest.fixture
@@ -81,9 +77,8 @@ def test_nested_lock_does_not_hide_unpinned_requirements(repo_tree, name: str) -
     assert result.status == HandlerResultStatus.FAIL
 
 
-@pytest.mark.parametrize("handler", [repro_deps_pinned_handler, repro_build_env_declared_handler])
-def test_unreadable_directory_is_inconclusive(repo_tree, monkeypatch, handler) -> None:
-    repo = repo_tree({"hidden/requirements.txt": PINNED, "Dockerfile": DOCKERFILE})
+def test_unreadable_directory_is_inconclusive(repo_tree, monkeypatch) -> None:
+    repo = repo_tree({"hidden/requirements.txt": PINNED})
     original = Path.iterdir
 
     def iterdir(path):
@@ -92,55 +87,19 @@ def test_unreadable_directory_is_inconclusive(repo_tree, monkeypatch, handler) -
         return original(path)
 
     monkeypatch.setattr(Path, "iterdir", iterdir)
-    result = handler({}, repro_ctx(repo))
+    result = repro_deps_pinned_handler({}, repro_ctx(repo))
     assert result.status == HandlerResultStatus.INCONCLUSIVE
     assert "Could not search" in result.message
 
 
-@pytest.mark.parametrize(
-    ("name", "contents"),
-    [
-        ("Dockerfile", DOCKERFILE),
-        ("docker/Dockerfile", DOCKERFILE),
-        ("docker/prod/Dockerfile.release", DOCKERFILE),
-        ("containers/prod/Containerfile.dev", DOCKERFILE),
-        ("docker/docker-compose.prod.yaml", "services: {}\n"),
-        ("docker/docker-compose.yml", "services: {}\n"),
-        ("env/flake.nix", "{}\n"),
-        ("env/shell.nix", "{}\n"),
-        ("env/.python-version", "3.11\n"),
-        ("env/.nvmrc", "22\n"),
-        ("env/.tool-versions", "python 3.11\n"),
-        ("env/Vagrantfile", "config.vm.box = 'ubuntu/jammy64'\n"),
-    ],
-)
-def test_environment_files_at_root_and_in_subdirectories(repo_tree, name: str, contents: str) -> None:
-    repo = repo_tree({name: contents})
-    result = repro_build_env_declared_handler({}, repro_ctx(repo))
-    assert result.status == HandlerResultStatus.PASS
-    assert any(item.startswith(f"{name} (") for item in result.evidence["env_files_found"])
-
-
-def test_nested_devcontainer_directory_counts(repo_tree) -> None:
-    repo = repo_tree({"app/.devcontainer/devcontainer.json": "{}\n"})
-    assert repro_build_env_declared_handler({}, repro_ctx(repo)).status == HandlerResultStatus.PASS
-
-
-@pytest.mark.parametrize("name", ["docker/prod/Dockerfile", "env/Vagrantfile"])
-def test_any_qualifying_environment_wins_over_floating_container(repo_tree, name: str) -> None:
-    repo = repo_tree({"Dockerfile": "FROM alpine:latest\n", name: DOCKERFILE})
-    assert repro_build_env_declared_handler({}, repro_ctx(repo)).status == HandlerResultStatus.PASS
-
-
-@pytest.mark.parametrize("directory", ["a/b/c", ".hidden", "a/.hidden", "vendor", "a/node_modules", "build"])
+@pytest.mark.parametrize("directory", ["a/b/c", ".hidden", "a/.hidden", "vendor", "a/node_modules", "build", "docs", "examples", "a/docs", "a/examples"])
 def test_too_deep_and_excluded_directories_do_not_count(repo_tree, directory: str) -> None:
-    repo = repo_tree({f"{directory}/requirements.txt": PINNED, f"{directory}/Dockerfile": DOCKERFILE})
+    repo = repo_tree({f"{directory}/requirements.txt": PINNED})
     assert repro_deps_pinned_handler({}, repro_ctx(repo)).status == HandlerResultStatus.INCONCLUSIVE
-    assert repro_build_env_declared_handler({}, repro_ctx(repo)).status == HandlerResultStatus.INCONCLUSIVE
 
 
 def test_symlinked_directories_do_not_count(repo_tree) -> None:
-    root = repo_tree({"outside/requirements.txt": PINNED, "outside/Dockerfile": DOCKERFILE})
+    root = repo_tree({"outside/requirements.txt": PINNED})
     repo = root / "repo"
     repo.mkdir()
     try:
@@ -150,4 +109,9 @@ def test_symlinked_directories_do_not_count(repo_tree) -> None:
             raise
         pytest.skip("creating symlinks requires Windows developer mode or elevated privileges")
     assert repro_deps_pinned_handler({}, repro_ctx(repo)).status == HandlerResultStatus.INCONCLUSIVE
-    assert repro_build_env_declared_handler({}, repro_ctx(repo)).status == HandlerResultStatus.INCONCLUSIVE
+
+
+@pytest.mark.parametrize("directory", ["docs", "examples", "app/docs", "app/examples"])
+def test_excluded_loose_requirements_do_not_override_pinned(repo_tree, directory: str) -> None:
+    repo = repo_tree({"requirements.txt": PINNED, f"{directory}/requirements.txt": "requests\n"})
+    assert repro_deps_pinned_handler({}, repro_ctx(repo)).status == HandlerResultStatus.PASS

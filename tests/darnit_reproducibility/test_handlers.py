@@ -807,6 +807,13 @@ class TestBuildEnvDeclared:
         result = repro_build_env_declared_handler({}, make_ctx(tmp_path))
         assert result.status == HandlerResultStatus.PASS
 
+    def test_floating_dockerfile_takes_precedence_over_vagrant(self, tmp_path: Path) -> None:
+        (tmp_path / "Dockerfile").write_text("FROM alpine:latest")
+        (tmp_path / "Vagrantfile").write_text('config.vm.box = "ubuntu/jammy64"')
+        result = repro_build_env_declared_handler({}, make_ctx(tmp_path))
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
+        assert "alpine:latest" in result.message
+
     def test_pass_with_nix_flake(self, tmp_path: Path) -> None:
         (tmp_path / "flake.nix").write_text("{ outputs = {}; }")
         result = repro_build_env_declared_handler({}, make_ctx(tmp_path))
