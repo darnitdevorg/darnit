@@ -96,12 +96,13 @@ def is_supported(repository: str) -> bool:
     return repository.split("/", 1)[0] == GITHUB_HOST
 
 
-def platform_repository(local_path: str, owner: str | None, repo: str | None) -> str | None:
+def platform_repository(local_path: str, owner: str | None, repo: str | None, host: str | None = None) -> str | None:
     """The canonical identity whose platform settings a remediation of ``local_path`` changes.
 
     A checkout whose ``origin`` is on another host is that host's repository
     (no platform call is made for it); otherwise the operator-named or
-    detected ``owner``/``repo`` on GitHub.
+    detected ``owner``/``repo``, on ``host`` when named (no platform call is
+    made for a host other than github.com), else on GitHub.
     """
     from darnit.core.utils import detect_checkout_identity
     from darnit.trust.decision import target_from_owner_repo
@@ -110,7 +111,7 @@ def platform_repository(local_path: str, owner: str | None, repo: str | None) ->
     hint = detect_checkout_identity(local_path)
     if hint is not None and not is_supported(hint.canonical):
         return hint.canonical
-    named = target_from_owner_repo(owner, repo)
+    named = target_from_owner_repo(owner, repo, host)
     if named is not None:
         return canonical_identity(named)
     return hint.canonical if hint is not None else None

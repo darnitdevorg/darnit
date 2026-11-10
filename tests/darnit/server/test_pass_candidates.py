@@ -44,7 +44,9 @@ def _candidates(checkout: Path, **overrides: object) -> dict:
     return json.loads(get_pass_candidates_impl(**args))
 
 
-def _judge(checkout: Path, control_id: str = CONTROL, verdict: str = "pass", excerpt: str = EXCERPT) -> dict:
+def _judge(
+    checkout: Path, control_id: str = CONTROL, verdict: str = "pass", excerpt: str = EXCERPT, host: str = "github.com"
+) -> dict:
     return submit_judgment_impl(
         control_id=control_id,
         verdict=verdict,
@@ -54,6 +56,7 @@ def _judge(checkout: Path, control_id: str = CONTROL, verdict: str = "pass", exc
         model_version="v",
         owner=OWNER,
         repo=REPO,
+        host=host,
         local_path=str(checkout),
         framework_name=FRAMEWORK,
     )
@@ -92,11 +95,11 @@ def _snapshot(*roots: Path) -> dict[str, bytes]:
     }
 
 
-def _record_run(checkout: Path, *paths: str) -> str:
+def _record_run(checkout: Path, *paths: str, host: str | None = None) -> str:
     from darnit.remediation import manifest
     from darnit.remediation.plan import content_digest
 
-    repository = manifest.repository_identity(checkout, OWNER, REPO)
+    repository = manifest.repository_identity(checkout, OWNER, REPO, host=host)
     run = manifest.start_run(repository, checkout=checkout)
     for path in paths or ("README.md",):
         manifest.record_file(
@@ -310,6 +313,18 @@ class TestDocumentsRemediationWrote:
         assert response["status"] == "ok"
         assert "remediation" not in response["candidates"][0]
         assert "01JAAAAAAAAAAAAAAAAAAAAAAA" in response["note"]
+
+    def test_the_run_is_looked_up_under_the_named_host(self, repo: Path) -> None:
+        """Not under github.com when the caller names another host (#729 review)."""
+        run_id = _record_run(repo, host="gitlab.com")
+        _judge(repo, host="gitlab.com")
+
+        response = _candidates(repo, run_id=run_id, host="gitlab.com")
+
+        assert not response.get("note"), response
+        [entry] = response["candidates"]
+        assert entry["remediation"]["run_id"] == run_id
+        assert entry["remediation"]["written"] is True
 
 
 @pytest.mark.integration

@@ -330,3 +330,25 @@ def test_git_tools_find_run_on_checkout_without_remote_when_owner_repo_given(tmp
     )
     assert "Changes committed successfully" in commit_host_out
     assert "SUPPORT.md" in commit_host_out
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("host", [None, "gitlab.com"], ids=["github.com", "gitlab.com"])
+def test_the_git_tools_named_like_the_apply_find_its_run_without_a_remote(host: str | None, tmp_path: Path) -> None:
+    """remediate_audit_findings records the run under the repository the caller names, host
+    included, so the git tools named the same way find it on a checkout with no remote
+    (#726, #729 review)."""
+    checkout = git_fixtures._init_repo(tmp_path / "checkout")
+    named: dict[str, str] = {"owner": OWNER, "repo": REPO, **({"host": host} if host else {})}
+
+    output = tools.remediate_audit_findings(local_path=str(checkout), dry_run=False, **named)
+
+    run_id = _run_block(output)["run_id"]
+    assert manifest.load_run(f"{host or 'github.com'}/{OWNER}/{REPO}", run_id, checkout=checkout) is not None, output
+    branch = tools.create_remediation_branch(
+        branch_name=REMEDIATION_BRANCH, local_path=str(checkout), run_id=run_id, **named
+    )
+    assert not branch.startswith("Error"), branch
+    committed = tools.commit_remediation_changes(local_path=str(checkout), run_id=run_id, **named)
+    assert "Changes committed successfully" in committed, committed
+    assert git(checkout, "diff-tree", "-r", "--no-commit-id", "--name-only", "HEAD").stdout.split() == ["SECURITY.md"]

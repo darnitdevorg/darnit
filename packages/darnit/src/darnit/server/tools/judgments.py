@@ -367,7 +367,7 @@ def get_pass_candidates_impl(
     if run_id:
         try:
             run = manifest.load_run(
-                manifest.repository_identity(resolved_path, owner, repo), run_id, checkout=resolved_path
+                manifest.repository_identity(resolved_path, owner, repo, host=host), run_id, checkout=resolved_path
             )
         except ValueError:
             run = None

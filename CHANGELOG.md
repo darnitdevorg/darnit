@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `create_remediation_pr` tools accept optional `owner`, `repo`, and `host`
   parameters, resolving recorded remediation runs when the local checkout has no
   `origin` remote (fixes #726).
+- A remediation applied for a repository named with a `host` other than
+  github.com is recorded under that host. Before, `remediate_audit_findings`
+  recorded the run under github.com while the git tools and
+  `get_pass_candidates`, given the same `host`, looked it up under the named
+  host, so on a checkout without a matching `origin` the commit failed with
+  "no remediation run is recorded" and the confirmation page lost the run's
+  files. A named non-GitHub repository is also no longer treated as a GitHub
+  repository for platform settings.
 
 ### Added
 

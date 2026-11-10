@@ -302,6 +302,11 @@ def _run_baseline_checks(
 # =============================================================================
 
 
+def _named_host(target: str | None) -> str | None:
+    """Host of the repository the caller named; None when the caller named none (framework-design 15.6)."""
+    return target.split("/", 1)[0] if target else None
+
+
 def _apply_control_remediation(
     control_id: str,
     local_path: str,
@@ -528,6 +533,7 @@ def _apply_declarative_remediation(
             local_path=local_path,
             owner=owner,
             repo=repo,
+            host=_named_host(target),
             templates=templates or {},
             context_values=context_values,
             scan_values=scan_values,
@@ -1240,7 +1246,10 @@ def run_remediation(
     except OperatorConfigError as e:
         return RemediationReport(f"Error: remediation policy unavailable: {e}")
     run_id = run_id or manifest.new_run_id()
-    repository = platform_repository(local_path, owner, repo) or manifest.repository_identity(local_path, owner, repo)
+    host = _named_host(target)
+    repository = platform_repository(local_path, owner, repo, host) or manifest.repository_identity(
+        local_path, owner, repo, host=host
+    )
     session = PlatformSession(
         repository,
         platform_requests(framework, [c for c in remediable_ids if c not in honored_claims]),
