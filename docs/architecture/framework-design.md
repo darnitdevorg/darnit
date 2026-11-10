@@ -2353,6 +2353,8 @@ After an apply that changed something, darnit re-checks the affected controls wi
 
 Every apply records a run manifest operator-side at `user_data_root()/remediation/<repository-identity>/<run_id>.json`, mode 0600. A manifest path inside the checkout is refused. A preview writes no manifest.
 
+`<repository-identity>` is the canonical identity of the repository the caller names (`owner`, `repo`, and `host`, which defaults to github.com), else of the checkout's `origin` remote, else a stable local identity derived from the checkout's real path. It names records only and is never a basis for trust. Every tool that writes or reads a run computes it the same way from the same arguments, so a run applied for a named repository is found by any tool named the same way, on a checkout with or without a remote.
+
 | Field | Description |
 |-------|-------------|
 | `run_id`, `repository`, `created_at` | |
@@ -2366,7 +2368,7 @@ The manifest is the only record of which files remediation wrote; the git tools 
 
 ### 15.7 Version-Control Rules
 
-The git tools `create_remediation_branch`, `commit_remediation_changes`, and `create_remediation_pr` take `run_id` (default `None`: the latest run for the repository).
+The git tools `create_remediation_branch`, `commit_remediation_changes`, and `create_remediation_pr` take `run_id` (default `None`: the latest run for the repository) and the optional `owner`, `repo`, and `host` that name it.
 
 - **Refused states.** When any git step is requested, darnit checks the repository before applying any remediation and stops with nothing changed on a detached HEAD, a merge in progress (`MERGE_HEAD`), a rebase in progress (`rebase-merge`, `rebase-apply`), an existing remediation branch with a commit beyond its base that lacks the `Darnit-Remediation-Run` trailer, or a dirty working tree when switching to an existing branch. When a pull request is requested, it also stops when the pull request's head would be `main`, `master`, or the pull request base branch itself (for example `develop` checked out with no branch name, when the remote's default branch is `develop`), when the pull request base cannot be determined, or when the history the remediation branch starts from (HEAD for a new branch, the branch itself for an existing one) holds a commit without the trailer that is not on the pull request base (for example a local branch, or a `main` with unpushed commits): the pull request would carry work remediation did not make, so the pull request tool would refuse after the commit.
 - **No stash.** Remediation never stashes, drops a stash, discards, or overwrites the user's uncommitted changes. A new branch is created with `git checkout -b` from HEAD; the user's uncommitted changes stay in the working tree untouched. Switching to an existing branch requires a clean tree.
