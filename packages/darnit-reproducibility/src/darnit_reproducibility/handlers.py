@@ -128,21 +128,7 @@ def repro_deps_pinned_handler(
         "go.mod": "Go module",
     }
 
-    try:
-        dependency_files = _iter_evidence_files(path, tuple(lock_files) + ("*requirements*.txt", "requirements/*.txt"))
-    except OSError as exc:
-        return HandlerResult(
-            status=HandlerResultStatus.INCONCLUSIVE,
-            message=f"Could not search dependency files: {exc}",
-            confidence=0.0,
-        )
-    requirements_files = [candidate for candidate in dependency_files if candidate.name not in lock_files]
-
-    found_locks = []
-    for filename, label in lock_files.items():
-        for candidate in dependency_files:
-            if candidate.name == filename and candidate.parent == path:
-                found_locks.append(f"{candidate.relative_to(path).as_posix()} ({label})")
+    found_locks = [f"{filename} ({label})" for filename, label in lock_files.items() if (path / filename).exists()]
 
     found_loose = []
     for filename, label in loose_manifests.items():
@@ -152,11 +138,6 @@ def repro_deps_pinned_handler(
         if filename == "pyproject.toml" and not _pyproject_declares_dependencies(path, candidate):
             continue
         found_loose.append(f"{filename} ({label})")
-    for candidate in requirements_files:
-        filename = candidate.relative_to(path).as_posix()
-        if filename != "requirements.txt":
-            found_loose.append(f"{filename} (pip requirements)")
-
     evidence: dict[str, Any] = {
         "lock_files_found": found_locks,
         "loose_manifests_found": found_loose,
@@ -172,6 +153,19 @@ def repro_deps_pinned_handler(
             confidence=0.8,  # a lock file proves deps were pinned once, not that it is current
             evidence=evidence,
         )
+
+    try:
+        requirements_files = _iter_evidence_files(path, ("*requirements*.txt", "requirements/*.txt"))
+    except OSError as exc:
+        return HandlerResult(
+            status=HandlerResultStatus.INCONCLUSIVE,
+            message=f"Could not search dependency files: {exc}",
+            confidence=0.0,
+        )
+    for candidate in requirements_files:
+        filename = candidate.relative_to(path).as_posix()
+        if filename != "requirements.txt":
+            found_loose.append(f"{filename} (pip requirements)")
 
     not_inspectable: str | None = None
     if requirements_files:

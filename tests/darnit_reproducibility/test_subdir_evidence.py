@@ -92,6 +92,18 @@ def test_unreadable_directory_is_inconclusive(repo_tree, monkeypatch) -> None:
     assert "Could not search" in result.message
 
 
+def test_root_lock_short_circuits_directory_search(repo_tree, monkeypatch) -> None:
+    repo = repo_tree({"uv.lock": "", "hidden/requirements.txt": "requests\n"})
+
+    def fail_search(path):
+        raise PermissionError("access denied")
+
+    monkeypatch.setattr(Path, "iterdir", fail_search)
+    result = repro_deps_pinned_handler({}, repro_ctx(repo))
+    assert result.status == HandlerResultStatus.PASS
+    assert result.evidence["loose_manifests_found"] == []
+
+
 @pytest.mark.parametrize("directory", ["a/b/c", ".hidden", "a/.hidden", "vendor", "a/node_modules", "build", "docs", "examples", "a/docs", "a/examples"])
 def test_too_deep_and_excluded_directories_do_not_count(repo_tree, directory: str) -> None:
     repo = repo_tree({f"{directory}/requirements.txt": PINNED})
