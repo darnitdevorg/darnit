@@ -100,10 +100,85 @@ def clear_repo_filter_cache() -> None:
     _filter_overrides_cache.clear()
 
 
+def _discover_submodule_configs(repo_path: Path, git_dir: Path) -> list[tuple[Path, Path]]:
+    """Discover submodule config files and their git directories.
+
+    Returns a list of (config_file, sub_git_dir) pairs for submodules found in:
+    1. .git/modules/**/config (standard submodule layout)
+    2. The git index (mode 160000 via git ls-files --stage), covering submodules
+       with in-tree .git directories and recursing into nested submodules (issue #617 review).
+    """
+    visited_worktrees: set[Path] = set()
+    visited_configs: set[Path] = set()
+    entries: list[tuple[Path, Path]] = []
+
+    # 1. Any configs under .git/modules
+    modules_dir = git_dir / "modules"
+    if modules_dir.is_dir():
+        try:
+            for p in sorted(modules_dir.rglob("config")):
+                if p.is_file() and p not in visited_configs:
+                    visited_configs.add(p)
+                    entries.append((p, p.parent))
+        except OSError:
+            pass
+
+    # 2. Submodules from index (mode 160000), including in-tree .git directories and nested submodules
+    def _scan_submodules_from_index(current_worktree: Path, depth: int = 0) -> None:
+        if depth > 10 or current_worktree in visited_worktrees:
+            return
+        visited_worktrees.add(current_worktree)
+
+        try:
+            res = subprocess.run(
+                ["git", "--no-optional-locks", "-c", "core.fsmonitor=false", "ls-files", "--stage"],
+                cwd=current_worktree,
+                capture_output=True,
+                text=True,
+                timeout=5.0,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            return
+
+        if res.returncode != 0 or not res.stdout:
+            return
+
+        for line in res.stdout.splitlines():
+            if not line.startswith("160000 "):
+                continue
+            parts = line.split("\t", 1)
+            if len(parts) != 2:
+                continue
+            rel_path = parts[1]
+            sub_worktree = (current_worktree / rel_path).resolve()
+            sub_git_target = sub_worktree / ".git"
+            sub_git_dir: Path | None = None
+            if sub_git_target.is_dir():
+                sub_git_dir = sub_git_target
+            elif sub_git_target.is_file():
+                try:
+                    content = sub_git_target.read_text().strip()
+                    if content.startswith("gitdir:"):
+                        sub_git_dir = (sub_worktree / content.split(":", 1)[1].strip()).resolve()
+                except OSError:
+                    sub_git_dir = None
+
+            if sub_git_dir and sub_git_dir.is_dir():
+                sub_cfg = sub_git_dir / "config"
+                if sub_cfg.is_file() and sub_cfg not in visited_configs:
+                    visited_configs.add(sub_cfg)
+                    entries.append((sub_cfg, sub_git_dir))
+                # Recurse into nested submodules
+                _scan_submodules_from_index(sub_worktree, depth + 1)
+
+    _scan_submodules_from_index(repo_path, 0)
+    return entries
+
+
 def _repo_filter_overrides(repo: str | Path) -> list[str]:
     """Find filter names in ``repo``'s git config and submodule configs, returning args to neutralize them.
 
-    Results are cached per repository based on .git/config and submodule config mtimes (issue #617).
+    Results are cached per repository based on .git/config, index, and submodule config mtimes (issue #617).
     """
     try:
         repo_path = Path(repo).resolve()
@@ -125,36 +200,45 @@ def _repo_filter_overrides(repo: str | Path) -> list[str]:
     if not git_dir or not git_dir.is_dir():
         return []
 
-    # Build cache fingerprint from config mtime and submodule config mtimes
+    # Build cache fingerprint from config mtime, index mtime, and submodule config mtimes
     main_cfg = git_dir / "config"
     try:
         main_mtime = main_cfg.stat().st_mtime_ns if main_cfg.is_file() else 0
     except OSError:
         main_mtime = 0
 
+    index_file = git_dir / "index"
+    try:
+        index_mtime = index_file.stat().st_mtime_ns if index_file.is_file() else 0
+    except OSError:
+        index_mtime = 0
+
     modules_dir = git_dir / "modules"
-    sub_configs: list[Path] = []
-    modules_mtime: int | None = None
-    if modules_dir.is_dir():
-        try:
-            modules_mtime = modules_dir.stat().st_mtime_ns
-            sub_configs = sorted(modules_dir.rglob("config"))
-        except OSError:
-            sub_configs = []
+    try:
+        modules_mtime = modules_dir.stat().st_mtime_ns if modules_dir.is_dir() else 0
+    except OSError:
+        modules_mtime = 0
 
-    sub_mtimes: list[tuple[str, int]] = []
-    for sc in sub_configs:
-        try:
-            if sc.is_file():
-                sub_mtimes.append((str(sc), sc.stat().st_mtime_ns))
-        except OSError:
-            pass
-
-    cache_key = (main_mtime, modules_mtime, tuple(sub_mtimes))
     if repo_path in _filter_overrides_cache:
         cached_key, cached_overrides = _filter_overrides_cache[repo_path]
-        if cached_key == cache_key:
-            return list(cached_overrides)
+        c_main_m, c_index_m, c_modules_m, c_sub_info = cached_key
+        if main_mtime == c_main_m and index_mtime == c_index_m and modules_mtime == c_modules_m:
+            sub_unchanged = True
+            for cfg_str, cfg_m, dir_str, dir_m in c_sub_info:
+                try:
+                    if Path(cfg_str).stat().st_mtime_ns != cfg_m:
+                        sub_unchanged = False
+                        break
+                    if Path(dir_str).stat().st_mtime_ns != dir_m:
+                        sub_unchanged = False
+                        break
+                except OSError:
+                    sub_unchanged = False
+                    break
+            if sub_unchanged:
+                return list(cached_overrides)
+
+    sub_entries = _discover_submodule_configs(repo_path, git_dir)
 
     names: set[str] = set()
 
@@ -168,10 +252,10 @@ def _repo_filter_overrides(repo: str | Path) -> list[str]:
                     if name:
                         names.add(name)
 
-    # 1. Main repository config
+    # 1. Main repository config (pass --includes so include.path is followed)
     try:
         res = subprocess.run(
-            ["git", "config", "--get-regexp", r"^filter\."],
+            ["git", "config", "--includes", "--get-regexp", r"^filter\."],
             cwd=repo,
             capture_output=True,
             text=True,
@@ -182,11 +266,11 @@ def _repo_filter_overrides(repo: str | Path) -> list[str]:
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         pass
 
-    # 2. Submodule configs located in .git/modules/**/config
-    for cfg in sub_configs:
+    # 2. Submodule configs (passing --includes so submodule include.path is followed)
+    for cfg, _ in sub_entries:
         try:
             res = subprocess.run(
-                ["git", "config", "--file", str(cfg), "--get-regexp", r"^filter\."],
+                ["git", "config", "--file", str(cfg), "--includes", "--get-regexp", r"^filter\."],
                 cwd=repo,
                 capture_output=True,
                 text=True,
@@ -199,12 +283,24 @@ def _repo_filter_overrides(repo: str | Path) -> list[str]:
 
     overrides: list[str] = []
     for name in sorted(names):
-        overrides.extend([
-            "-c", f"filter.{name}.clean=",
-            "-c", f"filter.{name}.process=",
-            "-c", f"filter.{name}.required=false",
-        ])
+        overrides.extend(
+            [
+                "-c",
+                f"filter.{name}.clean=",
+                "-c",
+                f"filter.{name}.process=",
+                "-c",
+                f"filter.{name}.required=false",
+            ]
+        )
 
+    sub_info = []
+    for cfg, s_dir in sub_entries:
+        cfg_m = cfg.stat().st_mtime_ns if cfg.is_file() else 0
+        dir_m = s_dir.stat().st_mtime_ns if s_dir.is_dir() else 0
+        sub_info.append((str(cfg), cfg_m, str(s_dir), dir_m))
+
+    cache_key = (main_mtime, index_mtime, modules_mtime, tuple(sub_info))
     _filter_overrides_cache[repo_path] = (cache_key, overrides)
     return list(overrides)
 

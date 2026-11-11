@@ -158,10 +158,7 @@ class TestRunGitSecurity:
 
         # Plant subsection with dot: [filter "a.b"]
         cfg_file = clean_git_repo / ".git" / "config"
-        cfg_file.write_text(
-            cfg_file.read_text()
-            + f'\n[filter "a.b"]\nclean = {evil_filter}\nrequired = true\n'
-        )
+        cfg_file.write_text(cfg_file.read_text() + f'\n[filter "a.b"]\nclean = {evil_filter}\nrequired = true\n')
 
         (clean_git_repo / ".gitattributes").write_text("* filter=a.b\n")
         tracked = clean_git_repo / "dotted_tracked.txt"
@@ -220,6 +217,100 @@ class TestRunGitSecurity:
         res = run_git(clean_git_repo, "status", "--porcelain")
         assert res.returncode == 0, f"git status failed: {res.stderr}"
         assert not sub_witness.exists(), "Planted submodule filter must not execute!"
+
+    @pytest.mark.unit
+    def test_run_git_neutralizes_submodule_filter_via_include_path(self, clean_git_repo: Path, tmp_path: Path):
+        """Submodule filters defined through include.path must be neutralized (issue #617 maintainer review)."""
+        sub_witness = clean_git_repo / ".git" / "sub_inc_witness.txt"
+        sub_evil = clean_git_repo / ".git" / "sub_inc_evil.sh"
+        sub_evil.write_text(f"#!/bin/sh\necho subevil >> {sub_witness}\ncat\n")
+        sub_evil.chmod(0o755)
+
+        # Create upstream repo to add as submodule
+        sub_origin = tmp_path / "sub_inc_origin"
+        sub_origin.mkdir()
+        subprocess.run(["git", "init"], cwd=sub_origin, check=True, capture_output=True)
+        subprocess.run(["git", "config", "user.name", "test"], cwd=sub_origin, check=True)
+        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=sub_origin, check=True)
+        (sub_origin / "file.txt").write_text("sub\n")
+        subprocess.run(["git", "add", "."], cwd=sub_origin, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "sub init"], cwd=sub_origin, check=True, capture_output=True)
+
+        # Add submodule to clean_git_repo
+        subprocess.run(
+            ["git", "-c", "protocol.file.allow=always", "submodule", "add", str(sub_origin), "sub_inc"],
+            cwd=clean_git_repo,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(["git", "commit", "-m", "add sub_inc"], cwd=clean_git_repo, check=True, capture_output=True)
+
+        # Plant include.path = extra.cfg in submodule config
+        sub_dir = clean_git_repo / ".git" / "modules" / "sub_inc"
+        extra_cfg = sub_dir / "extra.cfg"
+        extra_cfg.write_text(f'\n[filter "subevil_inc"]\nclean = {sub_evil}\nrequired = true\n')
+        sub_cfg = sub_dir / "config"
+        sub_cfg.write_text(sub_cfg.read_text() + "\n[include]\npath = extra.cfg\n")
+
+        sub_info = sub_dir / "info"
+        sub_info.mkdir(exist_ok=True)
+        (sub_info / "attributes").write_text("* filter=subevil_inc\n")
+
+        (clean_git_repo / "sub_inc" / "file.txt").touch()
+
+        if sub_witness.exists():
+            sub_witness.unlink()
+
+        clear_repo_filter_cache()
+        res = run_git(clean_git_repo, "status", "--porcelain")
+        assert res.returncode == 0, f"git status failed: {res.stderr}"
+        assert not sub_witness.exists(), "Planted submodule include.path filter must not execute!"
+
+    @pytest.mark.unit
+    def test_run_git_neutralizes_submodule_with_in_tree_gitdir(self, clean_git_repo: Path, tmp_path: Path):
+        """Submodules with in-tree .git directories (mode 160000 in index) must have filters neutralized (issue #617 maintainer review)."""
+        sub_witness = clean_git_repo / ".git" / "in_tree_witness.txt"
+        sub_evil = clean_git_repo / ".git" / "in_tree_evil.sh"
+        sub_evil.write_text(f"#!/bin/sh\necho in_tree >> {sub_witness}\ncat\n")
+        sub_evil.chmod(0o755)
+
+        # Create submodule with in-tree .git directory directly inside superproject
+        sub_tree = clean_git_repo / "sub_intree"
+        sub_tree.mkdir()
+        subprocess.run(["git", "init"], cwd=sub_tree, check=True, capture_output=True)
+        subprocess.run(["git", "config", "user.name", "test"], cwd=sub_tree, check=True)
+        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=sub_tree, check=True)
+        (sub_tree / "f.txt").write_text("intree\n")
+        subprocess.run(["git", "add", "."], cwd=sub_tree, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "intree init"], cwd=sub_tree, check=True, capture_output=True)
+
+        # Plant filter in the submodule's in-tree .git/config
+        sub_cfg = sub_tree / ".git" / "config"
+        sub_cfg.write_text(sub_cfg.read_text() + f'\n[filter "subevil_intree"]\nclean = {sub_evil}\nrequired = true\n')
+        sub_info = sub_tree / ".git" / "info"
+        sub_info.mkdir(exist_ok=True)
+        (sub_info / "attributes").write_text("* filter=subevil_intree\n")
+
+        # Stage submodule in superproject index as gitlink (mode 160000)
+        sub_head = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=sub_tree, capture_output=True, text=True, check=True
+        ).stdout.strip()
+        subprocess.run(
+            ["git", "update-index", "--add", "--cacheinfo", f"160000,{sub_head},sub_intree"],
+            cwd=clean_git_repo,
+            check=True,
+        )
+        subprocess.run(["git", "commit", "-m", "add intree sub"], cwd=clean_git_repo, check=True, capture_output=True)
+
+        (sub_tree / "f.txt").touch()
+
+        if sub_witness.exists():
+            sub_witness.unlink()
+
+        clear_repo_filter_cache()
+        res = run_git(clean_git_repo, "status", "--porcelain")
+        assert res.returncode == 0, f"git status failed: {res.stderr}"
+        assert not sub_witness.exists(), "Planted in-tree submodule filter must not execute!"
 
     @pytest.mark.unit
     def test_run_git_timeout_handling(self, clean_git_repo: Path):
