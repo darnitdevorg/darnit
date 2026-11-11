@@ -365,6 +365,15 @@ detect = [
     { handler = "file_exists", files = [".github"], value_if_pass = "github" },
 ]
 
+# Confirmed values take precedence over detection under the context trust model.
+# Unknown is explicit because a missing when key does not skip verification steps.
+[context.github_owner_type]
+prompt = "What type of account owns the GitHub repository?"
+type = "enum"
+values = ["User", "Organization", "Unknown"]
+auto_detect = true
+detect = [{ handler = "github_repository_owner_type" }]
+
 [context.license_type]
 type = "enum"
 prompt = "Which license should darnit use when it creates a LICENSE file?"

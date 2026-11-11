@@ -426,31 +426,21 @@ def _resolve_audit_context(
     target: str | None = None,
     operator: "OperatorConfig | None" = None,
     definitions: dict[str, Any] | None = None,
+    owner: str | None = None,
+    repo: str | None = None,
+    detect_keys: set[str] | None = None,
 ) -> Any:
     """The context resolver's view for an audit, or None when it cannot be read (non-fatal)."""
     try:
         from darnit.config.context_resolve import resolve_context
 
-        return resolve_context(local_path, definitions, target=target, operator=operator, detect=False)
+        return resolve_context(
+            local_path, definitions, target=target, operator=operator, owner=owner, repo=repo,
+            detect=bool(detect_keys), detect_keys=detect_keys,
+        )
     except Exception as e:  # noqa: BLE001 - context must not break an audit
         logger.debug("Context resolution failed (non-fatal): %s", e)
         return None
-
-
-def _github_owner_type(owner: str, repo: str) -> str:
-    """Read the GitHub owner type for step routing."""
-    from darnit.core.utils import gh_api_with_status
-
-    if not owner or not repo:
-        return "Unknown"
-    body, status, _ = gh_api_with_status(f"/repos/{owner}/{repo}")
-    if 200 <= status < 300 and isinstance(body, dict):
-        account = body.get("owner")
-        if isinstance(account, dict):
-            owner_type = account.get("type")
-            if owner_type in ("User", "Organization"):
-                return owner_type
-    return "Unknown"
 
 
 def _applicability_context(
@@ -1047,7 +1037,18 @@ def run_sieve_audit(
     from darnit.config.context_storage import framework_definitions
 
     definitions = framework_definitions(framework) if framework is not None else None
-    resolved_context = _resolve_audit_context(local_path, target=target, operator=operator, definitions=definitions)
+    # Resolve auto-detectable keys used by selected verification steps.
+    detect_keys = {
+        key
+        for spec in all_controls
+        for step in spec.metadata.get("handler_invocations", [])
+        for key in (step.when or {})
+        if definitions and key in definitions and definitions[key].auto_detect and definitions[key].detect
+    }
+    resolved_context = _resolve_audit_context(
+        local_path, target=target, operator=operator, definitions=definitions,
+        owner=owner, repo=repo, detect_keys=detect_keys,
+    )
     usable_project = resolved_context.usable() if resolved_context is not None else {}
     project_context, detected_context, repository_values = _applicability_context(
         local_path,
@@ -1058,19 +1059,6 @@ def run_sieve_audit(
         definitions=definitions,
         resolved=resolved_context,
     )
-
-    owner_type_key = "github_owner_type"
-    if any(
-        owner_type_key in (step.when or {})
-        for spec in all_controls
-        for step in spec.metadata.get("handler_invocations", [])
-    ):
-        owner_type = "Unknown"
-        if detected_context.get("platform") in (None, "github") and project_context.get("platform") in (None, "github"):
-            owner_type = _github_owner_type(owner, repo)
-        # Only GitHub's response can route these steps.
-        project_context[owner_type_key] = detected_context[owner_type_key] = owner_type
-        repository_values.pop(owner_type_key, None)
 
     if project_context:
         logger.info("Project context for when-clause evaluation: %s", project_context)
