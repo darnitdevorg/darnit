@@ -184,10 +184,15 @@ def gittuf_commits_signed_handler(
         }
 
         if not_good:
-            details = ", ".join(f"{count} {_NOT_GOOD[status]}" for status, count in not_good.items())
+            details_parts = [f"{count} {_NOT_GOOD[status]}" for status, count in not_good.items()]
+            if unverifiable:
+                details_parts.append(f"{len(unverifiable)} could not be checked on this machine")
+            if unknown_validity:
+                details_parts.append(f"{len(unknown_validity)} of unknown validity")
+            details = ", ".join(details_parts)
             return HandlerResult(
                 status=HandlerResultStatus.FAIL,
-                message=f"{sum(not_good.values())} of last {total} commits lack a good signature: {details}",
+                message=f"{statuses['G']} of last {total} commits have a good signature: {details}",
                 confidence=1.0,
                 evidence=evidence,
             )

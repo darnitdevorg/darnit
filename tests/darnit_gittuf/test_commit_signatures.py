@@ -219,6 +219,21 @@ class TestHandlerOnRealGit:
         result = gittuf_commits_signed_handler({}, _ctx(repo))
 
         assert result.status == HandlerResultStatus.FAIL
+        assert result.message == (
+            "0 of last 2 commits have a good signature: 1 unsigned, 1 could not be checked on this machine"
+        )
+
+    def test_mix_of_unsigned_and_unverifiable_reports_both_counts(self, tmp_path: Path) -> None:
+        """FAIL message reports both unsigned and unverifiable commits (issue #679)."""
+        repo = _repo(tmp_path, unsigned_commits=2)
+        _commit_with_signature(repo, _random_openpgp_signature())
+
+        result = gittuf_commits_signed_handler({}, _ctx(repo))
+
+        assert result.status == HandlerResultStatus.FAIL
+        assert result.message == (
+            "0 of last 3 commits have a good signature: 2 unsigned, 1 could not be checked on this machine"
+        )
 
     def test_no_commits_is_inconclusive(self, tmp_path: Path) -> None:
         result = gittuf_commits_signed_handler({}, _ctx(_repo(tmp_path, unsigned_commits=0)))

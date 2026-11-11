@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- In the gittuf commit signature check (GT-02.01), when commits lack good
+  signatures, the FAIL message states how many recent commits have a good
+  signature and reports commits that could not be checked on the machine
+  alongside unsigned and bad signatures (fixes #679).
 - Baseline handler registration no longer imports `tree-sitter` or the language
   pack at registration time, preventing transient language pack download
   failures from taking down all baseline handlers; when a plugin handler registration
