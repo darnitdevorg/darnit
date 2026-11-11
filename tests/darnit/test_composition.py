@@ -20,6 +20,7 @@ from darnit.core.composition import (
     _TAG_ORIGINAL_CONTROL_ID,
     CompositionConflictError,
     CompositionCycleError,
+    CompositionError,
     CompositionMissingSourceError,
     CompositionOrphanOverrideError,
     CompositionUnknownFieldError,
@@ -100,6 +101,30 @@ def test_include_controls_filter(composite_fixtures_dir, fixture_source_loader):
     result = _resolve(composite_fixtures_dir, fixture_source_loader, "include-controls")
 
     assert set(result.controls.keys()) == {"MOCK-AC-01.01", "MOCK-QA-01.01"}
+
+
+@pytest.mark.unit
+def test_fallback_keeps_local_control_and_imports_only_requested_ids(composite_fixtures_dir, fixture_source_loader):
+    config = _parse_framework_only(_composite_path(composite_fixtures_dir, "include-controls"))
+    config.compose[0].fallback = True
+    local_id = "MOCK-AC-01.01"
+    config.controls[local_id] = ControlConfig(name="Local control", description="Custom check")
+
+    result = resolve_composition(config, source_loader=fixture_source_loader)
+
+    assert set(result.controls) == {local_id, "MOCK-QA-01.01"}
+    assert result.controls[local_id].name == "Local control"
+    assert result.controls["MOCK-QA-01.01"].tags[_TAG_COMPOSED_FROM] == "mock-source-a"
+
+
+@pytest.mark.unit
+def test_fallback_reports_unknown_id(composite_fixtures_dir, fixture_source_loader):
+    config = _parse_framework_only(_composite_path(composite_fixtures_dir, "include-controls"))
+    config.compose[0].fallback = True
+    config.compose[0].include_controls.append("MOCK-TYPO")
+
+    with pytest.raises(CompositionError, match="test-include-controls.*mock-source-a.*MOCK-TYPO"):
+        resolve_composition(config, source_loader=fixture_source_loader)
 
 
 # ---------------------------------------------------------------------------

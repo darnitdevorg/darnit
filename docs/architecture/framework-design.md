@@ -89,6 +89,19 @@ url = "https://..."               # OPTIONAL: Spec URL
 # Control definitions (main content)
 ```
 
+A custom framework can use another framework as a fallback for specific control IDs.
+
+```toml
+[[compose]]
+source = "openssf-baseline"
+include_controls = ["OSPS-AC-01.01", "OSPS-AC-04.01"]
+fallback = true
+```
+
+Darnit keeps locally defined controls and imports the remaining listed IDs from the source.
+If a listed ID is missing from both frameworks, loading fails and reports the ID.
+With `fallback = true`, use `include_controls` as the only selector.
+
 ### 2.2 Control Definition
 
 Each control is defined under `[controls."CONTROL-ID"]`:
