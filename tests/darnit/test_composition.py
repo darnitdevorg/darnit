@@ -20,9 +20,9 @@ from darnit.core.composition import (
     _TAG_ORIGINAL_CONTROL_ID,
     CompositionConflictError,
     CompositionCycleError,
-    CompositionError,
     CompositionMissingSourceError,
     CompositionOrphanOverrideError,
+    CompositionUnknownControlError,
     CompositionUnknownFieldError,
     CompositionVersionMismatchError,
     _apply_override,
@@ -104,27 +104,25 @@ def test_include_controls_filter(composite_fixtures_dir, fixture_source_loader):
 
 
 @pytest.mark.unit
-def test_fallback_keeps_local_control_and_imports_only_requested_ids(composite_fixtures_dir, fixture_source_loader):
-    config = _parse_framework_only(_composite_path(composite_fixtures_dir, "include-controls"))
-    config.compose[0].fallback = True
-    local_id = "MOCK-AC-01.01"
-    config.controls[local_id] = ControlConfig(name="Local control", description="Custom check")
+def test_unknown_include_control_names_source_and_id(composite_fixtures_dir, fixture_source_loader):
+    cfg = _parse_framework_only(_composite_path(composite_fixtures_dir, "include-controls"))
+    cfg.compose[0].include_controls.append("MOCK-TYPO")
 
-    result = resolve_composition(config, source_loader=fixture_source_loader)
-
-    assert set(result.controls) == {local_id, "MOCK-QA-01.01"}
-    assert result.controls[local_id].name == "Local control"
-    assert result.controls["MOCK-QA-01.01"].tags[_TAG_COMPOSED_FROM] == "mock-source-a"
+    with pytest.raises(CompositionUnknownControlError, match="mock-source-a.*MOCK-TYPO"):
+        resolve_composition(cfg, source_loader=fixture_source_loader)
 
 
 @pytest.mark.unit
-def test_fallback_reports_unknown_id(composite_fixtures_dir, fixture_source_loader):
-    config = _parse_framework_only(_composite_path(composite_fixtures_dir, "include-controls"))
-    config.compose[0].fallback = True
-    config.compose[0].include_controls.append("MOCK-TYPO")
+def test_local_control_can_be_left_out_of_include_controls(composite_fixtures_dir, fixture_source_loader):
+    cfg = _parse_framework_only(_composite_path(composite_fixtures_dir, "include-controls"))
+    local_id = "MOCK-AC-01.01"
+    cfg.compose[0].include_controls.remove(local_id)
+    cfg.controls[local_id] = ControlConfig(name="Local control", description="Custom check")
 
-    with pytest.raises(CompositionError, match="test-include-controls.*mock-source-a.*MOCK-TYPO"):
-        resolve_composition(config, source_loader=fixture_source_loader)
+    result = resolve_composition(cfg, source_loader=fixture_source_loader)
+
+    assert set(result.controls) == {local_id, "MOCK-QA-01.01"}
+    assert result.controls[local_id].name == "Local control"
 
 
 # ---------------------------------------------------------------------------

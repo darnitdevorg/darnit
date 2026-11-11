@@ -73,6 +73,14 @@ class CompositionMissingSourceError(CompositionError):
         )
 
 
+class CompositionUnknownControlError(CompositionError):
+    """A compose block lists control IDs its source does not provide."""
+
+    def __init__(self, source: str, control_ids: set[str]) -> None:
+        missing = ", ".join(sorted(control_ids))
+        super().__init__(f"Unknown control IDs in include_controls for source {source!r}: {missing}")
+
+
 class CompositionConflictError(CompositionError):
     """Two ``[[compose]]`` blocks contribute the same control ID in strict mode.
 
@@ -234,7 +242,10 @@ def _select_controls(
 
         if block.include_controls:
             wanted = set(block.include_controls)
-            individual_sets.append({cid for cid in source_controls if cid in wanted})
+            missing = wanted - source_controls.keys()
+            if missing:
+                raise CompositionUnknownControlError(block.source, missing)
+            individual_sets.append(wanted)
 
         if block.include_tags:
             tagged: set[str] = set()
@@ -586,10 +597,6 @@ def resolve_composition(
     # Stage 2: walk `[[compose]]` blocks in TOML file order.
     # -------------------------------------------------------------------------
     for block in composite.compose:
-        fallback_ids = set(block.include_controls) - composite.controls.keys()
-        if block.fallback and not fallback_ids:
-            continue
-
         # Source resolution. The loader is parse-only by contract, so the
         # returned config still has its own `compose`/`overrides` set if
         # the source is itself a composite — that gets resolved on the
@@ -615,17 +622,7 @@ def resolve_composition(
 
         # Apply this block's filters against the source's RESOLVED control
         # set (per FR-018 — composing on effective behavior, not raw config).
-        if block.fallback:
-            missing_ids = fallback_ids - source_config.controls.keys()
-            if missing_ids:
-                missing = ", ".join(sorted(missing_ids))
-                raise CompositionError(
-                    f"Fallback controls not found in {composite_slug!r} or {block.source!r}: {missing}. "
-                    "Check include_controls or define the controls locally."
-                )
-            selected_ids = sorted(fallback_ids)
-        else:
-            selected_ids = _select_controls(block, source_config.controls)
+        selected_ids = _select_controls(block, source_config.controls)
 
         for cid in selected_ids:
             src_ctrl = source_config.controls[cid]
