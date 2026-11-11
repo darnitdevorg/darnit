@@ -970,3 +970,35 @@ description = "Control without a level"
     idx_l2 = caplog.text.index("Level 2")
     idx_none = caplog.text.index("No level")
     assert idx_l1 < idx_l2 < idx_none
+
+
+@pytest.mark.unit
+def test_audit_fails_closed_on_invalid_control_level(tmp_path, caplog):
+    """Audit rejects frameworks with control levels outside 1-3 instead of dropping them (fixes #701)."""
+    import logging
+
+    framework_file = tmp_path / "invalid_level.toml"
+    framework_file.write_text(
+        """[metadata]
+name = "invalid-level"
+display_name = "Invalid Level"
+version = "0.1.0"
+description = "Framework with invalid control level"
+
+[controls."INVALID-01"]
+name = "LevelFour"
+description = "Control declaring level 4"
+tags = { level = 4 }
+
+[[controls."INVALID-01".passes]]
+handler = "file_exists"
+files = ["nonexistent.txt"]
+"""
+    )
+
+    with caplog.at_level(logging.ERROR):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        exit_code = main(["audit", "-f", str(framework_file), "-o", "json", "--no-fail", str(repo)])
+    assert exit_code == 1
+    assert "Invalid control level 4" in caplog.text

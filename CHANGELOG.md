@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   signatures, the FAIL message states how many recent commits have a good
   signature and reports commits that could not be checked on the machine
   alongside unsigned and bad signatures (fixes #679).
+- Reject control maturity levels outside 1-3 (including 0, negative integers, and
+  integers above 3) when loading framework configurations or applying composite
+  overrides, ensuring `darnit audit` fails closed instead of silently omitting
+  controls whose level exceeds the default audit maximum (fixes #701).
 - Baseline handler registration no longer imports `tree-sitter` or the language
   pack at registration time, preventing transient language pack download
   failures from taking down all baseline handlers; when a plugin handler registration

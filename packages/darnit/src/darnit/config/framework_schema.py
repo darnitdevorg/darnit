@@ -684,6 +684,14 @@ class ControlConfig(BaseModel):
     # define fails loading instead of being ignored.
     model_config = ConfigDict(extra="forbid")
 
+    @field_validator("level", mode="before")
+    @classmethod
+    def _validate_level_type(cls, v: Any) -> Any:
+        """Reject non-integer level values (strings, floats, booleans)."""
+        if v is not None and (isinstance(v, bool) or not isinstance(v, int)):
+            raise ValueError(f"level must be an integer, got {v!r} ({type(v).__name__})")
+        return v
+
     @field_validator("tags", mode="before")
     @classmethod
     def convert_tags_list_to_dict(cls, v: Any) -> dict[str, Any]:
@@ -706,7 +714,7 @@ class ControlConfig(BaseModel):
         Framework controls may declare maturity level, domain, and severity either
         as top-level attributes or inside the flexible tags dictionary (e.g. tags = { level = 1 }).
         Top-level attributes are canonical. If present in only one location, values are synchronized.
-        Conflicting declarations or invalid tags.level types reject loading.
+        Conflicting declarations, invalid tags.level types, or levels outside 1-3 reject loading.
         """
         if "level" in self.tags:
             tag_level = self.tags["level"]
@@ -719,6 +727,10 @@ class ControlConfig(BaseModel):
             self.level = tag_level
         elif self.level is not None:
             self.tags["level"] = self.level
+
+        if self.level is not None:
+            if isinstance(self.level, bool) or self.level not in (1, 2, 3):
+                raise ValueError(f"Invalid control level {self.level}: level must be 1, 2, or 3")
 
         if "domain" in self.tags:
             tag_domain = self.tags["domain"]

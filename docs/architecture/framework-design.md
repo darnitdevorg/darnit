@@ -171,6 +171,7 @@ steps = ["Verify branch protection in repository settings"]
 - **THEN** top-level control attributes are canonical; when present in only one place, values are synchronized to both the attribute and `tags`
 - **AND** declaring conflicting values between top-level attributes and `tags` (e.g. `level = 1` with `tags = { level = 2 }`) MUST fail loading with an error
 - **AND** non-integer `tags.level` values (e.g. `"L1"`, `1.5`, or `true`) MUST fail loading with an error
+- **AND** control levels outside the valid maturity range 1-3 (e.g. 0, negative integers, or integers above 3) MUST fail loading with an error
 - **AND** controls without a declared maturity level MUST have `level = None`
 - **AND** commands grouping or sorting by level (`darnit plan`, `darnit validate`) MUST sort controls with `level = None` last without error (displaying as "No level" in plan, while audit and harness compliance count an unleveled result as L1)
 
