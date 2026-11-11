@@ -107,3 +107,33 @@ def test_every_skill_names_the_repository_on_every_call(path: Path) -> None:
     for line in text.splitlines():
         if re.search(r"Call (it|the appropriate `audit_\*` tool) with", line):
             assert "`owner` and `repo`" in line, line
+
+
+@pytest.mark.unit
+def test_no_skill_tells_agent_to_make_a_new_commit() -> None:
+    """Skills must not tell the agent to commit its own edits (#738).
+
+    Darnit enforces manifest-only commits (framework-design 15.6 / 15.7) and
+    never commits content it did not write. Any agent edits or syntax fixes are
+    left uncommitted in the working tree for the person to review and commit.
+    """
+    for path in sorted(SKILLS.glob("*/SKILL.md")):
+        text = path.read_text(encoding="utf-8")
+        assert "make a new commit" not in text.lower(), (
+            f"{path.parent.name} tells the agent to 'make a new commit', "
+            "but MCP agents have no tool to commit edits to generated files (#738)"
+        )
+
+
+@pytest.mark.unit
+def test_remediation_skills_instruct_uncommitted_edits_for_review() -> None:
+    """Remediation skills instruct the agent to leave edits uncommitted for review (#738)."""
+    comply = (SKILLS / "darnit-comply" / "SKILL.md").read_text(encoding="utf-8")
+    assert "uncommitted in the working tree" in comply
+    assert "review and commit" in comply
+
+    remediate = (SKILLS / "darnit-remediate" / "SKILL.md").read_text(encoding="utf-8")
+    assert "uncommitted in the working tree" in remediate
+    assert "review and commit" in remediate
+
+
