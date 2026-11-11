@@ -99,6 +99,7 @@ docs_url = "https://internal.acme.example/runbooks/vuln-management"
 - A `[[compose]]` block MUST define at least one inclusion expression (either `include_all = true` OR at least one of `include_levels`, `include_controls`, `include_tags`). A block with only `exclude_controls` is rejected.
 - `include_all = true` is mutually exclusive with the other `include_*` fields.
 - Inclusion expressions are evaluated as the **intersection** of all expressions present in the block (R-009). Then `exclude_controls` is subtracted from that intersection.
+- Each ID in `include_controls` must exist in the resolved source. Unknown IDs fail loading with an error naming the source and missing IDs.
 - An empty result (filters narrow to zero controls) is NOT an error — it contributes nothing and emits a DEBUG log.
 
 ---

@@ -298,6 +298,7 @@ def cmd_audit(args: argparse.Namespace) -> int:
         load_effective_config_auto,
         load_effective_config_by_name,
     )
+    from darnit.core.composition import CompositionError
     from darnit.filtering import filter_controls, parse_tags_arg
 
     # Warn about limited functionality in terminal mode
@@ -330,7 +331,7 @@ def cmd_audit(args: argparse.Namespace) -> int:
                 config = load_effective_config_by_name(args.framework, operator=operator)
         else:
             config = load_effective_config_auto(operator=operator)
-    except ValueError as e:
+    except (ValueError, CompositionError) as e:
         logger.error(f"Failed to load framework: {e}")
         return 1
     except FileNotFoundError as e:

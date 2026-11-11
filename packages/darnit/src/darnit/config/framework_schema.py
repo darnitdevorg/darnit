@@ -1398,7 +1398,6 @@ class ComposeBlock(BaseModel):
     """
 
     source: str
-    fallback: bool = False
     include_all: bool = False
     include_levels: list[int] = Field(default_factory=list)
     include_controls: list[str] = Field(default_factory=list)
@@ -1416,14 +1415,6 @@ class ComposeBlock(BaseModel):
         block with only excludes is a no-op and almost certainly an
         authoring mistake.
         """
-        if self.fallback and (
-            not self.include_controls
-            or self.include_all
-            or self.include_levels
-            or self.include_tags
-            or self.exclude_controls
-        ):
-            raise ValueError("fallback requires include_controls as the only control selector")
         has_any_include = (
             self.include_all or bool(self.include_levels) or bool(self.include_controls) or bool(self.include_tags)
         )
