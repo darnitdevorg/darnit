@@ -81,18 +81,23 @@ def new_run_id() -> str:
     return "".join(_CROCKFORD[(value >> shift) & 31] for shift in range(125, -1, -5))
 
 
-def repository_identity(local_path: str | Path, owner: str | None = None, repo: str | None = None) -> str:
+def repository_identity(
+    local_path: str | Path,
+    owner: str | None = None,
+    repo: str | None = None,
+    host: str | None = None,
+) -> str:
     """Identity a checkout's runs are recorded under.
 
-    The operator-named ``owner``/``repo`` (on github.com) when given, else the
-    checkout's ``origin`` remote, else a stable local identity derived from
-    the checkout's real path. It names records only and is never a basis for
-    trust.
+    The operator-named ``owner``/``repo`` (on github.com, or ``host`` when
+    given) when given, else the checkout's ``origin`` remote, else a stable
+    local identity derived from the checkout's real path. It names records only
+    and is never a basis for trust.
     """
     from darnit.core.utils import detect_checkout_identity
     from darnit.trust.decision import target_from_owner_repo
 
-    target = target_from_owner_repo(owner, repo)
+    target = target_from_owner_repo(owner, repo, host=host)
     canonical = canonical_identity(target) if target else None
     if canonical is None:
         hint = detect_checkout_identity(str(local_path))

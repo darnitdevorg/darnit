@@ -159,9 +159,15 @@ def create_failing_empty_project(target_dir: Path) -> Path:
             "OSPS-GV-04.01": "FAIL",
             "OSPS-QA-02.01": "PASS",
             "OSPS-QA-05.01": "PASS",
+            "OSPS-DO-03.02": "FAIL",
+            "OSPS-DO-04.01": "FAIL",
+            "OSPS-DO-05.01": "FAIL",
+            "OSPS-DO-06.01": "FAIL",
+            "OSPS-QA-06.02": "FAIL",
+            "OSPS-SA-01.01": "FAIL",
         },
         "min_failures": 10,
-        "max_failures": 15,
+        "max_failures": 21,
         "max_errors": 20,
     }
     (project_dir / "expected_verdicts.json").write_text(json.dumps(expected, indent=2) + "\n", encoding="utf-8")
@@ -231,9 +237,15 @@ def create_partially_compliant_project(target_dir: Path) -> Path:
             "OSPS-GV-04.01": "FAIL",
             "OSPS-SA-03.02": "FAIL",
             "OSPS-DO-03.01": "FAIL",
+            "OSPS-DO-03.02": "FAIL",
+            "OSPS-DO-04.01": "FAIL",
+            "OSPS-DO-05.01": "FAIL",
+            "OSPS-DO-06.01": "FAIL",
+            "OSPS-QA-06.02": "FAIL",
+            "OSPS-SA-01.01": "FAIL",
         },
         "min_failures": 5,
-        "max_failures": 10,
+        "max_failures": 16,
         "max_errors": 20,
     }
     (project_dir / "expected_verdicts.json").write_text(json.dumps(expected, indent=2) + "\n", encoding="utf-8")
@@ -279,7 +291,9 @@ def create_passing_reference_project(target_dir: Path) -> Path:
         "| 0.1.x   | :white_check_mark: |\n\n"
         "## Reporting a Vulnerability\n\n"
         "Please report vulnerabilities by emailing security@example.com.\n"
-        "Do not open public issues for security vulnerabilities.\n",
+        "Do not open public issues for security vulnerabilities.\n\n"
+        "## Verifying Releases\n\n"
+        "Verify the Sigstore signature on each release and check the signing identity.\n",
         encoding="utf-8",
     )
     (project_dir / "CONTRIBUTING.md").write_text(
@@ -287,7 +301,11 @@ def create_passing_reference_project(target_dir: Path) -> Path:
         "Thank you for considering contributing!\n\n"
         "1. Fork the repository\n"
         "2. Create a feature branch\n"
-        "3. Submit a pull request\n",
+        "3. Submit a pull request\n\n"
+        "## Testing\n\n"
+        "Run the tests with `python -m pytest` before opening a pull request.\n\n"
+        "## Dependencies\n\n"
+        "Dependencies are selected from PyPI, and Dependabot tracks updates weekly.\n",
         encoding="utf-8",
     )
     (project_dir / "GOVERNANCE.md").write_text(
@@ -297,7 +315,17 @@ def create_passing_reference_project(target_dir: Path) -> Path:
         encoding="utf-8",
     )
     (project_dir / "SUPPORT.md").write_text(
-        "# Support Policy\n\nFor help with this project, please open a discussion or email support@example.com.\n",
+        "# Support Policy\n\n"
+        "For help with this project, please open a discussion or email support@example.com.\n\n"
+        "## End of Support\n\n"
+        "A release reaches end of support 12 months after the next minor release.\n",
+        encoding="utf-8",
+    )
+    (project_dir / "ARCHITECTURE.md").write_text(
+        "# Architecture\n\n"
+        "The `passing_reference` module provides a single `run` function.\n\n"
+        "Users interact with the package by importing it.\n\n"
+        "Data flow: `run` takes no input and writes a message to stdout.\n",
         encoding="utf-8",
     )
     (project_dir / "THREAT_MODEL.md").write_text(
@@ -370,7 +398,12 @@ def create_passing_reference_project(target_dir: Path) -> Path:
             "OSPS-QA-05.01": "PASS",
             "OSPS-QA-05.02": "PASS",
             "OSPS-DO-01.01": ["PENDING", "PASS"],
+            "OSPS-DO-03.02": ["PENDING", "PASS"],
+            "OSPS-DO-04.01": ["PENDING", "PASS"],
+            "OSPS-DO-05.01": ["PENDING", "PASS"],
             "OSPS-DO-06.01": ["PENDING", "PASS"],
+            "OSPS-QA-06.02": ["PENDING", "PASS"],
+            "OSPS-SA-01.01": ["PENDING", "PASS"],
             "OSPS-GV-01.01": ["PENDING", "PASS"],
             "OSPS-SA-03.01": ["PENDING", "PASS"],
             "OSPS-GV-04.01": ["PENDING", "PASS"],

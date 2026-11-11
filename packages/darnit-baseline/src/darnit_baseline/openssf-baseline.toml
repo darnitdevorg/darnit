@@ -259,7 +259,11 @@ store_as = "security.contact"
 # A user-judgment key (feature 042, FR-005); see maintainers.
 auto_detect = false
 required = false
-hint_sources = ["SECURITY.md", ".github/SECURITY.md"]
+hint_sources = [
+    "SECURITY.md", "security.md",
+    ".github/SECURITY.md", ".github/security.md",
+    "docs/SECURITY.md", "docs/security.md",
+]
 allow_sieve_hints = true
 # Rejects detected values containing "example.com" or "example.org" before
 # they can be stored or offered for confirmation (feature 039).
@@ -686,6 +690,15 @@ run: |
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-BR-01.01"
 location_hint = ".github/workflows"
 
+# No workflow file means nothing to audit (#584): WARN with that reason, and
+# zizmor (exit 3, unexpected_exit) never runs. With workflow files present it
+# is evidence only. zizmor's template-injection audit also reads action
+# definitions, which it collects from the whole tree, so an action.yml or
+# action.yaml anywhere also lets zizmor run.
+[[controls."OSPS-BR-01.01".passes]]
+handler = "github_workflows_present"
+actions = true
+
 [[controls."OSPS-BR-01.01".passes]]
 handler = "exec"
 command = ["zizmor", "--format", "json", "--offline", "$PATH"]
@@ -771,6 +784,12 @@ run: |
   echo "Building branch: $BRANCH"
 ```
 """
+
+# No workflow file means nothing to audit (#584): WARN with that reason, and
+# grep (exit 2, unexpected_exit) never runs. With workflow files present it
+# is evidence only.
+[[controls."OSPS-BR-01.02".passes]]
+handler = "github_workflows_present"
 
 # Keyword absence, evidence only (feature 041): not finding github.head_ref
 # does not show branch names are handled safely (github.ref_name and event
@@ -1460,7 +1479,8 @@ look_for_urls = false
 
 [[controls."OSPS-DO-06.01".passes]]
 handler = "pattern"
-files = ["README.md", "CONTRIBUTING.md", "docs/dependencies.md", "DEPENDENCIES.md"]
+fail_on_miss = true  # missing from every file listed: FAIL, so remediation plans it (#665)
+files = ["README.md", "README.rst", "README.txt", "README", "CONTRIBUTING.md", "docs/dependencies.md", "docs/DEPENDENCIES.md", "DEPENDENCIES.md"]
 
 [controls."OSPS-DO-06.01".passes.pattern.patterns]
 dependency_docs = "(dependenc|package|library).*(select|obtain|track|manage|update|policy)"
@@ -1707,6 +1727,9 @@ discover = [
     "LICENSE", "LICENSE.md", "LICENSE.txt",
     "LICENCE", "LICENCE.md", "LICENCE.txt",
     "COPYING", "COPYING.md", "COPYING.txt",
+    "license", "license.md", "license.txt",
+    "licence", "licence.md", "licence.txt",
+    "copying", "copying.md", "copying.txt",
 ]
 kind = "file"
 
@@ -1768,7 +1791,11 @@ help_md = """Use an OSI-approved open source license.
 # Local check: Look for SPDX identifier in project files (no API needed)
 [[controls."OSPS-LE-02.01".passes]]
 handler = "regex"
-files = ["LICENSE*", "COPYING*", "NOTICE*", "package.json", "pyproject.toml", "Cargo.toml", "go.mod"]
+files = [
+    "LICENSE*", "LICENCE*", "COPYING*", "NOTICE*",
+    "license*", "licence*", "copying*", "notice*",
+    "package.json", "pyproject.toml", "Cargo.toml", "go.mod",
+]
 pattern = '(?i)(SPDX-License-Identifier\s*:\s*\S+|"license"\s*:\s*"[^"]+"|license\s*=\s*"[^"]+"|License\s*::\s*OSI)'
 pass_if_any = true
 expr = 'output.any_match'
@@ -1887,6 +1914,9 @@ discover = [
     "LICENSE", "LICENSE.md", "LICENSE.txt",
     "LICENCE", "LICENCE.md", "LICENCE.txt",
     "COPYING", "COPYING.md", "COPYING.txt",
+    "license", "license.md", "license.txt",
+    "licence", "licence.md", "licence.txt",
+    "copying", "copying.md", "copying.txt",
 ]
 kind = "file"
 
@@ -2305,7 +2335,11 @@ help_md = """Add security contacts to SECURITY.md.
 
 [controls."OSPS-VM-02.01".locator]
 project_path = "security.policy"
-discover = ["SECURITY.md", ".github/SECURITY.md", "docs/SECURITY.md"]
+discover = [
+    "SECURITY.md", "security.md",
+    ".github/SECURITY.md", ".github/security.md",
+    "docs/SECURITY.md", "docs/security.md",
+]
 kind = "file"
 
 [controls."OSPS-VM-02.01".locator.llm_hints]
@@ -2747,7 +2781,11 @@ help_md = """Create CVD policy in SECURITY.md.
 
 [controls."OSPS-VM-01.01".locator]
 project_path = "security.policy"
-discover = ["SECURITY.md", ".github/SECURITY.md", "docs/SECURITY.md"]
+discover = [
+    "SECURITY.md", "security.md",
+    ".github/SECURITY.md", ".github/security.md",
+    "docs/SECURITY.md", "docs/security.md",
+]
 kind = "file"
 
 [controls."OSPS-VM-01.01".locator.llm_hints]
@@ -2757,7 +2795,11 @@ look_for_urls = true
 
 [[controls."OSPS-VM-01.01".passes]]
 handler = "pattern"
-files = ["SECURITY.md"]
+files = [
+    "SECURITY.md", "security.md",
+    ".github/SECURITY.md", ".github/security.md",
+    "docs/SECURITY.md", "docs/security.md",
+]
 
 [controls."OSPS-VM-01.01".passes.pattern.patterns]
 disclosure = "(disclos|report|contact)"
@@ -2815,7 +2857,11 @@ help_md = """Enable private vulnerability reporting.
 
 [controls."OSPS-VM-03.01".locator]
 project_path = "security.policy"
-discover = ["SECURITY.md", ".github/SECURITY.md"]
+discover = [
+    "SECURITY.md", "security.md",
+    ".github/SECURITY.md", ".github/security.md",
+    "docs/SECURITY.md", "docs/security.md",
+]
 kind = "file"
 
 [controls."OSPS-VM-03.01".locator.llm_hints]
@@ -2835,7 +2881,11 @@ concludes = ["pass"]
 # PatternPass: Check for private contact methods in SECURITY.md
 [[controls."OSPS-VM-03.01".passes]]
 handler = "pattern"
-files = ["SECURITY.md", ".github/SECURITY.md"]
+files = [
+    "SECURITY.md", "security.md",
+    ".github/SECURITY.md", ".github/security.md",
+    "docs/SECURITY.md", "docs/security.md",
+]
 
 [controls."OSPS-VM-03.01".passes.pattern.patterns]
 private_contact = "(private|confidential|security advisory|PGP|GPG|security@|email)"
@@ -2961,6 +3011,13 @@ help_md = """Minimize CI/CD job permissions.
 3. Use job-level instead of workflow-level permissions
 4. Avoid using `write-all` or `admin` permissions
 """
+
+# No workflow file means nothing to audit (#584): WARN with that reason, and
+# zizmor (exit 3, unexpected_exit) never runs. With workflow files present it
+# is evidence only. No `actions = true`: zizmor's excessive-permissions audit
+# reads workflows only.
+[[controls."OSPS-AC-04.02".passes]]
+handler = "github_workflows_present"
 
 # Primary: zizmor's `excessive-permissions` deep audit. zizmor models per-step
 # action requirements and flags workflow- or job-level grants broader than the
@@ -3093,7 +3150,12 @@ help_md = """Document secrets management policy.
 
 [[controls."OSPS-BR-07.02".passes]]
 handler = "pattern"
-files = ["SECURITY.md", "docs/security.md", "docs/SECRETS-POLICY.md", "CONTRIBUTING.md"]
+files = [
+    "SECURITY.md", "security.md",
+    ".github/SECURITY.md", ".github/security.md",
+    "docs/SECURITY.md", "docs/security.md",
+    "docs/SECRETS-POLICY.md", "CONTRIBUTING.md",
+]
 
 [controls."OSPS-BR-07.02".passes.pattern.patterns]
 secrets_policy = "(secret|credential|token|key).*(management|policy|handling|rotation)"
@@ -3303,7 +3365,8 @@ help_md = """Document testing process.
 
 [[controls."OSPS-QA-06.02".passes]]
 handler = "pattern"
-files = ["README.md", "CONTRIBUTING.md", "docs/testing.md", "docs/TESTING.md"]
+fail_on_miss = true  # missing from every file listed: FAIL, so remediation plans it (#665)
+files = ["README.md", "README.rst", "README.txt", "README", "CONTRIBUTING.md", "docs/testing.md", "docs/TESTING.md"]
 
 [controls."OSPS-QA-06.02".passes.pattern.patterns]
 test_docs = "(run.*test|test.*instruction|how to test)"
@@ -3455,7 +3518,12 @@ Run: `create_security_policy()` or `ensure_vex_policy()`
 
 [[controls."OSPS-VM-04.02".passes]]
 handler = "pattern"
-files = ["SECURITY.md", ".github/SECURITY.md", "docs/VEX-POLICY.md"]
+files = [
+    "SECURITY.md", "security.md",
+    ".github/SECURITY.md", ".github/security.md",
+    "docs/SECURITY.md", "docs/security.md",
+    "docs/VEX-POLICY.md",
+]
 
 [controls."OSPS-VM-04.02".passes.pattern.patterns]
 vex_policy = "(vex|vulnerability.exploitability|exploitability.exchange)"
@@ -3519,7 +3587,12 @@ help_md = """Define SCA remediation policy.
 
 [[controls."OSPS-VM-05.01".passes]]
 handler = "pattern"
-files = ["SECURITY.md", "docs/security.md", "docs/SCA-POLICY.md"]
+files = [
+    "SECURITY.md", "security.md",
+    ".github/SECURITY.md", ".github/security.md",
+    "docs/SECURITY.md", "docs/security.md",
+    "docs/SCA-POLICY.md",
+]
 
 [controls."OSPS-VM-05.01".passes.pattern.patterns]
 sca_policy = "(dependency|SCA|software composition|remediat)"
@@ -3736,7 +3809,12 @@ help_md = """Define SAST remediation policy.
 
 [[controls."OSPS-VM-06.01".passes]]
 handler = "pattern"
-files = ["SECURITY.md", "docs/SAST-POLICY.md"]
+files = [
+    "SECURITY.md", "security.md",
+    ".github/SECURITY.md", ".github/security.md",
+    "docs/SECURITY.md", "docs/security.md",
+    "docs/SAST-POLICY.md",
+]
 
 [controls."OSPS-VM-06.01".passes.pattern.patterns]
 sast_policy = "(SAST|static analysis|code scan|remediat)"
@@ -3934,6 +4012,7 @@ help_md = """Document how to verify release author.
 
 [[controls."OSPS-DO-03.02".passes]]
 handler = "pattern"
+fail_on_miss = true  # missing from every file listed: FAIL, so remediation plans it (#665)
 # rst/txt/no-ext README variants added so this pass can PASS/FAIL
 # deterministically on projects that don't ship .md-based READMEs
 # (Python/Sphinx projects like tqdm surfaced the gap; see issue #402).
@@ -3993,6 +4072,7 @@ help_md = """Document support policy.
 
 [[controls."OSPS-DO-04.01".passes]]
 handler = "pattern"
+fail_on_miss = true  # missing from every file listed: FAIL, so remediation plans it (#665)
 # rst/txt/no-ext README variants added (see #402 sibling change).
 files = ["SUPPORT.md", "SECURITY.md", "README.md", "README.rst", "README.txt", "README", "docs/support.md"]
 
@@ -4058,6 +4138,7 @@ help_md = """Document end-of-life policy.
 
 [[controls."OSPS-DO-05.01".passes]]
 handler = "pattern"
+fail_on_miss = true  # missing from every file listed: FAIL, so remediation plans it (#665)
 # rst/txt/no-ext README variants added (see #402 sibling change).
 files = ["SUPPORT.md", "SECURITY.md", "README.md", "README.rst", "README.txt", "README", "CONTRIBUTING.md"]
 
@@ -4212,9 +4293,10 @@ look_for_urls = true
 
 [[controls."OSPS-SA-01.01".passes]]
 handler = "pattern"
+fail_on_miss = true  # missing from every file listed: FAIL, so remediation plans it (#665)
 # rst variants added; ARCHITECTURE/DESIGN commonly live as .rst
 # in Sphinx-based Python projects.
-files = ["ARCHITECTURE.md", "ARCHITECTURE.rst", "docs/ARCHITECTURE.md", "docs/ARCHITECTURE.rst", "docs/architecture.md", "docs/architecture.rst", "docs/design.md", "docs/design.rst", "DESIGN.md", "DESIGN.rst", "README.md", "README.rst"]
+files = ["ARCHITECTURE.md", "ARCHITECTURE.rst", "docs/ARCHITECTURE.md", "docs/ARCHITECTURE.rst", "docs/architecture.md", "docs/architecture.rst", "docs/design.md", "docs/design.rst", "DESIGN.md", "DESIGN.rst", "README.md", "README.rst", "README.txt", "README"]
 pass_if_any = true
 
 [controls."OSPS-SA-01.01".passes.pattern.patterns]
@@ -4355,7 +4437,12 @@ help_md = """Perform and document security assessment.
 
 [[controls."OSPS-SA-03.01".passes]]
 handler = "pattern"
-files = ["SECURITY.md", "docs/security.md", "CONTRIBUTING.md", "docs/SECURITY-ASSESSMENT.md"]
+files = [
+    "SECURITY.md", "security.md",
+    ".github/SECURITY.md", ".github/security.md",
+    "docs/SECURITY.md", "docs/security.md",
+    "CONTRIBUTING.md", "docs/SECURITY-ASSESSMENT.md",
+]
 
 [controls."OSPS-SA-03.01".passes.pattern.patterns]
 security_assessment = "(security.*(assessment|review|audit)|pre-release.*security)"
@@ -4508,7 +4595,11 @@ tags = { level = 1, domain = "VM", "stage1-ref" = true }
 # orchestrator so both properties hold; documented for follow-up.
 [[controls."STAGE1-REF-SECURITY-01".passes]]
 handler = "file_exists"
-files = ["SECURITY.md", "docs/SECURITY.md", ".github/SECURITY.md"]
+files = [
+    "SECURITY.md", "security.md",
+    ".github/SECURITY.md", ".github/security.md",
+    "docs/SECURITY.md", "docs/security.md",
+]
 authority = "dispositive"
 
 [[controls."STAGE1-REF-SECURITY-01".passes]]
@@ -4630,18 +4721,11 @@ Each question carries its candidate, if any, as data: `candidate: {value, origin
 labelled UNCONFIRMED. Command templates and answer mappings hold placeholders only;
 `allowed_values` lists every allowed value of an enum; `format_hint` is a format, never an answer.
 
-MANDATORY WORKFLOW - your next action after calling this tool MUST be calling AskUserQuestion:
-1. Call this tool. It returns "questions" and "ask_user_batch" (AskUserQuestion-compatible objects).
-2. Show the person each question's candidate value and origin, labelled unconfirmed. Then call
-   AskUserQuestion with questions=<ask_user_batch>, VERBATIM. Ask the questions that have no
-   ask_user entry after that, listing every allowed value.
-3. After the person answers, use "answer_mapping" to call confirm_project_data(). A "Yes" on a
-   candidate becomes accept_candidates with that question's candidate.digest, filled in only now.
-4. Call this tool again for the next batch. Repeat until status is "complete".
-
-`stored_unconfirmed` lists values stored in .project/ without a confirmation (key, value,
-location). Show them to the person; confirm or reject the ones the person names in one
-confirm_project_data call with `confirm_stored` / `reject_stored`.
+The result's `procedure` lists the steps to follow, in order: show candidates, ask the
+questions (`ask_user_batch` is AskUserQuestion-compatible; pass it verbatim), record the answers
+with confirm_project_data, call this tool again until status is "complete", review
+`stored_unconfirmed` values, and summarize. Your next action after calling this tool MUST be
+asking the person the questions.
 
 Do NOT pre-fill or suggest answers. Never type a detected value as an answer.
 """

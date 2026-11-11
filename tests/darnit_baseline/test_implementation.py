@@ -127,6 +127,25 @@ class TestHandlerRegistration:
         assert handler_info is not None
         assert handler_info.plugin == "openssf-baseline"
 
+    @pytest.mark.unit
+    def test_register_handlers_succeeds_even_when_language_pack_download_fails(self, monkeypatch):
+        """#716: language pack download failure must not crash baseline handler registration."""
+        import sys
+
+        class BrokenLanguagePack:
+            def __getattr__(self, name):
+                raise RuntimeError("504 Gateway Timeout: failed to download parsers")
+
+        monkeypatch.setitem(sys.modules, "tree_sitter_language_pack", BrokenLanguagePack())
+        impl = OSPSBaselineImplementation()
+        # Must not raise
+        impl.register_handlers()
+
+        from darnit.sieve.handler_registry import get_sieve_handler_registry
+        sieve_registry = get_sieve_handler_registry()
+        assert sieve_registry.get("github_branch_protection") is not None
+        assert sieve_registry.get("generate_threat_model") is not None
+
 class TestRegisterFunction:
     """Tests for the register() entry point function."""
 

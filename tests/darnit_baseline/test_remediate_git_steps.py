@@ -260,4 +260,95 @@ def test_git_tools_take_run_id(tool) -> None:
     params = inspect.signature(tool).parameters
 
     assert params["run_id"].default is None
+    assert params["owner"].default is None
+    assert params["repo"].default is None
+    assert params["host"].default is None
     assert "add_all" not in params
+
+
+@pytest.mark.integration
+def test_git_tools_find_run_on_checkout_without_remote_when_owner_repo_given(tmp_path: Path) -> None:
+    from darnit.remediation.plan import content_digest
+
+    repo = tmp_path / "local_repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "Tester"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    (repo / "README.md").write_text("hello\n")
+    subprocess.run(["git", "add", "README.md"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "initial"], cwd=repo, check=True)
+
+    owner, repo_name = "whiskeytastingfoundation", "wtf-frontend"
+    identity = f"github.com/{owner}/{repo_name}"
+    run_id = manifest.new_run_id()
+    manifest.start_run(identity, checkout=repo, run_id=run_id)
+    (repo / "SECURITY.md").write_text("# Security Policy\n")
+    digest = content_digest(b"# Security Policy\n")
+    manifest.record_file(identity, run_id, "SECURITY.md", digest, checkout=repo)
+
+    # Without owner/repo, checkout has no remote so run lookup misses
+    err = tools.commit_remediation_changes(local_path=str(repo), run_id=run_id)
+    assert f"no remediation run {run_id} is recorded for this repository" in err
+
+    # With owner/repo, create_remediation_branch finds and updates the run
+    branch_out = tools.create_remediation_branch(
+        branch_name="fix/compliance-check",
+        local_path=str(repo),
+        run_id=run_id,
+        owner=owner,
+        repo=repo_name,
+    )
+    assert "Switched to" in branch_out or "Created and switched" in branch_out
+    loaded = manifest.load_run(identity, run_id, checkout=repo)
+    assert loaded is not None and loaded.branch == "fix/compliance-check"
+
+    # With owner/repo, commit_remediation_changes finds the run and commits
+    commit_out = tools.commit_remediation_changes(
+        local_path=str(repo),
+        run_id=run_id,
+        owner=owner,
+        repo=repo_name,
+    )
+    assert "Changes committed successfully" in commit_out
+    assert "SECURITY.md" in commit_out
+
+    # Test custom host support
+    host_identity = "gitlab.com/custom-org/custom-repo"
+    run_id_host = manifest.new_run_id()
+    manifest.start_run(host_identity, checkout=repo, run_id=run_id_host)
+    (repo / "SUPPORT.md").write_text("# Support Policy\n")
+    digest_host = content_digest(b"# Support Policy\n")
+    manifest.record_file(host_identity, run_id_host, "SUPPORT.md", digest_host, checkout=repo)
+
+    commit_host_out = tools.commit_remediation_changes(
+        local_path=str(repo),
+        run_id=run_id_host,
+        owner="custom-org",
+        repo="custom-repo",
+        host="gitlab.com",
+    )
+    assert "Changes committed successfully" in commit_host_out
+    assert "SUPPORT.md" in commit_host_out
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("host", [None, "gitlab.com"], ids=["github.com", "gitlab.com"])
+def test_the_git_tools_named_like_the_apply_find_its_run_without_a_remote(host: str | None, tmp_path: Path) -> None:
+    """remediate_audit_findings records the run under the repository the caller names, host
+    included, so the git tools named the same way find it on a checkout with no remote
+    (#726, #729 review)."""
+    checkout = git_fixtures._init_repo(tmp_path / "checkout")
+    named: dict[str, str] = {"owner": OWNER, "repo": REPO, **({"host": host} if host else {})}
+
+    output = tools.remediate_audit_findings(local_path=str(checkout), dry_run=False, **named)
+
+    run_id = _run_block(output)["run_id"]
+    assert manifest.load_run(f"{host or 'github.com'}/{OWNER}/{REPO}", run_id, checkout=checkout) is not None, output
+    branch = tools.create_remediation_branch(
+        branch_name=REMEDIATION_BRANCH, local_path=str(checkout), run_id=run_id, **named
+    )
+    assert not branch.startswith("Error"), branch
+    committed = tools.commit_remediation_changes(local_path=str(checkout), run_id=run_id, **named)
+    assert "Changes committed successfully" in committed, committed
+    assert git(checkout, "diff-tree", "-r", "--no-commit-id", "--name-only", "HEAD").stdout.split() == ["SECURITY.md"]

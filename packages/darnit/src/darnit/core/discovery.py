@@ -15,6 +15,12 @@ logger = get_logger("core.discovery")
 # Cache for discovered implementations
 _implementations: dict[str, ComplianceImplementation] | None = None
 _implementation_packages: frozenset[str] = frozenset()
+_registration_errors: dict[str, Exception] = {}
+
+
+def get_registration_error(framework_name: str) -> Exception | None:
+    """Return the exception that failed handler registration for framework_name, if any."""
+    return _registration_errors.get(framework_name)
 
 
 def discover_implementations() -> dict[str, ComplianceImplementation]:
@@ -160,6 +166,7 @@ def register_implementation_handlers(framework_name: str | None) -> bool:
         for method in methods:
             method()
     except Exception as err:  # noqa: BLE001 - a bad plugin must not kill the audit
+        _registration_errors[framework_name] = err
         logger.warning(
             "Failed to register handlers for '%s': %s: %s",
             framework_name,
@@ -168,6 +175,7 @@ def register_implementation_handlers(framework_name: str | None) -> bool:
         )
         return False
 
+    _registration_errors.pop(framework_name, None)
     logger.debug("Registered handlers for '%s'", framework_name)
     return True
 
@@ -177,15 +185,17 @@ def clear_cache() -> None:
 
     Useful for testing or when implementations may have changed.
     """
-    global _implementations, _implementation_packages
+    global _implementations, _implementation_packages, _registration_errors
     _implementations = None
     _implementation_packages = frozenset()
+    _registration_errors.clear()
 
 
 __all__ = [
     "clear_cache",
     "discover_implementations",
     "get_implementation",
+    "get_registration_error",
     "implementation_packages",
     "register_implementation_handlers",
 ]

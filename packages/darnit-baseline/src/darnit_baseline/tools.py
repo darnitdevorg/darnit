@@ -544,6 +544,8 @@ def create_security_policy(
         )
     elif written:
         recheck = (outcome.recheck or {}).get("status", "not run")
+        if outcome.pending_kind:
+            recheck = f"{recheck}, awaiting {outcome.pending_kind}"
         summary = f"Wrote {', '.join(written)} in {repo_path} ({outcome.kind}; re-check of {control_id}: {recheck})."
     elif outcome.kind == "unchanged":
         summary = f"Nothing was written: {outcome.reason}. An existing SECURITY.md is never overwritten."
@@ -711,6 +713,7 @@ def confirm_project_data(
     Returns:
         What was recorded or refused, per key
     """
+    from darnit.server.procedures import data_next_step
     from darnit.server.tools.project_data import confirm_project_data_impl
 
     return confirm_project_data_impl(
@@ -725,6 +728,7 @@ def confirm_project_data(
         host=host,
         framework_name=_FRAMEWORK_NAME,
         confirm_pass_candidate=confirm_pass_candidate,
+        next_step=data_next_step(owner, repo, str(Path(local_path).resolve())),
         **values,
     )
 
@@ -751,25 +755,8 @@ def _context_key_order() -> list[str]:
         return []
 
 
-_LLM_DIRECTIVE_PREFIX = """MANDATORY: Your next action MUST be calling the AskUserQuestion tool.
-
-For every question in "questions" that has a "candidate", first show the person its
-candidate.value and candidate.origin, labelled UNCONFIRMED. Then pass "ask_user_batch"
-below verbatim as the "questions" parameter to AskUserQuestion. Do NOT paraphrase, do NOT
-pre-select answers, and do NOT add options. A question in "questions" with no entry in
-"ask_user_batch" (free text, or more allowed values than the selector holds) is asked
-after that, listing every value in its "allowed_values"; never offer its "format_hint"
-as an answer.
-
-After the person answers, call confirm_project_data() once for the batch, with owner and
-repo (and host when not github.com) naming the repository. Use "answer_mapping":
-- "Yes" / "No" on a yes/no question -> pass true / false (not strings)
-- A selected option label -> pass the label as a string
-- "Yes" on a candidate question -> accept_candidates, mapping the key to that question's
-  candidate.digest; fill in the digest only now, after the person answered Yes
-- "No" on a candidate question, or "Other" -> pass the value the person typed
-Never type a detected value as an answer. Then call get_pending_data() again for the
-next batch (if any remain).
+_LLM_DIRECTIVE_PREFIX = """MANDATORY: Your next action MUST be asking the person the questions below.
+Follow "procedure" in this result, step by step.
 
 ---
 """
@@ -791,12 +778,9 @@ def get_pending_data(
     its candidate, if any, as unconfirmed data (value, origin, digest); command
     templates and answer mappings hold placeholders only.
 
-    Workflow:
-    1. Call this tool. It returns "questions" and "ask_user_batch".
-    2. Show each question's candidate to the person, labelled unconfirmed, then
-       call AskUserQuestion(questions=<ask_user_batch>).
-    3. After the person answers, use "answer_mapping" to call confirm_project_data().
-    4. Call get_pending_data() again for the next batch. Repeat until status is "complete".
+    The result's ``procedure`` lists the steps to follow: how to show
+    candidates and ask the questions, the confirm_project_data call, the next
+    get_pending_data call, the review of stored values, and the summary.
 
     Parameters:
     - `local_path`: Path to repository (default: ".")
@@ -807,17 +791,27 @@ def get_pending_data(
     - `limit`: Max questions to return per batch (default: 4). Use 0 for all.
 
     Returns:
-        JSON with the questions, ask_user_batch (for AskUserQuestion),
+        JSON with the procedure, the questions, ask_user_batch (for AskUserQuestion),
         answer_mapping for confirm_project_data, a progress indicator, and
         stored_unconfirmed: values stored in .project/ without a confirmation,
         with their locations, for review with confirm_stored / reject_stored.
     """
     from darnit.config.context_storage import get_pending_context as _get_pending
+    from darnit.server.procedures import (
+        ASK_FOR_VALUE_MARKER,
+        CHAT_OPTION,
+        SKIP_MARKER,
+        SKIP_OPTION,
+        data_collection_procedure,
+    )
     from darnit.server.tools.project_data import stored_unconfirmed
     from darnit.trust.decision import target_from_owner_repo
 
     repo_path = Path(local_path).resolve()
     target = target_from_owner_repo(owner, repo)
+    # Only the repository the caller named goes into the procedure's calls,
+    # never one detected from the checkout's remote.
+    procedure = data_collection_procedure(owner, repo, str(repo_path), control_ids)
 
     # Auto-detect owner/repo from git
     if owner is None or repo is None:
@@ -842,6 +836,7 @@ def get_pending_data(
             complete: dict = {
                 "status": "complete",
                 "message": "All context has been confirmed. No additional input needed.",
+                "procedure": procedure,
                 "questions": [],
             }
             if stored:
@@ -869,10 +864,7 @@ def get_pending_data(
         batch_questions = []
         answer_mapping = []
         for q in questions:
-            ask_user = q.get("ask_user")
-            if ask_user is None:
-                continue
-            batch_questions.append(ask_user)
+            batch_questions.append(q["ask_user"])
             mapping: dict = {
                 "question_index": len(batch_questions) - 1,
                 "context_key": q["key"],
@@ -880,10 +872,12 @@ def get_pending_data(
             if q["candidate"] is not None:
                 mapping["value_map"] = {
                     "Yes": {"accept_candidates": {q["key"]: "<candidate.digest>"}},
-                    "No": "ASK_USER_FOR_VALUE",
+                    "No": ASK_FOR_VALUE_MARKER,
                 }
             elif q["input_type"] == "select" and q.get("options") == ["true", "false"]:
                 mapping["value_map"] = {"Yes": True, "No": False}
+            elif q["input_type"] == "free_text":
+                mapping["value_map"] = {SKIP_OPTION: SKIP_MARKER, CHAT_OPTION: ASK_FOR_VALUE_MARKER}
             answer_mapping.append(mapping)
 
         # Determine answered count from total minus pending
@@ -891,6 +885,7 @@ def get_pending_data(
 
         response: dict = {
             "status": "pending",
+            "procedure": procedure,
             "progress": {
                 "answered": answered,
                 "total": total,
@@ -1005,23 +1000,24 @@ def _build_context_question(req) -> dict:
             "repository owner, git config, or any other source. The format hint is not an answer."
         )
 
-    ask_user = _build_ask_user_params(req.key, question, definition)
-    if ask_user is not None:
-        question["ask_user"] = ask_user
+    question["ask_user"] = _build_ask_user_params(req.key, question, definition)
 
     return question
 
 
-def _build_ask_user_params(key: str, question_dict: dict, definition) -> dict | None:
-    """AskUserQuestion parameters (question/header/options/multiSelect), or None.
+def _build_ask_user_params(key: str, question_dict: dict, definition) -> dict:
+    """AskUserQuestion parameters (question/header/options/multiSelect) for every question.
 
-    None for free text and for an enum with more values than the selector
-    holds, so no allowed value is dropped (FR-015). A candidate's value is
-    not repeated here; the person sees it from the question's ``candidate``.
+    The question tool shows at most 4 options and always adds a free-text
+    "Other". A choice key with more values names them all in the question, so
+    each stays reachable under Other (FR-015). A free-text key offers skip and
+    chat options, never a value. A candidate's value is not repeated here; the
+    person sees it from the question's ``candidate``.
     """
+    from darnit.server.procedures import CHAT_OPTION, SKIP_OPTION
+
     input_type = question_dict.get("input_type")
     question_text = question_dict["prompt"]
-
     header = _ask_user_header(key)
 
     if input_type == "confirm":
@@ -1038,26 +1034,39 @@ def _build_ask_user_params(key: str, question_dict: dict, definition) -> dict | 
             "multiSelect": False,
         }
 
-    if input_type != "select":
-        return None
-
-    if definition.type == "boolean":
+    if input_type == "select" and definition.type == "boolean":
         if hint := question_dict.get("hint"):
             question_text = f"{question_text} {hint}"
-        options = [
-            {"label": "Yes", "description": "Yes, this applies"},
-            {"label": "No", "description": "No, this does not apply"},
-        ]
-    else:
+        return {
+            "question": question_text,
+            "header": header,
+            "options": [
+                {"label": "Yes", "description": "Yes, this applies"},
+                {"label": "No", "description": "No, this does not apply"},
+            ],
+            "multiSelect": False,
+        }
+
+    if input_type == "select":
         values = question_dict["options"]
         if len(values) > _SELECTOR_OPTION_LIMIT:
-            return None
-        options = [{"label": str(v), "description": f"Select '{v}'"} for v in values]
+            question_text = f"{question_text} Choose Other to type a value not listed below."
+        return {
+            "question": question_text,
+            "header": header,
+            "options": [{"label": str(v), "description": f"Select '{v}'"} for v in values[:_SELECTOR_OPTION_LIMIT]],
+            "multiSelect": False,
+        }
 
+    hint = question_dict.get("hint")
+    details = f" {hint}." if hint and not hint.endswith(".") else (f" {hint}" if hint else "")
     return {
-        "question": question_text,
+        "question": f"{question_text}{details} Type your answer under Other.",
         "header": header,
-        "options": options,
+        "options": [
+            {"label": SKIP_OPTION, "description": "Leave it unanswered; the controls it affects stay non-compliant"},
+            {"label": CHAT_OPTION, "description": "Type a longer answer in the conversation instead"},
+        ],
         "multiSelect": False,
     }
 
@@ -1539,6 +1548,9 @@ def create_remediation_branch(
     local_path: str = ".",
     base_branch: str | None = None,
     run_id: str | None = None,
+    owner: str | None = None,
+    repo: str | None = None,
+    host: str | None = None,
 ) -> str:
     """
     Create a new branch for remediation work, or switch to an existing remediation branch.
@@ -1553,6 +1565,9 @@ def create_remediation_branch(
         local_path: Path to the repository
         base_branch: Branch to base off of (default: current branch)
         run_id: Remediation run to record the branch in (default: the latest run)
+        owner: Repository owner the run is recorded under (default: detected from git)
+        repo: Repository name the run is recorded under (default: detected from git)
+        host: Host of the repository owner and repo name, when not github.com
 
     Returns:
         Success message with branch name or error
@@ -1564,6 +1579,9 @@ def create_remediation_branch(
         local_path=local_path,
         base_branch=base_branch,
         run_id=run_id,
+        owner=owner,
+        repo=repo,
+        host=host,
     )
 
 
@@ -1571,6 +1589,9 @@ def commit_remediation_changes(
     local_path: str = ".",
     message: str | None = None,
     run_id: str | None = None,
+    owner: str | None = None,
+    repo: str | None = None,
+    host: str | None = None,
 ) -> str:
     """
     Commit the files a remediation run wrote, and nothing else.
@@ -1583,6 +1604,9 @@ def commit_remediation_changes(
         local_path: Path to the repository
         message: Commit message (auto-generated if not provided)
         run_id: Remediation run to commit (default: the latest run)
+        owner: Repository owner the run is recorded under (default: detected from git)
+        repo: Repository name the run is recorded under (default: detected from git)
+        host: Host of the repository owner and repo name, when not github.com
 
     Returns:
         Success message listing every committed file, or error
@@ -1593,6 +1617,9 @@ def commit_remediation_changes(
         local_path=local_path,
         message=message,
         run_id=run_id,
+        owner=owner,
+        repo=repo,
+        host=host,
     )
 
 
@@ -1603,6 +1630,9 @@ def create_remediation_pr(
     base_branch: str | None = None,
     draft: bool = False,
     run_id: str | None = None,
+    owner: str | None = None,
+    repo: str | None = None,
+    host: str | None = None,
 ) -> str:
     """
     Create a pull request for a remediation run's branch, pushing only that branch.
@@ -1616,6 +1646,9 @@ def create_remediation_pr(
         base_branch: Target branch for PR (default: repo default branch)
         draft: Create as draft PR (default: False)
         run_id: Remediation run whose branch to push (default: the latest run)
+        owner: Repository owner the run is recorded under (default: detected from git)
+        repo: Repository name the run is recorded under (default: detected from git)
+        host: Host of the repository owner and repo name, when not github.com
 
     Returns:
         Success message with PR URL or error
@@ -1629,6 +1662,9 @@ def create_remediation_pr(
         base_branch=base_branch,
         draft=draft,
         run_id=run_id,
+        owner=owner,
+        repo=repo,
+        host=host,
     )
 
 

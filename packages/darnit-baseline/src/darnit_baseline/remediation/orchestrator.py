@@ -302,6 +302,11 @@ def _run_baseline_checks(
 # =============================================================================
 
 
+def _named_host(target: str | None) -> str | None:
+    """Host of the repository the caller named; None when the caller named none (framework-design 15.6)."""
+    return target.split("/", 1)[0] if target else None
+
+
 def _apply_control_remediation(
     control_id: str,
     local_path: str,
@@ -528,6 +533,7 @@ def _apply_declarative_remediation(
             local_path=local_path,
             owner=owner,
             repo=repo,
+            host=_named_host(target),
             templates=templates or {},
             context_values=context_values,
             scan_values=scan_values,
@@ -1240,7 +1246,10 @@ def run_remediation(
     except OperatorConfigError as e:
         return RemediationReport(f"Error: remediation policy unavailable: {e}")
     run_id = run_id or manifest.new_run_id()
-    repository = platform_repository(local_path, owner, repo) or manifest.repository_identity(local_path, owner, repo)
+    host = _named_host(target)
+    repository = platform_repository(local_path, owner, repo, host) or manifest.repository_identity(
+        local_path, owner, repo, host=host
+    )
     session = PlatformSession(
         repository,
         platform_requests(framework, [c for c in remediable_ids if c not in honored_claims]),
@@ -1307,6 +1316,7 @@ def run_remediation(
         dry_run=dry_run,
         categories=categories,
         run=run,
+        target=target,
     )
     return RemediationReport(markdown, run)
 
@@ -1479,7 +1489,11 @@ def _rechecked_outcome(r: dict[str, Any], result: dict[str, Any] | None, failure
             cause=block.get("cause") or recheck.get("details") or "the re-check ended ERROR",
         )
         return RemediationOutcome(kind="changed_not_verified", recheck=recheck, error=error, **common)
-    return RemediationOutcome(kind="changed_not_passing", recheck=recheck, **common)
+    pending_kind = (recheck.get("pending") or {}).get("kind") if status == "PENDING" else None
+    if status == "PENDING" and pending_kind not in ("llm_judgment", "confirmation"):
+        error = ErrorInfo(error_class="evaluation", cause=f"the re-check is PENDING with pending.kind {pending_kind!r}")
+        return RemediationOutcome(kind="changed_not_verified", recheck=recheck, error=error, **common)
+    return RemediationOutcome(kind="changed_not_passing", recheck=recheck, pending_kind=pending_kind, **common)
 
 
 def _outcomes(
@@ -1676,6 +1690,32 @@ def _status_sections(results: list[dict[str, Any]]) -> list[str]:
     return md
 
 
+_AWAITING = {
+    "llm_judgment": "a model judgment",
+    "confirmation": "the operator's confirmation of a PASS candidate",
+}
+
+
+def _next_steps_lines(run: RemediationRun, local_path: str, target: str | None) -> list[str]:
+    """What to do about changed controls awaiting a judgment or confirmation (15.9); ids only, no evidence.
+
+    The calls name the repository the caller named (``target``), never the
+    owner, repo, or host detected from the checkout's remote; without one
+    they hold placeholders (procedures contract).
+    """
+    from darnit.server.procedures import remediation_next_steps
+    from darnit.trust.decision import owner_repo_from_identity
+
+    owner = repo = host = None
+    if target:
+        host = target.split("/", 1)[0]
+        owner, repo = owner_repo_from_identity(target)
+    steps = remediation_next_steps(owner, repo, host, local_path, run.awaiting, run.run_id)
+    if not steps:
+        return []
+    return ["## Next steps", "", *(f"- {step}" for step in steps), ""]
+
+
 def _outcome_lines(run: RemediationRun, results: list[dict[str, Any]]) -> list[str]:
     by_id = {r.get("control_id", "?"): r for r in results}
     md = ["## Summary", "", "| Outcome | Count |", "|---|---|"]
@@ -1700,6 +1740,8 @@ def _outcome_lines(run: RemediationRun, results: list[dict[str, Any]]) -> list[s
         if outcome.recheck is not None:
             details = f" ({outcome.recheck['details']})" if outcome.recheck.get("details") else ""
             md.append(f"- **Re-check:** {outcome.recheck.get('status')}{details}")
+        if outcome.pending_kind:
+            md.append(f"- **Awaiting:** {_AWAITING[outcome.pending_kind]}")
         if outcome.reason and outcome.kind != "manual":
             md.append(f"- **Reason:** {outcome.reason}")
         for item in r.get("plan", []):
@@ -1778,6 +1820,7 @@ def _format_remediation_output(
     dry_run: bool,
     run: RemediationRun,
     categories: list[str] | None = None,
+    target: str | None = None,
 ) -> str:
     """The Markdown report rendered from ``run`` (contract section 5), followed by ``run`` as fenced JSON."""
     md = [
@@ -1790,6 +1833,7 @@ def _format_remediation_output(
     md += _review_lines(results, dry_run)
     if not dry_run:
         md += _consultation_lines(results)
+        md += _next_steps_lines(run, local_path, target)
     md += ["```json", json.dumps(run.model_dump(mode="json"), indent=2), "```", ""]
     return "\n".join(md)
 

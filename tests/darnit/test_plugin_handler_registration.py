@@ -252,3 +252,35 @@ class TestControlOrderDeterminism:
         """Guards the set -> list change: dedup must still happen."""
         ids = list(self._merge().controls.keys())
         assert len(ids) == len(set(ids))
+
+
+class TestRegistrationFailureDiagnostics:
+    """#716: handler registration failures should name the underlying cause in AuthorityViolation."""
+
+    @pytest.mark.unit
+    def test_authority_violation_names_registration_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from unittest.mock import MagicMock, patch
+
+        from darnit.config.control_loader import validate_step_authority
+        from darnit.core.discovery import clear_cache, get_registration_error, register_implementation_handlers
+        from darnit.core.errors import AuthorityViolation
+
+        clear_cache()
+        broken = MagicMock()
+        broken.name = "broken-framework"
+        broken.register_handlers.side_effect = RuntimeError("network download error: 504")
+
+        with patch("darnit.core.discovery.get_implementation", return_value=broken):
+            assert register_implementation_handlers("broken-framework") is False
+            err = get_registration_error("broken-framework")
+            assert err is not None
+            assert "network download error: 504" in str(err)
+
+            class DummyInv:
+                handler = "unregistered_step"
+
+            with pytest.raises(AuthorityViolation) as exc_info:
+                validate_step_authority("broken-framework", "TEST-01", [DummyInv()])
+
+            msg = str(exc_info.value)
+            assert "step type 'unregistered_step' is not registered because plugin 'broken-framework' failed handler registration: RuntimeError: network download error: 504" in msg
