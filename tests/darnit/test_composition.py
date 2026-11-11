@@ -329,6 +329,19 @@ def test_overrides_sync_tags_level_and_validate():
 
 
 @pytest.mark.unit
+def test_overrides_invalid_level_rejected():
+    """Composite overrides setting level outside 1-3 are rejected by validation (fixes #701)."""
+    base_ctrl = ControlConfig(name="Base", description="base desc", level=2, tags={"level": 2})
+
+    for invalid_level in [0, -1, 4]:
+        with pytest.raises(ValidationError, match="Invalid control level"):
+            _apply_override("TEST-01", base_ctrl, OverrideBlock(tags={"level": invalid_level}))
+
+        with pytest.raises(ValidationError, match="Invalid control level"):
+            _apply_override("TEST-01", base_ctrl, OverrideBlock(level=invalid_level))
+
+
+@pytest.mark.unit
 def test_overrides_preserve_provenance(composite_fixtures_dir, fixture_source_loader):
     """US2 / T034: provenance tags survive override unchanged.
 
