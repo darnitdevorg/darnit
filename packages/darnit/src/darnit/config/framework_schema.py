@@ -728,9 +728,8 @@ class ControlConfig(BaseModel):
         elif self.level is not None:
             self.tags["level"] = self.level
 
-        if self.level is not None:
-            if isinstance(self.level, bool) or self.level not in (1, 2, 3):
-                raise ValueError(f"Invalid control level {self.level}: level must be 1, 2, or 3")
+        if self.level is not None and self.level not in (1, 2, 3):
+            raise ValueError(f"Invalid control level {self.level}: level must be 1, 2, or 3")
 
         if "domain" in self.tags:
             tag_domain = self.tags["domain"]
