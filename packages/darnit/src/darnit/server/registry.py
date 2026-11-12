@@ -204,7 +204,8 @@ class ToolRegistry:
         import inspect
 
         sig = inspect.signature(base_fn)
-        bound_handler.__signature__ = sig.replace(
+        # typeshed does not declare __signature__, which inspect.signature honours.
+        bound_handler.__signature__ = sig.replace(  # type: ignore[attr-defined]
             parameters=[
                 p
                 for name, p in sig.parameters.items()
