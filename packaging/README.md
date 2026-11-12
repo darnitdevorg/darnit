@@ -14,7 +14,7 @@ Maintainer-facing documentation for the darnit release pipeline. End-user instal
 
 The tag-driven pipeline in `release.yml` currently ships **PyPI + container** only. Binary, Homebrew, and Claude Code plugin channels are designed but not wired up; they will be re-introduced per waybill's incremental pattern as separate PRs.
 
-PyPI publishing uses an **account-scoped API token** (`PYPI_API_TOKEN` repo secret) rather than trusted publishers. Trusted publishers are the better long-term posture (no long-lived secrets, per-project scoping) but the per-project PyPI UI setup was blocking; tokens ship the pipeline today and can be migrated later. See "External setup" below for the token flow.
+PyPI publishing uses **Trusted Publishing** (GitHub OIDC) for both PyPI and TestPyPI. Stable tags publish to PyPI; release-candidate tags publish to TestPyPI. No long-lived PyPI API token is required. Every `publish-*` job runs in the `release` environment, which requires approval from a maintainer (mlieberman85 or Marc-cn) and deploys only from `v*` tags or `main`.
 
 Sections below marked *(deferred)* describe channels the workflow does not currently drive.
 
@@ -38,32 +38,48 @@ Authoritative list: [`packaging/pypi/public-packages.txt`](pypi/public-packages.
 
 ## External setup (one-time)
 
-Before the first release works end-to-end, a maintainer with admin access must:
+Before the next release works end-to-end, a maintainer with admin access must:
 
-### PyPI API token (current)
+### PyPI Trusted Publishing
 
-The workflow authenticates every `publish-*` job with the `PYPI_API_TOKEN` repo secret. Setup, one time:
+Configure Trusted Publishing for each public package, on PyPI and on TestPyPI (rc tags publish there). The publisher is the same on both:
 
-1. Under a PyPI account with 2FA enabled (Account settings -> Two-factor authentication), create a new API token:
-   - https://pypi.org/manage/account/token/
-   - Name: `darnit-github-actions` (or similar)
-   - Scope: **Entire account (all projects)**. Project-scoped tokens require the projects to already exist; the account-scoped token is only needed for first-time publish, then narrow down.
-2. Copy the full token (starts with `pypi-`).
-3. Add as a **repository secret** (not environment secret) on `darnitdevorg/darnit`:
-   ```bash
-   gh secret set PYPI_API_TOKEN --repo darnitdevorg/darnit
-   ```
-4. After the first release lands and the five projects exist on PyPI, replace with per-project tokens for scope reduction (optional; not required for correctness).
+- Owner: `darnitdevorg`
+- Repository: `darnit`
+- Workflow: `release.yml`
+- Environment: `release`
 
-If the token is bad, the first `publish-*` job in `release.yml` fails immediately with a 403 and no packages are published. Fix the secret and re-trigger via `workflow_dispatch` on the same tag; no need to bump the version.
+Where the project already exists (for example on PyPI, after an earlier token-based release): open the project's settings, then Publishing, and add the GitHub publisher above. Where it does not exist yet (every package on TestPyPI, and any new package on PyPI): add a **pending publisher** from the account page (Your account -> Publishing) with the project name and the same four fields. The first publish from the workflow then creates the project and the pending publisher becomes its Trusted Publisher. Nothing is uploaded by hand, and no account-scoped API token is created at any point.
 
-### PyPI Trusted Publishing *(deferred)*
+Repeat for every package in [`packaging/pypi/public-packages.txt`](pypi/public-packages.txt), currently:
 
-Better long-term posture; skipped for v0.1.0 because per-project UI setup was blocking. To migrate later, per public package: on the project's "Publishing" page add a Trusted Publisher with Owner: `darnitdevorg`, Repository: `darnit`, Workflow: `release.yml`, Environment: `release`. Then swap `password: ${{ secrets.PYPI_API_TOKEN }}` in each `publish-*` job for the trusted-publisher config, add `id-token: write` permission, and re-add `environment: release`.
+- `darnit-core`
+- `darnit-baseline`
+- `darnit-gittuf`
+- `darnit-reproducibility`
+- `darnit-mcp`
 
-### TestPyPI *(deferred)*
+`darnit-csl` is a workspace package but is not published yet (how modules are published and bundled is being settled in #680).
 
-Not currently used. rc tags publish directly to real PyPI as GitHub prereleases.
+### `release` environment
+
+The publish jobs run in the `release` environment (Settings -> Environments). Its protection:
+
+- **Required reviewers:** `mlieberman85` and `Marc-cn`. One of them approves the publish jobs of each run. Self-review is prevented, so the maintainer who started the release cannot approve it, and administrators cannot bypass the rule.
+- **Deployment branches and tags:** only `v*` tags and the `main` branch. `main` is used by the `workflow_dispatch` re-release path.
+
+The Trusted Publishers above name this environment, so PyPI and TestPyPI reject an upload from any job outside it.
+
+### Cleanup once Trusted Publishing works
+
+The account-scoped token from the v0.1.x releases is still live as the `PYPI_API_TOKEN` repository secret. No workflow reads it any more. After the first release that publishes through Trusted Publishing:
+
+1. Delete the repository secret: `gh secret delete PYPI_API_TOKEN --repo darnitdevorg/darnit`.
+2. Revoke the token itself at https://pypi.org/manage/account/token/ under the account that created it.
+
+### TestPyPI
+
+Configure the same Trusted Publisher entries on TestPyPI. Release-candidate tags (`vX.Y.ZrcN`) publish to TestPyPI. The container build installs Darnit packages from the workflow's built wheel artifacts and resolves external dependencies from PyPI.
 
 ### Homebrew tap *(deferred)*
 
@@ -74,9 +90,9 @@ Not currently used. rc tags publish directly to real PyPI as GitHub prereleases.
 
    The dispatch step in `release.yml` uses bearer auth (`Authorization: Bearer ${HOMEBREW_TAP_TOKEN}`), which works identically for both options. Swap between them at any time without touching the workflow.
 
-3. Store the credential as the `HOMEBREW_TAP_TOKEN` secret on the `release` environment of `kusari-oss/darnit`:
+3. Store the credential as the `HOMEBREW_TAP_TOKEN` secret on the `release` environment of `darnitdevorg/darnit`:
    ```bash
-   gh secret set HOMEBREW_TAP_TOKEN --repo kusari-oss/darnit --env release
+   gh secret set HOMEBREW_TAP_TOKEN --repo darnitdevorg/darnit --env release
    ```
 
 ## Doing a release
@@ -121,7 +137,7 @@ The `release.yml` workflow triggers automatically. **No `--force` or amend** —
 
 ### Monitor
 
-1. Open the [Actions tab](https://github.com/kusari-oss/darnit/actions). The `Release` workflow should appear within a few seconds of tag push.
+1. Open the [Actions tab](https://github.com/darnitdevorg/darnit/actions). The `Release` workflow should appear within a few seconds of tag push.
 2. Watch `preflight` first. If it fails:
    - Most common: version mismatch between tag and `pyproject.toml`. Delete the tag (`git push upstream --delete vX.Y.Z`), fix the bump commit, push a new tag.
    - Other gates (lint/tests/sync/doc-gen) should have been caught in pre-flight above. If they fire here, you skipped step 4.
@@ -136,7 +152,7 @@ The `release.yml` workflow triggers automatically. **No `--force` or amend** —
 - Verify the user-facing surfaces:
   ```bash
   pip install darnit-mcp==X.Y.Z
-  docker pull ghcr.io/kusari-oss/darnit:vX.Y.Z
+  docker pull ghcr.io/darnitdevorg/darnit:vX.Y.Z
   # stable only:
   brew tap kusari-oss/tap && brew install darnit
   ```

@@ -38,27 +38,17 @@ pip install \
 
 The `--extra-index-url` is required so dependencies of darnit that exist only on PyPI (e.g. `tree-sitter`, `mcp`, `pydantic`) can still be resolved.
 
-## Verify the Sigstore attestation
+## Verify the PEP 740 attestation
 
-Every release attaches a [PEP 740](https://peps.python.org/pep-0740/) Sigstore attestation. The signing identity is the GitHub Actions workflow that produced the wheel; you can verify the chain back to the canonical repository without trusting anything in between.
+Releases published with Trusted Publishing (`release.yml`; every release from the first one made that way) attach a [PEP 740](https://peps.python.org/pep-0740/) attestation to every wheel. The signing identity is the GitHub Actions workflow that produced the wheel; you can verify the chain back to the canonical repository without trusting anything in between. The 0.1.x releases were uploaded with an API token and carry no attestation: for those, `pypi-attestations` reports that no provenance was found, which is expected, not a failure of the package.
 
-### One-step verification with pip
+pip has no `--verify-attestations` option (checked against `pip install --help` on pip 24.0 and 26.2.1); verification is a separate step with `pypi-attestations`.
 
-If your pip is 25.0 or newer, `--verify-attestations` does the whole thing automatically:
-
-```bash
-pip install --verify-attestations darnit-mcp==0.1.0
-```
-
-pip refuses to install if the attestation is missing or fails to verify against PyPI's public certs.
-
-### Manual verification with `sigstore`
-
-If you need to verify outside an install context (security scanning, attestation archives, etc.):
+### Verification with `pypi-attestations`
 
 ```bash
 # Install the verifier
-pip install 'sigstore>=3.0.0'
+pip install 'pypi-attestations>=0.0.30'
 
 # Download the wheel
 pip download --no-deps darnit-mcp==0.1.0
@@ -68,27 +58,17 @@ curl -fsSL \
   "https://pypi.org/integrity/darnit-mcp/0.1.0/darnit_mcp-0.1.0-py3-none-any.whl/provenance" \
   -o provenance.json
 
-# Extract the first attestation as a sigstore-readable bundle
-python -c "
-import json
-with open('provenance.json') as f:
-    data = json.load(f)
-with open('attestation.sigstore.json', 'w') as out:
-    json.dump(data['attestation_bundles'][0]['attestations'][0], out)
-"
-
-# Verify against the canonical kusari-oss/darnit identity
-python -m sigstore verify identity \
-  --bundle attestation.sigstore.json \
-  --cert-identity-regexp '^https://github\.com/kusari-oss/darnit/\.github/workflows/release\.yml@' \
-  --cert-oidc-issuer https://token.actions.githubusercontent.com \
+# Verify the attestations against the wheel and the publishing repository
+pypi-attestations verify pypi \
+  --repository https://github.com/darnitdevorg/darnit \
+  --provenance-file provenance.json \
   darnit_mcp-0.1.0-py3-none-any.whl
 ```
 
 A passing verification proves:
 
 - The wheel bytes match exactly what was signed.
-- The signer was the `release.yml` workflow in `kusari-oss/darnit`.
+- The attestation was produced by the `release.yml` workflow of `darnitdevorg/darnit`, from its `release` environment (the tool reads both from the provenance file's `publisher` block; check them, as the release smoke does, before trusting the verification).
 - The OIDC issuer was GitHub Actions (not some other identity provider).
 
 For TestPyPI pre-releases, substitute `test.pypi.org` for `pypi.org` in the provenance URL.
@@ -118,5 +98,6 @@ For most users, `uv tool install darnit-mcp` (or `pip install darnit-mcp` in a v
 |---|---|
 | `ERROR: Package requires a different Python` | Host Python is older than 3.11. Install Python 3.11+ or use [pipx](https://pipx.pypa.io/) with an explicit `--python` flag. |
 | `Could not find a version that satisfies the requirement` (for a pre-release) | Missing `--pre` flag or wrong `--index-url`. |
-| Sigstore verification fails with "no attestation bundles" | The release was published before PEP 740 attestations existed, or the attestation hasn't propagated yet (rare; retry in a few minutes). |
-| Sigstore verification fails with "identity mismatch" | The wheel was not signed by `kusari-oss/darnit`'s release workflow. **Do not trust this artifact.** Report it via the project's security policy. |
+| `curl` gets HTTP 404 from the provenance URL, or `pypi-attestations` reports that provenance for the file was not found | The release carries no PEP 740 attestation: every 0.1.x release (uploaded with an API token), or a release published minutes ago that has not propagated yet (retry). Not a sign of tampering. |
+| `pypi-attestations verify` fails on the publisher: repository, workflow or environment differs from `darnitdevorg/darnit`, `release.yml`, `release` | The wheel was not signed by this project's release workflow. **Do not trust this artifact.** Report it via the project's security policy. |
+| `pypi-attestations verify` fails on the digest or signature | The wheel bytes differ from what was signed. **Do not trust this artifact.** Download again from PyPI; if it still fails, report it. |
