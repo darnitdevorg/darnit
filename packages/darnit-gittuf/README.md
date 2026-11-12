@@ -26,10 +26,16 @@ maintainer decisions; nothing is pushed.
 
 ## Test coverage
 
-The real-gittuf onboarding tests currently provide **local-only coverage**: CI
-does not install gittuf, so those tests skip when the binary is absent. With
-gittuf installed on PATH, run them locally from the workspace root:
+The gittuf CI job installs the checksum-pinned 0.17.0 release and runs the
+entire plugin suite without skips. To run it locally, put gittuf on PATH and run:
 
 ```bash
-uv run pytest tests/darnit_gittuf/test_onboarding.py -v
+uv run pytest tests/darnit_gittuf -v
 ```
+
+Setup alone creates the root of trust. It does not protect `main` or record it
+in the reference state log. On a fresh repository, `gittuf verify-ref HEAD`
+therefore has no entry to verify. The end-to-end test adds a signing rule for
+`main`, records an authorized update, then checks that an update recorded by
+an unauthorized key fails verification. Those policy choices are test fixtures,
+not defaults installed by Darnit.

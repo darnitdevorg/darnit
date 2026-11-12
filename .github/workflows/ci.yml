@@ -55,6 +55,39 @@ jobs:
         if: always()
         run: uv run python scripts/corpus_report.py --format markdown >> "$GITHUB_STEP_SUMMARY"
 
+  gittuf:
+    name: Gittuf 0.17.0 integration tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v4
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - name: Install pinned gittuf release
+        run: |
+          mkdir -p "$RUNNER_TEMP/gittuf-bin"
+          cd "$RUNNER_TEMP/gittuf-bin"
+          curl --fail --location --retry 3 --output gittuf \
+            https://github.com/gittuf/gittuf/releases/download/v0.17.0/gittuf_0.17.0_linux_amd64
+          echo 'bff632cc64a237792ff92df82374fa42cbc1ed1c603ac97c7c99d72bd118cafb  gittuf' | sha256sum --check
+          chmod +x gittuf
+          echo "$PWD" >> "$GITHUB_PATH"
+      - name: Run all gittuf tests without skips
+        run: |
+          gittuf version
+          uv sync --all-extras
+          uv run pytest tests/darnit_gittuf -v --junitxml="$RUNNER_TEMP/gittuf-tests.xml"
+          python - "$RUNNER_TEMP/gittuf-tests.xml" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+          if ET.parse(sys.argv[1]).find(".//skipped") is not None:
+              sys.exit("A gittuf test skipped; this job requires the entire suite to run")
+          PY
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
