@@ -131,9 +131,35 @@ def test_remediation_skills_instruct_uncommitted_edits_for_review() -> None:
     comply = (SKILLS / "darnit-comply" / "SKILL.md").read_text(encoding="utf-8")
     assert "uncommitted in the working tree" in comply
     assert "review and commit" in comply
+    assert "files whose content still matches what remediation wrote (framework-design 15.7)" in comply
 
     remediate = (SKILLS / "darnit-remediate" / "SKILL.md").read_text(encoding="utf-8")
     assert "uncommitted in the working tree" in remediate
     assert "review and commit" in remediate
+    assert "template bug" in remediate
+
+
+@pytest.mark.unit
+def test_remediation_skills_list_uncommitted_files_before_offering_pr() -> None:
+    """Remediation skills must list uncommitted files and warn before offering a PR (#738).
+
+    create_remediation_pr pushes only what remediation committed. Each skill must
+    instruct the agent to list uncommitted files for review and state plainly that
+    the PR will not contain them before offering PR creation.
+    """
+    for skill_name in ["darnit-comply", "darnit-remediate"]:
+        text = (SKILLS / skill_name / "SKILL.md").read_text(encoding="utf-8")
+        offer_idx = text.lower().find("ask if the user wants a pr")
+        assert offer_idx != -1, f"{skill_name} missing offer to create PR"
+
+        assert "will not contain" in text, (
+            f"{skill_name} must state plainly that the PR will not contain uncommitted edits"
+        )
+
+        warning_idx = text.find("will not contain")
+        assert warning_idx < offer_idx, (
+            f"{skill_name} must instruct listing uncommitted files and warn that "
+            "the PR will not contain them before offering PR creation"
+        )
 
 

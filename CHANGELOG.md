@@ -13,14 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   signatures, the FAIL message states how many recent commits have a good
   signature and reports commits that could not be checked on the machine
   alongside unsigned and bad signatures (fixes #679).
-- In `/darnit-comply` and `/darnit-remediate`, tell the agent to leave
-  enhanced files and syntax fixes uncommitted in the working tree for the
-  person to review and commit, keeping darnit's rule that it never commits
-  content it did not write. Before, `/darnit-comply` instructed the agent
-  to make a new commit with its improvements, but `commit_remediation_changes`
-  deliberately commits only the run's files whose content matches what
-  remediation wrote, leaving an agent without a shell with no tool to
-  commit them (fixes #738).
+- In `/darnit-comply` and `/darnit-remediate`, tell the agent to list
+  enhanced files and syntax fixes for review before offering a pull request,
+  stating plainly that the pull request will not contain uncommitted working-tree
+  edits and leaving them for the person to review and commit, keeping darnit's
+  rule that it never commits content it did not write. Before, `/darnit-comply`
+  instructed the agent to make a new commit with its improvements, but
+  `commit_remediation_changes` deliberately commits only the run's files whose
+  content matches what remediation wrote, leaving an agent without a shell with
+  no tool to commit them (fixes #738).
 - Baseline handler registration no longer imports `tree-sitter` or the language
   pack at registration time, preventing transient language pack download
   failures from taking down all baseline handlers; when a plugin handler registration
