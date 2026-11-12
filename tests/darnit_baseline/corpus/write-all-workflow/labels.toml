@@ -1,6 +1,9 @@
 [fixture]
 description = "The only CI workflow grants permissions: write-all to every job"
 
+[fixture.tools.zizmor]
+recorded = true
+
 [labels."OSPS-AC-04.02"]
 expected = "FAIL"
 why = "write-all grants far more than a test job needs."
