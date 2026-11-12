@@ -276,24 +276,18 @@ This works but bypasses the signing chain. Fine for development; not recommended
 
 ---
 
-## Signing and the `[plugins]` trust config
+## Signing and the `[plugins]` allow-list
 
-darnit's plugin discovery has an optional verification step backed by Sigstore. By default it allows unsigned plugins (for backward compatibility), but production deployments can flip the switch.
+darnit does not verify plugin signatures (framework-design 6.6). Installing your package is the user's decision to trust it, so publish it in a form installers can verify: PyPI with trusted publishing produces PEP 740 attestations that can be verified before installing.
 
-Configure trust in operator configuration (`~/.config/darnit/config.toml`, or the file named by `--operator-config`; it is never read from the audited repository):
+Operators choose which installed plugins darnit loads in operator configuration (`~/.config/darnit/config.toml`, or the file named by `--operator-config`; it is never read from the audited repository):
 
 ```toml
 [plugins]
-allow_unsigned = false
-trusted_publishers = [
-    "https://github.com/your-org",
-    "https://github.com/kusari-oss",
-]
+allowed = ["openssf-baseline", "your-framework"]
 ```
 
-If your plugin is published to PyPI with Sigstore attestations enabled (the default for new projects since 2024), the signing identity will be a GitHub OIDC URL like `https://github.com/your-org/your-repo/.github/workflows/release.yml@refs/tags/v0.1.0`. The default trusted publishers list (`kusari-oss`, `kusaridev`) covers darnit's own plugins; add your org's URL prefix to extend the list.
-
-For the full verification API, see [`packages/darnit/src/darnit/core/verification.py`](../packages/darnit/src/darnit/core/verification.py).
+The names are your entry point names in `darnit.implementations` and `darnit.frameworks`, so keep them equal to your implementation and framework names. An empty or absent list allows every installed plugin. A plugin left out is not loaded at all: its entry points are not imported, and its step types are not registered.
 
 ---
 

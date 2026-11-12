@@ -7,9 +7,9 @@ string such as "false" is not coerced.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr, model_validator
 
 from darnit.config.framework_schema import (
     ControlConfig,
@@ -28,13 +28,27 @@ class OperatorIdentity(BaseModel):
     identity: StrictStr | None = None
 
 
+_REMOVED_PLUGIN_SETTINGS = ("allow_unsigned", "trusted_publishers")
+
+
 class PluginSettings(BaseModel):
     model_config = _FORBID
 
-    # Empty means every installed framework may load.
+    # Entry point names that may load; empty means every installed plugin (framework-design 6.6).
     allowed: list[StrictStr] = Field(default_factory=list)
-    trusted_publishers: list[StrictStr] = Field(default_factory=list)
-    allow_unsigned: StrictBool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def _no_signature_settings(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            for key in _REMOVED_PLUGIN_SETTINGS:
+                if key in data:
+                    raise ValueError(
+                        f"plugins.{key} was removed: darnit does not verify plugin signatures and never did. "
+                        "Delete the key; restrict which installed plugins load with plugins.allowed, and verify "
+                        "packages when installing them (framework-design 6.6)."
+                    )
+        return data
 
 
 class OperatorControlOverride(BaseModel):
