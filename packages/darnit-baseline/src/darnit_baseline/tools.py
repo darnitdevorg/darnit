@@ -1449,9 +1449,13 @@ def remediate_audit_findings(
     try:
         from darnit.config.context_storage import get_pending_context as _get_pending
 
-        pending = _get_pending(
-            local_path=str(repo_path), owner=owner, repo=repo, target=target,
-        )
+        gate_controls = orchestrator.pending_gate_control_ids(categories=categories, profile=profile)
+        if gate_controls == []:
+            pending = []
+        else:
+            pending = _get_pending(
+                local_path=str(repo_path), control_ids=gate_controls, owner=owner, repo=repo, target=target,
+            )
     except Exception as e:
         return (
             f"Error: cannot check for unconfirmed project context: {e}. "

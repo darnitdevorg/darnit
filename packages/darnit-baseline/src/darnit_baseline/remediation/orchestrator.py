@@ -93,6 +93,31 @@ def _resolve_categories_to_control_ids(
     return ids
 
 
+def pending_gate_control_ids(
+    categories: list[str] | None = None,
+    profile: str | None = None,
+) -> list[str] | None:
+    """Control IDs matching ``categories`` and ``profile`` for the pending-context gate, or None for all."""
+    framework = _get_framework_config()
+    if framework is None:
+        return None
+    scoped: set[str] | None = None
+    if categories and categories != ["all"]:
+        scoped = _resolve_categories_to_control_ids(categories, framework)
+    if profile:
+        from darnit.config.control_loader import load_controls_from_framework
+        from darnit.config.profile_resolver import resolve_profile, resolve_profile_control_ids
+
+        all_controls = load_controls_from_framework(framework)
+        profile_impls: dict[str, Any] = {}
+        if framework.audit_profiles:
+            profile_impls["openssf-baseline"] = dict(framework.audit_profiles)
+        _, profile_config = resolve_profile(profile, profile_impls)
+        profile_ids = set(resolve_profile_control_ids(profile_config, all_controls))
+        scoped = profile_ids if scoped is None else (scoped & profile_ids)
+    return sorted(scoped) if scoped is not None else None
+
+
 # =============================================================================
 # Framework Loading
 # =============================================================================
@@ -573,6 +598,17 @@ def _apply_declarative_remediation(
                     platform.note_known(item.digest)
                 plan_items.append(item.model_dump(mode="json"))
         if dry_run:
+            if not result.success:
+                failures = [h for h in (result.details or {}).get("handlers", []) if h.get("status") == "error"]
+                return {
+                    "control_id": control_id,
+                    "status": "error",
+                    "description": description,
+                    "controls": [control_id],
+                    "message": "; ".join(h.get("message", "") for h in failures) or result.message,
+                    "declarative": True,
+                    "platform": _platform_results(result.details),
+                }
             return {
                 "control_id": control_id,
                 "status": "would_apply",

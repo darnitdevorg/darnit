@@ -481,11 +481,11 @@ class TestIntegrationWithValidator:
 
 
 class TestStatusChecksDetection:
-    """Test required_status_checks detection (deterministic workflow fallback and API candidate proposing)."""
+    """Test required_status_checks API candidate proposing without offline workflow guessing."""
 
     @pytest.mark.unit
-    def test_detect_status_checks_deterministic(self, temp_repo):
-        """Detect status checks from workflow files."""
+    def test_detect_status_checks_offline_returns_none_with_matrix_workflows(self, temp_repo):
+        """Offline detection must not propose unexpanded expressions or raw workflow job keys (#697)."""
         wf_dir = Path(temp_repo) / ".github" / "workflows"
         wf_dir.mkdir(parents=True)
         (wf_dir / "ci.yml").write_text("""
@@ -493,20 +493,25 @@ name: CI
 on: [push, pull_request]
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.10', '3.12']
+        os: [ubuntu-latest, macos-latest]
+    name: pytest (${{ matrix.os }}, ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-  lint:
+  publish:
+    if: github.event_name == 'release'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 """)
-        sieve = ContextSieve()
-        signals = sieve._detect_status_checks_deterministic(temp_repo, "test-owner", "test-repo")
-        assert len(signals) == 1
-        assert signals[0].source == SignalSource.PROJECT_MANIFEST
-        assert "test" in signals[0].value
-        assert "lint" in signals[0].value
+        with patch("darnit.core.utils.gh_api_with_status", return_value=({}, 500, "offline")):
+            sieve = ContextSieve()
+            result = sieve.detect("required_status_checks", temp_repo, "test-owner", "test-repo")
+            assert result.value is None
+            assert result.signals == []
 
     @pytest.mark.unit
     def test_detect_status_checks_api_success(self, temp_repo):

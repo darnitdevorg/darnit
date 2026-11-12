@@ -115,7 +115,6 @@ class ContextSieve:
                 "deterministic": self._detect_governance_deterministic,
             },
             "required_status_checks": {
-                "deterministic": self._detect_status_checks_deterministic,
                 "api": self._detect_status_checks_api,
             },
         }
@@ -692,35 +691,9 @@ class ContextSieve:
     # Status Checks Detection
     # =========================================================================
 
-    def _detect_status_checks_deterministic(
-        self, local_path: str, owner: str | None = None, repo: str | None = None
-    ) -> list[ContextSignal]:
-        """Detect status checks from GitHub Actions workflow files.
-
-        Sources:
-        - .github/workflows/*.yml, *.yaml
-        """
-        signals = []
-        try:
-            from darnit.remediation.github import detect_workflow_checks
-
-            detected = detect_workflow_checks(local_path)
-            if detected:
-                checks = sorted({c["check_name"] for c in detected if c.get("check_name")})
-                if checks:
-                    signals.append(
-                        ContextSignal(
-                            source=SignalSource.PROJECT_MANIFEST,
-                            value=checks,
-                            raw_confidence=0.6,
-                            method="Parsed GitHub Actions workflows (.github/workflows)",
-                            evidence={"checks": checks, "count": len(checks)},
-                        )
-                    )
-        except Exception as e:
-            logger.debug(f"Workflow checks detection failed: {e}")
-
-        return signals
+    # =========================================================================
+    # Required Status Checks Detection
+    # =========================================================================
 
     def _detect_status_checks_api(
         self,

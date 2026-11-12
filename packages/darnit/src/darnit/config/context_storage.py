@@ -6,6 +6,7 @@ FR-006). Nothing here writes. Context values and confirmation records are
 written only by :mod:`darnit.config.context_writes`.
 """
 
+from collections.abc import Mapping
 from typing import Any
 
 from darnit.config.context_schema import (
@@ -114,6 +115,25 @@ def get_context_definitions_with_detect(
         return {}
 
 
+def _applicable_controls_for_pending(usable: Mapping[str, Any]) -> set[str] | None:
+    """Control IDs whose ``when`` clause is not excluded by ``usable`` context, or None if unavailable."""
+    try:
+        from darnit.config.merger import load_effective_config_auto
+        from darnit.config.when_evaluator import evaluate_when
+
+        framework = load_effective_config_auto()._framework_config
+        if framework is None or not framework.controls:
+            return None
+        return {
+            cid
+            for cid, control in framework.controls.items()
+            if not getattr(control, "when", None) or evaluate_when(control.when, usable)
+        }
+    except Exception as exc:
+        logger.debug(f"Could not filter pending controls by when-clause: {exc}")
+        return None
+
+
 def get_pending_context(
     local_path: str,
     control_ids: list[str] | None = None,
@@ -152,11 +172,18 @@ def get_pending_context(
         repo = repo or detected_repo or None
 
     resolved = resolve_context(local_path, definitions, target=target, owner=owner, repo=repo)
+    applicable_controls = _applicable_controls_for_pending(resolved.usable())
 
     pending: list[ContextPromptRequest] = []
     for candidate in resolved.pending(control_ids):
         definition = resolved.definitions[candidate.key]
-        affected = [c for c in definition.affects if not control_ids or c in control_ids]
+        affected = [
+            c
+            for c in definition.affects
+            if (not control_ids or c in control_ids) and (applicable_controls is None or c in applicable_controls)
+        ]
+        if not affected:
+            continue
         current_value = None
         if candidate.value is not None and candidate.origin is not None:
             current_value = ContextValue(
@@ -398,9 +425,11 @@ def _try_sieve_detection(
         result = sieve.detect(key, local_path, owner, repo)
 
         if result.is_usable:
+            methods = list(dict.fromkeys(s.method for s in result.signals if s.method))
+            method = "; ".join(methods) if methods else f"context_sieve ({len(result.signals)} signals)"
             return ContextValue.auto_detected(
                 value=result.value,
-                method=f"context_sieve ({len(result.signals)} signals)",
+                method=method,
                 confidence=result.confidence,
             )
     except ImportError:

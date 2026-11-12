@@ -278,6 +278,74 @@ class TestPreflightContextCheck:
         assert "Would Apply" in result
         assert "BLOCKED: Remediation Cannot Proceed" not in result
 
+    @pytest.mark.unit
+    def test_preflight_scoped_category_ignores_unrelated_pending_context(
+        self, temp_repo, trusted_target, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Smaller #3 (#697): documentation-only remediation must not block on required_status_checks."""
+        from darnit_baseline import tools
+
+        owner, repo = trusted_target
+        monkeypatch.setattr("darnit.context.sieve.get_context_sieve", lambda: _no_sieve())
+
+        result = tools.remediate_audit_findings(
+            local_path=temp_repo,
+            owner=owner,
+            repo=repo,
+            categories=["documentation"],
+            dry_run=True,
+        )
+
+        assert "required_status_checks" not in result
+
+    @pytest.mark.unit
+    def test_ci_provider_none_makes_required_status_checks_not_applicable(
+        self, temp_repo, trusted_target, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Smaller #3 (#697): confirming ci_provider='none' excludes required_status_checks as N/A."""
+        from darnit.config.context_storage import get_pending_context
+        from darnit.server.tools.project_data import confirm_project_data_impl
+        from darnit_baseline import tools
+
+        owner, repo = trusted_target
+        monkeypatch.setattr("darnit.context.sieve.get_context_sieve", lambda: _no_sieve())
+        confirm_project_data_impl(
+            local_path=temp_repo,
+            maintainers=["@testuser"],
+            ci_provider="none",
+            has_releases=False,
+            is_library=False,
+            has_compiled_assets=False,
+            has_subprojects=False,
+            security_contact="security@example.com",
+            governance_model="bdfl",
+            platform="github",
+            license_type="mit",
+            owner=owner,
+            repo=repo,
+        )
+
+        pending_keys = [p.key for p in get_pending_context(temp_repo, owner, repo)]
+        assert "required_status_checks" not in pending_keys
+
+        # Scoped QA domain check must not block on required_status_checks when ci_provider == "none"
+        result = tools.remediate_audit_findings(
+            local_path=temp_repo,
+            owner=owner,
+            repo=repo,
+            categories=["quality"],
+            dry_run=True,
+        )
+        assert "required_status_checks" not in result
+
+
+def _no_sieve():
+    from unittest.mock import MagicMock
+
+    sieve = MagicMock()
+    sieve.detect.return_value = None
+    return sieve
+
 
 class TestExplicitWarningAgainstDirectEdits:
     """CRITICAL: Verify prompts include explicit warnings against direct file editing."""
