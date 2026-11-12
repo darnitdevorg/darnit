@@ -10,7 +10,7 @@ There are two routes: install straight from the git URL with `uv tool install` (
 uv tool install --python 3.12 git+https://github.com/darnitdevorg/darnit
 
 darnit --version
-darnit list        # openssf-baseline (66 controls), gittuf, reproducibility
+darnit list        # openssf-baseline (66 controls), gittuf, amber
 ```
 
 This installs the workspace root, the `darnit-mcp` package. It provides the `darnit` command and pulls in every workspace plugin. The package is `darnit-mcp`, but the command is `darnit`; there is no `darnit-mcp` command.
@@ -57,9 +57,9 @@ uv tool install --python 3.12 \
   --editable packages/darnit \
   --with-editable packages/darnit-baseline \
   --with-editable packages/darnit-gittuf \
-  --with-editable packages/darnit-reproducibility
+  --with-editable packages/darnit-amber
 
-darnit list        # openssf-baseline (66 controls), gittuf, reproducibility
+darnit list        # openssf-baseline (66 controls), gittuf, amber
 ```
 
 The user-facing CLI lives in `packages/darnit/` (the `darnit-core` package), but it discovers compliance implementations via Python entry points exposed by sibling packages:
@@ -67,7 +67,7 @@ The user-facing CLI lives in `packages/darnit/` (the `darnit-core` package), but
 - `packages/darnit/` → the `darnit-core` framework (CLI, sieve, MCP server)
 - `packages/darnit-baseline/` → the OpenSSF Baseline implementation
 - `packages/darnit-gittuf/` → the gittuf plugin
-- `packages/darnit-reproducibility/` → the reproducibility plugin
+- `packages/darnit-amber/` → the Amber (reproducibility) plugin
 
 `darnit-core` does not depend on the plugins, so each `--with-editable` adds one to the same tool environment. Leave one out and `darnit list` does not show it.
 

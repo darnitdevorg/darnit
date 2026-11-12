@@ -496,8 +496,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     --framework`, MCP client configurations (server name and framework
     argument), and operator configuration: `[plugins].allowed` and
     `[[compose]] source`.
-  - Python code: `import darnit_amber`; `darnit_reproducibility` re-exports it
-    with a `DeprecationWarning` for this release.
+  - Python code: `import darnit_amber`; `darnit_reproducibility` re-exports
+    its top-level names with a `DeprecationWarning` for this release
+    (submodules such as `darnit_reproducibility.handlers` are not provided).
+  - Upgrading: `darnit-mcp` pins its components to its own version, so
+    `pip install -U darnit-mcp` moves `darnit-core`, the plugins and the
+    transitional package together; `darnit-amber` and the transitional
+    package pin the same way.
 - In OpenSSF Baseline assessment attestation predicates, `assessor.name`
   changes from `openssf-baseline-mcp` to `openssf-baseline`, `assessor.uri`
   points to `https://github.com/darnitdevorg/darnit`, `assessor.version`
