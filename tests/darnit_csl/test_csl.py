@@ -235,6 +235,21 @@ class TestGovernanceContentDetection:
         assert _status("CSL-05.01", tmp_path) == "FAIL"
 
 
+class TestReadmeLinksDetection:
+    """CSL-06.01 reads every README form it lists (#702)."""
+
+    LINKS = "Scope: governance/02-scope.md\nNotices: governance/03-notices.md\n"
+
+    @pytest.mark.parametrize("name", ["README.txt", "README", "README.adoc"])
+    def test_readme_with_links_needs_judgment(self, tmp_path: Path, name: str) -> None:
+        (tmp_path / name).write_text("Foo\n\n" + self.LINKS)
+        assert _status("CSL-06.01", tmp_path) == "WARN"
+
+    def test_readme_without_links_fails(self, tmp_path: Path) -> None:
+        (tmp_path / "README.txt").write_text("Foo\n")
+        assert _status("CSL-06.01", tmp_path) == "FAIL"
+
+
 # ---------------------------------------------------------------------------
 # Remediation: template substitution + governance when-clause
 # ---------------------------------------------------------------------------
