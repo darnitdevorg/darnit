@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Pin DOT_PROJECT_SPEC_VERSION to canonical upstream CNCF 1.0.0 and remove
+  project_path = "security.policy" from OSPS-DO-02.01 (fixes #502). Existing
+  .project/project.yaml files declaring schema_version: 1.4.0 are left as
+  they are and require a manual edit to pass upstream validation.
 - Baseline handler registration no longer imports `tree-sitter` or the language
   pack at registration time, preventing transient language pack download
   failures from taking down all baseline handlers; when a plugin handler registration
