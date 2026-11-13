@@ -11,7 +11,7 @@ from darnit.stores.errors import StoreError
 
 from .claim import claim
 from .rerun import rerun, verify
-from .run import TSA_URL, RunError, run
+from .run import TSA_URL, RunError, default_store, run
 
 # What a bad entry, a bad regex, a missing file or a store problem raise: reported, not traced back.
 _REPORTED = (RunError, StoreError, OSError, KeyError, ValueError, TypeError)
@@ -20,8 +20,9 @@ _REPORTED = (RunError, StoreError, OSError, KeyError, ValueError, TypeError)
 def _make_store(a: argparse.Namespace):  # noqa: ANN202
     from darnit.stores.defaults.local_fs import LocalFsAttestationStore
 
-    a.out.mkdir(parents=True, exist_ok=True)
-    return LocalFsAttestationStore(root=a.out)
+    out = a.out or default_store()
+    out.mkdir(parents=True, exist_ok=True)
+    return LocalFsAttestationStore(root=out)
 
 
 def _add_verify_args(q: argparse.ArgumentParser) -> None:
@@ -63,7 +64,9 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="run on a checkout with uncommitted changes; the bundle then records no commit and cannot be rerun",
     )
-    r.add_argument("--out", type=Path, default=Path("amber-runs"), help="store directory")
+    r.add_argument(
+        "--out", type=Path, default=None, help=f"store directory (default: {default_store()}, never the checkout)"
+    )
     for name, help_ in (
         ("verify", "check a stored bundle: id, statement signature, outputs vs Witness, timestamps, signer"),
         ("rerun", "verify a stored bundle, then re-execute its experiment and compare outputs"),
@@ -71,7 +74,7 @@ def main(argv: list[str] | None = None) -> int:
     ):
         q = sub.add_parser(name, help=help_)
         q.add_argument("bundle_id")
-        q.add_argument("--out", type=Path, default=Path("amber-runs"))
+        q.add_argument("--out", type=Path, default=None)
         if name == "verify":
             _add_verify_args(q)
         elif name == "rerun":

@@ -34,7 +34,7 @@ A researcher runs their experiment once through darnit, inside the
 artifact's checkout:
 
 ```
-darnit-amber run --out amber-runs -- ./run_experiment.sh
+darnit-amber run -- ./run_experiment.sh
 ```
 
 darnit runs the Amber audit and the command under CNCF Witness and stores
@@ -101,10 +101,12 @@ not verify. It then prints the command and asks, because the command runs
 artifact is cloned at the recorded commit, never run in place; a bundle
 made from a local path without a remote names it `local/<directory name>`
 and records no path, so `rerun` then needs `--artifact` with a clone. It
-reports, per claim, the first value and the new one with both verdicts,
-and per output whether the file is identical. `drift` is true only when a
-verdict changed (or an output changed and nothing was measured): a timing
-report that differs byte for byte but gives the same verdict is not drift.
+reports the exit status of both runs, per claim the first value and the
+new one with both verdicts, and per output path of either run whether the
+file is identical, changed, added or missing. `drift` is true when the
+exit status changed, when a verdict changed, or when nothing was measured
+and any output differs: a timing report that differs byte for byte but
+gives the same verdict is not drift.
 
 ## Signing, time, and what is public
 
@@ -254,9 +256,10 @@ cannot be `verified`: nothing places its signatures in time.
 `rerun` executes the same command at the same commit, re-measures the
 claims, and stores a new bundle with `reruns.of`, `reruns.outputs` (digest
 first vs rerun) and `reruns.claims` (value and verdict first vs rerun).
-`drift` is true when a claim's verdict changed, or when an output changed
-and nothing was measured. A timing report that differs byte for byte but
-gives the same verdict is not drift.
+`drift` is true when the exit status changed, when a claim's verdict
+changed, or when nothing was measured and an output changed, appeared or
+went missing. A timing report that differs byte for byte but gives the
+same verdict is not drift.
 
 ## Example entries
 

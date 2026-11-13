@@ -23,6 +23,7 @@ import sys
 import tempfile
 from collections.abc import Callable
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -109,6 +110,16 @@ def read_output(store: Any, bundle: dict[str, Any], path: str) -> bytes:
     return data
 
 
+def default_store() -> Path:
+    """Where bundles go without ``--out``: under darnit's data root, next to the key.
+
+    Not the working directory: ``darnit-amber run`` defaults to the artifact at
+    ``.``, and a store created inside it is an untracked directory that makes
+    the next run refuse as dirty (review, Nov 11 and 13).
+    """
+    return user_data_root() / "amber" / "runs"
+
+
 def default_key() -> Path:
     """The researcher's signing key, generated once under darnit's data root (ed25519, 0600)."""
     key = user_data_root() / "amber" / "signing.key"
@@ -160,10 +171,14 @@ def public_url(url: str) -> str:
     return urlunsplit((p.scheme, host, p.path, "", ""))
 
 
-def _clone(url: str, ref: str | None, dest: Path) -> Path:
+def _clone(url: str, ref: str | None, dest: Path, keep_remote: bool = True) -> Path:
     r = subprocess.run(["git", "clone", "-q", url, str(dest)], capture_output=True, text=True)
     if r.returncode != 0:
         raise RunError(f"clone failed: {r.stderr.strip()}")
+    if not keep_remote:
+        # A clone of a local path would carry that path as `origin`, and Witness's git attestor records
+        # remotes verbatim into the signed envelope. The statement names the artifact as local/<name>.
+        subprocess.run(["git", "-C", str(dest), "remote", "remove", "origin"], check=True, capture_output=True)
     if ref:
         r = subprocess.run(["git", "-C", str(dest), "checkout", "-q", ref], capture_output=True, text=True)
         if r.returncode != 0:
@@ -335,16 +350,23 @@ _NUMBER = re.compile(r"[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?")
 _NUMBER_LIKE = re.compile(r"[+-]?(?:inf(?:inity)?|nan|0[xX][0-9a-fA-F_]+|[\d_]*\.?[\d_]+(?:[eE][+-]?[\d_]+)?)", re.I)
 
 
-def _number(s: Any) -> float | None:
-    """A finite number in plain decimal notation; ``inf``, ``nan`` and ``1_000`` are not numbers here."""
+def _number(s: Any) -> Decimal | None:
+    """A finite number in plain decimal notation, exactly as written; ``inf``, ``nan`` and ``1_000`` are not numbers here.
+
+    Decimal, not float: a measurement and a threshold that differ past the 53rd
+    bit (9007199254740992 vs 9007199254740993) are the same float, and a claim
+    that misses its threshold must not come out REPRODUCED (review, Nov 13).
+    """
     if isinstance(s, bool):
         return None
-    if isinstance(s, (int, float)):
-        return float(s) if math.isfinite(s) else None
+    if isinstance(s, int):
+        return Decimal(s)
+    if isinstance(s, float):
+        return Decimal(repr(s)) if math.isfinite(s) else None
     if not isinstance(s, str) or not _NUMBER.fullmatch(s.strip()):
         return None
-    v = float(s)
-    return v if math.isfinite(v) else None
+    v = Decimal(s.strip())
+    return v if v.is_finite() else None
 
 
 def compare(value: str, threshold: str, tolerance: Any) -> tuple[bool | None, str]:
@@ -357,7 +379,7 @@ def compare(value: str, threshold: str, tolerance: Any) -> tuple[bool | None, st
     """
     op, want = _parse_threshold(threshold)
     a, b = _number(value), _number(want)
-    tol = _number(tolerance) if tolerance is not None else 0.0
+    tol = _number(tolerance) if tolerance is not None else Decimal(0)
     if tol is None or tol < 0:
         return None, f"tolerance {tolerance!r} is not a finite number >= 0"
     if a is None or b is None:
@@ -379,7 +401,8 @@ def compare(value: str, threshold: str, tolerance: Any) -> tuple[bool | None, st
     }[op]
     note = ""
     if tol:
-        note = f" (holds only with tolerance {tol})" if holds and not strict else f" (tolerance {tol})"
+        shown = f"{tol.normalize():f}"
+        note = f" (holds only with tolerance {shown})" if holds and not strict else f" (tolerance {shown})"
     return holds, f"measured {value} {op} {want}" + note
 
 
@@ -409,7 +432,11 @@ def measure_claim(claim: dict[str, Any], read: Callable[[str], bytes | None]) ->
             if n is None:
                 claim["reason"] = f"scale given but {value!r} is not a number"
                 return
-            value = str(n * float(m["scale"]))
+            scale = _number(m["scale"])
+            if scale is None:
+                claim["reason"] = f"scale {m['scale']!r} is not a number"
+                return
+            value = f"{(n * scale).normalize():f}"
         claim["measured"] = value
         if m.get("comparable") is False:
             claim["reason"] = m.get("reason") or "measured, but not on the paper's terms"
@@ -472,7 +499,7 @@ def wrap_command(command: str) -> str:
     itself exits 0. ``verify`` recomputes this script from the recorded
     command, so the command Witness saw is the one in the statement.
     """
-    return f'({command})\nprintf %s "$?" > "$0"\n'
+    return f'(\n{command}\n)\nprintf %s "$?" > "$0"\n'  # the ) on its own line: a trailing # comment cannot eat it
 
 
 def audit_command() -> str:
@@ -579,20 +606,28 @@ def _signing(key: Path, tsa: str | None) -> dict[str, Any]:
 def compare_rerun(
     first: dict[str, Any], experiment: dict[str, Any] | None, claims: list[dict[str, Any]]
 ) -> dict[str, Any]:
-    """Outputs and claims of this run against the bundle it repeats; ``drift`` is a verdict change, or an output change when nothing was measured."""
+    """This run against the bundle it repeats: exit status, every output path of either run, and the claims.
+
+    ``drift`` is a changed exit status, a changed claim verdict, or, when
+    nothing was measured, any output that changed, appeared or went missing.
+    A measured claim decides for its outputs: the same number from a file
+    with a new timestamp in it is not drift.
+    """
     first_pred = first["statement"]["predicate"]
     first_exp = first_pred.get("experiment") or {}
     first_claims = first_pred.get("claims") or []
+    theirs = {o["path"]: o["sha256"] for o in first_exp.get("outputs") or []}
     mine = {o["path"]: o["sha256"] for o in (experiment or {}).get("outputs") or []}
-    outputs = [
-        {
-            "path": o["path"],
-            "first": o["sha256"],
-            "rerun": mine.get(o["path"]),
-            "result": "identical" if mine.get(o["path"]) == o["sha256"] else "changed",
-        }
-        for o in first_exp.get("outputs") or []
-    ]
+    outputs = []
+    for path in sorted(theirs.keys() | mine.keys()):
+        a, b = theirs.get(path), mine.get(path)
+        result = "identical" if a == b else "missing" if b is None else "added" if a is None else "changed"
+        outputs.append({"path": path, "first": a, "rerun": b, "result": result})
+    exit_codes = {"first": first_exp.get("exit_code"), "rerun": (experiment or {}).get("exit_code")}
+    if exit_codes["first"] is None or exit_codes["rerun"] is None:
+        exit_codes["result"] = "unknown"  # a bundle without a recorded exit status: nothing to compare
+    else:
+        exit_codes["result"] = "same" if exit_codes["first"] == exit_codes["rerun"] else "changed"
     again = {c["id"]: c for c in claims}
     compared = [
         {
@@ -607,10 +642,12 @@ def compare_rerun(
         for c in first_claims
     ]
     measured = [c for c in compared if c["first"]["measured"] is not None]
-    drift = any(c["result"] == "changed" for c in compared) or (
-        not measured and any(o["result"] == "changed" for o in outputs)
+    drift = (
+        exit_codes["result"] == "changed"
+        or any(c["result"] == "changed" for c in compared)
+        or (not measured and any(o["result"] != "identical" for o in outputs))
     )
-    return {"of": first["id"], "outputs": outputs, "claims": compared, "drift": drift}
+    return {"of": first["id"], "exit_code": exit_codes, "outputs": outputs, "claims": compared, "drift": drift}
 
 
 def _store_bundle(store: Any, bundle: dict[str, Any]) -> None:
@@ -669,22 +706,26 @@ def execute(
                 # A clean checkout is run from a fresh clone of its commit: files git ignores
                 # (caches, data, precomputed results) are not there, so the experiment reads
                 # only what the commit contains. The same path rerun takes.
-                repo = _clone(str(source), ref, tmpdir / "artifact")
+                repo = _clone(str(source), ref, tmpdir / "artifact", keep_remote=False)
         started = datetime.now(UTC).isoformat()
 
         record_dir = repo / RECORD_DIR
+        # The record dir is removed after each step, success or failure: nothing of darnit's is left for the
+        # experiment to read, or in the user's checkout when --allow-dirty ran in place.
         record_dir.mkdir()
-        audit_env, audit_w = _witness(
-            "amber-audit",
-            key,
-            tmpdir / "audit.json",
-            repo,
-            ["sh", "-c", audit_command()],  # darnit: on PATH, see _witness_env
-            tsa,
-        )
-        audit_blob, audit_record = _record(repo, AUDIT_RECORD, audit_w, "the audit report")
+        try:
+            audit_env, audit_w = _witness(
+                "amber-audit",
+                key,
+                tmpdir / "audit.json",
+                repo,
+                ["sh", "-c", audit_command()],  # darnit: on PATH, see _witness_env
+                tsa,
+            )
+            audit_blob, audit_record = _record(repo, AUDIT_RECORD, audit_w, "the audit report")
+        finally:
+            shutil.rmtree(record_dir, ignore_errors=True)
         audit = json.loads(audit_blob)
-        shutil.rmtree(record_dir)  # nothing of darnit's is left for the experiment to read, or in the checkout
 
         experiment: dict[str, Any] | None = None
         exp_env: dict[str, Any] | None = None
@@ -692,16 +733,18 @@ def execute(
         exit_record: dict[str, Any] | None = None
         if exp_cmd:
             record_dir.mkdir()
-            exp_env, exp_w = _witness(
-                "experiment",
-                key,
-                tmpdir / "experiment.json",
-                repo,
-                ["sh", "-c", wrap_command(exp_cmd), EXIT_RECORD],
-                tsa,
-            )
-            exit_blob, exit_record = _record(repo, EXIT_RECORD, exp_w, "the experiment's exit status")
-            shutil.rmtree(record_dir)
+            try:
+                exp_env, exp_w = _witness(
+                    "experiment",
+                    key,
+                    tmpdir / "experiment.json",
+                    repo,
+                    ["sh", "-c", wrap_command(exp_cmd), EXIT_RECORD],
+                    tsa,
+                )
+                exit_blob, exit_record = _record(repo, EXIT_RECORD, exp_w, "the experiment's exit status")
+            finally:
+                shutil.rmtree(record_dir, ignore_errors=True)
             products = exp_w.get("product") or {}
             if exp_outputs is None:
                 exp_outputs = _infer_outputs(products)

@@ -44,7 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the experiment's exit status and the audit report are Witness products
   (`.amber/`, removed after each step) that `verify` reads back by digest.
   `verify` names two signers for a derived bundle (`--pubkey`,
-  `--claimer-pubkey`); values and tolerances must be finite plain decimals.
+  `--claimer-pubkey`); values, thresholds and tolerances must be finite
+  plain decimals and are compared exactly, as decimals, never as floats.
 
 - Developer test flow automation scripts (`scripts/clean_and_install_dev.sh`,
   `scripts/setup_dev_projects.sh`, `scripts/run_dev_test_flow.sh`) to
