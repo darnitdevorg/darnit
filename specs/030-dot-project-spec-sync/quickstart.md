@@ -56,14 +56,14 @@ Apply changes in this order to keep review-diffs coherent:
 2. Add new YAML-parsing helpers required by RESHAPE handling (typically a "scalar-or-list" coercer that returns the first element).
 3. Update per-field parsing at the relevant `data.get(...)` call sites in `DotProjectReader._parse_project(...)`.
 4. Add `warnings.warn(msg, DeprecationWarning, stacklevel=2)` calls for each `KEPT-WITH-ALIAS` field, at the point the old key is first observed.
-5. Bump `DOT_PROJECT_SPEC_VERSION` per the Q3 rule (1:1 with the tracked-hash file — every drift, no exceptions).
-6. Update the module docstring's maintenance note to summarize the diff:
+5. Leave `DOT_PROJECT_SPEC_VERSION` alone unless upstream published a new `schema_version` (issue #502: it is upstream's schema version, not a reconcile counter). The tracked-hash file (step 4) is what records the drift.
+6. Update the module docstring's maintenance note to summarize the diff, keyed by date and issue:
    ```
    # Reconciliation history
-   #  - 1.1.0 -> 1.2.0 (feature 030-dot-project-spec-sync, 2026-08-14):
+   #  - 2026-08-14 (feature 030-dot-project-spec-sync; was the 1.1.0 -> 1.2.0 bump):
    #      * project_lead: accepts scalar or list; collapses to first.
    #      * package_managers[*]: accepts scalar or list; collapses to first.
-   #      * cncf_slack_channel: deprecated upstream, alias with warning until 1.3.0.
+   #      * cncf_slack_channel: deprecated upstream, alias with warning for one release.
    #      * slack_channels: parsed and ignored (NEW-IGNORED).
    ```
 
@@ -99,7 +99,7 @@ The deselect on the first line runs everything except the upstream-sync test (wh
 Before opening the PR:
 
 - [ ] `.github/dot-project-spec-hash.txt` matches the current CNCF upstream tip.
-- [ ] `DOT_PROJECT_SPEC_VERSION` was bumped.
+- [ ] `DOT_PROJECT_SPEC_VERSION` still equals upstream's `schema_version` (bumped only if upstream published a new one).
 - [ ] Every renamed / removed upstream field emits `DeprecationWarning`; every warning message names the release the alias is removed in.
 - [ ] `tests/darnit/context/test_full_field_coverage.py` passes with no golden-dict update needed (unless a `KEPT-WITH-RESHAPE` intentionally shifted a value; in that case the golden update is part of the PR).
 - [ ] The module docstring's reconciliation-history note lists the fields touched.

@@ -16,6 +16,10 @@
 - Q: Rename-alias compatibility window → A: One-release grace; warn on old name, remove next release.
 - Q: `DOT_PROJECT_SPEC_VERSION` bump rule → A: Bump on every upstream drift the reconciliation processes.
 
+### Session 2026-11-05 (issue #502)
+
+- Q: What does `DOT_PROJECT_SPEC_VERSION` identify? → A (supersedes the 2026-08-14 bump rule): upstream's own `schema_version`, the value a new `project.yaml` declares, so files darnit writes validate against upstream tooling. It is `1.0.0` and changes only when upstream publishes a new schema version. Upstream drift of `types.go` is tracked by the tracked-hash file alone; a reconciliation updates that file and the module's reconciliation history, not the version identifier. The 1.1.0–1.4.0 values were darnit-internal counters.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Restore CI green on new PRs (Priority: P1)
@@ -80,7 +84,7 @@ Every real-world `.project/project.yaml` that darnit successfully audits *today*
 - **FR-001**: `dot_project.py` MUST parse the CNCF `.project/` specification at the version captured by this feature without raising exceptions for any field the specification declares.
 - **FR-002**: The reader MUST tolerate fields present in a real `.project/project.yaml` that are not declared in the captured specification (forward compatibility for the next minor upstream change).
 - **FR-003**: The reader MUST expose every field that a darnit control or the harness's answer-source chain reads from `.project/project.yaml` today, with the same field name and semantics as it exposed before the reconciliation.
-- **FR-004**: `DOT_PROJECT_SPEC_VERSION` and `DOT_PROJECT_SPEC_URL` (or the equivalents in `dot_project.py`) MUST accurately identify the captured upstream state. The version identifier MUST be bumped by this feature and by every subsequent reconciliation that updates the tracked-hash file, regardless of how large or small the underlying upstream change is (clarified 2026-08-14). One-to-one mapping: every distinct tracked-hash value corresponds to exactly one version identifier.
+- **FR-004** (amended 2026-11-05, issue #502): `DOT_PROJECT_SPEC_VERSION` MUST equal the upstream `schema_version` that new `project.yaml` files declare (`1.0.0` today), and `DOT_PROJECT_SPEC_URL` MUST point at the upstream specification. The captured upstream state of `types.go` is identified by the tracked-hash file, which every reconciliation MUST update together with the module's reconciliation history. The version identifier is NOT bumped by a reconciliation; it changes only when upstream publishes a new schema version. (Before the amendment: bumped on every drift, one-to-one with the tracked hash.)
 - **FR-005**: The tracked-hash file MUST contain the hash of the exact upstream `types.go` used to derive the reconciled reader. That file is the sole reference the `test_upstream_spec_unchanged` test compares against.
 - **FR-006**: `test_upstream_spec_unchanged` MUST pass on a clean checkout of the feature branch without invoking any `--update-hash` override.
 - **FR-007**: When network access to the CNCF repository is unavailable, `test_upstream_spec_unchanged` MUST skip cleanly and MUST NOT report the drift as a hard failure.
@@ -93,7 +97,7 @@ Every real-world `.project/project.yaml` that darnit successfully audits *today*
 - **CNCF `.project/` specification (`types.go`)**: the upstream Go source-of-truth that defines the shape of `.project/project.yaml`. Not code darnit executes; darnit reads its structure and mirrors the field set.
 - **`dot_project.py` reader**: the darnit-side module that parses `.project/project.yaml` into typed dataclasses. Every control that consumes project context reaches values through this reader.
 - **Tracked-hash file** (`.github/dot-project-spec-hash.txt`): a one-line file storing the SHA-256 of the exact upstream `types.go` blob the reader was reconciled against. The upstream-sync test compares this against the currently fetched upstream.
-- **Version identifier** (`DOT_PROJECT_SPEC_VERSION`): a semantic-version-style label that a maintainer can grep to answer "which upstream state does darnit think it is on?" without decoding hashes.
+- **Version identifier** (`DOT_PROJECT_SPEC_VERSION`): upstream's `schema_version`, written into new `project.yaml` files (issue #502). Which upstream `types.go` the reader was reconciled against is answered by the tracked-hash file and the reconciliation history in `dot_project.py`, not by this value.
 
 ## Success Criteria *(mandatory)*
 
