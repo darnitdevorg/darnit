@@ -49,13 +49,17 @@ class TestAmberImplementation:
             get_sieve_handler_registry,
             reset_sieve_handler_registry,
         )
+
         reset_sieve_handler_registry()
         self.impl.register_handlers()
         registry = get_sieve_handler_registry()
         expected = {
-            "repro_deps_pinned", "repro_build_env_declared",
-            "repro_hermetic_build", "repro_provenance_exists",
-            "repro_bit_for_bit", "repro_witness_attestation",
+            "repro_deps_pinned",
+            "repro_build_env_declared",
+            "repro_hermetic_build",
+            "repro_provenance_exists",
+            "repro_bit_for_bit",
+            "repro_witness_attestation",
         }
         for name in expected:
             assert registry.get(name) is not None, f"{name} not registered"
@@ -65,13 +69,17 @@ class TestAmberImplementation:
             get_sieve_handler_registry,
             reset_sieve_handler_registry,
         )
+
         reset_sieve_handler_registry()
         self.impl.register_handlers()
         registry = get_sieve_handler_registry()
         for name in [
-            "repro_deps_pinned", "repro_build_env_declared",
-            "repro_hermetic_build", "repro_provenance_exists",
-            "repro_bit_for_bit", "repro_witness_attestation",
+            "repro_deps_pinned",
+            "repro_build_env_declared",
+            "repro_hermetic_build",
+            "repro_provenance_exists",
+            "repro_bit_for_bit",
+            "repro_witness_attestation",
         ]:
             info = registry.get(name)
             assert info is not None and callable(info.fn), f"{name} not callable"
