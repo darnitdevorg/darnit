@@ -426,7 +426,9 @@ level = 1
 """
     )
 
-    code, shown = _run_plan(["plan", "-f", str(framework), "--profile", "nothing", str(tmp_path)], caplog)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    code, shown = _run_plan(["plan", "-f", str(framework), "--profile", "nothing", str(repo)], caplog)
 
     assert code == 1
     assert shown == set()
@@ -590,8 +592,10 @@ description = "Control without a level"
 """
     )
 
+    repo = tmp_path / "repo"
+    repo.mkdir()
     code, shown = _run_plan(
-        ["plan", "-f", str(framework), "--profile", "only_unleveled", str(tmp_path)],
+        ["plan", "-f", str(framework), "--profile", "only_unleveled", str(repo)],
         caplog,
     )
 
@@ -954,7 +958,9 @@ description = "Control without a level"
 
     caplog.clear()
     with caplog.at_level(logging.INFO):
-        plan_exit = main(["plan", "-f", str(framework_file), str(tmp_path)])
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        plan_exit = main(["plan", "-f", str(framework_file), str(repo)])
     assert plan_exit == 0
     assert "Level 1 (1 controls):" in caplog.text
     assert "Level 2 (1 controls):" in caplog.text
