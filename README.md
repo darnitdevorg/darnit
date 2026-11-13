@@ -60,6 +60,8 @@ after 0.1.1, the first whose `darnit-mcp` provides the `darnit` command
 [`docs/install/from-source.md`](docs/install/from-source.md) for pinning a tag, and
 [`docs/install/README.md`](docs/install/README.md) for the other channels.
 
+To set up from source with one command (it offers to install uv, sets darnit up, and audits a repository), see [One-command setup](docs/install/from-source.md#one-command-setup).
+
 > [!NOTE]
 > Container, Homebrew, and standalone-binary channels are not published yet -
 > tracked in [#229](https://github.com/darnitdevorg/darnit/issues/229).
