@@ -17,6 +17,7 @@ import pytest
 from darnit.cli import main as cli_main
 from darnit.config.control_loader import load_controls_from_effective, load_controls_from_framework
 from darnit.config.merger import load_effective_config, load_framework_config
+from darnit.tools import audit
 from darnit.tools.audit import run_sieve_audit
 
 REMOVED = "shared handlers were removed"
@@ -125,9 +126,12 @@ def test_effective_path_refuses(framework_path: Path) -> None:
         load_controls_from_effective(load_effective_config(framework_path))
 
 
-def test_audit_refuses(framework_path: Path, repo: Path) -> None:
+def test_audit_refuses(framework_path: Path, repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # run_sieve_audit takes a registered framework name, never a path (#634), so
+    # the name resolves to the file here.
+    monkeypatch.setattr(audit, "_get_framework_config_path", lambda name=None: framework_path)
     with pytest.raises(ValueError, match=REMOVED):
-        run_sieve_audit("o", "r", str(repo), "main", framework_name=str(framework_path), write_cache=False)
+        run_sieve_audit("o", "r", str(repo), "main", framework_name="shared-removed", write_cache=False)
 
 
 def test_cli_audit_refuses(
