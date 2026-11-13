@@ -147,7 +147,7 @@ def test_measure_not_comparable_cases() -> None:
         }
     )
     amber_run.measure_claim(c, _outputs(**{"out.txt": "value=0.71\n"}))
-    assert (c["measured"], c["verdict"], c["reason"]) == ("71.0", "NOT_COMPARABLE", "other quantity")
+    assert (c["measured"], c["verdict"], c["reason"]) == ("71", "NOT_COMPARABLE", "other quantity")
 
 
 def test_measure_file_is_confined_to_the_checkout() -> None:
@@ -1095,7 +1095,7 @@ def test_public_url_drops_query_and_fragment():
     assert amber_run.public_url("https://host/o/r.git") == "https://host/o/r.git"
 
 
-@pytest.mark.parametrize("bad", ["inf", "-inf", "nan", "1_000", "0x10", "1e400", "", "seven", float("inf")])
+@pytest.mark.parametrize("bad", ["inf", "-inf", "nan", "1_000", "0x10", "", "seven", float("inf")])
 def test_values_must_be_finite_plain_decimals(bad):
     assert amber_run._number(bad) is None
 
@@ -1116,10 +1116,10 @@ def test_tolerance_must_be_finite_and_bounds_are_honest():
     holds, reason = amber_run.compare("11", "< 10", 2)
     assert holds is True and "holds only with tolerance 2" in reason
     holds, reason = amber_run.compare("9", "< 10", 2)
-    assert holds is True and reason.endswith("(tolerance 2.0)")
+    assert holds is True and reason.endswith("(tolerance 2)")
     assert amber_run.compare("70", ">= 70", 0) == (True, "measured 70 >= 70")
     # Equality falls back to text only for text that is not number-like: nan == nan must not be REPRODUCED.
-    for bad in ("nan", "inf", "1_000", "0x10", "1e400", "Infinity"):
+    for bad in ("nan", "inf", "1_000", "0x10", "Infinity"):
         holds, reason = amber_run.compare(bad, f"== {bad}", 0)
         assert holds is None and "plain decimal" in reason, bad
     assert amber_run.compare("passed", "== passed", 0) == (True, "measured 'passed' == 'passed'")
@@ -1204,3 +1204,105 @@ def test_rerun_needs_an_artifact_for_a_local_subject(monkeypatch, tmp_path, stam
         rr.rerun(store, bundle["id"], None, pubkey=pub, consent=lambda c: True)
     with pytest.raises(amber_run.RunError, match="is not a directory"):
         rr.rerun(store, bundle["id"], None, pubkey=pub, consent=lambda c: True, artifact=str(tmp_path / "nope"))
+
+
+# --- review of Nov 13 (d9c5ac2): five findings, one test each ---
+
+
+def test_comparisons_are_exact_decimals_not_floats():
+    """9007199254740992 >= 9007199254740993 came out REPRODUCED: both are the same float (review, Nov 13)."""
+    holds, reason = amber_run.compare("9007199254740992", ">= 9007199254740993", 0)
+    assert holds is False and reason == "measured 9007199254740992 >= 9007199254740993"
+    assert amber_run.compare("9007199254740993", ">= 9007199254740993", 0)[0] is True
+    # Past float precision in the fraction too, and a tolerance that is itself a long decimal.
+    assert amber_run.compare("1.00000000000000000001", "> 1", 0)[0] is True
+    assert amber_run.compare("0.3", "== 0.1", "0.19999999999999999")[0] is False
+    assert amber_run.compare("0.3", "== 0.1", "0.2")[0] is True
+    # The exact value is what a scaled measurement records: 0.71 x 100 is 71, not 71.00000000000001.
+    c = {"id": "x", "measure": {"file": "o.txt", "regex": r"v=([\d.]+)", "scale": 100}, "threshold": "== 71"}
+    amber_run.measure_claim(c, _outputs(**{"o.txt": "v=0.71\n"}))
+    assert (c["measured"], c["verdict"]) == ("71", "REPRODUCED")
+
+
+def test_rerun_reports_exit_status_and_outputs_of_either_run():
+    """Exit 0 -> 3 and a new extra.txt both passed as drift: false (review, Nov 13)."""
+    first = {
+        "id": "f",
+        "statement": {
+            "predicate": {
+                "experiment": {"command": "true", "exit_code": 0, "outputs": [{"path": "t.txt", "sha256": "aaa"}]},
+                "claims": [],
+            }
+        },
+    }
+    same = {"command": "true", "exit_code": 0, "outputs": [{"path": "t.txt", "sha256": "aaa"}]}
+    out = amber_run.compare_rerun(first, same, [])
+    assert out["drift"] is False and out["exit_code"] == {"first": 0, "rerun": 0, "result": "same"}
+    # The exit status changed, the files did not.
+    out = amber_run.compare_rerun(first, {**same, "exit_code": 3}, [])
+    assert out["drift"] is True and out["exit_code"]["result"] == "changed"
+    # A file the first run did not produce, and one it did that the rerun did not.
+    out = amber_run.compare_rerun(
+        first, {**same, "outputs": same["outputs"] + [{"path": "extra.txt", "sha256": "e"}]}, []
+    )
+    assert out["drift"] is True and [o["result"] for o in out["outputs"]] == ["added", "identical"]
+    out = amber_run.compare_rerun(first, {**same, "outputs": []}, [])
+    assert out["drift"] is True and out["outputs"][0]["result"] == "missing"
+    # A measured claim decides for the outputs: same number, different file bytes, no drift.
+    first["statement"]["predicate"]["claims"] = [{"id": "c", "measured": "2.4", "verdict": "REPRODUCED"}]
+    again = [{"id": "c", "measured": "2.4", "verdict": "REPRODUCED"}]
+    out = amber_run.compare_rerun(first, {**same, "outputs": [{"path": "t.txt", "sha256": "bbb"}]}, again)
+    assert out["drift"] is False
+    # ... but not for the exit status.
+    assert amber_run.compare_rerun(first, {**same, "exit_code": 1}, again)["drift"] is True
+
+
+def test_default_store_is_outside_the_checkout(monkeypatch, tmp_path, capsys):
+    """The first run created ./amber-runs in the artifact; the second refused it as untracked (review, Nov 11 and 13)."""
+    from darnit_amber import cli
+
+    data = tmp_path / "data"
+    work = tmp_path / "work"
+    work.mkdir()
+    monkeypatch.setattr(amber_run, "user_data_root", lambda: data)
+    monkeypatch.chdir(work)
+    assert amber_run.default_store() == data / "amber" / "runs"
+    assert not amber_run.default_store().is_relative_to(Path.cwd())
+    # No --out: the CLI reads from the default store, and creates nothing in the working directory.
+    rc = cli.main(["verify", "nothing"])
+    assert rc == 1 and not (work / "amber-runs").exists() and (data / "amber" / "runs").is_dir()
+    assert "nothing" in capsys.readouterr().err
+
+
+def test_clone_of_a_local_path_keeps_no_origin(repo, tmp_path):
+    """Witness's git attestor recorded the source path from git.remotes in both envelopes (review, Nov 11 and 13)."""
+    dest = amber_run._clone(str(repo), None, tmp_path / "clone", keep_remote=False)
+    remotes = subprocess.run(["git", "-C", str(dest), "remote"], capture_output=True, text=True).stdout
+    assert remotes.strip() == ""
+    assert amber_run._git_commit(dest) == amber_run._git_commit(repo)
+    kept = amber_run._clone(str(repo), None, tmp_path / "kept")  # a URL artifact keeps its (public) origin
+    assert subprocess.run(["git", "-C", str(kept), "remote"], capture_output=True, text=True).stdout.strip() == "origin"
+
+
+def test_wrap_command_survives_a_trailing_comment_and_cleans_up_on_failure(tmp_path, repo, no_signing):
+    """`cmd  # note` ate the wrapper's closing paren; a failed --allow-dirty run left .amber/ behind (review, Nov 13)."""
+    exit_file = tmp_path / "exit"
+    script = amber_run.wrap_command("echo out  # a comment that ends the line")
+    r = subprocess.run(["sh", "-c", script, str(exit_file)], capture_output=True)
+    assert r.returncode == 0 and r.stdout == b"out\n" and exit_file.read_text() == "0"
+    # The recorded command is the script Witness ran, so verify can recompute it: the shape is fixed.
+    assert script == '(\necho out  # a comment that ends the line\n)\nprintf %s "$?" > "$0"\n'
+    # A Witness failure in a dirty checkout, run in place: the record dir must not survive it.
+    (repo / "scratch.txt").write_text("untracked\n")
+
+    def boom(*a, **k):
+        raise amber_run.RunError("witness run (experiment) failed")
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(amber_run, "_witness", boom)
+        mp.setattr(amber_run, "_witness_bin", lambda: "witness")
+        with pytest.raises(amber_run.RunError):
+            amber_run.execute(
+                str(repo), None, None, {"run": {"command": "true"}}, no_signing, tsa=None, allow_dirty=True
+            )
+    assert not os.path.isdir(repo / ".amber")  # os.path: the no_signing fixture patches Path.exists
