@@ -89,6 +89,10 @@ url = "https://..."               # OPTIONAL: Spec URL
 # Control definitions (main content)
 ```
 
+Each ID in a `[[compose]]` block's `include_controls` list must exist in that block's source framework.
+An unknown ID fails framework loading and the error names the source and the missing ID.
+Other filters can still narrow a valid selection to zero controls.
+
 ### 2.2 Control Definition
 
 Each control is defined under `[controls."CONTROL-ID"]`:

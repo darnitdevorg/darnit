@@ -73,6 +73,14 @@ class CompositionMissingSourceError(CompositionError):
         )
 
 
+class CompositionUnknownControlError(CompositionError):
+    """A compose block lists control IDs its source does not provide."""
+
+    def __init__(self, source: str, control_ids: set[str]) -> None:
+        missing = ", ".join(sorted(control_ids))
+        super().__init__(f"Unknown control IDs in include_controls for source {source!r}: {missing}")
+
+
 class CompositionConflictError(CompositionError):
     """Two ``[[compose]]`` blocks contribute the same control ID in strict mode.
 
@@ -234,7 +242,10 @@ def _select_controls(
 
         if block.include_controls:
             wanted = set(block.include_controls)
-            individual_sets.append({cid for cid in source_controls if cid in wanted})
+            missing = wanted - source_controls.keys()
+            if missing:
+                raise CompositionUnknownControlError(block.source, missing)
+            individual_sets.append(wanted)
 
         if block.include_tags:
             tagged: set[str] = set()

@@ -22,6 +22,7 @@ from darnit.core.composition import (
     CompositionCycleError,
     CompositionMissingSourceError,
     CompositionOrphanOverrideError,
+    CompositionUnknownControlError,
     CompositionUnknownFieldError,
     CompositionVersionMismatchError,
     _apply_override,
@@ -100,6 +101,28 @@ def test_include_controls_filter(composite_fixtures_dir, fixture_source_loader):
     result = _resolve(composite_fixtures_dir, fixture_source_loader, "include-controls")
 
     assert set(result.controls.keys()) == {"MOCK-AC-01.01", "MOCK-QA-01.01"}
+
+
+@pytest.mark.unit
+def test_unknown_include_control_names_source_and_id(composite_fixtures_dir, fixture_source_loader):
+    cfg = _parse_framework_only(_composite_path(composite_fixtures_dir, "include-controls"))
+    cfg.compose[0].include_controls.append("MOCK-TYPO")
+
+    with pytest.raises(CompositionUnknownControlError, match="mock-source-a.*MOCK-TYPO"):
+        resolve_composition(cfg, source_loader=fixture_source_loader)
+
+
+@pytest.mark.unit
+def test_local_control_can_be_left_out_of_include_controls(composite_fixtures_dir, fixture_source_loader):
+    cfg = _parse_framework_only(_composite_path(composite_fixtures_dir, "include-controls"))
+    local_id = "MOCK-AC-01.01"
+    cfg.compose[0].include_controls.remove(local_id)
+    cfg.controls[local_id] = ControlConfig(name="Local control", description="Custom check")
+
+    result = resolve_composition(cfg, source_loader=fixture_source_loader)
+
+    assert set(result.controls) == {local_id, "MOCK-QA-01.01"}
+    assert result.controls[local_id].name == "Local control"
 
 
 # ---------------------------------------------------------------------------
