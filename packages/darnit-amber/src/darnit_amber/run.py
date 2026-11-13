@@ -224,7 +224,8 @@ RECORD_DIR = ".amber"
 EXIT_RECORD = f"{RECORD_DIR}/exit"
 AUDIT_RECORD = f"{RECORD_DIR}/audit.json"
 
-_PATH_VARIABLES = ("VIRTUAL_ENV", "CONDA_PREFIX", "PYTHONPATH")
+# Allowlisted variables whose value is a path: scrubbed before recording (SHELL can be ~/.local/bin/fish, #747).
+_PATH_VARIABLES = ("VIRTUAL_ENV", "CONDA_PREFIX", "PYTHONPATH", "SHELL")
 _SYSTEM_PREFIXES = ("/usr", "/opt", "/lib", "/lib64", "/etc", "/nix", "/bin", "/sbin", "/snap")
 
 
