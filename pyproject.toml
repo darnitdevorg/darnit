@@ -120,6 +120,9 @@ dev = [
     "skills-ref>=0.1.1",
     "jsonschema>=4.26.0",
     "syrupy>=4.0.0",  # snapshot testing for threat-model rendering (014-cobra-threat-model R8)
+    # Exact: scripts/comply_replay.py compares per-control results with a record
+    # made with this version, and zizmor's findings change between versions.
+    "zizmor==1.32.0",
     # Internal/test-only workspace packages -- not published to PyPI. Pinned here
     # so they install for development and tests via `uv sync`, but do not become
     # runtime dependencies of any published wheel.
