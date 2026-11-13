@@ -24,7 +24,7 @@ click==8.1.7 --hash=sha256:ae74fb96c20a0277a1d615f1e4d73c8414f5a98db8b799a7931d1
 
 ```bash
 # Unit level -- classification and handler verdicts
-uv run pytest tests/darnit_reproducibility/ -v
+uv run pytest tests/darnit_amber/ -v
 
 # Framework level -- the WARN outcome
 uv run pytest tests/darnit/sieve/test_handler_warn_outcome.py -v

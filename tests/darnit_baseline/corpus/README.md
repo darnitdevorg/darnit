@@ -49,8 +49,8 @@ change.
 | `plugin-redefines-manual` | A plugin tries to register `manual` as a step type that concludes PASS (feature 044, #486) |
 
 The reproducibility framework has its own corpus in
-`tests/darnit_reproducibility/corpus/`, measured by the same runner and gated by
-`tests/darnit_reproducibility/test_repro_corpus_gate.py`. Its `text-signals-only`
+`tests/darnit_amber/corpus/`, measured by the same runner and gated by
+`tests/darnit_amber/test_repro_corpus_gate.py`. Its `text-signals-only`
 fixture is the #453 reproduction: workflow text that mentions signing or sets
 `SOURCE_DATE_EPOCH` without the property.
 

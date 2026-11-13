@@ -13,7 +13,7 @@ Four issues (#445, #431, #430, #432) where reproducibility controls report a rep
 - **#430** `_SUSPICIOUS_PATTERNS` misses `go install`, `go get`, `cargo install`, `gem install`.
 - **#432** nothing detects non-deterministic compiler flags.
 
-One package changes: `packages/darnit-reproducibility/`. No framework change -- feature 037 already added the conclusive WARN these verdicts need, which is why this branch stacks on #443.
+One package changes: `packages/darnit-amber/`. No framework change -- feature 037 already added the conclusive WARN these verdicts need, which is why this branch stacks on #443.
 
 The load-bearing consequence is FR-010: `_detect_strong_hermeticity_signal` gates its Nix path on `dependency_results.get("RE-01.02") == "PASS"`, so tightening #431 withdraws a hermeticity signal from repositories that did not change. That is accepted and must be visible in the result.
 
@@ -25,7 +25,7 @@ The load-bearing consequence is FR-010: `_detect_strong_hermeticity_signal` gate
 
 **Storage**: filesystem only; files are read during the audit as they are today.
 
-**Testing**: pytest. New unit tests in `tests/darnit_reproducibility/`; fixtures as tmp_path-constructed repos, matching the convention already used by `TestRepoDepsPin`.
+**Testing**: pytest. New unit tests in `tests/darnit_amber/`; fixtures as tmp_path-constructed repos, matching the convention already used by `TestRepoDepsPin`.
 
 **Target Platform**: local filesystem audit of a checked-out repository.
 
@@ -46,7 +46,7 @@ The load-bearing consequence is FR-010: `_detect_strong_hermeticity_signal` gate
 
 ### I. Plugin Separation -- PASS
 
-Entirely within `packages/darnit-reproducibility/`. No core change, no new protocol method, no framework import of an implementation. The conclusive WARN this feature depends on is already in core from feature 037.
+Entirely within `packages/darnit-amber/`. No core change, no new protocol method, no framework import of an implementation. The conclusive WARN this feature depends on is already in core from feature 037.
 
 ### II. Conservative-by-Default -- PASS; this feature exists to enforce it
 
@@ -58,7 +58,7 @@ FR-010's propagation is the same principle applied transitively: the Nix signal 
 
 ### III. TOML-First Architecture -- PASS
 
-No control metadata moves into Python. No new control, no new TOML key. `reproducibility.toml` is untouched.
+No control metadata moves into Python. No new control, no new TOML key. `amber.toml` is untouched.
 
 ### V. Sieve Pipeline Integrity -- PASS
 
@@ -95,11 +95,11 @@ specs/038-repro-false-pass/
 ### Source Code (repository root)
 
 ```text
-packages/darnit-reproducibility/src/darnit_reproducibility/
+packages/darnit-amber/src/darnit_amber/
 |-- container_pinning.py     # NEW -- FROM-line parsing and pin classification
 `-- handlers.py              # three handlers + the shared scan tables
 
-tests/darnit_reproducibility/
+tests/darnit_amber/
 |-- test_container_pinning.py   # NEW -- FROM-line table, pure function
 |-- test_handlers.py            # extend TestBuildEnvDeclared / TestHermeticBuild / TestBitForBit
 `-- test_repro_corpus.py        # NEW -- SC-007 corpus expectation

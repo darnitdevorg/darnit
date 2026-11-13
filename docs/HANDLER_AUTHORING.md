@@ -423,7 +423,7 @@ These files are the best companions while authoring handlers:
 - `docs/IMPLEMENTATION_GUIDE.md`
 - `CLAUDE.md` sections `Sieve Pattern` and `TOML Schema Features`
 - `packages/darnit-hello/` -- the minimal plugin template
-- `packages/darnit-reproducibility/src/darnit_reproducibility/handlers.py` and
+- `packages/darnit-amber/src/darnit_amber/handlers.py` and
   `implementation.py` -- a real plugin's custom step types and their
   registration in `register_handlers()`
 - `packages/darnit-gittuf/src/darnit_gittuf/handlers.py` and `implementation.py`

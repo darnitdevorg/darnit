@@ -209,7 +209,7 @@ Single workspace repo. New product code under `packages/darnit-baseline/src/darn
 
 - [X] T058 Run the full workspace test sweep from repo root: `uv run pytest tests/ -q --deselect tests/darnit/context/test_dot_project_upstream.py::TestUpstreamSpecSync::test_upstream_spec_unchanged`. Confirm exit code 0.
 
-- [X] T059 [P] Two sub-steps, both MUST pass. **(a) Structure Decision**: `git diff --name-only main..HEAD | grep -E 'packages/(darnit-gittuf|darnit-reproducibility|darnit-hello)/src/'` MUST produce zero lines (only `darnit-baseline/` and one file in `darnit/core/utils.py` are touched under `packages/*/src/`). **(b) FR-013 no-new-runtime-dep guard**: `git diff main..HEAD -- pyproject.toml packages/*/pyproject.toml` MUST be empty (no new deps introduced).
+- [X] T059 [P] Two sub-steps, both MUST pass. **(a) Structure Decision**: `git diff --name-only main..HEAD | grep -E 'packages/(darnit-gittuf|darnit-amber|darnit-hello)/src/'` MUST produce zero lines (only `darnit-baseline/` and one file in `darnit/core/utils.py` are touched under `packages/*/src/`). **(b) FR-013 no-new-runtime-dep guard**: `git diff main..HEAD -- pyproject.toml packages/*/pyproject.toml` MUST be empty (no new deps introduced).
 
 - [X] T060 [P] Run `uv run ruff check .` on repo root; MUST exit 0. Fix any lint issues in the files this feature touched; do NOT auto-format unrelated files.
 

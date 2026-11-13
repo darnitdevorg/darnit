@@ -8,6 +8,7 @@ resolution-markers = [
 
 [manifest]
 members = [
+    "darnit-amber",
     "darnit-baseline",
     "darnit-core",
     "darnit-csl",
@@ -464,6 +465,21 @@ wheels = [
 ]
 
 [[package]]
+name = "darnit-amber"
+version = "0.1.1"
+source = { editable = "packages/darnit-amber" }
+dependencies = [
+    { name = "darnit-core" },
+    { name = "packaging" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "darnit-core", editable = "packages/darnit" },
+    { name = "packaging", specifier = ">=23.0" },
+]
+
+[[package]]
 name = "darnit-baseline"
 version = "0.1.1"
 source = { editable = "packages/darnit-baseline" }
@@ -561,6 +577,7 @@ name = "darnit-mcp"
 version = "0.1.1"
 source = { editable = "." }
 dependencies = [
+    { name = "darnit-amber" },
     { name = "darnit-baseline" },
     { name = "darnit-core" },
     { name = "darnit-gittuf" },
@@ -599,6 +616,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "claude-agent-sdk", marker = "extra == 'parity-tier2'", specifier = ">=0.1.0" },
+    { name = "darnit-amber", editable = "packages/darnit-amber" },
     { name = "darnit-baseline", editable = "packages/darnit-baseline" },
     { name = "darnit-core", editable = "packages/darnit" },
     { name = "darnit-core", extras = ["attestation"], marker = "extra == 'attestation'", editable = "packages/darnit" },
@@ -631,15 +649,11 @@ name = "darnit-reproducibility"
 version = "0.1.1"
 source = { editable = "packages/darnit-reproducibility" }
 dependencies = [
-    { name = "darnit-core" },
-    { name = "packaging" },
+    { name = "darnit-amber" },
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "darnit-core", editable = "packages/darnit" },
-    { name = "packaging", specifier = ">=23.0" },
-]
+requires-dist = [{ name = "darnit-amber", editable = "packages/darnit-amber" }]
 
 [[package]]
 name = "darnit-testchecks"
