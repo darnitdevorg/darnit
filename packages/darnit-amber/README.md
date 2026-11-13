@@ -141,7 +141,9 @@ two signers: the run's, behind the Witness envelopes, and the claimer's,
 behind the statement, so name both: `--pubkey researcher.pub
 --claimer-pubkey reviewer.pub`; with no claimer key the run's is used,
 which is right when the researcher claimed their own run. Each claim says
-who stands behind it (`signed_by`). A bundle is `verified` only when every
+who stands behind it (`signed_by`: `signing`, `claim_signer`, or
+`prior_claimer` with the earlier signer and bundle when a claim is carried
+through a second `claim`). A bundle is `verified` only when every
 check passes.
 
 `verified` establishes that this exact bundle, signed with a key the
