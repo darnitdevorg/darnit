@@ -10,6 +10,7 @@ from collections import Counter
 from typing import Any
 
 from darnit.core.logging import get_logger
+from darnit.remediation.git_state import run_git
 from darnit.sieve.handler_registry import HandlerContext, HandlerResult, HandlerResultStatus
 from darnit_gittuf.setup import SetupError, initialize
 
@@ -133,11 +134,11 @@ def gittuf_commits_signed_handler(
     outweighs INCONCLUSIVE.
     """
     try:
-        result = subprocess.run(
-            ["git", "log", "--format=%H%x1f%G?%x1f%GK", "-5"],
-            cwd=ctx.local_path,
-            capture_output=True,
-            text=True,
+        result = run_git(
+            ctx.local_path,
+            "log",
+            "--format=%H%x1f%G?%x1f%GK",
+            "-5",
             timeout=15,
         )
 

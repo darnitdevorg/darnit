@@ -60,6 +60,24 @@ class TestGitHelpers:
         dirty = _is_working_tree_dirty(str(temp_git_repo))
         assert dirty is True
 
+    @pytest.mark.unit
+    def test_is_working_tree_dirty_ignores_planted_fsmonitor(self, temp_git_repo: Path):
+        """core.fsmonitor from repository config must not execute during dirty check (issue #617)."""
+        witness = temp_git_repo / ".git" / "fsmonitor_executed.txt"
+        fake_fsmonitor = temp_git_repo / ".git" / "fake_fsmonitor.sh"
+        fake_fsmonitor.write_text(f"#!/bin/sh\necho ran > {witness}\nexit 0\n")
+        fake_fsmonitor.chmod(0o755)
+
+        subprocess.run(
+            ["git", "config", "core.fsmonitor", str(fake_fsmonitor)],
+            cwd=temp_git_repo,
+            check=True,
+        )
+
+        dirty = _is_working_tree_dirty(str(temp_git_repo))
+        assert not witness.exists(), "Planting core.fsmonitor executed during dirty check!"
+        assert dirty is False
+
 
 class TestCacheDir:
     """Tests for _get_cache_dir."""
