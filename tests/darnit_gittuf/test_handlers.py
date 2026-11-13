@@ -21,7 +21,6 @@ def make_ctx(tmp_path: Path) -> HandlerContext:
         control_id="GT-01.02",
         project_context={},
         gathered_evidence={},
-        shared_cache={},
         dependency_results={},
     )
 

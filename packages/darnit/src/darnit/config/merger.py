@@ -187,7 +187,6 @@ def merge_control(
 
         resolved = _resolve_handler_invocations(
             framework_control.passes,
-            {},  # shared_handlers resolved separately
             locator_discover,
             control_id,
         )
