@@ -59,6 +59,7 @@ class TestGittufVerifyPolicyHandler:
 
     def test_inconclusive_on_timeout(self, tmp_path: Path) -> None:
         import subprocess
+
         ctx = make_ctx(tmp_path)
         with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("gittuf", 30)):
             result = gittuf_verify_policy_handler({}, ctx)
@@ -90,6 +91,35 @@ class TestGittufCommitsSignedHandler:
             result = gittuf_commits_signed_handler({}, ctx)
         assert result.status == HandlerResultStatus.FAIL
         assert result.evidence["unsigned"] == 1
+        assert result.message == "2 of last 3 commits have a good signature: 1 unsigned"
+
+    def test_fail_message_reports_unverifiable_and_unsigned_counts(self, tmp_path: Path) -> None:
+        """When commits fail, the message reports both not-good and unverifiable counts (fixes #679)."""
+        ctx = make_ctx(tmp_path)
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        # 1 signed (G), 1 unsigned (N), 2 unverifiable (E)
+        mock_result.stdout = "c1\x1fG\x1fabc123\nc2\x1fN\x1f\nc3\x1fE\x1fabc124\nc4\x1fE\x1fabc125\n"
+        with patch("subprocess.run", return_value=mock_result):
+            result = gittuf_commits_signed_handler({}, ctx)
+        assert result.status == HandlerResultStatus.FAIL
+        assert result.message == (
+            "1 of last 4 commits have a good signature: 1 unsigned, 2 could not be checked on this machine"
+        )
+
+    def test_fail_message_when_zero_signed_and_mix_of_n_and_e(self, tmp_path: Path) -> None:
+        """Reproduce issue #679: 1 unsigned and 4 unverifiable commits report 0 signed."""
+        ctx = make_ctx(tmp_path)
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        # 1 unsigned (N), 4 unverifiable (E)
+        mock_result.stdout = "c1\x1fN\x1f\nc2\x1fE\x1f\nc3\x1fE\x1f\nc4\x1fE\x1f\nc5\x1fE\x1f\n"
+        with patch("subprocess.run", return_value=mock_result):
+            result = gittuf_commits_signed_handler({}, ctx)
+        assert result.status == HandlerResultStatus.FAIL
+        assert result.message == (
+            "0 of last 5 commits have a good signature: 1 unsigned, 4 could not be checked on this machine"
+        )
 
     def test_fail_when_bad_signature(self, tmp_path: Path) -> None:
         ctx = make_ctx(tmp_path)
