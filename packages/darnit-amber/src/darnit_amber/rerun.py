@@ -425,6 +425,7 @@ def rerun(
         "id": new["id"],
         "rerun_of": bundle_id,
         "exit_code": new_pred["experiment"]["exit_code"],
+        "exit_code_first": comparison["exit_code"]["first"],
         "verdict": new_pred.get("verdict"),
         "outputs": comparison["outputs"],
         "claims": comparison["claims"],

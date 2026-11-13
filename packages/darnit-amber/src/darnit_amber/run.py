@@ -603,6 +603,19 @@ def _signing(key: Path, tsa: str | None) -> dict[str, Any]:
     return {"method": "key", "key_fingerprint": key_fingerprint(key), "timestamp_authority": tsa}
 
 
+def _files_witness_saw(experiment: dict[str, Any]) -> dict[str, str | None]:
+    """Every file the step produced, by digest: the Witness products, not the entry's output list.
+
+    A rerun that writes a file the first run never listed (review, Nov 13)
+    shows up only here; the entry's ``outputs`` are what the first run chose
+    to store. Older bundles without ``products`` fall back to the outputs.
+    """
+    products = experiment.get("products")
+    if products:
+        return {p: d for p, d in products.items() if not p.startswith(".git/") and not p.startswith(RECORD_DIR + "/")}
+    return {o["path"]: o["sha256"] for o in experiment.get("outputs") or []}
+
+
 def compare_rerun(
     first: dict[str, Any], experiment: dict[str, Any] | None, claims: list[dict[str, Any]]
 ) -> dict[str, Any]:
@@ -616,8 +629,8 @@ def compare_rerun(
     first_pred = first["statement"]["predicate"]
     first_exp = first_pred.get("experiment") or {}
     first_claims = first_pred.get("claims") or []
-    theirs = {o["path"]: o["sha256"] for o in first_exp.get("outputs") or []}
-    mine = {o["path"]: o["sha256"] for o in (experiment or {}).get("outputs") or []}
+    theirs = _files_witness_saw(first_exp)
+    mine = _files_witness_saw(experiment or {})
     outputs = []
     for path in sorted(theirs.keys() | mine.keys()):
         a, b = theirs.get(path), mine.get(path)

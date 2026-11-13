@@ -1255,6 +1255,17 @@ def test_rerun_reports_exit_status_and_outputs_of_either_run():
     assert out["drift"] is False
     # ... but not for the exit status.
     assert amber_run.compare_rerun(first, {**same, "exit_code": 1}, again)["drift"] is True
+    # The file set is what Witness hashed (products), not the entry's output list: a rerun that writes
+    # extra.txt without listing it is still reported, and .amber/ and .git/ are not files of the experiment.
+    first["statement"]["predicate"]["claims"] = []
+    first_exp = first["statement"]["predicate"]["experiment"]
+    first_exp["products"] = {"t.txt": "aaa", ".amber/exit": "z1", ".git/index": "g"}
+    with_products = {**same, "products": {"t.txt": "aaa", "extra.txt": "e", ".amber/exit": "z2"}}
+    out = amber_run.compare_rerun(first, with_products, [])
+    assert out["drift"] is True and [(o["path"], o["result"]) for o in out["outputs"]] == [
+        ("extra.txt", "added"),
+        ("t.txt", "identical"),
+    ]
 
 
 def test_default_store_is_outside_the_checkout(monkeypatch, tmp_path, capsys):
@@ -1306,3 +1317,31 @@ def test_wrap_command_survives_a_trailing_comment_and_cleans_up_on_failure(tmp_p
                 str(repo), None, None, {"run": {"command": "true"}}, no_signing, tsa=None, allow_dirty=True
             )
     assert not os.path.isdir(repo / ".amber")  # os.path: the no_signing fixture patches Path.exists
+
+
+def test_cli_keeps_tolerance_and_scale_as_written(monkeypatch):
+    """--tolerance and --scale were parsed as floats, rounding a long decimal before the exact comparison."""
+    from darnit_amber import cli
+
+    seen = {}
+    monkeypatch.setattr(cli, "_make_store", lambda a: object())
+    monkeypatch.setattr(cli, "claim", lambda store, bid, spec, key=None, tsa=None: seen.update(spec) or {"id": "d"})
+    cli.main(
+        [
+            "claim",
+            "x",
+            "--id",
+            "c",
+            "--file",
+            "f",
+            "--regex",
+            "(.*)",
+            "--threshold",
+            "== 1",
+            "--tolerance",
+            "0.19999999999999999",
+            "--scale",
+            "100",
+        ]
+    )
+    assert seen["tolerance"] == "0.19999999999999999" and seen["measure"]["scale"] == "100"
