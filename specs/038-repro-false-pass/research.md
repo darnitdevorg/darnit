@@ -2,7 +2,7 @@
 
 **Feature**: 038 | **Date**: 2026-09-20
 
-Every decision below was checked against the code rather than assumed. References are to `packages/darnit-reproducibility/src/darnit_reproducibility/handlers.py` unless stated.
+Every decision below was checked against the code rather than assumed. References are to `packages/darnit-amber/src/darnit_amber/handlers.py` unless stated.
 
 ---
 
@@ -104,7 +104,7 @@ The scanned file set is already bounded and relevant: workflows, composite actio
 
 **Rationale**: feature 037 tried a committed golden of control statuses and it failed in CI while passing locally -- seven OSPS controls resolve differently depending on whether `gh` is authenticated. That lesson applies to any corpus containing network-dependent controls. Restricting this corpus to `reproducibility` with witness checking disabled removes the cause rather than working around it.
 
-Controls outside this plugin cannot be affected: no shared code changes, and `openssf-baseline` does not import `darnit_reproducibility`. SC-007 is therefore satisfied by the reproducibility corpus plus that structural fact, and does not need the cross-framework capture from feature 037.
+Controls outside this plugin cannot be affected: no shared code changes, and `openssf-baseline` does not import `darnit_amber`. SC-007 is therefore satisfied by the reproducibility corpus plus that structural fact, and does not need the cross-framework capture from feature 037.
 
 ---
 

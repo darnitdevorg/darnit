@@ -4,7 +4,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from darnit_reproducibility.handlers import repro_deps_pinned_handler
+from darnit_amber.handlers import repro_deps_pinned_handler
 
 from darnit.sieve.handler_registry import HandlerResultStatus
 

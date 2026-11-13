@@ -34,7 +34,7 @@ This test would have caught the pre-021 bug.
 
 - `darnit-baseline` (fixed by feature 021)
 - `darnit-gittuf` (fixed by feature 021)
-- `darnit-reproducibility` (fixed by feature 021)
+- `darnit-amber` (fixed by feature 021)
 - Any future implementation package registered under `darnit.implementations`
 - Any third-party plugin package that opts into darnit's plugin system
 

@@ -30,7 +30,7 @@ class TestAccepted:
             "darnit_baseline.tools:audit_openssf_baseline",
             "darnit_csl.mcp_tools:remediate_community_spec",
             "darnit_gittuf.implementation:GittufImplementation",
-            "darnit_reproducibility.implementation:ReproducibilityImplementation",
+            "darnit_amber.implementation:AmberImplementation",
             "darnit_hello.implementation:HelloImplementation",
         ],
     )
@@ -40,7 +40,7 @@ class TestAccepted:
     def test_allowed_set_comes_from_implementation_entry_points(self) -> None:
         packages = discovery.implementation_packages()
 
-        assert {"darnit_baseline", "darnit_csl", "darnit_gittuf", "darnit_reproducibility", "darnit_hello"} <= packages
+        assert {"darnit_baseline", "darnit_csl", "darnit_gittuf", "darnit_amber", "darnit_hello"} <= packages
         assert "yaml" not in packages
 
     def test_allowed_set_is_recomputed_after_discovery_reset(self, monkeypatch: pytest.MonkeyPatch) -> None:

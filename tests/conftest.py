@@ -115,6 +115,14 @@ def _isolate_operator_config(
     data_root = tmp_path_factory.mktemp("data-root") / "darnit"
     monkeypatch.setattr(confirmations, "user_data_root", lambda: data_root)
     monkeypatch.setattr(manifest, "user_data_root", lambda: data_root)
+    # darnit-amber's default signing key lives under the data root too: a test must never write one for real
+    # (platform_paths ignores XDG_DATA_HOME on macOS, so an environment variable is not isolation).
+    try:
+        from darnit_amber import run as amber_run
+    except ImportError:
+        pass
+    else:
+        monkeypatch.setattr(amber_run, "user_data_root", lambda: data_root)
     loader.set_launch_options(None, strict=False)
     yield
     loader.set_launch_options(None, strict=False)
@@ -202,41 +210,14 @@ def temp_dir() -> Generator[Path, None, None]:
 def temp_git_repo(temp_dir: Path) -> Generator[Path, None, None]:
     """Create a temporary git repository for tests."""
     # Initialize git repo
-    subprocess.run(
-        ["git", "init"],
-        cwd=temp_dir,
-        capture_output=True,
-        check=True
-    )
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"],
-        cwd=temp_dir,
-        capture_output=True,
-        check=True
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Test User"],
-        cwd=temp_dir,
-        capture_output=True,
-        check=True
-    )
+    subprocess.run(["git", "init"], cwd=temp_dir, capture_output=True, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=temp_dir, capture_output=True, check=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=temp_dir, capture_output=True, check=True)
 
     # Create initial commit
     readme = temp_dir / "README.md"
     readme.write_text("# Test Repository\n")
-    subprocess.run(
-        ["git", "add", "."],
-        cwd=temp_dir,
-        capture_output=True,
-        check=True
-    )
-    subprocess.run(
-        ["git", "commit", "-m", "Initial commit"],
-        cwd=temp_dir,
-        capture_output=True,
-        check=True
-    )
+    subprocess.run(["git", "add", "."], cwd=temp_dir, capture_output=True, check=True)
+    subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=temp_dir, capture_output=True, check=True)
 
     yield temp_dir
-
-

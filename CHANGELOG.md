@@ -34,6 +34,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `darnit-amber run`, `verify`, `claim` and `rerun` (#677 steps A, C, D; #678;
+  specs/046-amber-run-bundle): one execution of an artifact's experiment under
+  Witness becomes a signed run bundle (statement signed as DSSE with the
+  researcher's key and timestamped, Witness envelopes bound by digest,
+  outputs stored and hashed). Claims are measured only from outputs the
+  experiment produced; `rerun` verifies before it executes and asks for
+  consent. A clean checkout is run from a fresh clone of its commit and
+  untracked files make it dirty, so the experiment reads only what the
+  commit contains; the bundle records no path of the researcher's machine
+  (`$HOME/...`, `$CHECKOUT/...`, `local/<name>`) and says under
+  `provenance` which fields Witness observed and which the tool wrote down;
+  the experiment's exit status and the audit report are Witness products
+  (`.amber/`, removed after each step) that `verify` reads back by digest.
+  `verify` names two signers for a derived bundle (`--pubkey`,
+  `--claimer-pubkey`); values, thresholds and tolerances must be finite
+  plain decimals and are compared exactly, as decimals, never as floats.
+
 - Developer test flow automation scripts (`scripts/clean_and_install_dev.sh`,
   `scripts/setup_dev_projects.sh`, `scripts/run_dev_test_flow.sh`) to
   generate reproducible test fixtures (`failing-empty`,
@@ -486,6 +503,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   automated workflow edits with manual guidance.
   ([#512](https://github.com/darnitdevorg/darnit/issues/512),
   [#513](https://github.com/darnitdevorg/darnit/issues/513))
+- **BREAKING:** the `darnit-reproducibility` plugin is renamed `darnit-amber`:
+  package `darnit_amber`, framework and MCP server name `amber`,
+  `AmberImplementation`, `amber.toml`. Control ids (`RE-*`), handler names
+  (`repro_*`) and the `audit_reproducibility` MCP tool are unchanged (#532).
+  Migration:
+  - `darnit-mcp` depends on a transitional `darnit-reproducibility` for this
+    one release: it has no entry points and only pulls in `darnit-amber`, so
+    upgrading `darnit-mcp` replaces the old plugin instead of leaving it
+    installed beside the new one. After upgrading, `pip uninstall
+    darnit-reproducibility`; the next release drops it.
+  - Rename `reproducibility` to `amber` in `darnit audit -f`, `darnit serve
+    --framework`, MCP client configurations (server name and framework
+    argument), and operator configuration: `[plugins].allowed` and
+    `[[compose]] source`.
+  - Python code: `import darnit_amber`; `darnit_reproducibility` re-exports
+    its top-level names with a `DeprecationWarning` for this release
+    (submodules such as `darnit_reproducibility.handlers` are not provided).
+  - Upgrading: `darnit-mcp` pins its components to its own version, so
+    `pip install -U darnit-mcp` moves `darnit-core`, the plugins and the
+    transitional package together; `darnit-amber` and the transitional
+    package pin the same way.
 - In OpenSSF Baseline assessment attestation predicates, `assessor.name`
   changes from `openssf-baseline-mcp` to `openssf-baseline`, `assessor.uri`
   points to `https://github.com/darnitdevorg/darnit`, `assessor.version`
