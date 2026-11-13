@@ -1,6 +1,6 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.20
+> **Version**: 1.0.0-alpha.21
 > **Status**: Authoritative
 > **Last Updated**: 2026-10-29
 
@@ -2627,7 +2627,7 @@ The following requirements have been superseded: by the handler dispatch archite
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.0.0-alpha.20 | 2026-10-29 | Removed shared handlers (`[shared_handlers]`, the `shared` step key): a second control referencing a shared step got the first control's verdict without evaluating its own `expr`, and the effective configuration never resolved them; declaring either now fails loading (Section 3.0.3; Appendix C) |
+| 1.0.0-alpha.21 | 2026-10-29 | Removed shared handlers (`[shared_handlers]`, the `shared` step key): a second control referencing a shared step got the first control's verdict without evaluating its own `expr`, and the effective configuration never resolved them; declaring either now fails loading (Section 3.0.3; Appendix C) |
 | 1.0.0-alpha.20 | 2026-10-29 | Framework selection: MCP, agent and harness state, and tool arguments name a registered framework only, never a path; a framework file given by path is refused inside the audited repository (Sections 10.5, 14.5) |
 | 1.0.0-alpha.19 | 2026-10-23 | `generate_threat_model` registers plan support: its files record the UTC scan date, not a time, so the preview equals the apply. Changed outcomes also list files kept because of uncommitted user changes (Sections 4.2, 12, 15.4; #673) |
 | 1.0.0-alpha.18 | 2026-10-23 | `generate_threat_model` writes only through the remediation executor and the run manifest: the remediation handler returns `FileChange`s and has ceiling `{}`, and the MCP tool writes only to a validated repository path (Sections 3.0.1, 4.2, 12, 15.8) |
