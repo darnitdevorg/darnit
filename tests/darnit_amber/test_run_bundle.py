@@ -934,6 +934,21 @@ def test_claim_records_which_signer_stands_behind_each_claim(tmp_path, monkeypat
     derived = json.loads((tmp_path / f"{out['id']}.intoto.json").read_bytes())
     claims = {c["id"]: c["signed_by"] for c in derived["statement"]["predicate"]["claims"]}
     assert claims == {"first": "signing", "score": "claim_signer"}
+    # Bob derives from Alice's derived bundle: Alice's claim must still name Alice, not Bob (review, Nov 13).
+    monkeypatch.setattr("darnit_amber.claim.key_fingerprint", lambda key: "sha256:cc")
+    bob = claim(
+        st,
+        out["id"],
+        {"id": "twice", "threshold": "<= 9", "measure": {"file": "r.txt", "regex": r"score: (\d+)"}},
+        key=tmp_path / "k2",
+    )
+    pred = json.loads((tmp_path / f"{bob['id']}.intoto.json").read_bytes())["statement"]["predicate"]
+    by = {c["id"]: c for c in pred["claims"]}
+    assert pred["claim_signer"]["key_fingerprint"] == "sha256:cc"
+    assert by["twice"]["signed_by"] == "claim_signer" and "signer" not in by["twice"]
+    assert by["first"]["signed_by"] == "signing"
+    assert by["score"]["signed_by"] == "prior_claimer"
+    assert by["score"]["signer"]["key_fingerprint"] == "sha256:bb" and by["score"]["signed_in"] == out["id"]
 
 
 def test_verify_fails_when_an_envelope_named_by_the_statement_is_missing(tmp_path):
@@ -1345,3 +1360,43 @@ def test_cli_keeps_tolerance_and_scale_as_written(monkeypatch):
         ]
     )
     assert seen["tolerance"] == "0.19999999999999999" and seen["measure"]["scale"] == "100"
+
+
+def test_comparisons_do_not_round_past_decimal_context(tmp_path):
+    """1 >= 1.0000000000000000000000000001 held: Decimal arithmetic rounds to 28 digits (review, Nov 13)."""
+    long = "1.0000000000000000000000000001"
+    assert amber_run.compare("1", f">= {long}", 0) == (False, f"measured 1 >= {long}")
+    assert amber_run.compare(long, f">= {long}", 0)[0] is True
+    assert amber_run.compare("1", f"== {long}", "0.0000000000000000000000000000999")[0] is False
+    assert amber_run.compare("1", f"== {long}", "0.0000000000000000000000000001")[0] is True
+    holds, reason = amber_run.compare("9", "< 10", "2.000000000000000000000000000001")
+    assert holds is True and reason.endswith("(tolerance 2.000000000000000000000000000001)")
+    # A scaled measurement is exact too, however many digits the factors have.
+    c = {
+        "id": "x",
+        "measure": {"file": "o.txt", "regex": r"v=([\d.]+)", "scale": "100"},
+        "threshold": "== 10.00000000000000000000000000000001",
+    }
+    amber_run.measure_claim(c, _outputs(**{"o.txt": "v=0.1000000000000000000000000000000001\n"}))
+    assert (c["measured"], c["verdict"]) == ("10.00000000000000000000000000000001", "REPRODUCED")
+
+
+def test_clone_of_a_local_path_at_a_branch(repo, tmp_path):
+    """--ref other-branch failed on a local repository: origin was dropped before the checkout (review, Nov 13)."""
+    subprocess.run(["git", "-C", str(repo), "checkout", "-q", "-b", "other-branch"], check=True)
+    (repo / "only-here.txt").write_text("x\n")
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@x", "commit", "-q", "-m", "branch"],
+        check=True,
+    )
+    subprocess.run(["git", "-C", str(repo), "checkout", "-q", "main"], check=True)
+    dest = amber_run._clone(str(repo), "other-branch", tmp_path / "c", keep_remote=False)
+    assert (dest / "only-here.txt").is_file()
+    assert subprocess.run(["git", "-C", str(dest), "remote"], capture_output=True, text=True).stdout.strip() == ""
+    assert (
+        amber_run._git_commit(dest)
+        == subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "other-branch"], capture_output=True, text=True
+        ).stdout.strip()
+    )

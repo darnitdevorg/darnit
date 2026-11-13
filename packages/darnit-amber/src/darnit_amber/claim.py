@@ -47,12 +47,22 @@ def claim(
     measure_claim(c, lambda p: data if p == path else None)
     c["matches_expected"] = (c["verdict"] == c["expected_verdict"]) if c.get("expected_verdict") else None
     # Which signer stands behind each claim: the run's claims were in the statement the run's signer
-    # signed; this one is in the statement the claimer signs. Only the claimer signs this bundle's
-    # statement, so the earlier claims are carried over on the claimer's word (the first bundle, with the
-    # run signer's own statement, stays in the store under ``derived_from``).
+    # signed (``signing``); this one is in the statement this claimer signs (``claim_signer``). A claim an
+    # earlier claimer made keeps that claimer: ``prior_claimer`` with the signer it had and the bundle it
+    # was signed in, since ``claim_signer`` now names someone else (review, Nov 13: Alice's claim pointed
+    # at Bob). Only this claimer signs this statement, so every earlier claim is carried over on the
+    # claimer's word; the bundles with the original signatures stay in the store along ``derived_from``.
+    prior = pred.get("claim_signer")
     for x in pred.get("claims") or []:
-        x.setdefault("signed_by", "signing")
+        if x.get("signed_by") == "claim_signer" and prior:
+            x["signed_by"] = "prior_claimer"
+            x["signer"] = dict(prior)
+            x["signed_in"] = bundle_id
+        else:
+            x.setdefault("signed_by", "signing")
     c["signed_by"] = "claim_signer"
+    c.pop("signer", None)
+    c.pop("signed_in", None)
     pred["claims"] = [x for x in pred.get("claims") or [] if x["id"] != c["id"]] + [c]
     pred["verdict"] = overall_verdict(pred["claims"])
     pred["derived_from"] = bundle_id

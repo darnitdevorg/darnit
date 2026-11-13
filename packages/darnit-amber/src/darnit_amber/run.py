@@ -23,7 +23,8 @@ import sys
 import tempfile
 from collections.abc import Callable
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import Decimal, localcontext
+from fractions import Fraction
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -175,14 +176,15 @@ def _clone(url: str, ref: str | None, dest: Path, keep_remote: bool = True) -> P
     r = subprocess.run(["git", "clone", "-q", url, str(dest)], capture_output=True, text=True)
     if r.returncode != 0:
         raise RunError(f"clone failed: {r.stderr.strip()}")
+    if ref:
+        # Before the remote goes: a branch name resolves through origin/<branch> (review, Nov 13).
+        r = subprocess.run(["git", "-C", str(dest), "checkout", "-q", ref], capture_output=True, text=True)
+        if r.returncode != 0:
+            raise RunError(f"checkout {ref} failed: {r.stderr.strip()}")
     if not keep_remote:
         # A clone of a local path would carry that path as `origin`, and Witness's git attestor records
         # remotes verbatim into the signed envelope. The statement names the artifact as local/<name>.
         subprocess.run(["git", "-C", str(dest), "remote", "remove", "origin"], check=True, capture_output=True)
-    if ref:
-        r = subprocess.run(["git", "-C", str(dest), "checkout", "-q", ref], capture_output=True, text=True)
-        if r.returncode != 0:
-            raise RunError(f"checkout {ref} failed: {r.stderr.strip()}")
     return dest
 
 
@@ -369,6 +371,20 @@ def _number(s: Any) -> Decimal | None:
     return v if v.is_finite() else None
 
 
+def _plain(d: Decimal) -> str:
+    """``d`` in plain notation with no trailing zeros and nothing rounded (``normalize`` rounds to the context)."""
+    with localcontext() as ctx:
+        ctx.prec = len(d.as_tuple().digits) + 2
+        return f"{d.normalize():f}"
+
+
+def _exact_product(a: Decimal, b: Decimal) -> str:
+    """``a * b`` with nothing rounded: a product has at most the digits of both factors, the context gets that many."""
+    with localcontext() as ctx:
+        ctx.prec = len(a.as_tuple().digits) + len(b.as_tuple().digits) + 2
+        return _plain(a * b)
+
+
 def compare(value: str, threshold: str, tolerance: Any) -> tuple[bool | None, str]:
     """``value`` against ``threshold`` (``op number`` or ``op text``): (holds, reason); ``None`` when not comparable.
 
@@ -390,18 +406,21 @@ def compare(value: str, threshold: str, tolerance: Any) -> tuple[bool | None, st
             same = value.strip() == want.strip()
             return (same if op == "==" else not same), f"measured {value!r} {op} {want!r}"
         return None, f"{op} needs two numbers: measured {value!r}, threshold {want!r}"
-    strict = {"==": a == b, "!=": a != b, "<=": a <= b, ">=": a >= b, "<": a < b, ">": a > b}[op]
+    # Exact rationals for the arithmetic: Decimal rounds a sum or difference to its context's 28 digits,
+    # so 1 >= 1.0000000000000000000000000001 - 0 came out true (review, Nov 13).
+    x, y, t = Fraction(a), Fraction(b), Fraction(tol)
+    strict = {"==": x == y, "!=": x != y, "<=": x <= y, ">=": x >= y, "<": x < y, ">": x > y}[op]
     holds = {
-        "==": abs(a - b) <= tol,
-        "!=": abs(a - b) > tol,
-        "<=": a <= b + tol,
-        ">=": a >= b - tol,
-        "<": a < b + tol,
-        ">": a > b - tol,
+        "==": abs(x - y) <= t,
+        "!=": abs(x - y) > t,
+        "<=": x <= y + t,
+        ">=": x >= y - t,
+        "<": x < y + t,
+        ">": x > y - t,
     }[op]
     note = ""
     if tol:
-        shown = f"{tol.normalize():f}"
+        shown = _plain(tol)
         note = f" (holds only with tolerance {shown})" if holds and not strict else f" (tolerance {shown})"
     return holds, f"measured {value} {op} {want}" + note
 
@@ -436,7 +455,7 @@ def measure_claim(claim: dict[str, Any], read: Callable[[str], bytes | None]) ->
             if scale is None:
                 claim["reason"] = f"scale {m['scale']!r} is not a number"
                 return
-            value = f"{(n * scale).normalize():f}"
+            value = _exact_product(n, scale)
         claim["measured"] = value
         if m.get("comparable") is False:
             claim["reason"] = m.get("reason") or "measured, but not on the paper's terms"
