@@ -1075,6 +1075,11 @@ def test_environment_paths_are_relative_to_home_or_checkout(tmp_path, monkeypatc
     assert env["variables"]["CONDA_PREFIX"] == "$HOME/miniconda3/envs/x"
     assert env["variables"]["PYTHONPATH"] == "$CHECKOUT/src:/usr/lib/python3/dist-packages"
     assert "someone" not in json.dumps(env)
+    # SHELL is a path too: a user-installed shell sits under the home directory (#747); a system one is kept.
+    monkeypatch.setenv("SHELL", str(home / ".local" / "bin" / "fish"))
+    assert amber_run._environment(checkout)["variables"]["SHELL"] == "$HOME/.local/bin/fish"
+    monkeypatch.setenv("SHELL", "/bin/bash")
+    assert amber_run._environment(checkout)["variables"]["SHELL"] == "/bin/bash"
     # Outside the home directory and the checkout, a system prefix stays and anything else keeps only its last name.
     monkeypatch.setenv("PYTHONPATH", "/scratch/someone/proj/src:/opt/conda/lib:relative/dir:/Volumes/USB/x")
     assert (
