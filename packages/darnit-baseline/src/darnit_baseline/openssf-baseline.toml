@@ -1461,7 +1461,7 @@ look_for_urls = false
 [[controls."OSPS-DO-06.01".passes]]
 handler = "pattern"
 fail_on_miss = true  # missing from every file listed: FAIL, so remediation plans it (#665)
-files = ["README.md", "README.rst", "README.txt", "README", "CONTRIBUTING.md", "docs/dependencies.md", "docs/DEPENDENCIES.md", "DEPENDENCIES.md"]
+files = ["README.*", "README", ".github/README.*", "docs/README.*", "CONTRIBUTING.*", ".github/CONTRIBUTING.*", "docs/CONTRIBUTING.*", "DEPENDENCIES.*", "docs/dependencies.*", "docs/DEPENDENCIES.*", "docs/dependency-policy.*"]
 
 [controls."OSPS-DO-06.01".passes.pattern.patterns]
 dependency_docs = "(dependenc|package|library).*(select|obtain|track|manage|update|policy)"
@@ -3347,10 +3347,10 @@ help_md = """Document testing process.
 [[controls."OSPS-QA-06.02".passes]]
 handler = "pattern"
 fail_on_miss = true  # missing from every file listed: FAIL, so remediation plans it (#665)
-files = ["README.md", "README.rst", "README.txt", "README", "CONTRIBUTING.md", "docs/testing.md", "docs/TESTING.md"]
+files = ["README.*", "README", ".github/README.*", "docs/README.*", "CONTRIBUTING.*", ".github/CONTRIBUTING.*", "docs/CONTRIBUTING.*", "docs/testing.*", "docs/TESTING.*"]
 
 [controls."OSPS-QA-06.02".passes.pattern.patterns]
-test_docs = "(run.*test|test.*instruction|how to test)"
+test_docs = "(run.*test|test.*run|test.*instruction|how to test)"
 
 [[controls."OSPS-QA-06.02".passes]]
 handler = "llm_eval"
@@ -3997,7 +3997,7 @@ fail_on_miss = true  # missing from every file listed: FAIL, so remediation plan
 # rst/txt/no-ext README variants added so this pass can PASS/FAIL
 # deterministically on projects that don't ship .md-based READMEs
 # (Python/Sphinx projects like tqdm surfaced the gap; see issue #402).
-files = ["SECURITY.md", "README.md", "README.rst", "README.txt", "README", "docs/releases.md", "CONTRIBUTING.md", "docs/RELEASE-VERIFICATION.md"]
+files = ["SECURITY.*", ".github/SECURITY.*", "docs/SECURITY.*", "README.*", "README", ".github/README.*", "docs/README.*", "CONTRIBUTING.*", ".github/CONTRIBUTING.*", "docs/CONTRIBUTING.*", "docs/releases.*", "docs/RELEASE-VERIFICATION.*"]
 
 [controls."OSPS-DO-03.02".passes.pattern.patterns]
 verify_author = "(verify|verif|signature|sign|GPG|Sigstore).*(author|release|identity)"
@@ -4011,7 +4011,7 @@ keyserver references, or other cryptographic identity verification methods.
 A general mention of 'signed releases' without verification instructions is insufficient."""
 # Issue #402: mirror the sibling pattern's file list. Adds README.rst
 # so llm_eval sees real content on rst-based repos.
-files_to_include = ["SECURITY.md", "README.md", "README.rst", "docs/releases.md", "CONTRIBUTING.md"]
+files_to_include = ["$RESOLVED_FILES"]
 confidence_threshold = 0.7
 analysis_hints = [
     "Look for specific verification commands or tools (gpg --verify, cosign verify)",
@@ -4055,7 +4055,7 @@ help_md = """Document support policy.
 handler = "pattern"
 fail_on_miss = true  # missing from every file listed: FAIL, so remediation plans it (#665)
 # rst/txt/no-ext README variants added (see #402 sibling change).
-files = ["SUPPORT.md", "SECURITY.md", "README.md", "README.rst", "README.txt", "README", "docs/support.md"]
+files = ["SUPPORT.*", ".github/SUPPORT.*", "docs/SUPPORT.*", "SECURITY.*", ".github/SECURITY.*", "docs/SECURITY.*", "README.*", "README", ".github/README.*", "docs/README.*", "docs/support.*"]
 
 [controls."OSPS-DO-04.01".passes.pattern.patterns]
 support_scope = "(support.*(scope|duration|period|timeline)|version.*(support|maintenance))"
@@ -4067,7 +4067,7 @@ prompt = """Evaluate whether this document defines the scope and expected durati
 Look for: which versions are supported, how long support lasts, what kind of support
 is provided (security fixes, bug fixes, feature development), and maintenance windows."""
 # Issue #402: mirror the sibling pattern's file list + rst variant.
-files_to_include = ["SUPPORT.md", "SECURITY.md", "README.md", "README.rst", "docs/support.md"]
+files_to_include = ["$RESOLVED_FILES"]
 confidence_threshold = 0.7
 analysis_hints = [
     "Look for version support matrices or timelines",
@@ -4121,7 +4121,7 @@ help_md = """Document end-of-life policy.
 handler = "pattern"
 fail_on_miss = true  # missing from every file listed: FAIL, so remediation plans it (#665)
 # rst/txt/no-ext README variants added (see #402 sibling change).
-files = ["SUPPORT.md", "SECURITY.md", "README.md", "README.rst", "README.txt", "README", "CONTRIBUTING.md"]
+files = ["SUPPORT.*", ".github/SUPPORT.*", "docs/SUPPORT.*", "SECURITY.*", ".github/SECURITY.*", "docs/SECURITY.*", "README.*", "README", ".github/README.*", "docs/README.*", "CONTRIBUTING.*", ".github/CONTRIBUTING.*", "docs/CONTRIBUTING.*"]
 
 [controls."OSPS-DO-05.01".passes.pattern.patterns]
 eol_policy = "(end.of.(life|support)|EOL|deprecat|sunset)"
@@ -4133,7 +4133,7 @@ prompt = """Evaluate whether this document describes the end-of-support policy a
 Look for: deprecation timelines, sunset procedures, migration guidance,
 end-of-life announcements, or version retirement policies."""
 # Issue #402: mirror the sibling pattern's file list + rst variant.
-files_to_include = ["SUPPORT.md", "SECURITY.md", "README.md", "README.rst", "CONTRIBUTING.md"]
+files_to_include = ["$RESOLVED_FILES"]
 confidence_threshold = 0.7
 analysis_hints = [
     "Look for explicit deprecation timelines or sunset dates",
@@ -4277,7 +4277,7 @@ handler = "pattern"
 fail_on_miss = true  # missing from every file listed: FAIL, so remediation plans it (#665)
 # rst variants added; ARCHITECTURE/DESIGN commonly live as .rst
 # in Sphinx-based Python projects.
-files = ["ARCHITECTURE.md", "ARCHITECTURE.rst", "docs/ARCHITECTURE.md", "docs/ARCHITECTURE.rst", "docs/architecture.md", "docs/architecture.rst", "docs/design.md", "docs/design.rst", "DESIGN.md", "DESIGN.rst", "README.md", "README.rst", "README.txt", "README"]
+files = ["ARCHITECTURE.*", "docs/ARCHITECTURE.*", "docs/architecture.*", "docs/design.*", "DESIGN.*", "README.*", "README", ".github/README.*", "docs/README.*"]
 pass_if_any = true
 
 [controls."OSPS-SA-01.01".passes.pattern.patterns]

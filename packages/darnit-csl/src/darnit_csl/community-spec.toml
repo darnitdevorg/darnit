@@ -616,7 +616,7 @@ in the README."""
 handler = "regex"
 # A miss proves failure; a match is evidence only, not a PASS (feature 041).
 fail_on_miss = true
-files = ["README.md", "readme.md", "README.rst"]
+files = ["README.md", "readme.md", "README.rst", "README.adoc", "README.txt", "README"]
 pass_if_any = false
 
 [controls."CSL-06.01".passes.pattern.patterns]

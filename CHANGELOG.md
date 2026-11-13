@@ -27,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "no remediation run is recorded" and the confirmation page lost the run's
   files. A named non-GitHub repository is also no longer treated as a GitHub
   repository for platform settings.
+- OSPS-DO-03.02, DO-04.01, DO-05.01, DO-06.01, QA-06.02, and SA-01.01 no longer
+  fail a project whose documentation covers the topic in a README, CONTRIBUTING,
+  SECURITY, or SUPPORT file of any extension (`.rst`, `.adoc`, ...), in the
+  root, `.github/`, or `docs/`, or in `docs/dependency-policy.*`. QA-06.02 also
+  matches "tests are run". The model judgment that follows a match now sees the
+  files that were read.
+  community-spec CSL-06.01 also reads `README.txt`, `README.adoc`, and
+  `README` (#702).
 
 ### Added
 
