@@ -443,9 +443,7 @@ class TestRepoDepsPin:
         assert result.status == HandlerResultStatus.INCONCLUSIVE
 
     def test_fail_with_pyproject_dependencies(self, tmp_path: Path) -> None:
-        (tmp_path / "pyproject.toml").write_text(
-            "[project]\nname = 'pkg'\ndependencies = ['requests>=2.0']\n"
-        )
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'pkg'\ndependencies = ['requests>=2.0']\n")
         result = repro_deps_pinned_handler({}, make_ctx(tmp_path))
         assert result.status == HandlerResultStatus.FAIL
 

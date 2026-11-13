@@ -3,7 +3,8 @@ revision = 3
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version == '3.13.*'",
-    "python_full_version != '3.13.*'",
+    "python_full_version == '3.12.*' or python_full_version >= '3.14'",
+    "python_full_version < '3.12'",
 ]
 
 [manifest]
@@ -469,14 +470,20 @@ name = "darnit-amber"
 version = "0.1.1"
 source = { editable = "packages/darnit-amber" }
 dependencies = [
+    { name = "cryptography" },
     { name = "darnit-core" },
     { name = "packaging" },
+    { name = "rfc3161-client" },
+    { name = "sigstore" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "cryptography", specifier = ">=46" },
     { name = "darnit-core", editable = "packages/darnit" },
     { name = "packaging", specifier = ">=23.0" },
+    { name = "rfc3161-client", specifier = ">=1.0" },
+    { name = "sigstore", specifier = ">=4.0,<5" },
 ]
 
 [[package]]

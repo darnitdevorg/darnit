@@ -30,6 +30,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `darnit-amber run`, `verify`, `claim` and `rerun` (#677 steps A, C, D; #678;
+  specs/046-amber-run-bundle): one execution of an artifact's experiment under
+  Witness becomes a signed run bundle (statement signed as DSSE with the
+  researcher's key and timestamped, Witness envelopes bound by digest,
+  outputs stored and hashed). Claims are measured only from outputs the
+  experiment produced; `rerun` verifies before it executes and asks for
+  consent. A clean checkout is run from a fresh clone of its commit and
+  untracked files make it dirty, so the experiment reads only what the
+  commit contains; the bundle records no path of the researcher's machine
+  (`$HOME/...`, `$CHECKOUT/...`, `local/<name>`) and says under
+  `provenance` which fields Witness observed and which the tool wrote down;
+  the experiment's exit status and the audit report are Witness products
+  (`.amber/`, removed after each step) that `verify` reads back by digest.
+  `verify` names two signers for a derived bundle (`--pubkey`,
+  `--claimer-pubkey`); values and tolerances must be finite plain decimals.
+
 - Developer test flow automation scripts (`scripts/clean_and_install_dev.sh`,
   `scripts/setup_dev_projects.sh`, `scripts/run_dev_test_flow.sh`) to
   generate reproducible test fixtures (`failing-empty`,
