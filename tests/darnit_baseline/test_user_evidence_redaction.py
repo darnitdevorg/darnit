@@ -40,18 +40,21 @@ PROFILE = {
 PERSONAL_VALUES = [PROFILE[k] for k in ("email", "location", "company", "bio", "name")]
 
 
+REPO_ENDPOINT = f"/repos/{OWNER}/{REPO}"
+ORG_ENDPOINT = f"/orgs/{OWNER}"
+
+
 @pytest.fixture
-def recorded_platform() -> Iterator[None]:
-    previous = set_gh_api_responder(
-        RecordedGhApi(
-            {
-                f"/orgs/{OWNER}": {"status": 404, "body": {"message": "Not Found"}, "error": "Not Found (HTTP 404)"},
-                "/user": {"status": 200, "body": PROFILE},
-            }
-        )
+def recorded_platform() -> Iterator[RecordedGhApi]:
+    responder = RecordedGhApi(
+        {
+            REPO_ENDPOINT: {"body": {"owner": {"type": "User"}}},
+            "/user": {"body": PROFILE},
+        }
     )
+    previous = set_gh_api_responder(responder)
     try:
-        yield
+        yield responder
     finally:
         set_gh_api_responder(previous)
 
@@ -102,11 +105,43 @@ class TestAc0101:
         assert step.model_extra["endpoint"] == "/user"
         assert step.model_extra["evidence_fields"] == ["login", "two_factor_authentication"]
 
-    def test_evidence_keeps_only_the_declared_fields(self, tmp_path: Path) -> None:
+    def test_personal_repo_needs_manual_review(self, tmp_path, recorded_platform):
         (result,) = _audit(tmp_path)
 
-        assert result["evidence"]["endpoint"] == "/user"
-        assert result["evidence"]["response"]["body"] == {"login": "auditor", "two_factor_authentication": True}
+        assert result["status"] == "WARN"
+        assert [call.endpoint for call in recorded_platform.calls] == [REPO_ENDPOINT, "/user"]
+        assert result["evidence"]["response"]["body"] == {"login": OWNER, "two_factor_authentication": True}
+        assert "user-owned" in result["evidence"]["verification_steps"][0]
+
+    def test_hidden_user_mfa_needs_manual_review(self, tmp_path, recorded_platform):
+        recorded_platform.record("/user", {"body": {"login": OWNER}})
+        (result,) = _audit(tmp_path)
+
+        assert result["status"] == "WARN"
+        assert "read:user" in " ".join(result["evidence"]["verification_steps"])
+
+    @pytest.mark.parametrize(
+        ("body", "expected"),
+        [
+            ({"two_factor_requirement_enabled": True}, "PASS"),
+            ({"two_factor_requirement_enabled": False}, "FAIL"),
+        ],
+    )
+    def test_org_repo_uses_org_mfa_setting(self, tmp_path, recorded_platform, body, expected):
+        recorded_platform.record(REPO_ENDPOINT, {"body": {"owner": {"type": "Organization"}}})
+        recorded_platform.record(ORG_ENDPOINT, {"body": body})
+        (result,) = _audit(tmp_path)
+
+        assert result["status"] == expected
+        assert [call.endpoint for call in recorded_platform.calls] == [REPO_ENDPOINT, ORG_ENDPOINT]
+
+    def test_unknown_owner_needs_manual_review(self, tmp_path, recorded_platform):
+        recorded_platform.record(REPO_ENDPOINT, {"status": 403})
+        (result,) = _audit(tmp_path)
+
+        assert result["status"] == "WARN"
+        assert [call.endpoint for call in recorded_platform.calls] == [REPO_ENDPOINT]
+        assert "owner type could not be verified" in result["evidence"]["verification_steps"][0]
 
     def test_json_report_and_attestation_carry_no_profile(self, tmp_path: Path) -> None:
         from darnit_baseline.attestation.predicate import build_assessment_predicate

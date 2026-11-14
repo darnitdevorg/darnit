@@ -372,6 +372,7 @@ def resolve_context(
     owner: str | None = None,
     repo: str | None = None,
     detect: bool = True,
+    detect_keys: set[str] | None = None,
     auto_accept_confidence: float | None = None,
     now: datetime | None = None,
     env: Mapping[str, str] | None = None,
@@ -386,6 +387,7 @@ def resolve_context(
         operator: Operator configuration (default: resolved for ``local_path``).
         owner: Repository owner, for detection.
         repo: Repository name, for detection.
+        detect_keys: If supplied, run detection only for these canonical keys.
         detect: Run detection for keys without a confirmed value.
         auto_accept_confidence: Threshold for concluding a detectable key
             (default: the framework's ``[context].auto_accept_confidence``).
@@ -413,7 +415,9 @@ def resolve_context(
 
     values = {}
     for key, definition in definitions.items():
-        run_detection = (lambda k=key, d=definition: _detect(k, d, local_path, owner, repo)) if detect else None
+        run_detection = None
+        if detect and (detect_keys is None or key in detect_keys):
+            run_detection = lambda k=key, d=definition: _detect(k, d, local_path, owner, repo)  # noqa: E731
         values[key] = _resolve_key(
             key,
             definition,

@@ -426,12 +426,18 @@ def _resolve_audit_context(
     target: str | None = None,
     operator: "OperatorConfig | None" = None,
     definitions: dict[str, Any] | None = None,
+    owner: str | None = None,
+    repo: str | None = None,
+    detect_keys: set[str] | None = None,
 ) -> Any:
     """The context resolver's view for an audit, or None when it cannot be read (non-fatal)."""
     try:
         from darnit.config.context_resolve import resolve_context
 
-        return resolve_context(local_path, definitions, target=target, operator=operator, detect=False)
+        return resolve_context(
+            local_path, definitions, target=target, operator=operator, owner=owner, repo=repo,
+            detect=bool(detect_keys), detect_keys=detect_keys,
+        )
     except Exception as e:  # noqa: BLE001 - context must not break an audit
         logger.debug("Context resolution failed (non-fatal): %s", e)
         return None
@@ -1032,7 +1038,18 @@ def run_sieve_audit(
     from darnit.config.context_storage import framework_definitions
 
     definitions = framework_definitions(framework) if framework is not None else None
-    resolved_context = _resolve_audit_context(local_path, target=target, operator=operator, definitions=definitions)
+    # Resolve auto-detectable keys used by selected verification steps.
+    detect_keys = {
+        key
+        for spec in all_controls
+        for step in spec.metadata.get("handler_invocations", [])
+        for key in (step.when or {})
+        if definitions and key in definitions and definitions[key].auto_detect and definitions[key].detect
+    }
+    resolved_context = _resolve_audit_context(
+        local_path, target=target, operator=operator, definitions=definitions,
+        owner=owner, repo=repo, detect_keys=detect_keys,
+    )
     usable_project = resolved_context.usable() if resolved_context is not None else {}
     project_context, detected_context, repository_values = _applicability_context(
         local_path,
