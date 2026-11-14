@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Remediation templates state a test command or link a file only when the
   repository scan found it or the same run writes it; otherwise, they leave
   a marked TODO gap (fixes #751).
+- Remediation: three controls planned the same new file (`SUPPORT.md` under
+  OSPS-DO-03.01, DO-04.01 and DO-05.01) and the preview listed it under each,
+  while the apply wrote it once. The first control to plan a path creates it;
+  a later one reports `not written (created by OSPS-DO-03.01)` in the preview
+  and in the apply, so the two agree and the approved plan items keep their
+  digests (fixes #755).
 - In the gittuf commit signature check (GT-02.01), when commits lack good
   signatures, the FAIL message states how many recent commits have a good
   signature and reports commits that could not be checked on the machine
