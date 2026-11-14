@@ -29,6 +29,7 @@ CONFIRMED_VALUES = {
     "ci_provider": "github",
     "license_type": "mit",
     "has_subprojects": False,
+    "required_status_checks": ["build", "test"],
 }
 
 

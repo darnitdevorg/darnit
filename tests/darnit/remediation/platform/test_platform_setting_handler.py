@@ -226,3 +226,61 @@ class TestExecutor:
         assert result.changed is False
         evidence = result.details["handlers"][0]["evidence"]
         assert evidence["platform_results"][0]["kind"] == "manual"
+
+    @pytest.mark.parametrize("dry_run", [True, False])
+    def test_unconfirmed_project_value_does_not_leak_and_needs_confirmation(
+        self, tmp_path: Path, gh_platform, dry_run: bool
+    ) -> None:
+        """Items 1 & 3 (#697): unconfirmed .project values never plan; executor asks for confirmation."""
+        gh = gh_platform("unprotected")
+        config = RemediationConfig(
+            handlers=[
+                _platform_setting(
+                    target="branch_protection",
+                    require={"require_status_checks": ["${context.required_status_checks}"]},
+                )
+            ]
+        )
+
+        result = RemediationExecutor(
+            local_path=str(tmp_path),
+            owner=OWNER,
+            repo=REPO,
+            context_values={},
+            unconfirmed_keys={"required_status_checks"},
+            project_values={"required_status_checks": ["repo-chosen-check"]},
+        ).execute("T-01", config, dry_run=dry_run)
+
+        assert not result.success
+        assert result.confirmation_required == "required_status_checks"
+        assert result.message == "confirmation required: required_status_checks"
+        assert "repo-chosen-check" not in str(result.plan)
+        assert gh.writes == []
+
+    def test_handler_direct_call_ignores_project_context_and_raises_confirmation(
+        self, tmp_path: Path, gh_platform
+    ) -> None:
+        """Item 1 (#697): platform_setting_handler reads usable_project only, never raw project_context."""
+        from darnit.remediation.executor import ConfirmationRequired
+
+        gh_platform("unprotected")
+        handler = get_sieve_handler_registry().get("platform_setting").fn
+        context = HandlerContext(
+            local_path=str(tmp_path),
+            owner=OWNER,
+            repo=REPO,
+            mode="plan",
+            usable_project={},
+            project_context={"required_status_checks": ["repo-chosen-check"]},
+        )
+
+        with pytest.raises(ConfirmationRequired) as exc:
+            handler(
+                {
+                    "target": "branch_protection",
+                    "require": {"require_status_checks": ["${context.required_status_checks}"]},
+                },
+                context,
+            )
+
+        assert exc.value.key == "required_status_checks"

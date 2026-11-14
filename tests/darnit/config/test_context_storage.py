@@ -11,6 +11,7 @@ from darnit.config.context_resolve import resolve_context
 from darnit.config.context_schema import OriginKind, Standing
 from darnit.config.context_storage import (
     _run_detect_pipeline,
+    _try_sieve_detection,
     get_context_definitions,
     get_pending_context,
 )
@@ -522,3 +523,34 @@ class TestRunDetectPipelinePlatform:
         ]
         result = _run_detect_pipeline("platform", pipeline, str(tmp_path), "owner", "repo")
         assert result is None
+
+
+class TestSieveDetectionOriginAndApplicability:
+    """Tests for Smaller #2 and #3 (#697): preserve signal origin and filter N/A controls."""
+
+    def test_try_sieve_detection_preserves_signal_method(self, tmp_path: Path) -> None:
+        from darnit.config.context_schema import ContextSource
+        from darnit.context.confidence import ContextSignal, SignalSource
+        from darnit.context.sieve import ContextDetectionResult
+
+        sieve_result = ContextDetectionResult(
+            key="required_status_checks",
+            value=["ci / build"],
+            confidence=0.9,
+            signals=[
+                ContextSignal(
+                    source=SignalSource.GITHUB_API,
+                    value=["ci / build"],
+                    raw_confidence=0.9,
+                    method="Checks seen passing on PR #42",
+                )
+            ],
+        )
+        with patch("darnit.context.get_context_sieve") as mock_get_sieve:
+            mock_get_sieve.return_value.detect.return_value = sieve_result
+            detected = _try_sieve_detection("required_status_checks", str(tmp_path), "o", "r")
+
+        assert detected is not None
+        assert detected.source == ContextSource.AUTO_DETECTED
+        assert detected.detection_method == "Checks seen passing on PR #42"
+        assert "context_sieve (" not in detected.detection_method

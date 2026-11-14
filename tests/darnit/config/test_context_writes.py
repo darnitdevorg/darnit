@@ -46,6 +46,7 @@ def _definitions() -> dict[str, ContextDefinition]:
         "ci_provider": ContextDefinition(
             type=ContextType.ENUM, prompt="?", auto_detect=True, values=["github", "gitlab", "other"]
         ),
+        "required_status_checks": ContextDefinition(type=ContextType.LIST, prompt="?", auto_detect=True),
     }
 
 
@@ -289,6 +290,22 @@ class TestRefusals:
         assert result.outcome == "refused"
         assert not (repo / ".project").exists()
         assert load_confirmations() == []
+
+    @pytest.mark.parametrize("bad_checks", ["none", "", [], [""], ["  "]])
+    def test_refuses_non_list_or_empty_status_checks(self, repo: Path, bad_checks: Any) -> None:
+        """Item 2 (#697): refuse non-list and empty answers for LIST context keys."""
+        result = _confirm(repo, "required_status_checks", bad_checks)
+
+        assert result.outcome == "refused"
+        assert load_confirmations() == []
+        assert not (repo / ".project" / "darnit.yaml").exists()
+
+    def test_confirms_matrix_status_check_list(self, repo: Path) -> None:
+        checks = ["test (ubuntu-latest, 3.12)", "lint"]
+        result = _confirm(repo, "required_status_checks", checks)
+
+        assert result.outcome == "confirmed"
+        assert _darnit(repo)["context"]["required_status_checks"] == checks
 
 
 @pytest.mark.unit

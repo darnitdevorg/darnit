@@ -478,3 +478,89 @@ class TestIntegrationWithValidator:
         assert result.ready is False
         # Should have prompts
         assert len(result.prompts) > 0
+
+
+class TestStatusChecksDetection:
+    """Test required_status_checks API candidate proposing without offline workflow guessing."""
+
+    @pytest.mark.unit
+    def test_detect_status_checks_offline_returns_none_with_matrix_workflows(self, temp_repo):
+        """Offline detection must not propose unexpanded expressions or raw workflow job keys (#697)."""
+        wf_dir = Path(temp_repo) / ".github" / "workflows"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "ci.yml").write_text("""
+name: CI
+on: [push, pull_request]
+jobs:
+  test:
+    strategy:
+      matrix:
+        python: ['3.10', '3.12']
+        os: [ubuntu-latest, macos-latest]
+    name: pytest (${{ matrix.os }}, ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+  publish:
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+""")
+        with patch("darnit.core.utils.gh_api_with_status", return_value=({}, 500, "offline")):
+            sieve = ContextSieve()
+            result = sieve.detect("required_status_checks", temp_repo, "test-owner", "test-repo")
+            assert result.value is None
+            assert result.signals == []
+
+    @pytest.mark.unit
+    def test_detect_status_checks_api_success(self, temp_repo):
+        """Detect status checks passing on recent PRs."""
+
+        def fake_gh_api(endpoint, **kwargs):
+            if "/pulls" in endpoint:
+                return [{"number": 42, "head": {"sha": "sha123"}}], 200, ""
+            if "/check-runs" in endpoint:
+                return (
+                    {
+                        "check_runs": [
+                            {"name": "ci / build", "conclusion": "success"},
+                            {"name": "failing-check", "conclusion": "failure"},
+                        ]
+                    },
+                    200,
+                    "",
+                )
+            if "/status" in endpoint:
+                return (
+                    {
+                        "statuses": [
+                            {"context": "codecov/patch", "state": "success"},
+                            {"context": "bad/check", "state": "failure"},
+                        ]
+                    },
+                    200,
+                    "",
+                )
+            return {}, 404, "not found"
+
+        with patch("darnit.core.utils.gh_api_with_status", side_effect=fake_gh_api):
+            sieve = ContextSieve()
+            signals = sieve._detect_status_checks_api(temp_repo, "test-owner", "test-repo")
+            assert len(signals) == 1
+            signal = signals[0]
+            assert signal.source == SignalSource.GITHUB_API
+            assert signal.method == "Checks seen passing on PR #42"
+            assert "ci / build" in signal.value
+            assert "codecov/patch" in signal.value
+            assert "failing-check" not in signal.value
+            assert "bad/check" not in signal.value
+
+    @pytest.mark.unit
+    def test_detect_status_checks_api_failure(self, temp_repo):
+        """Gracefully returns empty list on API error."""
+        with patch("darnit.core.utils.gh_api_with_status", return_value=({}, 500, "Server Error")):
+            sieve = ContextSieve()
+            signals = sieve._detect_status_checks_api(temp_repo, "test-owner", "test-repo")
+            assert signals == []
+

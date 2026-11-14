@@ -31,7 +31,7 @@ LEGACY_VALUES: dict[str, dict[str, Any]] = {
     },
 }
 
-ORDER_INSENSITIVE_KEYS = frozenset({"maintainers"})
+ORDER_INSENSITIVE_KEYS = frozenset({"maintainers", "required_status_checks"})
 
 _TRUE_ANSWERS = frozenset({"true", "yes", "y"})
 _FALSE_ANSWERS = frozenset({"false", "no", "n"})
@@ -90,8 +90,13 @@ def coerce_value(definition: ContextDefinition, value: Any) -> Any:
         raise ValueError(f"expected yes or no, got {value!r}")
     if kind == "enum" and isinstance(value, str):
         return value.strip().lower()
-    if kind == "list" and isinstance(value, str):
-        return [item.strip() for item in value.split(",") if item.strip()]
+    if kind == "list":
+        if not isinstance(value, list):
+            raise ValueError(f"expected a list of non-empty strings, got {type(value).__name__}")
+        items = [item.strip() for item in value if isinstance(item, str) and item.strip()]
+        if len(items) != len(value) or not items:
+            raise ValueError("expected a non-empty list of non-empty strings")
+        return items
     return value
 
 

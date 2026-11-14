@@ -93,6 +93,31 @@ def _resolve_categories_to_control_ids(
     return ids
 
 
+def pending_gate_control_ids(
+    categories: list[str] | None = None,
+    profile: str | None = None,
+) -> list[str] | None:
+    """Control IDs matching ``categories`` and ``profile`` for the pending-context gate, or None for all."""
+    framework = _get_framework_config()
+    if framework is None:
+        return None
+    scoped: set[str] | None = None
+    if categories and categories != ["all"]:
+        scoped = _resolve_categories_to_control_ids(categories, framework)
+    if profile:
+        from darnit.config.control_loader import load_controls_from_framework
+        from darnit.config.profile_resolver import resolve_profile, resolve_profile_control_ids
+
+        all_controls = load_controls_from_framework(framework)
+        profile_impls: dict[str, Any] = {}
+        if framework.audit_profiles:
+            profile_impls["openssf-baseline"] = dict(framework.audit_profiles)
+        _, profile_config = resolve_profile(profile, profile_impls)
+        profile_ids = set(resolve_profile_control_ids(profile_config, all_controls))
+        scoped = profile_ids if scoped is None else (scoped & profile_ids)
+    return sorted(scoped) if scoped is not None else None
+
+
 # =============================================================================
 # Framework Loading
 # =============================================================================
@@ -573,6 +598,17 @@ def _apply_declarative_remediation(
                     platform.note_known(item.digest)
                 plan_items.append(item.model_dump(mode="json"))
         if dry_run:
+            if not result.success:
+                failures = [h for h in (result.details or {}).get("handlers", []) if h.get("status") == "error"]
+                return {
+                    "control_id": control_id,
+                    "status": "error",
+                    "description": description,
+                    "controls": [control_id],
+                    "message": "; ".join(h.get("message", "") for h in failures) or result.message,
+                    "declarative": True,
+                    "platform": _platform_results(result.details),
+                }
             return {
                 "control_id": control_id,
                 "status": "would_apply",
@@ -1237,9 +1273,16 @@ def run_remediation(
     # Platform session: one policy, one set of approvals, and every
     # platform requirement of the run planned together (feature 043)
     # ------------------------------------------------------------------
+    from darnit.config.context_resolve import resolve_context
+    from darnit.config.context_storage import framework_definitions
     from darnit.config.operator.loader import OperatorConfigError
     from darnit.remediation import manifest
-    from darnit.remediation.platform import PlatformSession, platform_repository, platform_requests, resolve_policy
+    from darnit.remediation.platform import (
+        PlatformSession,
+        platform_repository,
+        platform_requests,
+        resolve_policy,
+    )
 
     try:
         policy = resolve_policy(local_path)
@@ -1250,9 +1293,12 @@ def run_remediation(
     repository = platform_repository(local_path, owner, repo, host) or manifest.repository_identity(
         local_path, owner, repo, host=host
     )
+    usable_context = resolve_context(
+        local_path, framework_definitions(framework) if framework else None, target=target, detect=False
+    ).usable()
     session = PlatformSession(
         repository,
-        platform_requests(framework, [c for c in remediable_ids if c not in honored_claims]),
+        platform_requests(framework, [c for c in remediable_ids if c not in honored_claims], context=usable_context),
         policy=policy,
         approvals=approve or [],
     )

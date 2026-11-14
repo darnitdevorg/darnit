@@ -262,7 +262,7 @@ def remediate(
     session = (
         PlatformSession(
             repository,
-            platform_requests(framework, failing_ids),
+            platform_requests(framework, failing_ids, context=resolved.usable()),
             policy=resolve_policy(state.local_path),
             approver=None if dry_run else approver,
         )

@@ -1415,14 +1415,24 @@ def platform_setting_handler(config: dict[str, Any], context: HandlerContext) ->
     from darnit.remediation.platform import (
         PlatformRequirement,
         PlatformSession,
+        UnresolvedContextError,
         platform_repository,
+        resolve_platform_require,
         resolve_policy,
     )
 
     try:
-        request = PlatformRequirement(
-            target=config.get("target"), require=config.get("require") or {}, branch=config.get("branch")
+        require = resolve_platform_require(
+            config.get("require") or {},
+            context.usable_project,
         )
+        request = PlatformRequirement(
+            target=config.get("target"), require=require, branch=config.get("branch")
+        )
+    except UnresolvedContextError as e:
+        from darnit.remediation.executor import ConfirmationRequired
+
+        raise ConfirmationRequired(e.key) from e
     except ValueError as e:
         return HandlerResult(status=HandlerResultStatus.ERROR, message=f"Invalid platform_setting: {e}")
 

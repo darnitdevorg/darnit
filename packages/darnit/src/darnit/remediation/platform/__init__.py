@@ -10,11 +10,13 @@ from darnit.remediation.platform.engine import (
     PlatformSession,
     TargetPlan,
     TargetResult,
+    UnresolvedContextError,
     apply,
     is_supported,
     plan,
     platform_repository,
     platform_requests,
+    resolve_platform_require,
 )
 from darnit.remediation.platform.model import (
     ChangeOperation,
@@ -41,11 +43,13 @@ __all__ = [
     "TargetPlan",
     "TargetResult",
     "TerminalApprover",
+    "UnresolvedContextError",
     "apply",
     "is_supported",
     "plan",
     "platform_repository",
     "platform_requests",
+    "resolve_platform_require",
     "resolve_policy",
     "terminal_approver",
 ]
