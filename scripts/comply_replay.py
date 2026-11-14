@@ -17,9 +17,10 @@ project environment first (zizmor is pinned in the dev dependency group), and
 a reference whose record names another zizmor version is not replayed.
 
 Only the clone reaches GitHub. The run uses a throwaway HOME whose operator
-configuration trusts the clone, and remediation names a repository identity
-that does not exist. File changes land in the temporary clone, which is never
-pushed.
+configuration trusts the clone. CI variables are removed, so it is a local run
+in CI too (under CI, darnit takes trust from the CI run). Remediation names a
+repository identity that does not exist. File changes land in the temporary
+clone, which is never pushed.
 
     uv run python scripts/comply_replay.py                 # every reference
     uv run python scripts/comply_replay.py wtf-frontend    # one reference
@@ -63,6 +64,11 @@ PLATFORM_ENV = (
     "GH_CONFIG_DIR",
     "GH_HOST",
 )
+# Never passed to the replay: under CI, darnit decides trust from the CI run
+# (darnit/trust/ci.py), not from the throwaway operator configuration, so the
+# replayed repository would read as untrusted. The replay is always a local run.
+CI_ENV_PREFIXES = ("CI_", "GITHUB_", "GITLAB_", "RUNNER_")
+CI_ENV = ("CI", "JENKINS_URL", "TF_BUILD", "BUILDKITE", "CIRCLECI", "TRAVIS", "TEAMCITY_VERSION")
 OUTCOME = re.compile(r"^### (\S+): ([a-z_]+)\s*$", re.MULTILINE)
 
 # Runs in the throwaway HOME: confirm the answers, then plan and apply every
@@ -107,7 +113,11 @@ def _token() -> str | None:
 
 
 def _base_env(platform: bool) -> dict:
-    env = {k: v for k, v in os.environ.items() if not k.startswith(("DARNIT_", "XDG_")) and k not in PLATFORM_ENV}
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if not k.startswith(("DARNIT_", "XDG_", *CI_ENV_PREFIXES)) and k not in PLATFORM_ENV and k not in CI_ENV
+    }
     env["PATH"] = f"{BIN}{os.pathsep}{env.get('PATH', '')}"
     if platform and (token := _token()):
         env["GH_TOKEN"] = token
