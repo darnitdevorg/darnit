@@ -31,7 +31,7 @@ def mock_framework() -> FrameworkConfig:
             "OSPS-GV-01.01": ControlConfig(
                 name="Governance",
                 description="Test Governance Control",
-                level="1",
+                level=1,
                 passes=[],
                 remediation=RemediationConfig(
                     type="declarative",
@@ -43,7 +43,7 @@ def mock_framework() -> FrameworkConfig:
             "OSPS-AC-01.01": ControlConfig(
                 name="Access Control",
                 description="Test Access Control - Error Path",
-                level="1",
+                level=1,
                 passes=[],
                 remediation=RemediationConfig(
                     type="declarative",
