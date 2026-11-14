@@ -1,8 +1,8 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.31
+> **Version**: 1.0.0-alpha.32
 > **Status**: Authoritative
-> **Last Updated**: 2026-11-24
+> **Last Updated**: 2026-11-26
 
 This specification defines the authoritative design of the Darnit framework, including the sieve orchestrator, TOML schema, built-in pass types, remediation actions, and plugin protocol.
 
@@ -920,7 +920,7 @@ Every remediation runs in one of two modes. The executor passes the mode to each
 | Field | Type | Description |
 |-------|------|-------------|
 | `path` | `str` | Repository-relative path |
-| `action` | `"create"` \| `"modify"` \| `"none"` | `none` carries a `reason`: `already_exists`, `user_changes_present`, or `when_not_met` |
+| `action` | `"create"` \| `"modify"` \| `"none"` | `none` carries a `reason`: `already_exists`, `user_changes_present`, `when_not_met`, or `created_by_other_control` (with `created_by`, the control that creates the path in this run; 15.2) |
 | `ignored` | `bool` | The path matches the repository's ignore rules: it is written but never staged or committed (15.7) |
 | `content` | `str \| None` | Resulting content for `create` and `modify` |
 | `before_digest`, `after_digest` | `str \| None` | Content digests before and after |
@@ -2294,6 +2294,13 @@ A person approves by digest: an apply call carries the approved digests (`approv
 - An apply flag alone (`dry_run = False`) never approves anything. An agent passes only the digests the person approved.
 - Approvals are single-use and are recorded only in the run record: `Approval` = `digest`, `approved_by` (the operator identity, feature 040), `approved_at`. Approvals are not confirmations and are never stored in the confirmation store (sections 5.4, 7.5).
 
+**One creation per path.** Within one run, the first control to plan a `create` of a path creates it; a later control that plans the same path gets `none` with reason `created_by_other_control` and `created_by` naming that control, in the preview and in the apply alike (at apply time the file exists, and the later control's `already_exists` is reported the same way), so the two plan items carry the same digest and the preview says what the apply does. The later control's outcome comes from the re-check (15.5). If the creating control's write was refused, the path is not claimed and the later control's `create` goes through.
+
+#### Scenario: Three controls, one new file
+- **WHEN** OSPS-DO-03.01, DO-04.01 and DO-05.01 each plan to create `SUPPORT.md` and the file does not exist
+- **THEN** the preview MUST list `create SUPPORT.md` under DO-03.01 and `not written (created by OSPS-DO-03.01)` under the other two
+- **AND** the apply MUST write the file once, with DO-03.01's content, and report the other two the same way as the preview
+
 #### Scenario: Stale preview
 - **WHEN** a person approved a change set's digest and the target's settings changed before the apply
 - **THEN** darnit MUST write nothing for that change set
@@ -2673,6 +2680,7 @@ The following requirements have been superseded: by the handler dispatch archite
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.32 | 2026-11-26 | One creation per path in a remediation run: a later control planning a path another control creates reports `created_by_other_control`, in preview and apply alike (Section 15.2; `FileChange` reasons) |
 | 1.0.0-alpha.31 | 2026-11-24 | `gh_api` step setting `auth_fields`: when an HTTP 2xx response omits any declared field, reports ERROR with error class `auth` naming the elevated permission requirement (Section 3.8; #753) |
 | 1.0.0-alpha.30 | 2026-11-24 | An `exec` remediation step previewed in a scratch copy marks files that have uncommitted user changes in the checkout with `action = "none"` and `reason = "user_changes_present"`, reports that the command will not run, and omits files the command will not touch, matching what the apply does (Section 4.4; #543) |
 | 1.0.0-alpha.29 | 2026-11-22 | `project_reference` is accepted on any step whose handler declares it in its settings, not only `file_create`; on a handler other than `file_create` it records only the file at the step's `path`. OSPS-SA-03.02 records `security.threat_model` through `project_reference` on `generate_threat_model` instead of an unconditional `project_update` (Sections 4.3, 7.9; #545) |

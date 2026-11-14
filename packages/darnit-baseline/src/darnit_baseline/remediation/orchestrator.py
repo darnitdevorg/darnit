@@ -318,6 +318,7 @@ def _apply_control_remediation(
     platform: Any | None = None,
     run_id: str | None = None,
     scheduled_paths: Collection[str] | None = None,
+    claimed_paths: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Apply remediation for a single control, driven entirely by TOML.
 
@@ -411,6 +412,7 @@ def _apply_control_remediation(
             platform=platform,
             run_id=run_id,
             scheduled_paths=scheduled_paths,
+            claimed_paths=claimed_paths,
         )
         # Tag unsafe remediations for review
         if not remediation_config.safe:
@@ -452,6 +454,7 @@ def _apply_declarative_remediation(
     platform: Any | None = None,
     run_id: str | None = None,
     scheduled_paths: Collection[str] | None = None,
+    claimed_paths: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Apply a declarative remediation from TOML config.
 
@@ -548,6 +551,7 @@ def _apply_declarative_remediation(
             unconfirmed_keys=resolved.unusable_keys(),
             run_id=run_id,
             platform=platform,
+            claimed_paths=claimed_paths,
         )
 
         # Execute the remediation
@@ -1336,6 +1340,7 @@ def run_remediation(
     # ------------------------------------------------------------------
     scheduled_paths = _scheduled_file_create_paths(framework, remediable_ids, skipped=honored_claims)
     results = []
+    claimed_paths: dict[str, str] = {}  # one creation per path across the controls of this run (#755)
     for control_id in remediable_ids:
         if control_id in honored_claims:
             results.append({
@@ -1356,6 +1361,7 @@ def run_remediation(
             platform=session,
             run_id=None if dry_run else run_id,
             scheduled_paths=scheduled_paths,
+            claimed_paths=claimed_paths,
         )
         results.append(result)
 
@@ -1636,7 +1642,7 @@ def _file_lines(changes: list[FileChange], *, preview: bool) -> list[str]:
     lines: list[str] = []
     for change in changes:
         if change.action == "none":
-            lines.append(f"- `{change.path}`: not written ({change.reason})")
+            lines.append(f"- `{change.path}`: not written ({change.not_written_because()})")
             continue
         verb = {"create": "created", "modify": "modified"}[change.action]
         lines.append(f"- `{change.path}`: {'would be ' + verb if preview else verb}")

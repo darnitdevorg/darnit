@@ -182,6 +182,7 @@ class RemediationExecutor:
         approvals: Collection[str] = (),
         item_approver: ItemApprover | None = None,
         host: str | None = None,
+        claimed_paths: dict[str, str] | None = None,
     ):
         """Initialize the executor.
 
@@ -194,6 +195,9 @@ class RemediationExecutor:
             context_values: Usable context values for ${context.*} substitution
                 and ``when`` clauses
             project_values: Flattened .project/project.yaml for ${project.*} substitution
+            claimed_paths: The run's map of created paths to the control that
+                creates them (#755); pass the same dict to every executor of
+                one run so a path is created once across controls
             scan_values: Repo scan values for ${scan.*} substitution.
                 Populated by the implementation's repo scanner with detected
                 languages, CI tools, directory structure, etc.
@@ -238,6 +242,9 @@ class RemediationExecutor:
         self._scan_values = scan_values or {}
         self._now_provider = now_provider or datetime.now
         self._unconfirmed_keys = frozenset(unconfirmed_keys)
+        # path -> the control that creates it in this run (#755). A caller that builds one executor per
+        # control (the Baseline orchestrator) passes the run's map so the claims span the controls.
+        self._claimed_paths: dict[str, str] = claimed_paths if claimed_paths is not None else {}
         self.run_id = run_id
         self._run_ready = False
         self.platform = platform
@@ -705,6 +712,29 @@ class RemediationExecutor:
             return FileChange(path=change.path, action="none", reason="user_changes_present")
         return change.model_copy(update={"ignored": True}) if ignored else change
 
+    def _claim_path(self, control_id: str, change: FileChange, mode: str) -> FileChange:
+        """One creation per path in a run: later controls see who creates it (#755).
+
+        Three controls can plan the same new file (``SUPPORT.md`` under
+        OSPS-DO-03.01, DO-04.01 and DO-05.01). The first control to plan a
+        ``create`` claims the path; a later control's ``create`` in a preview,
+        or its ``already_exists`` in an apply (the first control wrote the file
+        by then), becomes ``none`` with reason ``created_by_other_control``, so
+        the preview says what the apply does and the two plan items carry the
+        same digest. In an apply, a ``create`` on a claimed path means the
+        claimer did not write it after all: it goes through and the path is
+        claimed anew.
+        """
+        claimer = self._claimed_paths.get(change.path)
+        if change.action == "create":
+            if claimer is None or claimer == control_id or mode == "apply":
+                self._claimed_paths[change.path] = control_id
+                return change
+            return FileChange(path=change.path, action="none", reason="created_by_other_control", created_by=claimer)
+        if change.action == "none" and change.reason == "already_exists" and claimer is not None and claimer != control_id:
+            return FileChange(path=change.path, action="none", reason="created_by_other_control", created_by=claimer)
+        return change
+
     def _write(self, change: FileChange) -> FileChange:
         """Write one planned change atomically and record it in the run manifest.
 
@@ -1158,6 +1188,7 @@ class RemediationExecutor:
                     self._record_change_set(digest)
                     wrote = True
 
+            changes = [self._claim_path(control_id, c, mode) for c in changes]
             if mode == "plan":
                 try:
                     if not _is_exec(handler_info):
