@@ -161,6 +161,7 @@ def test_without_output_path_nothing_is_written(repo: Path) -> None:
     output = generate_threat_model(owner="o", repo="r", local_path=str(repo))
 
     assert "Threat Model" in output
+    assert "**Repository:** `o/r`" in output
     assert snapshot(repo) == before
 
 

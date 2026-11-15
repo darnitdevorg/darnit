@@ -5,6 +5,7 @@ files as ``FileChange`` entries. ``_run`` checks that, then writes the planned
 files as the remediation executor would, so the content tests read them back.
 """
 
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -431,3 +432,90 @@ class TestComplianceCycleSC004:
         draft_second = (tmp_path / "THREAT_MODEL.md").read_text()
 
         assert draft_first == draft_second, "Skip path must leave the file byte-identical"
+
+
+class TestRepoIdentityInRemediation:
+    """Verifies that the threat model names the repository from the caller identity (fixes #754)."""
+
+    def test_repo_identity_honored_in_remediation_summary_and_raw_json(self, tmp_path):
+        repo_dir = tmp_path / "repo"
+        repo_dir.mkdir()
+        (repo_dir / "src").mkdir()
+        (repo_dir / "src" / "app.py").write_text("# empty app\n")
+
+        config = {"path": "docs/threatmodel/SUMMARY.md", "overwrite": True}
+        context = HandlerContext(
+            local_path=str(repo_dir),
+            owner="whiskeytastingfoundation",
+            repo="wtf-frontend",
+            control_id="OSPS-SA-03.02",
+        )
+        result = _run(config, context)
+        assert result.status == HandlerResultStatus.PASS
+
+        summary_file = repo_dir / "docs" / "threatmodel" / "SUMMARY.md"
+        assert summary_file.exists()
+        summary_content = summary_file.read_text(encoding="utf-8")
+        assert "| Repository | `whiskeytastingfoundation/wtf-frontend` |" in summary_content
+        assert "| Repository | `repo` |" not in summary_content
+
+        raw_json_file = repo_dir / "docs" / "threatmodel" / "raw-findings.json"
+        assert raw_json_file.exists()
+        raw_data = json.loads(raw_json_file.read_text(encoding="utf-8"))
+        assert raw_data["metadata"]["repository"] == "whiskeytastingfoundation/wtf-frontend"
+
+    def test_repo_identity_overrides_fork_origin_remote(self, tmp_path):
+        repo_dir = tmp_path / "repo"
+        repo_dir.mkdir()
+        (repo_dir / "src").mkdir()
+        (repo_dir / "src" / "app.py").write_text("# empty app\n")
+        _git(repo_dir, "init")
+        _git(repo_dir, "remote", "add", "origin", "git@github.com:myfork/wtf-frontend.git")
+
+        config = {"path": "docs/threatmodel/SUMMARY.md", "overwrite": True}
+        context = HandlerContext(
+            local_path=str(repo_dir),
+            owner="whiskeytastingfoundation",
+            repo="wtf-frontend",
+            control_id="OSPS-SA-03.02",
+        )
+        result = _run(config, context)
+        assert result.status == HandlerResultStatus.PASS
+
+        summary_file = repo_dir / "docs" / "threatmodel" / "SUMMARY.md"
+        summary_content = summary_file.read_text(encoding="utf-8")
+        assert "| Repository | `whiskeytastingfoundation/wtf-frontend` |" in summary_content
+        assert "myfork/wtf-frontend" not in summary_content
+
+        raw_json_file = repo_dir / "docs" / "threatmodel" / "raw-findings.json"
+        raw_data = json.loads(raw_json_file.read_text(encoding="utf-8"))
+        assert raw_data["metadata"]["repository"] == "whiskeytastingfoundation/wtf-frontend"
+
+    def test_repo_identity_config_override_takes_precedence(self, tmp_path):
+        repo_dir = tmp_path / "repo"
+        repo_dir.mkdir()
+        (repo_dir / "src").mkdir()
+        (repo_dir / "src" / "app.py").write_text("# empty app\n")
+
+        config = {
+            "path": "docs/threatmodel/SUMMARY.md",
+            "overwrite": True,
+            "owner": "config-org",
+            "repo": "config-repo",
+        }
+        context = HandlerContext(
+            local_path=str(repo_dir),
+            owner="context-org",
+            repo="context-repo",
+            control_id="OSPS-SA-03.02",
+        )
+        result = _run(config, context)
+        assert result.status == HandlerResultStatus.PASS
+
+        summary_file = repo_dir / "docs" / "threatmodel" / "SUMMARY.md"
+        summary_content = summary_file.read_text(encoding="utf-8")
+        assert "| Repository | `config-org/config-repo` |" in summary_content
+
+        raw_json_file = repo_dir / "docs" / "threatmodel" / "raw-findings.json"
+        raw_data = json.loads(raw_json_file.read_text(encoding="utf-8"))
+        assert raw_data["metadata"]["repository"] == "config-org/config-repo"

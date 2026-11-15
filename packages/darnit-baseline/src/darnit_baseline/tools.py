@@ -1244,6 +1244,8 @@ def generate_threat_model(
                 overflow=overflow,
                 options=options,
                 cli_families=cli_families,
+                owner=owner,
+                repo=repo,
             )
 
         if relative is not None:

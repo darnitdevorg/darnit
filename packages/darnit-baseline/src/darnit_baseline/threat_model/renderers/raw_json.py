@@ -27,6 +27,8 @@ def render_raw_json(
     all_findings: list[CandidateFinding],
     sidecar_matches: dict[str, Any],
     repo_path: str = ".",
+    owner: str | None = None,
+    repo: str | None = None,
 ) -> str:
     """Render the ``raw-findings.json`` output file.
 
@@ -42,6 +44,10 @@ def render_raw_json(
         will include a ``mitigation`` field in the output.
     repo_path:
         Path to the repository root, used to derive the display name.
+    owner:
+        Optional repository owner given by caller.
+    repo:
+        Optional repository name given by caller.
 
     Returns
     -------
@@ -53,7 +59,7 @@ def render_raw_json(
     # -- metadata -----------------------------------------------------------
     languages = sorted((stats.by_language or {}).keys()) if stats else []
     metadata: dict[str, Any] = {
-        "repository": repo_display_name(repo_path),
+        "repository": repo_display_name(repo_path, owner=owner, repo=repo),
         "scan_date": datetime.now(tz=UTC).date().isoformat(),
         "languages": languages,
         "files_scanned": stats.in_scope_files if stats else 0,

@@ -67,13 +67,15 @@ def _render_executive_summary(
     repo_path: str,
     result: DiscoveryResult,
     findings: list[CandidateFinding],
+    owner: str | None = None,
+    repo: str | None = None,
 ) -> list[str]:
     md: list[str] = ["## Executive Summary", ""]
 
     languages = ", ".join(sorted((result.file_scan_stats.by_language or {}).keys()))
     frameworks = ", ".join(sorted({ep.framework for ep in result.entry_points if ep.framework}))
     md.append(f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    md.append(f"**Repository:** `{_repo_display_name(repo_path)}`")
+    md.append(f"**Repository:** `{_repo_display_name(repo_path, owner=owner, repo=repo)}`")
     md.append(f"**Languages scanned:** {languages or 'none'}")
     md.append(f"**Frameworks detected:** {frameworks or 'none'}")
     md.append("")
@@ -684,6 +686,8 @@ def generate_markdown_threat_model(
     overflow: TrimmedOverflow | None,
     options: GeneratorOptions | None = None,
     cli_families: list[CommandFamily] | None = None,
+    owner: str | None = None,
+    repo: str | None = None,
 ) -> str:
     """Render the full Markdown draft from a DiscoveryResult.
 
@@ -696,10 +700,12 @@ def generate_markdown_threat_model(
             ``## Entry Points`` / ``### CLI Entry Points`` section.
             When ``None`` or empty, no CLI section is emitted (FR-014:
             no empty placeholder).
+        owner: Optional repository owner given by caller.
+        repo: Optional repository name given by caller.
     """
     options = options or GeneratorOptions()
     md: list[str] = ["# Threat Model Report", ""]
-    md.extend(_render_executive_summary(repo_path, result, capped_findings))
+    md.extend(_render_executive_summary(repo_path, result, capped_findings, owner=owner, repo=repo))
     md.extend(_render_asset_inventory(result))
     md.extend(_render_dfd(result, options))
     md.extend(_render_entry_points_section(result, cli_families))
