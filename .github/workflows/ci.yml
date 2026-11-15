@@ -55,6 +55,29 @@ jobs:
         if: always()
         run: uv run python scripts/corpus_report.py --format markdown >> "$GITHUB_STEP_SUMMARY"
 
+  replay:
+    # Clone the reference repositories, audit, confirm the recorded answers,
+    # remediate, audit again, and compare every control with
+    # scripts/comply_replay_expected.json. No model and no platform token, so
+    # the result is the same wherever it runs.
+    name: Comply replay
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v4
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - name: Replay the comply flow
+        run: |
+          uv sync --all-extras
+          uv run python scripts/comply_replay.py
+
   gittuf:
     name: Gittuf 0.17.0 integration tests
     runs-on: ubuntu-24.04
