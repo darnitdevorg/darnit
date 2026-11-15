@@ -51,7 +51,6 @@ def make_ctx(tmp_path: Path, dependency_results: dict[str, str] | None = None) -
         control_id="RE-01.01",
         project_context={},
         gathered_evidence={},
-        shared_cache={},
         dependency_results=dependency_results if dependency_results is not None else {},
     )
 

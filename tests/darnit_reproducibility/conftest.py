@@ -25,7 +25,6 @@ def make_handler_ctx(repo: Path) -> HandlerContext:
         control_id="RE-01.01",
         project_context={},
         gathered_evidence={},
-        shared_cache={},
         dependency_results={},
     )
 
@@ -75,6 +74,5 @@ def repro_ctx(repo: Path, dependency_results: dict[str, str] | None = None) -> H
         control_id="RE-TEST",
         project_context={},
         gathered_evidence={},
-        shared_cache={},
         dependency_results=dependency_results or {},
     )

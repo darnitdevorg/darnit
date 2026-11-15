@@ -137,7 +137,6 @@ def _ctx(repo: Path) -> HandlerContext:
         control_id="GT-02.01",
         project_context={},
         gathered_evidence={},
-        shared_cache={},
         dependency_results={},
     )
 

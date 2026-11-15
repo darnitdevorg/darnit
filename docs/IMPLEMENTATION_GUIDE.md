@@ -910,7 +910,6 @@ def my_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResult
 | `control_id` | `str` | ID of the control being verified (e.g., `"OSPS-AC-01.01"`). Empty for data gathering. |
 | `project_context` | `dict[str, Any]` | This run's detections of keys that are not user-judgment keys, `.project/project.yaml` mapper values, and usable context values (confirmed, or concluded in this run for `auto_detect = true` keys). A stored value without a matching confirmation record is not included. |
 | `gathered_evidence` | `dict[str, Any]` | Evidence accumulated from earlier handlers in this control's pipeline. See [Evidence propagation](#evidence-propagation). |
-| `shared_cache` | `dict[str, HandlerResult]` | Cache of shared handler results, keyed by the shared handler name. Shared handlers run once and cache their result for all controls that reference them. |
 | `dependency_results` | `dict[str, Any]` | Results from dependency controls (keyed by control ID), available when control dependencies are declared in TOML. |
 
 ### HandlerResult construction

@@ -134,7 +134,6 @@ def test_handler_passes_when_file_exists(tmp_path):
         control_id="TEST-01",
         project_context={},
         gathered_evidence={},
-        shared_cache={},
         dependency_results={},
     )
     config = {"files": ["README.md"]}
@@ -157,7 +156,6 @@ def test_handler_returns_inconclusive_when_no_files(tmp_path):
         control_id="TEST-01",
         project_context={},
         gathered_evidence={},
-        shared_cache={},
         dependency_results={},
     )
     config = {"files": []}
