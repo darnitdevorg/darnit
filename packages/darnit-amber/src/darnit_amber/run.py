@@ -529,6 +529,17 @@ def wrap_command(command: str) -> str:
     return f'(\n{command}\n)\nprintf %s "$?" > "$0"\n'  # the ) on its own line: a trailing # comment cannot eat it
 
 
+def wrapper_shapes(command: str) -> tuple[str, ...]:
+    """Every script ``wrap_command`` has ever produced for ``command``, newest first.
+
+    ``verify`` recomputes the wrapper from the statement's command and compares
+    it with what Witness recorded; a bundle made with an earlier wrapper must
+    keep verifying (bundles are signed and kept). Before Nov 13 2026 the
+    closing paren shared the command's line.
+    """
+    return (wrap_command(command), f'({command})\nprintf %s "$?" > "$0"\n')
+
+
 def audit_command() -> str:
     """The audit step's shell command; ``verify`` recomputes it, so the audit Witness ran is the one recorded."""
     return f"darnit audit . -f amber --output json --no-fail > {AUDIT_RECORD}"

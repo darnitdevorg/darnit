@@ -686,7 +686,7 @@ def _bundle(tmp_path, predicate, sign_statement, witness, outputs=None):
     return store, bundle
 
 
-def _witness_experiment_envelope(sign, command, products: dict[str, bytes]):
+def _witness_experiment_envelope(sign, command, products: dict[str, bytes], wrapper=None):
     from darnit_amber.run import wrap_command
 
     payload = json.dumps(
@@ -695,7 +695,7 @@ def _witness_experiment_envelope(sign, command, products: dict[str, bytes]):
                 "attestations": [
                     {
                         "type": "https://witness.dev/attestations/command-run/v0.1",
-                        "attestation": {"cmd": ["sh", "-c", wrap_command(command), "/tmp/x"], "exitcode": 0},
+                        "attestation": {"cmd": ["sh", "-c", wrapper or wrap_command(command), "/tmp/x"], "exitcode": 0},
                     },
                     {
                         "type": "https://witness.dev/attestations/product/v0.1",
@@ -710,7 +710,7 @@ def _witness_experiment_envelope(sign, command, products: dict[str, bytes]):
     return sign(payload)
 
 
-def _key_bundle(tmp_path, products=None, claims=None, verdict="NOT_COMPARABLE", exit_code=3):
+def _key_bundle(tmp_path, products=None, claims=None, verdict="NOT_COMPARABLE", exit_code=3, wrapper=None):
     """A key-signed bundle with an experiment, like ``run`` makes with a local key.
 
     Like a real run, the experiment's exit status and the audit report are
@@ -744,7 +744,7 @@ def _key_bundle(tmp_path, products=None, claims=None, verdict="NOT_COMPARABLE", 
     ).encode()
     witness = {
         "amber-audit": sign(audit_payload),
-        "experiment": _witness_experiment_envelope(sign, "./run.sh", {**products, EXIT_RECORD: exit_blob}),
+        "experiment": _witness_experiment_envelope(sign, "./run.sh", {**products, EXIT_RECORD: exit_blob}, wrapper),
     }
     predicate = {
         "signing": {"method": "key", "key_fingerprint": fp},
@@ -1419,3 +1419,20 @@ def test_a_checkout_cloned_from_a_local_path_is_still_a_local_artifact(repo, tmp
         ["git", "-C", str(from_dir), "remote", "set-url", "origin", "https://example.org/x/y.git"], check=True
     )
     assert amber_run._git_remote(from_dir) == "https://example.org/x/y.git"
+
+
+def test_a_bundle_made_with_the_earlier_wrapper_still_verifies(tmp_path, stamped):
+    """The Nov 13 wrapper change ((cmd) -> (newline cmd newline)) made every earlier bundle fail
+    command_matches_witness (found on the oracle, Nov 14: the OIDEli bundles of Nov 9 and 12). Bundles are signed
+    and kept, so verify accepts every shape the wrapper has had; an unrelated script still fails."""
+    from darnit_amber import rerun as rr
+
+    legacy = '(./run.sh)\nprintf %s "$?" > "$0"\n'  # _key_bundle's experiment command is ./run.sh
+    assert legacy in amber_run.wrapper_shapes("./run.sh") and amber_run.wrap_command("./run.sh") != legacy
+    store, bundle, key, pub = _key_bundle(tmp_path, wrapper=legacy)
+    report = rr.verify(store, bundle["id"], pub)
+    assert report["command_matches_witness"] is True and report["verified"] is True
+    (tmp_path / "other").mkdir()
+    other_store, other, key2, pub2 = _key_bundle(tmp_path / "other", wrapper='(./other.sh)\nprintf %s "$?" > "$0"\n')
+    bad = rr.verify(other_store, other["id"], pub2)
+    assert bad["command_matches_witness"] is False and bad["verified"] is False

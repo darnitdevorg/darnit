@@ -23,7 +23,7 @@ from .run import (
     execute,
     exit_status,
     read_blob,
-    wrap_command,
+    wrapper_shapes,
 )
 
 
@@ -312,7 +312,7 @@ def verify(
         )
         cmd = run.get("cmd") or []
         checks["command_matches_witness"] = (
-            bool(w) and len(cmd) == 4 and cmd[:3] == ["sh", "-c", wrap_command(exp["command"])]
+            bool(w) and len(cmd) == 4 and cmd[:2] == ["sh", "-c"] and cmd[2] in wrapper_shapes(exp["command"])
         )
         # Stored outputs are what the statement says they are: a store can be written to by others.
         stored_ok = True
