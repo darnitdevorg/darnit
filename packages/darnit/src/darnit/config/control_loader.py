@@ -645,6 +645,7 @@ def validate_step_authority(
 
         if inv.handler == "gh_api":
             _validate_evidence_fields(inv.model_extra or {}, reject)
+            _validate_auth_fields(inv.model_extra or {}, reject)
         if inv.handler == "exec":
             _validate_exec_personal_record(inv.model_extra or {}, reject)
 
@@ -700,6 +701,18 @@ def _validate_evidence_fields(step: dict[str, Any], reject: Callable[[str], None
             f"endpoint {_endpoint_path(endpoint)!r} reads people's account records; declare evidence_fields "
             "listing only the response fields the check needs"
         )
+
+
+def _validate_auth_fields(step: dict[str, Any], reject: Callable[[str], None]) -> None:
+    """A gh_api step declaring auth_fields must provide a non-empty mapping of field name to reason."""
+    fields = step.get("auth_fields")
+    if fields is None:
+        return
+    if isinstance(fields, dict):
+        if not (fields and all(isinstance(k, str) and k and isinstance(v, str) and v for k, v in fields.items())):
+            reject(f"auth_fields mapping must map response body keys to non-empty strings, not {fields!r}")
+        return
+    reject(f"auth_fields must be a mapping of response body keys to reasons, not {fields!r}")
 
 
 def _validate_exec_personal_record(step: dict[str, Any], reject: Callable[[str], None]) -> None:

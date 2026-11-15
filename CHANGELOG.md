@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- In `gh_api` steps, permission-gated response fields omitted on a 2xx answer
+  (such as `two_factor_requirement_enabled` and `default_repository_permission`
+  on `/orgs/<owner>` for non-owners) are reported as ERROR with error class `auth`
+  naming the field, via `auth_fields`, rather than raising a raw CEL KeyError
+  evaluation error (fixes #753).
 - Remediation templates state a test command or link a file only when the
   repository scan found it or the same run writes it; otherwise, they leave
   a marked TODO gap (fixes #751).

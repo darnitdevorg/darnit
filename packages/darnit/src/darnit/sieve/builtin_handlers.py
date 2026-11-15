@@ -626,6 +626,10 @@ def gh_api_handler(config: dict[str, Any], context: HandlerContext) -> HandlerRe
         evidence_fields: list[str] - Feature 044. Top-level ``response.body``
             keys kept in evidence; every other key is dropped (``expr``
             still sees the full response). Required on personal records.
+        auth_fields: dict[str, str] - Fields visible only with
+            specific permissions (e.g. organization owners), mapped to
+            reasons. When a 2xx response omits one, the step reports
+            ERROR (class auth).
 
     Evidence: ``endpoint`` (after substitution) and ``response``
     (``status_code``, ``body``). See framework-design.md section 3.8.
@@ -667,6 +671,20 @@ def gh_api_handler(config: dict[str, Any], context: HandlerContext) -> HandlerRe
     }
 
     if 200 <= status < 300:
+        auth_fields = config.get("auth_fields")
+        if auth_fields and isinstance(auth_fields, dict) and isinstance(body, dict):
+            for field, reason in auth_fields.items():
+                if field not in body:
+                    detail = _format_auth_detail(str(field), str(reason))
+                    message = f"Platform API call {endpoint} could not be measured (auth): {detail}"
+                    _log_environmental_failure(context.control_id, "gh_api", "auth", message)
+                    return HandlerResult(
+                        status=HandlerResultStatus.ERROR,
+                        message=message,
+                        evidence=evidence,
+                        error_class="auth",
+                    )
+
         expr = config.get("expr")
         if not expr:
             return HandlerResult(
@@ -723,6 +741,16 @@ def gh_api_handler(config: dict[str, Any], context: HandlerContext) -> HandlerRe
         evidence=evidence,
         error_class=error_class,
     )
+
+
+def _format_auth_detail(field: str, reason: str) -> str:
+    """Format the environmental cause for a permission-gated response field."""
+    clean = reason.strip()
+    if clean.startswith((f"'{field}'", f'"{field}"', field)):
+        return clean
+    if clean.startswith(("is ", "requires ", "needs ")):
+        return f"'{field}' {clean}"
+    return f"'{field}' is {clean}"
 
 
 def _evidence_body(body: Any, fields: list[str] | None) -> Any:
@@ -1986,7 +2014,7 @@ def register_builtin_handlers() -> None:
         handler_fn=gh_api_handler,
         description="Call the platform API via gh; decide from HTTP status and CEL over response.*",
         ceiling={"pass", "fail"},
-        settings={"endpoint", "evidence_fields"},
+        settings={"endpoint", "evidence_fields", "auth_fields"},
         expression_names={"response"},
     )
     registry.register(

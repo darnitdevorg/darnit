@@ -435,13 +435,14 @@ location_hint = ".github/settings.yml"
 
 # A confirmed or detected user owner skips the organization lookup.
 # If detection fails, the missing key leaves this step eligible, preserving
-# the API error for 404/401/403. No has() guard: only org owners can read
-# the 2FA requirement, and a hidden field must surface an evaluation error.
+# the API error for 404/401/403. Only org owners can read the 2FA requirement;
+# when omitted, auth_fields surfaces an auth error instead of failing evaluation.
 [[controls."OSPS-AC-01.01".passes]]
 when = { github_owner_type = "Organization" }
 handler = "gh_api"
 endpoint = "/orgs/$OWNER"
 expr = 'response.body.two_factor_requirement_enabled == true'
+auth_fields = { two_factor_requirement_enabled = "visible only to organization owners" }
 
 # /user describes the signed-in auditor, who may not be the repository owner.
 # Keep concludes = [] so the auditor's MFA cannot produce a PASS (feature 041).
@@ -505,10 +506,13 @@ collaborator invitations separately.
 """
 
 # Organization base permissions do not apply to outside collaborators.
+# Non-owners cannot read default_repository_permission; auth_fields surfaces
+# this as an auth error instead of failing evaluation.
 [[controls."OSPS-AC-02.01".passes]]
 handler = "gh_api"
 endpoint = "/orgs/$OWNER"
 expr = 'response.body.default_repository_permission in ["none", "read"]'
+auth_fields = { default_repository_permission = "visible only to organization owners" }
 evidence_fields = ["default_repository_permission"]
 concludes = []
 
