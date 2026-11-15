@@ -1400,3 +1400,22 @@ def test_clone_of_a_local_path_at_a_branch(repo, tmp_path):
             ["git", "-C", str(repo), "rev-parse", "other-branch"], capture_output=True, text=True
         ).stdout.strip()
     )
+
+
+def test_a_checkout_cloned_from_a_local_path_is_still_a_local_artifact(repo, tmp_path):
+    """On the oracle (Nov 14) the rerun statement named /home/<user>/.../art.gitbundle: the checkout's origin was
+    the bundle file it was cloned from, and a path-valued origin was taken for the artifact's public name."""
+    bundle_file = tmp_path / "art.gitbundle"
+    subprocess.run(["git", "-C", str(repo), "bundle", "create", "-q", str(bundle_file), "--all"], check=True)
+    from_bundle = tmp_path / "from-bundle"
+    subprocess.run(["git", "clone", "-q", str(bundle_file), str(from_bundle)], check=True)
+    from_dir = tmp_path / "from-dir"
+    subprocess.run(["git", "clone", "-q", str(repo), str(from_dir)], check=True)
+    assert amber_run._git_remote(from_bundle) is None
+    assert amber_run._git_remote(from_dir) is None
+    assert amber_run._local_subject(from_bundle) == "local/from-bundle"
+    # A real remote URL is still the name, and still stripped of credentials downstream.
+    subprocess.run(
+        ["git", "-C", str(from_dir), "remote", "set-url", "origin", "https://example.org/x/y.git"], check=True
+    )
+    assert amber_run._git_remote(from_dir) == "https://example.org/x/y.git"

@@ -194,8 +194,16 @@ def _git_commit(repo: Path) -> str | None:
 
 
 def _git_remote(repo: Path) -> str | None:
+    """The checkout's ``origin`` when it is a URL; a remote that is itself a path on this machine is not a name.
+
+    A checkout cloned from a local directory or a git bundle file has that
+    absolute path as ``origin`` (seen on the oracle, Nov 14: the rerun
+    statement named /home/<user>/.../art.gitbundle); such a checkout is a
+    local artifact and gets ``local/<name>`` like one without a remote.
+    """
     r = subprocess.run(["git", "-C", str(repo), "remote", "get-url", "origin"], capture_output=True, text=True)
-    return r.stdout.strip() or None
+    url = r.stdout.strip()
+    return url if url and _is_url(url) else None
 
 
 def _git_dirty(repo: Path) -> list[str]:
