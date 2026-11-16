@@ -111,9 +111,14 @@ main() {
   # install` would otherwise follow XDG_BIN_HOME / XDG_DATA_HOME on their own.
   local bindir="${XDG_BIN_HOME:-$HOME/.local/bin}"
   export UV_INSTALL_DIR="$bindir" UV_TOOL_BIN_DIR="$bindir"
-  if ! command -v uv >/dev/null 2>&1; then
-    export PATH="$bindir:$PATH"
-  fi
+  # On PATH for the rest of this script whatever is already installed: `uv tool install zizmor`
+  # puts zizmor in $bindir even when uv itself came from elsewhere (Homebrew's uv with
+  # ~/.local/bin not on PATH is the usual macOS setup), and the audit must find it. The
+  # "not on your PATH" warning at the end still judges the user's own PATH (ORIGINAL_PATH).
+  case ":$PATH:" in
+    *":$bindir:"*) ;;
+    *) export PATH="$bindir:$PATH" ;;
+  esac
   if ! command -v uv >/dev/null 2>&1; then
     info "uv is not installed. darnit uses it to manage Python and dependencies."
     if ! confirm "Install uv $UV_VERSION from astral.sh into $bindir? Your shell profile is not changed." n; then
@@ -126,7 +131,6 @@ main() {
     else
       die "curl or wget is needed to install uv."
     fi
-    export PATH="$bindir:$PATH"
     if ! command -v uv >/dev/null 2>&1; then
       die "uv was installed but is not on PATH. Open a new shell and re-run."
     fi
