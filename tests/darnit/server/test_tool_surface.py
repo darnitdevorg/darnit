@@ -22,7 +22,7 @@ from darnit.config.merger import resolve_framework_path
 from darnit.server.factory import create_server
 
 SURFACE = Path(__file__).parent / "tool_surface"
-FRAMEWORKS = ["openssf-baseline", "gittuf", "reproducibility"]
+FRAMEWORKS = ["openssf-baseline", "gittuf", "amber"]
 
 
 def _surface(framework: str) -> list[dict]:

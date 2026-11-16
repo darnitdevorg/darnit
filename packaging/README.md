@@ -53,7 +53,7 @@ The workflow authenticates every `publish-*` job with the `PYPI_API_TOKEN` repo 
    ```bash
    gh secret set PYPI_API_TOKEN --repo darnitdevorg/darnit
    ```
-4. After the first release lands and the five projects exist on PyPI, replace with per-project tokens for scope reduction (optional; not required for correctness).
+4. After the first release lands and the six projects exist on PyPI, replace with per-project tokens for scope reduction (optional; not required for correctness).
 
 If the token is bad, the first `publish-*` job in `release.yml` fails immediately with a 403 and no packages are published. Fix the secret and re-trigger via `workflow_dispatch` on the same tag; no need to bump the version.
 
@@ -90,12 +90,13 @@ Not currently used. rc tags publish directly to real PyPI as GitHub prereleases.
    gh run list --branch main --limit 5
    ```
 2. **Decide the version.** Stable releases are `vX.Y.Z`; pre-releases are `vX.Y.ZrcN` (no hyphen — PEP 440 canonical). Use a pre-release tag if this is the first run after a non-trivial release-pipeline change.
-3. **Bump `version` in every public `pyproject.toml`.** The five public packages must agree exactly with the tag (preflight enforces this):
+3. **Bump the version everywhere it appears in the six public `pyproject.toml` files.** The packages must agree exactly with the tag (preflight enforces this), and so must the pins between them: `darnit-mcp` pins its components with `==`, `darnit-reproducibility` pins `darnit-amber` with `==`, and `darnit-baseline` and `darnit-gittuf` require `darnit-core>=` the same version (`tests/packaging/test_workspace_pins.py` fails otherwise). A text replace of the old version with the new one in these six files does all of it:
    - `pyproject.toml` (the root `darnit-mcp` package)
    - `packages/darnit/pyproject.toml` (name: `darnit-core`)
    - `packages/darnit-baseline/pyproject.toml`
    - `packages/darnit-gittuf/pyproject.toml`
    - `packages/darnit-amber/pyproject.toml`
+   - `packages/darnit-reproducibility/pyproject.toml` (the transitional package, one release)
 4. **Sync and verify locally:**
    ```bash
    uv sync --all-extras
