@@ -293,7 +293,7 @@ def sync_discovered_to_config(
         if section_obj is None:
             continue
 
-        for field_name in section_obj.model_fields:
+        for field_name in type(section_obj).model_fields:
             ref = getattr(section_obj, field_name, None)
             if ref and isinstance(ref, PathRef):
                 full_path = os.path.join(local_path, ref.path)
