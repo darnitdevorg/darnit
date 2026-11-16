@@ -51,7 +51,8 @@ def _bind_tool_config(handler, config: dict):
     new_params = [
         p for name, p in sig.parameters.items() if name != "_tool_config"
     ]
-    wrapper.__signature__ = sig.replace(parameters=new_params)
+    # typeshed does not declare __signature__, which inspect.signature honours.
+    wrapper.__signature__ = sig.replace(parameters=new_params)  # type: ignore[attr-defined]
     return wrapper
 
 
