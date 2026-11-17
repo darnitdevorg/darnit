@@ -11,7 +11,7 @@ is what would land. Each side is built in its own worktree and venv, and every
 phase runs on a fresh copy of the reference repository at its pinned commit
 (scripts/comply_replay.toml), with darnit in a throwaway HOME.
 
-Phases (docs/design/e2e-verification.md, Layer 2):
+Phases (docs/design/e2e-verification.md, "Compare base and head"):
 
   1  Deterministic audit. Compares each control's level, status and
      concluded_by. Platform reads use GH_TOKEN, or `gh auth token`, unless
