@@ -16,9 +16,9 @@ import copy
 from pathlib import Path
 
 import pytest
-from darnit_reproducibility.handlers import repro_hermetic_build_handler
-from darnit_reproducibility.implementation import ReproducibilityImplementation
-from darnit_reproducibility.witness_attestation import WitnessCheckResult
+from darnit_amber.handlers import repro_hermetic_build_handler
+from darnit_amber.implementation import AmberImplementation
+from darnit_amber.witness_attestation import WitnessCheckResult
 
 from darnit.config import load_controls_from_framework, load_framework_config
 from darnit.config.framework_schema import HandlerInvocation
@@ -76,7 +76,7 @@ OFFLINE = {"repro_witness_attestation": {"verify_witness_attestations": False}}
 
 @pytest.fixture(autouse=True)
 def _registered() -> None:
-    ReproducibilityImplementation().register_handlers()
+    AmberImplementation().register_handlers()
 
 
 def _build(root: Path, files: dict[str, str]) -> Path:
@@ -88,7 +88,7 @@ def _build(root: Path, files: dict[str, str]) -> Path:
 
 
 def _shipped_control(control_id: str, *, offline: bool = True) -> ControlSpec:
-    path = ReproducibilityImplementation().get_framework_config_path()
+    path = AmberImplementation().get_framework_config_path()
     controls = {c.control_id: c for c in load_controls_from_framework(load_framework_config(path))}
     # A copy: the loaded configuration is cached and shared, so setting a step
     # field on it would carry into every later load in the process.
@@ -275,7 +275,7 @@ def _attestation(monkeypatch: pytest.MonkeyPatch, network_recorded: bool | None,
         detail=detail,
         evidence={"commit": "a" * 40, "artifact": "build.att.json", "monitor_types": ["https://tetragon.io/"]},
     )
-    monkeypatch.setattr("darnit_reproducibility.handlers.check_witness_attestation", lambda ctx: result)
+    monkeypatch.setattr("darnit_amber.handlers.check_witness_attestation", lambda ctx: result)
 
 
 @pytest.mark.unit

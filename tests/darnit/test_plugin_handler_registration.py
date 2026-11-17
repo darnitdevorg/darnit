@@ -1,7 +1,7 @@
 """Plugin sieve-handler registration and control ordering.
 
 Covers issues #427 and #428, both reported against the
-`darnit-reproducibility` plugin but rooted in the framework.
+`darnit-amber` plugin but rooted in the framework.
 
 #427: plugin-provided sieve handlers never reached the registry outside
 the MCP server path, so every control referencing one fell through to
@@ -21,7 +21,7 @@ import pytest
 from darnit.core.discovery import register_implementation_handlers
 from darnit.sieve.handler_registry import get_sieve_handler_registry
 
-# Handlers shipped by darnit-reproducibility, the plugin #427 was reported against.
+# Handlers shipped by darnit-amber, the plugin #427 was reported against.
 _REPRO_HANDLERS = (
     "repro_deps_pinned",
     "repro_build_env_declared",
@@ -37,7 +37,7 @@ class TestRegisterImplementationHandlers:
 
     @pytest.mark.unit
     def test_registers_reproducibility_handlers(self) -> None:
-        assert register_implementation_handlers("reproducibility") is True
+        assert register_implementation_handlers("amber") is True
 
         registry = get_sieve_handler_registry()
         missing = [h for h in _REPRO_HANDLERS if registry.get(h) is None]
@@ -63,7 +63,7 @@ class TestRegisterImplementationHandlers:
         from darnit.core.discovery import discover_implementations
 
         discover_implementations()  # warm the cache first
-        assert register_implementation_handlers("reproducibility") is True
+        assert register_implementation_handlers("amber") is True
 
         registry = get_sieve_handler_registry()
         assert all(registry.get(h) is not None for h in _REPRO_HANDLERS)
@@ -80,8 +80,8 @@ class TestRegisterImplementationHandlers:
     @pytest.mark.unit
     def test_is_idempotent(self) -> None:
         """Called once per audit; repeat calls must not raise."""
-        assert register_implementation_handlers("reproducibility") is True
-        assert register_implementation_handlers("reproducibility") is True
+        assert register_implementation_handlers("amber") is True
+        assert register_implementation_handlers("amber") is True
 
     @pytest.mark.unit
     def test_plugin_exception_is_contained(self) -> None:
@@ -115,7 +115,7 @@ class TestProtocolMethodNaming:
             ("darnit_csl.implementation", "CommunitySpecImplementation"),
             ("darnit_gittuf.implementation", "GittufImplementation"),
             ("darnit_hello.implementation", "HelloImplementation"),
-            ("darnit_reproducibility.implementation", "ReproducibilityImplementation"),
+            ("darnit_amber.implementation", "AmberImplementation"),
             ("darnit_testchecks.implementation", "CustomStepsImplementation"),
         ],
     )

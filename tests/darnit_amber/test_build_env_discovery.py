@@ -3,7 +3,7 @@
 from pathlib import Path
 
 import pytest
-from darnit_reproducibility.handlers import repro_build_env_declared_handler
+from darnit_amber.handlers import repro_build_env_declared_handler
 
 from darnit.sieve.handler_registry import HandlerResultStatus
 
@@ -46,7 +46,7 @@ def test_all_containers_are_inspected(tmp_path: Path) -> None:
 
 
 def test_unreadable_container_prevents_pass(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from darnit_reproducibility import handlers
+    from darnit_amber import handlers
 
     write_file(tmp_path, "Dockerfile", PINNED)
     write_file(tmp_path, "docker/Dockerfile", PINNED)

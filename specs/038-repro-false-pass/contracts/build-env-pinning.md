@@ -1,6 +1,6 @@
 # Contract: Build Environment Pinning (RE-01.02)
 
-**Feature**: 038 (#431) | **Package**: `darnit-reproducibility` | **Status**: proposed
+**Feature**: 038 (#431) | **Package**: `darnit-amber` | **Status**: proposed
 
 ## Problem
 

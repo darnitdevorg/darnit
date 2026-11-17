@@ -19,8 +19,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from darnit_reproducibility import witness_attestation as wa
-from darnit_reproducibility.handlers import (
+from darnit_amber import witness_attestation as wa
+from darnit_amber.handlers import (
     repro_bit_for_bit_handler,
     repro_build_env_declared_handler,
     repro_deps_pinned_handler,

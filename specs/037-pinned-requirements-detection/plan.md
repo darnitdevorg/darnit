@@ -10,7 +10,7 @@
 
 The WARN tier is what makes this more than a plugin change. A handler's verdict vocabulary is PASS / FAIL / INCONCLUSIVE / ERROR; there is no WARN. The only existing route to a WARN status is the all-inconclusive fallthrough in the orchestrator, which replaces the handler's message with a fixed "manual verification required" string. FR-005 and FR-013 require a WARN that says why, so the framework gains a conclusive WARN outcome (FR-016) and the plugin gains a parser.
 
-Two packages change: `packages/darnit/` (verdict vocabulary) and `packages/darnit-reproducibility/` (classification). The framework change is additive and gated so that no existing handler's verdict moves (FR-017, SC-008).
+Two packages change: `packages/darnit/` (verdict vocabulary) and `packages/darnit-amber/` (classification). The framework change is additive and gated so that no existing handler's verdict moves (FR-017, SC-008).
 
 ## Technical Context
 
@@ -20,7 +20,7 @@ Two packages change: `packages/darnit/` (verdict vocabulary) and `packages/darni
 
 **Storage**: filesystem only. One file read per audit, no caching (spec Assumptions).
 
-**Testing**: pytest. New unit tests under `tests/darnit_reproducibility/` for classification and `tests/darnit/sieve/` for the WARN outcome. Fixture repos under `tests/darnit_reproducibility/fixtures/`.
+**Testing**: pytest. New unit tests under `tests/darnit_amber/` for classification and `tests/darnit/sieve/` for the WARN outcome. Fixture repos under `tests/darnit_amber/fixtures/`.
 
 **Target Platform**: same as the rest of darnit -- local filesystem audit of a checked-out repository.
 
@@ -41,7 +41,7 @@ Two packages change: `packages/darnit/` (verdict vocabulary) and `packages/darni
 
 ### I. Plugin Separation -- PASS
 
-`darnit` core gains a vocabulary item; it does not learn anything about requirements files or about `darnit-reproducibility`. The classification logic lives entirely in the plugin. No new core-to-implementation import. The new outcome is available to every handler, not privileged to this one.
+`darnit` core gains a vocabulary item; it does not learn anything about requirements files or about `darnit-amber`. The classification logic lives entirely in the plugin. No new core-to-implementation import. The new outcome is available to every handler, not privileged to this one.
 
 The `hasattr()` back-compat rule does not apply -- no protocol method is added. The equivalent obligation for an enum is that no consumer may assume exhaustiveness; research.md R2 records where that is checked.
 
@@ -103,7 +103,7 @@ packages/darnit/src/darnit/sieve/
 |                            #   _handler_status_to_outcome; _apply_cel_expr guard
 `-- models.py                # PassOutcome gains WARN (see research.md R2)
 
-packages/darnit-reproducibility/src/darnit_reproducibility/
+packages/darnit-amber/src/darnit_amber/
 |-- requirements_pins.py     # NEW -- line parsing and classification, no I/O decisions
 |-- handlers.py              # repro_deps_pinned_handler consumes the classifier
 `-- (pyproject.toml)         # declares `packaging` (research.md R4)
@@ -113,7 +113,7 @@ docs/architecture/framework-design.md    # Normative WARN outcome + disposition 
 tests/darnit/sieve/
 `-- test_handler_warn_outcome.py         # NEW -- framework-level WARN semantics
 
-tests/darnit_reproducibility/
+tests/darnit_amber/
 |-- test_requirements_pins.py            # NEW -- classification table, edge cases
 |-- test_deps_pinned_handler.py          # NEW -- handler verdicts end to end
 `-- fixtures/                            # NEW -- one repo dir per edge case
