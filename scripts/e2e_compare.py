@@ -16,8 +16,8 @@ Phases (docs/design/e2e-verification.md, Layer 2):
   1  Deterministic audit. Compares each control's level, status and
      concluded_by. Platform reads use GH_TOKEN, or `gh auth token`, unless
      --no-platform; the token is used for reads only.
-  2  MCP tool surface of each shipped framework: tool names, descriptions and
-     schemas, as an agent sees them.
+  2  MCP tool surface of every framework registered on either side: tool
+     names, descriptions and schemas, as an agent sees them.
   4  Headless /darnit:darnit-comply through the local Claude Code login. The
      agent gets the reference's recorded answers, approves every file change
      and no platform change, and cannot confirm a PASS candidate, open a PR or
@@ -51,7 +51,6 @@ from pathlib import Path
 CHECKOUT = Path(__file__).resolve().parent.parent
 REFERENCES = CHECKOUT / "scripts" / "comply_replay.toml"
 DEFAULT_ROOT = Path.home() / ".local" / "share" / "darnit-e2e-runs"
-FRAMEWORKS = ["openssf-baseline", "gittuf", "reproducibility"]
 PHASES = {"1", "2", "4"}
 SERVER = "darnit"
 # The agent may not confirm its own PASS candidates or reach the platform.
@@ -65,15 +64,12 @@ SPILLED = re.compile(r"Output has been saved to (\S+\.txt)")
 SPILL_SIZE = re.compile(r"result \(([\d,]+) characters\)")
 
 SURFACE = r"""
-import asyncio, json, sys
-from darnit.config.merger import resolve_framework_path
+import asyncio, json
+from darnit.config.merger import list_available_frameworks, resolve_framework_path
 from darnit.server.factory import create_server
 out = {}
-for name in sys.argv[1:]:
+for name in list_available_frameworks():
     path = resolve_framework_path(name)
-    if path is None:
-        out[name] = None
-        continue
     tools = asyncio.run(create_server(path).list_tools())
     out[name] = {t.name: t.model_dump(mode="json", exclude_none=True) for t in tools}
 print(json.dumps(out))
@@ -131,6 +127,8 @@ def build(root: Path, base: str, head: str | None = None) -> Path:
         sh(["git", "-C", str(CHECKOUT), "worktree", "remove", "--force", str(path)], check=False)
         shutil.rmtree(path, ignore_errors=True)
     path.parent.mkdir(parents=True, exist_ok=True)
+    # A worktree whose directory was deleted by hand stays registered until pruned.
+    sh(["git", "-C", str(CHECKOUT), "worktree", "prune"], check=False)
     log(f"build {key}")
     sh(["git", "-C", str(CHECKOUT), "worktree", "add", "-q", "--detach", str(path), base])
     if head is not None:
@@ -292,7 +290,7 @@ def phase_surface(side: Path, build_path: Path, ref: dict) -> dict:
     work = side / "phase2"
     work.mkdir(parents=True)
     env = {**clean_env(), **darnit_home(work / "home", ref)}
-    r = sh([str(build_path / ".venv" / "bin" / "python"), "-c", SURFACE, *FRAMEWORKS], env=env, cwd=work)
+    r = sh([str(build_path / ".venv" / "bin" / "python"), "-c", SURFACE], env=env, cwd=work)
     surface = json.loads(r.stdout)
     (work / "surface.json").write_text(json.dumps(surface, indent=1, sort_keys=True))
     return {"frameworks": surface}

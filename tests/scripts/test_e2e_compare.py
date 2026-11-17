@@ -43,6 +43,18 @@ def test_diff_surface_names_tools_and_fields() -> None:
     ]
 
 
+def test_diff_surface_framework_only_in_head() -> None:
+    # Frameworks are listed per side, so a renamed one is absent from the other side.
+    base = {"old-name": {"audit": {"name": "audit"}}}
+    head = {"new-name": {"audit": {"name": "audit"}}}
+    assert diff_surface(base, head) == [
+        "new-name: registered in head",
+        "new-name: added audit",
+        "old-name: not registered in head",
+        "old-name: removed audit",
+    ]
+
+
 def test_diff_files() -> None:
     assert diff_files(["A.md", "B.md"], ["B.md", "C.md"]) == ["no longer written: A.md", "now written: C.md"]
 
