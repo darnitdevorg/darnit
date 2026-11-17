@@ -1,0 +1,14 @@
+[fixture]
+description = "User-owned repository audited by a signed-in account with 2FA"
+
+[fixture.platform."/repos/$OWNER/$REPO"]
+status = 200
+body = { owner = { type = "User" } }
+
+[fixture.platform."/user"]
+status = 200
+body = { login = "auditor", two_factor_authentication = true }
+
+[labels."OSPS-AC-01.01"]
+expected = "NOT_PASS"
+why = "The auditor's 2FA cannot establish that the repository owner has MFA enabled."

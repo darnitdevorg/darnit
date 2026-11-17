@@ -278,7 +278,7 @@ Names by step type (each step type declares its `expression_names`; one with non
 - `gh_api`: `response.status_code`, `response.body` (evaluated by the handler; no headers)
 - `mcp`: `result.*` (evaluated by the handler)
 
-`project.*` holds only usable values (in an audit, confirmed values); reading anything else is an evaluation error.
+`project.*` holds only usable values (confirmed values and values concluded by detection). Audits run framework detection for auto-detectable keys with detectors used in selected verification steps' `when` clauses. Reading a value outside the usable mapping is an evaluation error.
 
 Custom functions: `file_exists(path)` (relative to the audited repository), `json_path(obj, path)`
 

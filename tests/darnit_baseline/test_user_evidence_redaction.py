@@ -113,12 +113,13 @@ class TestAc0101:
         assert result["evidence"]["response"]["body"] == {"login": OWNER, "two_factor_authentication": True}
         assert "user-owned" in result["evidence"]["verification_steps"][0]
 
-    def test_hidden_user_mfa_needs_manual_review(self, tmp_path, recorded_platform):
+    def test_hidden_user_mfa_reports_evaluation_error(self, tmp_path, recorded_platform):
         recorded_platform.record("/user", {"body": {"login": OWNER}})
         (result,) = _audit(tmp_path)
 
-        assert result["status"] == "WARN"
-        assert "read:user" in " ".join(result["evidence"]["verification_steps"])
+        assert result["status"] == "ERROR"
+        assert result["error"]["class"] == "evaluation"
+        assert "two_factor_authentication" in result["error"]["cause"]
 
     @pytest.mark.parametrize(
         ("body", "expected"),
@@ -135,13 +136,15 @@ class TestAc0101:
         assert result["status"] == expected
         assert [call.endpoint for call in recorded_platform.calls] == [REPO_ENDPOINT, ORG_ENDPOINT]
 
-    def test_unknown_owner_needs_manual_review(self, tmp_path, recorded_platform):
+    def test_failed_owner_lookup_keeps_api_error(self, tmp_path, recorded_platform):
         recorded_platform.record(REPO_ENDPOINT, {"status": 403})
+        recorded_platform.record(ORG_ENDPOINT, {"status": 403})
         (result,) = _audit(tmp_path)
 
-        assert result["status"] == "WARN"
-        assert [call.endpoint for call in recorded_platform.calls] == [REPO_ENDPOINT]
-        assert "owner type could not be verified" in result["evidence"]["verification_steps"][0]
+        assert result["status"] == "ERROR"
+        assert result["error"]["class"] == "auth"
+        assert "HTTP 403" in result["error"]["cause"]
+        assert [call.endpoint for call in recorded_platform.calls][:2] == [REPO_ENDPOINT, ORG_ENDPOINT]
 
     def test_json_report_and_attestation_carry_no_profile(self, tmp_path: Path) -> None:
         from darnit_baseline.attestation.predicate import build_assessment_predicate
